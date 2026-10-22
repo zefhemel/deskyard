@@ -32,7 +32,7 @@ const (
 	LabelCreated  = "deskyard.created"
 	LabelContract = "deskyard.contract"
 	TokenEnv      = "WORKSPACE_PROXY_TOKEN"
-	Contract      = "1"
+	Contract      = "3" // 3: a Selkies desktop (Xvfb, Selkies behind Caddy)
 
 	stopTimeout = 30 * time.Second
 	shmBytes    = 1 << 30

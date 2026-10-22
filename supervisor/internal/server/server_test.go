@@ -1,6 +1,8 @@
 package server
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
@@ -16,20 +18,50 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 )
 
-// fakeEngine knows one stopped desktop, "alice", and nothing else.
-type fakeEngine struct{ engine.Engine }
+// fakeEngine knows one stopped desktop, "alice", plus any others a test
+// adds, and nothing else. Every image holds the Selkies client in fakeClient.
+type fakeEngine struct {
+	engine.Engine
+	others []engine.Container
+}
 
 var alice = engine.Container{ID: "c1", Name: "deskyard-alice", State: "exited", ImageID: "sha256:abc",
 	Labels: map[string]string{desktops.LabelManaged: "true", desktops.LabelName: "alice", desktops.LabelID: "id-alice"}}
 
-func (fakeEngine) Inspect(_ context.Context, id string) (engine.Container, error) {
-	if id == "deskyard-alice" || id == "c1" {
-		return alice, nil
+func (e fakeEngine) all() []engine.Container { return append([]engine.Container{alice}, e.others...) }
+
+func (e fakeEngine) Inspect(_ context.Context, id string) (engine.Container, error) {
+	for _, c := range e.all() {
+		if id == c.Name || id == c.ID {
+			return c, nil
+		}
 	}
 	return engine.Container{}, engine.ErrNotFound
 }
-func (fakeEngine) List(context.Context, map[string]string) ([]engine.Container, error) {
-	return []engine.Container{alice}, nil
+func (e fakeEngine) List(context.Context, map[string]string) ([]engine.Container, error) {
+	return e.all(), nil
+}
+
+// fakeClient is the Selkies web client folder of the fake images.
+var fakeClient = map[string]string{
+	"index.html":          `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Selkies</title><script type="module" crossorigin src="./assets/index-X.js"></script></head><body><div id="app"></div></body></html>`,
+	"assets/index-X.js":   "console.log('selkies')",
+	"src/selkies-core.js": "// core",
+}
+
+func (fakeEngine) CopyFromImage(_ context.Context, _, p string) (io.ReadCloser, error) {
+	if p != clientPath {
+		return nil, engine.ErrNotFound
+	}
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	_ = tw.WriteHeader(&tar.Header{Name: "selkies_web/", Typeflag: tar.TypeDir, Mode: 0o755})
+	for name, body := range fakeClient {
+		_ = tw.WriteHeader(&tar.Header{Name: "selkies_web/" + name, Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(body))})
+		_, _ = tw.Write([]byte(body))
+	}
+	_ = tw.Close()
+	return io.NopCloser(&buf), nil
 }
 func (fakeEngine) ImageInspect(context.Context, string) (engine.Image, error) {
 	return engine.Image{}, engine.ErrNotFound
@@ -39,12 +71,15 @@ func (fakeEngine) Info(context.Context) (engine.HostInfo, error) {
 }
 
 func newTestServer(t *testing.T) (*Server, *httptest.Server) {
+	return newTestServerWith(t, fakeEngine{})
+}
+
+func newTestServerWith(t *testing.T, e fakeEngine) (*Server, *httptest.Server) {
 	dir := t.TempDir()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	accts, _ := accounts.Load(dir)
 	_, _ = accts.EnsureAdmin("admin", "pw")
 	_, _ = accts.Create("anna", "pw", false, nil)
-	e := fakeEngine{}
 	s, err := New(Options{Log: log, Eng: e, Accounts: accts, StateDir: dir, DefaultImage: "img",
 		Desktops: desktops.New(e, desktops.Config{DataDir: dir, Subnet: "10.0.0.0/16"}, log),
 		UI:       fstest.MapFS{"index.html": {Data: []byte("<!doctype html>ui")}, "assets/a.js": {Data: []byte("js")}}})
@@ -121,7 +156,7 @@ func TestOriginAndPermissions(t *testing.T) {
 	if got := status(t, anna, "GET", ts.URL+"/api/desktops/alice", ""); got != 404 {
 		t.Errorf("anna sees alice: %d", got)
 	}
-	if got := status(t, anna, "GET", ts.URL+"/alice/vnc/vnc.html", ""); got != 404 {
+	if got := status(t, anna, "GET", ts.URL+"/alice/screen/", ""); got != 404 {
 		t.Errorf("anna gets alice's client: %d", got)
 	}
 	if got := status(t, admin, "GET", ts.URL+"/api/desktops/alice", ""); got != 200 {
@@ -131,13 +166,13 @@ func TestOriginAndPermissions(t *testing.T) {
 		t.Errorf("missing desktop: %d", got)
 	}
 	// Stopped: the desktop WebSocket can't be proxied.
-	req, _ := http.NewRequest("GET", ts.URL+"/alice/websockify", nil)
+	req, _ := http.NewRequest("GET", ts.URL+"/alice/screen/api/websockets", nil)
 	req.Header.Set("Origin", ts.URL)
 	req.Header.Set("Upgrade", "websocket")
 	req.Header.Set("Connection", "Upgrade")
 	resp, _ := admin.Do(req)
 	if resp.StatusCode != 409 {
-		t.Errorf("stopped websockify: %d", resp.StatusCode)
+		t.Errorf("stopped stream: %d", resp.StatusCode)
 	}
 }
 

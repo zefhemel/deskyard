@@ -31,6 +31,7 @@ func (s *Server) routes() {
 	h("PATCH /api/desktops/{name}", s.handleUpdateDesktop)
 	h("DELETE /api/desktops/{name}", s.handleRemoveDesktop)
 	h("POST /api/desktops/{name}/{action}", s.handlePower) // start, stop, restart, upgrade, keys
+	h("POST /api/desktops/{name}/mic", s.handleMic)
 	h("PUT /api/desktops/{name}/access", s.handleSetAccess)
 	h("GET /api/desktops/{name}/screen.png", s.handleScreen)
 	h("GET /api/desktops/{name}/processes", s.handleProcesses)

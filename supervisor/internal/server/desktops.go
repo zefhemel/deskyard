@@ -39,6 +39,7 @@ type desktopJSON struct {
 	Settings        settingsJSON  `json:"settings"`
 	Access          []string      `json:"access"`
 	Viewers         []string      `json:"viewers"`
+	Mics            []string      `json:"mics"`
 	Forwards        []forwardJSON `json:"forwards"`
 	Tokens          int           `json:"tokens"`
 	Stats           *statsJSON    `json:"stats"`
@@ -50,7 +51,7 @@ func (s *Server) desktopJSON(ctx context.Context, c desktops.Desktop, a accounts
 		ImageTitle: c.ImageLabels["org.opencontainers.image.title"], ImageVersion: c.ImageLabels["org.opencontainers.image.version"],
 		Settings: settingsJSON{c.Settings.MemoryBytes, c.Settings.NanoCPUs},
 		Access:   []string{}, Viewers: s.viewers.names(c.Name),
-		Forwards: s.forwards.list(c.Name),
+		Mics: s.viewers.mics(c.Name), Forwards: s.forwards.list(c.Name),
 	}
 	if !c.Created.IsZero() {
 		j.Created = &c.Created

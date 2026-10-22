@@ -42,6 +42,8 @@ export interface Desktop {
   settings: Settings;
   access: string[];
   viewers: string[];
+  /** Viewers with a mic on (per stream; gone when the stream closes). */
+  mics: string[];
   /** Port mappings agents have set up with `deskyard forward`; port is the desktop's. */
   forwards: Forward[];
   tokens: number;
@@ -139,6 +141,7 @@ export interface Forward {
 export interface ViewersEvent {
   name: string;
   viewers: string[];
+  mics: string[];
   forwards: Forward[];
 }
 export interface RemovedEvent {

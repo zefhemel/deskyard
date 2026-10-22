@@ -8,12 +8,15 @@ import (
 	"time"
 )
 
-// viewers tracks the open desktop connections per desktop, with the account
-// each belongs to and a way to close it (when access is revoked).
+// viewers tracks the open desktop streams per desktop, with the account
+// each belongs to, the browser tab it comes from, whether that tab's mic is
+// on, and a way to close it (when access is revoked).
 type conn struct {
 	username  string
+	tab       string // the page's id for its browser tab ("" if it sent none)
 	desktopID string
 	cancel    context.CancelFunc
+	mic       bool // guarded by viewers.mu
 }
 
 type viewers struct {
@@ -55,6 +58,34 @@ func (v *viewers) names(name string) []string {
 	return out
 }
 
+// setMic turns the mic badge of an account's stream from one tab on or off.
+// It reports false when that account has no stream from that tab.
+func (v *viewers) setMic(name, username, tab string, on bool) bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	found := false
+	for c := range v.byName[name] {
+		if c.username == username && c.tab == tab {
+			c.mic, found = on, true
+		}
+	}
+	return found
+}
+
+// mics lists the accounts with a mic on in a desktop, each once, sorted.
+func (v *viewers) mics(name string) []string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	out := []string{}
+	for c := range v.byName[name] {
+		if c.mic && !slices.Contains(out, c.username) {
+			out = append(out, c.username)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // revoke closes the connections of an account to desktops it may no longer use.
 func (v *viewers) revoke(username string, stillAllowed func(desktopID string) bool) {
 	v.mu.Lock()
@@ -86,7 +117,7 @@ func (s *Server) publishViewers(name, desktopID string) {
 
 func (s *Server) sendViewers(name, desktopID string) {
 	s.events.publish(event{kind: "viewers", desktopID: desktopID,
-		data: map[string]any{"name": name, "viewers": s.viewers.names(name), "forwards": s.forwards.list(name)}})
+		data: map[string]any{"name": name, "viewers": s.viewers.names(name), "mics": s.viewers.mics(name), "forwards": s.forwards.list(name)}})
 }
 
 // viewersInterval is the least time between two viewers events of a desktop.

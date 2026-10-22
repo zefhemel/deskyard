@@ -58,18 +58,9 @@ export type FrameMessage =
 
 const states: ConnectionState[] = ["init", "connecting", "connected", "disconnecting", "disconnected", "reconnecting"];
 
-/** The frame's URL for a desktop. */
+/** The frame's URL for a desktop: Selkies' client, served by the supervisor. */
 export function frameSrc(name: string): string {
-  const q = new URLSearchParams({
-    path: `${name}/websockify`,
-    autoconnect: "1",
-    resize: "remote",
-    reconnect: "1",
-    clipboard_up: "1",
-    clipboard_down: "1",
-    clipboard_seamless: "1",
-  });
-  return `/${name}/vnc/vnc.html?${q.toString()}`;
+  return `/${name}/screen/`;
 }
 
 /** Parses a message from the frame; null for anything we don't handle. */

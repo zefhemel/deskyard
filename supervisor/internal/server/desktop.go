@@ -2,7 +2,9 @@ package server
 
 import (
 	"archive/tar"
+	"bytes"
 	"context"
+	_ "embed"
 	"errors"
 	"io"
 	"net/http"
@@ -11,20 +13,23 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 )
 
-// serveDesktop handles /<name>/…: the desktop page (the UI), the KasmVNC
-// client files taken from the desktop's image, and the desktop WebSocket.
-// Nothing else from a desktop is ever served on this origin.
+// serveDesktop handles /<name>/…: the desktop page (the UI), and under
+// /<name>/screen/ Selkies' web client taken from the desktop's image, our
+// additions to it, and the desktop's stream. Nothing else from a desktop is
+// ever served on this origin.
 func (s *Server) serveDesktop(w http.ResponseWriter, r *http.Request, name, rest string) {
 	r, ok := s.withSession(w, r)
 	if !ok {
-		if rest == "websockify" {
+		if strings.HasPrefix(rest, "screen/api/") {
 			writeError(w, http.StatusUnauthorized, "sign in first")
 			return
 		}
@@ -42,49 +47,125 @@ func (s *Server) serveDesktop(w http.ResponseWriter, r *http.Request, name, rest
 		http.Redirect(w, r, "/"+name+"/", http.StatusFound)
 	case rest == "":
 		s.writeIndex(w) // the UI's desktop page
-	case rest == "websockify":
-		s.proxyDesktop(w, r, c)
-	case strings.HasPrefix(rest, "vnc/"):
-		s.serveClientFile(w, r, c, strings.TrimPrefix(rest, "vnc/"))
+	case rest == "screen":
+		http.Redirect(w, r, "/"+name+"/screen/", http.StatusFound)
+	case strings.HasPrefix(rest, "screen/"):
+		s.serveScreen(w, r, c, strings.TrimPrefix(rest, "screen/"))
 	default:
 		http.NotFound(w, r)
 	}
 }
 
-func (s *Server) serveClientFile(w http.ResponseWriter, r *http.Request, c desktops.Desktop, file string) {
+// serveScreen serves /<name>/screen/<file>. Of Selkies' HTTP API only the
+// stream is proxied; its other endpoints (upload, files, screenshots, …) are
+// refused here as well as by the desktop's Caddy.
+func (s *Server) serveScreen(w http.ResponseWriter, r *http.Request, c desktops.Desktop, file string) {
+	switch {
+	case file == "api/websockets" || file == "api/websockets/":
+		s.serveStream(w, r, c)
+		return
+	case file == "api" || strings.HasPrefix(file, "api/"):
+		writeError(w, http.StatusNotFound, "not served")
+		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	switch file {
+	case "deskyard.js":
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		_, _ = w.Write(screenAdditions)
+	case "", "index.html":
+		s.serveScreenPage(w, r, c)
+	default:
+		s.serveClientFile(w, r, c, file)
+	}
+}
+
+//go:embed screen_additions.js
+var screenAdditions []byte
+
+// additionsTag loads our additions before any of Selkies' own scripts.
+const additionsTag = `<script src="deskyard.js"></script>`
+
+// serveScreenPage serves the client's index.html with our additions.
+func (s *Server) serveScreenPage(w http.ResponseWriter, r *http.Request, c desktops.Desktop) {
+	dir, ok := s.clientDir(w, r, c)
+	if !ok {
+		return
+	}
+	page, err := os.ReadFile(filepath.Join(dir, "index.html"))
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "the desktop client isn't available")
+		return
+	}
+	if i := bytes.Index(page, []byte("<head>")); i >= 0 {
+		i += len("<head>")
+		page = slices.Concat(page[:i:i], []byte(additionsTag), page[i:])
+	} else {
+		page = slices.Concat([]byte(additionsTag), page)
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(page)
+}
+
+func (s *Server) clientDir(w http.ResponseWriter, r *http.Request, c desktops.Desktop) (string, bool) {
 	if c.ImageID == "" {
 		http.NotFound(w, r)
-		return
+		return "", false
 	}
 	dir, err := s.clients.dirFor(r.Context(), c.ImageID)
 	if err != nil {
 		s.Log.Warn("extracting the web client", "image", c.ImageID, "err", err)
 		writeError(w, http.StatusBadGateway, "the desktop client isn't available")
+		return "", false
+	}
+	return dir, true
+}
+
+func (s *Server) serveClientFile(w http.ResponseWriter, r *http.Request, c desktops.Desktop, file string) {
+	dir, ok := s.clientDir(w, r, c)
+	if !ok {
 		return
 	}
-	clean := cleanClientPath(file)
+	p := filepath.Join(dir, filepath.FromSlash(cleanClientPath(file)))
+	if st, err := os.Stat(p); err != nil || st.IsDir() {
+		http.NotFound(w, r) // no folder listings
+		return
+	}
 	w.Header().Set("Cache-Control", "no-cache")
-	http.ServeFile(w, r, filepath.Join(dir, filepath.FromSlash(clean)))
+	http.ServeFile(w, r, p)
 }
 
 // cleanClientPath keeps a requested client file inside the client's folder.
 func cleanClientPath(file string) string {
-	clean := path.Clean("/" + file)
-	if clean == "/" {
-		return "/vnc.html"
-	}
-	return clean
+	return path.Clean("/" + file)
 }
 
-// proxyDesktop proxies the desktop WebSocket to the desktop, adding the
-// desktop's token and dropping the session cookie, and tracks who's viewing.
-func (s *Server) proxyDesktop(w http.ResponseWriter, r *http.Request, c desktops.Desktop) {
+// streamOrigin is the Origin the stream reaches Selkies with, after the
+// supervisor's own same-origin check: the image allows only this one
+// (SELKIES_ALLOWED_ORIGINS), and .invalid is never a real site's.
+const streamOrigin = "http://supervisor.deskyard.invalid"
+
+// serveStream proxies the desktop's stream (Selkies' WebSocket) to the
+// desktop, adding the desktop's token and dropping the session cookie, and
+// tracks who's viewing. ?tab= names the page's browser tab, for its mic badge.
+// A plain GET is the client's reconnect probe.
+func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, c desktops.Desktop) {
+	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+		s.probeStream(w, r, c)
+		return
+	}
 	if !sameOrigin(r) {
 		writeError(w, http.StatusForbidden, "cross-origin WebSocket refused")
 		return
 	}
-	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
-		writeError(w, http.StatusBadRequest, "WebSocket expected")
+	tab := r.URL.Query().Get("tab")
+	if !validTab(tab) {
+		writeError(w, http.StatusBadRequest, "bad tab id")
 		return
 	}
 	addr, token, err := s.Desktops.Target(r.Context(), c.Name)
@@ -95,7 +176,7 @@ func (s *Server) proxyDesktop(w http.ResponseWriter, r *http.Request, c desktops
 	a, _ := s.account(r)
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	cn := &conn{username: a.Username, desktopID: c.ID, cancel: cancel}
+	cn := &conn{username: a.Username, tab: tab, desktopID: c.ID, cancel: cancel}
 	s.viewers.add(c.Name, cn)
 	s.publishViewers(c.Name, c.ID)
 	defer func() {
@@ -103,20 +184,10 @@ func (s *Server) proxyDesktop(w http.ResponseWriter, r *http.Request, c desktops
 		s.publishViewers(c.Name, c.ID)
 	}()
 	rp := &httputil.ReverseProxy{
-		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.Out.URL.Scheme = "http"
-			pr.Out.URL.Host = addr
-			pr.Out.URL.Path = "/websockify"
-			pr.Out.URL.RawQuery = ""
-			pr.Out.Host = addr
-			pr.Out.Header.Del("Cookie")
-			pr.Out.Header.Del("Authorization")
-			pr.Out.Header.Set("X-Deskyard-Token", token)
-		},
-		ErrorLog: nil,
+		Rewrite: func(pr *httputil.ProxyRequest) { streamRequest(pr.Out, addr, token) },
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			if !errors.Is(err, context.Canceled) {
-				s.Log.Debug("desktop proxy", "desktop", c.Name, "err", err)
+				s.Log.Debug("desktop stream", "desktop", c.Name, "err", err)
 			}
 			w.WriteHeader(http.StatusBadGateway)
 		},
@@ -124,7 +195,89 @@ func (s *Server) proxyDesktop(w http.ResponseWriter, r *http.Request, c desktops
 	rp.ServeHTTP(w, r.WithContext(ctx))
 }
 
-// clientFiles extracts KasmVNC's web client from desktop images (never from
+// streamRequest points a request at the desktop's stream endpoint.
+func streamRequest(out *http.Request, addr, token string) {
+	out.URL.Scheme = "http"
+	out.URL.Host = addr
+	out.URL.Path = "/api/websockets"
+	out.URL.RawPath = ""
+	out.URL.RawQuery = ""
+	out.Host = addr
+	out.Header.Del("Cookie")
+	out.Header.Del("Authorization")
+	out.Header.Set("Origin", streamOrigin)
+	out.Header.Set("X-Deskyard-Token", token)
+}
+
+// probeStream answers the client's reconnect probe: 204 when Selkies is up,
+// otherwise 503, which makes the client wait and probe again. (Never 409:
+// Selkies' client takes that as "the server serves WebRTC" and switches.)
+func (s *Server) probeStream(w http.ResponseWriter, r *http.Request, c desktops.Desktop) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	addr, token, err := s.Desktops.Target(r.Context(), c.Name)
+	if err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr, nil)
+	streamRequest(req, addr, token)
+	resp, err := http.DefaultTransport.RoundTrip(req)
+	if err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+	resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// validTab reports whether a page's tab id is acceptable (it may be empty).
+func validTab(tab string) bool {
+	if len(tab) > 64 {
+		return false
+	}
+	for _, r := range tab {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+// handleMic records whether the mic of one of the account's streams (the one
+// from that browser tab) is on, for everyone's mic badges. The badge goes
+// with the stream.
+func (s *Server) handleMic(w http.ResponseWriter, r *http.Request) {
+	c, a, ok := s.desktopFor(w, r, auth.View)
+	if !ok {
+		return
+	}
+	var req struct {
+		On  bool   `json:"on"`
+		Tab string `json:"tab"`
+	}
+	if err := readJSON(r, &req); err != nil || req.Tab == "" || !validTab(req.Tab) {
+		writeError(w, http.StatusBadRequest, `{"on": bool, "tab": id} expected`)
+		return
+	}
+	if !s.viewers.setMic(c.Name, a.Username, req.Tab, req.On) {
+		writeError(w, http.StatusConflict, "no stream from that tab")
+		return
+	}
+	s.publishViewers(c.Name, c.ID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// clientFiles extracts Selkies' web client from desktop images (never from
 // running containers, which their agents control), once per image ID.
 type clientFiles struct {
 	eng interface {
@@ -134,7 +287,8 @@ type clientFiles struct {
 	mu  sync.Mutex
 }
 
-const clientPath = "/usr/share/kasmvnc/www"
+// clientPath is where a contract-3 image keeps Selkies' web client.
+const clientPath = "/opt/selkies/lib/python3.13/site-packages/selkies/selkies_web"
 
 func (cf *clientFiles) dirFor(ctx context.Context, imageID string) (string, error) {
 	cf.mu.Lock()
@@ -144,7 +298,7 @@ func (cf *clientFiles) dirFor(ctx context.Context, imageID string) (string, erro
 		return "", errors.New("bad image ID")
 	}
 	dir := filepath.Join(cf.dir, key)
-	if _, err := os.Stat(filepath.Join(dir, "vnc.html")); err == nil {
+	if _, err := os.Stat(filepath.Join(dir, "index.html")); err == nil {
 		return dir, nil
 	}
 	rc, err := cf.eng.CopyFromImage(ctx, imageID, clientPath)

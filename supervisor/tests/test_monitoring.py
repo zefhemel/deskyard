@@ -43,7 +43,7 @@ def test_viewers_are_tracked(admin, desktop, name):
     done = threading.Event()
 
     async def view():
-        url = admin.base.replace("http", "ws") + f"/{name}/websockify"
+        url = admin.base.replace("http", "ws") + f"/{name}/screen/api/websockets"
         async with websockets.connect(url, additional_headers={"Cookie": cookie, "Origin": admin.base}, subprotocols=["binary"]):
             opened.set()
             while not done.is_set():
@@ -76,7 +76,7 @@ def test_two_viewers_see_each_other(admin, desktop, name, supervisor):
     def view(client):
         async def run():
             cookie = "; ".join(f"{k}={v}" for k, v in client.cookies.items())
-            url = client.base.replace("http", "ws") + f"/{name}/websockify"
+            url = client.base.replace("http", "ws") + f"/{name}/screen/api/websockets"
             async with websockets.connect(url, additional_headers={"Cookie": cookie, "Origin": client.base}, subprotocols=["binary"]):
                 opened.wait(10)
                 while not done.is_set():
@@ -86,6 +86,9 @@ def test_two_viewers_see_each_other(admin, desktop, name, supervisor):
     threads = [threading.Thread(target=view, args=(c,)) for c in (admin, anna)]
     for t in threads:
         t.start()
+        # Selkies refuses a second connection from one address (all viewers
+        # come through the supervisor) within 500 ms of the last.
+        time.sleep(0.7)
     try:
         opened.wait(10)
         both = sorted(["admin", user])

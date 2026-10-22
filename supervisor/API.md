@@ -30,13 +30,14 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
   "settings": {"memoryBytes": 0, "nanoCpus": 0},
   "access": ["anna"],
   "viewers": ["zef", "anna"],
+  "mics": ["anna"],
   "forwards": [{"token": "deploy-bot", "direction": "in", "port": 3000}, {"token": "deploy-bot", "direction": "out", "port": 5173}],
   "tokens": 2,
   "stats": {"cpuPercent": 34.2, "memBytes": 1503238553, "memLimit": 2147483648} | null
 }
 ```
 
-`memoryBytes`/`nanoCpus` 0 mean no limit; `memLimit` is then the host's memory. `cpuPercent` is relative to the desktop's CPU limit, or to all host CPUs without one (0–100). `access` lists regular accounts only (admins can use everything) and is only filled for admins. `forwards` are the port mappings agent tokens have open on the desktop (`deskyard forward`): `in` maps a port of the agent's machine into the desktop, `out` a desktop port out to the agent's machine; `port` is always the desktop's port (the agent's own port numbers aren't shown). Each entry is listed once, sorted by token, direction and port; an `in` port appears once the desktop is listening on it. `created` survives upgrades and settings changes (null for desktops made before it was recorded). `job` is the running create, upgrade or settings job, which anyone who can see the desktop may follow. A desktop's own page is at `/<name>/`.
+`memoryBytes`/`nanoCpus` 0 mean no limit; `memLimit` is then the host's memory. `cpuPercent` is relative to the desktop's CPU limit, or to all host CPUs without one (0–100). `access` lists regular accounts only (admins can use everything) and is only filled for admins. `viewers` are the accounts with a stream open (each once, sorted); `mics` those of them with a mic on, as their pages report it (see `POST /api/desktops/{name}/mic`). `forwards` are the port mappings agent tokens have open on the desktop (`deskyard forward`): `in` maps a port of the agent's machine into the desktop, `out` a desktop port out to the agent's machine; `port` is always the desktop's port (the agent's own port numbers aren't shown). Each entry is listed once, sorted by token, direction and port; an `in` port appears once the desktop is listening on it. `created` survives upgrades and settings changes (null for desktops made before it was recorded). `job` is the running create, upgrade or settings job, which anyone who can see the desktop may follow. A desktop's own page is at `/<name>/`.
 
 | Method and path | Body | Response |
 | --- | --- | --- |
@@ -52,6 +53,7 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 | `GET /api/desktops/{name}/stats` | | `{"history":[{"t":"…","cpuPercent":n,"memBytes":n}], "memLimit":n}` (15 min at 5 s) |
 | `GET /api/desktops/{name}/folder` | | `{"path","bytes","complete"}`; `complete` is false when some directories couldn't be read, so `bytes` is a lower bound |
 | `POST /api/desktops/{name}/keys` | `{"keys":"ctrl+alt+Delete"}` (xdotool syntax) | 204 |
+| `POST /api/desktops/{name}/mic` | `{"on":bool,"tab":id}` | 204; 400 without a valid `tab`; 409 when the account has no stream open from that tab. Sets the mic badge of the stream opened with `?tab=<id>` (see Desktop below); the badge goes when that stream closes |
 | `POST /api/desktops/{name}/upgrade` (admin) | | 202 `{"job": id}` |
 | `GET /api/validate-name?name=x` (admin) | | `{"ok":bool,"error"?:string,"folder":path,"folderExists":bool}` |
 
@@ -66,7 +68,7 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 - `event: desktop` — a `Desktop` that appeared or changed
 - `event: removed` — `{"name"}`
 - `event: stats` — `{"name","cpuPercent","memBytes","memLimit","t"}` every 5 s per running desktop
-- `event: viewers` — `{"name","viewers":[usernames],"forwards":[…]}` (as in `Desktop`), when someone starts or stops viewing or a mapping opens or closes (sent at most every 250 ms per desktop; the last state always follows)
+- `event: viewers` — `{"name","viewers":[usernames],"mics":[usernames],"forwards":[…]}` (as in `Desktop`), when someone starts or stops viewing, turns a mic on or off, or a mapping opens or closes (sent at most every 250 ms per desktop; the last state always follows)
 
 ### Accounts (admin)
 
@@ -103,8 +105,14 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 
 ## Desktop
 
-- `/<name>/` serves the UI's desktop page (the SPA's `index.html`); the page frames `/<name>/vnc/vnc.html?path=<name>/websockify&autoconnect=1&resize=remote&reconnect=1&clipboard_up=1&clipboard_down=1&clipboard_seamless=1`. Framed without `show_control_bar` (any value, even `0`, shows it), KasmVNC hides its own controls and turns the clipboard off unless the `clipboard_*` parameters say otherwise; the page talks to the frame with `postMessage` (see `web/src/desktop/kasm.ts`).
-- `/<name>/vnc/*` are the KasmVNC client files (from the desktop's image), `/<name>/websockify` the desktop WebSocket.
+- `/<name>/` serves the UI's desktop page (the SPA's `index.html`); the page frames `/<name>/screen/`, Selkies' web client, and drives it through `window.deskyardScreen` (see `internal/server/screen_additions.js`).
+- `/<name>/screen/…` are Selkies' web client files, extracted from the desktop's image (once per image ID, never from the running container). `index.html` and `deskyard.js` are served `no-store`; the other files `no-cache`. `index.html` gets `<script src="deskyard.js"></script>` first in its `<head>`: our additions, which
+  - hide `pointerrawupdate` from the client (Chrome reports its coordinates relative to the top-level page inside an iframe, so drags landed off by our bar);
+  - never send `STOP_VIDEO` (a background tab mustn't stop the desktop's stream for everyone);
+  - add `?tab=<id>` to the stream URL, the tab's id from `sessionStorage` `deskyard.tab` (created if missing; same-origin, so the desktop page reads it too);
+  - expose `window.deskyardScreen`: `tab`, `post(msg)` (a message to Selkies' client), `on(type, fn)` (messages of that type from it; returns an unsubscribe function; `"deskyard.state"` gets each new state), `state()` (`"connecting" | "connected" | "disconnected"`), `video()` (the `<video>` or `<canvas>` showing the picture, or null).
+- `/<name>/screen/api/websockets` (also with a trailing `/`) is the desktop's stream, proxied to the desktop's Selkies with the desktop's token and `Origin: http://supervisor.deskyard.invalid`, without the session cookie or the query. The WebSocket needs a session (401), access to the desktop (404) and a same-origin `Origin` (403); 409 when the desktop isn't running; 400 for a bad `tab` (letters, digits, `-`, `_`, at most 64). An open stream counts as viewing. A plain `GET` is the client's reconnect probe: 204 when Selkies answers, else 503 (never 409, which Selkies' client takes as "switch to WebRTC").
+- Every other `/<name>/screen/api/…` is 404: Selkies' upload, files, screenshots, recordings, status and the rest are never served. Selkies refuses a connection arriving within 500 ms of the previous one from the same address, and every viewer arrives from the supervisor's, so a second viewer opening at the same instant gets close code 4029 and has to reconnect.
 
 ## Agent API
 

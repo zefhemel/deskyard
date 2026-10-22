@@ -26,6 +26,7 @@ function desktop(c: Partial<Desktop> & { name: string }): Desktop {
     settings: { memoryBytes: 0, nanoCpus: 0 },
     access: [],
     viewers: [],
+    mics: [],
     forwards: [],
     tokens: 0,
     stats: null,

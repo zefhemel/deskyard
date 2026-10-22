@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent
 REPO = ROOT.parent
 IMAGE = os.environ.get("CC_TEST_IMAGE", "deskyard-debian-xfce:test")
 MODE = os.environ.get("DESKYARD_TEST_MODE", "direct")
+SUBNET = os.environ.get("DESKYARD_TEST_SUBNET", "10.215.0.0/20")
 ADMIN_PASSWORD = "admin-password"
 
 
@@ -91,7 +92,7 @@ class Supervisor:
     def start(self):
         env = {
             "DESKYARD_DATA_DIR": str(self.data), "DESKYARD_ADMIN_PASSWORD": ADMIN_PASSWORD,
-            "DESKYARD_IMAGE": IMAGE, "DESKYARD_SUBNET": "10.215.0.0/20",
+            "DESKYARD_IMAGE": IMAGE, "DESKYARD_SUBNET": SUBNET,
         }
         if MODE == "container":
             self.container = f"deskyard-test-supervisor-{uuid.uuid4().hex[:6]}"

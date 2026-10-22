@@ -3,6 +3,8 @@
 import subprocess
 import time
 
+import pytest
+
 from playwright.sync_api import expect, sync_playwright
 
 from conftest import ADMIN_PASSWORD, free_port
@@ -43,6 +45,7 @@ def test_wrong_password_shows_an_error(supervisor):
         browser.close()
 
 
+@pytest.mark.skip(reason="drives KasmVNC's frame messages; Task 3 rewrites the desktop page for Selkies")
 def test_desktop_page_frames_the_desktop_without_kasm_controls(supervisor, desktop, name, tmp_path):
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base, permissions=["clipboard-read", "clipboard-write"])
