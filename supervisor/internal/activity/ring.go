@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"sort"
 	"sync"
 	"time"
 )
@@ -16,17 +17,19 @@ type Ring struct {
 	now    func() time.Time
 	epoch  string
 
-	mu     sync.Mutex
-	events []Event
-	seq    uint64
-	wake   chan struct{} // closed and replaced on each Add
+	mu   sync.Mutex
+	buf  []Event // circular: n events from head
+	head int
+	n    int
+	seq  uint64
+	wake chan struct{} // closed and replaced on each Add
 }
 
 // NewRing makes a ring; the stream uses 15 minutes and 5,000 events.
 func NewRing(window time.Duration, max int, now func() time.Time) *Ring {
 	b := make([]byte, 8)
 	rand.Read(b)
-	return &Ring{window: window, max: max, now: now, epoch: hex.EncodeToString(b), wake: make(chan struct{})}
+	return &Ring{window: window, max: max, now: now, epoch: hex.EncodeToString(b), wake: make(chan struct{}), buf: make([]Event, max)}
 }
 
 // Epoch is random and fixed for the ring's life: a reader that sees it change
@@ -40,23 +43,29 @@ func (r *Ring) Add(e Event) Event {
 	defer r.mu.Unlock()
 	r.seq++
 	e.Seq, e.T = r.seq, r.now()
-	r.events = append(r.events, e)
 	r.trim()
+	if r.n == len(r.buf) { // full: overwrite the oldest
+		r.buf[r.head] = Event{}
+		r.head = (r.head + 1) % len(r.buf)
+		r.n--
+	}
+	r.buf[(r.head+r.n)%len(r.buf)] = e
+	r.n++
 	close(r.wake)
 	r.wake = make(chan struct{})
 	return e
 }
 
-// trim drops what is too old or over the cap; the caller holds mu.
+// at is the i-th oldest event; the caller holds mu.
+func (r *Ring) at(i int) *Event { return &r.buf[(r.head+i)%len(r.buf)] }
+
+// trim drops what is too old; the caller holds mu.
 func (r *Ring) trim() {
 	cut := r.now().Add(-r.window)
-	i := 0
-	for i < len(r.events) && r.events[i].T.Before(cut) {
-		i++
-	}
-	i = max(i, len(r.events)-r.max)
-	if i > 0 {
-		r.events = append([]Event(nil), r.events[i:]...)
+	for r.n > 0 && r.at(0).T.Before(cut) {
+		*r.at(0) = Event{}
+		r.head = (r.head + 1) % len(r.buf)
+		r.n--
 	}
 }
 
@@ -67,13 +76,17 @@ func (r *Ring) Since(after uint64) []Event {
 	return r.since(after)
 }
 
+// since finds the first newer event by binary search (Seq rises along the
+// ring) and copies from there.
 func (r *Ring) since(after uint64) []Event {
 	r.trim()
-	var out []Event
-	for _, e := range r.events {
-		if e.Seq > after {
-			out = append(out, e)
-		}
+	i := sort.Search(r.n, func(i int) bool { return r.at(i).Seq > after })
+	if i == r.n {
+		return nil
+	}
+	out := make([]Event, 0, r.n-i)
+	for ; i < r.n; i++ {
+		out = append(out, *r.at(i))
 	}
 	return out
 }

@@ -83,3 +83,20 @@ func TestRingWait(t *testing.T) {
 		t.Fatalf("cancelled Wait = %v", got)
 	}
 }
+
+func TestRingAddAtCapDoesNotAllocateBuffer(t *testing.T) {
+	r, _ := newTestRing()
+	for range 5000 {
+		r.Add(Event{Agent: "a"})
+	}
+	e := Event{Agent: "a"}
+	// The only allocation allowed is the wake channel; copying the ring
+	// would be 5000 events (hundreds of KB).
+	if n := testing.AllocsPerRun(100, func() { r.Add(e) }); n > 2 {
+		t.Fatalf("Add at cap allocates %v times", n)
+	}
+	got := r.Since(5090)
+	if len(got) == 0 || got[0].Seq != 5091 {
+		t.Fatalf("Since after wrap: %v", seqs(got))
+	}
+}

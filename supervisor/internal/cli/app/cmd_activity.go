@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -49,7 +51,7 @@ func runActivityServe(a *App, c *call) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /events", func(w http.ResponseWriter, r *http.Request) { serveEvents(w, r, ring) })
-	srv := &http.Server{Handler: mux, BaseContext: func(net.Listener) context.Context { return ctx }}
+	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second, BaseContext: func(net.Listener) context.Context { return ctx }}
 	go func() { <-ctx.Done(); srv.Close() }()
 	if err := srv.Serve(ln); err != nil && ctx.Err() == nil {
 		return err
@@ -63,7 +65,12 @@ func readDatagrams(pc net.PacketConn, ring *activity.Ring) {
 	for {
 		n, _, err := pc.ReadFrom(buf)
 		if err != nil {
-			return
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			log.Printf("activity-serve: read: %v", err)
+			time.Sleep(100 * time.Millisecond)
+			continue
 		}
 		if n > activity.MaxDatagram {
 			continue
