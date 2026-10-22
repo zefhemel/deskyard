@@ -141,6 +141,19 @@ Images this project builds carry the label `deskyard.kind`: `desktop` for
 the desktop image and `supervisor` for the supervisor. List them with
 `docker images --filter label=deskyard.kind`.
 
+### Custom images
+
+Admins can make their own images on the Images page with **New image**:
+a base image plus mise tools, Flatpak apps (from Flathub, another remote or
+a `.flatpakref`) and optional build commands. Or use **New image from this
+desktop** on a desktop's details page to bake in tools, apps, settings and
+dotfiles from its home folder; new desktops start with those files, and
+nothing is overwritten. Logins and other secrets are left out unless you
+tick them, and the image then shows a lock badge. Builds run in Docker on the
+supervisor's machine and are checked so `user` gains no way to root. Rebuild
+a custom image to pick up newer tools or a newer base. Desktops can still
+install and override tools in their own home folder.
+
 ### Flatpak
 
 Flatpak apps run inside bubblewrap, which needs namespaces that Docker's
