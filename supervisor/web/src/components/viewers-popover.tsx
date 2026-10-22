@@ -36,7 +36,7 @@ const hasHover = () => window.matchMedia("(hover: hover)").matches;
 
 /** The agents, one row each. Hovering a row (where there is hover) or clicking/tapping it opens its summary. */
 function AgentRows({ name, agents }: { name: string; agents: AgentPresence[] }) {
-  const summaries = useActivity(name);
+  const activity = useActivity(name);
   // Hovering opens a row for as long as the pointer is on it; a click keeps it open.
   const [open, setOpen] = useState<{ id: string; pinned: boolean } | null>(null);
   return (
@@ -63,7 +63,7 @@ function AgentRows({ name, agents }: { name: string; agents: AgentPresence[] }) 
             </button>
             {expanded && (
               <div class="mt-0.5 mb-1.5 ml-[30px]">
-                <AgentSummary summary={summaries?.find((s) => s.id === a.id)} />
+                <AgentSummary summary={activity.agents?.find((s) => s.id === a.id)} status={activity.status} />
               </div>
             )}
           </li>

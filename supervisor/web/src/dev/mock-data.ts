@@ -71,7 +71,7 @@ export const desktops: Desktop[] = [
     name: "build-bot",
     startedAt: iso(12 * 60 * 1000),
     settings: { memoryBytes: 4 * GB, nanoCpus: 4e9 },
-    agents: [agent("deploy-bot", "zef", false, 1)],
+    agents: [agent("Claude Code", "", true, 1)],
     stats: { cpuPercent: 91, memBytes: 3.1 * GB, memLimit: 4 * GB },
   }),
   desktop({

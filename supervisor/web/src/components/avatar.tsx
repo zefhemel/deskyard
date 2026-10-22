@@ -28,8 +28,8 @@ export function Avatar({ name, ring = "var(--color-surface)", size = 24 }: { nam
 export function Avatars({
   names,
   agents = [],
-  ring,
-  size,
+  ring = "var(--color-surface)",
+  size = 24,
   max = 4,
 }: {
   names: string[];
@@ -40,6 +40,7 @@ export function Avatars({
 }) {
   const people = names.slice(0, max);
   const bots = agents.slice(0, Math.max(0, max - people.length));
+  const hidden = names.length + agents.length - people.length - bots.length;
   return (
     <span class="inline-flex">
       {people.map((n, i) => (
@@ -52,6 +53,14 @@ export function Avatars({
           <AgentAvatar agent={a} ring={ring} size={size} />
         </span>
       ))}
+      {hidden > 0 && (
+        <span
+          class="-ml-[7px] inline-grid flex-none place-items-center rounded-full border-2 bg-[#4a596c] font-bold text-white"
+          style={{ height: `${size}px`, minWidth: `${size}px`, padding: "0 3px", fontSize: `${size * 0.42}px`, borderColor: ring }}
+        >
+          +{hidden}
+        </span>
+      )}
     </span>
   );
 }

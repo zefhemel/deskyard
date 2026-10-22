@@ -3,8 +3,7 @@
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
 import { api, type AgentPresence, type Desktop, type Job } from "../api.ts";
-import { agentLabel } from "../lib/activity-format.ts";
-import { names } from "../lib/format.ts";
+import { badgeLabel } from "../lib/activity-format.ts";
 import { Avatars } from "./avatar.tsx";
 import { Button, cx, errorMessage, Progress } from "./ui.tsx";
 
@@ -17,13 +16,7 @@ export function thumbBust(now: number): number {
 
 export function ViewersBadge({ viewers, agents = [], long }: { viewers: string[]; agents?: AgentPresence[]; long?: boolean }) {
   if (!viewers.length && !agents.length) return null;
-  const people = long
-    ? `${names(viewers)} ${viewers.length === 1 ? "is" : "are"} viewing`
-    : viewers.length === 1
-      ? viewers[0]
-      : `${viewers.length} viewing`;
-  const bots = agents.length === 1 ? (long ? `${agentLabel(agents[0]!)} is here` : agents[0]!.name) : `${agents.length} agents${long ? " here" : ""}`;
-  const label = [viewers.length ? people : "", agents.length ? bots : ""].filter(Boolean).join(" · ");
+  const label = badgeLabel(viewers, agents, long);
   return (
     <span class="absolute top-2.5 left-2.5 inline-flex items-center gap-1.5 rounded-full bg-[rgba(15,21,29,.78)] py-[3px] pr-[9px] pl-1 text-[12.5px] font-semibold text-white">
       <Avatars names={viewers} agents={agents} ring={glassRing} size={22} />

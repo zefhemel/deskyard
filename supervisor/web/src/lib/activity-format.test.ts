@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AgentPresence } from "../api.ts";
-import { agentLabel, agentTitle, nowLine, recentLine, shortDuration } from "./activity-format.ts";
+import { agentLabel, badgeLabel, agentTitle, nowLine, recentLine, shortDuration } from "./activity-format.ts";
 
 const base = { id: "x", color: "#123456", active: false, lastActive: "2026-10-22T10:00:00Z" };
 const bot: AgentPresence = { ...base, name: "deploy-bot", owner: "zef", inside: false };
@@ -59,4 +59,12 @@ test("short durations", () => {
   assert.equal(shortDuration(3_599_000), "59 min");
   assert.equal(shortDuration(3_600_000), "1 h 0 min");
   assert.equal(shortDuration(5_400_000), "1 h 30 min");
+});
+
+test("wall badge text", () => {
+  assert.equal(badgeLabel([], [claude]), "Claude Code (in this desktop)");
+  assert.equal(badgeLabel([], [claude], true), "Claude Code (in this desktop) is here");
+  assert.equal(badgeLabel([], [bot]), "deploy-bot");
+  assert.equal(badgeLabel(["zef", "anna"], [bot, claude]), "2 viewing · 2 agents");
+  assert.equal(badgeLabel(["zef"], [claude], true), "zef is viewing · Claude Code (in this desktop) is here");
 });

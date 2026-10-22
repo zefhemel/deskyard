@@ -1,6 +1,6 @@
 // Every user-visible string of the agent activity UI.
 import type { ActivityNow, ActivityRecent, AgentPresence } from "../api.ts";
-import { fileSize, shortDuration } from "./format.ts";
+import { fileSize, names, shortDuration } from "./format.ts";
 
 export { shortDuration };
 
@@ -74,4 +74,18 @@ export function recentLine(r: ActivityRecent): string {
       return r.size !== undefined ? `${line} · ${fileSize(r.size)}` : line;
     }
   }
+}
+
+/** The wall tile's badge text: people first, then agents; inside agents always say "(in this desktop)". */
+export function badgeLabel(viewers: string[], agents: AgentPresence[], long = false): string {
+  const people = long
+    ? `${names(viewers)} ${viewers.length === 1 ? "is" : "are"} viewing`
+    : viewers.length === 1
+      ? (viewers[0] ?? "")
+      : `${viewers.length} viewing`;
+  const bots =
+    agents.length === 1
+      ? `${agentLabel(agents[0]!)}${long ? " is here" : ""}`
+      : `${agents.length} agents${long ? " here" : ""}`;
+  return [viewers.length ? people : "", agents.length ? bots : ""].filter(Boolean).join(" · ");
 }
