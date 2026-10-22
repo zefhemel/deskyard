@@ -1,0 +1,12 @@
+#!/bin/bash
+# The computer's only door: KasmVNC's web server and the browser's CDP, for
+# the supervisor alone (it sends WORKSPACE_PROXY_TOKEN with every request).
+set -euo pipefail
+WORKSPACE_PROXY_TOKEN=$(cat /run/caddy/token)
+export WORKSPACE_PROXY_TOKEN
+export XDG_DATA_HOME=/var/lib/caddy/data XDG_CONFIG_HOME=/var/lib/caddy/config
+
+if [ "${1:-}" = "--validate-only" ]; then
+    exec caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+fi
+exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile

@@ -1,9 +1,0 @@
-# Paths under /workspace that only hold re-downloadable data. On every start
-# each one becomes a symlink into the cache volume (/var/cache/workspace),
-# moving any existing contents there first. Losing that volume is harmless.
-.cache
-.npm
-.codex/cache
-.codex/.tmp
-.config/chromium-shared/component_crx_cache
-.config/chromium-shared/WasmTtsEngine

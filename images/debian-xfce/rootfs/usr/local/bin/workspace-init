@@ -1,0 +1,84 @@
+#!/bin/bash
+# Container entrypoint (runs as root): prepare user, volumes and runtime
+# state, then hand over to supervisord.
+set -euo pipefail
+
+# Root must never run binaries from user-writable dirs. Keep the user PATH
+# (from the image ENV) for the user's own programs under supervisord.
+export WORKSPACE_USER_PATH="$PATH"
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+log() { echo "[workspace-init] $*"; }
+
+# Computers only run behind the supervisor, which passes the token Caddy
+# checks on every request.
+if [ -z "${WORKSPACE_PROXY_TOKEN:-}" ]; then
+    echo "[workspace-init] WORKSPACE_PROXY_TOKEN is not set: this image runs only behind the container-computer supervisor" >&2
+    exit 1
+fi
+
+# --- home folder owned by the user (a new host folder may be root's) -------
+if [ "$(stat -c %u /workspace)" != 1000 ] || [ "$(stat -c %g /workspace)" != 1000 ]; then
+    log "fixing ownership of /workspace"
+    chown -R 1000:1000 /workspace
+fi
+
+# --- first start: seed the home folder (never overwrite later) --------------
+if [ ! -e /workspace/.workspace-seeded ]; then
+    log "seeding /workspace"
+    cp -an /etc/workspace/skel/. /workspace/
+    chown -R 1000:1000 /workspace
+    touch /workspace/.workspace-seeded
+fi
+
+# --- Flathub as a per-user remote (installs land in /workspace) -------------
+runuser -u user -- flatpak remote-add --user --if-not-exists flathub /etc/workspace/flathub.flatpakrepo \
+    || log "warning: could not add the flathub remote"
+
+# --- Codex: seed a config once (never touch an existing one) ----------------
+if [ ! -e /workspace/.codex/config.toml ]; then
+    runuser -u user -- mkdir -p /workspace/.codex
+    runuser -u user -- cp /etc/workspace/codex-config.toml /workspace/.codex/config.toml \
+        || log "warning: could not seed ~/.codex/config.toml"
+fi
+
+# --- agent skills: link the image's skills into each agent's skill dir ------
+# Links follow image updates; a real directory the user put there is kept.
+for dir in .claude/skills .codex/skills .agents/skills .gemini/skills; do
+    runuser -u user -- mkdir -p "/workspace/$dir"
+    for skill in /opt/workspace/skills/*/; do
+        skill=${skill%/}
+        link="/workspace/$dir/$(basename "$skill")"
+        if [ -L "$link" ] || [ ! -e "$link" ]; then
+            runuser -u user -- ln -sfn "$skill" "$link"
+        fi
+    done
+done
+
+# --- runtime dir (fixed path so `docker exec` sees the same env) ------------
+rm -rf "$XDG_RUNTIME_DIR"
+install -d -m 700 -o 1000 -g 1000 "$XDG_RUNTIME_DIR"
+
+# --- system bus ------------------------------------------------------------------
+install -d -m 755 /run/dbus
+rm -f /run/dbus/system_bus_socket
+dbus-uuidgen --ensure
+
+# --- leftovers from an unclean stop ------------------------------------------
+rm -f /tmp/.X1-lock /tmp/.X11-unix/X1
+install -d -m 1777 /tmp/.X11-unix /tmp/.ICE-unix
+# Chromium locks its profile to a hostname; a recreated container has a new one.
+rm -f /workspace/.config/chromium-shared/Singleton{Lock,Socket,Cookie}
+
+# --- no sudo -------------------------------------------------------------------
+# Computers run with Flatpak support (systempaths=unconfined), so root here can
+# write host kernel settings: nobody gets root.
+rm -f /etc/sudoers.d/workspace
+
+# --- the supervisor's token: for Caddy only, not in any user process ----------
+install -d -m 700 -o caddy -g caddy /run/caddy
+printf '%s' "$WORKSPACE_PROXY_TOKEN" > /run/caddy/token
+chown caddy:caddy /run/caddy/token && chmod 400 /run/caddy/token
+unset WORKSPACE_PROXY_TOKEN
+
+exec /usr/bin/supervisord -n -c /etc/supervisor/supervisord.conf

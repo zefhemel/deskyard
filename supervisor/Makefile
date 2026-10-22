@@ -1,0 +1,65 @@
+# Build, test and release the supervisor and the computer command.
+#
+#   make build         web UI + both binaries into bin/
+#   make test          Go unit tests
+#   make test-engine   also the tests that need a running Docker engine
+#   make release VERSION=v1.2.3   cross-compiled binaries into dist/
+#   make image         the supervisor's container image
+
+VERSION ?= dev
+IMAGE   ?= container-computer-supervisor:$(VERSION)
+
+GO       ?= go
+LDFLAGS  := -s -w -X main.version=$(VERSION)
+GOFLAGS_RELEASE := -trimpath -ldflags "$(LDFLAGS)"
+
+# supervisor: Linux and macOS. computer: also Windows, for agents there.
+SUPERVISOR_PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+COMPUTER_PLATFORMS   := $(SUPERVISOR_PLATFORMS) windows/amd64
+
+.PHONY: all web build test test-engine typecheck vet release image clean
+
+all: build
+
+# The UI is built into internal/web/dist, which the supervisor embeds.
+web:
+	cd web && npm ci && npm run build
+
+build: web
+	$(GO) build -ldflags "-X main.version=$(VERSION)" -o bin/supervisor ./cmd/supervisor
+	$(GO) build -ldflags "-X main.version=$(VERSION)" -o bin/computer ./cmd/computer
+
+test:
+	$(GO) test ./...
+
+test-engine:
+	$(GO) test -tags engine ./...
+
+vet:
+	$(GO) vet ./...
+
+typecheck:
+	cd web && npm run typecheck
+
+release: web
+	rm -rf dist
+	mkdir -p dist
+	@set -e; for p in $(SUPERVISOR_PLATFORMS); do \
+		os=$${p%/*}; arch=$${p#*/}; \
+		echo "supervisor $$os/$$arch"; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build $(GOFLAGS_RELEASE) \
+			-o dist/supervisor-$$os-$$arch ./cmd/supervisor; \
+	done
+	@set -e; for p in $(COMPUTER_PLATFORMS); do \
+		os=$${p%/*}; arch=$${p#*/}; ext=; [ $$os = windows ] && ext=.exe; \
+		echo "computer $$os/$$arch"; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build $(GOFLAGS_RELEASE) \
+			-o dist/computer-$$os-$$arch$$ext ./cmd/computer; \
+	done
+	cd dist && shasum -a 256 * > SHA256SUMS
+
+image:
+	docker build --build-arg VERSION=$(VERSION) -t $(IMAGE) .
+
+clean:
+	rm -rf bin dist

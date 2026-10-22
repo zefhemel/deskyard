@@ -1,148 +1,187 @@
 # container-computer
 
-A Docker image that is a small, persistent Linux computer possibly shared between human
-and AI agent alike.
+Small, persistent Linux computers in containers, each shared between humans
+and AI agents alike, run and shared by one app: the **supervisor**.
 
 ![The desktop: Chromium on this project's GitHub page, and a terminal using node (installed with mise) and the computer command](docs/screenshot.png)
 
-What's in it:
+The supervisor is one Go binary with its web UI built in. You sign in with
+your own account and create, open, start, stop, restart, upgrade and remove
+**computers**, and see what each one is doing. Every computer's desktop is
+in the browser at `http://host/<name>/`, and everyone with access to it
+opens the same desktop, at the same time if they like.
 
-- **XFCE desktop in the browser** (KasmVNC), behind a password, with
-  optional automatic HTTPS (Caddy). The desktop resizes to fit your browser
-  window, and the clipboard is shared with your computer (in browsers that
-  allow it: over HTTPS or on localhost).
-- **One shared Chromium** with one profile: log in once on the desktop and the
-  agent is logged in too. Agents drive it over CDP.
-- **Computer use**: a `computer` command for screenshots, clicks and typing on
-  the same screen.
-- **Persistent installs**: `/workspace` (the user's home) is a folder on your
-  machine (`./workspace` by default). Tools
-  installed with mise, npm, uv or Flatpak live there and survive restarts and
-  image upgrades.
+What's in a computer:
+
+- **XFCE desktop in the browser** (KasmVNC). It resizes to fit your browser
+  window, and the bar above it has the clipboard, keys the browser would
+  otherwise take (Ctrl+Alt+Del, Alt+Tab, ...), a screenshot button and
+  quality presets.
+- **One shared Chromium** with one profile: log in once on the desktop and
+  the agent is logged in too. It starts when someone opens it or an agent
+  connects to it.
+- **Computer use**: a `computer` command for screenshots, clicks and typing
+  on the same screen, inside the computer and, with a token, from anywhere
+  else.
+- **Persistent installs**: `/workspace` (the user's home) is a plain folder
+  on the host (`~/computers/<name>`). Tools installed with mise, npm, uv or
+  Flatpak live there and survive restarts and image upgrades.
 - **Agent skills** for Claude Code, Codex and other agents, so they know how
   to use all of the above.
 
-Debian 13, `linux/arm64` and `linux/amd64`. About 0.4 GB of RAM per running
-instance with Chromium open, so several fit on an 8 GB machine.
+The computer image is Debian 13, `linux/arm64` and `linux/amd64`. About 0.4 GB
+of RAM per running computer with Chromium open, so several fit on an 8 GB
+machine.
 
 ## Quick start
 
-```bash
-cp .env.example .env        # optional: set WORKSPACE_PASSWORD, ports, ...
-docker compose up -d
-docker compose logs workspace | grep "WORKSPACE PASSWORD"   # if you didn't set one
-```
+You need Docker (or OrbStack, or Docker Desktop) on Linux or macOS.
 
-Open <http://127.0.0.1:8080> and log in as `workspace` with that password.
-The sandbox's home folder is `./workspace` next to the compose file (set
-`WORKSPACE_HOME_DIR` to use another folder).
-
-## Use the published image
-
-Every push to `main` publishes a multi-arch image (amd64 and arm64) to
-GitHub Container Registry: `ghcr.io/zefhemel/container-computer`. Tags:
-`latest` (main), `sha-<commit>`, and `1.2.3` / `1.2` for release tags
-`v1.2.3`.
-
-With this repo's compose file, skip the local build:
+**The binary.** Download the supervisor for your machine from the
+[releases](https://github.com/zefhemel/container-computer/releases)
+(`supervisor-linux-amd64`, `-linux-arm64`, `-darwin-amd64`, `-darwin-arm64`)
+and run it:
 
 ```bash
-cp .env.example .env
-# in .env:
-#   WORKSPACE_IMAGE=ghcr.io/zefhemel/container-computer:latest
-#   WORKSPACE_PULL_POLICY=always
-docker compose up -d
+curl -fsSLo supervisor https://github.com/zefhemel/container-computer/releases/latest/download/supervisor-linux-amd64
+chmod +x supervisor
+./supervisor
 ```
 
-`WORKSPACE_PULL_POLICY=always` checks for a newer image on every `up`; use
-`missing` to only pull once. Without cloning the repo, `docker run` needs
-the Flatpak seccomp profile next to it:
+It finds the engine at `SUPERVISOR_ENGINE_HOST`, else `DOCKER_HOST`, else
+the platform's default socket, and keeps everything in `~/computers`.
+
+**In a container.** `supervisor/compose.yaml` runs the image
+`ghcr.io/zefhemel/container-computer-supervisor`:
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/zefhemel/container-computer/main/seccomp/flatpak.json
-docker run -d --name workspace --shm-size 1g --memory 2g \
-  -e WORKSPACE_PASSWORD='change-me' \
-  -v "$PWD/workspace:/workspace" -v workspace-system:/var/lib/workspace-system \
-  -v workspace-cache:/var/cache/workspace \
-  -p 127.0.0.1:8080:8080 -p 127.0.0.1:5901:5901 -p 127.0.0.1:9222:9222 \
-  --security-opt seccomp=flatpak.json --security-opt apparmor=unconfined \
-  --security-opt systempaths=unconfined \
-  ghcr.io/zefhemel/container-computer:latest
+cd supervisor
+SUPERVISOR_DATA_DIR=/srv/computers docker compose up -d
 ```
 
-The workflow is `.github/workflows/publish.yml`: each architecture builds
-on a native GitHub runner (no emulation), then one job merges them into a
-multi-arch tag. Pull requests build both without publishing.
+The data folder must be an absolute path; it's mounted at the same path
+inside (see Storage).
 
-## Where data lives
+**Then.** On first start the supervisor creates the account `admin` and
+prints its generated password once in its log (`docker compose logs
+supervisor` in a container), unless you set `SUPERVISOR_ADMIN_PASSWORD`.
+Open <http://localhost:8080>, sign in, and create a computer: give it a name
+like `alice` and its desktop opens at <http://localhost:8080/alice/>.
 
-| Path in the container | On the host | Holds |
-|---|---|---|
-| `/workspace` | `WORKSPACE_HOME_DIR` (default `./workspace`) | everything the user and agent create or install: dotfiles, mise/npm/uv tools, Flatpak apps (several GB), the Chromium profile with its logins |
-| `/var/lib/workspace-system` | the `system` named volume | the web password's hash and Caddy's HTTPS certificates |
-| `/var/cache/workspace` | the `cache` named volume | re-downloadable data: `~/.cache` (mise, uv, pip, Chromium's disk cache), `~/.npm`, Codex's cache and temp folders, Chromium's component downloads |
+**On a server with a domain.** Set `SUPERVISOR_DOMAIN=computers.example.com`,
+point its DNS at the host and let ports 80 and 443 through: the supervisor
+gets a certificate itself and serves HTTPS. In a container, publish `80:80`
+and `443:443` instead of `127.0.0.1:8080:8080` (the compose file shows
+where). Run directly on Linux, let the binary bind low ports with
+`sudo setcap cap_net_bind_service=+ep ./supervisor`. Without a domain, keep
+the default localhost binding and put your own HTTPS proxy or Tailscale in
+front.
 
-The **cache volume** keeps caches out of the home folder. The paths listed
-in `/etc/workspace/cache-paths` (in the image) are symlinks from
-`/workspace` into it, re-created on every start, and existing contents are
-moved there, not deleted. Losing it is harmless: remove it
-(`docker compose down && docker volume rm <project>_cache`) to reclaim
-space, and things are downloaded again as needed.
+## Computers
 
-The **system volume** is kept apart from the home folder on purpose. It's
-owned by the container's `caddy` user, so the agent (which has no root in
-Flatpak mode) can't read or change the login; wiping `/workspace` doesn't
-reset your password; and HTTPS certificates survive recreating the
-container (re-requesting them on every start runs into Let's Encrypt rate
-limits). `docker compose down -v` deletes it (new password, new
-certificates); it never touches the home folder.
+Admins create computers with a name, an image from the catalog, and
+optionally a memory and CPU limit (by default a computer may use all of the
+host's). Names are lowercase letters, digits and dashes, start with a letter
+and can't be changed later. Each computer is a container `cc-<name>` on its
+own network `cc-<name>`, so computers can't reach each other.
 
-On Linux, set `PUID`/`PGID` to your own user and group ids so files in the
-home folder stay yours. On macOS (Docker Desktop, OrbStack) ownership maps
-to your user automatically.
+### What persists
 
-## Access
+Only `/workspace`. It's the folder `<data folder>/<name>` on the host, a
+plain folder you can browse and back up with host tools. Creating a computer
+with the name of a folder that already exists reuses that folder, so to copy
+a computer, copy its folder and create a computer with the new name.
+Removing a computer keeps its folder unless you tick "also delete files".
 
-| What | Where | Auth |
-|---|---|---|
-| Web desktop | `WORKSPACE_WEB_BIND:WORKSPACE_WEB_PORT` (default `127.0.0.1:8080`) | basic auth, user `workspace` |
-| CDP (Chromium) | `127.0.0.1:WORKSPACE_CDP_PORT` (default 9222) | none, host localhost only |
-| Raw VNC | `127.0.0.1:WORKSPACE_VNC_PORT` (default 5901) | none, host localhost only |
-| Shell | `docker compose exec -u workspace workspace bash -l` | Docker |
+| Need | Command |
+|---|---|
+| Runtimes and CLI tools | `mise use -g node@22 python@3.12 go jq ripgrep` |
+| npm CLIs | `npm i -g <pkg>` |
+| Python CLIs | `uv tool install <pkg>` |
+| Desktop apps | `flatpak install --user flathub <app-id>` |
+| Anything else | put binaries in `~/.local/bin` |
 
-**Password.** Set `WORKSPACE_PASSWORD`, or leave it empty and a password is
-generated on first start and printed once in the logs. It's stored (hashed)
-in the `system` volume, so it survives restarts and recreating the container.
-To get a new generated one, delete it and restart:
-`docker compose exec workspace rm /var/lib/workspace-system/auth.hash && docker compose restart`.
+These all land in `/workspace` and are on `PATH`. Node and Python come
+preinstalled with the image (outside `/workspace`, so they update with it);
+`mise use` wins over them. There's no `sudo`, and anything installed with
+`apt` or changed outside `/workspace` is lost when the image is updated.
 
-**Exposing it on the internet.** Either put your own proxy or Tailscale in
-front (and keep the default localhost binding), or let Caddy get a
-certificate: set `WORKSPACE_DOMAIN`, point its DNS at the host and use
-`COMPOSE_FILE=compose.yaml:compose.domain.yaml` (publishes 80/443; one
-instance per host). Setting `WORKSPACE_WEB_BIND=0.0.0.0` without HTTPS sends
-the password in clear text; only do that on a trusted network.
+### Desktop state across restarts
 
-The VNC and CDP ports have no password and give full control of the
-desktop and browser. Compose binds them to host localhost and the image
-only `EXPOSE`s the web port, so `docker run -P` won't publish them. Inside
-Docker they listen on the container's network, so other containers on the
-same Docker network can reach them: keep sandboxes on their own network
-(compose does this per project) and don't attach untrusted containers.
+When a computer stops (stop, restart, upgrades), the desktop logs out of
+XFCE properly so it can save its session, and Chromium saves its tabs. On
+the next start you get back Chromium with its open tabs, and terminals,
+file manager windows and window positions (XFCE session saving; change it in
+Settings > Session and Startup). Apps that don't support XFCE's session
+protocol, such as most Electron and Flatpak apps, aren't restored.
 
-The desktop's WebSocket only accepts requests whose `Origin` matches the
-host the page was served from, so other websites can't reuse your
-logged-in browser to open the desktop. If you put a proxy in front that
-rewrites the `Host` header, make it preserve the original host.
+### Images and upgrades
+
+The **Images** page holds the catalog of images computers can be created
+from; it starts with `ghcr.io/zefhemel/container-computer:latest`, the
+`debian-xfce` image in this repository. CI rebuilds it weekly (Debian
+security updates) and on every change, tagged `latest` and with the date
+(`2026.10.22`). The supervisor checks for newer versions daily (or on "Check
+now") and marks computers whose image is behind with "Update available".
+
+Upgrading a computer recreates its container on the new image with the same
+settings and folder; the Images page can upgrade all computers on an image
+at once. Switching a computer to another image works the same way. Upgrades
+go forward only: Chromium won't open a profile written by a newer version.
+Tools installed with mise, uv and npm bring their own runtimes and should
+keep working across Debian versions; if one breaks, reinstall it.
+
+Any image can be added to the catalog if it follows the image contract
+(label `container-computer.contract=1`, user `user` with home `/workspace`,
+KasmVNC behind Caddy on 8080); see the design in `docs/`.
+
+### Flatpak
+
+Flatpak apps run inside bubblewrap, which needs namespaces that Docker's
+defaults block. Every computer therefore runs with Docker's default seccomp
+profile plus the namespace and mount syscalls, `apparmor=unconfined` and
+`systempaths=unconfined`. These are per-container options; nothing in
+Docker's configuration changes. Chromium also uses them to run with its own
+sandbox.
+
+`systempaths=unconfined` leaves `/proc/sys` writable, and root in the
+container is root on the host for those files. So nothing reachable by the
+agent or the internet runs as root in a computer: there is no `sudo`, Caddy
+runs as its own user, and the supervisor runs every command as `user`.
+
+On Ubuntu 24.04+ hosts, unprivileged user namespaces may be restricted by
+AppArmor (`kernel.apparmor_restrict_unprivileged_userns`); this hasn't been
+tested yet. If bubblewrap fails there, try
+`sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0`.
+
+## Sharing
+
+Accounts are a username and a password; there are no email resets or SSO.
+Admins create accounts, set passwords and make accounts admin or not, and
+choose per computer which accounts may use it. Everyone can change their own
+password.
+
+| | Admin | Regular account |
+| --- | --- | --- |
+| See, open, start, stop, restart computers | all | those it has access to |
+| Create, remove, change settings, upgrade | yes | no |
+| Create agent tokens | yes | for computers it has access to |
+| Accounts, access, image catalog | yes | no |
+
+Everyone with access to a computer opens the **same desktop**: one screen,
+one mouse, one keyboard, like two people at one desk. The desktop follows
+the browser window of whoever resized last. The supervisor shows who's
+viewing on the tiles, the computer's page and the desktop's bar, but nothing
+arbitrates between people (or agents) driving it at the same time.
 
 ## Agents
 
-**Inside the sandbox.** Install an agent into `/workspace` from the desktop
+**Inside a computer.** Install an agent into `/workspace` from the desktop
 terminal and run it there:
 
 ```bash
 curl -fsSL https://claude.ai/install.sh | bash          # Claude Code
-mise use -g node@22 && npm i -g @openai/codex            # Codex
+npm i -g @openai/codex                                   # Codex
 ```
 
 The image links its skills into `~/.claude/skills`, `~/.codex/skills`,
@@ -150,164 +189,138 @@ The image links its skills into `~/.claude/skills`, `~/.codex/skills`,
 
 - `workspace-computer`: what this machine is, how to install things so they
   persist, what not to touch.
-- `workspace-browser`: drive the shared Chromium over CDP; ask the human to
-  log in.
+- `workspace-browser`: drive the shared Chromium over CDP (on
+  `127.0.0.1:9221` inside); ask the human to log in.
 - `workspace-computer-use`: the `computer` command.
 
 They update with the image. To customise one, replace its link with a real
 directory; it won't be touched again.
 
-**From the host.** Install the host skill into your local agents with
-`scripts/install-host-skills.sh` (or `--claude`, `--codex`, `--agents`,
-`--gemini`). Agents then use:
+**From elsewhere** (a laptop, CI, another sandbox), the only way in is the
+`computer` command with an **agent token**. Anyone with access to a computer
+creates one on its Agents tab, with a name and an optional expiry; it's
+shown once, with the line to paste on the agent's machine. Download
+`computer` for that machine from the releases (Linux, macOS, Windows), then:
 
 ```bash
-docker exec -u workspace <container> bash -lc 'ls ~'           # commands
-docker exec -u workspace <container> computer screenshot > s.png
-docker exec -u workspace <container> computer click 640 400
+computer remote add alice https://computers.example.com/alice --token cct_...
+computer -c alice exec -- ls ~            # one command; exit code passed through
+computer -c alice shell                   # interactive shell
+computer cp ./notes.md alice:/workspace/notes.md    # and back
+computer -c alice screenshot > s.png      # every desktop action works remotely
+computer -c alice click 640 400
+computer -c alice browser connect --port 9222   # the shared Chromium on local 127.0.0.1:9222
 ```
 
-and Playwright `chromium.connect_over_cdp("http://127.0.0.1:9222")` for the
-browser (use `browser.contexts[0]`, the shared profile).
+With `browser connect` running, Playwright's
+`chromium.connect_over_cdp("http://127.0.0.1:9222")` (use
+`browser.contexts[0]`, the shared profile), Puppeteer or chrome-devtools
+tools work as if the browser were local. `computer remote default alice`
+saves typing `-c`; `COMPUTER_URL` and `COMPUTER_TOKEN` work without a config
+file. The command explains itself to agents: `computer --help`, `computer
+guide` (a short manual) and `computer describe --json` (every command as a
+tool schema).
 
-If you close Chromium on the desktop it stays closed; the next connection to
-the CDP port (9221 inside, 9222 on the host) starts it again.
-
-The human and the agent share one mouse and keyboard; nothing arbitrates
-between them.
-
-## Installing software
-
-| Need | Command |
-|---|---|
-| Runtimes and CLI tools | `mise use -g node@22 python@3.12 go jq ripgrep` |
-| npm CLIs | `npm i -g <pkg>` (needs node from mise) |
-| Python CLIs | `uv tool install <pkg>` |
-| Desktop apps | `flatpak install --user flathub <app-id>` |
-| Anything else | put binaries in `~/.local/bin` |
-
-These all land in `/workspace` and are on `PATH`, including for
-non-login `docker exec`.
-
-`apt-get install` writes outside `/workspace` and **is lost when the image
-is updated**. Whether the user has passwordless `sudo` depends on Flatpak
-support (see below): by default it's on only when Flatpak support is off.
-From the host you can always run `docker exec -u root <container> ...`.
-
-## Flatpak
-
-Flatpak apps run inside bubblewrap, which needs namespaces that Docker's
-defaults block. The default `compose.yaml` therefore runs the container with:
-
-```yaml
-security_opt:
-  - seccomp=./seccomp/flatpak.json   # Docker's default profile + namespace/mount syscalls
-  - apparmor=unconfined
-  - systempaths=unconfined
-```
-
-or, with plain `docker run`:
-
-```bash
-docker run --security-opt seccomp=seccomp/flatpak.json \
-  --security-opt apparmor=unconfined --security-opt systempaths=unconfined ...
-```
-
-These are per-container options; nothing in Docker's configuration changes.
-Chromium also uses them to run with its own sandbox enabled (without them it
-runs with `--no-sandbox`).
-
-**Security consequence.** `systempaths=unconfined` leaves `/proc/sys` and
-`/proc/sysrq-trigger` writable, and without user-namespace remapping, root
-in the container is root on the host for those files: it can change host
-kernel settings, which is a known way to take over the host. So in this
-mode nothing reachable by the agent or the internet runs as root: the user
-gets no `sudo` (unless you set `WORKSPACE_SUDO=1`, which effectively hands
-the agent root on your Docker host), Caddy runs as its own user, and root
-processes never run programs from the user's folders. If you need both
-Flatpak and root inside, run Docker with `userns-remap` or rootless Docker.
-
-**Turn it off** with `COMPOSE_FILE=compose.yaml:compose.no-flatpak.yaml`
-(needs Docker Compose 2.24 or newer for `!reset`). `flatpak run` then
-explains why apps can't start, and the user gets `sudo` back.
-
-`seccomp/flatpak.json` is generated by `scripts/gen-seccomp.py` from the
-profile Docker ships (github.com/moby/profiles).
-
-Host notes: works on OrbStack and Docker Desktop. On Ubuntu 24.04+ hosts,
-unprivileged user namespaces may be restricted by AppArmor
-(`kernel.apparmor_restrict_unprivileged_userns`); this hasn't been tested
-yet. If bubblewrap fails there, try
-`sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0`.
-
-## Multiple instances
-
-Each instance needs its own ports, home folder and project name:
-
-```bash
-WORKSPACE_HOME_DIR=./alice WORKSPACE_WEB_PORT=8081 WORKSPACE_VNC_PORT=5902 \
-  WORKSPACE_CDP_PORT=9223 docker compose -p alice up -d
-```
-
-or keep one directory (with its own `.env`) per instance. The system volume
-is per project. The compose file caps each instance at 2 GB RAM and 2 CPUs.
-
-## Desktop state across restarts
-
-When the container stops (`docker compose stop`/`restart`/`down`, image
-upgrades), the desktop logs out of XFCE properly so it can save its session,
-and Chromium saves its tabs. On the next start you get back:
-
-- Chromium with its open tabs (a managed policy sets "continue where you
-  left off"),
-- terminals with their folders and tabs, file manager windows, and window
-  positions (XFCE session saving; change it in Settings > Session and
-  Startup).
-
-Not restored: apps that don't support XFCE's session protocol, such as most
-Electron and Flatpak apps (SilverBullet included). The saved session lives
-under `~/.cache`, i.e. on the cache volume, so a fresh cache volume starts
-a fresh desktop. A hard kill (`docker kill`) skips saving.
-
-## Upgrading
-
-Pull the repo and `docker compose up -d` (it rebuilds the image). `/workspace` and the
-password are kept. Upgrades go forward only: Chromium won't open a profile
-written by a newer version, so don't roll the image back. After a future
-Debian major-version bump, tools installed with mise/uv/npm should keep
-working (they bring their own runtimes); if one breaks, reinstall it
-(`mise install`, `uv tool install --reinstall <pkg>`).
+A token reaches one computer's shell, files, browser and desktop, nothing
+else: no other computers, no lifecycle, settings or accounts. Agents can't
+start a stopped computer. Revoking a token, or its expiry, closes its open
+connections at once, and a token dies with its creator's access.
 
 ## Configuration
 
-See `.env.example`. Container-level variables: `WORKSPACE_PASSWORD`,
-`WORKSPACE_DOMAIN`, `WORKSPACE_RESOLUTION` (default `1280x800`; the size
-the desktop starts at, until a browser window resizes it), `WORKSPACE_SUDO` (`auto`, `1`, `0`),
-`PUID`/`PGID`.
+Environment variables of the supervisor:
 
-In `.env`, keep `WORKSPACE_PASSWORD` in single quotes: Compose expands `$`
-in unquoted values. The password is visible to anyone who can run
-`docker inspect` or `docker exec` (including the agent, via its
-environment).
+| Variable | Default | |
+|---|---|---|
+| `SUPERVISOR_LISTEN` | `127.0.0.1:8080` (`0.0.0.0:8080` in the image) | address for plain HTTP |
+| `SUPERVISOR_DOMAIN` | | serve HTTPS for this domain on 80/443, with an automatic certificate |
+| `SUPERVISOR_DATA_DIR` | `~/computers` (required in a container) | workspace folders, and `.supervisor/` for the supervisor's own state |
+| `SUPERVISOR_ENGINE_HOST` | `DOCKER_HOST`, else the default socket | the engine to drive |
+| `SUPERVISOR_SUBNET` | `10.213.0.0/16` | each computer's network gets a /28 from it |
+| `SUPERVISOR_ADMIN_USER` | `admin` | first start only: the first admin |
+| `SUPERVISOR_ADMIN_PASSWORD` | generated, printed once | first start only: its password |
+| `SUPERVISOR_IMAGE` | `ghcr.io/zefhemel/container-computer:latest` | the catalog's first image |
 
-## How it works
+### Storage
 
-`workspace-init` (the entrypoint, as root) applies `PUID`/`PGID`, seeds
-`/workspace` on first start, links the skills, prepares the password, then
-runs supervisord with: system and session D-Bus, KasmVNC's `Xkasmvnc :1` (X
-server, VNC server and web client on 127.0.0.1:6080), XFCE, Chromium (CDP on
-an internal port; 9221 inside and 9222 for the host start it on demand),
-websocat (KasmVNC speaks VNC only over WebSocket; this bridges it to plain
-VNC on 5901), and Caddy in front.
+`SUPERVISOR_DATA_DIR` holds each computer's folder (`<name>/`, owned by UID
+1000) and `.supervisor/` with `accounts.json`, `tokens.json`, `images.json`,
+the session key and certificates (all mode 0600). The supervisor keeps no
+list of computers of its own: computers are containers with
+`container-computer.*` labels.
 
-## Testing
+In a container, the data folder must be mounted **at the same path** as on
+the host (`-v /srv/computers:/srv/computers`), because the supervisor hands
+those paths to the engine as bind mounts for computers. It checks this on
+startup and refuses to run, with an explanation, if they don't match.
 
-```bash
-cd tests
-uv run playwright install chromium   # once
-uv run pytest -m "not slow"          # ~3 minutes, needs Docker and internet
-uv run pytest                        # also: 3-instance memory budget, Flatpak app, agent CLIs
+## Security
+
+- **The engine socket is root on the host.** Whoever can use it owns the
+  machine, so the supervisor is the most privileged thing there. Run
+  directly on Linux, its user needs the `docker` group, which is
+  root-equivalent; in a container, mounting the socket is the same.
+- Every route but the login page needs a signed-in account; agent tokens
+  work only on the agent API. Failed logins are throttled.
+- Computers have no password and nothing else of their own facing the
+  network: only Caddy on 8080, which wants a per-computer token that only
+  the supervisor has. With the supervisor in a container, computers publish
+  no ports; run directly, each publishes only 8080 on host `127.0.0.1`.
+- The supervisor never serves pages from a computer: it serves the desktop
+  client itself (taken from the computer's image) and proxies only the
+  desktop's WebSocket and, for agents, the browser's CDP.
+- No `sudo` in computers, and every command the supervisor runs in one runs
+  as `user`.
+- Over plain HTTP, passwords travel in clear text: keep the default
+  `127.0.0.1` binding unless the network is trusted, or set
+  `SUPERVISOR_DOMAIN` for HTTPS.
+
+## Repository layout
+
+```
+supervisor/
+  cmd/supervisor/   the supervisor
+  cmd/computer/     the computer command (inside computers and for agents elsewhere)
+  internal/         engine interface and Docker implementation, accounts, auth,
+                    computers, the HTTP server and proxy, the embedded UI
+  web/              the UI: Preact + TypeScript + Tailwind, built with Vite
+  tests/            integration tests against a real engine
+  Dockerfile        node build -> go build -> alpine
+  compose.yaml      the supervisor in a container
+images/
+  debian-xfce/      the computer image: Dockerfile, rootfs/, tests/
+docs/               design notes (a SilverBullet space)
 ```
 
-Tests build `container-computer:test` and drive real containers. Screenshots
-and stats land in `tests/artifacts/`. `AC_IMAGE=<tag>` skips the build.
+CI: `.github/workflows/images.yml` builds every image under `images/` for
+amd64 and arm64 on native runners, weekly and on change;
+`.github/workflows/supervisor.yml` tests the supervisor, publishes its image
+and, for tags `v*`, attaches the `supervisor` and `computer` binaries to the
+GitHub release.
+
+## Development
+
+The supervisor needs Go and Node 24:
+
+```bash
+cd supervisor
+make build          # the UI, then bin/supervisor and bin/computer
+make test           # Go unit tests
+make test-engine    # also the tests that drive a real Docker engine
+make typecheck      # the UI's TypeScript
+make release VERSION=v1.2.3   # cross-compiled binaries in dist/
+make image          # the supervisor's container image
+```
+
+The computer image's tests build it and drive real containers (needs Docker
+and internet):
+
+```bash
+cd images/debian-xfce/tests
+uv run playwright install chromium   # once
+uv run pytest -m "not slow"
+uv run pytest                        # also: memory budget, Flatpak app, agent CLIs
+```
+
+Screenshots and stats land in `tests/artifacts/`. `AC_IMAGE=<tag>` skips the
+build.

@@ -1,0 +1,20 @@
+{
+	admin off
+	auto_https off
+}
+
+:8080 {
+	# `route` keeps this order: the token first.
+	route {
+		@no_token not header X-Container-Computer-Token {$WORKSPACE_PROXY_TOKEN}
+		respond @no_token 401
+		# The shared browser's DevTools protocol, for the supervisor's agent API.
+		# Chromium only answers to Host: localhost.
+		handle_path /_cdp/* {
+			reverse_proxy 127.0.0.1:9221 {
+				header_up Host localhost
+			}
+		}
+		reverse_proxy 127.0.0.1:6080
+	}
+}

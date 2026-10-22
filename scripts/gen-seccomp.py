@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate seccomp/flatpak.json: Docker's default profile plus the syscalls
+"""Generate supervisor/internal/engine/docker/flatpak-seccomp.json: Docker's default profile plus the syscalls
 bubblewrap (Flatpak) needs to build its sandbox.
 
 Docker's default only allows namespace and mount syscalls to containers that
@@ -15,7 +15,7 @@ from pathlib import Path
 PROFILES_TAG = "seccomp/v0.2.4"  # github.com/moby/profiles, the profile Docker ships
 URL = f"https://raw.githubusercontent.com/moby/profiles/{PROFILES_TAG}/seccomp/default.json"
 EXTRA = ["clone", "clone3", "unshare", "setns", "mount", "umount2", "pivot_root"]
-OUT = Path(__file__).resolve().parent.parent / "seccomp" / "flatpak.json"
+OUT = Path(__file__).resolve().parent.parent / "supervisor" / "internal" / "engine" / "docker" / "flatpak-seccomp.json"
 
 
 def main() -> None:
