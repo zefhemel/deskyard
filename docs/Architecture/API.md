@@ -3,6 +3,7 @@ tags: component
 status: planned
 partOf: "[[Architecture/Supervisor]]"
 uses:
+  - "[[Architecture/Agent tokens]]"
   - "[[Architecture/Accounts]]"
   - "[[Architecture/Lifecycle]]"
   - "[[Architecture/Monitoring]]"

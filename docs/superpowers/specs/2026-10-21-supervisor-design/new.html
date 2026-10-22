@@ -23,19 +23,15 @@
           <label><input type="radio" name="img"><span><b>Debian XFCE, beta</b> <span class="muted">2026.10.22-beta</span><p>Next week's image, for trying changes. <span class="mono">ghcr.io/zefhemel/container-computer:beta</span></p></span></label>
         </div>
       </div>
-      <div class="two">
+      <div>
         <div class="field"><span class="label">Memory</span>
-          <div class="seg"><button type="button">1 GB</button><button type="button" class="on">2 GB</button><button type="button">4 GB</button><button type="button">8 GB</button></div></div>
+          <div class="seg"><button type="button" class="on">No limit</button><button type="button">1 GB</button><button type="button">2 GB</button><button type="button">4 GB</button><button type="button">8 GB</button></div></div>
         <div class="field"><span class="label">CPUs</span>
-          <div class="seg"><button type="button">1</button><button type="button" class="on">2</button><button type="button">4</button></div></div>
+          <div class="seg"><button type="button" class="on">No limit</button><button type="button">1</button><button type="button">2</button><button type="button">4</button></div></div>
       </div>
       <div class="field check">
         <input type="checkbox" id="fp" checked>
         <label for="fp"><b>Flatpak apps</b><p>Lets the computer run desktop apps from Flathub. Its user can't use sudo while this is on.</p></label>
-      </div>
-      <div class="field check">
-        <input type="checkbox" id="ap">
-        <label for="ap"><b>Agent ports on this machine</b><p>Opens the browser's CDP port and VNC on 127.0.0.1, for agents running outside the computer. No password.</p></label>
       </div>
       <div class="field">
         <span class="label">Who can use it</span>

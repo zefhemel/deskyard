@@ -279,3 +279,8 @@ table.list { width: 100%; border-collapse: collapse; font-size: 14px; background
 .viewers-panel { display: flex; align-items: center; gap: 10px; font-size: 14px; }
 .viewers-panel p { margin: 0; color: var(--muted); font-size: 13px; }
 .list td.nowrap { white-space: nowrap; }
+.tab-head { display: flex; align-items: center; gap: 16px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.tab-head p { margin: 0; color: var(--muted); font-size: 14px; flex: 1; }
+table.list.flat { border: 0; border-radius: 0; }
+.list tr.expired td { color: var(--muted); }
+pre.snippet { background: var(--bezel); color: #e6ebf1; border-radius: 8px; padding: 12px 14px; font: 13px/1.5 var(--mono); white-space: pre-wrap; word-break: break-all; margin: 0 0 18px; }
