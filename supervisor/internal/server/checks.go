@@ -1,48 +1,31 @@
 package server
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
-	"slices"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/imagescan"
+	"github.com/zefhemel/deskyard/supervisor/internal/scanbin"
 )
 
-// scanScript runs as root in a throwaway container of an image and prints one
-// "<kind> <path>" line per finding:
-//   - sudo: a sudo or doas executable anywhere;
-//   - setuid: a setuid or setgid file anywhere;
-//   - writable: a file or folder that user (UID 1000, or one of its groups)
-//     can write, under the paths root runs from. The home template is meant
-//     to belong to user.
-//
-// -xdev keeps find on the image's own filesystem (no /proc, /sys, volumes).
-const scanScript = `
-gids=$(id -G user 2>/dev/null || echo 1000)
-grp=""
-for g in $gids; do grp="$grp -o ( -group $g -perm -g=w )"; done
-find / -xdev \( -name sudo -o -name sudoedit -o -name doas \) \( -type l -o -type f -perm /111 \) -printf 'sudo %p\n' 2>/dev/null
-find / -xdev ! -type l \( -perm -4000 -o -perm -2000 \) -printf 'setuid %p\n' 2>/dev/null
-for p in /usr /etc /opt/workspace /opt/deskyard; do
-  [ -e "$p" ] || continue
-  find "$p" -xdev -path ` + homeTemplate + ` -prune -o ! -type l \( -user 1000 -o -perm -o=w $grp \) -printf 'writable %p\n' 2>/dev/null
-done
-exit 0
-`
+// scannerBinary returns the static image scanner for a Linux architecture
+// (tests replace it).
+var scannerBinary = scanbin.Binary
 
-var scanReasons = map[string]string{
-	"sudo":     "sudo or doas",
-	"setuid":   "setuid or setgid",
-	"writable": "writable by user",
-}
+var scanOptions = imagescan.Options{UserUID: 1000}
 
-// rootScan compares the new image with its base: the new one may add no
-// sudo/doas, no setuid/setgid file and nothing user can write where root runs
-// from. The error names every offending path.
+// rootScan compares the new image with its base (see imagescan.Compare): the
+// new one may add no sudo or doas, no new or changed setuid, setgid or
+// file-capability binary, nothing user can write (or links to) where root
+// runs from, and no account that gives root. The error names every finding.
+// Anything short of two complete scans fails the build.
 func (s *Server) rootScan(ctx context.Context, baseID, newID string) error {
 	before, err := s.scanImage(ctx, baseID)
 	if err != nil {
@@ -52,71 +35,77 @@ func (s *Server) rootScan(ctx context.Context, baseID, newID string) error {
 	if err != nil {
 		return fmt.Errorf("scanning the image: %w", err)
 	}
-	found := map[string][]string{}
-	for f := range after {
-		if !before[f] {
-			kind, path, _ := strings.Cut(f, " ")
-			found[path] = append(found[path], scanReasons[kind])
-		}
-	}
+	found := imagescan.Compare(before, after, scanOptions)
 	if len(found) == 0 {
 		return nil
 	}
-	paths := make([]string, 0, len(found))
-	for p := range found {
-		paths = append(paths, p)
-	}
-	sort.Strings(paths)
-	var b strings.Builder
-	b.WriteString("the image would give user a way to become root:")
-	for _, p := range paths {
-		reasons := found[p]
-		slices.Sort(reasons)
-		fmt.Fprintf(&b, "\n  %s (%s)", p, strings.Join(reasons, ", "))
-	}
-	return fmt.Errorf("%s", b.String())
+	return fmt.Errorf("the image would give user a way to become root:\n  %s", strings.Join(found, "\n  "))
 }
 
-// scanImage runs scanScript in a throwaway container of ref, with no network.
-func (s *Server) scanImage(ctx context.Context, ref string) (map[string]bool, error) {
+// scanImage runs the scanner, as root, in a throwaway container of ref with
+// no network. The scanner is copied in and also keeps the container up, so
+// nothing in the image runs.
+func (s *Server) scanImage(ctx context.Context, ref string) (imagescan.Result, error) {
+	img, err := s.Eng.ImageInspect(ctx, ref)
+	if err != nil {
+		return imagescan.Result{}, err
+	}
+	bin, err := scannerBinary(img.Arch)
+	if err != nil {
+		return imagescan.Result{}, err
+	}
+	exe := "deskyard-image-scan-" + randomID(8)
 	id, err := s.Eng.Create(ctx, engine.ContainerSpec{
-		Name: "deskyard-scan-" + randomID(8), Image: ref, Network: "none", Restart: "no",
-		Entrypoint: []string{"sleep", "infinity"},
+		Name: "deskyard-scan-" + randomID(8), Image: img.ID, Network: "none", Restart: "no",
+		Entrypoint: []string{"/" + exe, "wait"},
 	})
 	if err != nil {
-		return nil, err
+		return imagescan.Result{}, err
 	}
 	defer func() { _ = s.Eng.Remove(context.WithoutCancel(ctx), id) }()
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	if err := tw.WriteHeader(&tar.Header{Name: exe, Mode: 0o755, Size: int64(len(bin)), ModTime: time.Unix(0, 0)}); err != nil {
+		return imagescan.Result{}, err
+	}
+	_, _ = tw.Write(bin)
+	if err := tw.Close(); err != nil {
+		return imagescan.Result{}, err
+	}
+	if err := s.Eng.CopyToContainer(ctx, id, "/", &buf); err != nil {
+		return imagescan.Result{}, fmt.Errorf("copying the scanner in: %w", err)
+	}
 	if err := s.Eng.Start(ctx, id); err != nil {
-		return nil, err
+		return imagescan.Result{}, err
 	}
-	out, errOut, code, err := engine.Output(ctx, s.Eng, id, engine.ExecSpec{Cmd: []string{"sh", "-c", scanScript}, User: "root"})
+	out, errOut, code, err := engine.Output(ctx, s.Eng, id, engine.ExecSpec{Cmd: []string{"/" + exe}, User: "0:0"})
 	if err != nil {
-		return nil, err
+		return imagescan.Result{}, err
 	}
-	if code != 0 {
-		return nil, fmt.Errorf("the scan failed (%d): %s", code, strings.TrimSpace(string(errOut)))
-	}
-	found := map[string]bool{}
-	for _, line := range strings.Split(string(out), "\n") {
-		if kind, path, ok := strings.Cut(line, " "); ok && scanReasons[kind] != "" && path != "" {
-			found[line] = true
+	r, err := imagescan.Parse(out, code)
+	if err != nil {
+		if msg := strings.TrimSpace(string(errOut)); msg != "" {
+			err = fmt.Errorf("%w: %s", err, msg)
 		}
+		return imagescan.Result{}, err
 	}
-	return found, nil
+	return r, nil
 }
 
 // smokeTestDesktop starts a throwaway desktop of the image, waits until it
-// answers (as a new desktop would: 2 minutes), then removes it with its folder.
+// answers (as a new desktop would: 2 minutes), then removes it with its
+// folder. New desktops' names can't start with desktops.SmokePrefix, so it is
+// never someone's.
 func (s *Server) smokeTestDesktop(ctx context.Context, imageID string) error {
-	name := "build-check-" + randomID(6)
-	defer func() {
-		bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
-		defer cancel()
-		if err := s.Desktops.Remove(bg, name, true); err != nil && err != desktops.ErrNotFound {
-			s.Log.Warn("removing the test desktop", "desktop", name, "err", err)
-		}
-	}()
+	name := desktops.SmokePrefix + randomID(6)
 	_, err := s.Desktops.Create(ctx, name, desktops.Settings{Image: imageID}, func(string, float64) {})
+	if errors.Is(err, desktops.ErrExists) {
+		return err // not ours: leave it
+	}
+	bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+	defer cancel()
+	if rerr := s.Desktops.Remove(bg, name, true); rerr != nil && !errors.Is(rerr, desktops.ErrNotFound) {
+		s.Log.Warn("removing the test desktop", "desktop", name, "err", rerr)
+	}
 	return err
 }

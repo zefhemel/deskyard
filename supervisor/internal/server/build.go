@@ -211,7 +211,7 @@ func (s *Server) startBuild(w http.ResponseWriter, a accounts.Account, rec recip
 		ctx, cancel := context.WithTimeout(ctx, buildTimeout)
 		defer cancel()
 		err := s.build(ctx, rec, opts, func(line string) { progress(line, -1) })
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			err = fmt.Errorf("the build took longer than %s", buildTimeout)
 		}
 		if err != nil {
@@ -392,14 +392,25 @@ func (s *Server) build(ctx context.Context, rec recipes.Recipe, opts buildOption
 	}
 
 	// 7. Tag.
-	stamp := repo + ":" + now.Format("20060102-150405")
-	for _, ref := range []string{stamp, repo + ":latest"} {
+	stamp, latest := repo+":"+now.Format("20060102-150405"), repo+":latest"
+	prev, prevErr := s.Eng.ImageInspect(ctx, latest)
+	// untag puts the tags back as they were (the image itself goes in the
+	// deferred clean-up).
+	untag := func() {
+		bg := context.WithoutCancel(ctx)
+		if prevErr == nil {
+			_ = s.Eng.Tag(bg, prev.ID, latest)
+		} else {
+			_ = s.Eng.RemoveImage(bg, latest)
+		}
+		_ = s.Eng.RemoveImage(bg, stamp)
+	}
+	for _, ref := range []string{stamp, latest} {
 		if err := s.Eng.Tag(ctx, id, ref); err != nil {
-			_ = s.Eng.RemoveImage(context.WithoutCancel(ctx), stamp)
+			untag()
 			return err
 		}
 	}
-	ok = true
 	log("Tagged " + stamp)
 
 	// 8. Catalog. Custom images built on this one now show "base updated"
@@ -407,8 +418,10 @@ func (s *Server) build(ctx context.Context, rec recipes.Recipe, opts buildOption
 	s.Desktops.ForgetImage(customRef(rec.Slug))
 	checked := time.Now().UTC()
 	if err := s.images.put(catalogEntry{Ref: customRef(rec.Slug), Newest: id, Checked: &checked, Custom: true}); err != nil {
+		untag()
 		return err
 	}
+	ok = true
 	s.events.refresh()
 
 	// 9. Older builds that no container uses.

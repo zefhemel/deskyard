@@ -20,6 +20,11 @@ COPY . .
 COPY --from=web /src/internal/web/dist ./internal/web/dist
 ARG TARGETOS TARGETARCH
 ARG VERSION=dev
+# The image scanner, embedded: static Linux binaries for both architectures.
+RUN for arch in amd64 arm64; do \
+        CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags "-s -w" \
+            -o internal/scanbin/bin/deskyard-image-scan-linux-$arch ./cmd/deskyard-image-scan; \
+    done
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
         -o /out/deskyard-supervisor ./cmd/deskyard-supervisor

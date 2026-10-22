@@ -88,7 +88,7 @@ func (js *jobs) run(owner, desktop string, cancellable bool, fn jobFunc) string 
 		st := j.get()
 		st.Progress = nil
 		switch {
-		case j.wasCancelled():
+		case err != nil && j.wasCancelled():
 			st.Status, st.Error, st.Message = "failed", "cancelled", "Cancelled"
 		case err != nil:
 			st.Status, st.Error, st.Message = "failed", err.Error(), "Failed"

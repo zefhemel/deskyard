@@ -437,6 +437,7 @@ func (d *Docker) ImageInspect(ctx context.Context, ref string) (engine.Image, er
 		img.Labels = res.Config.Labels
 		img.User = res.Config.User
 	}
+	img.Arch = res.Architecture
 	return img, nil
 }
 
@@ -586,6 +587,11 @@ func (d *Docker) CopyFromImage(ctx context.Context, ref, path string) (io.ReadCl
 		return nil, wrap(err)
 	}
 	return readCloser{res.Content, func() error { err := res.Content.Close(); remove(); return err }}, nil
+}
+
+func (d *Docker) CopyToContainer(ctx context.Context, id, dir string, archive io.Reader) error {
+	_, err := d.c.CopyToContainer(ctx, id, client.CopyToContainerOptions{DestinationPath: dir, Content: archive})
+	return wrap(err)
 }
 
 type readCloser struct {

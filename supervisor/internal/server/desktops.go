@@ -138,7 +138,7 @@ func (s *Server) handleValidateName(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.URL.Query().Get("name")
 	res := map[string]any{"ok": true, "folderExists": false}
-	if err := desktops.ValidName(name); err != nil {
+	if err := desktops.ValidNewName(name); err != nil {
 		res["ok"], res["error"] = false, err.Error()
 	} else if _, err := s.Desktops.Get(r.Context(), name); err == nil {
 		res["ok"], res["error"] = false, "a desktop with that name already exists"
@@ -165,7 +165,7 @@ func (s *Server) handleCreateDesktop(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
-	if err := desktops.ValidName(req.Name); err != nil {
+	if err := desktops.ValidNewName(req.Name); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

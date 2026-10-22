@@ -124,8 +124,18 @@ A build is a cancellable job (30-minute limit). Each line of the build log comes
 
 1. Takes the base's image ID, pulling the base first on a rebuild or edit unless it is a custom image (a base that can't be pulled but is on this machine is used as it is). The base must carry the Deskyard contract.
 2. Builds `FROM <base image ID>` with the recipe's mise tools, Flatpak remotes and apps, home template and build commands (no build cache on a rebuild or edit), with network access but no Docker socket, host mounts or supervisor network. The image keeps its base's `USER`.
-3. Checks the result: it still carries the contract; compared with the base, it adds no sudo or doas, no setuid or setgid file, and nothing UID 1000 can write under `/usr`, `/etc`, `/opt/workspace` or `/opt/deskyard` (outside `/opt/deskyard/home-template`), with every offending path named in the error; and a throwaway desktop of it (`build-check-…`, removed afterwards) becomes ready within 2 minutes.
+3. Checks the result. It must still carry the contract. Then the supervisor's own static scanner (`deskyard-image-scan`, embedded in the supervisor and copied into a throwaway container with no network, so nothing from the image runs) scans the base and the new image as root, walking everything but `/proc`, `/sys`, `/dev` and `/workspace`. Compared with the base, the new image must not add or change:
+   - a `sudo`, `sudoedit` or `doas` executable, anywhere;
+   - a setuid or setgid file that is new, or whose content (sha256) differs from the base's at that path;
+   - a file with file capabilities (`security.capability`) that is new or changed;
+   - a file or folder UID 1000 owns, or that its group or everyone may write, under `/usr` (so `/usr/local/bin`), `/etc` (so supervisord's `/etc/supervisor`), `/opt/workspace` or `/opt/deskyard` (except `/opt/deskyard/home-template`);
+   - a symlink there whose target resolves under `/workspace`, `/tmp`, `/var/tmp`, `/home`, `/dev/shm` or `/run/workspace`, or to a place UID 1000 can write;
+   - in `/etc/passwd`, `/etc/shadow` and `/etc/group`: a new UID 0 or GID 0 account, a new GID 0 group, `user` not UID 1000 (or missing), `user` added to a group, or a UID 0 account with no password or a password changed from the base.
+
+   Every finding is named in the error. A scan that fails, exits non-zero, or whose output is cut short or unreadable fails the build. `/opt/mise` and `/var/lib/flatpak` are not checked for writability by design: root doesn't run anything from them (only the setuid, capability and sudo checks cover them). Last, a throwaway desktop of the image (`build-check-…`, a prefix no one else's desktop may use; removed afterwards) must become ready within 2 minutes.
 4. Tags it `deskyard-custom/<slug>:<YYYYMMDD-HHMMSS>` and `:latest`, puts `deskyard-custom/<slug>:latest` in the catalog, and removes older timestamp tags no container uses. Desktops on the image then show `updateAvailable`.
+
+Known limits: Flatpak apps that download extra data while installing (`apply_extra`, e.g. Spotify) may fail to build, since that step needs Flatpak's sandbox, which a plain build doesn't allow. A build's network is the engine's default bridge, so its commands reach the internet and whatever else such a container can: on Docker Desktop and OrbStack that includes services on the host's loopback (`host.docker.internal`), the supervisor's own port among them, which still requires signing in.
 
 A failed or cancelled build leaves no tag, no catalog entry and no image; the recipe stays saved. Labels on a custom image: `deskyard.kind=custom`, `org.opencontainers.image.title` (the recipe name), `org.opencontainers.image.version` (build time, `YYYY-MM-DD HH:MM`), `deskyard.base` (the base's image ID), `deskyard.recipe` (the recipe JSON, so anyone who can inspect the image can read its build commands and remote URLs), and `deskyard.secrets=true` when it has secrets.
 

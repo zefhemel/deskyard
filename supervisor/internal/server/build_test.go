@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/imagescan"
 	"github.com/zefhemel/deskyard/supervisor/internal/recipes"
 )
 
@@ -30,7 +32,8 @@ type buildEngine struct {
 	tags       map[string]string       // ref → ID
 	containers map[string]string       // scan container ID → image ID
 	desktops   []engine.Container
-	scans      map[string]string // image ID → scan output
+	scans      map[string]scanOut // image ID → scanner output (default: a clean scan)
+	copied     []string           // CopyToContainer calls: container:dir
 	pulls      []string
 	pullErr    error
 	builds     []engine.BuildSpec
@@ -47,7 +50,7 @@ func newBuildEngine() *buildEngine {
 		images:     map[string]engine.Image{},
 		tags:       map[string]string{},
 		containers: map[string]string{},
-		scans:      map[string]string{},
+		scans:      map[string]scanOut{},
 	}
 	e.addImage("img", "sha256:base1", "user")
 	return e
@@ -56,7 +59,7 @@ func newBuildEngine() *buildEngine {
 func (e *buildEngine) addImage(ref, id, user string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.images[id] = engine.Image{ID: id, User: user, Labels: map[string]string{
+	e.images[id] = engine.Image{ID: id, User: user, Arch: "arm64", Labels: map[string]string{
 		desktops.LabelContract: desktops.Contract, labelKind: "desktop", labelTitle: "Debian XFCE"}}
 	e.tags[ref] = id
 }
@@ -123,7 +126,7 @@ func (e *buildEngine) Build(ctx context.Context, spec engine.BuildSpec, log func
 	for k, v := range spec.Labels {
 		labels[k] = v
 	}
-	e.images[id] = engine.Image{ID: id, Labels: labels, User: b.User}
+	e.images[id] = engine.Image{ID: id, Labels: labels, User: b.User, Arch: b.Arch}
 	return id, nil
 }
 
@@ -180,13 +183,43 @@ func (e *buildEngine) Remove(_ context.Context, id string) error {
 	return nil
 }
 
+type scanOut struct {
+	out  string
+	code int
+}
+
+// scanned is the scanner's output for r.
+func scanned(r imagescan.Result) scanOut {
+	var b bytes.Buffer
+	_ = imagescan.Write(&b, r)
+	return scanOut{out: b.String()}
+}
+
+func cleanResult() imagescan.Result {
+	return imagescan.Result{
+		Files:    []imagescan.File{{Path: "/usr/bin/passwd", Kind: imagescan.KindSetuid, SHA256: "aa"}},
+		Accounts: []imagescan.Account{{Name: "root", Password: "p"}, {Name: "user", UID: 1000, GID: 1000, Password: "q"}},
+		Groups:   []imagescan.Group{{Name: "root", Members: []string{}}},
+	}
+}
+
+func (e *buildEngine) CopyToContainer(_ context.Context, id, dir string, _ io.Reader) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.copied = append(e.copied, id+":"+dir)
+	return nil
+}
+
 func (e *buildEngine) Exec(_ context.Context, id string, _ engine.ExecSpec) (*engine.Process, error) {
 	e.mu.Lock()
-	out := e.scans[e.containers[id]]
+	out, ok := e.scans[e.containers[id]]
 	e.mu.Unlock()
+	if !ok {
+		out = scanned(cleanResult())
+	}
 	return &engine.Process{
-		Stdout: strings.NewReader(out), Stderr: strings.NewReader(""),
-		Wait: func() (int, error) { return 0, nil }, Close: func() {},
+		Stdout: strings.NewReader(out.out), Stderr: strings.NewReader("scanner says hello"),
+		Wait: func() (int, error) { return out.code, nil }, Close: func() {},
 	}, nil
 }
 
@@ -231,6 +264,9 @@ func newBuildTest(t *testing.T) *buildTest {
 	e := newBuildEngine()
 	s, ts := newTestServerWith(t, e)
 	s.smokeTest = func(context.Context, string) error { return nil }
+	oldScanner := scannerBinary
+	scannerBinary = func(string) ([]byte, error) { return []byte("scanner"), nil }
+	t.Cleanup(func() { scannerBinary = oldScanner })
 	bt := &buildTest{t: t, s: s, ts: ts, e: e, admin: login(t, ts, "admin"), clock: time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)}
 	old := buildClock
 	buildClock = func() time.Time { bt.clock = bt.clock.Add(time.Minute); return bt.clock }
@@ -430,24 +466,57 @@ func TestBuildRefusedWhenAlreadyBuilding(t *testing.T) {
 
 func TestRootScanRejects(t *testing.T) {
 	bt := newBuildTest(t)
-	bt.e.scans["sha256:base1"] = "setuid /usr/bin/passwd\nwritable /opt/deskyard/home-template\n"
-	bt.e.scans["sha256:built1"] = "setuid /usr/bin/passwd\nsudo /usr/bin/sudo\nsetuid /usr/bin/sudo\n" +
-		"setuid /usr/local/bin/x\nwritable /etc/foo\nnoise line\n"
+	bad := cleanResult()
+	bad.Files = append(bad.Files,
+		imagescan.File{Path: "/usr/bin/sudo", Kind: imagescan.KindSudo, SHA256: "s"},
+		imagescan.File{Path: "/usr/bin/sudo", Kind: imagescan.KindSetuid, SHA256: "s"},
+		imagescan.File{Path: "/usr/local/bin/x", Kind: imagescan.KindSetuid, SHA256: "x"},
+		imagescan.File{Path: "/etc/foo", Kind: imagescan.KindWritable})
+	bad.Files[0].SHA256 = "replaced"
+	bad.Accounts[0].Empty = true
+	bt.e.scans["sha256:built1"] = scanned(bad)
 	st := bt.build(tools("tools", "img"))
 	if st.Status != "failed" {
 		t.Fatalf("want failed: %+v", st)
 	}
-	for _, want := range []string{"/usr/bin/sudo (setuid or setgid, sudo or doas)", "/usr/local/bin/x (setuid or setgid)", "/etc/foo (writable by user)"} {
+	for _, want := range []string{"/usr/bin/sudo (sudo or doas)", "/usr/bin/sudo (setuid or setgid)", "/usr/local/bin/x (setuid or setgid)",
+		"/etc/foo (writable by user)", "/usr/bin/passwd (setuid or setgid, changed from the base)", "account root (UID 0 with no password)"} {
 		if !strings.Contains(st.Error, want) {
 			t.Errorf("error lacks %q: %s", want, st.Error)
 		}
 	}
-	if strings.Contains(st.Error, "passwd") {
-		t.Errorf("names what the base has already: %s", st.Error)
-	}
 	assertNothingLeft(t, bt, "tools", "sha256:built1")
 	if len(bt.e.containers) != 0 {
 		t.Errorf("scan containers left: %v", bt.e.containers)
+	}
+	if len(bt.e.copied) != 2 || !strings.HasSuffix(bt.e.copied[0], ":/") {
+		t.Errorf("the scanner wasn't copied into both containers: %v", bt.e.copied)
+	}
+}
+
+// The scan fails closed: anything but two complete scans fails the build.
+func TestRootScanFailsClosed(t *testing.T) {
+	good := scanned(cleanResult()).out
+	for name, out := range map[string]scanOut{
+		"non-zero exit": {out: good, code: 2},
+		"no sentinel":   {out: strings.TrimSuffix(good, imagescan.Sentinel+"\n")},
+		"garbage":       {out: "find: -printf: unknown primary\n" + imagescan.Sentinel + "\n"},
+		"nothing":       {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			bt := newBuildTest(t)
+			bt.e.scans["sha256:built1"] = out
+			st := bt.build(tools("tools", "img"))
+			if st.Status != "failed" || !strings.Contains(st.Error, "scanning the image") || !strings.Contains(st.Error, "scanner says hello") {
+				t.Fatalf("want a failed scan: %+v", st)
+			}
+			assertNothingLeft(t, bt, "tools", "sha256:built1")
+		})
+	}
+	bt := newBuildTest(t)
+	scannerBinary = func(arch string) ([]byte, error) { return nil, errors.New("no scanner for " + arch) }
+	if st := bt.build(tools("tools", "img")); st.Status != "failed" || !strings.Contains(st.Error, "no scanner for arm64") {
+		t.Fatalf("without a scanner: %+v", st)
 	}
 }
 
@@ -659,5 +728,62 @@ func TestSameRef(t *testing.T) {
 		if got := sameRef(c.a, c.b); got != c.same {
 			t.Errorf("sameRef(%q, %q) = %v", c.a, c.b, got)
 		}
+	}
+}
+
+// A job that finishes its work although cancel came late is done, not cancelled.
+func TestCancelTooLateIsDone(t *testing.T) {
+	js := newJobs()
+	stopped := make(chan struct{})
+	id := js.startCancellable("admin", func(ctx context.Context, _ func(string, float64)) error {
+		<-stopped
+		return nil // finished anyway
+	})
+	j := js.get(id)
+	if !j.stop() {
+		t.Fatal("couldn't cancel")
+	}
+	close(stopped)
+	<-j.done
+	if st := j.get(); st.Status != "done" {
+		t.Fatalf("got %+v", st)
+	}
+}
+
+// A catalog that can't be saved leaves the tags as they were.
+func TestCatalogFailureUntags(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes into read-only folders")
+	}
+	bt := newBuildTest(t)
+	if st := bt.build(tools("tools", "img")); st.Status != "done" {
+		t.Fatal(st)
+	}
+	first := bt.e.tagsOf("deskyard-custom/tools")
+	if err := os.Chmod(bt.s.StateDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(bt.s.StateDir, 0o700)
+	st := bt.wait(bt.start("POST", "/api/recipes/tools/rebuild", nil))
+	_ = os.Chmod(bt.s.StateDir, 0o700)
+	if st.Status != "failed" {
+		t.Fatalf("want failed: %+v", st)
+	}
+	if got := bt.e.tagsOf("deskyard-custom/tools"); fmt.Sprint(got) != fmt.Sprint(first) {
+		t.Errorf("tags %v, want %v", got, first)
+	}
+	if _, err := bt.e.ImageInspect(context.Background(), "sha256:built2"); err == nil {
+		t.Error("the failed build's image is left")
+	}
+}
+
+func TestSmokePrefixReserved(t *testing.T) {
+	bt := newBuildTest(t)
+	code, b := bt.do(bt.admin, "POST", "/api/desktops", map[string]string{"name": "build-check-abc123"})
+	if code != 400 || !strings.Contains(string(b), "reserved") {
+		t.Errorf("create: %d %s", code, b)
+	}
+	if code, b := bt.do(bt.admin, "GET", "/api/validate-name?name=build-check-x1", nil); !strings.Contains(string(b), "reserved") {
+		t.Errorf("validate: %d %s", code, b)
 	}
 }

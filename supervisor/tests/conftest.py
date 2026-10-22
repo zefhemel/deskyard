@@ -105,6 +105,8 @@ class Supervisor:
             docker(*args, "deskyard:test")
         else:
             binary = ROOT / "bin" / "deskyard-supervisor-test"
+            # The image scanner the supervisor embeds (static Linux binaries).
+            subprocess.run(["make", "scanner"], cwd=ROOT, check=True)
             subprocess.run(["go", "build", "-o", str(binary), "./cmd/deskyard-supervisor"], cwd=ROOT, check=True)
             self.log = open(self.data.parent / "supervisor.log", "w")
             self.proc = subprocess.Popen([str(binary)], env={**os.environ, **env, "DESKYARD_LISTEN": f"127.0.0.1:{self.port}"},

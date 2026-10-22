@@ -117,6 +117,21 @@ def test_build_with_sudo_rejected(admin, slug):
     assert f"deskyard-custom/{slug}:latest" not in catalog(admin)
 
 
+@pytest.mark.network
+@pytest.mark.parametrize("commands,finding", [
+    ("apt-get update\napt-get install -y libcap2-bin\nsetcap cap_setuid+ep \"$(readlink -f /usr/bin/python3)\"",
+     "(file capabilities)"),
+    ("passwd -d root", "account root (UID 0 with no password)"),
+])
+def test_build_with_root_path_rejected(admin, slug, commands, finding):
+    if "apt-get" in commands and not online("deb.debian.org"):
+        pytest.skip("no network: the build installs libcap2-bin from Debian")
+    st, log = build(admin, {"slug": slug, "commands": commands})
+    assert st["status"] == "failed", st
+    assert finding in st["error"], st["error"]
+    assert tags(slug) == []
+
+
 def test_rebuild_and_upgrade_keeps_home(admin, slug, name):
     st, log = build(admin, {"slug": slug, "commands": "echo built > /opt/marker"})
     assert st["status"] == "done", st

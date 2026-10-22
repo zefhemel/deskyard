@@ -306,7 +306,7 @@ func images(t *testing.T, e engine.Engine) {
 			t.Fatalf("want ErrNotFound, got %v", err)
 		}
 	})
-	t.Run("image tags, user and entrypoint", func(t *testing.T) {
+	t.Run("image tags, user, entrypoint and copy in", func(t *testing.T) {
 		ref := uniqueRef(t, e)
 		repo := ref[:strings.LastIndex(ref, ":")]
 		ref2 := repo + ":other"
@@ -338,6 +338,21 @@ func images(t *testing.T, e engine.Engine) {
 		out, _, code, err := engine.Output(ctx, e, cid, engine.ExecSpec{Cmd: []string{"cat", "/proc/1/cmdline"}, User: "root"})
 		if err != nil || code != 0 || !strings.HasPrefix(string(out), "sleep") {
 			t.Fatalf("entrypoint: %v %d %q", err, code, out)
+		}
+		if img, _ := e.ImageInspect(ctx, id); img.Arch == "" {
+			t.Errorf("no architecture: %+v", img)
+		}
+		var buf bytes.Buffer
+		tw := tar.NewWriter(&buf)
+		_ = tw.WriteHeader(&tar.Header{Name: "copied", Mode: 0o755, Size: 2})
+		_, _ = tw.Write([]byte("hi"))
+		_ = tw.Close()
+		if err := e.CopyToContainer(ctx, cid, "/", &buf); err != nil {
+			t.Fatal(err)
+		}
+		out, _, code, err = engine.Output(ctx, e, cid, engine.ExecSpec{Cmd: []string{"cat", "/copied"}, User: "0:0"})
+		if err != nil || code != 0 || string(out) != "hi" {
+			t.Fatalf("copied file: %v %d %q", err, code, out)
 		}
 	})
 }

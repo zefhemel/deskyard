@@ -89,6 +89,7 @@ type Image struct {
 	ID     string
 	Labels map[string]string
 	User   string // the image's USER, "" for root
+	Arch   string // e.g. amd64, arm64
 }
 
 // BuildSpec describes an image build from a tar build context.
@@ -139,6 +140,9 @@ type Engine interface {
 	// CopyFromImage returns a tar stream of path inside the image, read from a
 	// never-started container of it.
 	CopyFromImage(ctx context.Context, ref, path string) (io.ReadCloser, error)
+	// CopyToContainer extracts a tar archive into dir inside a container
+	// (created or running).
+	CopyToContainer(ctx context.Context, id, dir string, archive io.Reader) error
 	// Build builds an image, passing each line of build output to log.
 	// Cancelling ctx stops the build.
 	Build(ctx context.Context, spec BuildSpec, log func(line string)) (imageID string, err error)
