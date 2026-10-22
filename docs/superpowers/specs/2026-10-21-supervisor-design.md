@@ -106,7 +106,7 @@ agent elsewhere ── computer -c alice … ──HTTPS/WebSocket──▶ /api
 
 ## Running it
 
-- **Directly:** download the binary for your OS and run `container-computer-supervisor`. It finds the engine at `SUPERVISOR_ENGINE_HOST`, else `DOCKER_HOST`, else the platform default (`/var/run/docker.sock`, or Docker Desktop's/OrbStack's socket on macOS). The user running it must be able to use that socket (on Linux: the `docker` group, which is root-equivalent; the docs say so). For HTTPS on 80/443 on Linux, the docs show `setcap cap_net_bind_service` or a systemd socket.
+- **Directly:** download the binary for your OS (`supervisor-<os>-<arch>` from the releases) and run it. It finds the engine at `SUPERVISOR_ENGINE_HOST`, else `DOCKER_HOST`, else the platform default (`/var/run/docker.sock`, or Docker Desktop's/OrbStack's socket on macOS). The user running it must be able to use that socket (on Linux: the `docker` group, which is root-equivalent; the docs say so). For HTTPS on 80/443 on Linux, the docs show `setcap cap_net_bind_service` or a systemd socket.
 - **In a container:** `ghcr.io/zefhemel/container-computer-supervisor`, Alpine-based, the binary plus CA certificates and tzdata. Mount the engine socket and the data folder (at the same path). A `compose.yaml` in `supervisor/` shows it.
 
 ## Engine

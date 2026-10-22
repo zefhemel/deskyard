@@ -1,6 +1,6 @@
 ---
 tags: component
-status: planned
+status: built
 partOf: "[[Architecture/Supervisor]]"
 spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 ---

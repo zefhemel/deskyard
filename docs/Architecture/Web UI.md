@@ -1,6 +1,6 @@
 ---
 tags: component
-status: planned
+status: built
 partOf: "[[Architecture/Supervisor]]"
 uses:
   - "[[Architecture/API]]"

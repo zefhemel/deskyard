@@ -51,12 +51,12 @@ spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 - Image changes: user `workspace` → `user` (UID/GID 1000, home `/workspace`; PUID/PGID gone); no `sudo` package or sudoers; no websocat, `vnc` and `cdp-host` programs; Chromium `autostart=false`; no cache volume (`XDG_CACHE_HOME`, `NPM_CONFIG_CACHE` back under `/workspace`); no system volume, password or HTTPS; `VOLUME ["/workspace"]`; labels `container-computer.contract=1` and OCI title/description/version (`ARG VERSION=dev`).
 - Caddy: `:8080`, every request needs header `X-Container-Computer-Token` equal to `{$WORKSPACE_PROXY_TOKEN}` (else 401); `/_cdp/*` strips the prefix and proxies to `127.0.0.1:9221` with `Host: localhost`; everything else to `127.0.0.1:6080`. `workspace-init` refuses to start (exit 1, message) without `WORKSPACE_PROXY_TOKEN`.
 
-- [ ] **Step 1:** `git mv` the files; delete the dropped ones; update `.dockerignore`.
-- [ ] **Step 2:** Change `tests/sandbox.py`: start with `-e WORKSPACE_PROXY_TOKEN=test-token`, publish only 8080, `exec` default user `user`; `web_url` requests carry the token header; readiness = display up and `GET /` with token → 200 and without → 401; CDP checks go through `/_cdp/json/version`.
-- [ ] **Step 3:** Adjust tests: `test_web.py` (401 without token, 200 with, WebSocket via token), `test_privileges.py` (no sudo, `id -u user` = 1000, caddy runs as `caddy`, nothing listens on 5901/9222), `test_chromium.py` (Chromium not running after boot; starts on first CDP connection), `test_boot.py` (missing token → container exits with the message).
-- [ ] **Step 4:** Change the image and rootfs as listed.
-- [ ] **Step 5:** Run `cd images/debian-xfce/tests && uv run pytest -x -q` — all pass.
-- [ ] **Step 6:** Commit `image: supervisor-only computer image in images/debian-xfce`.
+- [x] **Step 1:** `git mv` the files; delete the dropped ones; update `.dockerignore`.
+- [x] **Step 2:** Change `tests/sandbox.py`: start with `-e WORKSPACE_PROXY_TOKEN=test-token`, publish only 8080, `exec` default user `user`; `web_url` requests carry the token header; readiness = display up and `GET /` with token → 200 and without → 401; CDP checks go through `/_cdp/json/version`.
+- [x] **Step 3:** Adjust tests: `test_web.py` (401 without token, 200 with, WebSocket via token), `test_privileges.py` (no sudo, `id -u user` = 1000, caddy runs as `caddy`, nothing listens on 5901/9222), `test_chromium.py` (Chromium not running after boot; starts on first CDP connection), `test_boot.py` (missing token → container exits with the message).
+- [x] **Step 4:** Change the image and rootfs as listed.
+- [x] **Step 5:** Run `cd images/debian-xfce/tests && uv run pytest -x -q` — all pass.
+- [x] **Step 6:** Commit `image: supervisor-only computer image in images/debian-xfce`.
 
 ### Task 2: Go module, config and state files
 
@@ -65,9 +65,9 @@ spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 **Interfaces:**
 - Produces: `config.Load() (config.Config, error)` with fields `Listen, Domain, DataDir, StateDir, EngineHost, Subnet, AdminUser, AdminPassword, DefaultImage string; InContainer bool`; `store.ReadJSON(path string, v any) error` (missing file → `fs.ErrNotExist`), `store.WriteJSON(path string, v any) error` (0600, temp + rename), `store.Locked(fn func() error) error`.
 
-- [ ] **Step 1:** Tests: `WriteJSON` then `ReadJSON` round-trips; file mode is 0600; a crash between temp write and rename leaves the old file (write temp, don't rename, read old).
-- [ ] **Step 2:** Implement; `config.Load` defaults per Global Constraints; `InContainer` = `/.dockerenv` exists or `SUPERVISOR_IN_CONTAINER=1`.
-- [ ] **Step 3:** `go test ./...` passes; commit.
+- [x] **Step 1:** Tests: `WriteJSON` then `ReadJSON` round-trips; file mode is 0600; a crash between temp write and rename leaves the old file (write temp, don't rename, read old).
+- [x] **Step 2:** Implement; `config.Load` defaults per Global Constraints; `InContainer` = `/.dockerenv` exists or `SUPERVISOR_IN_CONTAINER=1`.
+- [x] **Step 3:** `go test ./...` passes; commit.
 
 ### Task 3: Engine interface and Docker implementation
 
@@ -82,9 +82,9 @@ spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
   - `Stats{CPUPercent float64; MemBytes, MemLimit uint64; Time time.Time}`
 - `enginetest.Run(t, e engine.Engine, image string)` creates a container from a small image (`alpine`), checks labels round-trip, start/stop, exec as user 1000 with stdout and exit code, network create/connect/remove.
 
-- [ ] **Step 1:** Write the suite and the docker test calling it (`go test -tags engine ./internal/engine/...`), see it fail.
-- [ ] **Step 2:** Implement the Docker engine with API negotiation; `SecurityOpt` passes the seccomp profile JSON contents; `SelfID` reads the container ID from `/proc/self/mountinfo` or hostname when in a container.
-- [ ] **Step 3:** Suite passes against OrbStack; commit.
+- [x] **Step 1:** Write the suite and the docker test calling it (`go test -tags engine ./internal/engine/...`), see it fail.
+- [x] **Step 2:** Implement the Docker engine with API negotiation; `SecurityOpt` passes the seccomp profile JSON contents; `SelfID` reads the container ID from `/proc/self/mountinfo` or hostname when in a container.
+- [x] **Step 3:** Suite passes against OrbStack; commit.
 
 ### Task 4: Accounts, sessions and login
 
@@ -94,8 +94,8 @@ spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 - Produces: `accounts.Store` with `Load(dir)`, `EnsureAdmin(user, password string) (generated string, err error)`, `Get(username) (Account, bool)`, `List() []Account`, `Put(Account) error`, `Delete(username) error`, `SetPassword(username, pw string) error` (bumps epoch), `Grant(username, computerID string)`, `Revoke(username, computerID string)`, `ForgetComputer(computerID string)`; `Account{Username, PasswordHash string; Admin bool; SessionEpoch int; Computers []string; Created, LastLogin time.Time}`.
 - `auth.HashPassword(pw) string` (argon2id m=65536,t=3,p=2, PHC string), `auth.CheckPassword(hash, pw) bool`; `auth.Sessions{Key []byte}` with `Issue(w, username, epoch)`, `Read(r) (username string, epoch int, ok bool)`, cookie `cc_session` HttpOnly, SameSite=Strict, Path=/, Secure under HTTPS, 30 days sliding; `auth.Throttle` (5 failures per username or IP → 1 attempt / 10 s); `auth.Can(a Account, action Action, computerID string) bool` with actions `View, Power, Manage, ManageAccounts, CreateToken, RevokeAnyToken`.
 
-- [ ] **Step 1:** Tests: hash/verify; `EnsureAdmin` creates `admin` once with a 24-char generated password when none is given; the last admin can't be deleted or demoted; epoch bump invalidates a session; throttle; `Can` table from the spec's permissions table (every row).
-- [ ] **Step 2:** Implement; commit.
+- [x] **Step 1:** Tests: hash/verify; `EnsureAdmin` creates `admin` once with a 24-char generated password when none is given; the last admin can't be deleted or demoted; epoch bump invalidates a session; throttle; `Can` table from the spec's permissions table (every row).
+- [x] **Step 2:** Implement; commit.
 
 ### Task 5: Computers: names, labels, networks, lifecycle
 
@@ -109,9 +109,9 @@ spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 - The per-computer token is generated at create, passed as `WORKSPACE_PROXY_TOKEN` and read back from the container's env on inspect (no extra state).
 - Same-path check (container mode): write a marker into `DataDir`, run `alpine` with the same path mounted, `test -f` it; refuse to start otherwise.
 
-- [ ] **Step 1:** Unit tests: names (valid, reserved, too long), settings ↔ labels round-trip, subnet allocation skips used /28s.
-- [ ] **Step 2:** Integration test (tag `engine`): create with an existing folder reuses it; create → running; stop; start; remove keeps the folder; remove with deleteFiles deletes it; a failed pull leaves nothing behind.
-- [ ] **Step 3:** Implement; commit.
+- [x] **Step 1:** Unit tests: names (valid, reserved, too long), settings ↔ labels round-trip, subnet allocation skips used /28s.
+- [x] **Step 2:** Integration test (tag `engine`): create with an existing folder reuses it; create → running; stop; start; remove keeps the folder; remove with deleteFiles deletes it; a failed pull leaves nothing behind.
+- [x] **Step 3:** Implement; commit.
 
 ### Task 6: HTTP server, desktop proxy and API
 
@@ -123,8 +123,8 @@ spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 - Client files: on first use of an image ID, `CopyFromImage(image, "/usr/share/kasmvnc/www")` into `StateDir/clients/<imageID>/`.
 - Proxy: `httputil.ReverseProxy` to `Target`, adds the token header, removes `Cookie`, rejects foreign `Origin` (403); 404 for computers the account can't see.
 
-- [ ] **Step 1:** Tests with a fake engine: unauthenticated `/api/computers` → 401 and `/alice/` → redirect to `/login`; state-changing call with foreign Origin → 403; `/alice/vnc/../x` can't escape; `/<reserved>` isn't a computer.
-- [ ] **Step 2:** Implement; commit.
+- [x] **Step 1:** Tests with a fake engine: unauthenticated `/api/computers` → 401 and `/alice/` → redirect to `/login`; state-changing call with foreign Origin → 403; `/alice/vnc/../x` can't escape; `/<reserved>` isn't a computer.
+- [x] **Step 2:** Implement; commit.
 
 ### Task 7: Web UI (phase 1 pages)
 
@@ -148,7 +148,7 @@ spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 
 - API: `GET/POST /api/accounts`, `PATCH/DELETE /api/accounts/{username}`, `PUT /api/computers/{name}/access`, `POST /api/me/password`; revoking access closes that account's open desktop WebSockets for the computer; create grants access to the chosen accounts; remove forgets the computer everywhere; startup prunes unknown IDs.
 - UI: Accounts page and Edit dialog, Access tab, account menu (Change password, Sign out), regular accounts see only their computers with Restart/Stop.
-- [ ] Tests (Go + integration): regular account can't see, open, power or proxy to a computer without access; revoking closes the desktop; password change signs out everywhere.
+- [x] Tests (Go + integration): regular account can't see, open, power or proxy to a computer without access; revoking closes the desktop; password change signs out everywhere.
 
 ### Task 10: Who's viewing and the full desktop bar
 
@@ -165,7 +165,7 @@ spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 - Thumbnails: `computer screenshot` via exec as `user`, scaled to 480 px wide, cached 10 s; `GET /api/computers/{name}/screen.png`.
 - Processes: `GET /api/computers/{name}/processes` (top `-eo pid,user,pcpu,rss,etime,args`), polled by the tab every 3 s.
 - Computer page: big screen, viewers, CPU and memory charts (SVG), facts, tabs Processes, Agents, Settings, Access.
-- [ ] Tests: stats arrive for a running computer; processes include `Xkasmvnc`; a thumbnail is a PNG 480 px wide.
+- [x] Tests: stats arrive for a running computer; processes include `Xkasmvnc`; a thumbnail is a PNG 480 px wide.
 
 # Phase 4: agent access
 
@@ -174,19 +174,19 @@ spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 - `tokens.json`: `{id, name, computerID, hash, createdBy, created, expires, lastUsed}`; format `cct_<id>_<secret>` (id 8 chars, secret 32 random bytes base64url); SHA-256 of the secret.
 - API: `GET/POST /api/computers/{name}/tokens`, `DELETE /api/computers/{name}/tokens/{id}`; anyone with access creates and revokes own, admins any; expiry and revocation close open connections; tokens of a creator who loses access or is deleted are revoked.
 - UI: Agents tab, New token dialog (name, expiry never/7/30/90 days/date), Token created dialog with the `computer remote add` line.
-- [ ] Tests: token lifecycle; expiry; creator losing access revokes.
+- [x] Tests: token lifecycle; expiry; creator losing access revokes.
 
 ### Task 13: Agent API
 
 - `GET /api/agent/v1` (status JSON), `GET /api/agent/v1/exec` (WebSocket: first text message `{"argv":[…],"cwd":…,"env":{…},"tty":bool,"cols":n,"rows":n}`; then binary frames prefixed with one byte stream id: 0 stdin, 1 stdout, 2 stderr; text `{"resize":[c,r]}`, `{"eof":true}`; final text `{"exit":n}`), `/api/agent/v1/cdp/*` → computer Caddy `/_cdp/*` with `webSocketDebuggerUrl` rewritten.
 - Exec as `user` in `/workspace` with the image's env; log every call with the token name.
-- [ ] Tests: exec output and exit code; tty shell; CDP version through the proxy; another computer's token refused; session cookie refused.
+- [x] Tests: exec output and exit code; tty shell; CDP version through the proxy; another computer's token refused; session cookie refused.
 
 ### Task 14: The `computer` command in Go
 
 - `supervisor/cmd/computer`: local desktop actions (same as the bash script: screenshot, zoom, size, cursor, move, click, double-click, triple-click, mouse-down, mouse-up, drag, type, key, hold-key, scroll, wait) via `xdotool`/`maim`; remotes (`remote add|list|remove|default`, `-c`, `COMPUTER_REMOTE`, `COMPUTER_URL`+`COMPUTER_TOKEN`, `~/.config/container-computer/remotes.json` 0600); `exec`, `shell`, `cp`, `browser connect`, `status`, `guide`, `describe --json`; desktop actions remote = exec `computer …` in the computer.
 - The image builds it from `supervisor/` (multi-stage) and drops the bash script.
-- [ ] Tests: golden `--help`, `guide`, `describe --json`; integration: `computer -c alice exec -- id -u` prints 1000; `cp` round-trip; `screenshot` PNG; `browser connect` + Playwright `connect_over_cdp`.
+- [x] Tests: golden `--help`, `guide`, `describe --json`; integration: `computer -c alice exec -- id -u` prints 1000; `cp` round-trip; `screenshot` PNG; `browser connect` + Playwright `connect_over_cdp`.
 
 # Phase 5: settings and images
 
@@ -195,7 +195,7 @@ spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 - `PATCH /api/computers/{name}` (image, memory, CPUs) recreates the container (same labels/ID/folder/token).
 - `images.json` catalog (default one entry); `GET/POST/DELETE /api/images`; daily + "Check now" update check (pull, compare image IDs); "Update available" per computer; upgrade one or all (job with progress); contract check refuses images without `container-computer.contract=1`.
 - UI: Settings tab, Images page, Upgrade dialog (what survives).
-- [ ] Tests: upgrade recreates and keeps the folder and ID; image without contract label refused.
+- [x] Tests: upgrade recreates and keeps the folder and ID; image without contract label refused.
 
 # Phase 6: HTTPS, phone, docs, releases
 

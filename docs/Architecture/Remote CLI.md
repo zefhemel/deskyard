@@ -1,6 +1,6 @@
 ---
 tags: component
-status: planned
+status: built
 uses:
   - "[[Architecture/Agent API]]"
 spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
