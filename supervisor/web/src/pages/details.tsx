@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 import { useLocation, useRoute } from "preact-iso";
-import { api, type Desktop, type Forward } from "../api.ts";
+import { api, type AgentPresence, type Desktop, type Forward } from "../api.ts";
+import { agentLabel } from "../lib/activity-format.ts";
 import { Avatars } from "../components/avatar.tsx";
 import { ChartsPanel } from "../components/charts-panel.tsx";
 import { DesktopMenu, power } from "../components/desktop-menu.tsx";
@@ -125,7 +126,7 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
         <div class="grid grid-cols-[minmax(0,1.55fr)_minmax(320px,1fr)] items-start gap-8 max-[900px]:grid-cols-1">
           <Monitor desktop={c} job={jobs[c.name]} now={now} big />
           <div class="flex flex-col gap-4">
-            <ViewersPanel viewers={c.viewers} forwards={c.forwards} />
+            <ViewersPanel viewers={c.viewers} forwards={c.forwards} agents={c.agents} />
             <ChartsPanel desktop={c} />
             <Facts desktop={c} admin={me.admin} onTab={setTab} />
           </div>
@@ -145,13 +146,15 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
 function ViewersPanel({
   viewers,
   forwards,
+  agents,
 }: {
   viewers: string[];
   forwards: Forward[];
+  agents: AgentPresence[];
 }) {
   return (
     <div class="flex items-center gap-2.5 rounded-[10px] border border-line bg-surface px-5 py-[18px] text-sm">
-      {viewers.length > 0 && <Avatars names={viewers} />}
+      {(viewers.length > 0 || agents.length > 0) && <Avatars names={viewers} agents={agents} />}
       <div>
         <b class="font-semibold">
           {viewers.length
@@ -162,6 +165,11 @@ function ViewersPanel({
           Same desktop, one mouse and keyboard. It follows the window of whoever
           resized last.
         </p>
+        {agents.length > 0 && (
+          <p class="mt-1.5 mb-0 text-[13px]" aria-label="Agents">
+            {names(agents.map(agentLabel))} {agents.length === 1 ? "is" : "are"} working here.
+          </p>
+        )}
         <ForwardLines forwards={forwards} class="mt-1.5" />
       </div>
     </div>

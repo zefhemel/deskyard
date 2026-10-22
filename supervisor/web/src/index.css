@@ -90,3 +90,14 @@
     transform: translateX(300%);
   }
 }
+
+/* The dashed ring around an agent's avatar while it is active. */
+@keyframes agent-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
