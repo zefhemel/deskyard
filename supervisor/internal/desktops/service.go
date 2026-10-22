@@ -480,11 +480,13 @@ func (s *Service) removeNetwork(ctx context.Context, name string) error {
 // is false when some directories couldn't be read (files belong to UID 1000).
 func (s *Service) FolderSize(name string) (bytes int64, complete bool) {
 	complete = true
-	folder := filepath.Join(s.Cfg.DataDir, name)
-	if _, err := os.Stat(folder); err != nil {
-		return 0, true
+	// Through an os.Root: a desktop's links never lead the walk outside.
+	root, err := os.OpenRoot(filepath.Join(s.Cfg.DataDir, name))
+	if err != nil {
+		return 0, !errors.Is(err, fs.ErrPermission)
 	}
-	_ = filepath.WalkDir(folder, func(_ string, d fs.DirEntry, err error) error {
+	defer root.Close()
+	_ = fs.WalkDir(root.FS(), ".", func(_ string, d fs.DirEntry, err error) error {
 		if err != nil {
 			complete = false
 			return nil

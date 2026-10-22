@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -19,14 +18,11 @@ const (
 	GroupFlatpak  = "flatpak"  // Flatpak apps (installed again) and their data in ~/.var
 	GroupSettings = "settings" // ~/.config
 	GroupDotfiles = "dotfiles" // the other top-level dotfiles
-	GroupBrowser  = "browser"  // the shared Chromium's profile
+	GroupBrowser  = "browser"  // browser profiles (browsers.go)
 	GroupOther    = "other"    // everything else
 )
 
 var groupOrder = []string{GroupTools, GroupFlatpak, GroupSettings, GroupDotfiles, GroupBrowser, GroupOther}
-
-// browserProfile is the shared Chromium's profile (start-chromium).
-const browserProfile = ".config/chromium-shared"
 
 // flatpakInstall is the desktop's per-user Flatpak installation: its apps are
 // installed again in the image, never copied.
@@ -53,34 +49,6 @@ var browserCaches = map[string]bool{
 	"CacheStorage": true, "ScriptCache": true, "component_crx_cache": true,
 }
 
-// The browser profile is copied from an allow-list: in each profile folder,
-// what isn't a sign-in (browserKeep), and the sign-ins (browserSignIns in
-// secrets.go), which are secrets. Everything else (history, caches, the
-// profile's top-level state) is left out.
-var (
-	profileDirRE = regexp.MustCompile(`^(Default|Profile [0-9]+)$`)
-	browserKeep  = map[string]bool{
-		"Bookmarks": true, "Bookmarks.bak": true, "Preferences": true, "Secure Preferences": true,
-		"Extensions": true, "Custom Dictionary.txt": true, "Favicons": true, "Favicons-journal": true,
-	}
-)
-
-// browserKept reports whether a path under the profile (split in parts) may
-// be copied: the profile folder, its profile folders, and their allowed and
-// sign-in entries.
-func browserKept(parts []string) bool {
-	switch {
-	case len(parts) == 2:
-		return true
-	case !profileDirRE.MatchString(parts[2]):
-		return false
-	case len(parts) == 3:
-		return true
-	default:
-		return browserKeep[parts[3]] || browserSignIns[parts[3]]
-	}
-}
-
 // Classify gives the group of p (relative to the home folder), or false when
 // p is always left out.
 func Classify(p string) (group string, ok bool) {
@@ -104,16 +72,16 @@ func classify(p string) (group, root string, ok bool) {
 	if len(parts) >= 4 && parts[0] == ".var" && parts[1] == "app" && parts[3] == "cache" {
 		return "", "", false
 	}
-	if under(p, browserProfile) {
-		if !browserKept(parts) {
+	if b, rp := browserPath(p); b != nil {
+		if !b.kept(rp) {
 			return "", "", false
 		}
-		for _, part := range parts[2:] {
+		for _, part := range rp {
 			if browserCaches[part] {
 				return "", "", false
 			}
 		}
-		return GroupBrowser, browserProfile, true
+		return GroupBrowser, b.root, true
 	}
 	for _, d := range toolPaths {
 		if under(p, d) {

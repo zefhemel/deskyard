@@ -45,6 +45,11 @@ func Dockerfile(r Recipe, baseID string, flatpakInBuild bool) string {
 		line("")
 		line("# Flatpak remotes")
 		for _, rm := range r.Remotes {
+			if rm.RepoFile == "" {
+				// The key travels as a file in the build context, so it shows
+				// in neither the build log nor the image's history.
+				line("COPY %s %s/%s.flatpakrepo", contextRepoFile(rm), remotesDir, rm.Name)
+			}
 			line("RUN %s", remoteStep(rm))
 		}
 	}
@@ -110,15 +115,31 @@ func withVersion(spec string) string {
 func remoteStep(rm Remote) string {
 	file := remotesDir + "/" + rm.Name + ".flatpakrepo"
 	var b strings.Builder
-	b.WriteString("set -eux; ")
 	if rm.RepoFile != "" {
+		b.WriteString("set -eux; ")
 		fmt.Fprintf(&b, "curl -fsSL -o '%s' '%s'; ", file, rm.RepoFile)
 	} else {
-		fmt.Fprintf(&b, `printf '[Flatpak Repo]\nTitle=%%s\nUrl=%%s\nGPGKey=%%s\n' '%s' '%s' '%s' > '%s'; `,
-			rm.Name, rm.URL, cleanKey(rm.GPGKey), file)
+		b.WriteString("set -eux; ")
 	}
 	fmt.Fprintf(&b, "%s --system remote-add --if-not-exists '%s' '%s'", flatpakReal, rm.Name, file)
 	return b.String()
+}
+
+// contextRepoFile is where a remote given by URL and key has its
+// .flatpakrepo in the build context.
+func contextRepoFile(rm Remote) string { return "remotes/" + rm.Name + ".flatpakrepo" }
+
+// ContextFiles are the files the build of r needs in its context besides
+// the Dockerfile and the home template: a .flatpakrepo for each remote given
+// by URL and key (path in the context → content).
+func ContextFiles(r Recipe) map[string]string {
+	out := map[string]string{}
+	for _, rm := range r.Remotes {
+		if rm.RepoFile == "" {
+			out[contextRepoFile(rm)] = fmt.Sprintf("[Flatpak Repo]\nTitle=%s\nUrl=%s\nGPGKey=%s\n", rm.Name, rm.URL, cleanKey(rm.GPGKey))
+		}
+	}
+	return out
 }
 
 func flatpakStep(apps []Flatpak) string {
@@ -166,11 +187,11 @@ const triggersSnippet = `for t in /usr/share/flatpak/triggers/*.trigger; do ` +
 // saveRemotesSnippet writes a .flatpakrepo for each system remote that has
 // none yet (those a .flatpakref added), with the remote's GPG key. A remote
 // without a key is skipped: workspace-init would turn it into an unsigned
-// or broken user remote.
-var saveRemotesSnippet = flatpakReal + ` --system remotes --columns=name,url | while read -r name url; do ` +
+// or broken user remote. Tracing is off meanwhile: it would echo the keys.
+var saveRemotesSnippet = `set +x; ` + flatpakReal + ` --system remotes --columns=name,url | while read -r name url; do ` +
 	`f="` + remotesDir + `/$name.flatpakrepo"; ` +
 	`k="/var/lib/flatpak/repo/$name.trustedkeys.gpg"; ` +
 	`if [ "$name" = flathub ] || [ -e "$f" ]; then continue; fi; ` +
 	`if [ -s "$k" ]; then printf '[Flatpak Repo]\nTitle=%s\nUrl=%s\nGPGKey=%s\n' "$name" "$url" "$(base64 -w0 "$k")" > "$f"; ` +
 	`else echo "not saving flatpak remote $name: it has no GPG key, so desktops could not verify it" >&2; fi; ` +
-	`done; `
+	`done; set -x; `

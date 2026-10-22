@@ -6,7 +6,8 @@ RUN set -eux; export MISE_YES=1 MISE_CACHE_DIR=/tmp/mise-cache MISE_DATA_DIR=/op
 
 # Flatpak remotes
 RUN set -eux; curl -fsSL -o '/etc/deskyard/flatpak-remotes/gnome-nightly.flatpakrepo' 'https://nightly.gnome.org/gnome-nightly.flatpakrepo'; /usr/bin/flatpak.real --system remote-add --if-not-exists 'gnome-nightly' '/etc/deskyard/flatpak-remotes/gnome-nightly.flatpakrepo'
-RUN set -eux; printf '[Flatpak Repo]\nTitle=%s\nUrl=%s\nGPGKey=%s\n' 'myrepo' 'https://repo.example.com/repo' 'QUJDREVG' > '/etc/deskyard/flatpak-remotes/myrepo.flatpakrepo'; /usr/bin/flatpak.real --system remote-add --if-not-exists 'myrepo' '/etc/deskyard/flatpak-remotes/myrepo.flatpakrepo'
+COPY remotes/myrepo.flatpakrepo /etc/deskyard/flatpak-remotes/myrepo.flatpakrepo
+RUN set -eux; /usr/bin/flatpak.real --system remote-add --if-not-exists 'myrepo' '/etc/deskyard/flatpak-remotes/myrepo.flatpakrepo'
 
 # Starting home for new desktops
 COPY --chown=1000:1000 home-template/ /opt/deskyard/home-template/

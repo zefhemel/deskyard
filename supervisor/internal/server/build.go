@@ -492,6 +492,14 @@ func (s *Server) buildContext(ctx context.Context, rec recipes.Recipe, dockerfil
 	if _, err := io.WriteString(tw, dockerfile); err != nil {
 		return nil, err
 	}
+	for name, data := range recipes.ContextFiles(rec) {
+		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: int64(len(data)), ModTime: time.Unix(0, 0)}); err != nil {
+			return nil, err
+		}
+		if _, err := io.WriteString(tw, data); err != nil {
+			return nil, err
+		}
+	}
 	if rec.HomeFrom == recipes.HomeFromImage {
 		home := opts.home
 		if home == nil {

@@ -17,7 +17,7 @@ const groupInfo: Record<HomeGroupName, { label: string; hint: string }> = {
   flatpak: { label: "Flatpak apps", hint: "Installed again from their remotes; their data in ~/.var is copied" },
   settings: { label: "App settings", hint: "~/.config" },
   dotfiles: { label: "Dotfiles", hint: "Files and folders starting with a dot" },
-  browser: { label: "Browser profile", hint: "Chromium's extensions, bookmarks and settings" },
+  browser: { label: "Browser profiles", hint: "Bookmarks, settings and extensions of Chromium, Chrome, Brave and Firefox; history and caches stay out" },
   other: { label: "Other files", hint: "Everything else in the home folder" },
 };
 

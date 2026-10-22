@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,7 +107,13 @@ func TestImageFromDesktop(t *testing.T) {
 			t.Errorf("%s: %q, want %q", name, ctx[name], want)
 		}
 	}
+	if want := "[Flatpak Repo]\nTitle=extra\nUrl=https://example.org/repo/\nGPGKey=S0VZ\n"; ctx["remotes/extra.flatpakrepo"] != want {
+		t.Errorf("remote file: %q", ctx["remotes/extra.flatpakrepo"])
+	}
 	for name := range ctx {
+		if strings.HasPrefix(name, "remotes/") {
+			continue
+		}
 		for _, out := range []string{"hosts.yml", ".ssh", ".cache", ".bashrc", "flatpak", "config.toml"} {
 			if strings.Contains(name, out) {
 				t.Errorf("%s is in the build context", name)
@@ -374,5 +381,66 @@ func TestImageFromDesktopSavesRecipeOnTop(t *testing.T) {
 	}
 	if code, _ := bt.do(bt.admin, "POST", "/api/desktops/alice/image", map[string]any{"name": "x", "slug": "other", "recipe": map[string]string{"slug": "B", "name": "x"}}); code != 400 {
 		t.Errorf("bad recipe slug: %d", code)
+	}
+}
+
+// A stopped desktop's Flatpak installation is read from its folder: a key or
+// config linked out of the folder (to the supervisor's state) is never read.
+func TestStoppedFlatpakReadsStayInFolder(t *testing.T) {
+	bt := newBuildTest(t)
+	supervisorSecret(t, bt)
+	folder := withDesktop(t, bt, map[string]string{
+		".local/share/flatpak/repo/config":                                           "[remote \"evil\"]\nurl=https://evil.example.org/repo/\n[remote \"fifo\"]\nurl=https://fifo.example.org/repo/\n",
+		".local/share/flatpak/repo/refs/remotes/evil/app/org.evil.App/x86_64/stable": "c",
+		".local/share/flatpak/app/org.evil.App/current":                              "x",
+	})
+	repo := filepath.Join(folder, ".local/share/flatpak/repo")
+	if err := os.Symlink("../../../../../.deskyard/tokens.json", filepath.Join(repo, "evil.trustedkeys.gpg")); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(filepath.Join(repo, "fifo.trustedkeys.gpg"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, b := bt.do(bt.admin, "GET", "/api/desktops/alice/image-scan", nil)
+	if code != 200 || strings.Contains(string(b), "SUPERVISOR-SECRET") || strings.Contains(string(b), "U1VQRVJWSVNPUi1TRUNSRVQ") {
+		t.Fatalf("scan: %d %s", code, b)
+	}
+	if !strings.Contains(string(b), "Leaving out the Flatpak remote evil: it has no GPG key") {
+		t.Errorf("no note about the remote: %s", b)
+	}
+	body := map[string]any{"name": "Evil", "slug": "evil", "groups": []string{"flatpak"}}
+	done := make(chan jobState, 1)
+	go func() { done <- bt.wait(bt.start("POST", "/api/desktops/alice/image", body)) }()
+	select {
+	case st := <-done:
+		if st.Status != "done" {
+			t.Fatalf("build: %+v", st)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("the build hangs")
+	}
+	rec, _ := bt.s.recipes.Get("evil")
+	recJSON, _ := json.Marshal(rec)
+	for _, where := range []string{string(recJSON), bt.e.dockerfile, fmt.Sprint(bt.e.context)} {
+		if strings.Contains(where, "SUPERVISOR-SECRET") || strings.Contains(where, "U1VQRVJWSVNPUi1TRUNSRVQ") {
+			t.Errorf("the supervisor's state leaked: %s", where)
+		}
+	}
+	if len(rec.Remotes) != 0 || len(rec.Flatpaks) != 0 {
+		t.Errorf("recipe: %+v", rec)
+	}
+}
+
+// The folder size shown on the details page doesn't follow links out either.
+func TestFolderSizeStaysInFolder(t *testing.T) {
+	bt := newBuildTest(t)
+	supervisorSecret(t, bt)
+	folder := withDesktop(t, bt, map[string]string{"a": "12345"})
+	if err := os.Symlink("../.deskyard", filepath.Join(folder, "state")); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := bt.s.Desktops.FolderSize("alice"); n != 5 {
+		t.Errorf("size %d, want 5", n)
 	}
 }

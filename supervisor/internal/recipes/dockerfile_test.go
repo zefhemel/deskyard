@@ -174,3 +174,16 @@ func TestSavedRefRemotesKeepTheirGPGKey(t *testing.T) {
 		t.Error("remote-saving loop emitted without a .flatpakref")
 	}
 }
+
+func TestContextFilesCarryKeys(t *testing.T) {
+	r := valid()
+	r.Remotes = []Remote{{Name: "myrepo", URL: "https://repo.example.com/repo", GPGKey: "QUJD\nREVG"}, {Name: "other", RepoFile: "https://x.org/a.flatpakrepo"}}
+	files := ContextFiles(r)
+	want := "[Flatpak Repo]\nTitle=myrepo\nUrl=https://repo.example.com/repo\nGPGKey=QUJDREVG\n"
+	if len(files) != 1 || files["remotes/myrepo.flatpakrepo"] != want {
+		t.Errorf("context files: %q", files)
+	}
+	if df := Dockerfile(r, "sha256:abc", true); strings.Contains(df, "QUJDREVG") {
+		t.Errorf("the key is in the Dockerfile:\n%s", df)
+	}
+}

@@ -331,8 +331,11 @@ var walkHereHook func(folder, rel string)
 // walkHere walks the folder through an os.Root, so nothing outside it is
 // ever listed or opened: a running desktop may swap a folder or file for a
 // symlink (to ../.deskyard, say) while the walk runs. Files are opened
-// without following a last symlink and without blocking (a FIFO), and read
-// only if the open file is a regular file.
+// without blocking (a FIFO) and read only if the open file is a regular
+// file. The root refuses every link that leads out of the folder, but
+// follows links that stay inside (it ignores O_NOFOLLOW for those): that
+// only reaches files the desktop could copy anywhere in its folder itself,
+// so it's harmless.
 func walkHere(ctx context.Context, folder string, fn func(rel string, h *tar.Header, content contentFunc) error) error {
 	root, err := os.OpenRoot(folder)
 	if err != nil {
@@ -413,8 +416,9 @@ func walkHere(ctx context.Context, folder string, fn func(rel string, h *tar.Hea
 	})
 }
 
-// isSymlinkErr reports an open refused because the path is (or now leads
-// through) a symlink: O_NOFOLLOW's ELOOP, or the root's escape check.
+// isSymlinkErr reports an open refused because the path leads through a
+// symlink out of the folder (the root's escape check), or O_NOFOLLOW's
+// ELOOP.
 func isSymlinkErr(err error) bool {
 	return errors.Is(err, syscall.ELOOP) || strings.Contains(err.Error(), "path escapes from parent")
 }
@@ -463,17 +467,64 @@ func (s *Server) desktopFlatpaks(ctx context.Context, c desktops.Desktop) deskto
 		}
 		return out
 	}
-	home := os.DirFS(filepath.Join(s.Desktops.Cfg.DataDir, c.Name))
+	root, err := os.OpenRoot(filepath.Join(s.Desktops.Cfg.DataDir, c.Name))
+	if err != nil {
+		out.notes = append(out.notes, "Couldn't read the Flatpak apps of a stopped desktop here: start it to include them.")
+		return out
+	}
+	defer root.Close()
+	home := homeFS{root}
 	if _, err := fs.ReadDir(home, ".local/share/flatpak/app"); errors.Is(err, fs.ErrPermission) {
 		out.notes = append(out.notes, "Couldn't read the Flatpak apps of a stopped desktop here: start it to include them.")
 	}
 	out.apps, out.remotes = recipes.FlatpaksInHome(home)
-	out.key = func(remote string) []byte {
-		if !plain(remote) {
-			return nil
+	// Read now: the root closes on return.
+	keys := map[string][]byte{}
+	for _, rm := range out.remotes {
+		if plain(rm.Name) {
+			keys[rm.Name], _ = fs.ReadFile(home, recipes.FlatpakKeyPath(rm.Name))
 		}
-		b, _ := fs.ReadFile(home, recipes.FlatpakKeyPath(remote))
-		return b
 	}
+	out.key = func(remote string) []byte { return keys[remote] }
 	return out
+}
+
+// homeFS reads a desktop's folder for the supervisor through an os.Root:
+// nothing outside the folder is ever opened, whatever symlinks the desktop
+// planted (links that stay inside are followed, which reaches only what
+// the desktop can read anyway). Files open without blocking (a FIFO), and
+// ReadFile reads only regular files, up to maxHomeFile bytes.
+type homeFS struct{ root *os.Root }
+
+const maxHomeFile = 1 << 20
+
+func (h homeFS) Open(name string) (fs.File, error) {
+	if !fs.ValidPath(name) {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrInvalid}
+	}
+	return h.root.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+}
+
+func (h homeFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	return fs.ReadDir(h.root.FS(), name)
+}
+
+func (h homeFS) ReadFile(name string) ([]byte, error) {
+	f, err := h.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !st.Mode().IsRegular() {
+		return nil, &fs.PathError{Op: "read", Path: name, Err: errNotRegular}
+	}
+	b, err := io.ReadAll(io.LimitReader(f, maxHomeFile+1))
+	if err == nil && len(b) > maxHomeFile {
+		return nil, &fs.PathError{Op: "read", Path: name, Err: errors.New("too large")}
+	}
+	return b, err
 }

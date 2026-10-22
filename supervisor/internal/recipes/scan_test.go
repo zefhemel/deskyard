@@ -258,3 +258,50 @@ func TestParseFlatpakColumns(t *testing.T) {
 		t.Errorf("remotes %+v", rms)
 	}
 }
+
+func TestOtherBrowsers(t *testing.T) {
+	ff := ".mozilla/firefox/ab12cd34.default-release/"
+	cases := []struct {
+		path   string
+		group  string // "" when left out
+		secret string
+	}{
+		{".mozilla/firefox/profiles.ini", GroupBrowser, ""},
+		{".mozilla/firefox/Crash Reports/x", "", ""},
+		{ff + "prefs.js", GroupBrowser, ""},
+		{ff + "extensions/addon@x.xpi", GroupBrowser, ""},
+		{ff + "bookmarkbackups/bookmarks-2026.jsonlz4", GroupBrowser, ""},
+		{ff + "places.sqlite", "", ""}, // history
+		{ff + "cache2/entries/x", "", ""},
+		{ff + "cookies.sqlite", GroupBrowser, ff + "cookies.sqlite"},
+		{ff + "logins.json", GroupBrowser, ff + "logins.json"},
+		{ff + "key4.db", GroupBrowser, ff + "key4.db"},
+		{ff + "sessionstore-backups/recovery.jsonlz4", GroupBrowser, ff + "sessionstore-backups"},
+		{ff + "storage/default/https+++app/idb/x.sqlite", GroupBrowser, ff + "storage"},
+		{ff + "webappsstore.sqlite", GroupBrowser, ff + "webappsstore.sqlite"},
+		{".mozilla/native-messaging-hosts/x.json", GroupDotfiles, ""},
+		{".config/google-chrome/Default/Bookmarks", GroupBrowser, ""},
+		{".config/google-chrome/Default/History", "", ""},
+		{".config/google-chrome/Default/Local Storage/leveldb/1.log", GroupBrowser, ".config/google-chrome/Default/Local Storage"},
+		{".config/google-chrome/Default/Extensions/abc/1/token.js", GroupBrowser, ""},
+		{".config/google-chrome/Local State", "", ""},
+		{".config/BraveSoftware/Brave-Browser/Profile 1/Cookies", GroupBrowser, ".config/BraveSoftware/Brave-Browser/Profile 1/Cookies"},
+		{".config/BraveSoftware/Brave-Browser/Profile 1/Preferences", GroupBrowser, ""},
+		{".config/BraveSoftware/Brave-Browser/Default/IndexedDB/x", GroupBrowser, ".config/BraveSoftware/Brave-Browser/Default/IndexedDB"},
+		{".config/chromium/Default/Login Data", GroupBrowser, ".config/chromium/Default/Login Data"},
+	}
+	for _, c := range cases {
+		g, ok := Classify(c.path)
+		if !ok {
+			g = ""
+		}
+		if g != c.group {
+			t.Errorf("%s: group %q, want %q", c.path, g, c.group)
+		}
+		if ok {
+			if s := SecretOf(c.path); s != c.secret {
+				t.Errorf("%s: secret %q, want %q", c.path, s, c.secret)
+			}
+		}
+	}
+}
