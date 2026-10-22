@@ -77,22 +77,35 @@ def wait_until(f, timeout=15.0, every=0.3):
 
 
 # Where the picture is shown, in page coordinates, and the remote screen's
-# size in pixels: Selkies keeps its canvas buffer at the size it streams and
-# shows the picture in its video element (or a canvas) with the same CSS box.
+# size in pixels: the stream's size (stream_resolution), shown in Selkies'
+# video element (or a canvas) with its CSS box at that aspect ratio.
 PICTURE = """() => {
     const frame = document.querySelector("iframe");
     const w = frame.contentWindow;
     const shown = w.deskyardScreen.video().getBoundingClientRect();
-    const canvas = w.document.getElementById("videoCanvas");
+    const d = w.deskyardScreen.display();
     const f = frame.getBoundingClientRect();
     return {left: f.left + frame.clientLeft + shown.left, top: f.top + frame.clientTop + shown.top,
-            width: shown.width, height: shown.height, remoteWidth: canvas.width, remoteHeight: canvas.height,
+            width: shown.width, height: shown.height, remoteWidth: d.width, remoteHeight: d.height,
             frameWidth: frame.clientWidth, frameHeight: frame.clientHeight};
 }"""
 
 
 def to_page(pic, x, y):
     return (pic["left"] + x * pic["width"] / pic["remoteWidth"], pic["top"] + y * pic["height"] / pic["remoteHeight"])
+
+
+def mouse_location(name) -> tuple[int, int]:
+    out = in_desktop(name, "xdotool", "getmouselocation")
+    x, y = re.search(r"x:(\d+) y:(\d+)", out).groups()
+    return int(x), int(y)
+
+
+def fits(pic) -> bool:
+    """The picture is scaled to fit the frame at the stream's aspect ratio."""
+    return (pic["width"] <= pic["frameWidth"] + 1 and pic["height"] <= pic["frameHeight"] + 1
+            and (abs(pic["width"] - pic["frameWidth"]) <= 1 or abs(pic["height"] - pic["frameHeight"]) <= 1)
+            and abs(pic["width"] / pic["height"] - pic["remoteWidth"] / pic["remoteHeight"]) < 0.01)
 
 
 def test_sign_in_and_see_the_wall(supervisor, desktop, name, tmp_path):
@@ -267,6 +280,138 @@ def test_quality_preset_applies(supervisor, desktop, name, browser_name):
         assert wait_until(lambda: latest().endswith("2000 kbps, 30 fps.")), video_settings_lines(name)[-3:]
         page.get_by_role("button", name="Quality", exact=True).click()
         expect(page.get_by_role("menuitemcheckbox", name=re.compile("^Low"))).to_have_attribute("aria-checked", "true")
+
+        # Lossless, live: full colour restarts the capture, and the stream
+        # climbs to 64 Mbit/s with no reload. Selkies' congestion control
+        # raises the rate as the path proves it (CC_RATE), which takes a
+        # moving picture: a terminal listing files over and over.
+        page.wait_for_function(SHOWING, timeout=30000)
+        page.evaluate(f"""() => {{ const t = document.querySelector('iframe').contentWindow.selkiesTransport;
+            window.__rates = []; t.addEventListener('message', (e) => {{
+                if (typeof e.data === 'string' && e.data.startsWith('CC_RATE ')) window.__rates.push(Number(e.data.slice(8))); }}); }}""")
+        in_desktop(name, "sh", "-c", "setsid xfce4-terminal --maximize -e \"sh -c 'while :; do ls -lR /usr; done'\" >/dev/null 2>&1 &")
+        before = len(video_settings_lines(name))
+        page.get_by_role("menuitemcheckbox", name=re.compile("^Lossless")).click()
+        restarted = lambda: any("Video parameters changed" in line for line in video_settings_lines(name)[before:])  # noqa: E731
+        assert wait_until(restarted), video_settings_lines(name)[before:]
+        rates = lambda: page.evaluate("window.__rates")  # noqa: E731
+        assert wait_until(lambda: any(r >= 0.9 * 64000 for r in rates()), 60, 1), rates()
+        in_desktop(name, "pkill", "-f", "ls -lR", check=False)
+        browser.close()
+
+
+def test_second_viewer(cli, remote, supervisor, name):  # noqa: F811
+    # The first page on a desktop owns its screen: its size, and its quality.
+    # A second page joins beside it, scaled to fit at the stream's size,
+    # however its own window changes, so clicks and marks land right; its
+    # stored choices don't touch the first viewer's.
+    with sync_playwright() as p:
+        browser, a = signed_in(p, supervisor.base)
+        open_desktop(a, supervisor.base, name)
+        a.wait_for_function(f"{SCREEN}.display().owner === true", timeout=15000)
+        a.get_by_role("button", name="Quality", exact=True).click()
+        a.get_by_role("menuitemcheckbox", name=re.compile("^High")).click()
+        size = screen_size(name)
+        time.sleep(1)
+        before = len(video_settings_lines(name))
+
+        ctx = browser.new_context(viewport={"width": 900, "height": 700})
+        ctx.add_init_script("try { localStorage.setItem('deskyard.quality', 'low'); "
+                            "localStorage.setItem('deskyard.lockSize', JSON.stringify({width: 640, height: 480})); } catch {}")
+        b = ctx.new_page()
+        b.goto(supervisor.base + "/login")
+        b.fill("#u", "admin")
+        b.fill("#p", ADMIN_PASSWORD)
+        b.get_by_role("button", name="Sign in").click()
+        b.wait_for_url(lambda u: "/login" not in u)
+        open_desktop(b, supervisor.base, name)
+        b.wait_for_function(f"{SCREEN}.display().owner === false", timeout=15000)
+        time.sleep(2)
+        # The first viewer's screen and quality stay.
+        assert screen_size(name) == size
+        assert video_settings_lines(name)[before:] == []
+        for page in (a, b):
+            page.get_by_role("button", name="Quality", exact=True).click()
+            expect(page.get_by_role("menuitemcheckbox", name=re.compile("^High"))).to_have_attribute("aria-checked", "true")
+            page.keyboard.press("Escape")
+        lock = b.get_by_role("button", name="Lock size", exact=True)
+        expect(lock).to_be_disabled()
+        expect(lock).to_have_attribute("title", re.compile("first viewer sets the screen size"))
+
+        # The second viewer's window changes; the picture still fits, unstretched.
+        b.set_viewport_size({"width": 1000, "height": 650})
+        time.sleep(2)
+        assert screen_size(name) == size
+        pic = b.evaluate(PICTURE)
+        assert (pic["remoteWidth"], pic["remoteHeight"]) == size, pic
+        assert fits(pic), pic
+        # Its pointer lands where it points.
+        b.mouse.move(*to_page(pic, 600, 400))
+        assert wait_until(lambda: all(abs(v - w) <= 4 for v, w in zip(mouse_location(name), (600, 400))), 5), mouse_location(name)
+        # So do the agents' marks.
+        remote("-d", name, "click", "300", "200")
+        mark = b.locator('[data-mark="click"]')
+        expect(mark).to_be_visible(timeout=5000)
+        box = mark.bounding_box()
+        want = to_page(b.evaluate(PICTURE), 300, 200)
+        assert abs(box["x"] + box["width"] / 2 - want[0]) <= 3 and abs(box["y"] + box["height"] / 2 - want[1]) <= 3, (box, want)
+
+        # The first viewer leaves: the second owns the screen now, and its
+        # browser's Lock size (640x480) applies; unlocked, the screen follows its window.
+        a.close()
+        b.wait_for_function(f"{SCREEN}.display().owner === true", timeout=15000)
+        expect(lock).to_be_enabled()
+        expect(lock).to_have_attribute("aria-pressed", "true")
+        assert wait_until(lambda: screen_size(name) == (640, 480)), screen_size(name)
+        lock.click()
+        frame = b.evaluate("[document.querySelector('iframe').clientWidth, document.querySelector('iframe').clientHeight]")
+        follows = lambda: all(abs(v - w) <= 8 for v, w in zip(screen_size(name), frame))  # noqa: E731
+        assert wait_until(follows), (screen_size(name), frame)
+        browser.close()
+
+
+def test_selkies_saved_settings_ignored(supervisor, desktop, name):
+    # Selkies' own saved stream settings and manual size are this page's
+    # business only through our bar: gone at load, so they never apply.
+    prefix = f"http___127.0.0.1_{supervisor.port}_{name}_screen__"
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base)
+        # In every frame before its scripts run, so the client's page has them too.
+        page.add_init_script(f"""try {{ for (const [k, v] of [['manual_resolution', 'true'], ['manual_width', '640'],
+                ['manual_height', '480'], ['video_bitrate', '500'], ['framerate', '10']])
+            localStorage.setItem('{prefix}' + k, v); }} catch {{}}""")
+        open_desktop(page, supervisor.base, name)
+        time.sleep(2)
+        frame = page.evaluate("[document.querySelector('iframe').clientWidth, document.querySelector('iframe').clientHeight]")
+        assert all(abs(v - w) <= 8 for v, w in zip(screen_size(name), frame)), (screen_size(name), frame)
+        assert not (video_settings_lines(name) or [""])[-1].endswith("500 kbps, 10 fps."), video_settings_lines(name)[-2:]
+        # (Selkies saves what it streams with again as it goes.)
+        kept = page.evaluate(f"""() => ['manual_resolution', 'manual_width', 'manual_height', 'video_bitrate', 'framerate']
+            .map(k => localStorage.getItem('{prefix}' + k))""")
+        assert kept[0] != "true" and "640" not in kept and "500" not in kept and "10" not in kept, kept
+        browser.close()
+
+
+def test_pointerrawupdate_hidden(supervisor, desktop, name):
+    # Inside our frame Chrome reports pointerrawupdate's position relative to
+    # the top-level page, off by the bar's height. Our additions hide the
+    # event from Selkies; a synthetic one, offset as Chrome's would be, must
+    # not move the desktop's pointer.
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base)
+        open_desktop(page, supervisor.base, name)
+        pic = page.evaluate(PICTURE)
+        page.mouse.move(*to_page(pic, 400, 300))
+        assert wait_until(lambda: mouse_location(name) == (400, 300), 5), mouse_location(name)
+        bar = page.evaluate("document.querySelector('iframe').getBoundingClientRect().top")
+        assert bar > 30
+        page.frames[1].evaluate("""([x, y]) => {
+            const target = document.getElementById('overlayInput');
+            for (let i = 0; i < 5; i++)
+                target.dispatchEvent(new PointerEvent('pointerrawupdate', {pointerType: 'mouse', clientX: x, clientY: y, bubbles: true}));
+        }""", [400, 300 + bar])
+        time.sleep(1)
+        assert mouse_location(name) == (400, 300)
         browser.close()
 
 

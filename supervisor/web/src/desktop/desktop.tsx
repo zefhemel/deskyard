@@ -20,6 +20,7 @@ import {
   browserSupported,
   type ConnectionState,
   defaultQuality,
+  type Display,
   focusFrame,
   frameSrc,
   isQualityId,
@@ -27,6 +28,7 @@ import {
   lockSize,
   onClipboard,
   qualities,
+  qualityOf,
   type QualityId,
   remoteSize,
   screenOf,
@@ -117,10 +119,14 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [quality, setQuality] = useState(() => stored(QUALITY_KEY, parseQuality, defaultQuality));
   const [locked, setLocked] = useState(() => stored<Size | null>(LOCK_SIZE_KEY, parseSize, null));
+  // Whether this page owns the display (null until known), and the preset the
+  // display streams with (null when unknown or none of ours).
+  const [owner, setOwner] = useState<boolean | null>(null);
+  const [live, setLive] = useState<QualityId | null>(null);
   const running = c.state === "running";
   const supported = browserSupported();
 
-  // What this browser wants, applied each time the stream (re)connects.
+  // What this browser wants: applied when this page owns the display.
   const prefs = useRef({ quality, locked });
   prefs.current = { quality, locked };
 
@@ -141,15 +147,33 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
     }
     const onState = (s: ConnectionState) => {
       setConn(s);
-      if (s !== "connected") return;
-      const { quality, locked } = prefs.current;
-      sendQuality(frame.current, quality);
-      if (locked) lockSize(frame.current, locked);
-      else unlockSize(frame.current);
-      focusFrame(frame.current);
+      if (s === "connected") focusFrame(frame.current);
     };
-    unsubscribe.current = [screen.on("deskyard.state", onState), onClipboard(screen, setRemoteClip)];
+    // What this page has done for the current connection's display.
+    let was: Display = { owner: null, width: 0, height: 0, settings: null };
+    const onDisplay = (d: Display) => {
+      if (d.owner === null) was = d; // a new connection
+      setOwner(d.owner);
+      if (d.settings) setLive(qualityOf(d.settings));
+      const { quality, locked } = prefs.current;
+      if (d.owner && !was.owner) {
+        // The first page on the display: this browser's choices apply. (A
+        // page handed the display later keeps the quality it streams with.)
+        if (was.owner === null) {
+          sendQuality(frame.current, quality);
+          setLive(quality);
+        }
+        if (locked) lockSize(frame.current, locked);
+        else unlockSize(frame.current);
+      } else if (d.owner === false && d.width > 0 && (was.owner !== false || d.width !== was.width || d.height !== was.height)) {
+        // Beside the owner: the picture at the stream's size, scaled to fit.
+        lockSize(frame.current, { width: d.width, height: d.height });
+      }
+      was = d;
+    };
+    unsubscribe.current = [screen.on("deskyard.state", onState), screen.on("deskyard.display", onDisplay), onClipboard(screen, setRemoteClip)];
     onState(screen.state());
+    onDisplay(screen.display());
   }, []);
   useEffect(
     () => () => {
@@ -177,10 +201,12 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
   };
   const chooseQuality = (id: QualityId) => {
     setQuality(id);
+    setLive(id);
     store(QUALITY_KEY, id);
     sendQuality(frame.current, id);
   };
   const toggleLock = () => {
+    if (!owner) return; // the display's owner sets its size
     if (locked) {
       setLocked(null);
       store(LOCK_SIZE_KEY, null);
@@ -216,7 +242,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
         {q.hint && <span class="text-muted">, {q.hint}</span>}
       </>
     ),
-    checked: q.id === quality,
+    checked: q.id === live,
     onSelect: () => chooseQuality(q.id),
   }));
   const phoneOnly = "sm:hidden";
@@ -233,11 +259,11 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
     // On a phone the bar has no room for these.
     ...(showing
       ? [
-          { label: "Lock size", checked: locked !== null, onSelect: toggleLock, separated: true, class: phoneOnly },
-          ...keyItems.map((k, i) => ({ ...k, label: <>Send {k.label}</>, separated: i === 0, class: phoneOnly })),
+          ...(owner ? [{ label: "Lock size", checked: locked !== null, onSelect: toggleLock, separated: true, class: phoneOnly }] : []),
+          ...keyItems.map((k, i) => ({ ...k, label: <>Send {k.label}</>, separated: i === 0 && !owner, class: phoneOnly })),
           ...qualities.map((q, i) => ({
             label: `Quality: ${q.label}`,
-            checked: q.id === quality,
+            checked: q.id === live,
             onSelect: () => chooseQuality(q.id),
             separated: i === 0,
             class: phoneOnly,
@@ -299,13 +325,18 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
               </button>
               <button
                 type="button"
-                aria-pressed={locked !== null}
-                title="Keep the desktop's screen size and scale it to fit"
-                class={cx(barButton, "max-sm:hidden", locked && pressed)}
+                aria-pressed={owner === true && locked !== null}
+                disabled={owner !== true}
+                title={
+                  owner === false
+                    ? "The first viewer sets the screen size; yours is scaled to fit"
+                    : "Keep the desktop's screen size and scale it to fit"
+                }
+                class={cx(barButton, "max-sm:hidden disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent", owner && locked && pressed)}
                 onClick={toggleLock}
               >
                 <span aria-hidden="true" class="text-[12px]">
-                  {locked ? "☑" : "☐"}
+                  {owner && locked ? "☑" : "☐"}
                 </span>
                 Lock size
               </button>

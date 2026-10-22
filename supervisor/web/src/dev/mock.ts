@@ -159,19 +159,28 @@ function fakeScreen(name: string): string {
 const log = (t) => (document.getElementById("log").textContent = t);
 let state = "connecting";
 const listeners = new Set();
+const displayListeners = new Set();
+let display = { owner: null, width: 0, height: 0, settings: null };
 window.deskyardScreen = {
   tab: "devtab",
   post(msg) { log(JSON.stringify(msg)); },
   on(type, fn) {
     if (type === "deskyard.state") { listeners.add(fn); return () => listeners.delete(fn); }
+    if (type === "deskyard.display") { displayListeners.add(fn); return () => displayListeners.delete(fn); }
     const l = (e) => e.data && e.data.type === type && fn(e.data);
     addEventListener("message", l);
     return () => removeEventListener("message", l);
   },
   state: () => state,
+  display: () => display,
   video: () => document.getElementById("videoStream"),
 };
-setTimeout(() => { state = "connected"; for (const fn of listeners) fn(state); }, 600);
+setTimeout(() => {
+  state = "connected";
+  for (const fn of listeners) fn(state);
+  display = { owner: true, width: 1280, height: 800, settings: null };
+  for (const fn of displayListeners) fn(display);
+}, 600);
 setTimeout(() => postMessage({ type: "clipboardContentUpdate", text: "https://github.com/zefhemel/deskyard/pull/42" }, location.origin), 1500);
 </script></body></html>`;
 }

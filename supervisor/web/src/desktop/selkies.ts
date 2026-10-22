@@ -20,28 +20,51 @@
  *   scaled to fit the frame. {type: "resetResolutionToWindow"} undoes it.
  *   `window.manual_resolution` in the frame tells which mode it is in.
  *
+ * The display has an owner, the first page to connect: it sets the screen's
+ * size and its stream settings stick. Later pages join beside it: their
+ * window size is ignored, so Selkies' client would size its canvas to a
+ * window the stream doesn't have (a stretched picture, clicks off target).
+ * A page beside the owner is therefore kept scaled to fit at the stream's
+ * size, and applies this browser's Quality only when its user picks one.
+ * `display()` (from our additions) says which this page is, the stream's
+ * size and the display's settings; "deskyard.display" on `on` gets changes.
+ *
  * From the client (`on`), posted on the frame's own window:
  * - {type: "clipboardContentUpdate", text}: the desktop's clipboard changed
  *   (also once after connecting).
  * - "deskyard.state" (from our additions): the stream's state on each change.
  *   Selkies itself posts no connection event.
  *
- * The client keeps its canvas (#videoCanvas) buffer at the size it streams,
- * in remote pixels, and shows the picture in a video element or a canvas
- * (`video()`) with the same CSS box: no letterboxing inside the element, and
- * Lock size's scale-to-fit is that box's size and position.
+ * The client shows the picture in a video element or a canvas (`video()`)
+ * with a CSS box at the stream's aspect ratio when scaled to fit, filled
+ * (`object-fit: fill`): Lock size's scale-to-fit is that box. The remote
+ * size is the stream's (stream_resolution); the canvas buffer, which follows
+ * the page's own window, is only a fallback before the stream says.
  */
 import type { ScreenGeometry } from "./screen-geometry.ts";
 
 export type ConnectionState = "connecting" | "connected" | "disconnected";
+
+/** The display, as the frame's connection knows it. */
+export interface Display {
+  /** Whether this page owns the display; null until the server has said. */
+  owner: boolean | null;
+  /** The size the display streams at; 0 until known. */
+  width: number;
+  height: number;
+  /** The stream settings the display runs with, when the server has told this page. */
+  settings: Record<string, unknown> | null;
+}
 
 /** What our additions put on the frame's window. */
 export interface DeskyardScreen {
   tab: string;
   post(msg: object): void;
   on(type: "deskyard.state", fn: (state: ConnectionState) => void): () => void;
+  on(type: "deskyard.display", fn: (display: Display) => void): () => void;
   on(type: string, fn: (data: Record<string, unknown>) => void): () => void;
   state(): ConnectionState;
+  display(): Display;
   video(): HTMLVideoElement | HTMLCanvasElement | null;
 }
 
@@ -108,6 +131,19 @@ export function isQualityId(v: unknown): v is QualityId {
   return qualities.some((q) => q.id === v);
 }
 
+/** The preset a display's stream settings match, if any. */
+export function qualityOf(settings: Record<string, unknown>): QualityId | null {
+  const q = qualities.find(
+    (q) =>
+      Number(settings.video_bitrate) === q.bitrate &&
+      Number(settings.framerate) === q.framerate &&
+      String(settings.encoder) === q.encoder &&
+      Boolean(settings.video_fullcolor) === q.fullcolor &&
+      (settings.rate_control_mode === undefined || settings.rate_control_mode === "cbr"),
+  );
+  return q?.id ?? null;
+}
+
 export function sendQuality(frame: HTMLIFrameElement | null, id: QualityId): void {
   const q = qualities.find((x) => x.id === id);
   if (!q) return;
@@ -122,8 +158,10 @@ export interface Size {
   height: number;
 }
 
-/** The size the frame's client streams at, in remote pixels; null before it knows. */
+/** The size the display streams at, in remote pixels; null before it's known. */
 export function remoteSize(frame: HTMLIFrameElement | null): Size | null {
+  const d = screenOf(frame)?.display();
+  if (d && d.width > 0 && d.height > 0) return { width: d.width, height: d.height };
   try {
     // The frame's own HTMLCanvasElement, so no instanceof across the realms.
     const canvas = frameWindow(frame)?.document.getElementById("videoCanvas") as HTMLCanvasElement | null | undefined;
@@ -133,7 +171,10 @@ export function remoteSize(frame: HTMLIFrameElement | null): Size | null {
   }
 }
 
-/** Lock size: the remote screen stays at size and is scaled to fit the frame. */
+/**
+ * Lock size: the remote screen stays at size and is scaled to fit the frame.
+ * Also how a page beside the owner shows the stream, at the stream's size.
+ */
 export function lockSize(frame: HTMLIFrameElement | null, size: Size): void {
   const s = screenOf(frame);
   s?.post({ type: "setScaleLocally", value: true });
