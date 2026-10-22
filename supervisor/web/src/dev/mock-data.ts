@@ -86,7 +86,13 @@ export const homeScan: ImageScan = {
     { name: "flatpak", bytes: 48 * 1024 ** 2, paths: [".var"], secrets: [] },
     { name: "settings", bytes: 22 * 1024 ** 2, paths: [".config/Code", ".config/gh", ".config/xfce4"], secrets: [".config/gh/hosts.yml"] },
     { name: "dotfiles", bytes: 41 * 1024, paths: [".bashrc", ".codex", ".gitconfig", ".profile", ".vimrc"], secrets: [".bash_history", ".codex/auth.json", ".ssh"] },
-    { name: "browser", bytes: 310 * 1024 ** 2, paths: [".config/chromium-shared"], secrets: [".config/chromium-shared/Default/Cookies", ".config/chromium-shared/Default/Login Data"] },
+    { name: "browser", bytes: 310 * 1024 ** 2, paths: [".config/chromium-shared"], secrets: [
+        ".config/chromium-shared/Default/Cookies",
+        ".config/chromium-shared/Default/IndexedDB",
+        ".config/chromium-shared/Default/Local Extension Settings",
+        ".config/chromium-shared/Default/Local Storage",
+        ".config/chromium-shared/Default/Login Data",
+      ] },
     { name: "other", bytes: 6.4 * GB, paths: ["Downloads", "Notes", "projects"], secrets: ["projects/api/.env"] },
   ],
   flatpaks: [

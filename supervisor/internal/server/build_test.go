@@ -41,6 +41,7 @@ type buildEngine struct {
 	builds     []engine.BuildSpec
 	dockerfile string
 	context    map[string]string // the last build context: name → content ("<dir>", "-> target")
+	modes      map[string]int64  // the last build context: name → mode
 	folderTar  []byte            // what a folder-reading helper container streams
 	n          int
 
@@ -98,13 +99,14 @@ func (e *buildEngine) Pull(_ context.Context, ref string, _ func(engine.PullProg
 func (e *buildEngine) Build(ctx context.Context, spec engine.BuildSpec, log func(string)) (string, error) {
 	tr := tar.NewReader(spec.Context)
 	var df []byte
-	files := map[string]string{}
+	files, modes := map[string]string{}, map[string]int64{}
 	for {
 		h, err := tr.Next()
 		if err != nil {
 			break
 		}
 		b, _ := io.ReadAll(tr)
+		modes[h.Name] = h.Mode
 		switch h.Typeflag {
 		case tar.TypeDir:
 			files[h.Name] = "<dir>"
@@ -120,7 +122,7 @@ func (e *buildEngine) Build(ctx context.Context, spec engine.BuildSpec, log func
 	e.mu.Lock()
 	e.builds = append(e.builds, spec)
 	e.dockerfile = string(df)
-	e.context = files
+	e.context, e.modes = files, modes
 	fn := e.buildFn
 	e.mu.Unlock()
 	if fn != nil {
@@ -438,10 +440,22 @@ func TestBuildFlowTagsAndCatalog(t *testing.T) {
 	bt.e.pullErr = nil
 
 	// Secrets, the rule for slugs, and a base outside the catalog.
+	// The client can't say whether an image has secrets: a new recipe takes
+	// it from its base, and an edit can't drop it.
 	sec := tools("sec", "img")
-	sec.Secrets = true
-	if st := bt.build(sec); st.Status != "done" || !bt.catalog()["deskyard-custom/sec:latest"].Secrets {
-		t.Errorf("secrets: %+v", st)
+	sec.Secrets, sec.HomeFrom = true, recipes.HomeFromImage
+	if st := bt.build(sec); st.Status != "done" || bt.catalog()["deskyard-custom/sec:latest"].Secrets {
+		t.Errorf("secrets from the client: %+v", st)
+	}
+	if got, _ := bt.s.recipes.Get("sec"); got.Secrets || got.HomeFrom != "" {
+		t.Errorf("saved recipe: %+v", got)
+	}
+	marked, _ := bt.s.recipes.Get("sec")
+	marked.Secrets = true
+	_ = bt.s.recipes.Put(marked)
+	edit := tools("sec", "img")
+	if st := bt.wait(bt.start("PUT", "/api/recipes/sec", edit)); st.Status != "done" || !bt.catalog()["deskyard-custom/sec:latest"].Secrets {
+		t.Errorf("an edit dropped secrets: %+v", st)
 	}
 	if code, _ := bt.do(bt.admin, "POST", "/api/recipes", tools("Bad", "img")); code != 400 {
 		t.Errorf("bad slug: %d", code)

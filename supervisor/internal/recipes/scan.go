@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -52,6 +53,34 @@ var browserCaches = map[string]bool{
 	"CacheStorage": true, "ScriptCache": true, "component_crx_cache": true,
 }
 
+// The browser profile is copied from an allow-list: in each profile folder,
+// what isn't a sign-in (browserKeep), and the sign-ins (browserSignIns in
+// secrets.go), which are secrets. Everything else (history, caches, the
+// profile's top-level state) is left out.
+var (
+	profileDirRE = regexp.MustCompile(`^(Default|Profile [0-9]+)$`)
+	browserKeep  = map[string]bool{
+		"Bookmarks": true, "Bookmarks.bak": true, "Preferences": true, "Secure Preferences": true,
+		"Extensions": true, "Custom Dictionary.txt": true, "Favicons": true, "Favicons-journal": true,
+	}
+)
+
+// browserKept reports whether a path under the profile (split in parts) may
+// be copied: the profile folder, its profile folders, and their allowed and
+// sign-in entries.
+func browserKept(parts []string) bool {
+	switch {
+	case len(parts) == 2:
+		return true
+	case !profileDirRE.MatchString(parts[2]):
+		return false
+	case len(parts) == 3:
+		return true
+	default:
+		return browserKeep[parts[3]] || browserSignIns[parts[3]]
+	}
+}
+
 // Classify gives the group of p (relative to the home folder), or false when
 // p is always left out.
 func Classify(p string) (group string, ok bool) {
@@ -76,6 +105,9 @@ func classify(p string) (group, root string, ok bool) {
 		return "", "", false
 	}
 	if under(p, browserProfile) {
+		if !browserKept(parts) {
+			return "", "", false
+		}
 		for _, part := range parts[2:] {
 			if browserCaches[part] {
 				return "", "", false

@@ -69,6 +69,22 @@ var secretNames = map[string]bool{
 	".histfile": true, ".zhistory": true, ".lesshst": true, "fish_history": true,
 }
 
+// browserSignIns are the entries of a Chromium profile folder that hold
+// sign-ins: cookies, saved logins and card data, web apps' storage (where
+// many keep their tokens), and extensions' storage (password managers and
+// other extensions keep their sessions there). Each is one secret.
+var browserSignIns = map[string]bool{
+	"Cookies": true, "Cookies-journal": true, "Network": true,
+	"Login Data": true, "Login Data-journal": true, "Login Data For Account": true, "Login Data For Account-journal": true,
+	"Web Data": true, "Web Data-journal": true, "Account Web Data": true, "Account Web Data-journal": true,
+	"Local Storage": true, "Session Storage": true, "IndexedDB": true, "WebStorage": true, "Storage": true,
+	"databases": true, "File System": true, "Shared Storage": true, "Service Worker": true,
+	"Trust Tokens": true, "Trust Tokens-journal": true, "Sessions": true, "Sync Data": true,
+	"Extension Cookies": true, "Extension Cookies-journal": true, "Local Extension Settings": true,
+	"Sync Extension Settings": true, "Managed Extension Settings": true, "Extension State": true,
+	"Extension Rules": true, "Extension Scripts": true,
+}
+
 var (
 	// Shell and REPL history: .bash_history, .python_history, …
 	historyRE = regexp.MustCompile(`^\..+_history$`)
@@ -98,6 +114,9 @@ func SecretOf(p string) string {
 		}
 	}
 	parts := strings.Split(p, "/")
+	if under(p, browserProfile) && len(parts) >= 4 && profileDirRE.MatchString(parts[2]) && browserSignIns[parts[3]] {
+		return strings.Join(parts[:4], "/")
+	}
 	for i, name := range parts {
 		if name == "node_modules" || name == "site-packages" || name == ".git" ||
 			(name == "Extensions" && under(p, browserProfile)) {

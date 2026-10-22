@@ -3,6 +3,7 @@ import { useEffect, useState } from "preact/hooks";
 import { api, type NameCheck } from "../api.ts";
 import { AccessPicks, cpuOptions, ImagePick, memoryOptions } from "../components/desktop-fields.tsx";
 import { JobProgress, useJob } from "../components/job.tsx";
+import { SecretAccessDialog } from "../components/secret-access.tsx";
 import { Button, Dialog, ErrorText, Field, Seg } from "../components/ui.tsx";
 import { useLive } from "../live.tsx";
 import { useFetch } from "../lib/use-fetch.ts";
@@ -28,6 +29,7 @@ export function NewDesktopDialog({ onClose }: { onClose: () => void }) {
   const [memory, setMemory] = useState(0);
   const [cpus, setCpus] = useState(0);
   const [access, setAccess] = useState<string[]>([]);
+  const [confirming, setConfirming] = useState(false);
   const run = useJob(() => onClose());
 
   // Default to the catalog's first image.
@@ -60,7 +62,11 @@ export function NewDesktopDialog({ onClose }: { onClose: () => void }) {
   } else if (check && !check.ok) {
     hint = <span class="text-danger">{check.error ?? "This name can't be used."}</span>;
   } else if (check?.ok) {
-    const folder = folderFor(name, check, (desktops ?? []).map((c) => c.folder));
+    const folder = folderFor(
+      name,
+      check,
+      (desktops ?? []).map((c) => c.folder),
+    );
     hintOk = true;
     hint = (
       <>
@@ -77,53 +83,70 @@ export function NewDesktopDialog({ onClose }: { onClose: () => void }) {
   }
 
   const ready = check?.ok === true && !!image && !run.running;
+  const picked = images.data?.find((i) => i.ref === image);
+  const create = () => {
+    setConfirming(false);
+    void run.start(() => api.createDesktop({ name, image, memoryBytes: memory, nanoCpus: cpus, access }));
+  };
   const submit = () => {
     if (!ready) return;
-    void run.start(() => api.createDesktop({ name, image, memoryBytes: memory, nanoCpus: cpus, access }));
+    // Others given access to a desktop on an image with secrets: ask first.
+    if (picked?.secrets && access.length) setConfirming(true);
+    else create();
   };
 
   return (
-    <Dialog
-      title="New desktop"
-      onClose={onClose}
-      onSubmit={submit}
-      footer={
-        <>
-          <Button variant="quiet" onClick={onClose}>
-            {run.running ? "Close" : "Cancel"}
-          </Button>
-          <Button type="submit" variant="primary" disabled={!ready}>
-            {run.running ? "Creating…" : "Create desktop"}
-          </Button>
-        </>
-      }
-    >
-      <fieldset disabled={run.running} class="m-0 min-w-0 border-0 p-0">
-        <Field label="Name" htmlFor="nc-name" hint={hint} hintOk={hintOk}>
-          <input
-            id="nc-name"
-            type="text"
-            autocomplete="off"
-            spellcheck={false}
-            value={name}
-            onInput={(e) => setName(e.currentTarget.value.toLowerCase())}
-          />
-        </Field>
-        <Field label="Image">
-          {images.data ? <ImagePick images={images.data} value={image} onChange={setImage} /> : <ErrorText error={images.error} />}
-        </Field>
-        <Field label="Memory">
-          <Seg label="Memory" options={memoryOptions(memory)} value={memory} onChange={setMemory} />
-        </Field>
-        <Field label="CPUs">
-          <Seg label="CPUs" options={cpuOptions(cpus)} value={cpus} onChange={setCpus} />
-        </Field>
-        <Field label="Who can use it">
-          {accounts.data ? <AccessPicks accounts={accounts.data} value={access} onChange={setAccess} /> : <ErrorText error={accounts.error} />}
-        </Field>
-      </fieldset>
-      <JobProgress job={run.job} />
-      <ErrorText error={run.error} />
-    </Dialog>
+    <>
+      <Dialog
+        title="New desktop"
+        onClose={onClose}
+        onSubmit={submit}
+        footer={
+          <>
+            <Button variant="quiet" onClick={onClose}>
+              {run.running ? "Close" : "Cancel"}
+            </Button>
+            <Button type="submit" variant="primary" disabled={!ready}>
+              {run.running ? "Creating…" : "Create desktop"}
+            </Button>
+          </>
+        }
+      >
+        <fieldset disabled={run.running} class="m-0 min-w-0 border-0 p-0">
+          <Field label="Name" htmlFor="nc-name" hint={hint} hintOk={hintOk}>
+            <input
+              id="nc-name"
+              type="text"
+              autocomplete="off"
+              spellcheck={false}
+              value={name}
+              onInput={(e) => setName(e.currentTarget.value.toLowerCase())}
+            />
+          </Field>
+          <Field label="Image">
+            {images.data ? <ImagePick images={images.data} value={image} onChange={setImage} /> : <ErrorText error={images.error} />}
+          </Field>
+          <Field label="Memory">
+            <Seg label="Memory" options={memoryOptions(memory)} value={memory} onChange={setMemory} />
+          </Field>
+          <Field label="CPUs">
+            <Seg label="CPUs" options={cpuOptions(cpus)} value={cpus} onChange={setCpus} />
+          </Field>
+          <Field label="Who can use it">
+            {accounts.data ? <AccessPicks accounts={accounts.data} value={access} onChange={setAccess} /> : <ErrorText error={accounts.error} />}
+          </Field>
+        </fieldset>
+        <JobProgress job={run.job} />
+        <ErrorText error={run.error} />
+      </Dialog>
+      {confirming && picked && (
+        <SecretAccessDialog
+          who={access}
+          desktops={[{ name, image: picked.title || picked.ref }]}
+          onCancel={() => setConfirming(false)}
+          onConfirm={create}
+        />
+      )}
+    </>
   );
 }

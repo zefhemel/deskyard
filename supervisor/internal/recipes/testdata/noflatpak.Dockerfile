@@ -9,8 +9,7 @@ RUN set -eux; curl -fsSL -o '/etc/deskyard/flatpak-remotes/gnome-nightly.flatpak
 RUN set -eux; printf '[Flatpak Repo]\nTitle=%s\nUrl=%s\nGPGKey=%s\n' 'myrepo' 'https://repo.example.com/repo' 'QUJDREVG' > '/etc/deskyard/flatpak-remotes/myrepo.flatpakrepo'; /usr/bin/flatpak.real --system remote-add --if-not-exists 'myrepo' '/etc/deskyard/flatpak-remotes/myrepo.flatpakrepo'
 
 # Starting home for new desktops
-COPY home-template/ /opt/deskyard/home-template/
-RUN chown -R 1000:1000 /opt/deskyard/home-template
+COPY --chown=1000:1000 home-template/ /opt/deskyard/home-template/
 
 # Build commands (base64 keeps them out of the Dockerfile's own syntax)
 RUN set -eux; printf %s 'YXB0LWdldCB1cGRhdGUKYXB0LWdldCBpbnN0YWxsIC15IHJpcGdyZXA=' | base64 -d > /tmp/deskyard-commands.sh; bash -eux /tmp/deskyard-commands.sh; rm -f /tmp/deskyard-commands.sh

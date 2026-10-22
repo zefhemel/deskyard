@@ -2,8 +2,8 @@ import { useEffect, useState } from "preact/hooks";
 import { api, type Desktop } from "../../api.ts";
 import { AccessPicks } from "../../components/desktop-fields.tsx";
 import { notify } from "../../components/toast.tsx";
-import { Button, Dialog, ErrorText, errorMessage, LockBadge } from "../../components/ui.tsx";
-import { names } from "../../lib/format.ts";
+import { SecretAccessDialog } from "../../components/secret-access.tsx";
+import { Button, ErrorText, errorMessage } from "../../components/ui.tsx";
 import { useFetch } from "../../lib/use-fetch.ts";
 
 const same = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
@@ -43,7 +43,9 @@ export function AccessTab({ desktop: c }: { desktop: Desktop }) {
   const removed = saved.filter((u) => !value.includes(u));
   return (
     <div class="max-w-[620px] px-5 py-5">
-      <p class="mt-0 mb-3.5 text-sm text-muted">Who can open {c.name}, start and stop it, and give agents tokens for it. Changing this doesn't restart anything.</p>
+      <p class="mt-0 mb-3.5 text-sm text-muted">
+        Who can open {c.name}, start and stop it, and give agents tokens for it. Changing this doesn't restart anything.
+      </p>
       {accounts.data ? <AccessPicks accounts={accounts.data} value={value} onChange={setValue} /> : <ErrorText error={accounts.error} />}
       {removed.length > 0 && (
         <p class="mt-1.5 mb-0 text-[13px] text-muted">
@@ -57,26 +59,11 @@ export function AccessTab({ desktop: c }: { desktop: Desktop }) {
         </Button>
       </div>
       {confirming && (
-        <Dialog
-          title={`Give ${names(added)} access to ${c.name}?`}
-          intro={
-            <>
-              {c.name} runs on <b class="font-semibold">{c.imageTitle || c.image}</b> <LockBadge />, an image that contains secrets: desktops made from it
-              start signed in as whoever made it. {names(added)} can use those sign-ins.
-            </>
-          }
-          onClose={() => setConfirming(false)}
-          onSubmit={() => void save()}
-          footer={
-            <>
-              <Button variant="quiet" onClick={() => setConfirming(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" variant="danger">
-                Give access
-              </Button>
-            </>
-          }
+        <SecretAccessDialog
+          who={added}
+          desktops={[{ name: c.name, image: c.imageTitle || c.image }]}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => void save()}
         />
       )}
     </div>

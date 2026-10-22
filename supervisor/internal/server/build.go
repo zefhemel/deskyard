@@ -35,6 +35,10 @@ const (
 	homeTemplate = "/opt/deskyard/home-template"
 )
 
+// buildsDir (in StateDir) holds the build contexts of running builds; it is
+// emptied at startup.
+const buildsDir = "builds"
+
 // buildTimeout limits a whole build, checks included (tests shorten it).
 var buildTimeout = 30 * time.Minute
 
@@ -106,6 +110,10 @@ func (s *Server) handleCreateRecipe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
+	// Only images made from a desktop have a home template; whether an
+	// image has secrets is never the client's to say.
+	rec.HomeFrom = ""
+	rec.Secrets = s.hasSecrets(r.Context(), rec.Base)
 	if !s.checkRecipe(w, rec) {
 		return
 	}
@@ -134,10 +142,15 @@ func (s *Server) handleUpdateRecipe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "the slug can't change")
 		return
 	}
-	if _, err := s.recipes.Get(slug); err != nil {
+	old, err := s.recipes.Get(slug)
+	if err != nil {
 		writeError(w, http.StatusNotFound, "no such recipe")
 		return
 	}
+	// The home template and its secrets stay as they were (the template is
+	// copied out of the current image); a base with secrets adds them.
+	rec.HomeFrom = old.HomeFrom
+	rec.Secrets = old.Secrets || s.hasSecrets(r.Context(), rec.Base)
 	if !s.checkRecipe(w, rec) {
 		return
 	}
@@ -192,6 +205,12 @@ func (s *Server) checkRecipe(w http.ResponseWriter, rec recipes.Recipe) bool {
 		ref = parent.Base
 	}
 	return true
+}
+
+// hasSecrets reports whether the image ref is marked as containing secrets.
+func (s *Server) hasSecrets(ctx context.Context, ref string) bool {
+	img, err := s.Eng.ImageInspect(ctx, ref)
+	return err == nil && img.Labels[labelSecrets] == "true"
 }
 
 // startBuild runs a build job for rec (saving rec first when save is set)
@@ -288,6 +307,8 @@ type buildOptions struct {
 	// Without it, a recipe with HomeFrom "image" takes the template from its
 	// current image.
 	home func(ctx context.Context, tw *tar.Writer) error
+	// after, when set, runs once the image is built, tagged and in the catalog.
+	after func(log func(string))
 }
 
 var imageUserRE = regexp.MustCompile(`^[A-Za-z0-9._-]+(:[A-Za-z0-9._-]+)?$`)
@@ -439,6 +460,9 @@ func (s *Server) build(ctx context.Context, rec recipes.Recipe, opts buildOption
 
 	// 9. Older builds that no container uses.
 	s.pruneBuilds(context.WithoutCancel(ctx), repo, id)
+	if opts.after != nil {
+		opts.after(log)
+	}
 	return nil
 }
 
@@ -446,7 +470,7 @@ func (s *Server) build(ctx context.Context, rec recipes.Recipe, opts buildOption
 // file (a home template can be large), positioned at its start. The caller
 // closes and removes it.
 func (s *Server) buildContext(ctx context.Context, rec recipes.Recipe, dockerfile string, opts buildOptions) (f *os.File, err error) {
-	dir := filepath.Join(s.StateDir, "builds")
+	dir := filepath.Join(s.StateDir, buildsDir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}

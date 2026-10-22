@@ -270,6 +270,63 @@ def test_access_to_secret_image_asks_first(mock_ui):
         browser.close()
 
 
+def test_new_desktop_on_secret_image_asks_first(mock_ui):
+    with sync_playwright() as p:
+        browser, page = mock_page(p, mock_ui, "/")
+        page.get_by_role("button", name="New desktop").first.click()
+        dialog = page.get_by_role("dialog")
+        dialog.locator("#nc-name").fill("signed-in")
+        expect(dialog.get_by_text("Its desktop will be at", exact=False)).to_be_visible()
+        dialog.get_by_role("radio", name="Work, signed in", exact=False).check()
+        dialog.get_by_role("checkbox", name="anna").check()
+        posts = []
+        page.on("request", lambda r: posts.append(r) if r.method == "POST" and r.url.endswith("/api/desktops") else None)
+        dialog.get_by_role("button", name="Create desktop").click()
+        confirm = page.get_by_role("dialog").filter(has_text="Give anna access to signed-in?")
+        expect(confirm).to_be_visible()
+        expect(confirm.get_by_text("Work, signed in")).to_be_visible()
+        confirm.get_by_role("button", name="Cancel").click()
+        expect(confirm).to_have_count(0)
+        assert posts == []
+        dialog.get_by_role("button", name="Create desktop").click()
+        with page.expect_request(lambda r: r.method == "POST" and r.url.endswith("/api/desktops")) as sent:
+            page.get_by_role("dialog").filter(has_text="Give anna access").get_by_role("button", name="Give access").click()
+        assert json.loads(sent.value.post_data)["access"] == ["anna"]
+        browser.close()
+
+
+def test_account_given_secret_desktop_asks_first(mock_ui):
+    with sync_playwright() as p:
+        browser, page = mock_page(p, mock_ui, "/accounts")
+        page.get_by_role("row").filter(has_text="ci").get_by_role("button", name="Edit").click()
+        dialog = page.get_by_role("dialog")
+        dialog.get_by_role("checkbox", name="work").check()
+        dialog.get_by_role("button", name="Save").click()
+        confirm = page.get_by_role("dialog").filter(has_text="Give ci access to work?")
+        expect(confirm).to_be_visible()
+        with page.expect_request(lambda r: r.method == "PATCH" and r.url.endswith("/api/accounts/ci")) as sent:
+            confirm.get_by_role("button", name="Give access").click()
+        assert json.loads(sent.value.post_data)["desktops"] == ["work"]
+        browser.close()
+
+
+def test_image_from_desktop_saves_a_recipe_on_top(mock_ui):
+    with sync_playwright() as p:
+        browser, page = mock_page(p, mock_ui, "/desktops/research")
+        page.get_by_role("button", name="More actions").click()
+        page.get_by_role("menuitem", name="New image from this desktop…").click()
+        dialog = page.get_by_role("dialog")
+        expect(dialog.get_by_role("checkbox", name="App settings")).to_be_checked(timeout=10000)
+        dialog.get_by_role("checkbox", name="Also save a recipe on the new image").check()
+        expect(dialog.get_by_text("deskyard-custom/research-image-tools:latest")).to_be_visible()
+        with page.expect_request(lambda r: r.method == "POST" and r.url.endswith("/api/desktops/research/image")) as sent:
+            dialog.get_by_role("button", name="Build", exact=True).click()
+        assert json.loads(sent.value.post_data)["recipe"] == {"slug": "research-image-tools", "name": "research image tools"}
+        page.goto(mock_ui + "/images")
+        expect(page.get_by_role("row").filter(has_text="research image tools").get_by_role("button", name="Edit and build")).to_be_visible()
+        browser.close()
+
+
 def test_forwards_shown(cli, remote, forwards, supervisor, name):  # noqa: F811
     p = free_port()
     f = forwards(cli, remote, str(p))

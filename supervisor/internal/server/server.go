@@ -69,6 +69,10 @@ func New(o Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Build contexts a crash left behind hold copies of home folders.
+	if err := os.RemoveAll(filepath.Join(o.StateDir, buildsDir)); err != nil {
+		o.Log.Warn("removing old build contexts", "err", err)
+	}
 	s := &Server{
 		Log: o.Log, Eng: o.Eng, Desktops: o.Desktops, Accounts: o.Accounts,
 		Sessions: &auth.Sessions{Key: key, Secure: o.Secure}, Throttle: &auth.Throttle{},

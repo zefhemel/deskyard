@@ -58,8 +58,9 @@ func Dockerfile(r Recipe, baseID string, flatpakInBuild bool) string {
 	if r.HomeFrom == HomeFromImage {
 		line("")
 		line("# Starting home for new desktops")
-		line("COPY home-template/ /opt/deskyard/home-template/")
-		line("RUN chown -R 1000:1000 /opt/deskyard/home-template")
+		// Owned by the user as it is copied: no root step runs over the
+		// desktop-supplied tree.
+		line("COPY --chown=1000:1000 home-template/ /opt/deskyard/home-template/")
 	}
 
 	if strings.TrimSpace(r.Commands) != "" {

@@ -549,7 +549,7 @@ func (s *Service) ensureHelper(ctx context.Context) error {
 // FolderTar streams a desktop's folder as a tar archive (names relative to
 // the folder, starting with "./"), read in a helper container of alpine as
 // root, for when the supervisor can't read the files itself. The folder is
-// mounted read-only. Close removes the helper, and reports a failed or
+// mounted read-only, and the helper has no network. Close removes the helper, and reports a failed or
 // incomplete read.
 func (s *Service) FolderTar(ctx context.Context, name string) (io.ReadCloser, error) {
 	folder := filepath.Join(s.Cfg.DataDir, name)
@@ -561,7 +561,7 @@ func (s *Service) FolderTar(ctx context.Context, name string) (io.ReadCloser, er
 	}
 	hname := "deskyard-read-" + randomHex(4)
 	if _, err := s.Eng.Create(ctx, engine.ContainerSpec{
-		Name: hname, Image: helperImage, Cmd: []string{"sleep", "86400"},
+		Name: hname, Image: helperImage, Cmd: []string{"sleep", "86400"}, Network: "none",
 		Mounts: []engine.Mount{{Source: folder, Target: "/home-src", ReadOnly: true}},
 	}); err != nil {
 		return nil, err

@@ -32,11 +32,20 @@ func home() fstest.MapFS {
 		".config/gh/config.yml":            file(4),
 		".config/workspace/panel-migrated": file(1), // Deskyard's own marker
 		// browser
-		".config/chromium-shared/Default/Bookmarks":           file(50),
-		".config/chromium-shared/Default/Cookies":             file(60),
-		".config/chromium-shared/Default/Login Data":          file(70),
-		".config/chromium-shared/Default/Cache/Cache_Data/f1": file(8000),
-		".config/chromium-shared/SingletonLock":               file(1),
+		".config/chromium-shared/Default/Bookmarks":                            file(50),
+		".config/chromium-shared/Default/Cookies":                              file(60),
+		".config/chromium-shared/Default/Login Data":                           file(70),
+		".config/chromium-shared/Default/Cache/Cache_Data/f1":                  file(8000),
+		".config/chromium-shared/SingletonLock":                                file(1),
+		".config/chromium-shared/Local State":                                  file(3),
+		".config/chromium-shared/Default/Preferences":                          file(5),
+		".config/chromium-shared/Default/Extensions/abc/1.0/auth.js":           file(6),
+		".config/chromium-shared/Default/History":                              file(900),
+		".config/chromium-shared/Default/Local Storage/leveldb/000003.log":     file(80),
+		".config/chromium-shared/Default/IndexedDB/https_app.example_0/x":      file(81),
+		".config/chromium-shared/Default/Local Extension Settings/abc/000.log": file(82),
+		".config/chromium-shared/Default/Extension Cookies":                    file(83),
+		".config/chromium-shared/Profile 2/Network/Cookies":                    file(84),
 		// dotfiles
 		".bashrc":            file(11),
 		".bash_history":      file(12),
@@ -91,8 +100,11 @@ func TestScanGroups(t *testing.T) {
 		{GroupSettings, 40 + 4, []string{".config/app", ".config/gh"}, []string{".config/gh/hosts.yml"}},
 		{GroupDotfiles, 11 + 18, []string{".bashrc", ".codex"},
 			[]string{".bash_history", ".codex/auth.json", ".git-credentials", ".npmrc", ".ssh"}},
-		{GroupBrowser, 50, []string{".config/chromium-shared"},
-			[]string{".config/chromium-shared/Default/Cookies", ".config/chromium-shared/Default/Login Data"}},
+		{GroupBrowser, 50 + 5 + 6, []string{".config/chromium-shared"},
+			[]string{".config/chromium-shared/Default/Cookies", ".config/chromium-shared/Default/Extension Cookies",
+				".config/chromium-shared/Default/IndexedDB", ".config/chromium-shared/Default/Local Extension Settings",
+				".config/chromium-shared/Default/Local Storage", ".config/chromium-shared/Default/Login Data",
+				".config/chromium-shared/Profile 2/Network"}},
 		{GroupOther, 21 + 2 + 22 + 23, []string{".local/share/recently-used.xbel", "foo", "notes.txt"}, []string{"foo/.env"}},
 	}
 	for _, c := range cases {
@@ -120,7 +132,8 @@ func TestCachesAndStateExcluded(t *testing.T) {
 	for _, p := range []string{
 		".cache", ".cache/pip/x", ".npm/_cacache/y", ".var/app/org.gimp.GIMP/cache/thumbs/a.png",
 		".config/chromium-shared/Default/Cache/Cache_Data/f1", ".config/chromium-shared/Default/Code Cache/js/1",
-		".config/chromium-shared/SingletonLock", ".workspace-seeded", ".Xauthority", ".config/workspace/x",
+		".config/chromium-shared/SingletonLock", ".config/chromium-shared/Local State", ".config/chromium-shared/Default/History",
+		".config/chromium-shared/Default/Service Worker/CacheStorage/x", ".workspace-seeded", ".Xauthority", ".config/workspace/x",
 		".local/share/flatpak/app/x", ".local/share/Trash/files/a",
 	} {
 		if g, ok := Classify(p); ok {
@@ -137,6 +150,9 @@ func TestSecrets(t *testing.T) {
 		".netrc", ".config/git/credentials", ".gnupg/private-keys-v1.d/a.key", ".local/share/keyrings/login.keyring",
 		"work/server.pem", "work/api_token.txt", "work/client-secret.json", "keys/id_rsa",
 		".config/chromium-shared/Default/Network/Cookies", ".config/chromium-shared/Default/Web Data",
+		".config/chromium-shared/Default/Local Storage/leveldb/1.log", ".config/chromium-shared/Default/Session Storage/x",
+		".config/chromium-shared/Default/IndexedDB/x", ".config/chromium-shared/Default/Extension Cookies",
+		".config/chromium-shared/Default/Local Extension Settings/abc/1.log", ".config/chromium-shared/Profile 1/Login Data",
 	} {
 		if SecretOf(p) == "" {
 			t.Errorf("%s: not a secret", p)

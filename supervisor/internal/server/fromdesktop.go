@@ -49,7 +49,7 @@ func (s *Server) handleImageScan(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := timeout(r, scanTimeout)
 	defer cancel()
 	sc := recipes.NewScanner()
-	err := s.walkHome(ctx, c.Name, func(rel string, h *tar.Header, _ func() (io.Reader, error)) error {
+	err := s.walkHome(ctx, c.Name, func(rel string, h *tar.Header, _ contentFunc) error {
 		if h.Typeflag == tar.TypeReg || h.Typeflag == tar.TypeSymlink {
 			sc.Add(rel, h.Size)
 		}
@@ -91,6 +91,12 @@ func (s *Server) handleImageFromDesktop(w http.ResponseWriter, r *http.Request) 
 		Slug    string   `json:"slug"`
 		Groups  []string `json:"groups"`
 		Include []string `json:"include"`
+		// Recipe, when set, is also saved once the image is built: a recipe
+		// on the new image, to add tools on top later.
+		Recipe *struct {
+			Slug string `json:"slug"`
+			Name string `json:"name"`
+		} `json:"recipe"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad request")
@@ -112,6 +118,38 @@ func (s *Server) handleImageFromDesktop(w http.ResponseWriter, r *http.Request) 
 		Slug: req.Slug, Name: strings.TrimSpace(req.Name), Base: c.Image, HomeFrom: recipes.HomeFromImage,
 		Secrets: len(req.Include) > 0 || c.ImageLabels[labelSecrets] == "true",
 	}
+	// The quick checks first: the Flatpak lookup can take a while.
+	if err := rec.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if _, err := s.recipes.Get(rec.Slug); err == nil {
+		writeError(w, http.StatusConflict, "a recipe named "+rec.Slug+" already exists")
+		return
+	}
+	opts := buildOptions{}
+	if req.Recipe != nil {
+		follow := recipes.Recipe{Slug: req.Recipe.Slug, Name: strings.TrimSpace(req.Recipe.Name), Base: customRef(rec.Slug), Secrets: rec.Secrets}
+		if err := follow.Validate(); err != nil {
+			writeError(w, http.StatusBadRequest, "the recipe on the new image: "+err.Error())
+			return
+		}
+		if _, err := s.recipes.Get(follow.Slug); err == nil || follow.Slug == rec.Slug {
+			writeError(w, http.StatusConflict, "a recipe named "+follow.Slug+" already exists")
+			return
+		}
+		opts.after = func(log func(string)) {
+			if _, err := s.recipes.Get(follow.Slug); err == nil {
+				log("Not saving the recipe " + follow.Slug + ": one with that name exists now")
+				return
+			}
+			if err := s.recipes.Put(follow); err != nil {
+				log("Couldn't save the recipe " + follow.Slug + ": " + err.Error())
+				return
+			}
+			log("Saved the recipe " + follow.Name + " on this image")
+		}
+	}
 	if slices.Contains(req.Groups, recipes.GroupFlatpak) {
 		ctx, cancel := timeout(r, time.Minute)
 		fl := s.desktopFlatpaks(ctx, c)
@@ -121,14 +159,11 @@ func (s *Server) handleImageFromDesktop(w http.ResponseWriter, r *http.Request) 
 	if !s.checkRecipe(w, rec) {
 		return
 	}
-	if _, err := s.recipes.Get(rec.Slug); err == nil {
-		writeError(w, http.StatusConflict, "a recipe named "+rec.Slug+" already exists")
-		return
-	}
 	sel := recipes.Selection{Groups: req.Groups, Include: req.Include}
-	s.startBuild(w, a, rec, true, buildOptions{home: func(ctx context.Context, tw *tar.Writer) error {
+	opts.home = func(ctx context.Context, tw *tar.Writer) error {
 		return s.copyHome(ctx, c.Name, sel, tw)
-	}})
+	}
+	s.startBuild(w, a, rec, true, opts)
 }
 
 // copyHome writes the selected files of a desktop's folder into a build
@@ -166,7 +201,7 @@ func (s *Server) copyHome(ctx context.Context, name string, sel recipes.Selectio
 		}
 		return nil
 	}
-	return s.walkHome(ctx, name, func(rel string, h *tar.Header, content func() (io.Reader, error)) error {
+	return s.walkHome(ctx, name, func(rel string, h *tar.Header, content contentFunc) error {
 		if h.Typeflag == tar.TypeDir {
 			dirs[rel] = h
 			return nil
@@ -177,37 +212,49 @@ func (s *Server) copyHome(ctx context.Context, name string, sel recipes.Selectio
 		if keep, _ := sel.Keep(rel); !keep {
 			return nil
 		}
+		out := &tar.Header{Typeflag: h.Typeflag, Name: prefix + rel, Mode: h.Mode & 0o777, ModTime: h.ModTime, Linkname: h.Linkname}
+		var rd io.Reader
+		if h.Typeflag == tar.TypeReg {
+			// Opened before anything is written: a file that turned into
+			// something else since it was listed is left out.
+			var err error
+			rd, out.Size, err = content()
+			if errors.Is(err, errNotRegular) {
+				return nil
+			}
+			if err != nil {
+				return fmt.Errorf("reading %s: %w", rel, err)
+			}
+		}
 		if err := ensureDir(path.Dir(rel)); err != nil {
 			return err
-		}
-		out := &tar.Header{Typeflag: h.Typeflag, Name: prefix + rel, Mode: h.Mode & 0o777, ModTime: h.ModTime, Linkname: h.Linkname}
-		if h.Typeflag == tar.TypeReg {
-			out.Size = h.Size
 		}
 		if err := tw.WriteHeader(out); err != nil {
 			return err
 		}
-		if h.Typeflag != tar.TypeReg {
+		if rd == nil {
 			return nil
 		}
-		rd, err := content()
-		if err != nil {
-			return fmt.Errorf("reading %s: %w", rel, err)
-		}
-		_, err = io.Copy(tw, rd)
+		_, err := io.Copy(tw, rd)
 		return err
 	})
 }
 
+// contentFunc gives a regular file's data and its size: exactly that many
+// bytes. errNotRegular means the entry is no longer a regular file.
+type contentFunc func() (io.Reader, int64, error)
+
+var errNotRegular = errors.New("not a regular file")
+
 // walkHome calls fn for each folder, file and link in a desktop's folder,
 // folders before what's in them. rel is the path relative to the folder.
 // h carries the type, permission bits, size, time and link target; content
-// gives a regular file's data, exactly h.Size bytes.
+// opens a regular file.
 //
 // The supervisor reads the folder itself where it can, skipping what is
 // always left out; otherwise (files of UID 1000 it may not read) a helper
 // container reads it, as removing a folder does.
-func (s *Server) walkHome(ctx context.Context, name string, fn func(rel string, h *tar.Header, content func() (io.Reader, error)) error) error {
+func (s *Server) walkHome(ctx context.Context, name string, fn func(rel string, h *tar.Header, content contentFunc) error) error {
 	folder := filepath.Join(s.Desktops.Cfg.DataDir, name)
 	if err := readableHere(ctx, folder); err == nil {
 		return walkHere(ctx, folder, fn)
@@ -232,7 +279,7 @@ func (s *Server) walkHome(ctx context.Context, name string, fn func(rel string, 
 		if rel == "." || rel == "" || strings.HasPrefix(rel, "../") {
 			continue
 		}
-		if err := fn(rel, h, func() (io.Reader, error) { return tr, nil }); err != nil {
+		if err := fn(rel, h, func() (io.Reader, int64, error) { return tr, h.Size, nil }); err != nil {
 			rc.Close()
 			return err
 		}
@@ -250,15 +297,18 @@ func skipHere(rel string) bool {
 // readableHere reports whether the supervisor can read everything walkHere
 // would read: an error wrapping fs.ErrPermission if not.
 func readableHere(ctx context.Context, folder string) error {
-	return filepath.WalkDir(folder, func(p string, d fs.DirEntry, err error) error {
+	root, err := os.OpenRoot(folder)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	return fs.WalkDir(root.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		rel, _ := filepath.Rel(folder, p)
-		rel = filepath.ToSlash(rel)
 		if rel != "." && skipHere(rel) {
 			if d.IsDir() {
 				return fs.SkipDir
@@ -266,24 +316,39 @@ func readableHere(ctx context.Context, folder string) error {
 			return nil
 		}
 		if d.Type().IsRegular() {
-			if err := syscall.Access(p, 4 /* R_OK */); err != nil {
-				return &fs.PathError{Op: "read", Path: p, Err: fs.ErrPermission}
+			if err := syscall.Access(filepath.Join(folder, filepath.FromSlash(rel)), 4 /* R_OK */); err != nil {
+				return &fs.PathError{Op: "read", Path: rel, Err: fs.ErrPermission}
 			}
 		}
 		return nil
 	})
 }
 
-func walkHere(ctx context.Context, folder string, fn func(rel string, h *tar.Header, content func() (io.Reader, error)) error) error {
-	return filepath.WalkDir(folder, func(p string, d fs.DirEntry, err error) error {
+// walkHereHook, when set (tests), runs after each entry is looked at and
+// before it is used: where a running desktop can swap things.
+var walkHereHook func(folder, rel string)
+
+// walkHere walks the folder through an os.Root, so nothing outside it is
+// ever listed or opened: a running desktop may swap a folder or file for a
+// symlink (to ../.deskyard, say) while the walk runs. Files are opened
+// without following a last symlink and without blocking (a FIFO), and read
+// only if the open file is a regular file.
+func walkHere(ctx context.Context, folder string, fn func(rel string, h *tar.Header, content contentFunc) error) error {
+	root, err := os.OpenRoot(folder)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	return fs.WalkDir(root.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
+		if err != nil && d != nil && d.IsDir() && isSymlinkErr(err) {
+			return fs.SkipDir // a folder swapped for a symlink out of the folder
+		}
 		if err != nil {
 			return err
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		rel, _ := filepath.Rel(folder, p)
-		rel = filepath.ToSlash(rel)
 		if rel == "." {
 			return nil
 		}
@@ -293,12 +358,15 @@ func walkHere(ctx context.Context, folder string, fn func(rel string, h *tar.Hea
 			}
 			return nil
 		}
-		info, err := d.Info()
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil // gone since the folder was listed (a running desktop)
+		info, err := root.Lstat(rel)
+		if errors.Is(err, fs.ErrNotExist) || (err != nil && isSymlinkErr(err)) {
+			return nil // gone, or moved out of reach, since the folder was listed
 		}
 		if err != nil {
 			return err
+		}
+		if walkHereHook != nil {
+			walkHereHook(folder, rel)
 		}
 		h := &tar.Header{Mode: int64(info.Mode().Perm()), ModTime: info.ModTime()}
 		switch {
@@ -308,11 +376,11 @@ func walkHere(ctx context.Context, folder string, fn func(rel string, h *tar.Hea
 			h.Typeflag, h.Size = tar.TypeReg, info.Size()
 		case info.Mode()&fs.ModeSymlink != 0:
 			h.Typeflag = tar.TypeSymlink
-			if h.Linkname, err = os.Readlink(p); err != nil {
+			if h.Linkname, err = root.Readlink(rel); err != nil {
 				return nil
 			}
 		default:
-			return nil
+			return nil // FIFOs, sockets, devices
 		}
 		var f *os.File
 		defer func() {
@@ -320,17 +388,35 @@ func walkHere(ctx context.Context, folder string, fn func(rel string, h *tar.Hea
 				f.Close()
 			}
 		}()
-		content := func() (io.Reader, error) {
+		content := func() (io.Reader, int64, error) {
 			var err error
-			if f, err = os.Open(p); err != nil {
-				return nil, err
+			f, err = root.OpenFile(rel, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+			if err != nil {
+				if isSymlinkErr(err) {
+					return nil, 0, errNotRegular
+				}
+				return nil, 0, err
 			}
-			// Exactly the size in the header: a file that changed since (a
+			st, err := f.Stat()
+			if err != nil {
+				return nil, 0, err
+			}
+			if !st.Mode().IsRegular() {
+				return nil, 0, errNotRegular
+			}
+			size := st.Size()
+			// Exactly size bytes: a file that changes while it's read (a
 			// running desktop) is cut or padded.
-			return io.LimitReader(io.MultiReader(io.LimitReader(f, h.Size), zeros{}), h.Size), nil
+			return io.LimitReader(io.MultiReader(io.LimitReader(f, size), zeros{}), size), size, nil
 		}
 		return fn(rel, h, content)
 	})
+}
+
+// isSymlinkErr reports an open refused because the path is (or now leads
+// through) a symlink: O_NOFOLLOW's ELOOP, or the root's escape check.
+func isSymlinkErr(err error) bool {
+	return errors.Is(err, syscall.ELOOP) || strings.Contains(err.Error(), "path escapes from parent")
 }
 
 type zeros struct{}

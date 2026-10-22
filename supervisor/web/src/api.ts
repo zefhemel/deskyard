@@ -173,6 +173,8 @@ export interface ImageFromDesktop {
   groups: HomeGroupName[];
   /** Secrets to include, as the scan lists them. */
   include: string[];
+  /** Also save this recipe on the new image once it's built, to add tools on top later. */
+  recipe?: { slug: string; name: string };
 }
 
 export interface JobRef {
@@ -298,6 +300,7 @@ export const api = {
   recipes: () => request<Recipe[]>("GET", "/api/recipes"),
   createRecipe: (recipe: Recipe) => request<JobRef>("POST", "/api/recipes", recipe),
   updateRecipe: (recipe: Recipe) => request<JobRef>("PUT", `/api/recipes/${enc(recipe.slug)}`, recipe),
+  removeRecipe: (slug: string) => request<void>("DELETE", `/api/recipes/${enc(slug)}`),
   rebuildRecipe: (slug: string) => request<JobRef>("POST", `/api/recipes/${enc(slug)}/rebuild`),
   cancelJob: (id: string) => request<void>("POST", `/api/jobs/${enc(id)}/cancel`),
 };

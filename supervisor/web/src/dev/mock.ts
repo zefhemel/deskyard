@@ -350,6 +350,10 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const rec = recipes.find((r) => r.slug === rcp[1]);
     if (!rec) return json(res, 404, { error: "no such recipe" });
     if (rcp[2] === "rebuild" && method === "POST") return json(res, 202, buildJob(rec));
+    if (method === "DELETE") {
+      recipes.splice(recipes.indexOf(rec), 1);
+      return json(res, 204);
+    }
     if (method === "PUT") {
       Object.assign(rec, await readBody(req));
       return json(res, 202, buildJob(rec));
@@ -416,6 +420,8 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const rec: Recipe = { slug: String(b.slug), name: String(b.name), base: c.image, homeFrom: "image", secrets: include.length > 0 || c.imageSecrets };
     if (recipes.some((r) => r.slug === rec.slug)) return json(res, 409, { error: `a recipe named ${rec.slug} already exists` });
     recipes.push(rec);
+    const onTop = b.recipe as { slug: string; name: string } | undefined;
+    if (onTop) recipes.push({ slug: onTop.slug, name: onTop.name, base: `deskyard-custom/${rec.slug}:latest`, secrets: rec.secrets });
     return json(res, 202, buildJob(rec));
   }
   if (sub === "processes") {

@@ -17,12 +17,16 @@ const td = "border-b border-hairline px-4 py-[13px] align-middle";
 
 export function ImagesPage() {
   const images = useFetch(() => api.images(), "images");
+  const saved = useFetch(() => api.recipes(), "recipes");
   const [adding, setAdding] = useState(false);
   const [upgrading, setUpgrading] = useState<CatalogImage | null>(null);
   // The recipe dialog: `recipe` set means editing it.
   const [recipe, setRecipe] = useState<{ recipe?: Recipe } | null>(null);
   const [building, setBuilding] = useState<{ job: string; title: string } | null>(null);
-  const reload = images.reload;
+  const reload = () => {
+    images.reload();
+    saved.reload();
+  };
 
   const rebuild = (img: CatalogImage) => {
     if (!img.recipe) return;
@@ -106,7 +110,7 @@ export function ImagesPage() {
             </thead>
             <tbody>
               {images.data.map((img) => (
-                <ImageRow key={img.ref} image={img} onUpgrade={() => setUpgrading(img)} onRemoved={images.reload} onEdit={() => edit(img)} onRebuild={() => rebuild(img)} />
+                <ImageRow key={img.ref} image={img} onUpgrade={() => setUpgrading(img)} onRemoved={reload} onEdit={() => edit(img)} onRebuild={() => rebuild(img)} />
               ))}
               {!images.data.length && (
                 <tr>
@@ -118,6 +122,13 @@ export function ImagesPage() {
             </tbody>
           </table>
         </div>
+      )}
+      {images.data && saved.data && (
+        <UnbuiltRecipes
+          recipes={saved.data.filter((r) => !images.data?.some((i) => i.ref === `deskyard-custom/${r.slug}:latest`))}
+          onEdit={(r) => setRecipe({ recipe: r })}
+          onRemoved={reload}
+        />
       )}
       <p class="mt-4 text-sm text-muted">Upgrading recreates a desktop on the newest version and restarts it if it's running. {UPGRADE_NOTE}</p>
       {adding && (
@@ -137,7 +148,7 @@ export function ImagesPage() {
           onStarted={(job, title) => {
             setRecipe(null);
             setBuilding({ job, title });
-            images.reload();
+            reload();
           }}
         />
       )}
@@ -146,8 +157,8 @@ export function ImagesPage() {
           title={building.title}
           job={building.job}
           onClose={(running) => hideLog(building.job, building.title, running)}
-          onDone={images.reload}
-          onLost={images.reload}
+          onDone={reload}
+          onLost={reload}
         />
       )}
       {upgrading && (
@@ -288,5 +299,40 @@ function AddImageDialog({ onClose, onAdded }: { onClose: () => void; onAdded: ()
       <JobProgress job={run.job} />
       <ErrorText error={run.error} />
     </Dialog>
+  );
+}
+
+/** Recipes saved without an image yet (a recipe on an image made from a desktop): built when first edited. */
+function UnbuiltRecipes({ recipes, onEdit, onRemoved }: { recipes: Recipe[]; onEdit: (r: Recipe) => void; onRemoved: () => void }) {
+  if (!recipes.length) return null;
+  const remove = (r: Recipe) => api.removeRecipe(r.slug).then(onRemoved, notifyError);
+  return (
+    <div class="mt-6 overflow-x-auto rounded-[10px] border border-line bg-surface">
+      <table class="w-full border-collapse text-sm">
+        <thead>
+          <tr>
+            <th class={th}>Saved recipes, not built yet</th>
+            <th class={th}>Based on</th>
+            <th class={th} />
+          </tr>
+        </thead>
+        <tbody>
+          {recipes.map((r) => (
+            <tr key={r.slug}>
+              <td class={td}>
+                <b class="font-semibold">{r.name}</b> {r.secrets && <LockBadge />}
+              </td>
+              <td class={`${td} mono text-[12.5px]`}>{r.base}</td>
+              <td class={`${td} text-right whitespace-nowrap`}>
+                <Button variant="quiet" onClick={() => void remove(r)}>
+                  Delete
+                </Button>{" "}
+                <Button onClick={() => onEdit(r)}>Edit and build</Button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
@@ -112,7 +114,7 @@ func TestImageFromDesktop(t *testing.T) {
 		}
 	}
 	df := bt.e.dockerfile
-	for _, want := range []string{"COPY home-template/ /opt/deskyard/home-template/", "install -y --noninteractive 'extra' 'org.example.App'",
+	for _, want := range []string{"COPY --chown=1000:1000 home-template/ /opt/deskyard/home-template/", "install -y --noninteractive 'extra' 'org.example.App'",
 		"install -y --noninteractive 'flathub' 'org.gimp.GIMP'", "remote-add --if-not-exists 'extra'"} {
 		if !strings.Contains(df, want) {
 			t.Errorf("dockerfile lacks %q:\n%s", want, df)
@@ -139,7 +141,7 @@ func TestImageFromDesktop(t *testing.T) {
 	if st := bt.wait(bt.start("POST", "/api/desktops/alice/image", plain)); st.Status != "done" {
 		t.Fatalf("plain build: %+v", st)
 	}
-	if len(bt.e.context) != 2 || bt.e.context["home-template/"] != "<dir>" || !strings.Contains(bt.e.dockerfile, "COPY home-template/") {
+	if len(bt.e.context) != 2 || bt.e.context["home-template/"] != "<dir>" || !strings.Contains(bt.e.dockerfile, "COPY --chown=1000:1000 home-template/") {
 		t.Errorf("plain context %v\n%s", bt.e.context, bt.e.dockerfile)
 	}
 	img, _ = bt.e.ImageInspect(t.Context(), bt.e.tags["deskyard-custom/plain:latest"])
@@ -205,5 +207,172 @@ func TestImageFromDesktopThroughHelper(t *testing.T) {
 	}
 	if _, left := bt.e.containers[helper.Name]; left {
 		t.Error("the helper container was left behind")
+	}
+}
+
+// The supervisor's own state, next to the desktops' folders (as in a real
+// install, where StateDir is DataDir/.deskyard).
+func supervisorSecret(t *testing.T, bt *buildTest) {
+	t.Helper()
+	dir := filepath.Join(bt.s.Desktops.Cfg.DataDir, ".deskyard")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tokens.json"), []byte("SUPERVISOR-SECRET"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertNoLeak(t *testing.T, ctx map[string]string) {
+	t.Helper()
+	for name, data := range ctx {
+		if strings.Contains(data, "SUPERVISOR-SECRET") || strings.Contains(name, "tokens.json") {
+			t.Errorf("%s leaks the supervisor's state: %q", name, data)
+		}
+	}
+}
+
+func buildAlice(t *testing.T, bt *buildTest, slug string) {
+	t.Helper()
+	body := map[string]any{"name": "Alice", "slug": slug, "groups": []string{"settings", "dotfiles"}}
+	done := make(chan jobState, 1)
+	go func() { done <- bt.wait(bt.start("POST", "/api/desktops/alice/image", body)) }()
+	select {
+	case st := <-done:
+		if st.Status != "done" {
+			t.Fatalf("build: %+v", st)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("the build hangs")
+	}
+}
+
+// Symlinks are copied as links and never followed; FIFOs and devices are
+// left out; setuid, setgid and sticky bits are dropped.
+func TestImageFromDesktopSpecialFiles(t *testing.T) {
+	bt := newBuildTest(t)
+	supervisorSecret(t, bt)
+	folder := withDesktop(t, bt, map[string]string{".config/app/settings.json": "here", ".config/app/tool": "#!/bin/sh"})
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(os.Symlink("../../../.deskyard/tokens.json", filepath.Join(folder, ".config/app/link.json")))
+	must(os.Symlink("../.deskyard", filepath.Join(folder, ".state")))
+	must(syscall.Mkfifo(filepath.Join(folder, ".config/app/pipe"), 0o644))
+	must(os.Chmod(filepath.Join(folder, ".config/app/tool"), 0o755|os.ModeSetuid|os.ModeSetgid|os.ModeSticky))
+	device := os.Geteuid() == 0 && syscall.Mknod(filepath.Join(folder, ".config/app/null"), syscall.S_IFCHR|0o666, 0x103) == nil
+
+	buildAlice(t, bt, "special")
+	ctx := bt.e.context
+	assertNoLeak(t, ctx)
+	if ctx["home-template/.config/app/link.json"] != "-> ../../../.deskyard/tokens.json" || ctx["home-template/.state"] != "-> ../.deskyard" {
+		t.Errorf("links: %v", ctx)
+	}
+	for _, out := range []string{"home-template/.config/app/pipe", "home-template/.config/app/null"} {
+		if _, ok := ctx[out]; ok {
+			t.Errorf("%s copied", out)
+		}
+	}
+	if m := bt.e.modes["home-template/.config/app/tool"]; m != 0o755 {
+		t.Errorf("tool mode %o, want 755", m)
+	}
+	if !device {
+		t.Log("device file not tested (needs root)")
+	}
+}
+
+// A running desktop swaps things while the walk runs: a listed folder for a
+// symlink out of the folder, a listed file for a symlink, a FIFO.
+func TestImageFromDesktopSwapsDuringWalk(t *testing.T) {
+	bt := newBuildTest(t)
+	supervisorSecret(t, bt)
+	folder := withDesktop(t, bt, map[string]string{
+		".config/app/settings.json": "here",
+		".config/swapped/x":         "folder content",
+		".config/app/file.json":     "file content",
+		".config/app/fifo.json":     "fifo content",
+	})
+	walkHereHook = func(_, rel string) {
+		p := filepath.Join(folder, filepath.FromSlash(rel))
+		switch rel {
+		case ".config/swapped":
+			_ = os.RemoveAll(p)
+			_ = os.Symlink("../../.deskyard", p)
+		case ".config/app/file.json":
+			_ = os.Remove(p)
+			_ = os.Symlink("../../../.deskyard/tokens.json", p)
+		case ".config/app/fifo.json":
+			_ = os.Remove(p)
+			_ = syscall.Mkfifo(p, 0o644)
+		}
+	}
+	t.Cleanup(func() { walkHereHook = nil })
+
+	buildAlice(t, bt, "swaps")
+	ctx := bt.e.context
+	assertNoLeak(t, ctx)
+	if ctx["home-template/.config/app/settings.json"] != "here" {
+		t.Errorf("settings.json missing: %v", ctx)
+	}
+	for name := range ctx {
+		if strings.Contains(name, "file.json") || strings.Contains(name, "fifo.json") || strings.HasPrefix(name, "home-template/.config/swapped/") {
+			t.Errorf("%s copied after it was swapped", name)
+		}
+	}
+}
+
+func TestStartupSweepsBuildContexts(t *testing.T) {
+	e := newBuildEngine()
+	s, _ := newTestServerWith(t, e)
+	left := filepath.Join(s.StateDir, buildsDir, "context-1.tar")
+	if err := os.MkdirAll(filepath.Dir(left), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(left, []byte("a home"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(Options{Log: s.Log, Eng: e, Accounts: s.Accounts, StateDir: s.StateDir, Desktops: s.Desktops, DefaultImage: "img", UI: s.UI}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(left); !os.IsNotExist(err) {
+		t.Errorf("left-over build context still there: %v", err)
+	}
+}
+
+// "Also save a recipe": once the image is built, a recipe on it is saved, to
+// add tools on top later; it builds like any other.
+func TestImageFromDesktopSavesRecipeOnTop(t *testing.T) {
+	bt := newBuildTest(t)
+	withDesktop(t, bt, aliceHome)
+	body := map[string]any{"name": "Alice's", "slug": "alice-img", "groups": []string{"settings"}, "include": []string{".codex/auth.json"},
+		"recipe": map[string]string{"slug": "alice-tools", "name": "Alice's tools"}}
+	if st := bt.wait(bt.start("POST", "/api/desktops/alice/image", body)); st.Status != "done" {
+		t.Fatalf("build: %+v", st)
+	}
+	follow, err := bt.s.recipes.Get("alice-tools")
+	if err != nil || follow.Base != "deskyard-custom/alice-img:latest" || follow.Name != "Alice's tools" || !follow.Secrets || follow.HomeFrom != "" {
+		t.Fatalf("recipe on top: %+v %v", follow, err)
+	}
+	edit := tools("alice-tools", "deskyard-custom/alice-img:latest")
+	if st := bt.wait(bt.start("PUT", "/api/recipes/alice-tools", edit)); st.Status != "done" {
+		t.Fatalf("building the recipe on top: %+v", st)
+	}
+	if !bt.catalog()["deskyard-custom/alice-tools:latest"].Secrets {
+		t.Error("the image on top isn't marked as containing secrets")
+	}
+
+	for _, bad := range []map[string]any{
+		{"name": "x", "slug": "again", "recipe": map[string]string{"slug": "alice-tools", "name": "x"}}, // exists
+		{"name": "x", "slug": "same", "recipe": map[string]string{"slug": "same", "name": "x"}},         // same as the image
+	} {
+		if code, b := bt.do(bt.admin, "POST", "/api/desktops/alice/image", bad); code != 409 {
+			t.Errorf("%v: %d %s", bad, code, b)
+		}
+	}
+	if code, _ := bt.do(bt.admin, "POST", "/api/desktops/alice/image", map[string]any{"name": "x", "slug": "other", "recipe": map[string]string{"slug": "B", "name": "x"}}); code != 400 {
+		t.Errorf("bad recipe slug: %d", code)
 	}
 }

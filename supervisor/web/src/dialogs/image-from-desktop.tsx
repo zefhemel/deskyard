@@ -40,6 +40,8 @@ export function ImageFromDesktopDialog({
   const [name, setName] = useState(`${c.name} image`);
   const [groups, setGroups] = useState<Set<HomeGroupName> | null>(null);
   const [include, setInclude] = useState<Set<string>>(new Set());
+  const [onTop, setOnTop] = useState(false);
+  const [onTopName, setOnTopName] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,9 +52,12 @@ export function ImageFromDesktopDialog({
   }, [scan.data]);
 
   const slug = slugFor(name);
+  const recipeName = onTopName ?? `${name.trim()} tools`;
+  const recipeSlug = slugFor(recipeName);
+  const recipeOk = !onTop || (recipeName.trim() !== "" && SLUG.test(recipeSlug) && recipeSlug !== slug);
   const ticked = groups ?? new Set<HomeGroupName>();
   const selected = (scan.data?.groups ?? []).filter((g) => ticked.has(g.name)).reduce((n, g) => n + g.bytes, 0);
-  const ready = !!scan.data && name.trim() !== "" && SLUG.test(slug) && !busy;
+  const ready = !!scan.data && name.trim() !== "" && SLUG.test(slug) && recipeOk && !busy;
 
   const toggle = <T,>(set: Set<T>, v: T, on: boolean) => {
     const next = new Set(set);
@@ -73,6 +78,7 @@ export function ImageFromDesktopDialog({
         // In the scan's order.
         groups: scan.data.groups.map((g) => g.name).filter((g) => ticked.has(g)),
         include: [...include].sort(),
+        ...(onTop ? { recipe: { slug: recipeSlug, name: recipeName.trim() } } : {}),
       })
       .then(
         ({ job }) => onStarted(job, title),
@@ -151,6 +157,39 @@ export function ImageFromDesktopDialog({
             />
           )}
         </Field>
+        <div class="mb-[18px]">
+          <label class="flex items-start gap-2.5 text-sm">
+            <input type="checkbox" id="fd-on-top" class="mt-[3px]" checked={onTop} onChange={(e) => setOnTop(e.currentTarget.checked)} />
+            <span>
+              <b class="font-semibold">Also save a recipe on the new image</b>
+              <span class="mt-0.5 block text-[13px] text-muted">
+                To add tools and apps on top later without starting over. It's built when you first edit it on the Images page.
+              </span>
+            </span>
+          </label>
+          {onTop && (
+            <div class="mt-2 ml-[26px]">
+              <input
+                id="fd-recipe-name"
+                type="text"
+                aria-label="Recipe name"
+                autocomplete="off"
+                spellcheck={false}
+                value={recipeName}
+                onInput={(e) => setOnTopName(e.currentTarget.value)}
+              />
+              <div class="mt-1.5 text-[13px] text-muted">
+                {recipeOk ? (
+                  <>
+                    Its reference will be <span class="mono">deskyard-custom/{recipeSlug}:latest</span>
+                  </>
+                ) : (
+                  <span class="text-danger">Give the recipe its own name, with at least 2 letters or digits, starting with a letter.</span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </fieldset>
       {scan.data && (
         <p class="mt-0 mb-3.5 text-sm text-muted" data-testid="sizes">
@@ -252,6 +291,17 @@ function GroupRow({
           {flatpak && scan.flatpaks.length > 0 && (
             <span class="mt-0.5 block text-[13px] [overflow-wrap:anywhere]">
               Apps: <span class="mono text-[12.5px]">{scan.flatpaks.map((f) => f.id).join(", ")}</span>
+            </span>
+          )}
+          {flatpak && scan.remotes.some((r) => r.name !== "flathub") && (
+            <span class="mt-0.5 block text-[13px] [overflow-wrap:anywhere]">
+              Remotes added system-wide:{" "}
+              <span class="mono text-[12.5px]">
+                {scan.remotes
+                  .filter((r) => r.name !== "flathub")
+                  .map((r) => `${r.name} (${r.url})`)
+                  .join(", ")}
+              </span>
             </span>
           )}
           {flatpak &&
