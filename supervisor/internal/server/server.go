@@ -42,6 +42,7 @@ type Server struct {
 	viewersPub *throttle
 	clients    *clientFiles
 	stats      *statsCollector
+	inside     *insideReader
 	thumbs     *thumbnails
 	tokens     *tokenStore
 	images     *catalog
@@ -95,8 +96,10 @@ func New(o Options) (*Server, error) {
 
 // Run starts the background work: engine events, stats, update checks.
 func (s *Server) Run(ctx context.Context) {
+	s.inside = newInsideReader(s)
 	go s.watchEngine(ctx)
 	go s.stats.run(ctx)
+	go s.inside.run(ctx)
 	go s.tokens.expireLoop(ctx, s)
 	go s.images.checkLoop(ctx, s)
 	go s.activityLoop(ctx)
