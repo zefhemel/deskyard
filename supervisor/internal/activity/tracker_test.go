@@ -319,7 +319,7 @@ func TestInsideFloodIsCapped(t *testing.T) {
 	r2 := newRig()
 	r2.Screen(dk, bot, click)
 	r2.ForwardOpen(dk, bot, "keeps it present for the 10 minutes") // presence alone lasts 5
-	for range 6000 { // 10 a second over 10 minutes, one wall second each
+	for range 6000 {                                               // 10 a second over 10 minutes, one wall second each
 		r2.adv(100 * time.Millisecond)
 		r2.Inside(dk, Event{Agent: "a terminal", Kind: "screen", T: r2.now, Screen: &ck})
 	}
