@@ -46,7 +46,7 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 | `POST /api/desktops` (admin) | `{"name","image","memoryBytes","nanoCpus","access":[usernames]}` | 202 `{"job": id}` |
 | `POST /api/desktops/{name}/start` \| `stop` \| `restart` | | 204 |
 | `DELETE /api/desktops/{name}?files=1` (admin) | | 204; `files=1` also deletes the workspace folder |
-| `PATCH /api/desktops/{name}` (admin) | `{"image"?, "memoryBytes"?, "nanoCpus"?}` | 202 `{"job": id}` (recreates the container) |
+| `PATCH /api/desktops/{name}` (admin) | `{"image"?, "memoryBytes"?, "nanoCpus"?, "confirmSecrets"?}` | 202 `{"job": id}` (recreates the container); 409 without `confirmSecrets` (see below) |
 | `PUT /api/desktops/{name}/access` (admin) | `{"usernames":[…]}` | 204 |
 | `GET /api/desktops/{name}/screen.png` | `?full=1` for full size | PNG, 480 px wide by default; 409 when stopped |
 | `GET /api/desktops/{name}/processes` | | `{"titles":[…],"rows":[[…]]}` (columns PID, USER, %CPU, RSS (KiB), ELAPSED, COMMAND) |
@@ -56,10 +56,12 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 | `GET /api/desktops/{name}/activity` | | `Activity` (below) |
 | `GET /api/desktops/{name}/screen-events` | | server-sent events (below) |
 | `POST /api/desktops/{name}/keys` | `{"keys":"ctrl+alt+Delete"}` (xdotool syntax) | 204 |
-| `POST /api/desktops/{name}/upgrade` (admin) | | 202 `{"job": id}` |
+| `POST /api/desktops/{name}/upgrade` (admin) | `{"confirmSecrets"?}` (or no body) | 202 `{"job": id}`; 409 without `confirmSecrets` (see below) |
 | `GET /api/desktops/{name}/image-scan` (admin) | | `ImageScan` (see [Images from a desktop](#images-from-a-desktop-admin)) |
-| `POST /api/desktops/{name}/image` (admin) | `{"name","slug","groups":[…],"include":[…]}` | 202 `{"job"}` |
+| `POST /api/desktops/{name}/image` (admin) | `{"name","slug","groups":[…],"include":[…],"recipe"?:{"slug","name"}}` | 202 `{"job"}` |
 | `GET /api/validate-name?name=x` (admin) | | `{"ok":bool,"error"?:string,"folder":path,"folderExists":bool}` |
+
+Moving desktops onto an image that contains secrets (an upgrade, or `PATCH` with another `image`) while accounts other than admins can use them is refused with 409 unless the body has `"confirmSecrets": true`: those accounts could then use the image's sign-ins. The UI asks first, naming the image and the accounts, as it does when giving access to such a desktop.
 
 #### Activity
 
@@ -139,7 +141,7 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 | `POST /api/images` | `{"ref"}` | 202 `{"job"}` (pulls and checks the contract) |
 | `DELETE /api/images?ref=…` | | 204; 409 while desktops use it |
 | `POST /api/images/check` | | 202 `{"job"}` (pull every ref, recompute updates) |
-| `POST /api/images/upgrade` | `{"ref"}` | 202 `{"job"}` (upgrades every desktop behind on it) |
+| `POST /api/images/upgrade` | `{"ref","confirmSecrets"?}` | 202 `{"job"}` (upgrades every desktop behind on it); 409 without `confirmSecrets` (see below) |
 
 `DELETE /api/images?ref=…` on a custom image does what `DELETE /api/recipes/{slug}` does. The daily update check (and `POST /api/images/check`) never pulls custom images; `POST /api/images` refuses `deskyard-custom/…` refs.
 
@@ -199,7 +201,7 @@ A desktop's home folder becomes the starting home (`/opt/deskyard/home-template`
 - `totalBytes` is everything that could be copied, secrets included. The UI warns above 5 GB; there is no limit.
 - The Flatpak apps and remotes come from `flatpak list --user --app --columns=application,origin` and `flatpak remotes --user --columns=name,url` in a running desktop, and from the installation's repository in its folder when it is stopped.
 
-`POST /api/desktops/{name}/image` with `{"name","slug","groups":[group names],"include":[secrets, as the scan lists them],"recipe"?:{"slug","name"}}` saves and builds the recipe `{"slug","name","base": <the desktop's image>,"homeFrom":"image","flatpaks","remotes","secrets"}` (202 `{"job"}`, a build as above). With `flatpak` ticked, the desktop's apps are installed again system-wide from their remotes; a remote other than Flathub goes in with the GPG key from the desktop's installation (for a stopped desktop, its config and keys are read through the same `os.Root`, regular files only), and one without a key is left out with its apps. The build context's `home-template/` (always there, empty if nothing is ticked) gets the files of the ticked groups without their secrets, plus each included secret whatever its group; files keep their permission bits (no setuid, setgid or sticky), and the image gives them to UID 1000. The image is marked `secrets` when any secret is included or its base has secrets, which passes down to images built on it. 400 for an unknown group or an `include` that isn't a secret; 409 if the slug (or the `recipe` slug) exists. With `recipe`, once the image is built a recipe `{"slug","name","base": "deskyard-custom/<slug>:latest"}` is saved on it (not built: it builds when first edited with `PUT`), to add tools on top later. The folder is read as the build runs: directly where the supervisor can read every file (walked through an `os.Root`, so a symlink a running desktop swaps in never leads outside the folder; links that lead outside are refused and links that stay inside are followed, which reaches nothing the desktop couldn't copy itself; files are opened without blocking, and only regular files are read; symlinks are copied as links, FIFOs, sockets and devices are left out), otherwise through a helper container of `alpine:3.22` with no network that mounts it read-only and streams it as root. The image's build copies the template with `COPY --chown=1000:1000`, so no root step runs over it. A running desktop's files can change while they're copied; stopping it first gives a consistent copy. Rebuilding such a recipe takes the template from its current image.
+`POST /api/desktops/{name}/image` with `{"name","slug","groups":[group names],"include":[secrets, as the scan lists them],"recipe"?:{"slug","name"}}` saves and builds the recipe `{"slug","name","base": <the desktop's image>,"homeFrom":"image","flatpaks","remotes","secrets"}` (202 `{"job"}`, a build as above). If that first build fails the recipe is removed again (it couldn't be rebuilt without its first image), so the same name can be tried again. With `flatpak` ticked, the desktop's apps are installed again system-wide from their remotes; a remote other than Flathub goes in with the GPG key from the desktop's installation (for a stopped desktop, its config and keys are read through the same `os.Root`, regular files only), and one without a key is left out with its apps. The build context's `home-template/` (always there, empty if nothing is ticked) gets the files of the ticked groups without their secrets, plus each included secret whatever its group; files keep their permission bits (no setuid, setgid or sticky), and the image gives them to UID 1000. The image is marked `secrets` when any secret is included or its base has secrets, which passes down to images built on it. 400 for an unknown group or an `include` that isn't a secret; 409 if the slug (or the `recipe` slug) exists. With `recipe`, once the image is built a recipe `{"slug","name","base": "deskyard-custom/<slug>:latest"}` is saved on it (not built: it builds when first edited with `PUT`), to add tools on top later. The folder is read as the build runs: directly where the supervisor can read every file (walked through an `os.Root`, so a symlink a running desktop swaps in never leads outside the folder; links that lead outside are refused and links that stay inside are followed, which reaches nothing the desktop couldn't copy itself; files are opened without blocking, and only regular files are read; symlinks are copied as links, FIFOs, sockets and devices are left out), otherwise through a helper container of `alpine:3.22` with no network that mounts it read-only and streams it as root. The image's build copies the template with `COPY --chown=1000:1000`, so no root step runs over it. A running desktop's files can change while they're copied; stopping it first gives a consistent copy. Rebuilding such a recipe takes the template from its current image.
 
 
 ## Desktop
