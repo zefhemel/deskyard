@@ -274,3 +274,19 @@ func remoteFailure(what string, code int, stderr string) error {
 	}
 	return fmt.Errorf("%s failed on the desktop (exit %d): %s", what, code, msg)
 }
+
+// Classify recognises the argv of Upload and Download as the supervisor
+// sees it on an exec: direction "in" (into the desktop) or "out", and the
+// remote path.
+func Classify(argv []string) (direction, remotePath string, ok bool) {
+	if len(argv) < 5 || argv[0] != "sh" || argv[1] != "-c" || argv[3] != "sh" {
+		return "", "", false
+	}
+	switch argv[2] {
+	case uploadFileScript, uploadDirScript:
+		return "in", argv[4], true
+	case downloadScript:
+		return "out", argv[4], true
+	}
+	return "", "", false
+}

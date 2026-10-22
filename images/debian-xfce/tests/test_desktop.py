@@ -103,37 +103,69 @@ for id in $(xfconf-query -c xfce4-panel -p /panels/panel-1/plugin-ids | grep -E 
   xfconf-query -c xfce4-panel -p /plugins/plugin-$id
 done
 """
-REMOVED = {"pager", "clock", "actions"}
 
 
-def test_top_panel_trimmed(sandbox, artifacts_dir):
+def test_top_panel_has_switcher_and_clock(sandbox, artifacts_dir):
     types = sandbox.exec(TOP_PANEL_TYPES).stdout.split()
-    assert not REMOVED & set(types), types
-    assert "applicationsmenu" in types and "tasklist" in types, types
+    assert "actions" not in types, types
+    assert {"applicationsmenu", "tasklist", "pager", "clock"} <= set(types), types
     (artifacts_dir / "top-panel.png").write_bytes(sandbox.exec_bytes("deskyard zoom 0 0 1280 40"))
+
+
+def set_top_panel(box, kinds):
+    """Make panel-1 hold plugins of the given types, ids 1..n."""
+    for i, kind in enumerate(kinds, 1):
+        box.exec(f"xfconf-query -c xfce4-panel -p /plugins/plugin-{i} -n -t string -s {kind}")
+    box.exec("xfconf-query -c xfce4-panel -p /panels/panel-1/plugin-ids --force-array "
+             + " ".join(f"-t int -s {i}" for i in range(1, len(kinds) + 1)))
 
 
 def test_existing_home_gets_top_panel_trimmed_once(make_sandbox, volumes, image):
     a = make_sandbox()
-    # A home from an older image: the full Debian top panel, no migration marker.
-    for i, kind in {4: "pager", 5: "separator", 7: "separator", 8: "clock", 9: "separator", 10: "actions"}.items():
-        a.exec(f"xfconf-query -c xfce4-panel -p /plugins/plugin-{i} -n -t string -s {kind}")
-    a.exec("xfconf-query -c xfce4-panel -p /panels/panel-1/plugin-ids --force-array "
-           + " ".join(f"-t int -s {i}" for i in range(1, 11)))
+    # A home from an older image: the full Debian top panel, no migration markers.
+    set_top_panel(a, ["applicationsmenu", "tasklist", "separator", "pager", "separator",
+                      "systray", "separator", "clock", "separator", "actions"])
     a.stop()
     a.remove()
     docker("run", "--rm", "-v", f"{volumes.home}:/workspace", "--entrypoint", "rm", image,
-           "-f", "/workspace/.config/workspace/migrated-top-panel")
+           "-f", "/workspace/.config/workspace/migrated-top-panel",
+           "/workspace/.config/workspace/restored-top-panel")
     b = make_sandbox()
     types = b.exec(TOP_PANEL_TYPES).stdout.split()
-    assert not REMOVED & set(types), types
-    # A later choice sticks: add the clock back.
+    assert "actions" not in types and "pager" in types and "clock" in types, types
+    # A later choice sticks: drop the pager.
     b.exec("xfconf-query -c xfce4-panel -p /panels/panel-1/plugin-ids --force-array "
            + " ".join(f"-t int -s {i}" for i in (1, 2, 3, 6, 8)))
     b.stop()
     b.remove()
     c = make_sandbox()
-    assert "clock" in c.exec(TOP_PANEL_TYPES).stdout.split()
+    types = c.exec(TOP_PANEL_TYPES).stdout.split()
+    assert "pager" not in types and "clock" in types, types
+
+
+def test_home_trimmed_by_older_image_gets_switcher_and_clock_back(make_sandbox, volumes, image):
+    a = make_sandbox()
+    # Trimmed by an older image: ids 1,2,3,6 only; trim marker present, restore marker absent.
+    a.exec("xfconf-query -c xfce4-panel -p /panels/panel-1/plugin-ids --force-array "
+           + " ".join(f"-t int -s {i}" for i in (1, 2, 3, 6)))
+    a.stop()
+    a.remove()
+    docker("run", "--rm", "-v", f"{volumes.home}:/workspace", "--entrypoint", "sh", image, "-c",
+           "mkdir -p /workspace/.config/workspace && touch /workspace/.config/workspace/migrated-top-panel"
+           " && rm -f /workspace/.config/workspace/restored-top-panel")
+    b = make_sandbox()
+    types = b.exec(TOP_PANEL_TYPES).stdout.split()
+    assert "pager" in types and "clock" in types and "actions" not in types, types
+    # The user removes the clock; it stays removed.
+    ids = b.exec("xfconf-query -c xfce4-panel -p /panels/panel-1/plugin-ids | grep -E '^[0-9]+$'").stdout.split()
+    keep = [i for i in ids if b.exec(f"xfconf-query -c xfce4-panel -p /plugins/plugin-{i}").stdout.strip() != "clock"]
+    b.exec("xfconf-query -c xfce4-panel -p /panels/panel-1/plugin-ids --force-array "
+           + " ".join(f"-t int -s {i}" for i in keep))
+    b.stop()
+    b.remove()
+    c = make_sandbox()
+    types = c.exec(TOP_PANEL_TYPES).stdout.split()
+    assert "clock" not in types and "pager" in types, types
 
 
 # The first file with a given name wins (XDG_DATA_DIRS order); later ones are shadowed.

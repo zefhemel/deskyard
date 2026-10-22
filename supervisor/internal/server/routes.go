@@ -40,6 +40,8 @@ func (s *Server) routes() {
 	h("GET /api/desktops/{name}/tools", s.handleTools)
 	h("GET /api/desktops/{name}/image-scan", s.handleImageScan)
 	h("POST /api/desktops/{name}/image", s.handleImageFromDesktop)
+	h("GET /api/desktops/{name}/activity", s.handleActivity)
+	h("GET /api/desktops/{name}/screen-events", s.handleScreenEvents)
 	h("GET /api/desktops/{name}/tokens", s.handleListTokens)
 	h("POST /api/desktops/{name}/tokens", s.handleCreateToken)
 	h("DELETE /api/desktops/{name}/tokens/{id}", s.handleDeleteToken)

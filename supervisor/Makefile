@@ -49,7 +49,7 @@ vet:
 	$(GO) vet ./...
 
 typecheck:
-	cd web && npm run typecheck
+	cd web && npm run typecheck && npm test
 
 release: web scanner
 	rm -rf dist

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
+	"github.com/zefhemel/deskyard/supervisor/internal/activity"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
@@ -42,6 +43,7 @@ type Server struct {
 	viewersPub *throttle
 	clients    *clientFiles
 	stats      *statsCollector
+	inside     *insideReader
 	thumbs     *thumbnails
 	tokens     *tokenStore
 	images     *catalog
@@ -49,6 +51,10 @@ type Server struct {
 	builds     builds
 	// smokeTest starts a throwaway desktop of a freshly built image.
 	smokeTest func(ctx context.Context, imageID string) error
+
+	activity       *activity.Tracker
+	activityPub    *throttle
+	screenWatchers *viewers // screen-events streams, closed on revoke like viewers
 
 	api *http.ServeMux
 }
@@ -62,6 +68,8 @@ type Options struct {
 	UI           fs.FS
 	Secure       bool // served over HTTPS
 	DefaultImage string
+
+	ActivityPresence time.Duration // how long an agent stays after its last action (0: 5 minutes)
 }
 
 func New(o Options) (*Server, error) {
@@ -78,13 +86,16 @@ func New(o Options) (*Server, error) {
 		Sessions: &auth.Sessions{Key: key, Secure: o.Secure}, Throttle: &auth.Throttle{},
 		StateDir: o.StateDir, UI: o.UI,
 		jobs: newJobs(), events: newHub(), viewers: newViewers(), forwards: newForwards(), viewersPub: newThrottle(viewersInterval),
-		clients: &clientFiles{eng: o.Eng, dir: filepath.Join(o.StateDir, "clients")},
+		clients:     &clientFiles{eng: o.Eng, dir: filepath.Join(o.StateDir, "clients")},
+		activityPub: newThrottle(activityInterval), screenWatchers: newViewers(),
 	}
+	s.activity = s.newActivity(o.ActivityPresence)
 	s.stats = newStatsCollector(s)
 	s.thumbs = newThumbnails(s)
 	if s.tokens, err = loadTokens(o.StateDir); err != nil {
 		return nil, err
 	}
+	s.tokens.onGone = func(t token) { s.activity.Forget(t.ID) }
 	if s.images, err = loadCatalog(o.StateDir, o.DefaultImage); err != nil {
 		return nil, err
 	}
@@ -97,10 +108,13 @@ func New(o Options) (*Server, error) {
 
 // Run starts the background work: engine events, stats, update checks.
 func (s *Server) Run(ctx context.Context) {
+	s.inside = newInsideReader(s)
 	go s.watchEngine(ctx)
 	go s.stats.run(ctx)
+	go s.inside.run(ctx)
 	go s.tokens.expireLoop(ctx, s)
 	go s.images.checkLoop(ctx, s)
+	go s.activityLoop(ctx)
 }
 
 func sessionKey(stateDir string) ([]byte, error) {
@@ -249,7 +263,9 @@ func (s *Server) writeIndex(w http.ResponseWriter) {
 func (s *Server) accountsChanged(usernames ...string) {
 	for _, u := range usernames {
 		a, ok := s.Accounts.Get(u)
-		s.viewers.revoke(u, func(desktopID string) bool { return ok && a.HasAccess(desktopID) })
+		stillAllowed := func(desktopID string) bool { return ok && a.HasAccess(desktopID) }
+		s.viewers.revoke(u, stillAllowed)
+		s.screenWatchers.revoke(u, stillAllowed)
 		s.tokens.creatorChanged(s, u, a, ok)
 	}
 	s.events.refresh()

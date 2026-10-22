@@ -1,3 +1,5 @@
+import type { AgentPresence } from "../api.ts";
+import { AgentAvatar } from "./agent-avatar.tsx";
 import { cx } from "./ui.tsx";
 
 const colors = ["#2457c5", "#1e8a5a", "#9a4fb5", "#b7791f", "#c2410c", "#0e7490"];
@@ -22,14 +24,43 @@ export function Avatar({ name, ring = "var(--color-surface)", size = 24 }: { nam
   );
 }
 
-export function Avatars({ names, ring, size, max = 4 }: { names: string[]; ring?: string; size?: number; max?: number }) {
+/** People first, then agents (when `agents` is given), overlapping; `max` counts both. */
+export function Avatars({
+  names,
+  agents = [],
+  ring = "var(--color-surface)",
+  size = 24,
+  max = 4,
+}: {
+  names: string[];
+  agents?: AgentPresence[];
+  ring?: string;
+  size?: number;
+  max?: number;
+}) {
+  const people = names.slice(0, max);
+  const bots = agents.slice(0, Math.max(0, max - people.length));
+  const hidden = names.length + agents.length - people.length - bots.length;
   return (
     <span class="inline-flex">
-      {names.slice(0, max).map((n, i) => (
+      {people.map((n, i) => (
         <span key={n} class={cx(i > 0 && "-ml-[7px]")}>
           <Avatar name={n} ring={ring} size={size} />
         </span>
       ))}
+      {bots.map((a, i) => (
+        <span key={a.id} class={cx(people.length + i > 0 && "-ml-[7px]")}>
+          <AgentAvatar agent={a} ring={ring} size={size} />
+        </span>
+      ))}
+      {hidden > 0 && (
+        <span
+          class="-ml-[7px] inline-grid flex-none place-items-center rounded-full border-2 bg-[#4a596c] font-bold text-white"
+          style={{ height: `${size}px`, minWidth: `${size}px`, padding: "0 3px", fontSize: `${size * 0.42}px`, borderColor: ring }}
+        >
+          +{hidden}
+        </span>
+      )}
     </span>
   );
 }

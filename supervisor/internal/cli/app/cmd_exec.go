@@ -51,7 +51,9 @@ func runExec(a *App, c *call) error {
 
 	var code int
 	if cl == nil {
+		end := a.recordCommand(c.args)
 		code, err = a.localExec(req, a.Stdin, stdout, stderr)
+		end(code, err)
 	} else if req.TTY {
 		code, err = a.interactive(c, cl, req)
 	} else {
@@ -134,7 +136,9 @@ func runShell(a *App, c *call) error {
 	req := execws.Request{Argv: []string{"bash", "-l"}}
 	var code int
 	if cl == nil {
+		end := a.recordCommand([]string{"shell"})
 		code, err = a.localExec(req, a.Stdin, a.Stdout, a.Stderr)
+		end(code, err)
 	} else {
 		f, ok := a.Stdin.(*os.File)
 		if !term.Supported {

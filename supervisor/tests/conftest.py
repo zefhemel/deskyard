@@ -95,6 +95,7 @@ class Supervisor:
         env = {
             "DESKYARD_DATA_DIR": str(self.data), "DESKYARD_ADMIN_PASSWORD": ADMIN_PASSWORD,
             "DESKYARD_IMAGE": IMAGE, "DESKYARD_SUBNET": SUBNET,
+            "DESKYARD_ACTIVITY_PRESENCE": "12s",
         }
         if MODE == "container":
             self.container = f"deskyard-test-supervisor-{uuid.uuid4().hex[:6]}"

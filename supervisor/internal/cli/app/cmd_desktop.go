@@ -24,6 +24,7 @@ func runDesktop(a *App, c *call) error {
 		return err
 	}
 	if cl == nil {
+		a.recordScreen(action, c.args)
 		env := desktop.Env{Stdout: a.Stdout, Stderr: a.Stderr, Getenv: a.Getenv}
 		err := env.RunLocal(c.ctx, action, c.args)
 		var xe *desktop.ExitError

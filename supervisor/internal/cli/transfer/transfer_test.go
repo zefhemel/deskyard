@@ -230,3 +230,42 @@ func TestLocalCopy(t *testing.T) {
 		t.Error("dir copy")
 	}
 }
+
+func TestClassify(t *testing.T) {
+	var got [][]string
+	exec := func(ctx context.Context, req execws.Request, sio execws.IO) (int, error) {
+		got = append(got, req.Argv)
+		return 0, nil
+	}
+	dir := t.TempDir()
+	file := filepath.Join(dir, "f.txt")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := Upload(ctx, exec, file, "/workspace/f", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := Upload(ctx, exec, dir, "/workspace/d", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := Upload(ctx, exec, "-", "/workspace/s", strings.NewReader("x")); err != nil {
+		t.Fatal(err)
+	}
+	if err := Download(ctx, exec, "/workspace/o", "-", &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	want := []struct{ dir, path string }{{"in", "/workspace/f"}, {"in", "/workspace/d"}, {"in", "/workspace/s"}, {"out", "/workspace/o"}}
+	if len(got) != len(want) {
+		t.Fatalf("argvs = %v", got)
+	}
+	for i, argv := range got {
+		d, p, ok := Classify(argv)
+		if !ok || d != want[i].dir || p != want[i].path {
+			t.Errorf("Classify(%q) = %q, %q, %v", argv, d, p, ok)
+		}
+	}
+	if _, _, ok := Classify([]string{"sh", "-c", "cat > x", "sh", "/p"}); ok {
+		t.Error("an arbitrary shell command is not a copy")
+	}
+}
