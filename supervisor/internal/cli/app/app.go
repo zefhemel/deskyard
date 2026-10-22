@@ -200,7 +200,7 @@ func lookup(argv []string) (*Command, []string) {
 
 func subcommands(parent string) []string {
 	var out []string
-	for _, c := range commands {
+	for _, c := range visibleCommands() {
 		if p, sub, ok := strings.Cut(c.Name, " "); ok && p == parent {
 			out = append(out, sub)
 		}

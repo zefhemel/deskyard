@@ -81,7 +81,7 @@ func TestGoldenHelp(t *testing.T) {
 		t.Fatalf("--help exit %d", r.code)
 	}
 	golden(t, "help/overview.txt", r.stdout)
-	for _, c := range commands {
+	for _, c := range visibleCommands() {
 		args := append(strings.Fields(c.Name), "--help")
 		r := h.run(args...)
 		if r.code != 0 || r.stderr != "" {
@@ -128,8 +128,8 @@ func TestGoldenDescribe(t *testing.T) {
 	if err := json.Unmarshal([]byte(r.stdout), &doc); err != nil {
 		t.Fatal(err)
 	}
-	if len(doc.Commands) != len(commands) {
-		t.Errorf("describe lists %d commands, want %d", len(doc.Commands), len(commands))
+	if len(doc.Commands) != len(visibleCommands()) {
+		t.Errorf("describe lists %d commands, want %d", len(doc.Commands), len(visibleCommands()))
 	}
 	for _, c := range doc.Commands {
 		if c.Output.Type == "" {
@@ -137,6 +137,31 @@ func TestGoldenDescribe(t *testing.T) {
 		}
 	}
 	golden(t, "describe.json", r.stdout)
+}
+
+func TestHiddenCommands(t *testing.T) {
+	h := newHarness(t)
+	var hidden []string
+	for _, c := range commands {
+		if c.Hidden {
+			hidden = append(hidden, c.Name)
+		}
+	}
+	if len(hidden) == 0 {
+		t.Fatal("no hidden commands")
+	}
+	for _, args := range [][]string{{"--help"}, {"guide"}, {"describe", "--json"}} {
+		out := h.run(args...).stdout
+		for _, name := range hidden {
+			if strings.Contains(out, name) {
+				t.Errorf("%v lists hidden %s", args, name)
+			}
+		}
+	}
+	// Still runnable and documented on request.
+	if r := h.run("forward-helper", "--help"); r.code != 0 || !strings.Contains(r.stdout, "forward protocol") {
+		t.Errorf("forward-helper --help: %+v", r)
+	}
 }
 
 func TestSpecIsConsistent(t *testing.T) {
