@@ -55,14 +55,13 @@ func fullRecipe() Recipe {
 const baseID = "sha256:0123456789abcdef"
 
 func TestDockerfileGolden(t *testing.T) {
-	golden(t, "full.Dockerfile", Dockerfile(fullRecipe(), baseID, true))
-	golden(t, "noflatpak.Dockerfile", Dockerfile(fullRecipe(), baseID, false))
+	golden(t, "full.Dockerfile", Dockerfile(fullRecipe(), baseID))
 	min := Recipe{Slug: "min-box", Name: "Min", Base: "b:latest"}
-	golden(t, "minimal.Dockerfile", Dockerfile(min, baseID, true))
+	golden(t, "minimal.Dockerfile", Dockerfile(min, baseID))
 }
 
 func TestDockerfileNeverTouchesEntrypointOrCmd(t *testing.T) {
-	d := Dockerfile(fullRecipe(), baseID, true)
+	d := Dockerfile(fullRecipe(), baseID)
 	for _, l := range strings.Split(d, "\n") {
 		for _, bad := range []string{"ENTRYPOINT", "CMD ", "USER "} {
 			if strings.HasPrefix(l, bad) && l != "USER root" {
@@ -76,11 +75,11 @@ func TestDockerfileNeverTouchesEntrypointOrCmd(t *testing.T) {
 }
 
 func TestDockerfileInvalidInput(t *testing.T) {
-	if Dockerfile(Recipe{Slug: "BAD"}, baseID, true) != "" {
+	if Dockerfile(Recipe{Slug: "BAD"}, baseID) != "" {
 		t.Error("invalid recipe produced a Dockerfile")
 	}
 	for _, id := range []string{"", "x\nRUN evil", "a b", "-x"} {
-		if Dockerfile(Recipe{Slug: "ab", Name: "n", Base: "b"}, id, true) != "" {
+		if Dockerfile(Recipe{Slug: "ab", Name: "n", Base: "b"}, id) != "" {
 			t.Errorf("base ID %q produced a Dockerfile", id)
 		}
 	}
@@ -94,7 +93,7 @@ func TestCommandsSurviveUnchanged(t *testing.T) {
 		"RUN rm -rf /\nENTRYPOINT [\"evil\"]\nFROM scratch\n# comment\n" +
 		"printf '%s\\n' \"a\\\\b\" $(whoami) ${X:-y}\n"
 	r := Recipe{Slug: "cmd-box", Name: "n", Base: "b", Commands: cmds}
-	d := Dockerfile(r, baseID, true)
+	d := Dockerfile(r, baseID)
 
 	for _, l := range strings.Split(d, "\n") {
 		if l == "" || strings.HasPrefix(l, "#") {
@@ -121,7 +120,7 @@ func TestCommandsSurviveUnchanged(t *testing.T) {
 }
 
 func TestCommandsCRLF(t *testing.T) {
-	d := Dockerfile(Recipe{Slug: "ab", Name: "n", Base: "b", Commands: "a\r\nb\r\n"}, baseID, true)
+	d := Dockerfile(Recipe{Slug: "ab", Name: "n", Base: "b", Commands: "a\r\nb\r\n"}, baseID)
 	m := regexp.MustCompile(`printf %s '([^']*)'`).FindStringSubmatch(d)
 	got, _ := base64.StdEncoding.DecodeString(m[1])
 	if string(got) != "a\nb\n" {
@@ -150,7 +149,7 @@ func TestFlatpakStepAlwaysAddsFlathub(t *testing.T) {
 		{Ref: "https://dl.example.com/app.flatpakref"},
 		{ID: "org.gimp.GIMP"},
 	} {
-		d := Dockerfile(Recipe{Slug: "ab", Name: "n", Base: "b", Flatpaks: []Flatpak{fp}}, baseID, true)
+		d := Dockerfile(Recipe{Slug: "ab", Name: "n", Base: "b", Flatpaks: []Flatpak{fp}}, baseID)
 		add := "remote-add --if-not-exists flathub /etc/workspace/flathub.flatpakrepo"
 		i, j := strings.Index(d, add), strings.Index(d, "install -y")
 		if i < 0 || j < i {
@@ -160,7 +159,7 @@ func TestFlatpakStepAlwaysAddsFlathub(t *testing.T) {
 }
 
 func TestSavedRefRemotesKeepTheirGPGKey(t *testing.T) {
-	d := Dockerfile(Recipe{Slug: "ab", Name: "n", Base: "b", Flatpaks: []Flatpak{{Ref: "https://dl.example.com/a.flatpakref"}}}, baseID, true)
+	d := Dockerfile(Recipe{Slug: "ab", Name: "n", Base: "b", Flatpaks: []Flatpak{{Ref: "https://dl.example.com/a.flatpakref"}}}, baseID)
 	for _, want := range []string{
 		`/var/lib/flatpak/repo/$name.trustedkeys.gpg`,
 		`GPGKey=%s`, `base64 -w0 "$k"`, `not saving flatpak remote $name`,
@@ -169,7 +168,7 @@ func TestSavedRefRemotesKeepTheirGPGKey(t *testing.T) {
 			t.Errorf("missing %q:\n%s", want, d)
 		}
 	}
-	noRef := Dockerfile(Recipe{Slug: "ab", Name: "n", Base: "b", Flatpaks: []Flatpak{{ID: "org.a.B"}}}, baseID, true)
+	noRef := Dockerfile(Recipe{Slug: "ab", Name: "n", Base: "b", Flatpaks: []Flatpak{{ID: "org.a.B"}}}, baseID)
 	if strings.Contains(noRef, "trustedkeys") {
 		t.Error("remote-saving loop emitted without a .flatpakref")
 	}
@@ -183,7 +182,7 @@ func TestContextFilesCarryKeys(t *testing.T) {
 	if len(files) != 1 || files["remotes/myrepo.flatpakrepo"] != want {
 		t.Errorf("context files: %q", files)
 	}
-	if df := Dockerfile(r, "sha256:abc", true); strings.Contains(df, "QUJDREVG") {
+	if df := Dockerfile(r, "sha256:abc"); strings.Contains(df, "QUJDREVG") {
 		t.Errorf("the key is in the Dockerfile:\n%s", df)
 	}
 }

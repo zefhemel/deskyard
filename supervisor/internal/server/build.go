@@ -360,7 +360,7 @@ func (s *Server) build(ctx context.Context, rec recipes.Recipe, opts buildOption
 	log("Base " + rec.Base + " is " + base.ID)
 
 	// 3. The build context: the Dockerfile, and the home template if any.
-	dockerfile := recipes.Dockerfile(rec, base.ID, true)
+	dockerfile := recipes.Dockerfile(rec, base.ID)
 	if dockerfile == "" {
 		return errors.New("the recipe can't be turned into a Dockerfile")
 	}

@@ -100,10 +100,8 @@ type Image struct {
 type BuildSpec struct {
 	Context    io.Reader // tar archive
 	Dockerfile string    // path of the Dockerfile inside Context
-	Tags       []string
 	Labels     map[string]string
 	NoCache    bool
-	Pull       bool // always pull the base image
 }
 
 type PullProgress struct {
@@ -150,9 +148,6 @@ type Engine interface {
 	// Build builds an image, passing each line of build output to log.
 	// Cancelling ctx stops the build.
 	Build(ctx context.Context, spec BuildSpec, log func(line string)) (imageID string, err error)
-	// Commit makes an image of a container's filesystem. ref may be empty;
-	// changes are Dockerfile instructions (e.g. "CMD [...]").
-	Commit(ctx context.Context, containerID string, ref string, changes []string, labels map[string]string) (imageID string, err error)
 	// RemoveImage returns ErrNotFound if ref doesn't exist, and an error
 	// mentioning "in use" if a container uses it.
 	RemoveImage(ctx context.Context, ref string) error

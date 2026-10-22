@@ -1,6 +1,7 @@
 package recipes
 
 import (
+	"io/fs"
 	"reflect"
 	"strings"
 	"testing"
@@ -85,7 +86,7 @@ func groupsByName(t *testing.T, gs Groups) map[string]Group {
 }
 
 func TestScanGroups(t *testing.T) {
-	gs, err := Scan(home())
+	gs, err := scan(home())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,4 +307,39 @@ func TestOtherBrowsers(t *testing.T) {
 			}
 		}
 	}
+}
+
+// scan sorts the files of an fs.FS home folder into groups, as the server's
+// walk does with a Scanner.
+func scan(root fs.FS) (Groups, error) {
+	s := NewScanner()
+	err := fs.WalkDir(root, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if p == "." {
+			return nil
+		}
+		if _, ok := Classify(p); !ok {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		switch {
+		case d.Type().IsRegular():
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			s.Add(p, info.Size())
+		case d.Type()&fs.ModeSymlink != 0:
+			s.Add(p, 0)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.Groups(), nil
 }

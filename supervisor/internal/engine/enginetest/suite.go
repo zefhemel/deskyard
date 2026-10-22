@@ -143,9 +143,12 @@ func images(t *testing.T, e engine.Engine) {
 		var lines []string
 		id, err := e.Build(ctx, engine.BuildSpec{
 			Context:    dockerfileTar(t, "FROM "+image+"\nRUN echo hi > /x\n"),
-			Dockerfile: "Dockerfile", Tags: []string{ref}, Labels: map[string]string{"deskyard.enginetest": "yes"},
+			Dockerfile: "Dockerfile", Labels: map[string]string{"deskyard.enginetest": "yes"},
 		}, func(l string) { mu.Lock(); lines = append(lines, l); mu.Unlock() })
 		if err != nil {
+			t.Fatal(err)
+		}
+		if err := e.Tag(ctx, id, ref); err != nil {
 			t.Fatal(err)
 		}
 		img, err := e.ImageInspect(ctx, id)
@@ -234,50 +237,9 @@ func images(t *testing.T, e engine.Engine) {
 			t.Fatalf("want an error naming the failing step, got %v", err)
 		}
 	})
-	t.Run("commit", func(t *testing.T) {
-		ref := uniqueRef(t, e)
-		cid, err := e.Create(ctx, engine.ContainerSpec{Image: image, Cmd: []string{"sh", "-c", "echo committed > /marker"}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = e.Remove(context.Background(), cid) })
-		if err := e.Start(ctx, cid); err != nil {
-			t.Fatal(err)
-		}
-		for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(100 * time.Millisecond) {
-			c, err := e.Inspect(ctx, cid)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !c.Running() && c.State != "created" {
-				break
-			}
-			if time.Now().After(deadline) {
-				t.Fatalf("container still %s", c.State)
-			}
-		}
-		id, err := e.Commit(ctx, cid, ref, nil, map[string]string{"deskyard.enginetest": "commit"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		img, err := e.ImageInspect(ctx, ref)
-		if err != nil || img.ID != id || img.Labels["deskyard.enginetest"] != "commit" {
-			t.Fatalf("inspect: %v %+v want %s", err, img, id)
-		}
-		r, err := e.CopyFromImage(ctx, ref, "/marker")
-		if err != nil {
-			t.Fatalf("committed image lacks the file: %v", err)
-		}
-		_ = r.Close()
-	})
 	t.Run("tag and remove image", func(t *testing.T) {
 		ref, ref2 := uniqueRef(t, e), uniqueRef(t, e)
-		id, err := e.Build(ctx, engine.BuildSpec{
-			Context: dockerfileTar(t, "FROM "+image+"\nRUN echo tagme > /t\n"), Dockerfile: "Dockerfile", Tags: []string{ref},
-		}, func(string) {})
-		if err != nil {
-			t.Fatal(err)
-		}
+		id := buildTagged(t, e, "FROM "+image+"\nRUN echo tagme > /t\n", ref)
 		if err := e.Tag(ctx, id, ref2); err != nil {
 			t.Fatal(err)
 		}
@@ -311,12 +273,7 @@ func images(t *testing.T, e engine.Engine) {
 		repo := ref[:strings.LastIndex(ref, ":")]
 		ref2 := repo + ":other"
 		t.Cleanup(func() { _ = e.RemoveImage(context.Background(), ref2) })
-		id, err := e.Build(ctx, engine.BuildSpec{
-			Context: dockerfileTar(t, "FROM "+image+"\nRUN echo tags > /t\nUSER nobody\n"), Dockerfile: "Dockerfile", Tags: []string{ref},
-		}, func(string) {})
-		if err != nil {
-			t.Fatal(err)
-		}
+		id := buildTagged(t, e, "FROM "+image+"\nRUN echo tags > /t\nUSER nobody\n", ref)
 		if err := e.Tag(ctx, id, ref2); err != nil {
 			t.Fatal(err)
 		}
@@ -358,12 +315,7 @@ func images(t *testing.T, e engine.Engine) {
 	t.Run("no healthcheck", func(t *testing.T) {
 		ref := uniqueRef(t, e)
 		// The healthcheck leaves a mark each time it runs.
-		if _, err := e.Build(ctx, engine.BuildSpec{
-			Context:    dockerfileTar(t, "FROM "+image+"\nHEALTHCHECK --interval=1s --start-period=0s CMD touch /checked\n"),
-			Dockerfile: "Dockerfile", Tags: []string{ref},
-		}, func(string) {}); err != nil {
-			t.Fatal(err)
-		}
+		buildTagged(t, e, "FROM "+image+"\nHEALTHCHECK --interval=1s --start-period=0s CMD touch /checked\n", ref)
 		run := func(off bool) bool {
 			cid, err := e.Create(ctx, engine.ContainerSpec{Image: ref, Cmd: []string{"sleep", "30"}, NoHealthcheck: off})
 			if err != nil {
@@ -387,4 +339,18 @@ func images(t *testing.T, e engine.Engine) {
 			t.Fatal("the healthcheck ran with NoHealthcheck")
 		}
 	})
+}
+
+// buildTagged builds an image from a Dockerfile and tags it ref.
+func buildTagged(t *testing.T, e engine.Engine, dockerfile, ref string) string {
+	t.Helper()
+	ctx := context.Background()
+	id, err := e.Build(ctx, engine.BuildSpec{Context: dockerfileTar(t, dockerfile), Dockerfile: "Dockerfile"}, func(string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Tag(ctx, id, ref); err != nil {
+		t.Fatal(err)
+	}
+	return id
 }

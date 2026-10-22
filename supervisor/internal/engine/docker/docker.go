@@ -460,8 +460,8 @@ func (d *Docker) Build(ctx context.Context, spec engine.BuildSpec, log func(stri
 		}
 	}()
 	res, err := d.c.ImageBuild(ctx, spec.Context, client.ImageBuildOptions{
-		Dockerfile: spec.Dockerfile, Tags: spec.Tags, Labels: spec.Labels, ExtraHosts: []string{marker},
-		NoCache: spec.NoCache, PullParent: spec.Pull, Remove: true, ForceRemove: true,
+		Dockerfile: spec.Dockerfile, Labels: spec.Labels, ExtraHosts: []string{marker},
+		NoCache: spec.NoCache, Remove: true, ForceRemove: true,
 	})
 	if err != nil {
 		return "", wrap(err)
@@ -533,18 +533,6 @@ func (d *Docker) removeBuildContainers(ctx context.Context, marker string) {
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
-}
-
-func (d *Docker) Commit(ctx context.Context, containerID, ref string, changes []string, labels map[string]string) (string, error) {
-	opts := client.ContainerCommitOptions{Reference: ref, Changes: changes}
-	if len(labels) > 0 {
-		opts.Config = &container.Config{Labels: labels}
-	}
-	res, err := d.c.ContainerCommit(ctx, containerID, opts)
-	if err != nil {
-		return "", wrap(err)
-	}
-	return res.ID, nil
 }
 
 func (d *Docker) RemoveImage(ctx context.Context, ref string) error {

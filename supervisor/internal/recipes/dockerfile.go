@@ -25,7 +25,7 @@ var baseIDRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/@-]*$`)
 // (the build commands), so no recipe can add Dockerfile instructions or
 // break out of a shell word. The base image sets no USER, so the final user
 // is root, as in the base; ENTRYPOINT and CMD are inherited untouched.
-func Dockerfile(r Recipe, baseID string, flatpakInBuild bool) string {
+func Dockerfile(r Recipe, baseID string) string {
 	if r.Validate() != nil || !baseIDRE.MatchString(baseID) {
 		return ""
 	}
@@ -54,7 +54,7 @@ func Dockerfile(r Recipe, baseID string, flatpakInBuild bool) string {
 		}
 	}
 
-	if flatpakInBuild && len(r.Flatpaks) > 0 {
+	if len(r.Flatpaks) > 0 {
 		line("")
 		line("# Flatpak apps, system-wide")
 		line("RUN %s", flatpakStep(r.Flatpaks))

@@ -178,41 +178,6 @@ func sortedKeys(m map[string]bool) []string {
 	return out
 }
 
-// Scan sorts the files of a home folder into groups. Caches and Deskyard's
-// own state are left out; secrets are listed apart in each group.
-func Scan(root fs.FS) (Groups, error) {
-	s := NewScanner()
-	err := fs.WalkDir(root, ".", func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if p == "." {
-			return nil
-		}
-		if _, ok := Classify(p); !ok {
-			if d.IsDir() {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		switch {
-		case d.Type().IsRegular():
-			info, err := d.Info()
-			if err != nil {
-				return err
-			}
-			s.Add(p, info.Size())
-		case d.Type()&fs.ModeSymlink != 0:
-			s.Add(p, 0)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return s.Groups(), nil
-}
-
 // Selection is what the admin ticked: whole groups, and secrets one by one.
 type Selection struct {
 	Groups  []string
