@@ -15,19 +15,81 @@ dock_visible() {
     [ "$behavior" != 1 ] || panel -p /panels/panel-2/autohide-behavior -s 0
 }
 
-# No workspace switcher, clock or user menu in the top panel. Small
-# separators went with them; the expanding one pushes the systray right.
+# No user menu in the top panel. The small separator before it went too; the
+# expanding one pushes the systray right.
 trim_top_panel() {
     local ids id keep=()
     ids=$(panel -p /panels/panel-1/plugin-ids | grep -E '^[0-9]+$') || return
     for id in $ids; do
-        case $(panel -p "/plugins/plugin-$id") in
-            pager|clock|actions) continue ;;
-            separator) [ "$(panel -p "/plugins/plugin-$id/expand")" = true ] || continue ;;
-        esac
-        keep+=(-t int -s "$id")
+        if [ "$(panel -p "/plugins/plugin-$id")" = actions ]; then
+            if [ ${#keep[@]} -gt 0 ]; then
+                local prev=${keep[-1]}
+                if [ "$(panel -p "/plugins/plugin-$prev")" = separator ] \
+                    && [ "$(panel -p "/plugins/plugin-$prev/expand")" != true ]; then
+                    unset 'keep[-1]'
+                fi
+            fi
+            continue
+        fi
+        keep+=("$id")
     done
-    panel -p /panels/panel-1/plugin-ids --force-array "${keep[@]}"
+    set_top_panel "${keep[@]}"
+}
+
+set_top_panel() {
+    local args=() id
+    for id; do args+=(-t int -s "$id"); done
+    panel -p /panels/panel-1/plugin-ids --force-array "${args[@]}"
+}
+
+# Lowest plugin id above every id in use.
+next_plugin_id() {
+    local max
+    max=$(panel -l | sed -n 's|^/plugins/plugin-\([0-9][0-9]*\).*|\1|p' | sort -n | tail -1)
+    echo $(( ${max:-0} + 1 ))
+}
+
+new_plugin() { # TYPE -> prints the new id
+    local id
+    id=$(next_plugin_id)
+    panel -p "/plugins/plugin-$id" -n -t string -s "$1" || return
+    echo "$id"
+}
+
+# Homes trimmed by an older image lost the workspace switcher and the clock.
+restore_top_panel() {
+    local ids id kind has_pager= has_clock= out=() sep pager clock
+    ids=$(panel -p /panels/panel-1/plugin-ids | grep -E '^[0-9]+$') || return
+    for id in $ids; do
+        case $(panel -p "/plugins/plugin-$id") in
+            pager) has_pager=1 ;;
+            clock) has_clock=1 ;;
+        esac
+    done
+    if [ -z "$has_pager" ]; then
+        pager=$(new_plugin pager) || return
+        panel -p "/plugins/plugin-$pager/rows" -n -t uint -s 1
+        sep=$(new_plugin separator) || return
+        local done_=
+        for id in $ids; do
+            out+=("$id")
+            if [ -z "$done_" ] && [ "$(panel -p "/plugins/plugin-$id")" = separator ] \
+                && [ "$(panel -p "/plugins/plugin-$id/expand")" = true ]; then
+                out+=("$pager" "$sep")
+                done_=1
+            fi
+        done
+        [ -n "$done_" ] || out+=("$pager" "$sep")
+        ids="${out[*]}"
+    fi
+    if [ -z "$has_clock" ]; then
+        sep=$(new_plugin separator) || return
+        clock=$(new_plugin clock) || return
+        panel -p "/plugins/plugin-$clock/digital-layout" -n -t uint -s 3
+        ids="$ids $sep $clock"
+    fi
+    # shellcheck disable=SC2086
+    set_top_panel $ids
 }
 
 # once MARKER STEP: run STEP unless done before. A home without saved panel
@@ -42,3 +104,4 @@ once() {
 
 once migrated-dock-visible dock_visible
 once migrated-top-panel trim_top_panel
+once restored-top-panel restore_top_panel
