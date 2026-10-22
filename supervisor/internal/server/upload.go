@@ -47,13 +47,22 @@ func uploadName(n string) error {
 	return nil
 }
 
-// Moves the finished .part ($1) to $2/$3$4, or "$3 (2)$4", "$3 (3)$4"… when
-// that exists. ln refuses an existing name, so two uploads can't overwrite
-// each other. Prints the final name.
+// Moves the finished .part ($2) into $1 as $3$4, or "$3 (2)$4", "$3 (3)$4"…
+// when that name is taken by anything (a file, a folder, a link: a plain ln
+// into an existing folder would drop the file inside it). ln itself still
+// refuses an existing name, which guards the race between two uploads; that
+// refusal is the only failure retried, any other ln error ends the upload.
+// Prints the final name.
 const finishUploadScript = `d=$1; part=$2; base=$3; ext=$4
+taken() { [ -e "$d/$1" ] || [ -L "$d/$1" ]; }
 n=1; final="$base$ext"
-until ln "$part" "$d/$final" 2>/dev/null; do
-  n=$((n+1)); [ "$n" -gt 9999 ] && { rm -f "$part"; echo "no free name for $base$ext" >&2; exit 1; }
+while :; do
+  if ! taken "$final"; then
+    err=$(ln "$part" "$d/$final" 2>&1) && break
+    if ! taken "$final"; then echo "$err" >&2; rm -f "$part"; exit 1; fi
+  fi
+  n=$((n+1))
+  [ "$n" -gt 9999 ] && { rm -f "$part"; echo "no free name for $base$ext" >&2; exit 1; }
   final="$base ($n)$ext"
 done
 rm -f "$part"

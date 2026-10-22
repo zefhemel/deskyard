@@ -284,7 +284,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
             )}
           />
         </div>
-        {running && <DropZone desktop={c.name} />}
+        {running && <DropZone desktop={c.name} frame={frame} frameKey={frameKey} />}
         {downloadOpen && running && <DownloadDialog desktop={c} onClose={closeDownload} />}
         {viewersOpen && (c.viewers.length > 0 || c.forwards.length > 0) && (
           <ViewersPopover viewers={c.viewers} forwards={c.forwards} onClose={closeViewers} />

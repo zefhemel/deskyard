@@ -125,3 +125,90 @@ def test_drop_a_file_onto_the_desktop_page(supervisor, desktop, name, tmp_path):
         assert (desk(desktop) / "dropped.txt").read_text() == "dropped content\n"
         page.screenshot(path=str(tmp_path / "dropped.png"))
         browser.close()
+
+
+DRAG_JS = """([type, files]) => {
+  const dt = new DataTransfer();
+  for (const f of files) dt.items.add(new File([f.content], f.name, {type: 'text/plain'}));
+  const target = type === 'drop' && document.querySelector('[data-testid=drop-overlay]') || document;
+  const ev = new DragEvent(type, {dataTransfer: dt, bubbles: true, cancelable: true});
+  target.dispatchEvent(ev);
+  return ev.defaultPrevented;
+}"""
+
+
+def open_desktop_frame(p, supervisor, name):
+    from playwright.sync_api import expect
+
+    from test_ui import signed_in
+
+    browser, page = signed_in(p, supervisor.base)
+    page.goto(f"{supervisor.base}/{name}/")
+    expect(page.get_by_role("button", name="More")).to_be_visible(timeout=15000)
+    frame = page.query_selector("iframe").content_frame()
+    frame.wait_for_load_state("load")
+    return browser, page, frame
+
+
+def test_drag_inside_the_frame_shows_overlay_and_drop_uploads(supervisor, desktop, name):
+    from playwright.sync_api import expect, sync_playwright
+
+    files = [{"name": "from-frame.txt", "content": "via the iframe\n"}]
+    with sync_playwright() as p:
+        browser, page, frame = open_desktop_frame(p, supervisor, name)
+        overlay = page.get_by_text(f"Drop to copy into {name}")
+        # The events fire in the frame's own document, as a real drag over the screen does.
+        assert frame.evaluate(DRAG_JS, ["dragenter", files]) is True  # default prevented: the frame won't navigate
+        frame.evaluate(DRAG_JS, ["dragover", files])
+        expect(overlay).to_be_visible()
+        page.evaluate(DRAG_JS, ["drop", files])  # the overlay now covers the frame and takes the drop
+        expect(page.get_by_text("Copied from-frame.txt")).to_be_visible(timeout=20000)
+        expect(overlay).to_be_hidden()
+        assert (desk(desktop) / "from-frame.txt").read_text() == "via the iframe\n"
+
+        # The frame is reloaded (reconnect): listeners come back.
+        page.get_by_role("button", name="Reconnect").click() if page.get_by_role("button", name="Reconnect").count() else frame.evaluate("location.reload()")
+        frame = page.query_selector("iframe").content_frame()
+        frame.wait_for_load_state("load")
+        frame.evaluate(DRAG_JS, ["dragenter", files])
+        expect(overlay).to_be_visible()
+        # A drop that lands in the frame itself (before the overlay) uploads too.
+        frame.evaluate(DRAG_JS, ["drop", [{"name": "direct.txt", "content": "d"}]])
+        expect(page.get_by_text("Copied direct.txt")).to_be_visible(timeout=20000)
+        browser.close()
+
+
+def test_drag_that_leaves_hides_the_overlay(supervisor, desktop, name):
+    from playwright.sync_api import expect, sync_playwright
+
+    files = [{"name": "never.txt", "content": "x"}]
+    with sync_playwright() as p:
+        browser, page, frame = open_desktop_frame(p, supervisor, name)
+        overlay = page.get_by_text(f"Drop to copy into {name}")
+        frame.evaluate(DRAG_JS, ["dragenter", files])
+        expect(overlay).to_be_visible()
+        expect(overlay).to_be_hidden(timeout=5000)  # no more dragover: the drag is over
+        # dragend and a click also clear it.
+        frame.evaluate(DRAG_JS, ["dragenter", files])
+        expect(overlay).to_be_visible()
+        page.evaluate("window.dispatchEvent(new DragEvent('dragend'))")
+        expect(overlay).to_be_hidden()
+        frame.evaluate(DRAG_JS, ["dragenter", files])
+        expect(overlay).to_be_visible()
+        page.mouse.move(300, 300)
+        expect(overlay).to_be_hidden()
+        assert not (desk(desktop).exists() and any(desk(desktop).iterdir()))
+        browser.close()
+
+
+def test_drop_on_the_top_bar_is_not_navigated_away(supervisor, desktop, name):
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser, page, _ = open_desktop_frame(p, supervisor, name)
+        prevented = page.evaluate(
+            """() => { const dt = new DataTransfer(); dt.items.add(new File(['x'], 'x.txt'));
+               const ev = new DragEvent('drop', {dataTransfer: dt, bubbles: true, cancelable: true});
+               document.querySelector('header, div').dispatchEvent(ev); return ev.defaultPrevented; }""")
+        assert prevented
+        browser.close()

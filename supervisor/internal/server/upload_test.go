@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -179,5 +180,49 @@ func TestUploadStoppedDesktop(t *testing.T) {
 	_, ts := newTestServer(t) // alice is stopped
 	if code, _ := upload(t, login(t, ts, "admin"), ts.URL, "x", strings.NewReader("x")); code != 409 {
 		t.Errorf("stopped: %d", code)
+	}
+}
+
+func TestUploadNamedLikeAFolderOrLink(t *testing.T) {
+	_, ts, root := newFilesServer(t)
+	admin := login(t, ts, "admin")
+	if err := os.MkdirAll(filepath.Join(root, "Desktop", "photos"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "Desktop", "photos"), filepath.Join(root, "Desktop", "linked")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/nonexistent", filepath.Join(root, "Desktop", "dangling")); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{"photos": "photos (2)", "linked": "linked (2)", "dangling": "dangling (2)"} {
+		code, body := upload(t, admin, ts.URL, name, strings.NewReader("data"))
+		if code != 200 || !strings.Contains(body, `"/workspace/Desktop/`+want+`"`) {
+			t.Fatalf("%s: %d %s", name, code, body)
+		}
+		if b, err := os.ReadFile(filepath.Join(root, "Desktop", want)); err != nil || string(b) != "data" {
+			t.Errorf("%s: %q %v", want, b, err)
+		}
+	}
+	for _, d := range []string{"photos", "linked"} {
+		if ents, _ := os.ReadDir(filepath.Join(root, "Desktop", d)); len(ents) != 0 {
+			t.Errorf("%s got files inside it: %v", d, ents)
+		}
+	}
+}
+
+func TestFinishScriptStopsOnARealLnFailure(t *testing.T) {
+	dir := t.TempDir()
+	cmd := exec.Command("sh", "-c", finishUploadScript, "sh", dir, filepath.Join(dir, "missing.part"), "f", ".txt")
+	done := make(chan error, 1)
+	var out []byte
+	go func() { var err error; out, err = cmd.CombinedOutput(); done <- err }()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(string(out), "missing.part") {
+			t.Errorf("want a failure naming ln's error, got %v %q", err, out)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("kept retrying after a failure that isn't a taken name")
 	}
 }
