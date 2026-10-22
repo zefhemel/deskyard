@@ -5,7 +5,8 @@
   "usage": "deskyard [-d NAME] COMMAND [ARGS...]",
   "globalFlags": [
     {
-      "name": "-c",
+      "name": "--desktop",
+      "short": "-d",
       "type": "string",
       "value": "NAME",
       "description": "use the remote NAME (see `deskyard remote list`); before the command"
@@ -20,7 +21,7 @@
   "environment": [
     {
       "name": "DESKYARD_REMOTE",
-      "description": "remote to use when -c isn't given"
+      "description": "remote to use when -d isn't given"
     },
     {
       "name": "DESKYARD_URL",
@@ -807,7 +808,7 @@
       "group": "remote",
       "summary": "set or show the default remote",
       "usage": "remote default [NAME]",
-      "description": "Makes NAME the remote used when no -c or DESKYARD_REMOTE is given; without NAME prints the current default.",
+      "description": "Makes NAME the remote used when no -d or DESKYARD_REMOTE is given; without NAME prints the current default.",
       "arguments": [
         {
           "name": "name",

@@ -49,7 +49,7 @@ Choosing a desktop:
   else the default remote (`deskyard remote default`).
 
 Environment:
-  DESKYARD_REMOTE  remote to use when -c isn't given
+  DESKYARD_REMOTE  remote to use when -d isn't given
   DESKYARD_URL     desktop URL (https://host/alice) to use without a remotes.json; needs DESKYARD_TOKEN
   DESKYARD_TOKEN   agent token for DESKYARD_URL, and the default for `remote add --token`
   DESKYARD_SETTLE  seconds screenshot and zoom wait before capturing (default 0.3)

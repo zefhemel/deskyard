@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -28,6 +29,7 @@ const (
 	LabelID       = "deskyard.id"
 	LabelMemory   = "deskyard.setting.memory"
 	LabelCPUs     = "deskyard.setting.cpus"
+	LabelCreated  = "deskyard.created"
 	LabelContract = "deskyard.contract"
 	TokenEnv      = "WORKSPACE_PROXY_TOKEN"
 	Contract      = "1"
@@ -57,6 +59,7 @@ type Desktop struct {
 	ImageID     string
 	ImageLabels map[string]string
 	StartedAt   time.Time
+	Created     time.Time // zero for desktops made before the label existed
 	Folder      string
 	Settings    Settings
 	Container   engine.Container
@@ -146,6 +149,7 @@ func (s *Service) fromContainer(ctx context.Context, c engine.Container) Desktop
 		StartedAt: c.StartedAt, Folder: filepath.Join(s.Cfg.DataDir, name), Container: c,
 		Settings: Settings{Image: c.Image, MemoryBytes: c.MemoryBytes, NanoCPUs: c.NanoCPUs},
 	}
+	comp.Created, _ = time.Parse(time.RFC3339, c.Labels[LabelCreated])
 	comp.ImageLabels = s.image(ctx, c.ImageID).Labels
 	switch {
 	case c.Running():
@@ -260,7 +264,7 @@ func (s *Service) Create(ctx context.Context, name string, set Settings, progres
 	cleanup := func() {
 		bg := context.WithoutCancel(ctx)
 		_ = s.Eng.Remove(bg, containerName(name))
-		_ = s.Eng.RemoveNetwork(bg, containerName(name))
+		_ = s.removeNetwork(bg, name)
 		if createdFolder {
 			_ = os.Remove(folder) // only if still empty
 		}
@@ -270,7 +274,7 @@ func (s *Service) Create(ctx context.Context, name string, set Settings, progres
 		cleanup()
 		return Desktop{}, err
 	}
-	if err := s.createContainer(ctx, name, id, randomHex(32), set); err != nil {
+	if err := s.createContainer(ctx, name, id, randomHex(32), time.Now(), set); err != nil {
 		cleanup()
 		return Desktop{}, err
 	}
@@ -341,8 +345,11 @@ func (s *Service) createNetwork(ctx context.Context, name, id string) error {
 	})
 }
 
-func (s *Service) createContainer(ctx context.Context, name, id, token string, set Settings) error {
+func (s *Service) createContainer(ctx context.Context, name, id, token string, created time.Time, set Settings) error {
 	labels := map[string]string{LabelManaged: "true", LabelName: name, LabelID: id}
+	if !created.IsZero() {
+		labels[LabelCreated] = created.UTC().Format(time.RFC3339)
+	}
 	if set.MemoryBytes > 0 {
 		labels[LabelMemory] = strconv.FormatInt(set.MemoryBytes, 10)
 	}
@@ -365,7 +372,12 @@ func (s *Service) createContainer(ctx context.Context, name, id, token string, s
 		return err
 	}
 	if s.Cfg.InContainer {
+		// After a recreate the supervisor is still on the network.
+		if self, err := s.Eng.Inspect(ctx, s.Cfg.SelfID); err == nil && self.IP[containerName(name)] != "" {
+			return nil
+		}
 		if err := s.Eng.ConnectNetwork(ctx, containerName(name), s.Cfg.SelfID, nil); err != nil {
+			_ = s.Eng.Remove(context.WithoutCancel(ctx), containerName(name))
 			return fmt.Errorf("connecting the supervisor to %s: %w", containerName(name), err)
 		}
 	}
@@ -394,9 +406,9 @@ func (s *Service) Recreate(ctx context.Context, name string, set Settings, progr
 	if err := s.Eng.Remove(ctx, c.Container.ID); err != nil {
 		return Desktop{}, err
 	}
-	if err := s.createContainer(ctx, name, c.ID, token, set); err != nil {
+	if err := s.createContainer(ctx, name, c.ID, token, c.Created, set); err != nil {
 		// Try to bring the old one back so the desktop isn't lost.
-		if err2 := s.createContainer(context.WithoutCancel(ctx), name, c.ID, token, c.Settings); err2 != nil {
+		if err2 := s.createContainer(context.WithoutCancel(ctx), name, c.ID, token, c.Created, c.Settings); err2 != nil {
 			return Desktop{}, errors.Join(err, err2)
 		}
 		return Desktop{}, err
@@ -443,13 +455,45 @@ func (s *Service) Remove(ctx context.Context, name string, deleteFiles bool) err
 	if err := s.Eng.Remove(ctx, containerName(name)); err != nil && !errors.Is(err, engine.ErrNotFound) {
 		return err
 	}
-	if err := s.Eng.RemoveNetwork(ctx, containerName(name)); err != nil && !errors.Is(err, engine.ErrNotFound) {
-		s.Log.Warn("removing network", "deskyard", name, "err", err)
+	if err := s.removeNetwork(ctx, name); err != nil && !errors.Is(err, engine.ErrNotFound) {
+		s.Log.Warn("removing network", "desktop", name, "err", err)
 	}
 	if deleteFiles {
 		return s.deleteFolder(ctx, name)
 	}
 	return nil
+}
+
+// removeNetwork removes a desktop's network. In container mode the supervisor
+// joined it to reach the desktop, and has to leave it first.
+func (s *Service) removeNetwork(ctx context.Context, name string) error {
+	if s.Cfg.InContainer {
+		_ = s.Eng.DisconnectNetwork(ctx, containerName(name), s.Cfg.SelfID)
+	}
+	return s.Eng.RemoveNetwork(ctx, containerName(name))
+}
+
+// FolderSize adds up the sizes of the files in a desktop's folder. complete
+// is false when some directories couldn't be read (files belong to UID 1000).
+func (s *Service) FolderSize(name string) (bytes int64, complete bool) {
+	complete = true
+	folder := filepath.Join(s.Cfg.DataDir, name)
+	if _, err := os.Stat(folder); err != nil {
+		return 0, true
+	}
+	_ = filepath.WalkDir(folder, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			complete = false
+			return nil
+		}
+		if d.Type().IsRegular() {
+			if info, err := d.Info(); err == nil {
+				bytes += info.Size()
+			}
+		}
+		return nil
+	})
+	return bytes, complete
 }
 
 // deleteFolder removes a workspace folder. Its files belong to UID 1000 (and

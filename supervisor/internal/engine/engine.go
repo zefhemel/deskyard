@@ -119,6 +119,7 @@ type Engine interface {
 	CreateNetwork(ctx context.Context, name, subnet string, labels map[string]string) error
 	RemoveNetwork(ctx context.Context, name string) error
 	ConnectNetwork(ctx context.Context, network, container string, aliases []string) error
+	DisconnectNetwork(ctx context.Context, network, container string) error
 	Networks(ctx context.Context, labels map[string]string) ([]Network, error)
 	Pull(ctx context.Context, ref string, progress func(PullProgress)) error
 	ImageInspect(ctx context.Context, ref string) (Image, error)

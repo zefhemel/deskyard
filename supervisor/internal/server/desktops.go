@@ -29,6 +29,8 @@ type desktopJSON struct {
 	Name            string       `json:"name"`
 	State           string       `json:"state"`
 	StartedAt       *time.Time   `json:"startedAt"`
+	Created         *time.Time   `json:"created"`
+	Job             *string      `json:"job"`
 	Folder          string       `json:"folder"`
 	Image           string       `json:"image"`
 	ImageTitle      string       `json:"imageTitle"`
@@ -47,6 +49,12 @@ func (s *Server) desktopJSON(ctx context.Context, c desktops.Desktop, a accounts
 		ImageTitle: c.ImageLabels["org.opencontainers.image.title"], ImageVersion: c.ImageLabels["org.opencontainers.image.version"],
 		Settings: settingsJSON{c.Settings.MemoryBytes, c.Settings.NanoCPUs},
 		Access:   []string{}, Viewers: s.viewers.names(c.Name),
+	}
+	if !c.Created.IsZero() {
+		j.Created = &c.Created
+	}
+	if id, ok := s.jobs.forDesktop(c.Name); ok {
+		j.Job = &id
 	}
 	if c.State == "running" {
 		j.StartedAt = since(c.StartedAt)
@@ -89,6 +97,15 @@ func (s *Server) handleGetDesktop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.desktopJSON(r.Context(), c, a))
+}
+
+func (s *Server) handleFolder(w http.ResponseWriter, r *http.Request) {
+	c, _, ok := s.desktopFor(w, r, auth.View)
+	if !ok {
+		return
+	}
+	bytes, complete := s.Desktops.FolderSize(c.Name)
+	writeJSON(w, http.StatusOK, map[string]any{"path": c.Folder, "bytes": bytes, "complete": complete})
 }
 
 func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
@@ -173,7 +190,6 @@ func (s *Server) handleCreateDesktop(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	s.events.publish(event{kind: "deskyard", data: desktops.Desktop{Name: req.Name, State: "creating"}})
 	id := s.jobs.start(a.Username, req.Name, func(ctx context.Context, progress func(string, float64)) error {
 		defer func() {
 			s.Desktops.Done(req.Name)
@@ -181,12 +197,14 @@ func (s *Server) handleCreateDesktop(w http.ResponseWriter, r *http.Request) {
 		}()
 		c, err := s.Desktops.Create(ctx, req.Name, desktops.Settings{Image: req.Image, MemoryBytes: req.MemoryBytes, NanoCPUs: req.NanoCPUs}, progress)
 		if err != nil {
-			s.Log.Warn("create failed", "deskyard", req.Name, "err", err)
+			s.Log.Warn("create failed", "desktop", req.Name, "err", err)
 			return err
 		}
-		s.Log.Info("created", "deskyard", req.Name, "by", a.Username)
+		s.Log.Info("created", "desktop", req.Name, "by", a.Username)
 		return s.Accounts.SetAccess(c.ID, req.Access)
 	})
+	// After the job starts, so the event carries its id.
+	s.events.publish(event{kind: "desktop", data: desktops.Desktop{Name: req.Name, State: "creating"}})
 	writeJSON(w, http.StatusAccepted, map[string]string{"job": id})
 }
 
@@ -227,7 +245,6 @@ func (s *Server) startRecreate(w http.ResponseWriter, a accounts.Account, name s
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	s.publishDesktop(context.Background(), name)
 	id := s.jobs.start(a.Username, name, func(ctx context.Context, progress func(string, float64)) error {
 		defer func() {
 			s.Desktops.Done(name)
@@ -236,10 +253,11 @@ func (s *Server) startRecreate(w http.ResponseWriter, a accounts.Account, name s
 		s.viewers.closeAll(name)
 		_, err := s.Desktops.Recreate(ctx, name, set, progress)
 		if err == nil {
-			s.Log.Info("recreated", "deskyard", name, "image", set.Image, "by", a.Username)
+			s.Log.Info("recreated", "desktop", name, "image", set.Image, "by", a.Username)
 		}
 		return err
 	})
+	s.publishDesktop(context.Background(), name)
 	writeJSON(w, http.StatusAccepted, map[string]string{"job": id})
 }
 
@@ -262,7 +280,7 @@ func (s *Server) handleRemoveDesktop(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.Accounts.Forget(func(id string) bool { return id == c.ID })
 	s.tokens.forgetDesktop(c.ID)
-	s.Log.Info("removed", "deskyard", c.Name, "files", r.URL.Query().Get("files") == "1", "by", a.Username)
+	s.Log.Info("removed", "desktop", c.Name, "files", r.URL.Query().Get("files") == "1", "by", a.Username)
 	s.events.publish(event{kind: "removed", desktopID: c.ID, data: map[string]string{"name": c.Name}})
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -312,7 +330,7 @@ func (s *Server) handlePower(w http.ResponseWriter, r *http.Request) {
 		writeError(w, errorStatus(err), err.Error())
 		return
 	}
-	s.Log.Info(action, "deskyard", c.Name, "by", a.Username)
+	s.Log.Info(action, "desktop", c.Name, "by", a.Username)
 	s.publishDesktop(r.Context(), c.Name)
 	w.WriteHeader(http.StatusNoContent)
 }

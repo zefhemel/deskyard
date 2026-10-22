@@ -7,7 +7,7 @@ const DAY = 24 * HOUR;
 const now = Date.now();
 const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
 
-export const FOLDER = "/Users/zef/desktops";
+export const FOLDER = "/Users/zef/deskyard";
 const LATEST = "ghcr.io/zefhemel/deskyard-debian-xfce:latest";
 const BETA = "ghcr.io/zefhemel/deskyard-debian-xfce:beta";
 
@@ -16,6 +16,8 @@ function desktop(c: Partial<Desktop> & { name: string }): Desktop {
     id: `${c.name}-id`,
     state: "running",
     startedAt: iso(HOUR),
+    created: iso(30 * DAY),
+    job: null,
     folder: `${FOLDER}/${c.name}`,
     image: LATEST,
     imageTitle: "Debian XFCE",

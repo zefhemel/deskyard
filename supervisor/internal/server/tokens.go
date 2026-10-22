@@ -273,7 +273,7 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.Log.Info("agent token created", "deskyard", c.Name, "token", t.Name, "by", a.Username)
+	s.Log.Info("agent token created", "desktop", c.Name, "token", t.Name, "by", a.Username)
 	j := toTokenJSON(t)
 	j.Token = secret
 	j.RemoteAdd = "deskyard remote add " + c.Name + " " + baseURL(r) + "/" + c.Name + " --token " + secret
@@ -303,7 +303,7 @@ func (s *Server) handleDeleteToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.tokens.remove(func(t token) bool { return t.ID == id })
-	s.Log.Info("agent token revoked", "deskyard", c.Name, "token", found.Name, "by", a.Username)
+	s.Log.Info("agent token revoked", "desktop", c.Name, "token", found.Name, "by", a.Username)
 	s.publishDesktop(r.Context(), c.Name)
 	w.WriteHeader(http.StatusNoContent)
 }

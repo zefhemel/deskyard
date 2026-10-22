@@ -11,10 +11,8 @@ Built and tested: every phase's code exists. The project is now called **Deskyar
 
 - Test suites: `cd supervisor && go test ./...` (unit), `go test -tags engine ./...` (against Docker), `cd supervisor/tests && uv run pytest` (integration: API, agent API, CLI, monitoring, UI in a browser; set `CC_TEST_IMAGE=deskyard-debian-xfce:test`), `cd images/debian-xfce/tests && AC_IMAGE=deskyard-debian-xfce:test uv run pytest -m "not slow and not network"` (the image). Build the image with `docker build -t deskyard-debian-xfce:test -f images/debian-xfce/Dockerfile .` from the repository root.
 - Open:
-  - Run the integration suite with the supervisor in its container (`DESKYARD_TEST_MODE=container`, builds `deskyard:test` from `supervisor/Dockerfile`).
   - HTTPS (CertMagic, `DESKYARD_DOMAIN`) is untested: it needs a public host.
-  - CI has never run (no GitHub repository at the moment).
-  - Small UI/API gaps the UI agent noted: a desktop's created date isn't in the API; job progress only reaches the account that started the job (others see an indeterminate bar); the Remove dialog can't show the folder's size.
+  - CI has never run (no GitHub repository at the moment); the workflows pass actionlint. Task 8 step 3 stays open until they have run.
   - On OrbStack/Docker Desktop, bridge networks aren't isolated from each other; the per-desktop token is what keeps desktops out of each other (tests accept 401).
 
 # Supervisor Implementation Plan
@@ -144,14 +142,14 @@ Built and tested: every phase's code exists. The project is now called **Deskyar
 
 - Login form (`autocomplete` username/current-password); Desktops wall (tiles with name, status, Open/Start, menu Restart/Stop/Remove for admins), New desktop dialog (name with live `/<name>/` preview and validation, image, memory and CPU limits, default no limit), Remove dialog with typed-name confirmation for deleting files; Desktop page: bar with Back, name, status, Clipboard (send and receive via `clipboardsnd`/`clipboardrx`), iframe `/<name>/vnc/vnc.html?path=<name>/websockify&autoconnect=1&resize=remote&show_control_bar=false`; stopped → "alice is stopped" + Start.
 
-- [ ] **Step 1:** `npm run build` and `npm run typecheck` pass; commit.
+- [x] **Step 1:** `npm run build` and `npm run typecheck` pass; commit.
 
 ### Task 8: Packaging, CI and integration tests
 
 **Files:** `supervisor/Makefile`, `supervisor/Dockerfile` (node build → go build → alpine), `supervisor/compose.yaml`, `.github/workflows/{images.yml,supervisor.yml}`, `supervisor/tests/{conftest.py,test_supervisor.py}` (+ `pyproject.toml`)
 
-- [ ] **Step 1:** Integration tests (supervisor run directly against OrbStack with a temporary data dir and the test image): login and logout, every route but login needs a session; create → desktop page shows the desktop without KasmVNC's control bar; clipboard both ways; two desktops side by side; stop/start/restart; remove keeps the folder, "delete files" removes it; reuse of an existing folder; a desktop publishes only 8080 on 127.0.0.1 and can't reach another desktop's 8080; foreign Origin WebSocket refused; replacing a desktop's web server doesn't change what `/<name>/vnc/` serves.
-- [ ] **Step 2:** The same tests pass with the supervisor in its container (`DESKYARD_TEST_MODE=container`).
+- [x] **Step 1:** Integration tests (supervisor run directly against OrbStack with a temporary data dir and the test image): login and logout, every route but login needs a session; create → desktop page shows the desktop without KasmVNC's control bar; clipboard both ways; two desktops side by side; stop/start/restart; remove keeps the folder, "delete files" removes it; reuse of an existing folder; a desktop publishes only 8080 on 127.0.0.1 and can't reach another desktop's 8080; foreign Origin WebSocket refused; replacing a desktop's web server doesn't change what `/<name>/vnc/` serves.
+- [x] **Step 2:** The same tests pass with the supervisor in its container (`DESKYARD_TEST_MODE=container`).
 - [ ] **Step 3:** CI: images matrix over `images/*` (weekly cron + on change, tags `latest` and date), supervisor binaries + image; commit.
 
 # Phase 2: accounts, access, viewers
@@ -166,7 +164,7 @@ Built and tested: every phase's code exists. The project is now called **Deskyar
 
 - The proxy tracks connections per desktop (`account`, opened at); `GET /api/desktops/{name}/viewers` (SSE) streams names; tiles and the desktop page show avatars and an "anna joined" note.
 - Bar: Keys menu (Ctrl+Alt+Del, Super, Alt+Tab, Ctrl+W, Esc, F11 via the agent-free path: exec `deskyard key …` as `user`), Screenshot (`GET /api/desktops/{name}/screen.png?full=1`), Quality presets (`setvideoquality`), ⋯ (Restart, Stop, desktop page).
-- [ ] Tests: two viewers see each other; screenshot returns a PNG.
+- [x] Tests: two viewers see each other; screenshot returns a PNG.
 
 # Phase 3: monitoring and the details page
 
@@ -217,4 +215,4 @@ Built and tested: every phase's code exists. The project is now called **Deskyar
 - Phone layout: wall one column, details page stacks, desktop bar collapses into a menu.
 - README rewritten around the supervisor; in-desktop skills mention `deskyard` remotes, not `docker exec`; architecture pages flip to `built`.
 - Release workflow: `supervisor` and `deskyard` binaries for linux/darwin (amd64, arm64) and `deskyard` for windows, attached to tags.
-- [ ] Tests: full integration suite green directly and in a container.
+- [x] Tests: full integration suite green directly and in a container.

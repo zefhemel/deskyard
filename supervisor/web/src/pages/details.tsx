@@ -183,6 +183,12 @@ function Facts({ desktop: c, admin, onTab }: { desktop: Desktop; admin: boolean;
             Manage
           </button>
         </dd>
+        {c.created && (
+          <>
+            <dt class="text-muted">Created</dt>
+            <dd class="m-0">{day(c.created)}</dd>
+          </>
+        )}
         {c.state === "running" && c.startedAt && (
           <>
             <dt class="text-muted">Started</dt>

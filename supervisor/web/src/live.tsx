@@ -1,6 +1,6 @@
 // Live state shared by every signed-in page: who is signed in, the desktops
 // they can see (kept current through /api/events), the host's numbers and the
-// jobs this browser started.
+// jobs running on them, whoever started them.
 import { createContext, type ComponentChildren } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
@@ -57,6 +57,7 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
   const [jobs, setJobs] = useState<Record<string, Job>>({});
   const statsListeners = useRef(new Set<StatsListener>());
   const hostTimer = useRef<number | undefined>(undefined);
+  const followed = useRef(new Set<string>());
 
   const loadHost = useCallback(() => {
     api.host().then(setHost, () => undefined);
@@ -76,7 +77,7 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
     refresh();
     const hostInterval = window.setInterval(loadHost, 15000);
     const es = new EventSource("/api/events");
-    es.addEventListener("deskyard", (e: MessageEvent<string>) => {
+    es.addEventListener("desktop", (e: MessageEvent<string>) => {
       const c = JSON.parse(e.data) as Desktop;
       setDesktops((list) => (list ? upsert(list, c) : list));
       hostSoon();
@@ -119,6 +120,7 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
   }, [refresh, loadHost, hostSoon]);
 
   const trackJob = useCallback((id: string, onUpdate?: (job: Job) => void) => {
+    followed.current.add(id);
     let name: string | undefined;
     return watchJob(id, (job) => {
       if (job.desktop) name = job.desktop;
@@ -134,6 +136,13 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
       onUpdate?.(job);
     });
   }, []);
+
+  // Jobs someone else started (or this browser started before a reload).
+  useEffect(() => {
+    for (const c of desktops ?? []) {
+      if (c.job && !followed.current.has(c.job)) trackJob(c.job);
+    }
+  }, [desktops, trackJob]);
 
   const onStats = useCallback((listener: StatsListener) => {
     statsListeners.current.add(listener);

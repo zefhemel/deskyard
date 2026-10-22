@@ -59,7 +59,7 @@ def test_works_without_display_env(sandbox):
 
 
 def test_usage_error(sandbox):
-    assert sandbox.exec("desktop bogus", check=False).returncode == 2
+    assert sandbox.exec("deskyard bogus", check=False).returncode == 2
     assert sandbox.exec("deskyard click 1", check=False).returncode == 2
 
 

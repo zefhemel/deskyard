@@ -27,7 +27,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
 # 3. The image: the binary, CA certificates (registry pulls, ACME) and tzdata.
 FROM alpine:3.22
 RUN apk add --no-cache ca-certificates tzdata
-COPY --from=build /out/deskyard-supervisor /usr/local/bin/deskyard
+COPY --from=build /out/deskyard-supervisor /usr/local/bin/deskyard-supervisor
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="Deskyard" \
       org.opencontainers.image.description="Creates, runs and shares desktops" \

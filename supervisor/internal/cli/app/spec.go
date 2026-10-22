@@ -224,7 +224,7 @@ func init() {
 			Args:   []Arg{{Name: "name", Type: "string", Required: true, Desc: "remote name"}},
 			Output: noOutput, Examples: []string{"deskyard remote remove alice"}, Where: whereLocal, Exit: exitStd, run: runRemoteRemove},
 		{Name: "remote default", Group: "remote", Summary: "set or show the default remote",
-			Usage: "remote default [NAME]", Desc: "Makes NAME the remote used when no -c or DESKYARD_REMOTE is given; without NAME prints the current default.",
+			Usage: "remote default [NAME]", Desc: "Makes NAME the remote used when no -d or DESKYARD_REMOTE is given; without NAME prints the current default.",
 			Args:   []Arg{{Name: "name", Type: "string", Desc: "remote name"}},
 			Output: Output{Type: "text", Desc: "without NAME: the default's name, or nothing"}, Examples: []string{"deskyard remote default alice"},
 			Where: whereLocal, Exit: exitStd, run: runRemoteDefault},
@@ -255,7 +255,7 @@ func init() {
 }
 
 var globalFlags = []Flag{
-	{Name: "-c", Type: "string", Value: "NAME", Desc: "use the remote NAME (see `deskyard remote list`); before the command"},
+	{Name: "--desktop", Short: "-d", Type: "string", Value: "NAME", Desc: "use the remote NAME (see `deskyard remote list`); before the command"},
 	{Name: "--help", Short: "-h", Type: "boolean", Desc: "help for the command"},
 }
 
@@ -263,7 +263,7 @@ var environment = []struct {
 	Name string `json:"name"`
 	Desc string `json:"description"`
 }{
-	{"DESKYARD_REMOTE", "remote to use when -c isn't given"},
+	{"DESKYARD_REMOTE", "remote to use when -d isn't given"},
 	{"DESKYARD_URL", "desktop URL (https://host/alice) to use without a remotes.json; needs DESKYARD_TOKEN"},
 	{"DESKYARD_TOKEN", "agent token for DESKYARD_URL, and the default for `remote add --token`"},
 	{"DESKYARD_SETTLE", "seconds screenshot and zoom wait before capturing (default 0.3)"},

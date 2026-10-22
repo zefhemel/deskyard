@@ -31,6 +31,9 @@ export interface Desktop {
   name: string;
   state: DesktopState;
   startedAt: string;
+  created: string | null;
+  /** The running job (create, upgrade, settings change), if any. */
+  job: string | null;
   folder: string;
   image: string;
   imageTitle: string;
@@ -63,7 +66,7 @@ export interface NameCheck {
   ok: boolean;
   error?: string;
   folderExists: boolean;
-  /** Not in API.md (yet): the folder the desktop's files would live in. */
+  /** The folder the desktop's files would live in (when the name is valid). */
   folder?: string;
 }
 
@@ -106,6 +109,13 @@ export interface CatalogImage {
   desktops: string[];
   behind: string[];
   checked: string | null;
+}
+
+export interface FolderSize {
+  path: string;
+  bytes: number;
+  /** False when some directories couldn't be read, so bytes is a lower bound. */
+  complete: boolean;
 }
 
 export interface JobRef {
@@ -188,6 +198,7 @@ export const api = {
   setAccess: (name: string, usernames: string[]) => request<void>("PUT", `${c(name)}/access`, { usernames }),
   processes: (name: string) => request<Processes>("GET", `${c(name)}/processes`),
   stats: (name: string) => request<StatsHistory>("GET", `${c(name)}/stats`),
+  folder: (name: string) => request<FolderSize>("GET", `${c(name)}/folder`),
   keys: (name: string, keys: string) => request<void>("POST", `${c(name)}/keys`, { keys }),
   upgrade: (name: string) => request<JobRef>("POST", `${c(name)}/upgrade`),
   validateName: (name: string) => request<NameCheck>("GET", `/api/validate-name?name=${enc(name)}`),

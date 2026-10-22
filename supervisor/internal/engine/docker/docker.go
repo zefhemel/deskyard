@@ -370,6 +370,11 @@ func (d *Docker) ConnectNetwork(ctx context.Context, net, ctr string, aliases []
 	return wrap(err)
 }
 
+func (d *Docker) DisconnectNetwork(ctx context.Context, net, ctr string) error {
+	_, err := d.c.NetworkDisconnect(ctx, net, client.NetworkDisconnectOptions{Container: ctr, Force: true})
+	return wrap(err)
+}
+
 func (d *Docker) Networks(ctx context.Context, labels map[string]string) ([]engine.Network, error) {
 	res, err := d.c.NetworkList(ctx, client.NetworkListOptions{Filters: labelFilters(labels)})
 	if err != nil {

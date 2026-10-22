@@ -7,6 +7,9 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 )
 
 // A job is a long operation (create, upgrade, image pull) whose progress the
@@ -20,11 +23,12 @@ type jobState struct {
 }
 
 type job struct {
-	mu    sync.Mutex
-	owner string
-	state jobState
-	subs  []chan jobState
-	done  chan struct{}
+	mu      sync.Mutex
+	owner   string
+	desktop string
+	state   jobState
+	subs    []chan jobState
+	done    chan struct{}
 }
 
 type jobs struct {
@@ -37,7 +41,7 @@ func newJobs() *jobs { return &jobs{byID: map[string]*job{}} }
 // start runs fn in the background as a job owned by an account.
 func (js *jobs) start(owner, desktop string, fn func(ctx context.Context, progress func(string, float64)) error) string {
 	id := randomID(8)
-	j := &job{owner: owner, state: jobState{Status: "running", Message: "Starting", Desktop: desktop}, done: make(chan struct{})}
+	j := &job{owner: owner, desktop: desktop, state: jobState{Status: "running", Message: "Starting", Desktop: desktop}, done: make(chan struct{})}
 	js.mu.Lock()
 	js.byID[id] = j
 	js.mu.Unlock()
@@ -68,6 +72,18 @@ func (js *jobs) start(owner, desktop string, fn func(ctx context.Context, progre
 		})
 	}()
 	return id
+}
+
+// forDesktop returns the running job for a desktop, if there is one.
+func (js *jobs) forDesktop(name string) (string, bool) {
+	js.mu.Lock()
+	defer js.mu.Unlock()
+	for id, j := range js.byID {
+		if j.desktop == name && j.get().Status == "running" {
+			return id, true
+		}
+	}
+	return "", false
 }
 
 func (j *job) get() jobState {
@@ -111,7 +127,7 @@ func (s *Server) handleJob(w http.ResponseWriter, r *http.Request) {
 	s.jobs.mu.Lock()
 	j := s.jobs.byID[r.PathValue("id")]
 	s.jobs.mu.Unlock()
-	if j == nil || (j.owner != a.Username && !a.Admin) {
+	if j == nil || (j.owner != a.Username && !a.Admin && !s.canSeeDesktop(r, a, j.desktop)) {
 		writeError(w, http.StatusNotFound, "no such job")
 		return
 	}
@@ -144,6 +160,15 @@ func (s *Server) handleJob(w http.ResponseWriter, r *http.Request) {
 			sse.comment()
 		}
 	}
+}
+
+// canSeeDesktop: whoever can see a desktop can follow its jobs.
+func (s *Server) canSeeDesktop(r *http.Request, a accounts.Account, name string) bool {
+	if name == "" {
+		return false
+	}
+	c, err := s.Desktops.Get(r.Context(), name)
+	return err == nil && auth.Can(a, auth.View, c.ID)
 }
 
 // --- server-sent events -----------------------------------------------------------

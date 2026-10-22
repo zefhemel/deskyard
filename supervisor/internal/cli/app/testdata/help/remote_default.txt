@@ -2,7 +2,7 @@ deskyard remote default: set or show the default remote
 
 Usage: deskyard [-d NAME] remote default [NAME]
 
-Makes NAME the remote used when no -c or DESKYARD_REMOTE is given; without
+Makes NAME the remote used when no -d or DESKYARD_REMOTE is given; without
 NAME prints the current default.
 
 Arguments:

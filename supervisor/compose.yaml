@@ -1,6 +1,6 @@
 # The supervisor in a container. From this folder:
 #
-#   DESKYARD_DATA_DIR=/srv/desktops docker compose up -d
+#   DESKYARD_DATA_DIR=/srv/deskyard docker compose up -d
 #   docker compose logs supervisor     # first start: the generated admin password
 #
 # then open http://localhost:8080.

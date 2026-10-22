@@ -116,7 +116,7 @@ func (s *Server) proxyDesktop(w http.ResponseWriter, r *http.Request, c desktops
 		ErrorLog: nil,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			if !errors.Is(err, context.Canceled) {
-				s.Log.Debug("desktop proxy", "deskyard", c.Name, "err", err)
+				s.Log.Debug("desktop proxy", "desktop", c.Name, "err", err)
 			}
 			w.WriteHeader(http.StatusBadGateway)
 		},

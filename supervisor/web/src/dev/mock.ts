@@ -54,7 +54,7 @@ function visible(): Desktop[] {
 }
 
 function changed(c: Desktop): void {
-  broadcast("deskyard", c);
+  broadcast("desktop", c);
 }
 
 function setState(c: Desktop, state: Desktop["state"], later?: Desktop["state"]): void {
@@ -219,7 +219,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const name = String(b.name);
     const img = images.find((i) => i.ref === b.image) ?? images[0]!;
     const c: Desktop = {
-      id: `${name}-id`, name, state: "creating", startedAt: "", folder: `${FOLDER}/${name}`, image: img.ref, imageTitle: img.title,
+      id: `${name}-id`, name, state: "creating", startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/${name}`, image: img.ref, imageTitle: img.title,
       imageVersion: img.version, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus) },
       access: (b.access as string[]) ?? [], viewers: [], tokens: 0, stats: null,
     };
@@ -317,6 +317,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   }
   if (sub === "keys") return json(res, 204);
   if (sub === "stats") return json(res, 200, history(c));
+  if (sub === "folder") return json(res, 200, { path: c.folder, bytes: 3.2 * GB, complete: true });
   if (sub === "processes") {
     return json(res, 200, {
       titles: ["PID", "USER", "%CPU", "RSS", "ELAPSED", "COMMAND"],

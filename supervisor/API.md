@@ -22,7 +22,8 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 {
   "id": "6f1c…", "name": "alice",
   "state": "running" | "stopped" | "starting" | "creating" | "upgrading" | "removing",
-  "startedAt": "…", "folder": "/Users/zef/deskyard/alice",
+  "startedAt": "…", "created": "…" | null, "job": "a1b2c3d4" | null,
+  "folder": "/Users/zef/deskyard/alice",
   "image": "ghcr.io/zefhemel/deskyard-debian-xfce:latest",
   "imageTitle": "Debian XFCE", "imageVersion": "2026.10.15",
   "updateAvailable": "2026.10.22" | null,
@@ -34,7 +35,7 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 }
 ```
 
-`memoryBytes`/`nanoCpus` 0 mean no limit; `memLimit` is then the host's memory. `cpuPercent` is relative to the desktop's CPU limit, or to all host CPUs without one (0–100). `access` lists regular accounts only (admins can use everything) and is only filled for admins. The desktop of a desktop is at `/<name>/`.
+`memoryBytes`/`nanoCpus` 0 mean no limit; `memLimit` is then the host's memory. `cpuPercent` is relative to the desktop's CPU limit, or to all host CPUs without one (0–100). `access` lists regular accounts only (admins can use everything) and is only filled for admins. `created` survives upgrades and settings changes (null for desktops made before it was recorded). `job` is the running create, upgrade or settings job, which anyone who can see the desktop may follow. A desktop's own page is at `/<name>/`.
 
 | Method and path | Body | Response |
 | --- | --- | --- |
@@ -48,13 +49,14 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 | `GET /api/desktops/{name}/screen.png` | `?full=1` for full size | PNG, 480 px wide by default; 409 when stopped |
 | `GET /api/desktops/{name}/processes` | | `{"titles":[…],"rows":[[…]]}` (columns PID, USER, %CPU, RSS (KiB), ELAPSED, COMMAND) |
 | `GET /api/desktops/{name}/stats` | | `{"history":[{"t":"…","cpuPercent":n,"memBytes":n}], "memLimit":n}` (15 min at 5 s) |
+| `GET /api/desktops/{name}/folder` | | `{"path","bytes","complete"}`; `complete` is false when some directories couldn't be read, so `bytes` is a lower bound |
 | `POST /api/desktops/{name}/keys` | `{"keys":"ctrl+alt+Delete"}` (xdotool syntax) | 204 |
 | `POST /api/desktops/{name}/upgrade` (admin) | | 202 `{"job": id}` |
 | `GET /api/validate-name?name=x` (admin) | | `{"ok":bool,"error"?:string,"folder":path,"folderExists":bool}` |
 
 ### Jobs
 
-`GET /api/jobs/{id}` is a server-sent event stream; each `data:` line is `{"status":"running"|"done"|"failed","message":"Pulling image","progress":0.38|null,"error"?:string,"desktop"?:name}`. The stream ends after `done` or `failed`.
+`GET /api/jobs/{id}` is a server-sent event stream; each `data:` line is `{"status":"running"|"done"|"failed","message":"Pulling image","progress":0.38|null,"error"?:string,"desktop"?:name}`. The stream ends after `done` or `failed`. The account that started a job, admins, and (for a desktop's job) anyone who can see that desktop may follow it; others get 404.
 
 ### Events
 

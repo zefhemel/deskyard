@@ -145,7 +145,7 @@ func (s *Server) agentExec(w http.ResponseWriter, r *http.Request, c desktops.De
 	for k, v := range start.Env {
 		env = append(env, k+"="+v)
 	}
-	s.Log.Info("agent exec", "deskyard", c.Name, "token", t.Name, "argv", start.Argv, "tty", start.Tty)
+	s.Log.Info("agent exec", "desktop", c.Name, "token", t.Name, "argv", start.Argv, "tty", start.Tty)
 	p, err := s.Eng.Exec(ctx, c.Container.ID, engine.ExecSpec{
 		Cmd: start.Argv, User: "user", WorkDir: start.Cwd, Env: env,
 		Tty: start.Tty, Stdin: true, Cols: start.Cols, Rows: start.Rows,
@@ -269,13 +269,13 @@ func (s *Server) agentCDP(w http.ResponseWriter, r *http.Request, c desktops.Des
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			if !errors.Is(err, context.Canceled) {
-				s.Log.Debug("cdp proxy", "deskyard", c.Name, "err", err)
+				s.Log.Debug("cdp proxy", "desktop", c.Name, "err", err)
 			}
 			writeError(w, http.StatusBadGateway, "the browser didn't answer")
 		},
 	}
 	if strings.HasPrefix(rest, "/devtools/") {
-		s.Log.Info("agent browser connect", "deskyard", c.Name, "token", t.Name)
+		s.Log.Info("agent browser connect", "desktop", c.Name, "token", t.Name)
 	}
 	rp.ServeHTTP(w, r)
 }

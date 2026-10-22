@@ -175,10 +175,22 @@ def test_image_without_contract_refused(admin, name):
 def test_settings_change_recreates_and_keeps_folder(admin, desktop, name, supervisor):
     (supervisor.data / name / "probe.txt").write_text("hi")
     old = desktop["id"]
+    assert desktop["created"] and desktop["job"] is None
+    size = admin.get(f"/api/desktops/{name}/folder").json()
+    assert size["path"].endswith("/" + name) and size["bytes"] >= 2
+    user = "u" + uuid.uuid4().hex[:5]
+    admin.post("/api/accounts", json={"username": user, "password": "pw", "admin": False, "desktops": [name]})
+    anna = supervisor.client().login(user, "pw")
     r = admin.patch(f"/api/desktops/{name}", json={"memoryBytes": 2 << 30, "nanoCpus": 2_000_000_000})
-    assert admin.wait_job(r.json()["job"])["status"] == "done"
+    job = r.json()["job"]
+    # Someone else who can see the desktop sees the job and can follow it.
+    assert anna.desktop(name)["job"] == job
+    st = anna.wait_job(job)
+    assert st["status"] == "done", st
+    admin.delete(f"/api/accounts/{user}")
     c = admin.desktop(name)
     assert c["id"] == old and c["state"] == "running"
+    assert c["created"] == desktop["created"] and c["job"] is None
     assert c["settings"] == {"memoryBytes": 2 << 30, "nanoCpus": 2_000_000_000}
     assert (supervisor.data / name / "probe.txt").read_text() == "hi"
 

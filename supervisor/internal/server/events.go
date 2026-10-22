@@ -95,7 +95,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		for _, c := range list {
 			if acct.HasAccess(c.ID) || (acct.Admin && c.ID == "") {
 				now[c.Name] = true
-				send("deskyard", s.desktopJSON(r.Context(), c, acct))
+				send("desktop", s.desktopJSON(r.Context(), c, acct))
 			}
 		}
 		for name := range visible {
@@ -139,7 +139,7 @@ func (s *Server) publishDesktop(ctx context.Context, name string) {
 		s.events.publish(event{kind: "removed", data: map[string]string{"name": name}})
 		return
 	}
-	s.events.publish(event{kind: "deskyard", desktopID: c.ID, data: c})
+	s.events.publish(event{kind: "desktop", desktopID: c.ID, data: c})
 }
 
 // watchEngine turns engine events about desktops into UI events.

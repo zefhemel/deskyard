@@ -4,6 +4,7 @@ import asyncio
 import json
 import threading
 import time
+import uuid
 
 import websockets
 
@@ -63,6 +64,44 @@ def test_viewers_are_tracked(admin, desktop, name):
             break
         time.sleep(0.5)
     assert admin.desktop(name)["viewers"] == []
+
+
+def test_two_viewers_see_each_other(admin, desktop, name, supervisor):
+    user = "u" + uuid.uuid4().hex[:5]
+    admin.post("/api/accounts", json={"username": user, "password": "pw", "admin": False, "desktops": [name]})
+    anna = supervisor.client().login(user, "pw")
+    opened = threading.Barrier(3)
+    done = threading.Event()
+
+    def view(client):
+        async def run():
+            cookie = "; ".join(f"{k}={v}" for k, v in client.cookies.items())
+            url = client.base.replace("http", "ws") + f"/{name}/websockify"
+            async with websockets.connect(url, additional_headers={"Cookie": cookie, "Origin": client.base}, subprotocols=["binary"]):
+                opened.wait(10)
+                while not done.is_set():
+                    await asyncio.sleep(0.2)
+        asyncio.run(run())
+
+    threads = [threading.Thread(target=view, args=(c,)) for c in (admin, anna)]
+    for t in threads:
+        t.start()
+    try:
+        opened.wait(10)
+        both = sorted(["admin", user])
+        # Each sees the other, on the desktop and in the event stream.
+        for client in (admin, anna):
+            for _ in range(20):
+                if sorted(client.desktop(name)["viewers"]) == both:
+                    break
+                time.sleep(0.5)
+            assert sorted(client.desktop(name)["viewers"]) == both
+        assert read_events(anna, lambda es: any(k == "desktop" and d["name"] == name and sorted(d["viewers"]) == both for k, d in es))
+    finally:
+        done.set()
+        for t in threads:
+            t.join(10)
+        admin.delete(f"/api/accounts/{user}")
 
 
 def test_keys_and_full_screenshot(admin, desktop, name):

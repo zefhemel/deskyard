@@ -1,5 +1,6 @@
-import { useState } from "preact/hooks";
-import { api, type Desktop } from "../api.ts";
+import { useEffect, useState } from "preact/hooks";
+import { api, type Desktop, type FolderSize } from "../api.ts";
+import { bytes } from "../lib/format.ts";
 import { Button, Check, Dialog, ErrorText, errorMessage, Field } from "../components/ui.tsx";
 
 export function RemoveDialog({ desktop: c, onClose, onRemoved }: { desktop: Desktop; onClose: () => void; onRemoved?: () => void }) {
@@ -7,7 +8,12 @@ export function RemoveDialog({ desktop: c, onClose, onRemoved }: { desktop: Desk
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [size, setSize] = useState<FolderSize | null>(null);
   const ready = !files || confirm === c.name;
+
+  useEffect(() => {
+    api.folder(c.name).then(setSize, () => undefined);
+  }, [c.name]);
 
   const submit = async () => {
     if (!ready) return;
@@ -28,8 +34,9 @@ export function RemoveDialog({ desktop: c, onClose, onRemoved }: { desktop: Desk
       title={`Remove ${c.name}?`}
       intro={
         <>
-          The desktop is stopped and removed, with its cache. {files ? "Its files in " : "Its files stay in "}
+          The desktop is stopped and removed. {files ? "Its files in " : "Its files stay in "}
           <span class="mono">{c.folder}</span>
+          {size && ` (${size.complete ? "" : "at least "}${bytes(size.bytes)})`}
           {files ? " are deleted too." : "."}
         </>
       }
