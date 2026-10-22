@@ -28,6 +28,32 @@ func TestDisplayCommand(t *testing.T) {
 		{[]string{"x", ""}, "x ''"},
 		{[]string{"cat", "/workspace/projects/app-2/src/components/Foo.tsx"}, "cat /workspace/projects/app-2/src/components/Foo.tsx"},
 		{[]string{"x", "--token"}, "x --token"},
+		// Review round 1.
+		{[]string{"curl", "-u", "alice:hunter2", "http://x"}, "curl -u ••• http://x"},
+		{[]string{"curl", "--user", "alice:hunter2", "http://x"}, "curl --user ••• http://x"},
+		{[]string{"curl", "--user=alice:hunter2"}, "curl --user=•••"},
+		{[]string{"mysql", "-phunter2", "db"}, "mysql -p••• db"},
+		{[]string{"mysql", "-uroot", "-phunter2"}, "mysql -u••• -p•••"},
+		{[]string{"sh", "-c", "mysql -p hunter2 db"}, "sh -c 'mysql -p ••• db'"},
+		{[]string{"sh", "-c", "mysql -phunter2 db"}, "sh -c 'mysql -p••• db'"},
+		{[]string{"sh", "-c", "curl -u bob:s3cr3t https://x"}, "sh -c 'curl -u ••• https://x'"},
+		{[]string{"sh", "-c", "curl --user bob:s3cr3t https://x"}, "sh -c 'curl --user ••• https://x'"},
+		{[]string{"x", "--pass", "hunter2"}, "x --pass •••"},
+		{[]string{"x", "--pw", "hunter2"}, "x --pw •••"},
+		{[]string{"x", "--auth", "hunter2"}, "x --auth •••"},
+		{[]string{"x", "--credentials", "hunter2"}, "x --credentials •••"},
+		{[]string{"x", "--pw=hunter2"}, "x --pw=•••"},
+		{[]string{"x", "--author", "bob"}, "x --author bob"},
+		{[]string{"aws", "configure", "set", "aws_secret_access_key", "wJalrXUtnFEMI"}, "aws configure set aws_secret_access_key •••"},
+		{[]string{"sh", "-c", "echo aws_secret_access_key=abc"}, "sh -c 'echo aws_secret_access_key=•••'"},
+		{[]string{"echo", "AKIAIOSFODNN7EXAMPLE"}, "echo •••"},
+		{[]string{"echo", "-----BEGIN RSA PRIVATE KEY-----\nMIIabc\ndef\n-----END RSA PRIVATE KEY----- after"}, "echo '••• after'"},
+		{[]string{"echo", "-----BEGIN PRIVATE KEY-----\nMIIabc cut short"}, "echo •••"},
+		// Control and format characters never reach logs or the UI.
+		{[]string{"x", "\x1b[31mred"}, "x ' [31mred'"},
+		{[]string{"x", "a\nb"}, "x 'a b'"},
+		{[]string{"x", "a\u202eb"}, "x ab"},
+		{[]string{"x", "dyt_ab\u200bcd"}, "x •••"},
 	}
 	for _, c := range cases {
 		if got := DisplayCommand(c.argv); got != c.want {
@@ -55,6 +81,16 @@ func TestMaskText(t *testing.T) {
 		if got := MaskText(in); got != want {
 			t.Errorf("MaskText(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestMaskTextPEMAndAWS(t *testing.T) {
+	pem := "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaA\n-----END OPENSSH PRIVATE KEY-----"
+	if got := MaskText("a " + pem + " b"); got != "a ••• b" {
+		t.Errorf("pem: %q", got)
+	}
+	if got := MaskText("aws_secret_access_key abc/def+ghi"); got != "aws_secret_access_key •••" {
+		t.Errorf("aws: %q", got)
 	}
 }
 

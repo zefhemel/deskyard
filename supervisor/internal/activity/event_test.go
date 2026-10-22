@@ -53,6 +53,14 @@ func TestSanitize(t *testing.T) {
 		{Agent: "a", Kind: "screen", Screen: &ScreenAction{Action: "click", Pos: []int{1, 2, 3}}},
 		{Agent: "a", Kind: "screen", Screen: &ScreenAction{Action: "click", Pos: []int{1, 2, 3, 4, 5}}},
 		{Agent: "a", Kind: "cmd-start"},
+		{Agent: "a", Kind: "screen", Screen: &ScreenAction{Action: "click"}},
+		{Agent: "a", Kind: "screen", Screen: &ScreenAction{Action: "click", Pos: []int{1, 2, 3, 4}}},
+		{Agent: "a", Kind: "screen", Screen: &ScreenAction{Action: "drag", Pos: []int{1, 2}}},
+		{Agent: "a", Kind: "screen", Screen: &ScreenAction{Action: "scroll"}},
+		{Agent: "a", Kind: "screen", Screen: &ScreenAction{Action: "move", Pos: []int{1, 2, 3, 4}}},
+		{Agent: "a", Kind: "screen", Screen: &ScreenAction{Action: "key", Pos: []int{1, 2}}},
+		{Agent: "a", Kind: "screen", Screen: &ScreenAction{Action: "type", Pos: []int{1, 2}}},
+		{Agent: "a", Kind: "screen", Screen: &ScreenAction{Action: "screenshot", Pos: []int{1, 2}}},
 		{Agent: "", Kind: "cmd-end"},
 		{Agent: " \n\t", Kind: "cmd-end"},
 	}
@@ -75,7 +83,7 @@ func TestSanitize(t *testing.T) {
 	if s.Pos[0] != 0 || s.Pos[1] != 65535 || s.N != 100 || s.Chars != 0 {
 		t.Errorf("clamp: %+v", s)
 	}
-	e = good(Event{Agent: "a", Kind: "screen", Screen: &ScreenAction{Action: "type", Chars: 1 << 40, Pos: []int{1, 2}, Keys: []string{"secret"}, Button: "left", N: 3}})
+	e = good(Event{Agent: "a", Kind: "screen", Screen: &ScreenAction{Action: "type", Chars: 1 << 40, Keys: []string{"secret"}, Button: "left", N: 3}})
 	if s := e.Screen; s.Chars != 1_000_000 || s.Pos != nil || s.Keys != nil || s.Button != "" || s.N != 0 {
 		t.Errorf("type: %+v", s)
 	}
@@ -88,6 +96,20 @@ func TestSanitize(t *testing.T) {
 	out := good(in)
 	if in.Screen.Pos[0] != -1 || out.Screen == in.Screen {
 		t.Errorf("aliased input")
+	}
+	// Every action's Pos has its own length.
+	for _, a := range ScreenCommands {
+		n := posLen[a]
+		good(Event{Agent: "a", Kind: "screen", Screen: &ScreenAction{Action: a, Pos: make([]int, n)}})
+	}
+	// Format characters (bidi overrides, zero-width) are dropped.
+	e = good(Event{Agent: "a\u202eb\u200b", Kind: "cmd-end", Cwd: "/x\u202ey", Cmd: "ls \u202e"})
+	if e.Agent != "ab" || e.Cwd != "/xy" || e.Cmd != "ls" {
+		t.Errorf("format chars: %q %q %q", e.Agent, e.Cwd, e.Cmd)
+	}
+	e = good(Event{Agent: "a", Kind: "cmd-end", Cmd: "x dyt_ab\u200bcd"})
+	if strings.Contains(e.Cmd, "dyt_") || strings.Contains(e.Cmd, "cd") {
+		t.Errorf("zero-width split dodged the mask: %q", e.Cmd)
 	}
 	// Control characters can't reach the UI.
 	e = good(Event{Agent: "a\x1b[2J\nb", Kind: "cmd-end", Cwd: "/x\x00y"})
@@ -131,7 +153,7 @@ func FuzzSanitize(f *testing.F) {
 		}
 		if out.Screen != nil {
 			s := out.Screen
-			if len(s.Pos) != 0 && len(s.Pos) != 2 && len(s.Pos) != 4 || len(s.Keys) > 8 || s.N < 0 || s.N > 100 || s.Chars < 0 || s.Chars > 1_000_000 {
+			if len(s.Pos) != posLen[s.Action] || len(s.Keys) > 8 || s.N < 0 || s.N > 100 || s.Chars < 0 || s.Chars > 1_000_000 {
 				t.Fatalf("bad screen: %+v", s)
 			}
 			for _, p := range s.Pos {

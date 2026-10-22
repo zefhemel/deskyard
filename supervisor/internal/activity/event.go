@@ -4,7 +4,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -68,11 +67,14 @@ func Sanitize(e Event) (Event, bool) {
 	return Event{}, false
 }
 
+// posLen is how many numbers each action's Pos has; absent means none.
+var posLen = map[string]int{"drag": 4, "click": 2, "double-click": 2, "triple-click": 2, "move": 2, "scroll": 2}
+
 func sanitizeScreen(s *ScreenAction) (ScreenAction, bool) {
 	if s == nil || !slices.Contains(ScreenCommands, s.Action) {
 		return ScreenAction{}, false
 	}
-	if n := len(s.Pos); n != 0 && n != 2 && n != 4 {
+	if len(s.Pos) != posLen[s.Action] { // later code indexes Pos by action
 		return ScreenAction{}, false
 	}
 	out := ScreenAction{Action: s.Action}
@@ -104,13 +106,7 @@ func clamp(v, hi int) int { return max(0, min(v, hi)) }
 // most n runes.
 func clean(s string, n int) string {
 	s = cutRunes(s, n*4) // bound the work on hostile input; a bad run rarely eats more
-	s = strings.ToValidUTF8(s, "")
-	s = strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) || r == ' ' || r == ' ' {
-			return ' '
-		}
-		return r
-	}, s)
+	s = plainText(s)
 	return strings.TrimSpace(cutRunes(s, n))
 }
 
