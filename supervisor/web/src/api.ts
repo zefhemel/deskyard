@@ -46,6 +46,8 @@ export interface Desktop {
   mics: string[];
   /** Port mappings agents have set up with `deskyard forward`; port is the desktop's. */
   forwards: Forward[];
+  /** Agents at work in the desktop: from outside (a token) or inside (a program). */
+  agents: AgentPresence[];
   tokens: number;
   stats: Stats | null;
 }
@@ -143,6 +145,61 @@ export interface ViewersEvent {
   viewers: string[];
   mics: string[];
   forwards: Forward[];
+  agents: AgentPresence[];
+}
+
+// Agent activity: who is at work in a desktop and what they did in the last 15 minutes.
+export interface AgentPresence {
+  id: string;
+  name: string;
+  /** The account that made the token; empty for agents inside the desktop. */
+  owner: string;
+  inside: boolean;
+  color: string;
+  /** Something happened in the last 10 seconds. */
+  active: boolean;
+  lastActive: string;
+}
+export interface ActivityNow {
+  kind: "command" | "browser" | "forward";
+  text?: string;
+  since: string;
+}
+export interface ActivityRecent {
+  kind: "command" | "screen" | "browser" | "copy";
+  t: string;
+  text?: string;
+  exit?: number;
+  disconnected?: boolean;
+  durationMs?: number;
+  action?: string;
+  count?: number;
+  direction?: "in" | "out";
+  path?: string;
+  size?: number;
+}
+export interface AgentSummary extends AgentPresence {
+  now: ActivityNow[];
+  /** Newest first. */
+  recent: ActivityRecent[];
+}
+export interface ActivityEvent {
+  name: string;
+  agents: AgentSummary[];
+}
+/** A screen action an agent made, from GET /api/desktops/{name}/screen-events. */
+export interface ScreenEvent {
+  agent: Pick<AgentPresence, "id" | "name" | "color" | "inside">;
+  t: string;
+  action: "click" | "double-click" | "triple-click" | "drag" | "scroll" | "key" | "hold-key" | "type";
+  /** [x, y], or [x1, y1, x2, y2] for drag. */
+  pos?: number[];
+  button?: string;
+  dir?: "up" | "down" | "left" | "right";
+  n?: number;
+  keys?: string[];
+  /** type: how many characters, never the text. */
+  chars?: number;
 }
 export interface RemovedEvent {
   name: string;
@@ -210,6 +267,7 @@ export const api = {
     request<JobRef>("PATCH", c(name), body),
   setAccess: (name: string, usernames: string[]) => request<void>("PUT", `${c(name)}/access`, { usernames }),
   processes: (name: string) => request<Processes>("GET", `${c(name)}/processes`),
+  activity: (name: string) => request<ActivityEvent>("GET", `${c(name)}/activity`),
   stats: (name: string) => request<StatsHistory>("GET", `${c(name)}/stats`),
   folder: (name: string) => request<FolderSize>("GET", `${c(name)}/folder`),
   keys: (name: string, keys: string) => request<void>("POST", `${c(name)}/keys`, { keys }),

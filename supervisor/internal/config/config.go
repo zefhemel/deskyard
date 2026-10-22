@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 const DefaultImage = "ghcr.io/zefhemel/deskyard-debian-xfce:latest"
@@ -21,6 +22,10 @@ type Config struct {
 	AdminPassword string
 	DefaultImage  string // DESKYARD_IMAGE: the catalog's first entry on first start
 	InContainer   bool
+
+	// ActivityPresence (DESKYARD_ACTIVITY_PRESENCE) is how long an agent
+	// stays listed after its last action. A test knob, not for users.
+	ActivityPresence time.Duration
 }
 
 func env(k, def string) string {
@@ -62,6 +67,10 @@ func Load() (Config, error) {
 	}
 	c.DataDir = abs
 	c.StateDir = filepath.Join(c.DataDir, ".deskyard")
+	c.ActivityPresence, err = time.ParseDuration(env("DESKYARD_ACTIVITY_PRESENCE", "5m"))
+	if err != nil || c.ActivityPresence <= 0 {
+		return c, fmt.Errorf("DESKYARD_ACTIVITY_PRESENCE must be a positive duration")
+	}
 	c.Subnet, err = netip.ParsePrefix(env("DESKYARD_SUBNET", "10.213.0.0/16"))
 	if err != nil {
 		return c, fmt.Errorf("DESKYARD_SUBNET: %w", err)

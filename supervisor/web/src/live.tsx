@@ -6,6 +6,7 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "p
 import {
   api,
   watchJob,
+  type ActivityEvent,
   type Desktop,
   type Host,
   type Job,
@@ -16,6 +17,7 @@ import {
 } from "./api.ts";
 
 type StatsListener = (e: StatsEvent) => void;
+type ActivityListener = (e: ActivityEvent) => void;
 
 export interface Live {
   me: Me;
@@ -29,6 +31,8 @@ export interface Live {
   /** Gets the desktops and the host again (after a change the events may not cover). */
   refresh: () => void;
   onStats: (listener: StatsListener) => () => void;
+  /** Agent summaries, at most once a second per desktop. */
+  onActivity: (listener: ActivityListener) => () => void;
 }
 
 const LiveContext = createContext<Live | null>(null);
@@ -56,6 +60,7 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
   const [host, setHost] = useState<Host | null>(null);
   const [jobs, setJobs] = useState<Record<string, Job>>({});
   const statsListeners = useRef(new Set<StatsListener>());
+  const activityListeners = useRef(new Set<ActivityListener>());
   const hostTimer = useRef<number | undefined>(undefined);
   const followed = useRef(new Set<string>());
 
@@ -100,7 +105,11 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
     });
     es.addEventListener("viewers", (e: MessageEvent<string>) => {
       const v = JSON.parse(e.data) as ViewersEvent;
-      setDesktops((list) => (list ? list.map((c) => (c.name === v.name ? { ...c, viewers: v.viewers, mics: v.mics, forwards: v.forwards } : c)) : list));
+      setDesktops((list) => (list ? list.map((c) => (c.name === v.name ? { ...c, viewers: v.viewers, mics: v.mics, forwards: v.forwards, agents: v.agents ?? c.agents } : c)) : list));
+    });
+    es.addEventListener("activity", (e: MessageEvent<string>) => {
+      const a = JSON.parse(e.data) as ActivityEvent;
+      for (const l of activityListeners.current) l(a);
     });
     let reconnected = false;
     es.onopen = () => {
@@ -151,9 +160,16 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
     };
   }, []);
 
+  const onActivity = useCallback((listener: ActivityListener) => {
+    activityListeners.current.add(listener);
+    return () => {
+      activityListeners.current.delete(listener);
+    };
+  }, []);
+
   const value = useMemo<Live>(
-    () => ({ me, desktops, host, jobs, trackJob, refresh, onStats }),
-    [me, desktops, host, jobs, trackJob, refresh, onStats],
+    () => ({ me, desktops, host, jobs, trackJob, refresh, onStats, onActivity }),
+    [me, desktops, host, jobs, trackJob, refresh, onStats, onActivity],
   );
   return <LiveContext.Provider value={value}>{children}</LiveContext.Provider>;
 }

@@ -15,6 +15,12 @@
 				header_up Host localhost
 			}
 		}
+		# The desktop's activity stream (deskyard activity-serve), streamed.
+		handle_path /_activity/* {
+			reverse_proxy 127.0.0.1:6092 {
+				flush_interval -1
+			}
+		}
 		# Selkies' HTTP API: only the stream and the health probe. Its
 		# screenshots, recordings, printing, uploads, downloads, sessions,
 		# mode switch, sharing tokens and metrics stay closed.

@@ -72,6 +72,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	s.events.subs[sub] = true
 	s.events.mu.Unlock()
 	s.stats.wake()
+	s.inside.wake()
 	defer func() {
 		s.events.mu.Lock()
 		delete(s.events.subs, sub)
@@ -159,6 +160,7 @@ func (s *Server) watchEngine(ctx context.Context) {
 			case "start", "die", "stop", "create", "destroy", "restart", "pause", "unpause":
 				s.publishDesktop(ctx, name)
 				s.stats.wake()
+				s.inside.wake()
 			}
 		}
 		time.Sleep(time.Second)
