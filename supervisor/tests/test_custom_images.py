@@ -144,8 +144,9 @@ def test_rebuild_and_upgrade_keeps_home(admin, slug, name):
         before = admin.desktop(name)
         old_id = docker("inspect", "-f", "{{.Image}}", f"deskyard-{name}").stdout.strip()
         assert before["updateAvailable"] is None
-        # The version is the build time to the minute.
-        while time.strftime("%Y-%m-%d %H:%M") == before["imageVersion"]:
+        # The version is the build time to the minute, in the supervisor's time zone
+        # (UTC in container mode, local when run directly).
+        while before["imageVersion"] in (time.strftime("%Y-%m-%d %H:%M"), time.strftime("%Y-%m-%d %H:%M", time.gmtime())):
             time.sleep(2)
 
         r = admin.post(f"/api/recipes/{slug}/rebuild")
