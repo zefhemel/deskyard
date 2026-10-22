@@ -1,7 +1,9 @@
 package activity
 
 import (
+	"path"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -24,17 +26,20 @@ const secretWords = `password|passwd|pass|pw|token|secret|key|auth|credentials?`
 
 var (
 	// A flag whose value is the next argument: -p, --token, --api-key, ...
-	// -u and --user take user:password (curl, and others).
-	secretFlag = regexp.MustCompile(`^(?i:-p|-u|--user|aws_secret_access_key|--[a-z0-9-]*(?:` + secretWords + `))$`)
+	secretFlag = regexp.MustCompile(`^(?i:aws_secret_access_key|--[a-z0-9-]*(?:` + secretWords + `))$`)
 
-	// -pSECRET and -uUSER:SECRET attached to the flag, and the short flags
-	// with their value in the same string (a script in sh -c). Any -p or -u
-	// word is masked, so `mkdir -pv` and `sort -u f` lose a word: hiding when
-	// in doubt beats naming argv[0]s.
-	shortFlag = regexp.MustCompile(`(^|[\s'"])(-[pu]\s*)\S+`)
+	// Short flags carry secrets only in some commands, so they are masked
+	// by context (see maskShort): -u/--user VALUE when VALUE is user:pass
+	// (curl), -p VALUE after mysql and friends, attached -pVALUE when the
+	// command is mysql or VALUE looks like a secret.
+	userFlag  = regexp.MustCompile(`(^|[\s'"])(-u\s*|--user(?:=|\s+))(\S*:\S*)`)
+	pwdAny    = regexp.MustCompile(`(^|[\s'"])(-p\s*)\S+`)
+	pwdAttach = regexp.MustCompile(`(^|[\s'"])(-p)(\S{6,})`)
+	// Where one simple command ends and the next begins.
+	cmdSep = regexp.MustCompile(`&&|\|\||[;|&\n]`)
 
 	// A secret flag with its value in the same string: --token=abc, --secret abc.
-	flagValue = regexp.MustCompile(`(?i)(--(?:user|[a-z0-9-]*(?:` + secretWords + `))(?:=|\s+))\S+`)
+	flagValue = regexp.MustCompile(`(?i)(--(?:[a-z0-9-]*(?:` + secretWords + `))(?:=|\s+))\S+`)
 
 	// PEM private keys, whole (or to the end of the string when cut short),
 	// and AWS credentials.
@@ -62,12 +67,49 @@ var (
 )
 
 // MaskText hides secrets in free text (a command line, a script in sh -c).
-func MaskText(s string) string {
+func MaskText(s string) string { return maskText(s, "") }
+
+// mysqlLike are the commands whose -p takes the password.
+var mysqlLike = []string{"mysql", "mariadb", "mysqldump"}
+
+// maskText masks s; ctx is the command a leading flag belongs to when s is
+// one argument of that command's argv (a text that starts with a command
+// word of its own uses that instead).
+func maskText(s, ctx string) string {
+	var b strings.Builder
+	last := 0
+	for _, loc := range append(cmdSep.FindAllStringIndex(s, -1), []int{len(s), len(s)}) {
+		b.WriteString(maskShort(s[last:loc[0]], ctx))
+		b.WriteString(s[loc[0]:loc[1]])
+		last = loc[1]
+	}
+	return maskRest(b.String())
+}
+
+// maskShort masks the short-flag secrets of one simple command.
+func maskShort(seg, ctx string) string {
+	cmd := ctx
+	if f := strings.Fields(seg); len(f) > 0 && !strings.HasPrefix(f[0], "-") {
+		cmd = path.Base(f[0])
+	}
+	seg = userFlag.ReplaceAllString(seg, "${1}${2}"+masked)
+	if slices.Contains(mysqlLike, cmd) {
+		return pwdAny.ReplaceAllString(seg, "${1}${2}"+masked)
+	}
+	return pwdAttach.ReplaceAllStringFunc(seg, func(m string) string {
+		g := pwdAttach.FindStringSubmatch(m)
+		if strings.ContainsAny(g[3], "0123456789") && containsLetter(g[3]) {
+			return g[1] + g[2] + masked
+		}
+		return m
+	})
+}
+
+func maskRest(s string) string {
 	s = pem.ReplaceAllString(s, masked)
 	s = awsSecret.ReplaceAllString(s, "${1}"+masked)
 	s = awsKeyID.ReplaceAllString(s, masked)
 	s = flagValue.ReplaceAllString(s, "${1}"+masked)
-	s = shortFlag.ReplaceAllString(s, "${1}${2}"+masked)
 	s = dyt.ReplaceAllString(s, masked)
 	s = sk.ReplaceAllString(s, "${1}"+masked)
 	s = gh.ReplaceAllString(s, masked)
@@ -99,18 +141,28 @@ func containsLetter(s string) bool {
 func DisplayCommand(argv []string) string {
 	var b strings.Builder
 	hide := false
+	prog := ""
+	if len(argv) > 0 {
+		prog = path.Base(argv[0])
+	}
 	for i, arg := range argv {
 		if i > 0 {
 			b.WriteByte(' ')
 		}
 		arg = plainText(cutRunes(arg, maxArg))
-		switch {
-		case hide:
-			arg = masked
-		default:
-			arg = MaskText(arg)
+		var next string
+		if i+1 < len(argv) {
+			next = argv[i+1]
 		}
-		hide = secretFlag.MatchString(arg)
+		raw := arg
+		if hide {
+			arg = masked
+		} else {
+			arg = maskText(arg, prog)
+		}
+		hide = secretFlag.MatchString(raw) ||
+			(raw == "-p" && slices.Contains(mysqlLike, prog)) ||
+			((raw == "-u" || raw == "--user") && strings.Contains(next, ":"))
 		b.WriteString(quote(arg))
 		if utf8.RuneCountInString(b.String()) > maxDisplay {
 			break
