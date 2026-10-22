@@ -8,7 +8,7 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
-	"github.com/zefhemel/deskyard/supervisor/internal/computers"
+	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 )
 
 func (s *Server) routes() {
@@ -24,20 +24,20 @@ func (s *Server) routes() {
 	h("GET /api/events", s.handleEvents)
 	h("GET /api/jobs/{id}", s.handleJob)
 
-	h("GET /api/computers", s.handleListComputers)
-	h("POST /api/computers", s.handleCreateComputer)
+	h("GET /api/desktops", s.handleListDesktops)
+	h("POST /api/desktops", s.handleCreateDesktop)
 	h("GET /api/validate-name", s.handleValidateName)
-	h("GET /api/computers/{name}", s.handleGetComputer)
-	h("PATCH /api/computers/{name}", s.handleUpdateComputer)
-	h("DELETE /api/computers/{name}", s.handleRemoveComputer)
-	h("POST /api/computers/{name}/{action}", s.handlePower) // start, stop, restart, upgrade, keys
-	h("PUT /api/computers/{name}/access", s.handleSetAccess)
-	h("GET /api/computers/{name}/screen.png", s.handleScreen)
-	h("GET /api/computers/{name}/processes", s.handleProcesses)
-	h("GET /api/computers/{name}/stats", s.handleStats)
-	h("GET /api/computers/{name}/tokens", s.handleListTokens)
-	h("POST /api/computers/{name}/tokens", s.handleCreateToken)
-	h("DELETE /api/computers/{name}/tokens/{id}", s.handleDeleteToken)
+	h("GET /api/desktops/{name}", s.handleGetDesktop)
+	h("PATCH /api/desktops/{name}", s.handleUpdateDesktop)
+	h("DELETE /api/desktops/{name}", s.handleRemoveDesktop)
+	h("POST /api/desktops/{name}/{action}", s.handlePower) // start, stop, restart, upgrade, keys
+	h("PUT /api/desktops/{name}/access", s.handleSetAccess)
+	h("GET /api/desktops/{name}/screen.png", s.handleScreen)
+	h("GET /api/desktops/{name}/processes", s.handleProcesses)
+	h("GET /api/desktops/{name}/stats", s.handleStats)
+	h("GET /api/desktops/{name}/tokens", s.handleListTokens)
+	h("POST /api/desktops/{name}/tokens", s.handleCreateToken)
+	h("DELETE /api/desktops/{name}/tokens/{id}", s.handleDeleteToken)
 
 	h("GET /api/accounts", s.handleListAccounts)
 	h("POST /api/accounts", s.handleCreateAccount)
@@ -142,15 +142,15 @@ func (s *Server) handleOwnPassword(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- helpers for computer routes -----------------------------------------------------------
+// --- helpers for desktop routes -----------------------------------------------------------
 
-// computerFor resolves {name} for the signed-in account, writing 404 when it
+// desktopFor resolves {name} for the signed-in account, writing 404 when it
 // doesn't exist or the account can't see it, and 403 when the action isn't allowed.
-func (s *Server) computerFor(w http.ResponseWriter, r *http.Request, action auth.Action) (computers.Computer, accounts.Account, bool) {
+func (s *Server) desktopFor(w http.ResponseWriter, r *http.Request, action auth.Action) (desktops.Desktop, accounts.Account, bool) {
 	a, _ := s.account(r)
-	c, err := s.Computers.Get(r.Context(), r.PathValue("name"))
+	c, err := s.Desktops.Get(r.Context(), r.PathValue("name"))
 	if err != nil || !auth.Can(a, auth.View, c.ID) {
-		writeError(w, http.StatusNotFound, "no such computer")
+		writeError(w, http.StatusNotFound, "no such desktop")
 		return c, a, false
 	}
 	if !auth.Can(a, action, c.ID) {
@@ -170,10 +170,10 @@ func requireAdmin(w http.ResponseWriter, a accounts.Account) bool {
 
 func errorStatus(err error) int {
 	switch {
-	case errors.Is(err, computers.ErrNotFound), errors.Is(err, accounts.ErrNotFound):
+	case errors.Is(err, desktops.ErrNotFound), errors.Is(err, accounts.ErrNotFound):
 		return http.StatusNotFound
-	case errors.Is(err, computers.ErrExists), errors.Is(err, accounts.ErrExists),
-		errors.Is(err, computers.ErrBusy), errors.Is(err, accounts.ErrLastAdmin), errors.Is(err, computers.ErrStopped):
+	case errors.Is(err, desktops.ErrExists), errors.Is(err, accounts.ErrExists),
+		errors.Is(err, desktops.ErrBusy), errors.Is(err, accounts.ErrLastAdmin), errors.Is(err, desktops.ErrStopped):
 		return http.StatusConflict
 	default:
 		return http.StatusBadRequest

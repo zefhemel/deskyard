@@ -1,4 +1,4 @@
-package computers
+package desktops
 
 import (
 	"net/netip"
@@ -11,7 +11,7 @@ func TestValidName(t *testing.T) {
 			t.Errorf("%q: %v", ok, err)
 		}
 	}
-	for _, bad := range []string{"", "a", "Alice", "1abc", "abc-", "a_b", "api", "login", "_x", "computers", "x234567890123456789012345678901ab"} {
+	for _, bad := range []string{"", "a", "Alice", "1abc", "abc-", "a_b", "api", "login", "_x", "desktops", "x234567890123456789012345678901ab"} {
 		if ValidName(bad) == nil {
 			t.Errorf("%q accepted", bad)
 		}

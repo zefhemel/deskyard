@@ -1,4 +1,4 @@
-package computers
+package desktops
 
 import (
 	"fmt"
@@ -13,10 +13,10 @@ var reserved = map[string]bool{
 	"api": true, "login": true, "logout": true, "assets": true, "static": true,
 	"healthz": true, "favicon.ico": true, "robots.txt": true,
 	// The UI's own pages.
-	"computers": true, "images": true, "accounts": true,
+	"desktops": true, "images": true, "accounts": true,
 }
 
-// ValidName checks a computer name: DNS label rules (so it also works as a
+// ValidName checks a desktop name: DNS label rules (so it also works as a
 // container, network and folder name), not one of the supervisor's routes.
 func ValidName(name string) error {
 	if strings.HasPrefix(name, "_") || reserved[name] {

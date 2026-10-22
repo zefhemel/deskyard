@@ -1,7 +1,7 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { api, type NameCheck } from "../api.ts";
-import { AccessPicks, cpuOptions, ImagePick, memoryOptions } from "../components/computer-fields.tsx";
+import { AccessPicks, cpuOptions, ImagePick, memoryOptions } from "../components/desktop-fields.tsx";
 import { JobProgress, useJob } from "../components/job.tsx";
 import { Button, Dialog, ErrorText, Field, Seg } from "../components/ui.tsx";
 import { useLive } from "../live.tsx";
@@ -9,7 +9,7 @@ import { useFetch } from "../lib/use-fetch.ts";
 
 const NAME = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
 
-/** Where the computer's files will be: from the server when it says, else next to the other computers' folders. */
+/** Where the desktop's files will be: from the server when it says, else next to the other desktops' folders. */
 function folderFor(name: string, check: NameCheck | null, folders: string[]): string | null {
   if (check?.folder) return check.folder;
   const first = folders[0];
@@ -17,8 +17,8 @@ function folderFor(name: string, check: NameCheck | null, folders: string[]): st
   return `${first.slice(0, first.lastIndexOf("/"))}/${name}`;
 }
 
-export function NewComputerDialog({ onClose }: { onClose: () => void }) {
-  const { computers } = useLive();
+export function NewDesktopDialog({ onClose }: { onClose: () => void }) {
+  const { desktops } = useLive();
   const images = useFetch(() => api.images(), "images");
   const accounts = useFetch(() => api.accounts(), "accounts");
 
@@ -60,7 +60,7 @@ export function NewComputerDialog({ onClose }: { onClose: () => void }) {
   } else if (check && !check.ok) {
     hint = <span class="text-danger">{check.error ?? "This name can't be used."}</span>;
   } else if (check?.ok) {
-    const folder = folderFor(name, check, (computers ?? []).map((c) => c.folder));
+    const folder = folderFor(name, check, (desktops ?? []).map((c) => c.folder));
     hintOk = true;
     hint = (
       <>
@@ -71,7 +71,7 @@ export function NewComputerDialog({ onClose }: { onClose: () => void }) {
             and its files in <span class="mono">{folder}</span>
           </>
         )}
-        {check.folderExists && <span class="text-busy">. That folder already exists: the computer will reuse the existing folder.</span>}
+        {check.folderExists && <span class="text-busy">. That folder already exists: the desktop will reuse the existing folder.</span>}
       </>
     );
   }
@@ -79,12 +79,12 @@ export function NewComputerDialog({ onClose }: { onClose: () => void }) {
   const ready = check?.ok === true && !!image && !run.running;
   const submit = () => {
     if (!ready) return;
-    void run.start(() => api.createComputer({ name, image, memoryBytes: memory, nanoCpus: cpus, access }));
+    void run.start(() => api.createDesktop({ name, image, memoryBytes: memory, nanoCpus: cpus, access }));
   };
 
   return (
     <Dialog
-      title="New computer"
+      title="New desktop"
       onClose={onClose}
       onSubmit={submit}
       footer={
@@ -93,7 +93,7 @@ export function NewComputerDialog({ onClose }: { onClose: () => void }) {
             {run.running ? "Close" : "Cancel"}
           </Button>
           <Button type="submit" variant="primary" disabled={!ready}>
-            {run.running ? "Creating…" : "Create computer"}
+            {run.running ? "Creating…" : "Create desktop"}
           </Button>
         </>
       }

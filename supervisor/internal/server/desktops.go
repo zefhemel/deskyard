@@ -9,7 +9,7 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
-	"github.com/zefhemel/deskyard/supervisor/internal/computers"
+	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 )
 
@@ -24,7 +24,7 @@ type statsJSON struct {
 	MemLimit   uint64  `json:"memLimit"`
 }
 
-type computerJSON struct {
+type desktopJSON struct {
 	ID              string       `json:"id"`
 	Name            string       `json:"name"`
 	State           string       `json:"state"`
@@ -41,8 +41,8 @@ type computerJSON struct {
 	Stats           *statsJSON   `json:"stats"`
 }
 
-func (s *Server) computerJSON(ctx context.Context, c computers.Computer, a accounts.Account) computerJSON {
-	j := computerJSON{
+func (s *Server) desktopJSON(ctx context.Context, c desktops.Desktop, a accounts.Account) desktopJSON {
+	j := desktopJSON{
 		ID: c.ID, Name: c.Name, State: c.State, Folder: c.Folder, Image: c.Image,
 		ImageTitle: c.ImageLabels["org.opencontainers.image.title"], ImageVersion: c.ImageLabels["org.opencontainers.image.version"],
 		Settings: settingsJSON{c.Settings.MemoryBytes, c.Settings.NanoCPUs},
@@ -67,34 +67,34 @@ func (s *Server) computerJSON(ctx context.Context, c computers.Computer, a accou
 	return j
 }
 
-func (s *Server) handleListComputers(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleListDesktops(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(r)
-	list, err := s.Computers.List(r.Context())
+	list, err := s.Desktops.List(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	out := []computerJSON{}
+	out := []desktopJSON{}
 	for _, c := range list {
 		if a.HasAccess(c.ID) || (a.Admin && c.ID == "") {
-			out = append(out, s.computerJSON(r.Context(), c, a))
+			out = append(out, s.desktopJSON(r.Context(), c, a))
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
-func (s *Server) handleGetComputer(w http.ResponseWriter, r *http.Request) {
-	c, a, ok := s.computerFor(w, r, auth.View)
+func (s *Server) handleGetDesktop(w http.ResponseWriter, r *http.Request) {
+	c, a, ok := s.desktopFor(w, r, auth.View)
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.computerJSON(r.Context(), c, a))
+	writeJSON(w, http.StatusOK, s.desktopJSON(r.Context(), c, a))
 }
 
 func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(r)
 	info, _ := s.Eng.Info(r.Context())
-	list, _ := s.Computers.List(r.Context())
+	list, _ := s.Desktops.List(r.Context())
 	var running, total int
 	var memUsed uint64
 	for _, c := range list {
@@ -121,18 +121,18 @@ func (s *Server) handleValidateName(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.URL.Query().Get("name")
 	res := map[string]any{"ok": true, "folderExists": false}
-	if err := computers.ValidName(name); err != nil {
+	if err := desktops.ValidName(name); err != nil {
 		res["ok"], res["error"] = false, err.Error()
-	} else if _, err := s.Computers.Get(r.Context(), name); err == nil {
-		res["ok"], res["error"] = false, "a computer with that name already exists"
+	} else if _, err := s.Desktops.Get(r.Context(), name); err == nil {
+		res["ok"], res["error"] = false, "a desktop with that name already exists"
 	} else {
-		res["folderExists"] = s.Computers.FolderExists(name)
-		res["folder"] = filepath.Join(s.Computers.Cfg.DataDir, name)
+		res["folderExists"] = s.Desktops.FolderExists(name)
+		res["folder"] = filepath.Join(s.Desktops.Cfg.DataDir, name)
 	}
 	writeJSON(w, http.StatusOK, res)
 }
 
-func (s *Server) handleCreateComputer(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleCreateDesktop(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(r)
 	if !requireAdmin(w, a) {
 		return
@@ -148,12 +148,12 @@ func (s *Server) handleCreateComputer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
-	if err := computers.ValidName(req.Name); err != nil {
+	if err := desktops.ValidName(req.Name); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if _, err := s.Computers.Get(r.Context(), req.Name); err == nil {
-		writeError(w, http.StatusConflict, "a computer with that name already exists")
+	if _, err := s.Desktops.Get(r.Context(), req.Name); err == nil {
+		writeError(w, http.StatusConflict, "a desktop with that name already exists")
 		return
 	}
 	if req.Image == "" {
@@ -169,29 +169,29 @@ func (s *Server) handleCreateComputer(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := s.Computers.Begin(req.Name, "creating"); err != nil {
+	if err := s.Desktops.Begin(req.Name, "creating"); err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	s.events.publish(event{kind: "computer", data: computers.Computer{Name: req.Name, State: "creating"}})
+	s.events.publish(event{kind: "deskyard", data: desktops.Desktop{Name: req.Name, State: "creating"}})
 	id := s.jobs.start(a.Username, req.Name, func(ctx context.Context, progress func(string, float64)) error {
 		defer func() {
-			s.Computers.Done(req.Name)
-			s.publishComputer(ctx, req.Name)
+			s.Desktops.Done(req.Name)
+			s.publishDesktop(ctx, req.Name)
 		}()
-		c, err := s.Computers.Create(ctx, req.Name, computers.Settings{Image: req.Image, MemoryBytes: req.MemoryBytes, NanoCPUs: req.NanoCPUs}, progress)
+		c, err := s.Desktops.Create(ctx, req.Name, desktops.Settings{Image: req.Image, MemoryBytes: req.MemoryBytes, NanoCPUs: req.NanoCPUs}, progress)
 		if err != nil {
-			s.Log.Warn("create failed", "computer", req.Name, "err", err)
+			s.Log.Warn("create failed", "deskyard", req.Name, "err", err)
 			return err
 		}
-		s.Log.Info("created", "computer", req.Name, "by", a.Username)
+		s.Log.Info("created", "deskyard", req.Name, "by", a.Username)
 		return s.Accounts.SetAccess(c.ID, req.Access)
 	})
 	writeJSON(w, http.StatusAccepted, map[string]string{"job": id})
 }
 
-func (s *Server) handleUpdateComputer(w http.ResponseWriter, r *http.Request) {
-	c, a, ok := s.computerFor(w, r, auth.Manage)
+func (s *Server) handleUpdateDesktop(w http.ResponseWriter, r *http.Request) {
+	c, a, ok := s.desktopFor(w, r, auth.Manage)
 	if !ok {
 		return
 	}
@@ -222,48 +222,48 @@ func (s *Server) handleUpdateComputer(w http.ResponseWriter, r *http.Request) {
 }
 
 // startRecreate runs Recreate as a job (settings changes and upgrades).
-func (s *Server) startRecreate(w http.ResponseWriter, a accounts.Account, name string, set computers.Settings, state string) {
-	if err := s.Computers.Begin(name, state); err != nil {
+func (s *Server) startRecreate(w http.ResponseWriter, a accounts.Account, name string, set desktops.Settings, state string) {
+	if err := s.Desktops.Begin(name, state); err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	s.publishComputer(context.Background(), name)
+	s.publishDesktop(context.Background(), name)
 	id := s.jobs.start(a.Username, name, func(ctx context.Context, progress func(string, float64)) error {
 		defer func() {
-			s.Computers.Done(name)
-			s.publishComputer(ctx, name)
+			s.Desktops.Done(name)
+			s.publishDesktop(ctx, name)
 		}()
 		s.viewers.closeAll(name)
-		_, err := s.Computers.Recreate(ctx, name, set, progress)
+		_, err := s.Desktops.Recreate(ctx, name, set, progress)
 		if err == nil {
-			s.Log.Info("recreated", "computer", name, "image", set.Image, "by", a.Username)
+			s.Log.Info("recreated", "deskyard", name, "image", set.Image, "by", a.Username)
 		}
 		return err
 	})
 	writeJSON(w, http.StatusAccepted, map[string]string{"job": id})
 }
 
-func (s *Server) handleRemoveComputer(w http.ResponseWriter, r *http.Request) {
-	c, a, ok := s.computerFor(w, r, auth.Manage)
+func (s *Server) handleRemoveDesktop(w http.ResponseWriter, r *http.Request) {
+	c, a, ok := s.desktopFor(w, r, auth.Manage)
 	if !ok {
 		return
 	}
-	if err := s.Computers.Begin(c.Name, "removing"); err != nil {
+	if err := s.Desktops.Begin(c.Name, "removing"); err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	defer s.Computers.Done(c.Name)
+	defer s.Desktops.Done(c.Name)
 	s.viewers.closeAll(c.Name)
 	ctx, cancel := timeout(r, 5*time.Minute)
 	defer cancel()
-	if err := s.Computers.Remove(ctx, c.Name, r.URL.Query().Get("files") == "1"); err != nil {
+	if err := s.Desktops.Remove(ctx, c.Name, r.URL.Query().Get("files") == "1"); err != nil {
 		writeError(w, errorStatus(err), err.Error())
 		return
 	}
 	_ = s.Accounts.Forget(func(id string) bool { return id == c.ID })
-	s.tokens.forgetComputer(c.ID)
-	s.Log.Info("removed", "computer", c.Name, "files", r.URL.Query().Get("files") == "1", "by", a.Username)
-	s.events.publish(event{kind: "removed", computerID: c.ID, data: map[string]string{"name": c.Name}})
+	s.tokens.forgetDesktop(c.ID)
+	s.Log.Info("removed", "deskyard", c.Name, "files", r.URL.Query().Get("files") == "1", "by", a.Username)
+	s.events.publish(event{kind: "removed", desktopID: c.ID, data: map[string]string{"name": c.Name}})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -274,7 +274,7 @@ func (s *Server) handlePower(w http.ResponseWriter, r *http.Request) {
 		s.handleKeys(w, r)
 		return
 	case "upgrade":
-		c, a, ok := s.computerFor(w, r, auth.Manage)
+		c, a, ok := s.desktopFor(w, r, auth.Manage)
 		if !ok {
 			return
 		}
@@ -287,12 +287,12 @@ func (s *Server) handlePower(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such action")
 		return
 	}
-	c, a, ok := s.computerFor(w, r, auth.Power)
+	c, a, ok := s.desktopFor(w, r, auth.Power)
 	if !ok {
 		return
 	}
-	if _, busy := s.Computers.Busy()[c.Name]; busy {
-		writeError(w, http.StatusConflict, computers.ErrBusy.Error())
+	if _, busy := s.Desktops.Busy()[c.Name]; busy {
+		writeError(w, http.StatusConflict, desktops.ErrBusy.Error())
 		return
 	}
 	ctx, cancel := timeout(r, 2*time.Minute)
@@ -300,25 +300,25 @@ func (s *Server) handlePower(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch action {
 	case "start":
-		err = s.Computers.Start(ctx, c.Name)
+		err = s.Desktops.Start(ctx, c.Name)
 	case "stop":
 		s.viewers.closeAll(c.Name)
-		err = s.Computers.Stop(ctx, c.Name)
+		err = s.Desktops.Stop(ctx, c.Name)
 	case "restart":
 		s.viewers.closeAll(c.Name)
-		err = s.Computers.Restart(ctx, c.Name)
+		err = s.Desktops.Restart(ctx, c.Name)
 	}
 	if err != nil {
 		writeError(w, errorStatus(err), err.Error())
 		return
 	}
-	s.Log.Info(action, "computer", c.Name, "by", a.Username)
-	s.publishComputer(r.Context(), c.Name)
+	s.Log.Info(action, "deskyard", c.Name, "by", a.Username)
+	s.publishDesktop(r.Context(), c.Name)
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleSetAccess(w http.ResponseWriter, r *http.Request) {
-	c, _, ok := s.computerFor(w, r, auth.ManageAccounts)
+	c, _, ok := s.desktopFor(w, r, auth.ManageAccounts)
 	if !ok {
 		return
 	}
@@ -339,12 +339,12 @@ func (s *Server) handleSetAccess(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.publishComputer(r.Context(), c.Name)
+	s.publishDesktop(r.Context(), c.Name)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// execOutput runs a command as the computer's user and returns its stdout.
-func (s *Server) execOutput(ctx context.Context, c computers.Computer, cmd ...string) ([]byte, error) {
+// execOutput runs a command as the desktop's user and returns its stdout.
+func (s *Server) execOutput(ctx context.Context, c desktops.Desktop, cmd ...string) ([]byte, error) {
 	out, errOut, code, err := engine.Output(ctx, s.Eng, c.Container.ID, engine.ExecSpec{Cmd: cmd, User: "user", WorkDir: "/workspace", Env: execEnv})
 	if err != nil {
 		return nil, err
@@ -368,7 +368,7 @@ func (e *execError) Error() string {
 }
 
 func (s *Server) handleKeys(w http.ResponseWriter, r *http.Request) {
-	c, _, ok := s.computerFor(w, r, auth.Power)
+	c, _, ok := s.desktopFor(w, r, auth.Power)
 	if !ok {
 		return
 	}
@@ -380,12 +380,12 @@ func (s *Server) handleKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !c.Running() {
-		writeError(w, http.StatusConflict, computers.ErrStopped.Error())
+		writeError(w, http.StatusConflict, desktops.ErrStopped.Error())
 		return
 	}
 	ctx, cancel := timeout(r, 15*time.Second)
 	defer cancel()
-	if _, err := s.execOutput(ctx, c, append([]string{"computer", "key"}, strings.Fields(req.Keys)...)...); err != nil {
+	if _, err := s.execOutput(ctx, c, append([]string{"deskyard", "key"}, strings.Fields(req.Keys)...)...); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -393,14 +393,14 @@ func (s *Server) handleKeys(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleProcesses(w http.ResponseWriter, r *http.Request) {
-	c, _, ok := s.computerFor(w, r, auth.View)
+	c, _, ok := s.desktopFor(w, r, auth.View)
 	if !ok {
 		return
 	}
 	titles := []string{"PID", "USER", "%CPU", "RSS", "ELAPSED", "COMMAND"}
 	rows := [][]string{}
 	if c.Running() {
-		// ps inside the computer: the engine's own "top" runs the host's ps,
+		// ps inside the desktop: the engine's own "top" runs the host's ps,
 		// which differs between engines.
 		ctx, cancel := timeout(r, 10*time.Second)
 		defer cancel()
@@ -419,4 +419,3 @@ func (s *Server) handleProcesses(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"titles": titles, "rows": rows})
 }
-

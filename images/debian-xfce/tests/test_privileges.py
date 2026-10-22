@@ -1,4 +1,4 @@
-"""Root inside a computer can write host kernel settings (Flatpak support), so no
+"""Root inside a desktop can write host kernel settings (Flatpak support), so no
 agent-reachable or internet-facing process may run as (or become) root."""
 
 import time

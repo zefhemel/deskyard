@@ -1,7 +1,7 @@
-computer guide: how to work on a Deskyard computer
+deskyard guide: how to work on a Deskyard desktop
 
-WHAT A COMPUTER IS
-A computer is a Debian Linux container with an XFCE desktop and one shared
+WHAT A DESKTOP IS
+A desktop is a Debian Linux container with an XFCE desktop and one shared
 Chromium. A human uses the same desktop from their browser and may be
 watching, or using the mouse and keyboard, while you work.
 
@@ -18,35 +18,35 @@ watching, or using the mouse and keyboard, while you work.
   supervisord): killing them cuts the human off.
 
 WHERE YOU ARE
-- Inside a computer: every command acts on it directly. No setup.
+- Inside a desktop: every command acts on it directly. No setup.
 - Anywhere else: talk to it through a remote. A token comes from the
-  computer's Agents tab; then:
-    computer remote add alice https://host/alice --token dyt_...
-    computer -c alice status
-  The first remote is the default; -c NAME or COMPUTER_REMOTE picks
-  another. COMPUTER_URL + COMPUTER_TOKEN work without saving anything.
-  A token reaches one computer's shell, files, browser and desktop, nothing
-  else. A stopped computer answers "alice is stopped"; you can't start it,
+  desktop's Agents tab; then:
+    deskyard remote add alice https://host/alice --token dyt_...
+    deskyard -d alice status
+  The first remote is the default; -d NAME or DESKYARD_REMOTE picks
+  another. DESKYARD_URL + DESKYARD_TOKEN work without saving anything.
+  A token reaches one desktop's shell, files, browser and desktop, nothing
+  else. A stopped desktop answers "alice is stopped"; you can't start it,
   ask the human.
 
 THREE WAYS TO WORK
 
 1. Shell: for files, code, builds, tests, anything scriptable. Fastest and
    most reliable; prefer it.
-    computer exec -- ls -la                    run a command, exit code passes through
-    computer exec -- bash -lc 'cd app && npm test'   pipes, &&, globs need bash -lc
-    computer exec --json -- cat notes.txt      {"stdout","stderr","exit"} in one object
-    computer exec --cwd /workspace/app -e CI=1 -- make
-    echo data | computer exec -- tee /workspace/in.txt   stdin is streamed
-    computer cp ./src alice:/workspace/src     upload (file or directory)
-    computer cp alice:/workspace/out.csv .     download
-    computer shell                             interactive terminal (for humans)
+    deskyard exec -- ls -la                    run a command, exit code passes through
+    deskyard exec -- bash -lc 'cd app && npm test'   pipes, &&, globs need bash -lc
+    deskyard exec --json -- cat notes.txt      {"stdout","stderr","exit"} in one object
+    deskyard exec --cwd /workspace/app -e CI=1 -- make
+    echo data | deskyard exec -- tee /workspace/in.txt   stdin is streamed
+    deskyard cp ./src alice:/workspace/src     upload (file or directory)
+    deskyard cp alice:/workspace/out.csv .     download
+    deskyard shell                             interactive terminal (for humans)
 
 2. Browser: for websites, especially ones that need the human's logins.
-   The computer's Chromium is shared: it is on the desktop, the human can
+   The desktop's Chromium is shared: it is on the desktop, the human can
    see it, and it is signed in to whatever the human signed in to.
-   Inside the computer CDP is at http://127.0.0.1:9221. From elsewhere:
-    computer -c alice browser connect &        forwards http://127.0.0.1:9222
+   Inside the desktop CDP is at http://127.0.0.1:9221. From elsewhere:
+    deskyard -d alice browser connect &        forwards http://127.0.0.1:9222
    then attach (never launch your own browser):
     browser = p.chromium.connect_over_cdp("http://127.0.0.1:9222")
     page = browser.contexts[0].new_page()      your own tab, in the shared profile
@@ -58,17 +58,17 @@ THREE WAYS TO WORK
 3. Desktop: for anything without an API: desktop apps, browser UI outside
    the page (permission prompts, file pickers), or checking what the human
    sees. Slowest; use it when the other two can't.
-    computer screenshot shot.png      look first (PNG; - or nothing = stdout)
-    computer zoom 0 0 400 300 z.png   read small text in a region
-    computer click 640 400            act by screen coordinates (pixels)
-    computer type 'hello'             type into the focused field
-    computer key ctrl+l Return        keys, xdotool syntax
-    computer scroll 640 400 down 5
-    computer drag 100 100 300 300
-    computer wait 1                   let things load
+    deskyard screenshot shot.png      look first (PNG; - or nothing = stdout)
+    deskyard zoom 0 0 400 300 z.png   read small text in a region
+    deskyard click 640 400            act by screen coordinates (pixels)
+    deskyard type 'hello'             type into the focused field
+    deskyard key ctrl+l Return        keys, xdotool syntax
+    deskyard scroll 640 400 down 5
+    deskyard drag 100 100 300 300
+    deskyard wait 1                   let things load
    The loop: screenshot, find the target's coordinates in the image, act,
    screenshot again to verify. Coordinates are screen pixels (see
-   `computer size`). Screenshots wait COMPUTER_SETTLE seconds (0.3) first.
+   `deskyard size`). Screenshots wait DESKYARD_SETTLE seconds (0.3) first.
    The human may move the mouse too: re-check before acting if things moved.
 
 WHICH ONE
@@ -85,8 +85,8 @@ WORKING ALONGSIDE A HUMAN
   outlive your command.
 
 MORE
-  computer --help                 all commands
-  computer COMMAND --help         arguments, an example, what it prints
-  computer describe --json        every command as a machine-readable schema
+  deskyard --help                 all commands
+  deskyard COMMAND --help         arguments, an example, what it prints
+  deskyard describe --json        every command as a machine-readable schema
 Exit codes: 0 ok, 1 error (the message says what to do next), 2 usage error;
-exec, shell and desktop actions pass through the command's own exit code.
+exec, shell and screen actions pass through the command's own exit code.

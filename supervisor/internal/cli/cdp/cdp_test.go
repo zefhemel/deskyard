@@ -56,7 +56,7 @@ func TestRewriteJSON(t *testing.T) {
 
 func forwarder(t *testing.T) (*clitest.Fake, *httptest.Server) {
 	f := clitest.New(t, "alice")
-	c := &remote.Client{Alias: "alice", Base: f.URL, Computer: "alice", Token: clitest.Token}
+	c := &remote.Client{Alias: "alice", Base: f.URL, Desktop: "alice", Token: clitest.Token}
 	fw := &Forwarder{Client: c}
 	srv := httptest.NewServer(fw)
 	fw.Local = strings.TrimPrefix(srv.URL, "http://")
@@ -145,7 +145,7 @@ func TestForwarderPassesErrors(t *testing.T) {
 
 func TestProbeAndServe(t *testing.T) {
 	f := clitest.New(t, "alice")
-	c := &remote.Client{Alias: "alice", Base: f.URL, Computer: "alice", Token: clitest.Token}
+	c := &remote.Client{Alias: "alice", Base: f.URL, Desktop: "alice", Token: clitest.Token}
 	ver, err := Probe(context.Background(), c)
 	if err != nil || ver["Browser"] != "Chrome/141.0" {
 		t.Fatalf("probe: %v %v", ver, err)

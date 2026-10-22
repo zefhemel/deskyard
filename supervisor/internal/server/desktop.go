@@ -15,13 +15,13 @@ import (
 	"sync"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
-	"github.com/zefhemel/deskyard/supervisor/internal/computers"
+	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 )
 
-// serveComputer handles /<name>/…: the desktop page (the UI), the KasmVNC
-// client files taken from the computer's image, and the desktop WebSocket.
-// Nothing else from a computer is ever served on this origin.
-func (s *Server) serveComputer(w http.ResponseWriter, r *http.Request, name, rest string) {
+// serveDesktop handles /<name>/…: the desktop page (the UI), the KasmVNC
+// client files taken from the desktop's image, and the desktop WebSocket.
+// Nothing else from a desktop is ever served on this origin.
+func (s *Server) serveDesktop(w http.ResponseWriter, r *http.Request, name, rest string) {
 	r, ok := s.withSession(w, r)
 	if !ok {
 		if rest == "websockify" {
@@ -32,9 +32,9 @@ func (s *Server) serveComputer(w http.ResponseWriter, r *http.Request, name, res
 		return
 	}
 	a, _ := s.account(r)
-	c, err := s.Computers.Get(r.Context(), name)
+	c, err := s.Desktops.Get(r.Context(), name)
 	if err != nil || !auth.Can(a, auth.View, c.ID) {
-		http.NotFound(w, r) // the same for missing and invisible computers
+		http.NotFound(w, r) // the same for missing and invisible desktops
 		return
 	}
 	switch {
@@ -51,7 +51,7 @@ func (s *Server) serveComputer(w http.ResponseWriter, r *http.Request, name, res
 	}
 }
 
-func (s *Server) serveClientFile(w http.ResponseWriter, r *http.Request, c computers.Computer, file string) {
+func (s *Server) serveClientFile(w http.ResponseWriter, r *http.Request, c desktops.Desktop, file string) {
 	if c.ImageID == "" {
 		http.NotFound(w, r)
 		return
@@ -76,9 +76,9 @@ func cleanClientPath(file string) string {
 	return clean
 }
 
-// proxyDesktop proxies the desktop WebSocket to the computer, adding the
-// computer's token and dropping the session cookie, and tracks who's viewing.
-func (s *Server) proxyDesktop(w http.ResponseWriter, r *http.Request, c computers.Computer) {
+// proxyDesktop proxies the desktop WebSocket to the desktop, adding the
+// desktop's token and dropping the session cookie, and tracks who's viewing.
+func (s *Server) proxyDesktop(w http.ResponseWriter, r *http.Request, c desktops.Desktop) {
 	if !sameOrigin(r) {
 		writeError(w, http.StatusForbidden, "cross-origin WebSocket refused")
 		return
@@ -87,7 +87,7 @@ func (s *Server) proxyDesktop(w http.ResponseWriter, r *http.Request, c computer
 		writeError(w, http.StatusBadRequest, "WebSocket expected")
 		return
 	}
-	addr, token, err := s.Computers.Target(r.Context(), c.Name)
+	addr, token, err := s.Desktops.Target(r.Context(), c.Name)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
@@ -95,7 +95,7 @@ func (s *Server) proxyDesktop(w http.ResponseWriter, r *http.Request, c computer
 	a, _ := s.account(r)
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	cn := &conn{username: a.Username, computerID: c.ID, cancel: cancel}
+	cn := &conn{username: a.Username, desktopID: c.ID, cancel: cancel}
 	s.viewers.add(c.Name, cn)
 	s.publishViewers(c.Name, c.ID)
 	defer func() {
@@ -116,7 +116,7 @@ func (s *Server) proxyDesktop(w http.ResponseWriter, r *http.Request, c computer
 		ErrorLog: nil,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			if !errors.Is(err, context.Canceled) {
-				s.Log.Debug("desktop proxy", "computer", c.Name, "err", err)
+				s.Log.Debug("desktop proxy", "deskyard", c.Name, "err", err)
 			}
 			w.WriteHeader(http.StatusBadGateway)
 		},
@@ -124,7 +124,7 @@ func (s *Server) proxyDesktop(w http.ResponseWriter, r *http.Request, c computer
 	rp.ServeHTTP(w, r.WithContext(ctx))
 }
 
-// clientFiles extracts KasmVNC's web client from computer images (never from
+// clientFiles extracts KasmVNC's web client from desktop images (never from
 // running containers, which their agents control), once per image ID.
 type clientFiles struct {
 	eng interface {

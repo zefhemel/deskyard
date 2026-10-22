@@ -1,4 +1,4 @@
-"""The computer command against a real supervisor, as an agent elsewhere uses it."""
+"""The deskyard command against a real supervisor, as an agent elsewhere uses it."""
 
 import os
 import socket
@@ -13,21 +13,21 @@ from conftest import ROOT
 
 @pytest.fixture(scope="session")
 def cli(tmp_path_factory) -> str:
-    out = tmp_path_factory.mktemp("bin") / "computer"
-    subprocess.run(["go", "build", "-o", str(out), "./cmd/computer"], cwd=ROOT, check=True)
+    out = tmp_path_factory.mktemp("bin") / "deskyard"
+    subprocess.run(["go", "build", "-o", str(out), "./cmd/deskyard"], cwd=ROOT, check=True)
     return str(out)
 
 
 @pytest.fixture
-def remote(cli, admin, computer, name, tmp_path):
-    t = admin.post(f"/api/computers/{name}/tokens", json={"name": "cli test", "expires": None}).json()
+def remote(cli, admin, desktop, name, tmp_path):
+    t = admin.post(f"/api/desktops/{name}/tokens", json={"name": "cli test", "expires": None}).json()
     env = {**os.environ, "XDG_CONFIG_HOME": str(tmp_path / "config"), "HOME": str(tmp_path)}
-    env.pop("COMPUTER_REMOTE", None)
+    env.pop("DESKYARD_REMOTE", None)
 
     def run(*args, input=None, check=True):
         r = subprocess.run([cli, *args], capture_output=True, env=env, input=input, timeout=120)
         if check and r.returncode != 0:
-            raise AssertionError(f"computer {args} failed ({r.returncode}): {r.stderr.decode()}")
+            raise AssertionError(f"deskyard {args} failed ({r.returncode}): {r.stderr.decode()}")
         return r
 
     run("remote", "add", name, f"{admin.base}/{name}", "--token", t["token"])

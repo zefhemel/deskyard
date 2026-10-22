@@ -43,7 +43,7 @@ export function ImagesPage() {
               <tr>
                 <th class={th}>Image</th>
                 <th class={th}>Newest version</th>
-                <th class={th}>Computers</th>
+                <th class={th}>Desktops</th>
                 <th class={th} />
               </tr>
             </thead>
@@ -54,7 +54,7 @@ export function ImagesPage() {
               {!images.data.length && (
                 <tr>
                   <td class={`${td} text-muted`} colSpan={4}>
-                    The catalog is empty: add an image to create computers from.
+                    The catalog is empty: add an image to create desktops from.
                   </td>
                 </tr>
               )}
@@ -62,7 +62,7 @@ export function ImagesPage() {
           </table>
         </div>
       )}
-      <p class="mt-4 text-sm text-muted">Upgrading recreates a computer on the newest version and restarts it if it's running. {UPGRADE_NOTE}</p>
+      <p class="mt-4 text-sm text-muted">Upgrading recreates a desktop on the newest version and restarts it if it's running. {UPGRADE_NOTE}</p>
       {adding && (
         <AddImageDialog
           onClose={() => setAdding(false)}
@@ -74,14 +74,14 @@ export function ImagesPage() {
       )}
       {upgrading && (
         <UpgradeDialog
-          title={`Upgrade ${plural(upgrading.behind.length, "computer")}?`}
+          title={`Upgrade ${plural(upgrading.behind.length, "desktop")}?`}
           intro={
             <>
               {upgrading.behind.join(", ")} {upgrading.behind.length === 1 ? "is" : "are"} recreated on {upgrading.title} {upgrading.version}; running
               ones restart.
             </>
           }
-          action={`Upgrade ${plural(upgrading.behind.length, "computer")}`}
+          action={`Upgrade ${plural(upgrading.behind.length, "desktop")}`}
           begin={() => api.upgradeImage(upgrading.ref)}
           onClose={() => {
             setUpgrading(null);
@@ -94,9 +94,9 @@ export function ImagesPage() {
 }
 
 function ImageRow({ image: img, onUpgrade, onRemoved }: { image: CatalogImage; onUpgrade: () => void; onRemoved: () => void }) {
-  const { computers } = useLive();
-  const version = (name: string) => computers?.find((c) => c.name === name)?.imageVersion;
-  const current = img.computers.filter((n) => !img.behind.includes(n));
+  const { desktops } = useLive();
+  const version = (name: string) => desktops?.find((c) => c.name === name)?.imageVersion;
+  const current = img.desktops.filter((n) => !img.behind.includes(n));
   const remove = () => {
     api.removeImage(img.ref).then(onRemoved, notifyError);
   };
@@ -115,7 +115,7 @@ function ImageRow({ image: img, onUpgrade, onRemoved }: { image: CatalogImage; o
         {img.checked && <div class="mt-0.5 text-[13px] text-muted">pulled {ago(img.checked).toLowerCase()}</div>}
       </td>
       <td class={td}>
-        {img.computers.length ? (
+        {img.desktops.length ? (
           <div class="flex flex-wrap gap-[5px]">
             {current.map((n) => (
               <Tag key={n}>{n}</Tag>
@@ -134,10 +134,10 @@ function ImageRow({ image: img, onUpgrade, onRemoved }: { image: CatalogImage; o
       <td class={`${td} text-right whitespace-nowrap`}>
         {img.behind.length > 0 ? (
           <Button variant="primary" class="h-[30px]! px-[11px]!" onClick={onUpgrade}>
-            Upgrade {plural(img.behind.length, "computer")}…
+            Upgrade {plural(img.behind.length, "desktop")}…
           </Button>
         ) : (
-          img.computers.length === 0 && (
+          img.desktops.length === 0 && (
             <Button class="h-[30px]! px-[11px]!" onClick={remove}>
               Remove from catalog
             </Button>
@@ -154,7 +154,7 @@ function AddImageDialog({ onClose, onAdded }: { onClose: () => void; onAdded: ()
   return (
     <Dialog
       title="Add image"
-      intro="The supervisor pulls it and checks that it's a Deskyard computer image before adding it to the catalog."
+      intro="The supervisor pulls it and checks that it's a Deskyard desktop image before adding it to the catalog."
       onClose={onClose}
       onSubmit={() => ref.trim() && void run.start(() => api.addImage(ref.trim()))}
       footer={

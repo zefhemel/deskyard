@@ -1,4 +1,4 @@
-// Live state shared by every signed-in page: who is signed in, the computers
+// Live state shared by every signed-in page: who is signed in, the desktops
 // they can see (kept current through /api/events), the host's numbers and the
 // jobs this browser started.
 import { createContext, type ComponentChildren } from "preact";
@@ -6,7 +6,7 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "p
 import {
   api,
   watchJob,
-  type Computer,
+  type Desktop,
   type Host,
   type Job,
   type Me,
@@ -20,13 +20,13 @@ type StatsListener = (e: StatsEvent) => void;
 export interface Live {
   me: Me;
   /** null until the first load. */
-  computers: Computer[] | null;
+  desktops: Desktop[] | null;
   host: Host | null;
-  /** Running jobs by computer name, for busy tiles. */
+  /** Running jobs by desktop name, for busy tiles. */
   jobs: Record<string, Job>;
-  /** Follows a job; its progress also shows on the computer's tile. */
+  /** Follows a job; its progress also shows on the desktop's tile. */
   trackJob: (id: string, onUpdate?: (job: Job) => void) => () => void;
-  /** Gets the computers and the host again (after a change the events may not cover). */
+  /** Gets the desktops and the host again (after a change the events may not cover). */
   refresh: () => void;
   onStats: (listener: StatsListener) => () => void;
 }
@@ -39,20 +39,20 @@ export function useLive(): Live {
   return live;
 }
 
-export function useComputer(name: string): Computer | null | undefined {
-  const { computers } = useLive();
-  if (!computers) return undefined;
-  return computers.find((c) => c.name === name) ?? null;
+export function useDesktop(name: string): Desktop | null | undefined {
+  const { desktops } = useLive();
+  if (!desktops) return undefined;
+  return desktops.find((c) => c.name === name) ?? null;
 }
 
-function upsert(list: Computer[], c: Computer): Computer[] {
+function upsert(list: Desktop[], c: Desktop): Desktop[] {
   const rest = list.filter((x) => x.name !== c.name);
   rest.push(c);
   return rest.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function LiveProvider({ me, children }: { me: Me; children: ComponentChildren }) {
-  const [computers, setComputers] = useState<Computer[] | null>(null);
+  const [desktops, setDesktops] = useState<Desktop[] | null>(null);
   const [host, setHost] = useState<Host | null>(null);
   const [jobs, setJobs] = useState<Record<string, Job>>({});
   const statsListeners = useRef(new Set<StatsListener>());
@@ -68,7 +68,7 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
   }, [loadHost]);
 
   const refresh = useCallback(() => {
-    api.computers().then(setComputers, () => undefined);
+    api.desktops().then(setDesktops, () => undefined);
     loadHost();
   }, [loadHost]);
 
@@ -76,19 +76,19 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
     refresh();
     const hostInterval = window.setInterval(loadHost, 15000);
     const es = new EventSource("/api/events");
-    es.addEventListener("computer", (e: MessageEvent<string>) => {
-      const c = JSON.parse(e.data) as Computer;
-      setComputers((list) => (list ? upsert(list, c) : list));
+    es.addEventListener("deskyard", (e: MessageEvent<string>) => {
+      const c = JSON.parse(e.data) as Desktop;
+      setDesktops((list) => (list ? upsert(list, c) : list));
       hostSoon();
     });
     es.addEventListener("removed", (e: MessageEvent<string>) => {
       const { name } = JSON.parse(e.data) as RemovedEvent;
-      setComputers((list) => (list ? list.filter((c) => c.name !== name) : list));
+      setDesktops((list) => (list ? list.filter((c) => c.name !== name) : list));
       hostSoon();
     });
     es.addEventListener("stats", (e: MessageEvent<string>) => {
       const s = JSON.parse(e.data) as StatsEvent;
-      setComputers((list) =>
+      setDesktops((list) =>
         list
           ? list.map((c) =>
               c.name === s.name ? { ...c, stats: { cpuPercent: s.cpuPercent, memBytes: s.memBytes, memLimit: s.memLimit } } : c,
@@ -99,7 +99,7 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
     });
     es.addEventListener("viewers", (e: MessageEvent<string>) => {
       const v = JSON.parse(e.data) as ViewersEvent;
-      setComputers((list) => (list ? list.map((c) => (c.name === v.name ? { ...c, viewers: v.viewers } : c)) : list));
+      setDesktops((list) => (list ? list.map((c) => (c.name === v.name ? { ...c, viewers: v.viewers } : c)) : list));
     });
     let reconnected = false;
     es.onopen = () => {
@@ -121,7 +121,7 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
   const trackJob = useCallback((id: string, onUpdate?: (job: Job) => void) => {
     let name: string | undefined;
     return watchJob(id, (job) => {
-      if (job.computer) name = job.computer;
+      if (job.desktop) name = job.desktop;
       if (name) {
         const key = name;
         setJobs((all) => {
@@ -143,8 +143,8 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
   }, []);
 
   const value = useMemo<Live>(
-    () => ({ me, computers, host, jobs, trackJob, refresh, onStats }),
-    [me, computers, host, jobs, trackJob, refresh, onStats],
+    () => ({ me, desktops, host, jobs, trackJob, refresh, onStats }),
+    [me, desktops, host, jobs, trackJob, refresh, onStats],
   );
   return <LiveContext.Provider value={value}>{children}</LiveContext.Provider>;
 }

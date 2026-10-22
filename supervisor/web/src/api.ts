@@ -13,7 +13,7 @@ export interface Host {
   memUsed: number;
 }
 
-export type ComputerState = "running" | "stopped" | "starting" | "creating" | "upgrading" | "removing";
+export type DesktopState = "running" | "stopped" | "starting" | "creating" | "upgrading" | "removing";
 
 export interface Stats {
   cpuPercent: number;
@@ -26,10 +26,10 @@ export interface Settings {
   nanoCpus: number;
 }
 
-export interface Computer {
+export interface Desktop {
   id: string;
   name: string;
-  state: ComputerState;
+  state: DesktopState;
   startedAt: string;
   folder: string;
   image: string;
@@ -63,7 +63,7 @@ export interface NameCheck {
   ok: boolean;
   error?: string;
   folderExists: boolean;
-  /** Not in API.md (yet): the folder the computer's files would live in. */
+  /** Not in API.md (yet): the folder the desktop's files would live in. */
   folder?: string;
 }
 
@@ -72,13 +72,13 @@ export interface Job {
   message: string;
   progress: number | null;
   error?: string;
-  computer?: string;
+  desktop?: string;
 }
 
 export interface Account {
   username: string;
   admin: boolean;
-  computers: string[];
+  desktops: string[];
   created: string;
   lastLogin: string | null;
 }
@@ -103,7 +103,7 @@ export interface CatalogImage {
   title: string;
   version: string;
   description: string;
-  computers: string[];
+  desktops: string[];
   behind: string[];
   checked: string | null;
 }
@@ -168,7 +168,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 const enc = encodeURIComponent;
-const c = (name: string) => `/api/computers/${enc(name)}`;
+const c = (name: string) => `/api/desktops/${enc(name)}`;
 
 export const api = {
   login: (username: string, password: string) => request<Me>("POST", "/api/login", { username, password }),
@@ -177,12 +177,12 @@ export const api = {
   changePassword: (current: string, next: string) => request<void>("POST", "/api/me/password", { current, new: next }),
   host: () => request<Host>("GET", "/api/host"),
 
-  computers: () => request<Computer[]>("GET", "/api/computers"),
-  computer: (name: string) => request<Computer>("GET", c(name)),
-  createComputer: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: string[] }) =>
-    request<JobRef>("POST", "/api/computers", body),
+  desktops: () => request<Desktop[]>("GET", "/api/desktops"),
+  desktop: (name: string) => request<Desktop>("GET", c(name)),
+  createDesktop: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: string[] }) =>
+    request<JobRef>("POST", "/api/desktops", body),
   power: (name: string, action: "start" | "stop" | "restart") => request<void>("POST", `${c(name)}/${action}`),
-  removeComputer: (name: string, files: boolean) => request<void>("DELETE", c(name) + (files ? "?files=1" : "")),
+  removeDesktop: (name: string, files: boolean) => request<void>("DELETE", c(name) + (files ? "?files=1" : "")),
   updateSettings: (name: string, body: { image?: string; memoryBytes?: number; nanoCpus?: number }) =>
     request<JobRef>("PATCH", c(name), body),
   setAccess: (name: string, usernames: string[]) => request<void>("PUT", `${c(name)}/access`, { usernames }),
@@ -200,9 +200,9 @@ export const api = {
   },
 
   accounts: () => request<Account[]>("GET", "/api/accounts"),
-  createAccount: (body: { username: string; password: string; admin: boolean; computers: string[] }) =>
+  createAccount: (body: { username: string; password: string; admin: boolean; desktops: string[] }) =>
     request<Account>("POST", "/api/accounts", body),
-  updateAccount: (username: string, body: { password?: string; admin?: boolean; computers?: string[] }) =>
+  updateAccount: (username: string, body: { password?: string; admin?: boolean; desktops?: string[] }) =>
     request<Account>("PATCH", `/api/accounts/${enc(username)}`, body),
   deleteAccount: (username: string) => request<void>("DELETE", `/api/accounts/${enc(username)}`),
 

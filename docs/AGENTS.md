@@ -38,7 +38,7 @@ spec: "[[superpowers/specs/2026-10-21-topic-design|Topic design]]"
 ---
 tags: component
 status: built            # built, planned (in a spec, not built), external (not in this repository)
-partOf: "[[Architecture/Computer]]"   # its container, if any; no label in the link
+partOf: "[[Architecture/Desktop]]"   # its container, if any; no label in the link
 uses:                                 # what it depends on or talks to; no labels in these links
   - "[[Architecture/KasmVNC]]"
 spec: "[[superpowers/specs/2026-10-21-workspace-sandbox-design|Workspace Sandbox design]]"
@@ -54,7 +54,7 @@ When a skill writes a new spec or plan, add this frontmatter (replacing any `Dat
 - The file name is the page's identity; `displayName` is its title. A page starts with a short summary and uses `#` for its sections.
 - One line per paragraph (no hard wrapping); `-` bullets.
 - Link pages with wiki links rooted at the space root, labelled with the display name: `[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]`. Renaming a file means updating links to it.
-- Images and other files for a page go in a folder named after the page (`superpowers/specs/2026-10-21-supervisor-design/computers.png`) and are linked with ordinary relative Markdown (`![…](2026-10-21-supervisor-design/computers.png)`), which works in SilverBullet and on GitHub.
+- Images and other files for a page go in a folder named after the page (`superpowers/specs/2026-10-21-supervisor-design/desktops.png`) and are linked with ordinary relative Markdown (`![…](2026-10-21-supervisor-design/desktops.png)`), which works in SilverBullet and on GitHub.
 - Keep the tag vocabulary small: `spec`, `plan`, `component`, `meta`. Add a new kind (with its tag page in [[CONFIG]]) only when several pages need it.
 
 # Checking changes

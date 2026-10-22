@@ -1,6 +1,6 @@
-computer remote list: list saved remotes
+deskyard remote list: list saved remotes
 
-Usage: computer [-c NAME] remote list [--json]
+Usage: deskyard [-d NAME] remote list [--json]
 
 Lists the saved remotes; * marks the default.
 
@@ -8,10 +8,10 @@ Options:
   --json               print JSON instead of text
 
 Prints: a table NAME URL TOKEN (token ID only); with --json an array of
-  {name,url,computer,default}
+  {name,url,desktop,default}
 
 Examples:
-  computer remote list
+  deskyard remote list
 
 Where: on this machine (no remote needed)
 Exit codes: 0 ok, 1 error, 2 usage error

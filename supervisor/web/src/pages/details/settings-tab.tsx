@@ -1,13 +1,13 @@
 import { useState } from "preact/hooks";
-import { api, type Computer } from "../../api.ts";
-import { cpuOptions, ImagePick, memoryOptions } from "../../components/computer-fields.tsx";
+import { api, type Desktop } from "../../api.ts";
+import { cpuOptions, ImagePick, memoryOptions } from "../../components/desktop-fields.tsx";
 import { JobProgress, useJob } from "../../components/job.tsx";
 import { notify } from "../../components/toast.tsx";
 import { Button, ErrorText, Field, Note, Seg } from "../../components/ui.tsx";
 import { useFetch } from "../../lib/use-fetch.ts";
 import { UPGRADE_NOTE } from "../../dialogs/upgrade.tsx";
 
-export function SettingsTab({ computer: c }: { computer: Computer }) {
+export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
   const images = useFetch(() => api.images(), "images");
   const [image, setImage] = useState(c.image);
   const [memory, setMemory] = useState(c.settings.memoryBytes);
@@ -26,7 +26,7 @@ export function SettingsTab({ computer: c }: { computer: Computer }) {
   const catalog = images.data ?? [];
   const list = catalog.some((i) => i.ref === c.image)
     ? catalog
-    : [{ ref: c.image, title: c.imageTitle, version: c.imageVersion, description: "Not in the catalog any more.", computers: [], behind: [], checked: null }, ...catalog];
+    : [{ ref: c.image, title: c.imageTitle, version: c.imageVersion, description: "Not in the catalog any more.", desktops: [], behind: [], checked: null }, ...catalog];
 
   return (
     <form

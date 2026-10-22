@@ -4,15 +4,15 @@ import { api, type Me } from "./api.ts";
 import { Toaster } from "./components/toast.tsx";
 import { LiveProvider } from "./live.tsx";
 import { AccountsPage } from "./pages/accounts.tsx";
-import { ComputerPage } from "./pages/computer.tsx";
-import { ComputersPage } from "./pages/computers.tsx";
+import { DetailsPage } from "./pages/details.tsx";
+import { DesktopsPage } from "./pages/desktops.tsx";
 import { DesktopPage } from "./desktop/desktop.tsx";
 import { ImagesPage } from "./pages/images.tsx";
 import { LoginPage } from "./pages/login.tsx";
 import { NotFound } from "./pages/not-found.tsx";
 
 /**
- * `/<name>/` (one segment with a trailing slash) is a computer's desktop page;
+ * `/<name>/` (one segment with a trailing slash) is a desktop's desktop page;
  * the UI's own pages have no trailing slash.
  */
 export function desktopName(path: string): string | null {
@@ -52,8 +52,8 @@ function SignedIn() {
         <DesktopPage key={desktop} name={desktop} />
       ) : (
         <Router>
-          <Route path="/" component={ComputersPage} />
-          <Route path="/computers/:name" component={ComputerPage} />
+          <Route path="/" component={DesktopsPage} />
+          <Route path="/desktops/:name" component={DetailsPage} />
           <Route path="/images" component={me.admin ? ImagesPage : NotFound} />
           <Route path="/accounts" component={me.admin ? AccountsPage : NotFound} />
           <Route default component={NotFound} />

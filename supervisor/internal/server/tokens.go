@@ -21,17 +21,17 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 )
 
-// Agent tokens: one computer each, an optional expiry, revocable; stored as
+// Agent tokens: one desktop each, an optional expiry, revocable; stored as
 // a SHA-256 of the secret (the secret is random, so a slow hash adds nothing).
 type token struct {
-	ID         string     `json:"id"`
-	Name       string     `json:"name"`
-	ComputerID string     `json:"computerId"`
-	Hash       string     `json:"hash"`
-	CreatedBy  string     `json:"createdBy"`
-	Created    time.Time  `json:"created"`
-	Expires    *time.Time `json:"expires"`
-	LastUsed   *time.Time `json:"lastUsed"`
+	ID        string     `json:"id"`
+	Name      string     `json:"name"`
+	DesktopID string     `json:"desktopId"`
+	Hash      string     `json:"hash"`
+	CreatedBy string     `json:"createdBy"`
+	Created   time.Time  `json:"created"`
+	Expires   *time.Time `json:"expires"`
+	LastUsed  *time.Time `json:"lastUsed"`
 }
 
 func (t token) expired(now time.Time) bool { return t.Expires != nil && now.After(*t.Expires) }
@@ -73,11 +73,11 @@ func hashSecret(secret string) string {
 	return hex.EncodeToString(h[:])
 }
 
-func (ts *tokenStore) create(name, computerID, createdBy string, expires *time.Time) (token, string, error) {
+func (ts *tokenStore) create(name, desktopID, createdBy string, expires *time.Time) (token, string, error) {
 	secretBytes := make([]byte, 32)
 	_, _ = rand.Read(secretBytes)
 	secret := base64.RawURLEncoding.EncodeToString(secretBytes)
-	t := token{ID: randomID(8), Name: name, ComputerID: computerID, Hash: hashSecret(secret),
+	t := token{ID: randomID(8), Name: name, DesktopID: desktopID, Hash: hashSecret(secret),
 		CreatedBy: createdBy, Created: time.Now().UTC(), Expires: expires}
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
@@ -114,21 +114,21 @@ func (ts *tokenStore) check(bearer string) (token, bool) {
 	return token{}, false
 }
 
-func (ts *tokenStore) forComputer(computerID string) []token {
+func (ts *tokenStore) forDesktop(desktopID string) []token {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	var out []token
 	for _, t := range ts.list {
-		if t.ComputerID == computerID {
+		if t.DesktopID == desktopID {
 			out = append(out, t)
 		}
 	}
 	return out
 }
 
-func (ts *tokenStore) activeCount(computerID string) int {
+func (ts *tokenStore) activeCount(desktopID string) int {
 	n := 0
-	for _, t := range ts.forComputer(computerID) {
+	for _, t := range ts.forDesktop(desktopID) {
 		if !t.expired(time.Now()) {
 			n++
 		}
@@ -157,15 +157,15 @@ func (ts *tokenStore) remove(fn func(token) bool) {
 	}
 }
 
-func (ts *tokenStore) forgetComputer(computerID string) {
-	ts.remove(func(t token) bool { return t.ComputerID == computerID })
+func (ts *tokenStore) forgetDesktop(desktopID string) {
+	ts.remove(func(t token) bool { return t.DesktopID == desktopID })
 }
 
 // creatorChanged revokes the tokens of an account that was deleted or lost
-// access to the token's computer.
+// access to the token's desktop.
 func (ts *tokenStore) creatorChanged(s *Server, username string, a accounts.Account, exists bool) {
 	ts.remove(func(t token) bool {
-		return t.CreatedBy == username && (!exists || !a.HasAccess(t.ComputerID))
+		return t.CreatedBy == username && (!exists || !a.HasAccess(t.DesktopID))
 	})
 }
 
@@ -231,12 +231,12 @@ func toTokenJSON(t token) tokenJSON {
 }
 
 func (s *Server) handleListTokens(w http.ResponseWriter, r *http.Request) {
-	c, _, ok := s.computerFor(w, r, auth.View)
+	c, _, ok := s.desktopFor(w, r, auth.View)
 	if !ok {
 		return
 	}
 	out := []tokenJSON{}
-	for _, t := range s.tokens.forComputer(c.ID) {
+	for _, t := range s.tokens.forDesktop(c.ID) {
 		out = append(out, toTokenJSON(t))
 	}
 	slices.SortFunc(out, func(a, b tokenJSON) int { return b.Created.Compare(a.Created) })
@@ -252,7 +252,7 @@ func baseURL(r *http.Request) string {
 }
 
 func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
-	c, a, ok := s.computerFor(w, r, auth.CreateToken)
+	c, a, ok := s.desktopFor(w, r, auth.CreateToken)
 	if !ok {
 		return
 	}
@@ -273,22 +273,22 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.Log.Info("agent token created", "computer", c.Name, "token", t.Name, "by", a.Username)
+	s.Log.Info("agent token created", "deskyard", c.Name, "token", t.Name, "by", a.Username)
 	j := toTokenJSON(t)
 	j.Token = secret
-	j.RemoteAdd = "computer remote add " + c.Name + " " + baseURL(r) + "/" + c.Name + " --token " + secret
-	s.publishComputer(r.Context(), c.Name)
+	j.RemoteAdd = "deskyard remote add " + c.Name + " " + baseURL(r) + "/" + c.Name + " --token " + secret
+	s.publishDesktop(r.Context(), c.Name)
 	writeJSON(w, http.StatusCreated, j)
 }
 
 func (s *Server) handleDeleteToken(w http.ResponseWriter, r *http.Request) {
-	c, a, ok := s.computerFor(w, r, auth.CreateToken)
+	c, a, ok := s.desktopFor(w, r, auth.CreateToken)
 	if !ok {
 		return
 	}
 	id := r.PathValue("id")
 	var found *token
-	for _, t := range s.tokens.forComputer(c.ID) {
+	for _, t := range s.tokens.forDesktop(c.ID) {
 		if t.ID == id {
 			found = &t
 			break
@@ -303,7 +303,7 @@ func (s *Server) handleDeleteToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.tokens.remove(func(t token) bool { return t.ID == id })
-	s.Log.Info("agent token revoked", "computer", c.Name, "token", found.Name, "by", a.Username)
-	s.publishComputer(r.Context(), c.Name)
+	s.Log.Info("agent token revoked", "deskyard", c.Name, "token", found.Name, "by", a.Username)
+	s.publishDesktop(r.Context(), c.Name)
 	w.WriteHeader(http.StatusNoContent)
 }

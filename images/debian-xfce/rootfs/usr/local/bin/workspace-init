@@ -10,7 +10,7 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 log() { echo "[workspace-init] $*"; }
 
-# Computers only run behind the supervisor, which passes the token Caddy
+# Desktops only run behind the supervisor, which passes the token Caddy
 # checks on every request.
 if [ -z "${WORKSPACE_PROXY_TOKEN:-}" ]; then
     echo "[workspace-init] WORKSPACE_PROXY_TOKEN is not set: this image runs only behind the Deskyard" >&2
@@ -71,7 +71,7 @@ install -d -m 1777 /tmp/.X11-unix /tmp/.ICE-unix
 rm -f /workspace/.config/chromium-shared/Singleton{Lock,Socket,Cookie}
 
 # --- no sudo -------------------------------------------------------------------
-# Computers run with Flatpak support (systempaths=unconfined), so root here can
+# Desktops run with Flatpak support (systempaths=unconfined), so root here can
 # write host kernel settings: nobody gets root.
 rm -f /etc/sudoers.d/workspace
 

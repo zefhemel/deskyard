@@ -4,7 +4,7 @@
 #     ghcr.io/<owner>/deskyard
 #   tags latest (main), sha-<commit>, and 1.2.3 / 1.2 for release tags v1.2.3;
 #   pull requests build it without pushing;
-# - release (tags v*): supervisor binaries for Linux and macOS and computer
+# - release (tags v*): supervisor binaries for Linux and macOS and desktop
 #   binaries for Linux, macOS and Windows, attached to the GitHub release.
 name: Supervisor
 

@@ -37,7 +37,7 @@ def test_three_instances_fit(image, artifacts_dir):
                               *[sb.name for sb in boxes]], capture_output=True, text=True, check=True).stdout
         stats = [json.loads(line) for line in out.splitlines()]
         (artifacts_dir / "stats.json").write_text(json.dumps(stats, indent=2))
-        (artifacts_dir / "desktop.png").write_bytes(boxes[0].exec_bytes("computer screenshot"))
+        (artifacts_dir / "desktop.png").write_bytes(boxes[0].exec_bytes("deskyard screenshot"))
         mem = {s["Name"]: parse_mem(s["MemUsage"]) for s in stats}
         print({k: f"{v / GIB:.2f} GiB" for k, v in mem.items()})
         assert all(m <= 1.2 * GIB for m in mem.values()), mem

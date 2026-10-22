@@ -1,4 +1,4 @@
-// Package clitest is a fake supervisor agent API for the computer command's
+// Package clitest is a fake supervisor agent API for the deskyard command's
 // tests: it implements the exec WebSocket from supervisor/API.md by running
 // commands on the test machine, plus the status and CDP endpoints.
 package clitest
@@ -40,15 +40,15 @@ type Fake struct {
 	Name    string
 	Dir     string // stands in for /workspace
 	Stopped bool
-	// Computer handles argv[0] == "computer" (the in-computer command);
+	// Desktop handles argv[0] == "deskyard" (the command inside a desktop);
 	// the default answers size and screenshot.
-	Computer func(args []string, stdout, stderr io.Writer) int
+	Desktop func(args []string, stdout, stderr io.Writer) int
 
 	mu    sync.Mutex
 	Execs []ExecRequest
 }
 
-// New starts a fake for a computer called name.
+// New starts a fake for a desktop called name.
 func New(t testing.TB, name string) *Fake {
 	f := &Fake{Name: name, Dir: t.TempDir()}
 	mux := http.NewServeMux()
@@ -60,8 +60,8 @@ func New(t testing.TB, name string) *Fake {
 	return f
 }
 
-// URL of the computer, as given to `remote add`.
-func (f *Fake) ComputerURL() string { return f.Server.URL + "/" + f.Name }
+// URL of the desktop, as given to `remote add`.
+func (f *Fake) DesktopURL() string { return f.Server.URL + "/" + f.Name }
 
 // Requests returns the exec requests so far.
 func (f *Fake) Requests() []ExecRequest {
@@ -95,12 +95,12 @@ func (f *Fake) info(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `{"name":%q,"state":"running","image":"ghcr.io/x/cc:latest","imageTitle":"Debian XFCE","imageVersion":"2026.10.22","screen":{"width":1280,"height":800},"api":1}`, f.Name)
 }
 
-// FakePNG is what the fake's `computer screenshot` prints.
+// FakePNG is what the fake's `deskyard screenshot` prints.
 var FakePNG = []byte("\x89PNG\r\n\x1a\nfake-image")
 
-func (f *Fake) computer(args []string, stdout, stderr io.Writer) int {
-	if f.Computer != nil {
-		return f.Computer(args, stdout, stderr)
+func (f *Fake) desktop(args []string, stdout, stderr io.Writer) int {
+	if f.Desktop != nil {
+		return f.Desktop(args, stdout, stderr)
 	}
 	switch args[0] {
 	case "size":
@@ -179,8 +179,8 @@ func (f *Fake) exec(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	var code int
-	if req.Argv[0] == "computer" && len(req.Argv) > 1 {
-		code = f.computer(req.Argv[1:], stdout, stderr)
+	if req.Argv[0] == "deskyard" && len(req.Argv) > 1 {
+		code = f.desktop(req.Argv[1:], stdout, stderr)
 	} else {
 		cmd := exec.CommandContext(ctx, req.Argv[0], req.Argv[1:]...)
 		cmd.Dir = f.Dir

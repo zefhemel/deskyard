@@ -1,26 +1,26 @@
 import { useState } from "preact/hooks";
 import { useLocation, useRoute } from "preact-iso";
-import { api, type Computer } from "../api.ts";
+import { api, type Desktop } from "../api.ts";
 import { Avatars } from "../components/avatar.tsx";
 import { ChartsPanel } from "../components/charts-panel.tsx";
-import { ComputerMenu, power } from "../components/computer-menu.tsx";
+import { DesktopMenu, power } from "../components/desktop-menu.tsx";
 import { Monitor } from "../components/screen.tsx";
 import { Page } from "../components/topbar.tsx";
 import { Button, cx, Status, Tag } from "../components/ui.tsx";
 import { UpgradeDialog } from "../dialogs/upgrade.tsx";
-import { useComputer, useLive, useNow } from "../live.tsx";
+import { useDesktop, useLive, useNow } from "../live.tsx";
 import { day, limits, names, statusKind, statusLine } from "../lib/format.ts";
-import { AccessTab } from "./computer/access-tab.tsx";
-import { AgentsTab } from "./computer/agents-tab.tsx";
-import { ProcessesTab } from "./computer/processes-tab.tsx";
-import { SettingsTab } from "./computer/settings-tab.tsx";
+import { AccessTab } from "./details/access-tab.tsx";
+import { AgentsTab } from "./details/agents-tab.tsx";
+import { ProcessesTab } from "./details/processes-tab.tsx";
+import { SettingsTab } from "./details/settings-tab.tsx";
 
 type Tab = "processes" | "agents" | "settings" | "access";
 
-export function ComputerPage() {
+export function DetailsPage() {
   const { params } = useRoute();
   const name = params.name ?? "";
-  const c = useComputer(name);
+  const c = useDesktop(name);
   if (c === undefined) {
     return (
       <Page>
@@ -33,24 +33,24 @@ export function ComputerPage() {
       <Page>
         <Crumbs />
         <h1 class="mb-3 text-[30px] font-bold">{name}</h1>
-        <p class="text-muted">There's no computer with this name, or you can't use it.</p>
+        <p class="text-muted">There's no desktop with this name, or you can't use it.</p>
       </Page>
     );
   }
-  return <ComputerDetail computer={c} />;
+  return <DesktopDetail desktop={c} />;
 }
 
 function Crumbs() {
   return (
     <div class="mb-2 text-sm">
       <a href="/" class="text-muted no-underline hover:underline">
-        Computers
+        Desktops
       </a>
     </div>
   );
 }
 
-function ComputerDetail({ computer: c }: { computer: Computer }) {
+function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
   const { me, jobs } = useLive();
   const { query, route } = useLocation();
   const now = useNow(10000);
@@ -65,7 +65,7 @@ function ComputerDetail({ computer: c }: { computer: Computer }) {
       : []),
   ];
   const tab: Tab = tabs.find((t) => t.id === query.tab)?.id ?? "processes";
-  const setTab = (t: Tab) => route(`/computers/${c.name}${t === "processes" ? "" : `?tab=${t}`}`, true);
+  const setTab = (t: Tab) => route(`/desktops/${c.name}${t === "processes" ? "" : `?tab=${t}`}`, true);
 
   return (
     <Page>
@@ -85,16 +85,16 @@ function ComputerDetail({ computer: c }: { computer: Computer }) {
               Start
             </Button>
           )}
-          <ComputerMenu computer={c} power={false} onRemoved={() => route("/")} />
+          <DesktopMenu desktop={c} power={false} onRemoved={() => route("/")} />
         </div>
       </div>
 
       <div class="grid grid-cols-[minmax(0,1.55fr)_minmax(320px,1fr)] items-start gap-8 max-[900px]:grid-cols-1">
-        <Monitor computer={c} job={jobs[c.name]} now={now} big />
+        <Monitor desktop={c} job={jobs[c.name]} now={now} big />
         <div class="flex flex-col gap-4">
           <ViewersPanel viewers={c.viewers} />
-          <ChartsPanel computer={c} />
-          <Facts computer={c} admin={me.admin} onTab={setTab} />
+          <ChartsPanel desktop={c} />
+          <Facts desktop={c} admin={me.admin} onTab={setTab} />
         </div>
       </div>
 
@@ -116,10 +116,10 @@ function ComputerDetail({ computer: c }: { computer: Computer }) {
         ))}
       </nav>
       <div class="overflow-hidden rounded-b-[10px] border border-t-0 border-line bg-surface">
-        {tab === "processes" && <ProcessesTab computer={c} />}
-        {tab === "agents" && <AgentsTab computer={c} />}
-        {tab === "settings" && <SettingsTab computer={c} />}
-        {tab === "access" && <AccessTab computer={c} />}
+        {tab === "processes" && <ProcessesTab desktop={c} />}
+        {tab === "agents" && <AgentsTab desktop={c} />}
+        {tab === "settings" && <SettingsTab desktop={c} />}
+        {tab === "access" && <AccessTab desktop={c} />}
       </div>
     </Page>
   );
@@ -137,7 +137,7 @@ function ViewersPanel({ viewers }: { viewers: string[] }) {
   );
 }
 
-function Facts({ computer: c, admin, onTab }: { computer: Computer; admin: boolean; onTab: (t: Tab) => void }) {
+function Facts({ desktop: c, admin, onTab }: { desktop: Desktop; admin: boolean; onTab: (t: Tab) => void }) {
   const [upgrading, setUpgrading] = useState(false);
   const link = "cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-accent hover:underline";
   return (

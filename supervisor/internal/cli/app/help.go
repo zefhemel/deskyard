@@ -12,11 +12,11 @@ import (
 var guideText string
 
 func (a *App) writeOverview(w io.Writer) {
-	fmt.Fprint(w, `computer: use a Deskyard computer (a Linux desktop with a shared browser) from inside it or from anywhere else.
+	fmt.Fprint(w, `deskyard: use a Deskyard desktop (a Linux desktop with a shared browser) from inside it or from anywhere else.
 
-Usage: computer [-c NAME] COMMAND [ARGS...]
+Usage: deskyard [-d NAME] COMMAND [ARGS...]
 
-New here? Run `+"`computer guide`"+` (written for AI agents) and `+"`computer COMMAND --help`"+`.
+New here? Run `+"`deskyard guide`"+` (written for AI agents) and `+"`deskyard COMMAND --help`"+`.
 `)
 	for _, g := range groups {
 		fmt.Fprintf(w, "\n%s:\n", g.Title)
@@ -27,10 +27,10 @@ New here? Run `+"`computer guide`"+` (written for AI agents) and `+"`computer CO
 		}
 	}
 	fmt.Fprint(w, `
-Choosing a computer:
-  Inside a computer, commands act on it directly. Elsewhere they use a remote:
-  -c NAME, else $COMPUTER_REMOTE, else $COMPUTER_URL + $COMPUTER_TOKEN,
-  else the default remote (`+"`computer remote default`"+`).
+Choosing a desktop:
+  Inside a desktop, commands act on it directly. Elsewhere they use a remote:
+  -d NAME, else $DESKYARD_REMOTE, else $DESKYARD_URL + $DESKYARD_TOKEN,
+  else the default remote (`+"`deskyard remote default`"+`).
 
 Environment:
 `)
@@ -41,7 +41,7 @@ Environment:
 	for _, e := range exitCodes {
 		fmt.Fprintf(w, "  %-6s %s\n", e.Code, e.Meaning)
 	}
-	fmt.Fprint(w, "\nMachine-readable: computer describe --json\n")
+	fmt.Fprint(w, "\nMachine-readable: deskyard describe --json\n")
 }
 
 func (a *App) printHelp(names []string) error {
@@ -55,20 +55,20 @@ func (a *App) printHelp(names []string) error {
 		return nil
 	}
 	if subs := subcommands(name); len(subs) > 0 {
-		fmt.Fprintf(a.Stdout, "computer %s: subcommands\n\n", name)
+		fmt.Fprintf(a.Stdout, "deskyard %s: subcommands\n\n", name)
 		for _, s := range subs {
 			c := findCommand(name + " " + s)
-			fmt.Fprintf(a.Stdout, "  computer %-34s %s\n", c.Usage, c.Summary)
+			fmt.Fprintf(a.Stdout, "  desktop %-34s %s\n", c.Usage, c.Summary)
 		}
-		fmt.Fprintf(a.Stdout, "\nRun `computer %s SUBCOMMAND --help` for details.\n", name)
+		fmt.Fprintf(a.Stdout, "\nRun `deskyard %s SUBCOMMAND --help` for details.\n", name)
 		return nil
 	}
 	return usagef(nil, "no command %q", name)
 }
 
 func writeCommandHelp(w io.Writer, c *Command) {
-	fmt.Fprintf(w, "computer %s: %s\n\n", c.Name, c.Summary)
-	fmt.Fprintf(w, "Usage: computer [-c NAME] %s\n\n", c.Usage)
+	fmt.Fprintf(w, "deskyard %s: %s\n\n", c.Name, c.Summary)
+	fmt.Fprintf(w, "Usage: deskyard [-d NAME] %s\n\n", c.Usage)
 	fmt.Fprintf(w, "%s\n", wrap(c.Desc, 78, ""))
 	if len(c.Args) > 0 {
 		fmt.Fprint(w, "\nArguments:\n")
@@ -142,7 +142,7 @@ func wrap(s string, width int, indent string) string {
 func runHelp(a *App, c *call) error { return a.printHelp(c.args) }
 
 func runVersion(a *App, _ *call) error {
-	fmt.Fprintf(a.Stdout, "computer %s\n", a.version())
+	fmt.Fprintf(a.Stdout, "deskyard %s\n", a.version())
 	return nil
 }
 
@@ -171,10 +171,10 @@ type describeDoc struct {
 
 func runDescribe(a *App, _ *call) error {
 	doc := describeDoc{
-		Name:        "computer",
+		Name:        "deskyard",
 		Version:     a.version(),
-		Description: "Use a Deskyard computer (a Linux desktop with a shared Chromium) from inside it or remotely through its agent API. Run commands as `computer [-c NAME] <name> <arguments...>`; arguments are positional in the listed order, flags go after the command name.",
-		Usage:       "computer [-c NAME] COMMAND [ARGS...]",
+		Description: "Use a Deskyard desktop (a Linux desktop with a shared Chromium) from inside it or remotely through its agent API. Run commands as `deskyard [-d NAME] <name> <arguments...>`; arguments are positional in the listed order, flags go after the command name.",
+		Usage:       "deskyard [-d NAME] COMMAND [ARGS...]",
 		GlobalFlags: globalFlags,
 		Environment: environment,
 		ExitCodes:   exitCodes,

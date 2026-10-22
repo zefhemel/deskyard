@@ -11,15 +11,15 @@ import (
 type accountJSON struct {
 	Username  string     `json:"username"`
 	Admin     bool       `json:"admin"`
-	Computers []string   `json:"computers"` // names
+	Desktops  []string   `json:"desktops"` // names
 	Created   time.Time  `json:"created"`
 	LastLogin *time.Time `json:"lastLogin"`
 }
 
-// computerNames maps computer IDs to names and back.
-func (s *Server) computerNames(r *http.Request) (byID, byName map[string]string) {
+// desktopNames maps desktop IDs to names and back.
+func (s *Server) desktopNames(r *http.Request) (byID, byName map[string]string) {
 	byID, byName = map[string]string{}, map[string]string{}
-	list, _ := s.Computers.List(r.Context())
+	list, _ := s.Desktops.List(r.Context())
 	for _, c := range list {
 		if c.ID != "" {
 			byID[c.ID], byName[c.Name] = c.Name, c.ID
@@ -29,10 +29,10 @@ func (s *Server) computerNames(r *http.Request) (byID, byName map[string]string)
 }
 
 func toAccountJSON(a accounts.Account, byID map[string]string) accountJSON {
-	j := accountJSON{Username: a.Username, Admin: a.Admin, Computers: []string{}, Created: a.Created, LastLogin: since(a.LastLogin)}
-	for _, id := range a.Computers {
+	j := accountJSON{Username: a.Username, Admin: a.Admin, Desktops: []string{}, Created: a.Created, LastLogin: since(a.LastLogin)}
+	for _, id := range a.Desktops {
 		if n, ok := byID[id]; ok {
-			j.Computers = append(j.Computers, n)
+			j.Desktops = append(j.Desktops, n)
 		}
 	}
 	return j
@@ -49,7 +49,7 @@ func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
-	byID, _ := s.computerNames(r)
+	byID, _ := s.desktopNames(r)
 	out := []accountJSON{}
 	for _, a := range s.Accounts.List() {
 		out = append(out, toAccountJSON(a, byID))
@@ -58,7 +58,7 @@ func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) idsFor(r *http.Request, names []string) ([]string, string) {
-	_, byName := s.computerNames(r)
+	_, byName := s.desktopNames(r)
 	ids := []string{}
 	for _, n := range names {
 		id, ok := byName[n]
@@ -79,15 +79,15 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Username, Password string
 		Admin              bool
-		Computers          []string
+		Desktops           []string
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
-	ids, missing := s.idsFor(r, req.Computers)
+	ids, missing := s.idsFor(r, req.Desktops)
 	if missing != "" {
-		writeError(w, http.StatusBadRequest, "no computer "+missing)
+		writeError(w, http.StatusBadRequest, "no desktop "+missing)
 		return
 	}
 	a, err := s.Accounts.Create(req.Username, req.Password, req.Admin, ids)
@@ -96,7 +96,7 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Log.Info("account created", "account", a.Username, "admin", a.Admin, "by", me.Username)
-	byID, _ := s.computerNames(r)
+	byID, _ := s.desktopNames(r)
 	s.events.refresh()
 	writeJSON(w, http.StatusCreated, toAccountJSON(a, byID))
 }
@@ -108,19 +108,19 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Password  *string   `json:"password"`
-		Admin     *bool     `json:"admin"`
-		Computers *[]string `json:"computers"`
+		Password *string   `json:"password"`
+		Admin    *bool     `json:"admin"`
+		Desktops *[]string `json:"desktops"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
 	var ids []string
-	if req.Computers != nil {
+	if req.Desktops != nil {
 		var missing string
-		if ids, missing = s.idsFor(r, *req.Computers); missing != "" {
-			writeError(w, http.StatusBadRequest, "no computer "+missing)
+		if ids, missing = s.idsFor(r, *req.Desktops); missing != "" {
+			writeError(w, http.StatusBadRequest, "no desktop "+missing)
 			return
 		}
 	}
@@ -135,8 +135,8 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 		if req.Admin != nil {
 			a.Admin = *req.Admin
 		}
-		if req.Computers != nil {
-			a.Computers = ids
+		if req.Desktops != nil {
+			a.Desktops = ids
 		}
 	})
 	if err != nil {
@@ -147,7 +147,7 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 	if a.Username == me.Username {
 		s.Sessions.Issue(w, a.Username, a.SessionEpoch)
 	}
-	byID, _ := s.computerNames(r)
+	byID, _ := s.desktopNames(r)
 	writeJSON(w, http.StatusOK, toAccountJSON(a, byID))
 }
 

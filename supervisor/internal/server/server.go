@@ -19,20 +19,20 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
-	"github.com/zefhemel/deskyard/supervisor/internal/computers"
+	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 )
 
 type Server struct {
-	Log       *slog.Logger
-	Eng       engine.Engine
-	Computers *computers.Service
-	Accounts  *accounts.Store
-	Sessions  *auth.Sessions
-	Throttle  *auth.Throttle
-	StateDir  string
-	UI        fs.FS // the built web UI (index.html, assets/…)
+	Log      *slog.Logger
+	Eng      engine.Engine
+	Desktops *desktops.Service
+	Accounts *accounts.Store
+	Sessions *auth.Sessions
+	Throttle *auth.Throttle
+	StateDir string
+	UI       fs.FS // the built web UI (index.html, assets/…)
 
 	jobs    *jobs
 	events  *hub
@@ -49,7 +49,7 @@ type Server struct {
 type Options struct {
 	Log          *slog.Logger
 	Eng          engine.Engine
-	Computers    *computers.Service
+	Desktops     *desktops.Service
 	Accounts     *accounts.Store
 	StateDir     string
 	UI           fs.FS
@@ -63,7 +63,7 @@ func New(o Options) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{
-		Log: o.Log, Eng: o.Eng, Computers: o.Computers, Accounts: o.Accounts,
+		Log: o.Log, Eng: o.Eng, Desktops: o.Desktops, Accounts: o.Accounts,
 		Sessions: &auth.Sessions{Key: key, Secure: o.Secure}, Throttle: &auth.Throttle{},
 		StateDir: o.StateDir, UI: o.UI,
 		jobs: newJobs(), events: newHub(), viewers: newViewers(),
@@ -105,7 +105,7 @@ func sessionKey(stateDir string) ([]byte, error) {
 }
 
 // ServeHTTP dispatches on the first path segment: the API, the UI's assets
-// and pages, or a computer's desktop (/<name>/…).
+// and pages, or a desktop's desktop (/<name>/…).
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	path := r.URL.Path
@@ -121,10 +121,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.api.ServeHTTP(w, r)
 	case first == "assets" || strings.Contains(first, "."):
 		s.serveStatic(w, r)
-	case first == "" || computers.IsReserved(first):
+	case first == "" || desktops.IsReserved(first):
 		s.serveIndex(w, r)
 	default:
-		s.serveComputer(w, r, first, rest)
+		s.serveDesktop(w, r, first, rest)
 	}
 }
 
@@ -236,7 +236,7 @@ func (s *Server) writeIndex(w http.ResponseWriter) {
 func (s *Server) accountsChanged(usernames ...string) {
 	for _, u := range usernames {
 		a, ok := s.Accounts.Get(u)
-		s.viewers.revoke(u, func(computerID string) bool { return ok && a.HasAccess(computerID) })
+		s.viewers.revoke(u, func(desktopID string) bool { return ok && a.HasAccess(desktopID) })
 		s.tokens.creatorChanged(s, u, a, ok)
 	}
 	s.events.refresh()

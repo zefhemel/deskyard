@@ -1,6 +1,6 @@
-computer zoom: PNG of a region at full resolution
+deskyard zoom: PNG of a region at full resolution
 
-Usage: computer [-c NAME] zoom X0 Y0 X1 Y1 [FILE|-]
+Usage: deskyard [-d NAME] zoom X0 Y0 X1 Y1 [FILE|-]
 
 Takes a PNG of just the region from the top-left corner X0 Y0 to the
 bottom-right corner X1 Y1 (exclusive), at full resolution: use it to read
@@ -18,7 +18,7 @@ Prints: PNG image bytes on stdout, or nothing when FILE is given (the file is
   written on this machine)
 
 Examples:
-  computer zoom 100 50 420 290 detail.png
+  deskyard zoom 100 50 420 290 detail.png
 
-Where: inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)
-Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer
+Where: inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)
+Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop

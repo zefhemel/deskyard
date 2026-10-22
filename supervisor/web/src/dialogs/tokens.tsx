@@ -26,7 +26,7 @@ function expiresAt(expiry: Expiry, date: string): Date | null | undefined {
   return new Date(Date.now() + expiry * 86400 * 1000);
 }
 
-export function NewTokenDialog({ computer, onClose, onCreated }: { computer: string; onClose: () => void; onCreated: (t: CreatedToken) => void }) {
+export function NewTokenDialog({ desktop, onClose, onCreated }: { desktop: string; onClose: () => void; onCreated: (t: CreatedToken) => void }) {
   const [name, setName] = useState("");
   const [expiry, setExpiry] = useState<Expiry>(30);
   const [date, setDate] = useState("");
@@ -40,7 +40,7 @@ export function NewTokenDialog({ computer, onClose, onCreated }: { computer: str
     setBusy(true);
     setError(null);
     try {
-      onCreated(await api.createToken(computer, { name: name.trim(), expires: when ? when.toISOString() : null }));
+      onCreated(await api.createToken(desktop, { name: name.trim(), expires: when ? when.toISOString() : null }));
     } catch (e) {
       setError(errorMessage(e));
       setBusy(false);
@@ -49,10 +49,10 @@ export function NewTokenDialog({ computer, onClose, onCreated }: { computer: str
 
   return (
     <Dialog
-      title={`New agent token for ${computer}`}
+      title={`New agent token for ${desktop}`}
       intro={
         <>
-          For an agent running elsewhere. It can use {computer}'s shell, files, browser and desktop as <span class="mono">user</span>, and
+          For an agent running elsewhere. It can use {desktop}'s shell, files, browser and desktop as <span class="mono">user</span>, and
           nothing else.
         </>
       }
@@ -92,12 +92,12 @@ export function NewTokenDialog({ computer, onClose, onCreated }: { computer: str
   );
 }
 
-/** The `computer remote add` line, broken before --token as in a shell. */
+/** The `deskyard remote add` line, broken before --token as in a shell. */
 function snippet(remoteAdd: string): string {
   return remoteAdd.replace(/ --token /, " \\\n  --token ");
 }
 
-export function TokenCreatedDialog({ computer, token: t, onClose }: { computer: string; token: CreatedToken; onClose: () => void }) {
+export function TokenCreatedDialog({ desktop, token: t, onClose }: { desktop: string; token: CreatedToken; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     setCopied(await copyText(t.remoteAdd));
@@ -128,13 +128,13 @@ export function TokenCreatedDialog({ computer, token: t, onClose }: { computer: 
       <dl class="mb-[18px] grid grid-cols-[max-content_1fr] gap-x-[18px] gap-y-[9px] text-sm">
         <dt class="text-muted">Name</dt>
         <dd class="m-0">{t.name}</dd>
-        <dt class="text-muted">Computer</dt>
-        <dd class="m-0">{computer}</dd>
+        <dt class="text-muted">Desktop</dt>
+        <dd class="m-0">{desktop}</dd>
         <dt class="text-muted">Expires</dt>
         <dd class="m-0">{expires}</dd>
       </dl>
       <Note>
-        The agent can then run <span class="mono">computer -c {computer} guide</span> to learn the rest.
+        The agent can then run <span class="mono">desktop -c {desktop} guide</span> to learn the rest.
       </Note>
     </Dialog>
   );

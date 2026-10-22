@@ -17,7 +17,7 @@ startxfce4 &
 session=$!
 
 # Chromium isn't started with the desktop, only when needed; but if it was
-# open when the computer stopped, bring it (and its tabs) back. Connecting to
+# open when the desktop stopped, bring it (and its tabs) back. Connecting to
 # its CDP port starts it.
 if [ -e /workspace/.config/chromium-shared/.open ]; then
     ( sleep 3; /usr/bin/curl -fs -o /dev/null --max-time 90 http://127.0.0.1:9221/json/version ) &

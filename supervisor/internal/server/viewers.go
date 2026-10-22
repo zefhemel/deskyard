@@ -7,12 +7,12 @@ import (
 	"sync"
 )
 
-// viewers tracks the open desktop connections per computer, with the account
+// viewers tracks the open desktop connections per desktop, with the account
 // each belongs to and a way to close it (when access is revoked).
 type conn struct {
-	username   string
-	computerID string
-	cancel     context.CancelFunc
+	username  string
+	desktopID string
+	cancel    context.CancelFunc
 }
 
 type viewers struct {
@@ -40,7 +40,7 @@ func (v *viewers) remove(name string, c *conn) {
 	}
 }
 
-// names lists the accounts viewing a computer, each once, sorted.
+// names lists the accounts viewing a desktop, each once, sorted.
 func (v *viewers) names(name string) []string {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -54,20 +54,20 @@ func (v *viewers) names(name string) []string {
 	return out
 }
 
-// revoke closes the connections of an account to computers it may no longer use.
-func (v *viewers) revoke(username string, stillAllowed func(computerID string) bool) {
+// revoke closes the connections of an account to desktops it may no longer use.
+func (v *viewers) revoke(username string, stillAllowed func(desktopID string) bool) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	for _, conns := range v.byName {
 		for c := range conns {
-			if c.username == username && !stillAllowed(c.computerID) {
+			if c.username == username && !stillAllowed(c.desktopID) {
 				c.cancel()
 			}
 		}
 	}
 }
 
-// closeAll closes every connection to a computer (stopped, removed).
+// closeAll closes every connection to a desktop (stopped, removed).
 func (v *viewers) closeAll(name string) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -76,7 +76,7 @@ func (v *viewers) closeAll(name string) {
 	}
 }
 
-func (s *Server) publishViewers(name, computerID string) {
-	s.events.publish(event{kind: "viewers", computerID: computerID,
+func (s *Server) publishViewers(name, desktopID string) {
+	s.events.publish(event{kind: "viewers", desktopID: desktopID,
 		data: map[string]any{"name": name, "viewers": s.viewers.names(name)}})
 }

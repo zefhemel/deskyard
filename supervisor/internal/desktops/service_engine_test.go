@@ -1,6 +1,6 @@
 //go:build engine
 
-package computers
+package desktops
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/engine/docker"
 )
 
-// The computer image to test with (build it from images/debian-xfce first).
+// The desktop image to test with (build it from images/debian-xfce first).
 func testImage() string {
 	if v := os.Getenv("CC_TEST_IMAGE"); v != "" {
 		return v

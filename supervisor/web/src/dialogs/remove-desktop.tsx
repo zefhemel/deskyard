@@ -1,8 +1,8 @@
 import { useState } from "preact/hooks";
-import { api, type Computer } from "../api.ts";
+import { api, type Desktop } from "../api.ts";
 import { Button, Check, Dialog, ErrorText, errorMessage, Field } from "../components/ui.tsx";
 
-export function RemoveDialog({ computer: c, onClose, onRemoved }: { computer: Computer; onClose: () => void; onRemoved?: () => void }) {
+export function RemoveDialog({ desktop: c, onClose, onRemoved }: { desktop: Desktop; onClose: () => void; onRemoved?: () => void }) {
   const [files, setFiles] = useState(false);
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -14,7 +14,7 @@ export function RemoveDialog({ computer: c, onClose, onRemoved }: { computer: Co
     setBusy(true);
     setError(null);
     try {
-      await api.removeComputer(c.name, files);
+      await api.removeDesktop(c.name, files);
       onClose();
       onRemoved?.();
     } catch (e) {
@@ -28,7 +28,7 @@ export function RemoveDialog({ computer: c, onClose, onRemoved }: { computer: Co
       title={`Remove ${c.name}?`}
       intro={
         <>
-          The computer is stopped and removed, with its cache. {files ? "Its files in " : "Its files stay in "}
+          The desktop is stopped and removed, with its cache. {files ? "Its files in " : "Its files stay in "}
           <span class="mono">{c.folder}</span>
           {files ? " are deleted too." : "."}
         </>
@@ -47,7 +47,7 @@ export function RemoveDialog({ computer: c, onClose, onRemoved }: { computer: Co
       }
     >
       <Check id="rm-files" checked={files} onChange={setFiles} title="Also delete its files">
-        Everything installed and saved in the computer, including browser logins. This can't be undone.
+        Everything installed and saved in the desktop, including browser logins. This can't be undone.
       </Check>
       {files && (
         <Field

@@ -1,6 +1,6 @@
-computer move: move the mouse
+deskyard move: move the mouse
 
-Usage: computer [-c NAME] move X Y
+Usage: deskyard [-d NAME] move X Y
 
 Moves the mouse pointer to X Y without clicking (to hover, e.g. for tooltips
 or menus).
@@ -12,7 +12,7 @@ Arguments:
 Prints: nothing
 
 Examples:
-  computer move 640 400
+  deskyard move 640 400
 
-Where: inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)
-Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer
+Where: inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)
+Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop

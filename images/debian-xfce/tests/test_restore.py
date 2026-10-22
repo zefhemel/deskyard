@@ -39,7 +39,7 @@ def test_terminals_restored_with_their_folders(sandbox, artifacts_dir):
     restart_gracefully(sandbox)
     after = terminal_cwds(sandbox)
     assert after == before, (before, after)
-    (artifacts_dir / "after-restart.png").write_bytes(sandbox.exec_bytes("computer screenshot"))
+    (artifacts_dir / "after-restart.png").write_bytes(sandbox.exec_bytes("deskyard screenshot"))
 
 
 def test_fresh_desktop_opens_nothing(sandbox):

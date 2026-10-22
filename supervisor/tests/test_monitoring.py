@@ -27,16 +27,16 @@ def read_events(client, until, timeout=60):
     raise AssertionError(f"events not seen: {events[-5:]}")
 
 
-def test_events_list_and_stats(admin, computer, name):
+def test_events_list_and_stats(admin, desktop, name):
     evs = read_events(admin, lambda es: any(k == "stats" and d["name"] == name for k, d in es), timeout=90)
-    assert any(k == "computer" and d["name"] == name for k, d in evs)
+    assert any(k == "desktop" and d["name"] == name for k, d in evs)
     st = [d for k, d in evs if k == "stats" and d["name"] == name][-1]
     assert 0 <= st["cpuPercent"] <= 100 and st["memBytes"] > 0 and st["memLimit"] >= st["memBytes"]
-    hist = admin.get(f"/api/computers/{name}/stats").json()
+    hist = admin.get(f"/api/desktops/{name}/stats").json()
     assert hist["history"] and hist["memLimit"] > 0
 
 
-def test_viewers_are_tracked(admin, computer, name):
+def test_viewers_are_tracked(admin, desktop, name):
     cookie = "; ".join(f"{k}={v}" for k, v in admin.cookies.items())
     opened = threading.Event()
     done = threading.Event()
@@ -53,19 +53,19 @@ def test_viewers_are_tracked(admin, computer, name):
     try:
         assert opened.wait(10)
         evs = read_events(admin, lambda es: any(k == "viewers" and d["name"] == name and d["viewers"] == ["admin"] for k, d in es)
-                          or any(k == "computer" and d["name"] == name and d["viewers"] == ["admin"] for k, d in es))
+                          or any(k == "desktop" and d["name"] == name and d["viewers"] == ["admin"] for k, d in es))
         assert evs
     finally:
         done.set()
         t.join(10)
     for _ in range(20):
-        if admin.computer(name)["viewers"] == []:
+        if admin.desktop(name)["viewers"] == []:
             break
         time.sleep(0.5)
-    assert admin.computer(name)["viewers"] == []
+    assert admin.desktop(name)["viewers"] == []
 
 
-def test_keys_and_full_screenshot(admin, computer, name):
-    assert admin.post(f"/api/computers/{name}/keys", json={"keys": "Escape"}).status_code == 204
-    r = admin.get(f"/api/computers/{name}/screen.png?full=1")
+def test_keys_and_full_screenshot(admin, desktop, name):
+    assert admin.post(f"/api/desktops/{name}/keys", json={"keys": "Escape"}).status_code == 204
+    r = admin.get(f"/api/desktops/{name}/screen.png?full=1")
     assert r.status_code == 200 and r.content[:4] == b"\x89PNG" and "attachment" in r.headers["Content-Disposition"]

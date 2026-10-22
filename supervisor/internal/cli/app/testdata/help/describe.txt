@@ -1,6 +1,6 @@
-computer describe: machine-readable description of every command
+deskyard describe: machine-readable description of every command
 
-Usage: computer [-c NAME] describe --json
+Usage: deskyard [-d NAME] describe --json
 
 Prints every command with its arguments, flags, output and exit codes as JSON,
 to load as tool definitions.
@@ -13,7 +13,7 @@ Prints: {name, version, usage, globalFlags, environment, exitCodes,
   output, examples, where, exitCodes}]}
 
 Examples:
-  computer describe --json
+  deskyard describe --json
 
 Where: on this machine (no remote needed)
 Exit codes: 0 ok, 1 error, 2 usage error

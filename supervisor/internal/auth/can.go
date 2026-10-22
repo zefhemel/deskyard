@@ -5,7 +5,7 @@ package auth
 type Action int
 
 const (
-	View           Action = iota // see and open a computer, its processes and activity
+	View           Action = iota // see and open a desktop, its processes and activity
 	Power                        // start, stop, restart
 	Manage                       // create, remove, change settings, upgrade
 	ManageAccounts               // accounts, access, image catalog
@@ -16,16 +16,16 @@ const (
 // Subject is what Can needs to know about an account.
 type Subject interface {
 	IsAdmin() bool
-	HasAccess(computerID string) bool
+	HasAccess(desktopID string) bool
 }
 
-func Can(a Subject, action Action, computerID string) bool {
+func Can(a Subject, action Action, desktopID string) bool {
 	if a.IsAdmin() {
 		return true
 	}
 	switch action {
 	case View, Power, CreateToken:
-		return computerID != "" && a.HasAccess(computerID)
+		return desktopID != "" && a.HasAccess(desktopID)
 	default:
 		return false
 	}

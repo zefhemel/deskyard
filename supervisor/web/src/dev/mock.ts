@@ -6,8 +6,8 @@ import { readFileSync, existsSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
-import type { Computer, CreatedToken, Job } from "../api.ts";
-import { accounts, computers, FOLDER, images, processRows, refreshImages, tokens } from "./mock-data.ts";
+import type { Desktop, CreatedToken, Job } from "../api.ts";
+import { accounts, desktops, FOLDER, images, processRows, refreshImages, tokens } from "./mock-data.ts";
 
 const GB = 1024 ** 3;
 const imgDir = fileURLToPath(new URL("../../../../docs/superpowers/specs/2026-10-21-supervisor-design/img/", import.meta.url));
@@ -46,18 +46,18 @@ function me() {
   return accounts.find((a) => a.username === session);
 }
 
-function visible(): Computer[] {
+function visible(): Desktop[] {
   const m = me();
   if (!m) return [];
-  const list = m.admin ? computers : computers.filter((c) => c.access.includes(m.username));
+  const list = m.admin ? desktops : desktops.filter((c) => c.access.includes(m.username));
   return list.map((c) => (m.admin ? c : { ...c, access: [] })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function changed(c: Computer): void {
-  broadcast("computer", c);
+function changed(c: Desktop): void {
+  broadcast("deskyard", c);
 }
 
-function setState(c: Computer, state: Computer["state"], later?: Computer["state"]): void {
+function setState(c: Desktop, state: Desktop["state"], later?: Desktop["state"]): void {
   c.state = state;
   if (state === "running") {
     c.startedAt = new Date().toISOString();
@@ -72,10 +72,10 @@ function setState(c: Computer, state: Computer["state"], later?: Computer["state
 }
 
 let jobSeq = 1;
-function job(messages: string[], after: () => void, computer?: string): { job: string } {
+function job(messages: string[], after: () => void, desktop?: string): { job: string } {
   const id = `job${jobSeq++}`;
-  const steps: Job[] = messages.map((m, i) => ({ status: "running", message: m, progress: (i + 1) / (messages.length + 1), computer }));
-  steps.push({ status: "done", message: "Done", progress: 1, computer });
+  const steps: Job[] = messages.map((m, i) => ({ status: "running", message: m, progress: (i + 1) / (messages.length + 1), desktop }));
+  steps.push({ status: "done", message: "Done", progress: 1, desktop });
   jobs.set(id, { steps, after });
   // The job finishes on its own schedule, whether or not anyone follows it.
   setTimeout(after, steps.length * 700);
@@ -112,7 +112,7 @@ function host() {
 function startTimers(): void {
 setInterval(() => {
   const t = new Date().toISOString();
-  for (const c of computers) {
+  for (const c of desktops) {
     if (c.state !== "running" || !c.stats) continue;
     const s = c.stats;
     s.cpuPercent = Math.max(0.5, Math.min(99, s.cpuPercent * 0.7 + (s.cpuPercent + (Math.random() - 0.5) * 30) * 0.3));
@@ -121,14 +121,14 @@ setInterval(() => {
   }
 }, 5000);
 setInterval(() => {
-  const alice = computers.find((c) => c.name === "alice");
+  const alice = desktops.find((c) => c.name === "alice");
   if (!alice || alice.state !== "running") return;
   alice.viewers = alice.viewers.includes("sam") ? alice.viewers.filter((v) => v !== "sam") : [...alice.viewers, "sam"];
   broadcast("viewers", { name: "alice", viewers: alice.viewers });
 }, 20000);
 }
 
-function history(c: Computer) {
+function history(c: Desktop) {
   const out = [];
   let cpu = c.stats?.cpuPercent ?? 10;
   let mem = c.stats?.memBytes ?? GB;
@@ -144,7 +144,7 @@ function history(c: Computer) {
 /** A stand-in for KasmVNC's vnc.html that speaks the same postMessage protocol (see desktop/kasm.ts). */
 function fakeVnc(name: string): string {
   return `<!doctype html><html><body style="margin:0;background:#0f151d;height:100vh;display:grid;place-items:center;overflow:hidden">
-<img src="/api/computers/${name}/screen.png?full=1" style="width:100%;height:100%;object-fit:contain" alt="">
+<img src="/api/desktops/${name}/screen.png?full=1" style="width:100%;height:100%;object-fit:contain" alt="">
 <canvas tabindex="-1" style="position:fixed;inset:0;width:100%;height:100%;outline:none"></canvas>
 <div id="log" style="position:fixed;left:12px;bottom:12px;font:12px monospace;color:#9fb0c3"></div>
 <script>
@@ -209,21 +209,21 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
 
   if (path === "/api/validate-name") {
     const name = url.searchParams.get("name") ?? "";
-    if (computers.some((c) => c.name === name)) return json(res, 200, { ok: false, error: `There's already a computer called ${name}.`, folderExists: true });
+    if (desktops.some((c) => c.name === name)) return json(res, 200, { ok: false, error: `There's already a desktop called ${name}.`, folderExists: true });
     if (["api", "login", "logout", "assets", "static", "healthz"].includes(name)) return json(res, 200, { ok: false, error: `${name} is reserved.`, folderExists: false });
     return json(res, 200, { ok: true, folderExists: name === "old-project", folder: `${FOLDER}/${name}` });
   }
-  if (path === "/api/computers" && method === "GET") return json(res, 200, visible());
-  if (path === "/api/computers" && method === "POST") {
+  if (path === "/api/desktops" && method === "GET") return json(res, 200, visible());
+  if (path === "/api/desktops" && method === "POST") {
     const b = await readBody(req);
     const name = String(b.name);
     const img = images.find((i) => i.ref === b.image) ?? images[0]!;
-    const c: Computer = {
+    const c: Desktop = {
       id: `${name}-id`, name, state: "creating", startedAt: "", folder: `${FOLDER}/${name}`, image: img.ref, imageTitle: img.title,
       imageVersion: img.version, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus) },
       access: (b.access as string[]) ?? [], viewers: [], tokens: 0, stats: null,
     };
-    computers.push(c);
+    desktops.push(c);
     changed(c);
     return json(res, 202, job(["Pulling image, 120 of 820 MB", "Pulling image, 540 of 820 MB", "Creating the container", "Starting"], () => setState(c, "running"), name));
   }
@@ -232,7 +232,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   }
   if (path === "/api/accounts" && method === "POST") {
     const b = await readBody(req);
-    const a = { username: String(b.username), password: String(b.password), admin: Boolean(b.admin), computers: (b.computers as string[]) ?? [], created: new Date().toISOString(), lastLogin: null };
+    const a = { username: String(b.username), password: String(b.password), admin: Boolean(b.admin), desktops: (b.desktops as string[]) ?? [], created: new Date().toISOString(), lastLogin: null };
     accounts.push(a);
     return json(res, 201, a);
   }
@@ -248,7 +248,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const b = await readBody(req);
     if (b.admin === false && a.admin && accounts.filter((x) => x.admin).length === 1) return json(res, 409, { error: "That would leave no admin." });
     if (typeof b.admin === "boolean") a.admin = b.admin;
-    if (Array.isArray(b.computers)) a.computers = b.computers as string[];
+    if (Array.isArray(b.desktops)) a.desktops = b.desktops as string[];
     return json(res, 200, a);
   }
   if (path === "/api/images" && method === "GET") {
@@ -259,7 +259,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const b = await readBody(req);
     if (!String(b.ref).includes(":")) return json(res, 400, { error: "Give a reference with a tag." });
     return json(res, 202, job(["Pulling " + String(b.ref), "Checking the image contract"], () => {
-      images.push({ ref: String(b.ref), title: "Custom image", version: "1.0", description: "Added in the mock", computers: [], behind: [], checked: new Date().toISOString() });
+      images.push({ ref: String(b.ref), title: "Custom image", version: "1.0", description: "Added in the mock", desktops: [], behind: [], checked: new Date().toISOString() });
     }));
   }
   if (path === "/api/images" && method === "DELETE") {
@@ -271,7 +271,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   if (path === "/api/images/upgrade") {
     const b = await readBody(req);
     return json(res, 202, job(["Upgrading", "Starting"], () => {
-      for (const c of computers) if (c.image === b.ref && c.updateAvailable) {
+      for (const c of desktops) if (c.image === b.ref && c.updateAvailable) {
         c.imageVersion = c.updateAvailable;
         c.updateAvailable = null;
         changed(c);
@@ -279,14 +279,14 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     }));
   }
 
-  const cm = /^\/api\/computers\/([^/]+)(?:\/(.+))?$/.exec(path);
-  const c = cm?.[1] ? visible().find((x) => x.name === cm[1]) && computers.find((x) => x.name === cm[1]) : undefined;
-  if (!cm || !c) return json(res, 404, { error: "No such computer" });
+  const cm = /^\/api\/desktops\/([^/]+)(?:\/(.+))?$/.exec(path);
+  const c = cm?.[1] ? visible().find((x) => x.name === cm[1]) && desktops.find((x) => x.name === cm[1]) : undefined;
+  if (!cm || !c) return json(res, 404, { error: "No such desktop" });
   const sub = cm[2] ?? "";
 
   if (sub === "" && method === "GET") return json(res, 200, visible().find((x) => x.name === c.name));
   if (sub === "" && method === "DELETE") {
-    computers.splice(computers.indexOf(c), 1);
+    desktops.splice(desktops.indexOf(c), 1);
     broadcast("removed", { name: c.name });
     return json(res, 204);
   }
@@ -338,7 +338,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const t: CreatedToken = {
       id, name: String(b.name), createdBy: m.username, created: new Date().toISOString(), expires: (b.expires as string | null) ?? null,
       lastUsed: null, expired: false, token: `dyt_${id}_${secret}`,
-      remoteAdd: `computer remote add ${c.name} https://computers.example.com/${c.name} --token dyt_${id}_${secret}`,
+      remoteAdd: `deskyard remote add ${c.name} https://desktops.example.com/${c.name} --token dyt_${id}_${secret}`,
     };
     const { token: _t, remoteAdd: _r, ...listed } = t;
     (tokens[c.name] ??= []).push(listed);

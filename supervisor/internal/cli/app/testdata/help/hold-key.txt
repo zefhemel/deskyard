@@ -1,6 +1,6 @@
-computer hold-key: hold a key down for a while
+deskyard hold-key: hold a key down for a while
 
-Usage: computer [-c NAME] hold-key KEY SECONDS
+Usage: deskyard [-d NAME] hold-key KEY SECONDS
 
 Holds a key down for SECONDS, then releases it.
 
@@ -11,7 +11,7 @@ Arguments:
 Prints: nothing
 
 Examples:
-  computer hold-key shift 0.5
+  deskyard hold-key shift 0.5
 
-Where: inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)
-Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer
+Where: inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)
+Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop

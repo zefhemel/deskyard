@@ -1,4 +1,4 @@
-"""The web UI in a real browser, against the real supervisor and a real computer."""
+"""The web UI in a real browser, against the real supervisor and a real desktop."""
 
 import subprocess
 import time
@@ -20,7 +20,7 @@ def signed_in(p, base, user="admin", password=ADMIN_PASSWORD, **ctx):
     return browser, page
 
 
-def test_sign_in_and_see_the_wall(supervisor, computer, name, tmp_path):
+def test_sign_in_and_see_the_wall(supervisor, desktop, name, tmp_path):
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base)
         expect(page.get_by_text(name, exact=True).first).to_be_visible(timeout=15000)
@@ -42,7 +42,7 @@ def test_wrong_password_shows_an_error(supervisor):
         browser.close()
 
 
-def test_desktop_page_frames_the_desktop_without_kasm_controls(supervisor, computer, name, tmp_path):
+def test_desktop_page_frames_the_desktop_without_kasm_controls(supervisor, desktop, name, tmp_path):
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base, permissions=["clipboard-read", "clipboard-write"])
         page.goto(f"{supervisor.base}/{name}/")
@@ -78,8 +78,8 @@ def test_desktop_page_frames_the_desktop_without_kasm_controls(supervisor, compu
         browser.close()
 
 
-def test_stopped_computer_page(supervisor, admin, computer, name):
-    admin.post(f"/api/computers/{name}/stop")
+def test_stopped_desktop_page(supervisor, admin, desktop, name):
+    admin.post(f"/api/desktops/{name}/stop")
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base)
         page.goto(f"{supervisor.base}/{name}/")

@@ -1,13 +1,13 @@
-computer version: print the version
+deskyard version: print the version
 
-Usage: computer [-c NAME] version
+Usage: deskyard [-d NAME] version
 
-Prints the computer command's version.
+Prints the deskyard command's version.
 
 Prints: the version
 
 Examples:
-  computer version
+  deskyard version
 
 Where: on this machine (no remote needed)
 Exit codes: 0 ok, 1 error, 2 usage error

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import { api, type Computer, type Processes } from "../../api.ts";
+import { api, type Desktop, type Processes } from "../../api.ts";
 import { bytes, plural } from "../../lib/format.ts";
 import { errorMessage } from "../../components/ui.tsx";
 
@@ -22,7 +22,7 @@ function column(titles: string[], name: string, fallback: number): number {
 const th = "border-b border-line px-3.5 py-2.5 text-left text-[13px] font-semibold text-muted";
 const td = "border-b border-hairline px-3.5 py-[7px] whitespace-nowrap";
 
-export function ProcessesTab({ computer: c }: { computer: Computer }) {
+export function ProcessesTab({ desktop: c }: { desktop: Desktop }) {
   const [data, setData] = useState<Processes | null>(null);
   const [error, setError] = useState<string | null>(null);
   const running = c.state === "running";

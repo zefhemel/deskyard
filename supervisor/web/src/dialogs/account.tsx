@@ -1,4 +1,4 @@
-// New account and Edit account (password, admin, computers).
+// New account and Edit account (password, admin, desktops).
 import { useState } from "preact/hooks";
 import { api, type Account } from "../api.ts";
 import { Button, Check, Dialog, ErrorText, errorMessage, Field, Pick, Picks } from "../components/ui.tsx";
@@ -7,12 +7,12 @@ import { useLive } from "../live.tsx";
 const USERNAME = /^[a-z][a-z0-9._-]{0,31}$/;
 
 export function AccountDialog({ account, onClose, onSaved }: { account: Account | null; onClose: () => void; onSaved: () => void }) {
-  const { computers } = useLive();
+  const { desktops } = useLive();
   const isNew = account === null;
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [admin, setAdmin] = useState(account?.admin ?? false);
-  const [picked, setPicked] = useState<string[]>(account?.computers ?? []);
+  const [picked, setPicked] = useState<string[]>(account?.desktops ?? []);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const who = isNew ? username || "they" : account.username;
@@ -26,9 +26,9 @@ export function AccountDialog({ account, onClose, onSaved }: { account: Account 
     setError(null);
     try {
       if (isNew) {
-        await api.createAccount({ username, password, admin, computers: admin ? [] : picked });
+        await api.createAccount({ username, password, admin, desktops: admin ? [] : picked });
       } else {
-        const body: { password?: string; admin?: boolean; computers?: string[] } = { computers: picked };
+        const body: { password?: string; admin?: boolean; desktops?: string[] } = { desktops: picked };
         if (password) body.password = password;
         if (admin !== account.admin) body.admin = admin;
         await api.updateAccount(account.username, body);
@@ -40,7 +40,7 @@ export function AccountDialog({ account, onClose, onSaved }: { account: Account 
     }
   };
 
-  const names = (computers ?? []).map((c) => c.name);
+  const names = (desktops ?? []).map((c) => c.name);
   // Keep names the account has even if this list hasn't loaded them.
   for (const n of picked) if (!names.includes(n)) names.push(n);
   names.sort();
@@ -93,17 +93,17 @@ export function AccountDialog({ account, onClose, onSaved }: { account: Account 
         />
       </Field>
       <Check id="acc-admin" checked={admin} onChange={setAdmin} title="Admin">
-        Can use every computer, create and change computers, and manage accounts and images.
+        Can use every desktop, create and change desktops, and manage accounts and images.
       </Check>
       {!admin && (
-        <Field label={`Computers ${who} can use`} hint={isNew ? undefined : `Taking a computer away also closes ${who}'s open desktop on it.`}>
+        <Field label={`Desktops ${who} can use`} hint={isNew ? undefined : `Taking a desktop away also closes ${who}'s open desktop on it.`}>
           <Picks>
             {names.map((n) => (
               <Pick key={n} checked={picked.includes(n)} onChange={(on) => setPicked(on ? [...picked, n] : picked.filter((x) => x !== n))}>
                 {n}
               </Pick>
             ))}
-            {!names.length && <div class="px-3 py-2 text-sm text-muted">There are no computers yet.</div>}
+            {!names.length && <div class="px-3 py-2 text-sm text-muted">There are no desktops yet.</div>}
           </Picks>
         </Field>
       )}

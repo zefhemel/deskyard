@@ -3,13 +3,13 @@
 import type { ComponentChildren } from "preact";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-import { api, type Computer } from "../api.ts";
+import { api, type Desktop } from "../api.ts";
 import { Avatar, Avatars } from "../components/avatar.tsx";
-import { power } from "../components/computer-menu.tsx";
+import { power } from "../components/desktop-menu.tsx";
 import { Menu, type MenuItem } from "../components/menu.tsx";
 import { notify, notifyError } from "../components/toast.tsx";
 import { Button, cx } from "../components/ui.tsx";
-import { useComputer, useLive } from "../live.tsx";
+import { useDesktop, useLive } from "../live.tsx";
 import { names } from "../lib/format.ts";
 import { ClipboardPopover } from "./clipboard.tsx";
 import { type ConnectionState, focusFrame, frameSrc, keyCombos, parseFrameMessage, qualities, sendClipboard, sendQuality } from "./kasm.ts";
@@ -40,7 +40,7 @@ const barButton =
   "inline-flex cursor-pointer items-center gap-1.5 rounded-[7px] border-0 bg-transparent px-2.5 py-[7px] text-[13.5px] font-semibold whitespace-nowrap text-bar-text no-underline hover:bg-bar-hover hover:text-white";
 
 export function DesktopPage({ name }: { name: string }) {
-  const c = useComputer(name);
+  const c = useDesktop(name);
   useEffect(() => {
     document.title = name;
   }, [name]);
@@ -48,13 +48,13 @@ export function DesktopPage({ name }: { name: string }) {
     <div class="fixed inset-0 flex flex-col bg-glass">
       {c === undefined ? null : c === null ? (
         <Centered>
-          <p>There's no computer named {name}, or you can't use it.</p>
+          <p>There's no desktop named {name}, or you can't use it.</p>
           <a href="/" class="text-[#9ec0ff]">
-            Back to the computers
+            Back to the desktops
           </a>
         </Centered>
       ) : (
-        <Desktop computer={c} />
+        <Desktop desktop={c} />
       )}
     </div>
   );
@@ -64,7 +64,7 @@ function Centered({ children }: { children: ComponentChildren }) {
   return <div class="flex flex-1 flex-col items-center justify-center gap-3.5 px-6 text-center text-[15px] text-[#c5cdd8]">{children}</div>;
 }
 
-function Desktop({ computer: c }: { computer: Computer }) {
+function Desktop({ desktop: c }: { desktop: Desktop }) {
   const { me } = useLive();
   const { route } = useLocation();
   const frame = useRef<HTMLIFrameElement>(null);
@@ -108,7 +108,7 @@ function Desktop({ computer: c }: { computer: Computer }) {
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
-  // A fresh frame when the computer comes back.
+  // A fresh frame when the desktop comes back.
   const wasRunning = useRef(running);
   useEffect(() => {
     if (running && !wasRunning.current) {
@@ -168,8 +168,8 @@ function Desktop({ computer: c }: { computer: Computer }) {
           { label: "Stop", onSelect: () => power(c.name, "stop") },
         ]
       : []),
-    { label: "Computer page", onSelect: () => route(`/computers/${c.name}`), separated: running },
-    ...(me.admin ? [{ label: "Settings", onSelect: () => route(`/computers/${c.name}?tab=settings`) }] : []),
+    { label: "Desktop page", onSelect: () => route(`/desktops/${c.name}`), separated: running },
+    ...(me.admin ? [{ label: "Settings", onSelect: () => route(`/desktops/${c.name}?tab=settings`) }] : []),
     // On a phone the bar has no room for these.
     ...(running
       ? [
@@ -192,8 +192,8 @@ function Desktop({ computer: c }: { computer: Computer }) {
   return (
     <>
       <div class="relative flex h-[46px] flex-none items-center gap-1.5 bg-bar px-2.5 text-sm text-[#e6ebf1]">
-        <a href="/" class={barButton} title="Computers">
-          ‹ <span class="max-sm:hidden">Computers</span>
+        <a href="/" class={barButton} title="Desktops">
+          ‹ <span class="max-sm:hidden">Desktops</span>
         </a>
         <span class="mx-1.5 h-[22px] w-px bg-[#2e3d52] max-sm:mx-0.5" />
         <span class="mx-0.5 truncate text-[15px] font-bold text-white">{c.name}</span>
@@ -287,13 +287,13 @@ function Desktop({ computer: c }: { computer: Computer }) {
           class="block w-full flex-1 border-0"
         />
       ) : (
-        <Stopped computer={c} />
+        <Stopped desktop={c} />
       )}
     </>
   );
 }
 
-function Stopped({ computer: c }: { computer: Computer }) {
+function Stopped({ desktop: c }: { desktop: Desktop }) {
   if (c.state === "stopped") {
     return (
       <Centered>

@@ -58,7 +58,7 @@ export type FrameMessage =
 
 const states: ConnectionState[] = ["init", "connecting", "connected", "disconnecting", "disconnected", "reconnecting"];
 
-/** The frame's URL for a computer. */
+/** The frame's URL for a desktop. */
 export function frameSrc(name: string): string {
   const q = new URLSearchParams({
     path: `${name}/websockify`,

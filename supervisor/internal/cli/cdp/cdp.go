@@ -1,5 +1,5 @@
 // Package cdp forwards a local DevTools endpoint (127.0.0.1:PORT) to a
-// computer's shared Chromium through the agent API, so Playwright's
+// desktop's shared Chromium through the agent API, so Playwright's
 // connectOverCDP("http://127.0.0.1:9222") works as if the browser were local.
 package cdp
 
@@ -278,8 +278,8 @@ func RewriteURL(s, local string) string {
 	return u.String()
 }
 
-// Probe asks the computer's CDP for /json/version, so problems (bad token,
-// stopped computer) show before anything listens. Chromium may need a few
+// Probe asks the desktop's CDP for /json/version, so problems (bad token,
+// stopped desktop) show before anything listens. Chromium may need a few
 // seconds to start.
 func Probe(ctx context.Context, c *remote.Client) (map[string]any, error) {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
@@ -309,7 +309,7 @@ func Serve(ctx context.Context, c *remote.Client, port int, ready func(addr stri
 	ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 	if err != nil {
 		if errors.Is(err, syscall.EADDRINUSE) || strings.Contains(err.Error(), "address already in use") || strings.Contains(err.Error(), "Only one usage") {
-			return fmt.Errorf("port %d is in use (another `computer browser connect` or a local Chromium?): pass --port N to use another one", port)
+			return fmt.Errorf("port %d is in use (another `deskyard browser connect` or a local Chromium?): pass --port N to use another one", port)
 		}
 		return err
 	}

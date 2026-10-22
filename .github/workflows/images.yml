@@ -1,13 +1,13 @@
-# Builds every computer image under images/<name>/ for amd64 and arm64 on
+# Builds every desktop image under images/<name>/ for amd64 and arm64 on
 # native runners and publishes one multi-arch image per name to GitHub
 # Container Registry:
 #   debian-xfce   -> ghcr.io/<owner>/deskyard-debian-xfce
 #   <other name>  -> ghcr.io/<owner>/deskyard-<name>
 # Tags (main only): latest, the build date (2026.10.22) and sha-<commit>.
-# The images also build the computer command from supervisor/, so changes
+# The images also build the desktop command from supervisor/, so changes
 # there rebuild them too. A weekly run picks up Debian security updates.
 # Pull requests build everything without pushing.
-name: Computer images
+name: Desktop images
 
 on:
   push:

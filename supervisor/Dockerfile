@@ -22,19 +22,19 @@ ARG TARGETOS TARGETARCH
 ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
-        -o /out/deskyard ./cmd/deskyard
+        -o /out/deskyard-supervisor ./cmd/deskyard-supervisor
 
 # 3. The image: the binary, CA certificates (registry pulls, ACME) and tzdata.
 FROM alpine:3.22
 RUN apk add --no-cache ca-certificates tzdata
-COPY --from=build /out/deskyard /usr/local/bin/deskyard
+COPY --from=build /out/deskyard-supervisor /usr/local/bin/deskyard
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="Deskyard" \
-      org.opencontainers.image.description="Creates, runs and shares computers" \
+      org.opencontainers.image.description="Creates, runs and shares desktops" \
       org.opencontainers.image.version="${VERSION}"
 # DESKYARD_DATA_DIR has no default here: mount the data folder at the
 # same path as on the host and set it to that path (see compose.yaml).
 ENV DESKYARD_IN_CONTAINER=1 \
     DESKYARD_LISTEN=0.0.0.0:8080
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/deskyard"]
+ENTRYPOINT ["/usr/local/bin/deskyard-supervisor"]

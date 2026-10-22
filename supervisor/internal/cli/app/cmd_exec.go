@@ -19,7 +19,7 @@ import (
 
 func runExec(a *App, c *call) error {
 	if len(c.args) == 0 {
-		return usagef(c.cmd, "no command given: computer exec -- CMD [ARG...]")
+		return usagef(c.cmd, "no command given: deskyard exec -- CMD [ARG...]")
 	}
 	env := map[string]string{}
 	for _, kv := range c.flags["--env"] {
@@ -120,7 +120,7 @@ func (a *App) localExec(req execws.Request, stdin io.Reader, stdout, stderr io.W
 		}
 		return 128 + 9, nil // killed by a signal
 	case errors.Is(err, exec.ErrNotFound):
-		fmt.Fprintf(stderr, "computer exec: %s: command not found\n", req.Argv[0])
+		fmt.Fprintf(stderr, "deskyard exec: %s: command not found\n", req.Argv[0])
 		return 127, nil
 	}
 	return -1, err
@@ -138,7 +138,7 @@ func runShell(a *App, c *call) error {
 	} else {
 		f, ok := a.Stdin.(*os.File)
 		if !term.Supported {
-			return errors.New("an interactive shell isn't supported on this platform yet: use `computer exec -- CMD`")
+			return errors.New("an interactive shell isn't supported on this platform yet: use `deskyard exec -- CMD`")
 		}
 		if !ok || !term.IsTerminal(int(f.Fd())) {
 			// Not a terminal: a plain login shell reading commands from stdin.
@@ -163,7 +163,7 @@ func (a *App) interactive(c *call, cl *remote.Client, req execws.Request) (int, 
 	req.TTY = true
 	req.Cols, req.Rows = 80, 24
 	if !term.Supported {
-		return -1, errors.New("--tty isn't supported on this platform yet: use `computer exec -- CMD` without --tty")
+		return -1, errors.New("--tty isn't supported on this platform yet: use `deskyard exec -- CMD` without --tty")
 	}
 	f, ok := a.Stdin.(*os.File)
 	if !ok || !term.IsTerminal(int(f.Fd())) {

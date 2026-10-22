@@ -1,4 +1,4 @@
-// Form controls shared by the New computer dialog and the computer page's
+// Form controls shared by the New desktop dialog and the desktop page's
 // Settings and Access tabs.
 import type { Account, CatalogImage } from "../api.ts";
 import { gb, trim } from "../lib/format.ts";
@@ -44,8 +44,8 @@ export function ImagePick({ images, value, onChange }: { images: CatalogImage[];
 }
 
 /**
- * Which accounts may use a computer. Admins are listed checked and disabled:
- * they can use every computer.
+ * Which accounts may use a desktop. Admins are listed checked and disabled:
+ * they can use every desktop.
  */
 export function AccessPicks({
   accounts,
@@ -63,7 +63,7 @@ export function AccessPicks({
     <Picks>
       {admins.map((a) => (
         <Pick key={a.username} checked disabled>
-          {a.username} <Tag kind="admin">admin</Tag> <span class="text-muted max-sm:hidden">admins can use every computer</span>
+          {a.username} <Tag kind="admin">admin</Tag> <span class="text-muted max-sm:hidden">admins can use every desktop</span>
         </Pick>
       ))}
       {regular.map((a) => (

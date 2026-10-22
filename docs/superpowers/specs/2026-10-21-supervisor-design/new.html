@@ -1,20 +1,20 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>New computer</title><link rel="stylesheet" href="style.css"></head>
+<title>New desktop</title><link rel="stylesheet" href="style.css"></head>
 <body>
 <div id="top"></div>
 <main>
-  <div class="page-head"><h1>Computers</h1><a class="btn primary" href="new.html">New computer</a></div>
+  <div class="page-head"><h1>Desktops</h1><a class="btn primary" href="new.html">New desktop</a></div>
   <div class="wall" id="wall"></div>
 </main>
 <div class="scrim">
   <form class="dialog" aria-labelledby="t">
-    <header><h2 id="t">New computer</h2></header>
+    <header><h2 id="t">New desktop</h2></header>
     <div class="body">
       <div class="field">
         <label for="name">Name</label>
         <input id="name" type="text" value="data-lab" autofocus>
-        <div class="hint ok">Its desktop will be at <span class="mono">/data-lab/</span> and its files in <span class="mono">~/computers/data-lab</span></div>
+        <div class="hint ok">Its desktop will be at <span class="mono">/data-lab/</span> and its files in <span class="mono">~/deskyard/data-lab</span></div>
       </div>
       <div class="field">
         <span class="label">Image</span>
@@ -32,7 +32,7 @@
       <div class="field">
         <span class="label">Who can use it</span>
         <div class="picks">
-          <label><input type="checkbox" checked disabled> zef <span class="tag admin">admin</span> <span class="muted">admins can use every computer</span></label>
+          <label><input type="checkbox" checked disabled> zef <span class="tag admin">admin</span> <span class="muted">admins can use every desktop</span></label>
           <label><input type="checkbox" checked> anna</label>
           <label><input type="checkbox"> sam</label>
           <label><input type="checkbox"> ci</label>
@@ -40,7 +40,7 @@
       </div>
       <details><summary>More settings</summary></details>
     </div>
-    <footer><button type="button" class="btn quiet">Cancel</button><button class="btn primary">Create computer</button></footer>
+    <footer><button type="button" class="btn quiet">Cancel</button><button class="btn primary">Create desktop</button></footer>
   </form>
 </div>
 <script src="wall.js"></script><script>renderWall();</script>

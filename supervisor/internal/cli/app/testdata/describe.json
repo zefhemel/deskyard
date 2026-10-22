@@ -1,14 +1,14 @@
 {
-  "name": "computer",
+  "name": "deskyard",
   "version": "test",
-  "description": "Use a Deskyard computer (a Linux desktop with a shared Chromium) from inside it or remotely through its agent API. Run commands as `computer [-c NAME] <name> <arguments...>`; arguments are positional in the listed order, flags go after the command name.",
-  "usage": "computer [-c NAME] COMMAND [ARGS...]",
+  "description": "Use a Deskyard desktop (a Linux desktop with a shared Chromium) from inside it or remotely through its agent API. Run commands as `deskyard [-d NAME] <name> <arguments...>`; arguments are positional in the listed order, flags go after the command name.",
+  "usage": "deskyard [-d NAME] COMMAND [ARGS...]",
   "globalFlags": [
     {
       "name": "-c",
       "type": "string",
       "value": "NAME",
-      "description": "use the remote NAME (see `computer remote list`); before the command"
+      "description": "use the remote NAME (see `deskyard remote list`); before the command"
     },
     {
       "name": "--help",
@@ -19,19 +19,19 @@
   ],
   "environment": [
     {
-      "name": "COMPUTER_REMOTE",
+      "name": "DESKYARD_REMOTE",
       "description": "remote to use when -c isn't given"
     },
     {
-      "name": "COMPUTER_URL",
-      "description": "computer URL (https://host/alice) to use without a remotes.json; needs COMPUTER_TOKEN"
+      "name": "DESKYARD_URL",
+      "description": "desktop URL (https://host/alice) to use without a remotes.json; needs DESKYARD_TOKEN"
     },
     {
-      "name": "COMPUTER_TOKEN",
-      "description": "agent token for COMPUTER_URL, and the default for `remote add --token`"
+      "name": "DESKYARD_TOKEN",
+      "description": "agent token for DESKYARD_URL, and the default for `remote add --token`"
     },
     {
-      "name": "COMPUTER_SETTLE",
+      "name": "DESKYARD_SETTLE",
       "description": "seconds screenshot and zoom wait before capturing (default 0.3)"
     },
     {
@@ -54,7 +54,7 @@
     },
     {
       "code": "other",
-      "meaning": "exec, shell and desktop actions pass through the exit code of the command on the computer"
+      "meaning": "exec, shell and screen actions pass through the exit code of the command on the desktop"
     }
   ],
   "commands": [
@@ -63,7 +63,7 @@
       "group": "desktop",
       "summary": "PNG of the whole screen",
       "usage": "screenshot [FILE|-]",
-      "description": "Takes a PNG screenshot of the whole screen, after a short settle delay (COMPUTER_SETTLE seconds, default 0.3) so the screen reflects your last action. Without FILE, or with -, the PNG goes to stdout. Take one before acting and after, to see what happened; coordinates in the image are screen coordinates.",
+      "description": "Takes a PNG screenshot of the whole screen, after a short settle delay (DESKYARD_SETTLE seconds, default 0.3) so the screen reflects your last action. Without FILE, or with -, the PNG goes to stdout. Take one before acting and after, to see what happened; coordinates in the image are screen coordinates.",
       "arguments": [
         {
           "name": "file",
@@ -78,11 +78,11 @@
         "description": "PNG image bytes on stdout, or nothing when FILE is given (the file is written on this machine)"
       },
       "examples": [
-        "computer screenshot shot.png",
-        "computer screenshot > shot.png"
+        "deskyard screenshot shot.png",
+        "deskyard screenshot > shot.png"
       ],
-      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
-      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+      "where": "inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
       "name": "zoom",
@@ -128,10 +128,10 @@
         "description": "PNG image bytes on stdout, or nothing when FILE is given (the file is written on this machine)"
       },
       "examples": [
-        "computer zoom 100 50 420 290 detail.png"
+        "deskyard zoom 100 50 420 290 detail.png"
       ],
-      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
-      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+      "where": "inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
       "name": "size",
@@ -146,10 +146,10 @@
         "description": "one line \"W H\", e.g. \"1280 800\""
       },
       "examples": [
-        "computer size"
+        "deskyard size"
       ],
-      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
-      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+      "where": "inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
       "name": "cursor",
@@ -164,10 +164,10 @@
         "description": "one line \"X Y\", e.g. \"640 400\""
       },
       "examples": [
-        "computer cursor"
+        "deskyard cursor"
       ],
-      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
-      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+      "where": "inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
       "name": "move",
@@ -195,10 +195,10 @@
         "description": "nothing"
       },
       "examples": [
-        "computer move 640 400"
+        "deskyard move 640 400"
       ],
-      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
-      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+      "where": "inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
       "name": "click",
@@ -238,11 +238,11 @@
         "description": "nothing"
       },
       "examples": [
-        "computer click 640 400",
-        "computer click 640 400 right"
+        "deskyard click 640 400",
+        "deskyard click 640 400 right"
       ],
-      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
-      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+      "where": "inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
       "name": "double-click",
@@ -270,10 +270,10 @@
         "description": "nothing"
       },
       "examples": [
-        "computer double-click 200 300"
+        "deskyard double-click 200 300"
       ],
-      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
-      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+      "where": "inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
       "name": "triple-click",
@@ -301,10 +301,10 @@
         "description": "nothing"
       },
       "examples": [
-        "computer triple-click 200 300"
+        "deskyard triple-click 200 300"
       ],
-      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
-      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+      "where": "inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
       "name": "mouse-down",
@@ -332,10 +332,10 @@
         "description": "nothing"
       },
       "examples": [
-        "computer move 100 100 && computer mouse-down && computer move 300 300 && computer mouse-up"
+        "deskyard move 100 100 && deskyard mouse-down && deskyard move 300 300 && deskyard mouse-up"
       ],
-      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
-      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+      "where": "inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
       "name": "mouse-up",
@@ -363,10 +363,10 @@
         "description": "nothing"
       },
       "examples": [
-        "computer mouse-up"
+        "deskyard mouse-up"
       ],
-      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
-      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+      "where": "inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
       "name": "drag",
@@ -406,10 +406,10 @@
         "description": "nothing"
       },
       "examples": [
-        "computer drag 100 100 400 300"
+        "deskyard drag 100 100 400 300"
       ],
-      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
-      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+      "where": "inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
       "name": "type",
@@ -432,10 +432,10 @@
         "description": "nothing"
       },
       "examples": [
-        "computer type 'hello world'"
+        "deskyard type 'hello world'"
       ],
-      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
-      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+      "where": "inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
       "name": "key",
@@ -458,11 +458,11 @@
         "description": "nothing"
       },
       "examples": [
-        "computer key ctrl+l",
-        "computer key ctrl+a BackSpace"
+        "deskyard key ctrl+l",
+        "deskyard key ctrl+a BackSpace"
       ],
-      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
-      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+      "where": "inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
       "name": "hold-key",
@@ -490,10 +490,10 @@
         "description": "nothing"
       },
       "examples": [
-        "computer hold-key shift 0.5"
+        "deskyard hold-key shift 0.5"
       ],
-      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
-      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+      "where": "inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
       "name": "scroll",
@@ -540,10 +540,10 @@
         "description": "nothing"
       },
       "examples": [
-        "computer scroll 640 400 down 5"
+        "deskyard scroll 640 400 down 5"
       ],
-      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
-      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+      "where": "inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
       "name": "wait",
@@ -565,15 +565,15 @@
         "description": "nothing"
       },
       "examples": [
-        "computer wait 2"
+        "deskyard wait 2"
       ],
-      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
-      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+      "where": "inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
       "name": "exec",
       "group": "shell",
-      "summary": "run a command on the computer",
+      "summary": "run a command on the desktop",
       "usage": "exec [OPTIONS] -- CMD [ARG...]",
       "description": "Runs one command as user (in /workspace unless --cwd) and streams its stdin, stdout and stderr; exits with the command's exit code. The command is run as given, not through a shell: for pipes, globs or && use `-- bash -lc '...'`.",
       "arguments": [
@@ -602,7 +602,7 @@
           "type": "string",
           "value": "DIR",
           "default": "/workspace",
-          "description": "working directory on the computer"
+          "description": "working directory on the desktop"
         },
         {
           "name": "--env",
@@ -624,19 +624,19 @@
         }
       },
       "examples": [
-        "computer -c alice exec -- ls -la",
-        "computer exec --json -- bash -lc 'cd app && npm test'",
-        "echo hi | computer exec -- tee /workspace/hi.txt"
+        "deskyard -d alice exec -- ls -la",
+        "deskyard exec --json -- bash -lc 'cd app && npm test'",
+        "echo hi | deskyard exec -- tee /workspace/hi.txt"
       ],
-      "where": "on the chosen remote (-c NAME); inside a computer without a remote it acts locally",
-      "exitCodes": "the command's own exit code; 1 when it couldn't run (connection, token, stopped computer), 2 usage error"
+      "where": "on the chosen remote (-d NAME); inside a desktop without a remote it acts locally",
+      "exitCodes": "the command's own exit code; 1 when it couldn't run (connection, token, stopped desktop), 2 usage error"
     },
     {
       "name": "shell",
       "group": "shell",
       "summary": "interactive login shell",
       "usage": "shell",
-      "description": "Opens an interactive bash login shell on the computer in your terminal (raw mode, resizes follow your window). Exit with `exit` or Ctrl-D. For scripted use, prefer exec.",
+      "description": "Opens an interactive bash login shell on the desktop in your terminal (raw mode, resizes follow your window). Exit with `exit` or Ctrl-D. For scripted use, prefer exec.",
       "arguments": [],
       "flags": [],
       "output": {
@@ -644,17 +644,17 @@
         "description": "the terminal session"
       },
       "examples": [
-        "computer -c alice shell"
+        "deskyard -d alice shell"
       ],
-      "where": "on the chosen remote (-c NAME); inside a computer without a remote it acts locally",
+      "where": "on the chosen remote (-d NAME); inside a desktop without a remote it acts locally",
       "exitCodes": "the shell's exit code; 1 when it couldn't start"
     },
     {
       "name": "cp",
       "group": "shell",
-      "summary": "copy files to or from a computer",
+      "summary": "copy files to or from a desktop",
       "usage": "cp SRC DST",
-      "description": "Copies a file or directory between this machine and a computer; write the computer side as NAME:/path (NAME is a remote; an empty NAME, as in :/path, means the chosen remote). A file lands at DST, or inside DST when it is an existing directory. A directory's contents land in DST, which is created (like `cp -r SRC/. DST`). SRC - reads stdin; DST - writes to stdout (a tar stream for a directory). Files land as user; inside a computer, two local paths are copied locally.",
+      "description": "Copies a file or directory between this machine and a desktop; write the desktop side as NAME:/path (NAME is a remote; an empty NAME, as in :/path, means the chosen remote). A file lands at DST, or inside DST when it is an existing directory. A directory's contents land in DST, which is created (like `cp -r SRC/. DST`). SRC - reads stdin; DST - writes to stdout (a tar stream for a directory). Files land as user; inside a desktop, two local paths are copied locally.",
       "arguments": [
         {
           "name": "src",
@@ -675,19 +675,19 @@
         "description": "nothing, unless DST is - (the file's bytes or a tar stream)"
       },
       "examples": [
-        "computer cp ./report.pdf alice:/workspace/",
-        "computer cp ./site alice:/workspace/site",
-        "computer cp alice:/workspace/out.csv ."
+        "deskyard cp ./report.pdf alice:/workspace/",
+        "deskyard cp ./site alice:/workspace/site",
+        "deskyard cp alice:/workspace/out.csv ."
       ],
-      "where": "on the chosen remote (-c NAME); inside a computer without a remote it acts locally",
+      "where": "on the chosen remote (-d NAME); inside a desktop without a remote it acts locally",
       "exitCodes": "0 ok, 1 error, 2 usage error"
     },
     {
       "name": "browser connect",
       "group": "browser",
-      "summary": "forward the computer's browser to a local CDP port",
+      "summary": "forward the desktop's browser to a local CDP port",
       "usage": "browser connect [--port N]",
-      "description": "Listens on 127.0.0.1:PORT and forwards the Chrome DevTools Protocol to the computer's shared Chromium (the one on its desktop, with the human's logins), so Playwright, Puppeteer or DevTools tools connect as if the browser were local. Prints the URL, then keeps running until Ctrl-C. Run it in the background. Inside a computer it isn't needed: CDP is at http://127.0.0.1:9221.",
+      "description": "Listens on 127.0.0.1:PORT and forwards the Chrome DevTools Protocol to the desktop's shared Chromium (the one on its desktop, with the human's logins), so Playwright, Puppeteer or DevTools tools connect as if the browser were local. Prints the URL, then keeps running until Ctrl-C. Run it in the background. Inside a desktop it isn't needed: CDP is at http://127.0.0.1:9221.",
       "arguments": [],
       "flags": [
         {
@@ -703,18 +703,18 @@
         "description": "first line: the local CDP URL (http://127.0.0.1:9222); connection log on stderr"
       },
       "examples": [
-        "computer -c alice browser connect &",
+        "deskyard -d alice browser connect &",
         "# then in Python: p.chromium.connect_over_cdp(\"http://127.0.0.1:9222\")"
       ],
-      "where": "on the chosen remote (-c NAME); inside a computer without a remote it acts locally",
+      "where": "on the chosen remote (-d NAME); inside a desktop without a remote it acts locally",
       "exitCodes": "0 ok, 1 error, 2 usage error"
     },
     {
       "name": "remote add",
       "group": "remote",
-      "summary": "save a computer as a remote",
+      "summary": "save a desktop as a remote",
       "usage": "remote add NAME URL --token dyt_…",
-      "description": "Checks the token against the computer's agent API and saves the remote in remotes.json ($XDG_CONFIG_HOME/deskyard-computer, default ~/.config/deskyard; mode 0600). URL is the computer's address, like https://host/alice. Tokens come from the computer's Agents tab. The first remote becomes the default.",
+      "description": "Checks the token against the desktop's agent API and saves the remote in remotes.json ($XDG_CONFIG_HOME/deskyard-desktop, default ~/.config/deskyard; mode 0600). URL is the desktop's address, like https://host/alice. Tokens come from the desktop's Agents tab. The first remote becomes the default.",
       "arguments": [
         {
           "name": "name",
@@ -726,7 +726,7 @@
           "name": "url",
           "type": "string",
           "required": true,
-          "description": "the computer's URL, e.g. https://host/alice"
+          "description": "the desktop's URL, e.g. https://host/alice"
         }
       ],
       "flags": [
@@ -734,7 +734,7 @@
           "name": "--token",
           "type": "string",
           "value": "TOKEN",
-          "description": "agent token (dyt_…); defaults to $COMPUTER_TOKEN"
+          "description": "agent token (dyt_…); defaults to $DESKYARD_TOKEN"
         }
       ],
       "output": {
@@ -742,7 +742,7 @@
         "description": "a confirmation line"
       },
       "examples": [
-        "computer remote add alice https://computers.example.com/alice --token dyt_…"
+        "deskyard remote add alice https://desktops.example.com/alice --token dyt_…"
       ],
       "where": "on this machine (no remote needed)",
       "exitCodes": "0 ok, 1 error, 2 usage error"
@@ -763,16 +763,16 @@
       ],
       "output": {
         "type": "text",
-        "description": "a table NAME URL TOKEN (token ID only); with --json an array of {name,url,computer,default}",
+        "description": "a table NAME URL TOKEN (token ID only); with --json an array of {name,url,desktop,default}",
         "fields": {
-          "computer": "computer name on the supervisor",
           "default": "whether it is the default",
+          "desktop": "desktop name on the supervisor",
           "name": "remote name",
-          "url": "computer URL"
+          "url": "desktop URL"
         }
       },
       "examples": [
-        "computer remote list"
+        "deskyard remote list"
       ],
       "where": "on this machine (no remote needed)",
       "exitCodes": "0 ok, 1 error, 2 usage error"
@@ -797,7 +797,7 @@
         "description": "nothing"
       },
       "examples": [
-        "computer remote remove alice"
+        "deskyard remote remove alice"
       ],
       "where": "on this machine (no remote needed)",
       "exitCodes": "0 ok, 1 error, 2 usage error"
@@ -807,7 +807,7 @@
       "group": "remote",
       "summary": "set or show the default remote",
       "usage": "remote default [NAME]",
-      "description": "Makes NAME the remote used when no -c or COMPUTER_REMOTE is given; without NAME prints the current default.",
+      "description": "Makes NAME the remote used when no -c or DESKYARD_REMOTE is given; without NAME prints the current default.",
       "arguments": [
         {
           "name": "name",
@@ -822,7 +822,7 @@
         "description": "without NAME: the default's name, or nothing"
       },
       "examples": [
-        "computer remote default alice"
+        "deskyard remote default alice"
       ],
       "where": "on this machine (no remote needed)",
       "exitCodes": "0 ok, 1 error, 2 usage error"
@@ -830,9 +830,9 @@
     {
       "name": "status",
       "group": "info",
-      "summary": "show the computer's name, state, image and screen",
+      "summary": "show the desktop's name, state, image and screen",
       "usage": "status [--json]",
-      "description": "Shows which computer the command talks to and its state, image and screen size.",
+      "description": "Shows which desktop the command talks to and its state, image and screen size.",
       "arguments": [],
       "flags": [
         {
@@ -849,17 +849,17 @@
           "imageTitle": "image title",
           "imageVersion": "image version",
           "local": "true when acting locally",
-          "name": "computer name",
+          "name": "desktop name",
           "remote": "remote used (absent locally)",
           "screen": "{width,height}",
           "state": "running, stopped, …",
-          "url": "computer URL (absent locally)"
+          "url": "desktop URL (absent locally)"
         }
       },
       "examples": [
-        "computer -c alice status"
+        "deskyard -d alice status"
       ],
-      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
+      "where": "inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)",
       "exitCodes": "0 ok, 1 error, 2 usage error"
     },
     {
@@ -867,7 +867,7 @@
       "group": "info",
       "summary": "short manual for AI agents",
       "usage": "guide",
-      "description": "Prints a short manual: how a computer is laid out, the three ways to work (shell, browser, desktop) and when to use which.",
+      "description": "Prints a short manual: how a desktop is laid out, the three ways to work (shell, browser, desktop) and when to use which.",
       "arguments": [],
       "flags": [],
       "output": {
@@ -875,7 +875,7 @@
         "description": "the guide"
       },
       "examples": [
-        "computer guide"
+        "deskyard guide"
       ],
       "where": "on this machine (no remote needed)",
       "exitCodes": "0 ok, 1 error, 2 usage error"
@@ -899,7 +899,7 @@
         "description": "{name, version, usage, globalFlags, environment, exitCodes, commands:[{name, group, summary, usage, description, arguments, flags, output, examples, where, exitCodes}]}"
       },
       "examples": [
-        "computer describe --json"
+        "deskyard describe --json"
       ],
       "where": "on this machine (no remote needed)",
       "exitCodes": "0 ok, 1 error, 2 usage error"
@@ -925,7 +925,7 @@
         "description": "help text"
       },
       "examples": [
-        "computer help cp"
+        "deskyard help cp"
       ],
       "where": "on this machine (no remote needed)",
       "exitCodes": "0 ok, 1 error, 2 usage error"
@@ -935,7 +935,7 @@
       "group": "info",
       "summary": "print the version",
       "usage": "version",
-      "description": "Prints the computer command's version.",
+      "description": "Prints the deskyard command's version.",
       "arguments": [],
       "flags": [],
       "output": {
@@ -943,7 +943,7 @@
         "description": "the version"
       },
       "examples": [
-        "computer version"
+        "deskyard version"
       ],
       "where": "on this machine (no remote needed)",
       "exitCodes": "0 ok, 1 error, 2 usage error"

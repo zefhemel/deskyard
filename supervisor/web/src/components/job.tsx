@@ -23,7 +23,7 @@ export function useJob(onDone: (job: Job) => void): JobRun {
   const done = useRef(onDone);
   done.current = onDone;
 
-  // Closing the dialog doesn't stop following the job: its progress stays on the computer's tile.
+  // Closing the dialog doesn't stop following the job: its progress stays on the desktop's tile.
   useEffect(
     () => () => {
       mounted.current = false;

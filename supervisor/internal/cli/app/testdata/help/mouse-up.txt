@@ -1,6 +1,6 @@
-computer mouse-up: release a mouse button
+deskyard mouse-up: release a mouse button
 
-Usage: computer [-c NAME] mouse-up [left|right|middle]
+Usage: deskyard [-d NAME] mouse-up [left|right|middle]
 
 Releases a mouse button pressed with mouse-down.
 
@@ -10,7 +10,7 @@ Arguments:
 Prints: nothing
 
 Examples:
-  computer mouse-up
+  deskyard mouse-up
 
-Where: inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)
-Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer
+Where: inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)
+Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop

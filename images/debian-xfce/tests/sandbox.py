@@ -1,4 +1,4 @@
-"""Helpers for driving computer containers through the docker CLI, the way the
+"""Helpers for driving desktop containers through the docker CLI, the way the
 supervisor runs them: Flatpak security options, a proxy token, only 8080."""
 
 from __future__ import annotations

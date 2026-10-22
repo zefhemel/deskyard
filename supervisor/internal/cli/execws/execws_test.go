@@ -18,7 +18,7 @@ func setup(t *testing.T) (*clitest.Fake, *remote.Client) {
 		t.Skip("the fake runs commands with sh")
 	}
 	f := clitest.New(t, "alice")
-	return f, &remote.Client{Alias: "alice", Base: f.URL, Computer: "alice", Token: clitest.Token}
+	return f, &remote.Client{Alias: "alice", Base: f.URL, Desktop: "alice", Token: clitest.Token}
 }
 
 func ctx(t *testing.T) context.Context {

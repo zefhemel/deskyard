@@ -152,7 +152,7 @@ wheels = [
 ]
 
 [[package]]
-name = "container-computer-tests"
+name = "deskyard-debian-xfce-tests"
 version = "0.0.0"
 source = { virtual = "." }
 dependencies = [

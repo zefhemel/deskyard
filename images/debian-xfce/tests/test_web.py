@@ -50,10 +50,10 @@ def test_desktop_renders(sandbox, artifacts_dir):
 def test_desktop_follows_browser_window(sandbox):
     with sync_playwright() as p:
         browser, page = open_desktop(p, sandbox.web_url, width=1000, height=640)
-        assert sandbox.exec("computer size").stdout.split() == ["1000", "640"]
+        assert sandbox.exec("deskyard size").stdout.split() == ["1000", "640"]
         page.set_viewport_size({"width": 1400, "height": 900})
         page.wait_for_timeout(3000)
-        assert sandbox.exec("computer size").stdout.split() == ["1400", "900"]
+        assert sandbox.exec("deskyard size").stdout.split() == ["1400", "900"]
         browser.close()
 
 

@@ -1,5 +1,5 @@
-// Package desktop implements the desktop actions (screenshot, click, type,
-// …) with xdotool and maim on the computer's display, and checks their
+// Package desktop implements the screen actions (screenshot, click, type,
+// …) with xdotool and maim on the desktop's display, and checks their
 // arguments for local and remote use alike.
 package desktop
 
@@ -18,13 +18,13 @@ import (
 	"time"
 )
 
-// Actions lists the desktop actions in help order.
+// Actions lists the screen actions in help order.
 var Actions = []string{
 	"screenshot", "zoom", "size", "cursor", "move", "click", "double-click", "triple-click",
 	"mouse-down", "mouse-up", "drag", "type", "key", "hold-key", "scroll", "wait",
 }
 
-// IsAction reports whether name is a desktop action.
+// IsAction reports whether name is a screen action.
 func IsAction(name string) bool {
 	for _, a := range Actions {
 		if a == name {
@@ -155,7 +155,7 @@ func Validate(action string, args []string) error {
 			return usagef("%q is not a number of notches", args[3])
 		}
 	default:
-		return usagef("unknown desktop action %q", action)
+		return usagef("unknown screen action %q", action)
 	}
 	return nil
 }
@@ -193,13 +193,13 @@ type Env struct {
 }
 
 func settle(getenv func(string) string) error {
-	s := getenv("COMPUTER_SETTLE")
+	s := getenv("DESKYARD_SETTLE")
 	if s == "" {
 		s = "0.3"
 	}
 	f, err := strconv.ParseFloat(s, 64)
 	if err != nil || f < 0 {
-		return fmt.Errorf("COMPUTER_SETTLE=%q is not a number of seconds", s)
+		return fmt.Errorf("DESKYARD_SETTLE=%q is not a number of seconds", s)
 	}
 	time.Sleep(time.Duration(f * float64(time.Second)))
 	return nil
@@ -229,7 +229,7 @@ func (e Env) run(ctx context.Context, stdout io.Writer, name string, args ...str
 		return &ExitError{Code: xe.ExitCode()}
 	}
 	if errors.Is(err, exec.ErrNotFound) {
-		return fmt.Errorf("%s is not installed: desktop actions only work inside a computer, or remotely with -c NAME", name)
+		return fmt.Errorf("%s is not installed: screen actions only work inside a desktop, or remotely with -d NAME", name)
 	}
 	return err
 }
@@ -246,7 +246,7 @@ func (e Env) png(ctx context.Context, file string, geometry ...string) error {
 	return e.run(ctx, e.Stdout, "maim", append(args, file)...)
 }
 
-// RunLocal performs an action on this computer's display. Arguments must
+// RunLocal performs an action on this desktop's display. Arguments must
 // have passed Validate.
 func (e Env) RunLocal(ctx context.Context, action string, args []string) error {
 	switch action {
@@ -318,5 +318,5 @@ func (e Env) RunLocal(ctx context.Context, action string, args []string) error {
 		}
 		return e.xdotool(ctx, "mousemove", args[0], args[1], "click", "--repeat", n, b)
 	}
-	return usagef("unknown desktop action %q", action)
+	return usagef("unknown screen action %q", action)
 }

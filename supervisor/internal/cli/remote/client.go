@@ -14,18 +14,18 @@ import (
 // APIPath is the agent API's root path on a supervisor.
 const APIPath = "/api/agent/v1"
 
-// Client talks to one computer's agent API.
+// Client talks to one desktop's agent API.
 type Client struct {
-	Alias    string // remote name, for messages ("alice"); may equal Computer
-	Base     string
-	Computer string // expected computer name; may be empty
-	Token    string
-	HTTP     *http.Client
+	Alias   string // remote name, for messages ("alice"); may equal Desktop
+	Base    string
+	Desktop string // expected desktop name; may be empty
+	Token   string
+	HTTP    *http.Client
 }
 
 // FromRemote builds a client for a saved remote.
 func FromRemote(r *Remote) *Client {
-	return &Client{Alias: r.Name, Base: r.Base, Computer: r.Computer, Token: r.Token}
+	return &Client{Alias: r.Name, Base: r.Base, Desktop: r.Desktop, Token: r.Token}
 }
 
 // Info is GET /api/agent/v1.
@@ -42,15 +42,15 @@ type Info struct {
 	API int `json:"api"`
 }
 
-// Label names the computer in messages.
+// Label names the desktop in messages.
 func (c *Client) Label() string {
-	if c.Computer != "" {
-		return c.Computer
+	if c.Desktop != "" {
+		return c.Desktop
 	}
 	if c.Alias != "" {
 		return c.Alias
 	}
-	return "the computer"
+	return "the desktop"
 }
 
 // URL returns base + APIPath + p.
@@ -92,7 +92,7 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
-// Info fetches the computer's description. A 409 (stopped) still proves the
+// Info fetches the desktop's description. A 409 (stopped) still proves the
 // token works; it comes back as an *APIError with Status 409.
 func (c *Client) Info(ctx context.Context) (*Info, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -153,8 +153,8 @@ func (c *Client) explain(status int, msg string) string {
 	name := c.Label()
 	switch status {
 	case http.StatusUnauthorized:
-		return fmt.Sprintf("token rejected (401): ask someone with access to %s for a new token (on its Agents tab; this one is wrong, expired or revoked), then run `computer remote add %s %s --token dyt_…` again",
-			name, aliasOr(c.Alias, name), (&Target{Base: c.Base, Computer: c.Computer}).URL())
+		return fmt.Sprintf("token rejected (401): ask someone with access to %s for a new token (on its Agents tab; this one is wrong, expired or revoked), then run `deskyard remote add %s %s --token dyt_…` again",
+			name, aliasOr(c.Alias, name), (&Target{Base: c.Base, Desktop: c.Desktop}).URL())
 	case http.StatusConflict:
 		if msg == "" {
 			msg = name + " is not running; someone with access can start it"

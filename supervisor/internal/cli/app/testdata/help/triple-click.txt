@@ -1,6 +1,6 @@
-computer triple-click: triple left-click at X Y
+deskyard triple-click: triple left-click at X Y
 
-Usage: computer [-c NAME] triple-click X Y
+Usage: deskyard [-d NAME] triple-click X Y
 
 Triple-clicks the left button at X Y (selects a line or paragraph).
 
@@ -11,7 +11,7 @@ Arguments:
 Prints: nothing
 
 Examples:
-  computer triple-click 200 300
+  deskyard triple-click 200 300
 
-Where: inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)
-Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer
+Where: inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)
+Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop

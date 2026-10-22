@@ -15,13 +15,13 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/zefhemel/deskyard/supervisor/internal/computers"
+	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 )
 
 const agentPrefix = "/api/agent/v1"
 
-// serveAgent is the agent API: bearer tokens only, one computer per token.
+// serveAgent is the agent API: bearer tokens only, one desktop per token.
 func (s *Server) serveAgent(w http.ResponseWriter, r *http.Request) {
 	bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok {
@@ -33,9 +33,9 @@ func (s *Server) serveAgent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "the token is unknown, revoked or expired")
 		return
 	}
-	c, err := s.computerByID(r.Context(), t.ComputerID)
+	c, err := s.desktopByID(r.Context(), t.DesktopID)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "the token's computer no longer exists")
+		writeError(w, http.StatusUnauthorized, "the token's desktop no longer exists")
 		return
 	}
 	rest, ok := strings.CutPrefix(r.URL.Path, agentPrefix)
@@ -65,20 +65,20 @@ func (s *Server) serveAgent(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) computerByID(ctx context.Context, id string) (computers.Computer, error) {
-	list, err := s.Computers.List(ctx)
+func (s *Server) desktopByID(ctx context.Context, id string) (desktops.Desktop, error) {
+	list, err := s.Desktops.List(ctx)
 	if err != nil {
-		return computers.Computer{}, err
+		return desktops.Desktop{}, err
 	}
 	for _, c := range list {
 		if c.ID == id {
 			return c, nil
 		}
 	}
-	return computers.Computer{}, computers.ErrNotFound
+	return desktops.Desktop{}, desktops.ErrNotFound
 }
 
-func (s *Server) agentStatus(w http.ResponseWriter, r *http.Request, c computers.Computer) {
+func (s *Server) agentStatus(w http.ResponseWriter, r *http.Request, c desktops.Desktop) {
 	res := map[string]any{
 		"name": c.Name, "state": c.State, "image": c.Image, "api": 1,
 		"imageTitle": c.ImageLabels["org.opencontainers.image.title"], "imageVersion": c.ImageLabels["org.opencontainers.image.version"],
@@ -87,7 +87,7 @@ func (s *Server) agentStatus(w http.ResponseWriter, r *http.Request, c computers
 	if c.Running() {
 		ctx, cancel := timeout(r, 10*time.Second)
 		defer cancel()
-		if out, err := s.execOutput(ctx, c, "computer", "size"); err == nil {
+		if out, err := s.execOutput(ctx, c, "deskyard", "size"); err == nil {
 			if f := strings.Fields(string(out)); len(f) == 2 {
 				wd, _ := strconv.Atoi(f[0])
 				ht, _ := strconv.Atoi(f[1])
@@ -116,7 +116,7 @@ type execControl struct {
 	EOF    bool   `json:"eof"`
 }
 
-func (s *Server) agentExec(w http.ResponseWriter, r *http.Request, c computers.Computer, t token) {
+func (s *Server) agentExec(w http.ResponseWriter, r *http.Request, c desktops.Desktop, t token) {
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {
 		return
@@ -145,7 +145,7 @@ func (s *Server) agentExec(w http.ResponseWriter, r *http.Request, c computers.C
 	for k, v := range start.Env {
 		env = append(env, k+"="+v)
 	}
-	s.Log.Info("agent exec", "computer", c.Name, "token", t.Name, "argv", start.Argv, "tty", start.Tty)
+	s.Log.Info("agent exec", "deskyard", c.Name, "token", t.Name, "argv", start.Argv, "tty", start.Tty)
 	p, err := s.Eng.Exec(ctx, c.Container.ID, engine.ExecSpec{
 		Cmd: start.Argv, User: "user", WorkDir: start.Cwd, Env: env,
 		Tty: start.Tty, Stdin: true, Cols: start.Cols, Rows: start.Rows,
@@ -225,9 +225,9 @@ func (s *Server) agentExec(w http.ResponseWriter, r *http.Request, c computers.C
 }
 
 // agentCDP proxies the shared Chromium's DevTools protocol through the
-// computer's Caddy (/_cdp/), pointing /json URLs back through this route.
-func (s *Server) agentCDP(w http.ResponseWriter, r *http.Request, c computers.Computer, t token, rest string) {
-	addr, tok, err := s.Computers.Target(r.Context(), c.Name)
+// desktop's Caddy (/_cdp/), pointing /json URLs back through this route.
+func (s *Server) agentCDP(w http.ResponseWriter, r *http.Request, c desktops.Desktop, t token, rest string) {
+	addr, tok, err := s.Desktops.Target(r.Context(), c.Name)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
@@ -269,13 +269,13 @@ func (s *Server) agentCDP(w http.ResponseWriter, r *http.Request, c computers.Co
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			if !errors.Is(err, context.Canceled) {
-				s.Log.Debug("cdp proxy", "computer", c.Name, "err", err)
+				s.Log.Debug("cdp proxy", "deskyard", c.Name, "err", err)
 			}
 			writeError(w, http.StatusBadGateway, "the browser didn't answer")
 		},
 	}
 	if strings.HasPrefix(rest, "/devtools/") {
-		s.Log.Info("agent browser connect", "computer", c.Name, "token", t.Name)
+		s.Log.Info("agent browser connect", "deskyard", c.Name, "token", t.Name)
 	}
 	rp.ServeHTTP(w, r)
 }

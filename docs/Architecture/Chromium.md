@@ -1,9 +1,9 @@
 ---
 tags: component
 status: built
-partOf: "[[Architecture/Computer]]"
+partOf: "[[Architecture/Desktop]]"
 uses:
-  - "[[Architecture/Desktop]]"
+  - "[[Architecture/Session]]"
   - "[[Architecture/Workspace folder]]"
 spec: "[[superpowers/specs/2026-10-21-workspace-sandbox-design|Workspace Sandbox design]]"
 ---

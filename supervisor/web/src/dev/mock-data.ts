@@ -1,5 +1,5 @@
 // Fake data for the dev-server mock (mock.ts). Never part of the build.
-import type { Account, CatalogImage, Computer, Token } from "../api.ts";
+import type { Account, CatalogImage, Desktop, Token } from "../api.ts";
 
 const GB = 1024 ** 3;
 const HOUR = 3600 * 1000;
@@ -7,11 +7,11 @@ const DAY = 24 * HOUR;
 const now = Date.now();
 const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
 
-export const FOLDER = "/Users/zef/computers";
+export const FOLDER = "/Users/zef/desktops";
 const LATEST = "ghcr.io/zefhemel/deskyard-debian-xfce:latest";
 const BETA = "ghcr.io/zefhemel/deskyard-debian-xfce:beta";
 
-function computer(c: Partial<Computer> & { name: string }): Computer {
+function desktop(c: Partial<Desktop> & { name: string }): Desktop {
   return {
     id: `${c.name}-id`,
     state: "running",
@@ -30,8 +30,8 @@ function computer(c: Partial<Computer> & { name: string }): Computer {
   };
 }
 
-export const computers: Computer[] = [
-  computer({
+export const desktops: Desktop[] = [
+  desktop({
     name: "alice",
     startedAt: iso(3 * DAY),
     imageVersion: "2026.10.15",
@@ -42,14 +42,14 @@ export const computers: Computer[] = [
     tokens: 2,
     stats: { cpuPercent: 34, memBytes: 1.4 * GB, memLimit: 2 * GB },
   }),
-  computer({ name: "research", startedAt: iso(5 * HOUR), access: ["anna", "sam"], viewers: ["anna"], stats: { cpuPercent: 8, memBytes: 0.9 * GB, memLimit: 16 * GB } }),
-  computer({
+  desktop({ name: "research", startedAt: iso(5 * HOUR), access: ["anna", "sam"], viewers: ["anna"], stats: { cpuPercent: 8, memBytes: 0.9 * GB, memLimit: 16 * GB } }),
+  desktop({
     name: "build-bot",
     startedAt: iso(12 * 60 * 1000),
     settings: { memoryBytes: 4 * GB, nanoCpus: 4e9 },
     stats: { cpuPercent: 91, memBytes: 3.1 * GB, memLimit: 4 * GB },
   }),
-  computer({
+  desktop({
     name: "notes",
     startedAt: iso(2 * DAY),
     imageVersion: "2026.10.15",
@@ -57,15 +57,15 @@ export const computers: Computer[] = [
     access: ["anna"],
     stats: { cpuPercent: 2, memBytes: 0.7 * GB, memLimit: 16 * GB },
   }),
-  computer({ name: "data-lab", state: "creating", startedAt: "", imageVersion: "" }),
-  computer({ name: "scratch", state: "stopped", startedAt: "", imageVersion: "2026.10.15", updateAvailable: "2026.10.22" }),
+  desktop({ name: "data-lab", state: "creating", startedAt: "", imageVersion: "" }),
+  desktop({ name: "scratch", state: "stopped", startedAt: "", imageVersion: "2026.10.15", updateAvailable: "2026.10.22" }),
 ];
 
 export const accounts: (Account & { password: string })[] = [
-  { username: "zef", admin: true, computers: [], created: iso(30 * DAY), lastLogin: iso(0), password: "zef" },
-  { username: "anna", admin: false, computers: ["alice", "research", "notes"], created: iso(20 * DAY), lastLogin: iso(60 * 1000), password: "anna" },
-  { username: "sam", admin: false, computers: ["research"], created: iso(10 * DAY), lastLogin: iso(3 * DAY), password: "sam" },
-  { username: "ci", admin: false, computers: [], created: iso(2 * DAY), lastLogin: null, password: "ci" },
+  { username: "zef", admin: true, desktops: [], created: iso(30 * DAY), lastLogin: iso(0), password: "zef" },
+  { username: "anna", admin: false, desktops: ["alice", "research", "notes"], created: iso(20 * DAY), lastLogin: iso(60 * 1000), password: "anna" },
+  { username: "sam", admin: false, desktops: ["research"], created: iso(10 * DAY), lastLogin: iso(3 * DAY), password: "sam" },
+  { username: "ci", admin: false, desktops: [], created: iso(2 * DAY), lastLogin: null, password: "ci" },
 ];
 
 export const images: CatalogImage[] = [
@@ -74,7 +74,7 @@ export const images: CatalogImage[] = [
     title: "Debian XFCE",
     version: "2026.10.22",
     description: "Debian trixie with XFCE, Chromium, Flatpak, mise and uv",
-    computers: [],
+    desktops: [],
     behind: [],
     checked: iso(2 * HOUR),
   },
@@ -83,7 +83,7 @@ export const images: CatalogImage[] = [
     title: "Debian XFCE, beta",
     version: "2026.10.22-beta",
     description: "Next week's image, for trying changes",
-    computers: [],
+    desktops: [],
     behind: [],
     checked: iso(2 * HOUR),
   },
@@ -109,11 +109,11 @@ export const processRows: [number, string, number, number, string, string][] = [
   [1, "root", 0.0, 24576, "3-01:12:46", "/usr/bin/python3 /usr/bin/supervisord -c /etc/supervisor/supervisord.conf"],
 ];
 
-/** Which computers use which image, recomputed from the computers. */
+/** Which desktops use which image, recomputed from the desktops. */
 export function refreshImages(): void {
   for (const img of images) {
-    const on = computers.filter((c) => c.image === img.ref);
-    img.computers = on.map((c) => c.name);
+    const on = desktops.filter((c) => c.image === img.ref);
+    img.desktops = on.map((c) => c.name);
     img.behind = on.filter((c) => c.updateAvailable).map((c) => c.name);
   }
 }

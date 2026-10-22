@@ -1,7 +1,7 @@
-// Package computers creates and runs computers: containers labelled as the
+// Package desktops creates and runs desktops: containers labelled as the
 // supervisor's, each with its own network and workspace folder. The engine is
-// the only list of computers; nothing about them is stored elsewhere.
-package computers
+// the only list of desktops; nothing about them is stored elsewhere.
+package desktops
 
 import (
 	"context"
@@ -37,10 +37,10 @@ const (
 )
 
 var (
-	ErrNotFound = errors.New("no such computer")
-	ErrExists   = errors.New("a computer with that name already exists")
-	ErrBusy     = errors.New("the computer is busy with another operation")
-	ErrStopped  = errors.New("the computer is stopped")
+	ErrNotFound = errors.New("no such desktop")
+	ErrExists   = errors.New("a desktop with that name already exists")
+	ErrBusy     = errors.New("the desktop is busy with another operation")
+	ErrStopped  = errors.New("the desktop is stopped")
 )
 
 type Settings struct {
@@ -49,8 +49,8 @@ type Settings struct {
 	NanoCPUs    int64 // 0: no limit
 }
 
-// Computer is what the supervisor knows about one computer, read from its container.
-type Computer struct {
+// Desktop is what the supervisor knows about one desktop, read from its container.
+type Desktop struct {
 	ID, Name    string
 	State       string // running, stopped, plus transient creating/upgrading/removing/starting
 	Image       string
@@ -62,7 +62,7 @@ type Computer struct {
 	Container   engine.Container
 }
 
-func (c Computer) Running() bool { return c.State == "running" }
+func (c Desktop) Running() bool { return c.State == "running" }
 
 type Config struct {
 	DataDir     string
@@ -87,7 +87,7 @@ func New(e engine.Engine, cfg Config, log *slog.Logger) *Service {
 
 func containerName(name string) string { return "deskyard-" + name }
 
-// Begin marks a computer busy for a long operation; Done clears it.
+// Begin marks a desktop busy for a long operation; Done clears it.
 func (s *Service) Begin(name, state string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -104,7 +104,7 @@ func (s *Service) Done(name string) {
 	delete(s.busy, name)
 }
 
-// Busy returns the transient states of computers in the middle of a long operation.
+// Busy returns the transient states of desktops in the middle of a long operation.
 func (s *Service) Busy() map[string]string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -139,9 +139,9 @@ func (s *Service) ForgetImage(ref string) {
 	delete(s.imgInfo, ref)
 }
 
-func (s *Service) fromContainer(ctx context.Context, c engine.Container) Computer {
+func (s *Service) fromContainer(ctx context.Context, c engine.Container) Desktop {
 	name := c.Labels[LabelName]
-	comp := Computer{
+	comp := Desktop{
 		ID: c.Labels[LabelID], Name: name, Image: c.Image, ImageID: c.ImageID,
 		StartedAt: c.StartedAt, Folder: filepath.Join(s.Cfg.DataDir, name), Container: c,
 		Settings: Settings{Image: c.Image, MemoryBytes: c.MemoryBytes, NanoCPUs: c.NanoCPUs},
@@ -159,41 +159,41 @@ func (s *Service) fromContainer(ctx context.Context, c engine.Container) Compute
 	return comp
 }
 
-func (s *Service) List(ctx context.Context) ([]Computer, error) {
+func (s *Service) List(ctx context.Context) ([]Desktop, error) {
 	cs, err := s.Eng.List(ctx, map[string]string{LabelManaged: "true"})
 	if err != nil {
 		return nil, err
 	}
-	out := make([]Computer, 0, len(cs))
+	out := make([]Desktop, 0, len(cs))
 	seen := map[string]bool{}
 	for _, c := range cs {
 		comp := s.fromContainer(ctx, c)
 		seen[comp.Name] = true
 		out = append(out, comp)
 	}
-	// Computers being created don't have a container yet.
+	// Desktops being created don't have a container yet.
 	for name, state := range s.Busy() {
 		if !seen[name] && state == "creating" {
-			out = append(out, Computer{Name: name, State: state, Folder: filepath.Join(s.Cfg.DataDir, name)})
+			out = append(out, Desktop{Name: name, State: state, Folder: filepath.Join(s.Cfg.DataDir, name)})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
 
-func (s *Service) Get(ctx context.Context, name string) (Computer, error) {
+func (s *Service) Get(ctx context.Context, name string) (Desktop, error) {
 	if ValidName(name) != nil {
-		return Computer{}, ErrNotFound
+		return Desktop{}, ErrNotFound
 	}
 	c, err := s.Eng.Inspect(ctx, containerName(name))
 	if errors.Is(err, engine.ErrNotFound) || (err == nil && c.Labels[LabelManaged] != "true") {
 		if st, ok := s.Busy()[name]; ok && st == "creating" {
-			return Computer{Name: name, State: st, Folder: filepath.Join(s.Cfg.DataDir, name)}, nil
+			return Desktop{Name: name, State: st, Folder: filepath.Join(s.Cfg.DataDir, name)}, nil
 		}
-		return Computer{}, ErrNotFound
+		return Desktop{}, ErrNotFound
 	}
 	if err != nil {
-		return Computer{}, err
+		return Desktop{}, err
 	}
 	return s.fromContainer(ctx, c), nil
 }
@@ -230,29 +230,29 @@ func (s *Service) EnsureImage(ctx context.Context, ref string, progress func(str
 		return engine.Image{}, err
 	}
 	if img.Labels[LabelContract] != Contract {
-		return engine.Image{}, fmt.Errorf("%s isn't a Deskyard computer image (label %s=%s missing)", ref, LabelContract, Contract)
+		return engine.Image{}, fmt.Errorf("%s isn't a Deskyard desktop image (label %s=%s missing)", ref, LabelContract, Contract)
 	}
 	return img, nil
 }
 
-// Create makes a new computer and starts it. progress reports steps (message,
+// Create makes a new desktop and starts it. progress reports steps (message,
 // fraction or -1). On failure nothing is left behind but a folder that was
 // already there.
-func (s *Service) Create(ctx context.Context, name string, set Settings, progress func(string, float64)) (Computer, error) {
+func (s *Service) Create(ctx context.Context, name string, set Settings, progress func(string, float64)) (Desktop, error) {
 	if err := ValidName(name); err != nil {
-		return Computer{}, err
+		return Desktop{}, err
 	}
 	if _, err := s.Eng.Inspect(ctx, containerName(name)); err == nil {
-		return Computer{}, ErrExists
+		return Desktop{}, ErrExists
 	}
 	if _, err := s.EnsureImage(ctx, set.Image, progress); err != nil {
-		return Computer{}, err
+		return Desktop{}, err
 	}
 	folder := filepath.Join(s.Cfg.DataDir, name)
 	createdFolder := false
 	if !s.FolderExists(name) {
 		if err := os.MkdirAll(folder, 0o755); err != nil {
-			return Computer{}, err
+			return Desktop{}, err
 		}
 		createdFolder = true
 	}
@@ -265,28 +265,28 @@ func (s *Service) Create(ctx context.Context, name string, set Settings, progres
 			_ = os.Remove(folder) // only if still empty
 		}
 	}
-	progress("Creating the computer", -1)
+	progress("Creating the desktop", -1)
 	if err := s.createNetwork(ctx, name, id); err != nil {
 		cleanup()
-		return Computer{}, err
+		return Desktop{}, err
 	}
 	if err := s.createContainer(ctx, name, id, randomHex(32), set); err != nil {
 		cleanup()
-		return Computer{}, err
+		return Desktop{}, err
 	}
 	progress("Starting", -1)
 	if err := s.Eng.Start(ctx, containerName(name)); err != nil {
 		cleanup()
-		return Computer{}, err
+		return Desktop{}, err
 	}
 	progress("Starting the desktop", -1)
 	if err := s.WaitReady(ctx, name, 2*time.Minute); err != nil {
-		return Computer{}, err
+		return Desktop{}, err
 	}
 	return s.Get(ctx, name)
 }
 
-// WaitReady waits until the computer's desktop answers through its Caddy.
+// WaitReady waits until the desktop's desktop answers through its Caddy.
 func (s *Service) WaitReady(ctx context.Context, name string, limit time.Duration) error {
 	deadline := time.Now().Add(limit)
 	client := &http.Client{Timeout: 3 * time.Second}
@@ -373,41 +373,41 @@ func (s *Service) createContainer(ctx context.Context, name, id, token string, s
 }
 
 // Recreate replaces the container with one on new settings (image, limits),
-// keeping its ID, token, network and folder. A running computer is started again.
-func (s *Service) Recreate(ctx context.Context, name string, set Settings, progress func(string, float64)) (Computer, error) {
+// keeping its ID, token, network and folder. A running desktop is started again.
+func (s *Service) Recreate(ctx context.Context, name string, set Settings, progress func(string, float64)) (Desktop, error) {
 	c, err := s.Get(ctx, name)
 	if err != nil {
-		return Computer{}, err
+		return Desktop{}, err
 	}
 	if _, err := s.EnsureImage(ctx, set.Image, progress); err != nil {
-		return Computer{}, err
+		return Desktop{}, err
 	}
 	wasRunning := c.Container.Running()
 	token := c.Container.Env[TokenEnv]
 	progress("Stopping", -1)
 	if wasRunning {
 		if err := s.Eng.Stop(ctx, c.Container.ID, stopTimeout); err != nil {
-			return Computer{}, err
+			return Desktop{}, err
 		}
 	}
 	progress("Recreating", -1)
 	if err := s.Eng.Remove(ctx, c.Container.ID); err != nil {
-		return Computer{}, err
+		return Desktop{}, err
 	}
 	if err := s.createContainer(ctx, name, c.ID, token, set); err != nil {
-		// Try to bring the old one back so the computer isn't lost.
+		// Try to bring the old one back so the desktop isn't lost.
 		if err2 := s.createContainer(context.WithoutCancel(ctx), name, c.ID, token, c.Settings); err2 != nil {
-			return Computer{}, errors.Join(err, err2)
+			return Desktop{}, errors.Join(err, err2)
 		}
-		return Computer{}, err
+		return Desktop{}, err
 	}
 	if wasRunning {
 		progress("Starting", -1)
 		if err := s.Eng.Start(ctx, containerName(name)); err != nil {
-			return Computer{}, err
+			return Desktop{}, err
 		}
 		if err := s.WaitReady(ctx, name, 2*time.Minute); err != nil {
-			return Computer{}, err
+			return Desktop{}, err
 		}
 	}
 	return s.Get(ctx, name)
@@ -444,7 +444,7 @@ func (s *Service) Remove(ctx context.Context, name string, deleteFiles bool) err
 		return err
 	}
 	if err := s.Eng.RemoveNetwork(ctx, containerName(name)); err != nil && !errors.Is(err, engine.ErrNotFound) {
-		s.Log.Warn("removing network", "computer", name, "err", err)
+		s.Log.Warn("removing network", "deskyard", name, "err", err)
 	}
 	if deleteFiles {
 		return s.deleteFolder(ctx, name)
@@ -491,7 +491,7 @@ func (s *Service) deleteFolder(ctx context.Context, name string) error {
 	return nil
 }
 
-// Target is where the proxy reaches a running computer's port 8080, and the
+// Target is where the proxy reaches a running desktop's port 8080, and the
 // token it must send.
 func (s *Service) Target(ctx context.Context, name string) (addr, token string, err error) {
 	c, err := s.Get(ctx, name)
@@ -515,7 +515,7 @@ func (s *Service) Target(ctx context.Context, name string) (addr, token string, 
 }
 
 // Reconcile runs at startup: in a container, it reconnects the supervisor to
-// every computer's network (e.g. after the supervisor's container was recreated).
+// every desktop's network (e.g. after the supervisor's container was recreated).
 func (s *Service) Reconcile(ctx context.Context) error {
 	if !s.Cfg.InContainer {
 		return nil

@@ -33,10 +33,10 @@ func runDesktop(a *App, c *call) error {
 		return err
 	}
 
-	// Remotely: run the computer's own `computer` through exec. A FILE
+	// Remotely: run the desktop's own `deskyard` through exec. A FILE
 	// argument is a path on this machine, so the PNG comes back on stdout.
 	file, rest := desktop.OutputFile(action, c.args)
-	argv := append([]string{"computer", action}, rest...)
+	argv := append([]string{"deskyard", action}, rest...)
 	out := a.Stdout
 	var tmp *os.File
 	switch action {
@@ -52,8 +52,8 @@ func runDesktop(a *App, c *call) error {
 		}
 	}
 	req := execws.Request{Argv: argv}
-	if s := a.Getenv("COMPUTER_SETTLE"); s != "" {
-		req.Env = map[string]string{"COMPUTER_SETTLE": s}
+	if s := a.Getenv("DESKYARD_SETTLE"); s != "" {
+		req.Env = map[string]string{"DESKYARD_SETTLE": s}
 	}
 	code, err := execws.Run(c.ctx, cl, req, execws.IO{Stdout: out, Stderr: a.Stderr})
 	if tmp != nil {

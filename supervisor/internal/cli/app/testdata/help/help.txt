@@ -1,6 +1,6 @@
-computer help: help for a command
+deskyard help: help for a command
 
-Usage: computer [-c NAME] help [COMMAND...]
+Usage: deskyard [-d NAME] help [COMMAND...]
 
 Prints help for a command, or the overview. Same as COMMAND --help.
 
@@ -10,7 +10,7 @@ Arguments:
 Prints: help text
 
 Examples:
-  computer help cp
+  deskyard help cp
 
 Where: on this machine (no remote needed)
 Exit codes: 0 ok, 1 error, 2 usage error

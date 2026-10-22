@@ -1,4 +1,4 @@
-// Package transfer implements `computer cp`: files and directories streamed
+// Package transfer implements `deskyard cp`: files and directories streamed
 // through the exec WebSocket with cat and tar.
 package transfer
 
@@ -138,7 +138,7 @@ func ExtractTar(r io.Reader, dir string) error {
 			}
 		case tar.TypeSymlink:
 			if runtime.GOOS == "windows" {
-				fmt.Fprintf(os.Stderr, "computer cp: skipping symlink %s -> %s (not supported on Windows)\n", hdr.Name, hdr.Linkname)
+				fmt.Fprintf(os.Stderr, "deskyard cp: skipping symlink %s -> %s (not supported on Windows)\n", hdr.Name, hdr.Linkname)
 				continue
 			}
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {

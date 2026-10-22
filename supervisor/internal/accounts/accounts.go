@@ -1,4 +1,4 @@
-// Package accounts keeps the supervisor's accounts and which computers each
+// Package accounts keeps the supervisor's accounts and which desktops each
 // may use, in accounts.json.
 package accounts
 
@@ -23,14 +23,14 @@ type Account struct {
 	PasswordHash string    `json:"passwordHash"`
 	Admin        bool      `json:"admin"`
 	SessionEpoch int       `json:"sessionEpoch"`
-	Computers    []string  `json:"computers"` // computer IDs (the deskyard.id label)
+	Desktops     []string  `json:"desktops"` // desktop IDs (the deskyard.id label)
 	Created      time.Time `json:"created"`
 	LastLogin    time.Time `json:"lastLogin,omitzero"`
 }
 
-// HasAccess reports whether the account may use the computer.
-func (a Account) HasAccess(computerID string) bool {
-	return a.Admin || slices.Contains(a.Computers, computerID)
+// HasAccess reports whether the account may use the desktop.
+func (a Account) HasAccess(desktopID string) bool {
+	return a.Admin || slices.Contains(a.Desktops, desktopID)
 }
 
 var (
@@ -121,7 +121,7 @@ func (s *Store) Get(username string) (Account, bool) {
 }
 
 func clone(a Account) Account {
-	a.Computers = slices.Clone(a.Computers)
+	a.Desktops = slices.Clone(a.Desktops)
 	return a
 }
 
@@ -146,7 +146,7 @@ func (s *Store) admins() int {
 	return n
 }
 
-func (s *Store) Create(username, password string, admin bool, computers []string) (Account, error) {
+func (s *Store) Create(username, password string, admin bool, desktops []string) (Account, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	username = strings.ToLower(username)
@@ -160,9 +160,9 @@ func (s *Store) Create(username, password string, admin bool, computers []string
 		return Account{}, errors.New("a password is required")
 	}
 	a := Account{Username: username, PasswordHash: auth.HashPassword(password), Admin: admin,
-		Computers: slices.Clone(computers), Created: time.Now().UTC()}
-	if a.Computers == nil {
-		a.Computers = []string{}
+		Desktops: slices.Clone(desktops), Created: time.Now().UTC()}
+	if a.Desktops == nil {
+		a.Desktops = []string{}
 	}
 	s.list = append(s.list, a)
 	return clone(a), s.save()
@@ -231,20 +231,20 @@ func (s *Store) TouchLogin(username string) {
 	}
 }
 
-// SetAccess makes exactly the given accounts (besides admins) able to use the computer.
-func (s *Store) SetAccess(computerID string, usernames []string) error {
+// SetAccess makes exactly the given accounts (besides admins) able to use the desktop.
+func (s *Store) SetAccess(desktopID string, usernames []string) error {
 	s.mu.Lock()
 	var changed []string
 	for i := range s.list {
 		a := &s.list[i]
 		want := slices.Contains(usernames, a.Username)
-		has := slices.Contains(a.Computers, computerID)
+		has := slices.Contains(a.Desktops, desktopID)
 		switch {
 		case want && !has:
-			a.Computers = append(a.Computers, computerID)
+			a.Desktops = append(a.Desktops, desktopID)
 			changed = append(changed, a.Username)
 		case !want && has:
-			a.Computers = slices.DeleteFunc(a.Computers, func(id string) bool { return id == computerID })
+			a.Desktops = slices.DeleteFunc(a.Desktops, func(id string) bool { return id == desktopID })
 			changed = append(changed, a.Username)
 		}
 	}
@@ -254,23 +254,23 @@ func (s *Store) SetAccess(computerID string, usernames []string) error {
 	return err
 }
 
-// WithAccess lists the regular accounts that may use the computer.
-func (s *Store) WithAccess(computerID string) []string {
+// WithAccess lists the regular accounts that may use the desktop.
+func (s *Store) WithAccess(desktopID string) []string {
 	var out []string
 	for _, a := range s.List() {
-		if !a.Admin && slices.Contains(a.Computers, computerID) {
+		if !a.Admin && slices.Contains(a.Desktops, desktopID) {
 			out = append(out, a.Username)
 		}
 	}
 	return out
 }
 
-// Forget removes computer IDs that aren't in keep (when known is false for them).
-func (s *Store) Forget(isGone func(computerID string) bool) error {
+// Forget removes desktop IDs that aren't in keep (when known is false for them).
+func (s *Store) Forget(isGone func(desktopID string) bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.list {
-		s.list[i].Computers = slices.DeleteFunc(s.list[i].Computers, isGone)
+		s.list[i].Desktops = slices.DeleteFunc(s.list[i].Desktops, isGone)
 	}
 	return s.save()
 }

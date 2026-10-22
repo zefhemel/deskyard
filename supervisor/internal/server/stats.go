@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
-	"github.com/zefhemel/deskyard/supervisor/internal/computers"
+	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 )
 
 const (
@@ -26,7 +26,7 @@ type sample struct {
 	MemBytes   uint64    `json:"memBytes"`
 }
 
-// statsCollector keeps a stats stream per running computer while any UI
+// statsCollector keeps a stats stream per running desktop while any UI
 // page is open (and a few minutes after), with 15 minutes of history at 5 s.
 type statsCollector struct {
 	s       *Server
@@ -77,14 +77,14 @@ func (sc *statsCollector) run(ctx context.Context) {
 	}
 }
 
-// reconcile starts streams for running computers and stops the others.
+// reconcile starts streams for running desktops and stops the others.
 func (sc *statsCollector) reconcile(ctx context.Context) {
 	if sc.s.events.count() > 0 {
 		sc.lastUse = time.Now()
 	}
-	wanted := map[string]computers.Computer{}
+	wanted := map[string]desktops.Desktop{}
 	if time.Since(sc.lastUse) < statsLinger {
-		list, err := sc.s.Computers.List(ctx)
+		list, err := sc.s.Desktops.List(ctx)
 		if err != nil {
 			return
 		}
@@ -114,7 +114,7 @@ func (sc *statsCollector) reconcile(ctx context.Context) {
 	}
 }
 
-func (sc *statsCollector) follow(ctx context.Context, c computers.Computer, hostCPUs int, hostMem uint64) {
+func (sc *statsCollector) follow(ctx context.Context, c desktops.Desktop, hostCPUs int, hostMem uint64) {
 	defer func() {
 		sc.mu.Lock()
 		if cancel, ok := sc.running[c.Name]; ok {
@@ -133,7 +133,7 @@ func (sc *statsCollector) follow(ctx context.Context, c computers.Computer, host
 			continue
 		}
 		lastSent = st.Time
-		// CPU relative to the computer's limit, or to all host CPUs.
+		// CPU relative to the desktop's limit, or to all host CPUs.
 		cpus := float64(hostCPUs)
 		if c.Settings.NanoCPUs > 0 {
 			cpus = float64(c.Settings.NanoCPUs) / 1e9
@@ -157,7 +157,7 @@ func (sc *statsCollector) follow(ctx context.Context, c computers.Computer, host
 		}
 		sc.history[c.Name] = h
 		sc.mu.Unlock()
-		sc.s.events.publish(event{kind: "stats", computerID: c.ID, data: map[string]any{
+		sc.s.events.publish(event{kind: "stats", desktopID: c.ID, data: map[string]any{
 			"name": c.Name, "cpuPercent": js.CPUPercent, "memBytes": js.MemBytes, "memLimit": js.MemLimit, "t": st.Time.UTC(),
 		}})
 	}
@@ -166,7 +166,7 @@ func (sc *statsCollector) follow(ctx context.Context, c computers.Computer, host
 func round1(f float64) float64 { return float64(int(f*10+0.5)) / 10 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
-	c, _, ok := s.computerFor(w, r, auth.View)
+	c, _, ok := s.desktopFor(w, r, auth.View)
 	if !ok {
 		return
 	}
@@ -198,12 +198,12 @@ func newThumbnails(s *Server) *thumbnails { return &thumbnails{s: s, m: map[stri
 const thumbWidth = 480
 
 func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
-	c, _, ok := s.computerFor(w, r, auth.View)
+	c, _, ok := s.desktopFor(w, r, auth.View)
 	if !ok {
 		return
 	}
 	if !c.Running() {
-		writeError(w, http.StatusConflict, computers.ErrStopped.Error())
+		writeError(w, http.StatusConflict, desktops.ErrStopped.Error())
 		return
 	}
 	full := r.URL.Query().Get("full") == "1"
@@ -217,7 +217,7 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 	if !ok || time.Since(t.at) > 8*time.Second || full {
 		ctx, cancel := timeout(r, 20*time.Second)
 		defer cancel()
-		raw, err := s.execOutput(ctx, c, "computer", "screenshot", "-")
+		raw, err := s.execOutput(ctx, c, "deskyard", "screenshot", "-")
 		if err != nil {
 			writeError(w, http.StatusBadGateway, "screenshot failed: "+err.Error())
 			return

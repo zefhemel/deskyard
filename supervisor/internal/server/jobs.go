@@ -16,7 +16,7 @@ type jobState struct {
 	Message  string   `json:"message"`
 	Progress *float64 `json:"progress"`
 	Error    string   `json:"error,omitempty"`
-	Computer string   `json:"computer,omitempty"`
+	Desktop  string   `json:"desktop,omitempty"`
 }
 
 type job struct {
@@ -35,9 +35,9 @@ type jobs struct {
 func newJobs() *jobs { return &jobs{byID: map[string]*job{}} }
 
 // start runs fn in the background as a job owned by an account.
-func (js *jobs) start(owner, computer string, fn func(ctx context.Context, progress func(string, float64)) error) string {
+func (js *jobs) start(owner, desktop string, fn func(ctx context.Context, progress func(string, float64)) error) string {
 	id := randomID(8)
-	j := &job{owner: owner, state: jobState{Status: "running", Message: "Starting", Computer: computer}, done: make(chan struct{})}
+	j := &job{owner: owner, state: jobState{Status: "running", Message: "Starting", Desktop: desktop}, done: make(chan struct{})}
 	js.mu.Lock()
 	js.byID[id] = j
 	js.mu.Unlock()

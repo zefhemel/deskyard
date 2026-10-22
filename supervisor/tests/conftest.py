@@ -2,7 +2,7 @@
 
 DESKYARD_TEST_MODE=direct (default) runs the binary on this machine;
 DESKYARD_TEST_MODE=container runs the supervisor image with the socket and
-the data folder mounted at the same path. CC_TEST_IMAGE is the computer image
+the data folder mounted at the same path. CC_TEST_IMAGE is the desktop image
 (default deskyard-debian-xfce:test, built from images/debian-xfce).
 """
 
@@ -67,14 +67,14 @@ class Client(requests.Session):
         return last
 
     def create(self, name: str, **kw) -> dict:
-        r = self.post("/api/computers", json={"name": name, "image": IMAGE, **kw})
+        r = self.post("/api/desktops", json={"name": name, "image": IMAGE, **kw})
         assert r.status_code == 202, r.text
         st = self.wait_job(r.json()["job"])
         assert st["status"] == "done", st
-        return self.computer(name)
+        return self.desktop(name)
 
-    def computer(self, name: str) -> dict:
-        r = self.get(f"/api/computers/{name}")
+    def desktop(self, name: str) -> dict:
+        r = self.get(f"/api/desktops/{name}")
         assert r.status_code == 200, r.text
         return r.json()
 
@@ -101,8 +101,8 @@ class Supervisor:
                 args += ["-e", f"{k}={v}"]
             docker(*args, "deskyard:test")
         else:
-            binary = ROOT / "bin" / "deskyard-test"
-            subprocess.run(["go", "build", "-o", str(binary), "./cmd/deskyard"], cwd=ROOT, check=True)
+            binary = ROOT / "bin" / "deskyard-supervisor-test"
+            subprocess.run(["go", "build", "-o", str(binary), "./cmd/deskyard-supervisor"], cwd=ROOT, check=True)
             self.log = open(self.data.parent / "supervisor.log", "w")
             self.proc = subprocess.Popen([str(binary)], env={**os.environ, **env, "DESKYARD_LISTEN": f"127.0.0.1:{self.port}"},
                                          stdout=self.log, stderr=subprocess.STDOUT)
@@ -152,7 +152,7 @@ def supervisor(tmp_path_factory):
     sup.start()
     yield sup
     sup.stop()
-    # Remove what the tests created: computers carry the test supervisor's data path.
+    # Remove what the tests created: desktops carry the test supervisor's data path.
     for name in docker("ps", "-a", "--format", "{{.Names}}", "--filter", "label=deskyard.managed=true", check=False).stdout.split():
         mounts = docker("inspect", "-f", "{{range .Mounts}}{{.Source}} {{end}}", name, check=False).stdout
         if str(sup.data) in mounts:
@@ -173,8 +173,8 @@ def name() -> str:
 
 
 @pytest.fixture
-def computer(admin, name):
-    """A running computer, removed (with its files) afterwards."""
+def desktop(admin, name):
+    """A running desktop, removed (with its files) afterwards."""
     c = admin.create(name)
     yield c
-    admin.delete(f"/api/computers/{name}?files=1")
+    admin.delete(f"/api/desktops/{name}?files=1")

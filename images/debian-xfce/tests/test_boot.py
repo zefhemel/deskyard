@@ -33,7 +33,7 @@ def test_refuses_to_start_without_token(image, volumes):
 
 
 def test_root_owned_home_is_fixed(make_sandbox, volumes):
-    """A new host folder may belong to root; the computer makes it the user's."""
+    """A new host folder may belong to root; the desktop makes it the user's."""
     docker("run", "--rm", "-v", f"{volumes.home}:/w", "alpine", "sh", "-c", "chown 0:0 /w")
     sb = make_sandbox()
     sb.exec("touch /workspace/mine")

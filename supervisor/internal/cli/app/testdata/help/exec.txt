@@ -1,6 +1,6 @@
-computer exec: run a command on the computer
+deskyard exec: run a command on the desktop
 
-Usage: computer [-c NAME] exec [OPTIONS] -- CMD [ARG...]
+Usage: deskyard [-d NAME] exec [OPTIONS] -- CMD [ARG...]
 
 Runs one command as user (in /workspace unless --cwd) and streams its stdin,
 stdout and stderr; exits with the command's exit code. The command is run as
@@ -15,7 +15,7 @@ Options:
                        when the JSON was printed
   -t, --tty            run in a terminal (for programs that need one); stdout
                        and stderr are merged
-  --cwd DIR            working directory on the computer (default /workspace)
+  --cwd DIR            working directory on the desktop (default /workspace)
   -e, --env K=V        set an environment variable (repeatable)
 
 Prints: the command's stdout and stderr as they arrive; with --json one object
@@ -24,9 +24,9 @@ Prints: the command's stdout and stderr as they arrive; with --json one object
   UTF-8
 
 Examples:
-  computer -c alice exec -- ls -la
-  computer exec --json -- bash -lc 'cd app && npm test'
-  echo hi | computer exec -- tee /workspace/hi.txt
+  deskyard -d alice exec -- ls -la
+  deskyard exec --json -- bash -lc 'cd app && npm test'
+  echo hi | deskyard exec -- tee /workspace/hi.txt
 
-Where: on the chosen remote (-c NAME); inside a computer without a remote it acts locally
-Exit codes: the command's own exit code; 1 when it couldn't run (connection, token, stopped computer), 2 usage error
+Where: on the chosen remote (-d NAME); inside a desktop without a remote it acts locally
+Exit codes: the command's own exit code; 1 when it couldn't run (connection, token, stopped desktop), 2 usage error

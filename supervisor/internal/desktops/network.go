@@ -1,4 +1,4 @@
-package computers
+package desktops
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 )
 
 // freeSubnet returns the first /28 inside pool that doesn't overlap any of
-// the used subnets. Each computer's bridge network gets one, because Docker's
+// the used subnets. Each desktop's bridge network gets one, because Docker's
 // default address pools run out after about 30 networks.
 func freeSubnet(pool netip.Prefix, used []string) (netip.Prefix, error) {
 	var taken []netip.Prefix

@@ -1,4 +1,4 @@
-import type { Computer, Settings } from "../api.ts";
+import type { Desktop, Settings } from "../api.ts";
 
 const GB = 1024 ** 3;
 
@@ -79,8 +79,8 @@ export function until(iso: string, now = Date.now()): string {
   return `in ${duration(Math.max(0, (Date.parse(iso) - now) / 1000))}`;
 }
 
-/** The status line of a computer: "Running for 3 days", "Stopped", "Creating". */
-export function statusLine(c: Computer, now = Date.now()): string {
+/** The status line of a desktop: "Running for 3 days", "Stopped", "Creating". */
+export function statusLine(c: Desktop, now = Date.now()): string {
   switch (c.state) {
     case "running":
       return c.startedAt ? `Running for ${since(c.startedAt, now)}` : "Running";
@@ -99,7 +99,7 @@ export function statusLine(c: Computer, now = Date.now()): string {
 
 export type StatusKind = "run" | "busy" | "off";
 
-export function statusKind(c: Computer): StatusKind {
+export function statusKind(c: Desktop): StatusKind {
   if (c.state === "running") return "run";
   if (c.state === "stopped") return "off";
   return "busy";

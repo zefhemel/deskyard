@@ -46,7 +46,7 @@ type IO struct {
 const chunk = 32 * 1024
 
 // Run runs one command over the exec WebSocket and returns its exit code.
-// Errors (network, auth, a stopped computer, an error message from the
+// Errors (network, auth, a stopped desktop, an error message from the
 // server) come back as err with the exit code -1.
 func Run(ctx context.Context, c *remote.Client, req Request, sio IO) (int, error) {
 	if len(req.Argv) == 0 {

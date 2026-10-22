@@ -33,7 +33,7 @@ def test_silverbullet_edge_flatpak(make_sandbox, artifacts_dir):
     else:
         raise AssertionError(sb.exec("cat /tmp/sb.log", check=False).stdout[-3000:])
     time.sleep(5)
-    (artifacts_dir / "silverbullet.png").write_bytes(sb.exec_bytes("computer screenshot"))
+    (artifacts_dir / "silverbullet.png").write_bytes(sb.exec_bytes("deskyard screenshot"))
     sb.remove()
     sb2 = make_sandbox()  # new container: fresh cache volume, same home
     assert SILVERBULLET_ID in sb2.exec("flatpak list --user --app --columns=application").stdout

@@ -3,7 +3,7 @@ name: workspace-computer
 description: "Use when working inside the workspace sandbox (HOME=/workspace) and you need to install software, find where things live, or understand what persists and what you share with the human."
 ---
 
-# This computer
+# This desktop
 
 You are on a Debian Linux container that a human shares with you. The human
 reaches the same desktop (XFCE, display `:1`, sized to their browser window) through a browser and
@@ -41,7 +41,7 @@ with `setsid -f flatpak run <app-id>` so it outlives your command.
 - The browser on screen is the shared Chromium. Drive it with the
   `workspace-browser` skill; never start a second browser.
 - To see or click anything else on screen, use the `workspace-computer-use`
-  skill (`computer screenshot`, `computer click X Y`, ...).
+  skill (`deskyard screenshot`, `deskyard click X Y`, ...).
 - When something needs the human (a login, a 2FA code, a CAPTCHA, a
   decision), say exactly what you need and wait; they do it on the same
   desktop.

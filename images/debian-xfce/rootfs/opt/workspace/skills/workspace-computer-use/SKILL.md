@@ -5,33 +5,33 @@ description: "Use when you need to see or operate the shared desktop in the work
 
 # Computer use
 
-The `computer` command controls the shared display (`:1`). Its size follows
+The `deskyard` command controls the shared display (`:1`). Its size follows
 the human's browser window (1280x800 until they connect), so it can change
-between screenshots; `computer size` tells you. Coordinates are screen pixels from the
+between screenshots; `deskyard size` tells you. Coordinates are screen pixels from the
 top-left corner.
 
 ```
-computer screenshot [FILE|-]          PNG; stdout when omitted or '-' (waits COMPUTER_SETTLE=0.3s first)
-computer zoom X0 Y0 X1 Y1 [FILE|-]    PNG of one region at full resolution, to read small text
-computer size                         prints "W H"
-computer cursor                       prints "X Y"
-computer move X Y
-computer click X Y [left|right|middle]
-computer double-click X Y
-computer triple-click X Y             select a whole line/paragraph
-computer mouse-down [button]          / computer mouse-up [button], for custom drags
-computer drag X1 Y1 X2 Y2
-computer type TEXT                    types into the focused window
-computer key COMBO...                 xdotool key names: ctrl+l Return Escape alt+F4 ctrl+shift+t
-computer hold-key KEY SECONDS
-computer scroll X Y up|down|left|right [N=3]
-computer wait SECONDS                 let an app or page load before the next screenshot
+deskyard screenshot [FILE|-]          PNG; stdout when omitted or '-' (waits DESKYARD_SETTLE=0.3s first)
+deskyard zoom X0 Y0 X1 Y1 [FILE|-]    PNG of one region at full resolution, to read small text
+deskyard size                         prints "W H"
+deskyard cursor                       prints "X Y"
+deskyard move X Y
+deskyard click X Y [left|right|middle]
+deskyard double-click X Y
+deskyard triple-click X Y             select a whole line/paragraph
+deskyard mouse-down [button]          / deskyard mouse-up [button], for custom drags
+deskyard drag X1 Y1 X2 Y2
+deskyard type TEXT                    types into the focused window
+deskyard key COMBO...                 xdotool key names: ctrl+l Return Escape alt+F4 ctrl+shift+t
+deskyard hold-key KEY SECONDS
+deskyard scroll X Y up|down|left|right [N=3]
+deskyard wait SECONDS                 let an app or page load before the next screenshot
 ```
 
 ## The loop
 
-1. `computer screenshot /tmp/s.png`, then look at the image. Text too small
-   to read? `computer zoom` on that region.
+1. `deskyard screenshot /tmp/s.png`, then look at the image. Text too small
+   to read? `deskyard zoom` on that region.
 2. Act on what you saw: one click, a `type`, a `key`.
 3. Screenshot again and check the action landed before the next one. UIs
    animate and load; if nothing changed yet, wait a second and look again.

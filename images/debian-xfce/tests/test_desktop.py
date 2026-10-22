@@ -67,7 +67,7 @@ echo $((Y - top)) $area
 
 
 def test_chromium_title_bar_below_panel_at_boot(sandbox):
-    """At boot Chromium (open when the computer stopped, so it comes back) must not
+    """At boot Chromium (open when the desktop stopped, so it comes back) must not
     maximize before the top panel reserves its space."""
     sandbox.exec("curl -fs --max-time 60 -o /dev/null http://127.0.0.1:9221/json/version")
     sandbox.restart()
@@ -110,7 +110,7 @@ def test_top_panel_trimmed(sandbox, artifacts_dir):
     types = sandbox.exec(TOP_PANEL_TYPES).stdout.split()
     assert not REMOVED & set(types), types
     assert "applicationsmenu" in types and "tasklist" in types, types
-    (artifacts_dir / "top-panel.png").write_bytes(sandbox.exec_bytes("computer zoom 0 0 1280 40"))
+    (artifacts_dir / "top-panel.png").write_bytes(sandbox.exec_bytes("deskyard zoom 0 0 1280 40"))
 
 
 def test_existing_home_gets_top_panel_trimmed_once(make_sandbox, volumes, image):

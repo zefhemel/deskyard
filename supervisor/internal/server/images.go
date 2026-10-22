@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
-	"github.com/zefhemel/deskyard/supervisor/internal/computers"
+	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 )
 
-// catalog is the list of images computers can be made from (images.json),
+// catalog is the list of images desktops can be made from (images.json),
 // with the newest pulled image ID per reference, for "update available".
 type catalogEntry struct {
 	Ref     string     `json:"ref"`
@@ -90,8 +90,8 @@ func (c *catalog) newest(ref string) string {
 	return ""
 }
 
-// updateFor returns the version a computer could upgrade to, if any.
-func (c *catalog) updateFor(comp computers.Computer) *string {
+// updateFor returns the version a desktop could upgrade to, if any.
+func (c *catalog) updateFor(comp desktops.Desktop) *string {
 	newest := c.newest(comp.Image)
 	if newest == "" || comp.ImageID == "" || newest == comp.ImageID {
 		return nil
@@ -123,7 +123,7 @@ func (s *Server) checkImages(ctx context.Context, progress func(string, float64)
 			errs = append(errs, err)
 			continue
 		}
-		s.Computers.ForgetImage(e.Ref)
+		s.Desktops.ForgetImage(e.Ref)
 		img, err := s.Eng.ImageInspect(ctx, e.Ref)
 		if err != nil {
 			errs = append(errs, err)
@@ -175,16 +175,16 @@ type catalogImageJSON struct {
 	Title       string     `json:"title"`
 	Version     string     `json:"version"`
 	Description string     `json:"description"`
-	Computers   []string   `json:"computers"`
+	Desktops    []string   `json:"desktops"`
 	Behind      []string   `json:"behind"`
 	Checked     *time.Time `json:"checked"`
 }
 
 func (s *Server) handleListImages(w http.ResponseWriter, r *http.Request) {
-	list, _ := s.Computers.List(r.Context())
+	list, _ := s.Desktops.List(r.Context())
 	out := []catalogImageJSON{}
 	for _, e := range s.images.entries() {
-		j := catalogImageJSON{Ref: e.Ref, Checked: e.Checked, Computers: []string{}, Behind: []string{}}
+		j := catalogImageJSON{Ref: e.Ref, Checked: e.Checked, Desktops: []string{}, Behind: []string{}}
 		if img, err := s.Eng.ImageInspect(r.Context(), e.Ref); err == nil {
 			j.Title = img.Labels["org.opencontainers.image.title"]
 			j.Version = img.Labels["org.opencontainers.image.version"]
@@ -192,7 +192,7 @@ func (s *Server) handleListImages(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, c := range list {
 			if c.Image == e.Ref {
-				j.Computers = append(j.Computers, c.Name)
+				j.Desktops = append(j.Desktops, c.Name)
 				if s.images.updateFor(c) != nil {
 					j.Behind = append(j.Behind, c.Name)
 				}
@@ -226,8 +226,8 @@ func (s *Server) handleAddImage(w http.ResponseWriter, r *http.Request) {
 		if err := s.Eng.Pull(ctx, req.Ref, nil); err != nil {
 			return err
 		}
-		s.Computers.ForgetImage(req.Ref)
-		img, err := s.Computers.EnsureImage(ctx, req.Ref, progress)
+		s.Desktops.ForgetImage(req.Ref)
+		img, err := s.Desktops.EnsureImage(ctx, req.Ref, progress)
 		if err != nil {
 			return err
 		}
@@ -248,7 +248,7 @@ func (s *Server) handleRemoveImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ref := r.URL.Query().Get("ref")
-	list, _ := s.Computers.List(r.Context())
+	list, _ := s.Desktops.List(r.Context())
 	for _, c := range list {
 		if c.Image == ref {
 			writeError(w, http.StatusConflict, c.Name+" uses this image")
@@ -290,11 +290,11 @@ func (s *Server) handleUpgradeImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := s.jobs.start(a.Username, "", func(ctx context.Context, progress func(string, float64)) error {
-		list, err := s.Computers.List(ctx)
+		list, err := s.Desktops.List(ctx)
 		if err != nil {
 			return err
 		}
-		var behind []computers.Computer
+		var behind []desktops.Desktop
 		for _, c := range list {
 			if c.Image == req.Ref && s.images.updateFor(c) != nil {
 				behind = append(behind, c)
@@ -302,17 +302,17 @@ func (s *Server) handleUpgradeImage(w http.ResponseWriter, r *http.Request) {
 		}
 		var errs []error
 		for i, c := range behind {
-			if err := s.Computers.Begin(c.Name, "upgrading"); err != nil {
+			if err := s.Desktops.Begin(c.Name, "upgrading"); err != nil {
 				errs = append(errs, err)
 				continue
 			}
-			s.publishComputer(ctx, c.Name)
+			s.publishDesktop(ctx, c.Name)
 			s.viewers.closeAll(c.Name)
-			_, err := s.Computers.Recreate(ctx, c.Name, c.Settings, func(msg string, _ float64) {
+			_, err := s.Desktops.Recreate(ctx, c.Name, c.Settings, func(msg string, _ float64) {
 				progress(c.Name+": "+msg, float64(i)/float64(len(behind)))
 			})
-			s.Computers.Done(c.Name)
-			s.publishComputer(ctx, c.Name)
+			s.Desktops.Done(c.Name)
+			s.publishDesktop(ctx, c.Name)
 			if err != nil {
 				errs = append(errs, err)
 			}

@@ -1,14 +1,14 @@
-computer guide: short manual for AI agents
+deskyard guide: short manual for AI agents
 
-Usage: computer [-c NAME] guide
+Usage: deskyard [-d NAME] guide
 
-Prints a short manual: how a computer is laid out, the three ways to work
+Prints a short manual: how a desktop is laid out, the three ways to work
 (shell, browser, desktop) and when to use which.
 
 Prints: the guide
 
 Examples:
-  computer guide
+  deskyard guide
 
 Where: on this machine (no remote needed)
 Exit codes: 0 ok, 1 error, 2 usage error

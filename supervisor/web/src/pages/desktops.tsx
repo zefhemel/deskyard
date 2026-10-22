@@ -2,35 +2,35 @@ import { useState } from "preact/hooks";
 import { Page, PageHead } from "../components/topbar.tsx";
 import { Tile } from "../components/tile.tsx";
 import { Button } from "../components/ui.tsx";
-import { NewComputerDialog } from "../dialogs/new-computer.tsx";
+import { NewDesktopDialog } from "../dialogs/new-desktop.tsx";
 import { useLive, useNow } from "../live.tsx";
 
-export function ComputersPage() {
-  const { me, computers, jobs } = useLive();
+export function DesktopsPage() {
+  const { me, desktops, jobs } = useLive();
   const now = useNow(10000);
   const [creating, setCreating] = useState(false);
 
   return (
     <Page>
-      <PageHead title="Computers" sub={me.admin ? undefined : "The computers you can use. Ask an admin for more."}>
+      <PageHead title="Desktops" sub={me.admin ? undefined : "The desktops you can use. Ask an admin for more."}>
         {me.admin && (
           <Button variant="primary" onClick={() => setCreating(true)}>
-            New computer
+            New desktop
           </Button>
         )}
       </PageHead>
-      {computers === null ? (
+      {desktops === null ? (
         <p class="text-muted">Loading…</p>
-      ) : computers.length === 0 ? (
+      ) : desktops.length === 0 ? (
         <Empty admin={me.admin} onCreate={() => setCreating(true)} />
       ) : (
         <div class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-x-6 gap-y-7 max-sm:grid-cols-1">
-          {computers.map((c) => (
-            <Tile key={c.name} computer={c} job={jobs[c.name]} now={now} admin={me.admin} />
+          {desktops.map((c) => (
+            <Tile key={c.name} desktop={c} job={jobs[c.name]} now={now} admin={me.admin} />
           ))}
         </div>
       )}
-      {creating && <NewComputerDialog onClose={() => setCreating(false)} />}
+      {creating && <NewDesktopDialog onClose={() => setCreating(false)} />}
     </Page>
   );
 }
@@ -40,13 +40,13 @@ function Empty({ admin, onCreate }: { admin: boolean; onCreate: () => void }) {
     <div class="rounded-[10px] border border-dashed border-line px-6 py-12 text-center text-muted">
       {admin ? (
         <>
-          <p class="mb-4">No computers yet.</p>
+          <p class="mb-4">No desktops yet.</p>
           <Button variant="primary" onClick={onCreate}>
-            New computer
+            New desktop
           </Button>
         </>
       ) : (
-        <p>You can't use any computers yet. Ask an admin for access.</p>
+        <p>You can't use any desktops yet. Ask an admin for access.</p>
       )}
     </div>
   );

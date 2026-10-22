@@ -15,10 +15,10 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/cli/execws"
 )
 
-// Exec runs a command on the remote computer (execws.Run bound to a client).
+// Exec runs a command on the remote desktop (execws.Run bound to a client).
 type Exec func(ctx context.Context, req execws.Request, sio execws.IO) (int, error)
 
-// Endpoint is one side of `computer cp`: a local path, or NAME:/path on a
+// Endpoint is one side of `deskyard cp`: a local path, or NAME:/path on a
 // remote (NAME may be empty for the chosen remote: ":/path").
 type Endpoint struct {
 	Remote   string
@@ -192,7 +192,7 @@ func (w *downloadWriter) start() error {
 		}
 		w.file, w.final, w.out = f, target, f
 	default:
-		return fmt.Errorf("unexpected answer from the computer (is it a Deskyard computer image?)")
+		return fmt.Errorf("unexpected answer from the desktop (is it a Deskyard desktop image?)")
 	}
 	return nil
 }
@@ -223,7 +223,7 @@ func (w *downloadWriter) finish(ok bool) error {
 		}
 	}
 	if ok && w.kind == 0 && w.dst != "-" {
-		return errors.New("unexpected empty answer from the computer")
+		return errors.New("unexpected empty answer from the desktop")
 	}
 	if err == nil && ok {
 		err = w.err
@@ -270,7 +270,7 @@ func LocalCopy(src, dst string) error {
 func remoteFailure(what string, code int, stderr string) error {
 	msg := strings.TrimSpace(stderr)
 	if msg == "" {
-		return fmt.Errorf("%s failed on the computer (exit %d)", what, code)
+		return fmt.Errorf("%s failed on the desktop (exit %d)", what, code)
 	}
-	return fmt.Errorf("%s failed on the computer (exit %d): %s", what, code, msg)
+	return fmt.Errorf("%s failed on the desktop (exit %d): %s", what, code, msg)
 }

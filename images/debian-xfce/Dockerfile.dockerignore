@@ -1,5 +1,5 @@
 # The build context is the repository root (the image also builds the
-# computer command from supervisor/); only send what the image needs.
+# desktop command from supervisor/); only send what the image needs.
 *
 !images/debian-xfce/rootfs
 !supervisor

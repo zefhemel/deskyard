@@ -147,7 +147,7 @@ func TestUsageErrors(t *testing.T) {
 	h := newHarness(t)
 	h.inside = true
 	for _, args := range [][]string{{}, {"bogus"}, {"click", "1"}, {"zoom", "50", "50", "10", "10"}, {"remote"}, {"remote", "bogus"},
-		{"exec"}, {"cp", "a"}, {"remote", "add", "x"}, {"--nope"}, {"-c"}, {"status", "--bogus"}, {"exec", "--cwd"}} {
+		{"exec"}, {"cp", "a"}, {"remote", "add", "x"}, {"--nope"}, {"-d"}, {"status", "--bogus"}, {"exec", "--cwd"}} {
 		r := h.run(args...)
 		if r.code != 2 {
 			t.Errorf("%v: exit %d, want 2 (stderr %q)", args, r.code, r.stderr)
@@ -161,16 +161,16 @@ func TestUsageErrors(t *testing.T) {
 func TestNoRemoteChosen(t *testing.T) {
 	h := newHarness(t)
 	r := h.run("screenshot")
-	if r.code != 1 || !strings.Contains(r.stderr, "no remote chosen: run `computer remote list`, then use -c NAME") {
+	if r.code != 1 || !strings.Contains(r.stderr, "no remote chosen: run `deskyard remote list`, then use -d NAME") {
 		t.Errorf("%+v", r)
 	}
-	r = h.run("-c", "nope", "size")
+	r = h.run("-d", "nope", "size")
 	if r.code != 1 || !strings.Contains(r.stderr, `no remote named "nope"`) {
 		t.Errorf("%+v", r)
 	}
-	h.env["COMPUTER_URL"] = "https://h/alice"
+	h.env["DESKYARD_URL"] = "https://h/alice"
 	r = h.run("size")
-	if r.code != 1 || !strings.Contains(r.stderr, "COMPUTER_TOKEN") {
+	if r.code != 1 || !strings.Contains(r.stderr, "DESKYARD_TOKEN") {
 		t.Errorf("%+v", r)
 	}
 }
@@ -181,7 +181,7 @@ func remoteHarness(t *testing.T) (*harness, *clitest.Fake) {
 	}
 	f := clitest.New(t, "alice")
 	h := newHarness(t)
-	if r := h.run("remote", "add", "al", f.ComputerURL(), "--token", clitest.Token); r.code != 0 {
+	if r := h.run("remote", "add", "al", f.DesktopURL(), "--token", clitest.Token); r.code != 0 {
 		t.Fatalf("remote add: %+v", r)
 	}
 	return h, f
@@ -191,25 +191,25 @@ func TestRemoteCommands(t *testing.T) {
 	f := clitest.New(t, "alice")
 	h := newHarness(t)
 
-	r := h.run("remote", "add", "al", f.ComputerURL(), "--token", "dyt_bad_token")
+	r := h.run("remote", "add", "al", f.DesktopURL(), "--token", "dyt_bad_token")
 	if r.code != 1 || !strings.Contains(r.stderr, "token rejected (401): ask someone with access to alice") {
 		t.Errorf("bad token: %+v", r)
 	}
 	r = h.run("remote", "add", "al", f.URL+"/bob", "--token", clitest.Token)
-	if r.code != 1 || !strings.Contains(r.stderr, `this token is for the computer "alice", not "bob"`) {
-		t.Errorf("wrong computer: %+v", r)
+	if r.code != 1 || !strings.Contains(r.stderr, `this token is for the desktop "alice", not "bob"`) {
+		t.Errorf("wrong desktop: %+v", r)
 	}
-	r = h.run("remote", "add", "al", f.ComputerURL(), "--token", clitest.Token)
+	r = h.run("remote", "add", "al", f.DesktopURL(), "--token", clitest.Token)
 	if r.code != 0 || !strings.Contains(r.stdout, "Added remote al") || !strings.Contains(r.stdout, "default") {
 		t.Errorf("add: %+v", r)
 	}
-	// A URL without the computer's name learns it from the token.
+	// A URL without the desktop's name learns it from the token.
 	r = h.run("remote", "add", "two", f.URL, "--token", clitest.Token)
 	if r.code != 0 {
 		t.Errorf("add two: %+v", r)
 	}
 	cfg, err := remote.Load(h.config)
-	if err != nil || cfg.Remotes["two"].Computer != "alice" || cfg.Default != "al" {
+	if err != nil || cfg.Remotes["two"].Desktop != "alice" || cfg.Default != "al" {
 		t.Errorf("config: %+v %v", cfg, err)
 	}
 
@@ -237,11 +237,11 @@ func TestRemoteCommands(t *testing.T) {
 
 	// Stopped: the token works, so the remote is saved with a note.
 	f.Stopped = true
-	r = h.run("remote", "add", "st", f.ComputerURL(), "--token", clitest.Token)
+	r = h.run("remote", "add", "st", f.DesktopURL(), "--token", clitest.Token)
 	if r.code != 0 || !strings.Contains(r.stdout, "alice is stopped") {
 		t.Errorf("add stopped: %+v", r)
 	}
-	r = h.run("-c", "st", "status")
+	r = h.run("-d", "st", "status")
 	if r.code != 1 || !strings.Contains(r.stderr, "alice is stopped; someone with access can start it") {
 		t.Errorf("status stopped: %+v", r)
 	}
@@ -266,8 +266,8 @@ func TestEnvRemote(t *testing.T) {
 	}
 	f := clitest.New(t, "alice")
 	h := newHarness(t)
-	h.env["COMPUTER_URL"] = f.ComputerURL()
-	h.env["COMPUTER_TOKEN"] = clitest.Token
+	h.env["DESKYARD_URL"] = f.DesktopURL()
+	h.env["DESKYARD_TOKEN"] = clitest.Token
 	if r := h.run("size"); r.code != 0 || r.stdout != "1280 800\n" {
 		t.Errorf("%+v", r)
 	}
@@ -307,7 +307,7 @@ func TestDesktopRemote(t *testing.T) {
 		t.Errorf("screenshot to stdout: %q", r.stdout)
 	}
 	file := filepath.Join(t.TempDir(), "shot.png")
-	h.env["COMPUTER_SETTLE"] = "0"
+	h.env["DESKYARD_SETTLE"] = "0"
 	if r := h.run("zoom", "0", "0", "10", "10", file); r.code != 0 || r.stdout != "" {
 		t.Errorf("zoom to file: %+v", r)
 	}
@@ -316,7 +316,7 @@ func TestDesktopRemote(t *testing.T) {
 	}
 	reqs := f.Requests()
 	last := reqs[len(reqs)-1]
-	if strings.Join(last.Argv, " ") != "computer zoom 0 0 10 10 -" || last.Env["COMPUTER_SETTLE"] != "0" {
+	if strings.Join(last.Argv, " ") != "deskyard zoom 0 0 10 10 -" || last.Env["DESKYARD_SETTLE"] != "0" {
 		t.Errorf("zoom request: %+v", last)
 	}
 	// Usage errors are caught before going remote.
@@ -325,7 +325,7 @@ func TestDesktopRemote(t *testing.T) {
 		t.Errorf("click 1: %+v", r)
 	}
 	// The remote's exit code passes through.
-	f.Computer = func(args []string, stdout, stderr io.Writer) int {
+	f.Desktop = func(args []string, stdout, stderr io.Writer) int {
 		io.WriteString(stderr, "no display\n")
 		return 5
 	}

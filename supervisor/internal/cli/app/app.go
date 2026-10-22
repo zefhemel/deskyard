@@ -1,4 +1,4 @@
-// Package app is the `computer` command: argument parsing, help, and the
+// Package app is the `deskyard` command: argument parsing, help, and the
 // commands themselves.
 package app
 
@@ -23,7 +23,7 @@ type App struct {
 	Getenv         func(string) string
 	// ConfigPath overrides remotes.json's location (tests).
 	ConfigPath string
-	// Inside reports whether this process runs inside a computer, where
+	// Inside reports whether this process runs inside a desktop, where
 	// commands act locally when no remote is chosen.
 	Inside  func() bool
 	HTTP    *http.Client
@@ -37,14 +37,14 @@ func New(version string) *App {
 	return &App{
 		Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr,
 		Getenv:  os.Getenv,
-		Inside:  insideComputer,
+		Inside:  insideDesktop,
 		Version: version,
 	}
 }
 
-// insideComputer: computer images create /etc/workspace (see
+// insideDesktop: desktop images create /etc/workspace (see
 // images/debian-xfce/Dockerfile) and run Linux.
-func insideComputer() bool {
+func insideDesktop() bool {
 	if runtime.GOOS != "linux" {
 		return false
 	}
@@ -101,17 +101,17 @@ func (a *App) Run(ctx context.Context, argv []string) int {
 	var ue *usageError
 	if errors.As(err, &ue) {
 		if ue.cmd != nil {
-			fmt.Fprintf(a.Stderr, "computer %s: %s\nusage: computer %s\nRun `computer %s --help` for details.\n", ue.cmd.Name, ue.msg, ue.cmd.Usage, ue.cmd.Name)
+			fmt.Fprintf(a.Stderr, "deskyard %s: %s\nusage: deskyard %s\nRun `deskyard %s --help` for details.\n", ue.cmd.Name, ue.msg, ue.cmd.Usage, ue.cmd.Name)
 		} else {
-			fmt.Fprintf(a.Stderr, "computer: %s\nRun `computer --help` for the list of commands, or `computer guide` to get started.\n", ue.msg)
+			fmt.Fprintf(a.Stderr, "desktop: %s\nRun `deskyard --help` for the list of commands, or `deskyard guide` to get started.\n", ue.msg)
 		}
 		return 2
 	}
 	if errors.Is(err, context.Canceled) {
-		fmt.Fprintln(a.Stderr, "computer: interrupted")
+		fmt.Fprintln(a.Stderr, "desktop: interrupted")
 		return 130
 	}
-	fmt.Fprintf(a.Stderr, "computer: %v\n", err)
+	fmt.Fprintf(a.Stderr, "desktop: %v\n", err)
 	return 1
 }
 
@@ -120,13 +120,13 @@ func (a *App) run(ctx context.Context, argv []string) error {
 	for len(argv) > 0 {
 		arg := argv[0]
 		switch {
-		case arg == "-c" || arg == "--computer":
+		case arg == "-d" || arg == "--desktop":
 			if len(argv) < 2 || argv[1] == "" {
-				return usagef(nil, "-c needs a remote name: computer -c NAME COMMAND (see `computer remote list`)")
+				return usagef(nil, "-d needs a remote name: deskyard -d NAME COMMAND (see `deskyard remote list`)")
 			}
 			a.remoteFlag, argv = argv[1], argv[2:]
 			continue
-		case strings.HasPrefix(arg, "-c="), strings.HasPrefix(arg, "--computer="):
+		case strings.HasPrefix(arg, "-c="), strings.HasPrefix(arg, "--desktop="):
 			_, v, _ := strings.Cut(arg, "=")
 			a.remoteFlag, argv = v, argv[1:]
 			continue
@@ -135,7 +135,7 @@ func (a *App) run(ctx context.Context, argv []string) error {
 		case arg == "--version":
 			return runVersion(a, nil)
 		case strings.HasPrefix(arg, "-") && arg != "-":
-			return usagef(nil, "unknown option %q (options for a command go after it, e.g. computer exec --json -- ls)", arg)
+			return usagef(nil, "unknown option %q (options for a command go after it, e.g. deskyard exec --json -- ls)", arg)
 		}
 		break
 	}
@@ -300,19 +300,19 @@ func (a *App) loadConfig() (*remote.Config, string, error) {
 	return cfg, p, err
 }
 
-const addHint = "No remotes yet? Get a token on the computer's Agents tab, then run `computer remote add NAME https://host/NAME --token dyt_…`"
+const addHint = "No remotes yet? Get a token on the desktop's Agents tab, then run `deskyard remote add NAME https://host/NAME --token dyt_…`"
 
 // target picks the remote to talk to. It returns nil, nil when the command
-// should act locally (inside a computer with no remote chosen).
+// should act locally (inside a desktop with no remote chosen).
 func (a *App) target() (*remote.Client, error) {
 	name := a.remoteFlag
 	if name == "" {
-		name = a.Getenv("COMPUTER_REMOTE")
+		name = a.Getenv("DESKYARD_REMOTE")
 	}
 	if name != "" {
 		return a.namedRemote(name)
 	}
-	if u := a.Getenv("COMPUTER_URL"); u != "" {
+	if u := a.Getenv("DESKYARD_URL"); u != "" {
 		return a.envRemote(u)
 	}
 	cfg, _, err := a.loadConfig()
@@ -326,9 +326,9 @@ func (a *App) target() (*remote.Client, error) {
 		return nil, nil
 	}
 	if len(cfg.Remotes) > 0 {
-		return nil, errors.New("no remote chosen: run `computer remote list`, then use -c NAME (or set COMPUTER_REMOTE=NAME, or `computer remote default NAME`)")
+		return nil, errors.New("no remote chosen: run `deskyard remote list`, then use -d NAME (or set DESKYARD_REMOTE=NAME, or `deskyard remote default NAME`)")
 	}
-	return nil, errors.New("no remote chosen: run `computer remote list`, then use -c NAME. " + addHint)
+	return nil, errors.New("no remote chosen: run `deskyard remote list`, then use -d NAME. " + addHint)
 }
 
 func (a *App) namedRemote(name string) (*remote.Client, error) {
@@ -339,9 +339,9 @@ func (a *App) namedRemote(name string) (*remote.Client, error) {
 	if r := cfg.Remotes[name]; r != nil {
 		return a.client(r), nil
 	}
-	// COMPUTER_URL's computer can be named too (cp alice:/x).
-	if u := a.Getenv("COMPUTER_URL"); u != "" {
-		if c, err := a.envRemote(u); err == nil && c.Computer == name {
+	// DESKYARD_URL's desktop can be named too (cp alice:/x).
+	if u := a.Getenv("DESKYARD_URL"); u != "" {
+		if c, err := a.envRemote(u); err == nil && c.Desktop == name {
 			return c, nil
 		}
 	}
@@ -352,19 +352,19 @@ func (a *App) namedRemote(name string) (*remote.Client, error) {
 	for _, r := range cfg.Sorted() {
 		names = append(names, r.Name)
 	}
-	return nil, fmt.Errorf("no remote named %q (there are: %s): run `computer remote list`, or add it with `computer remote add %s https://host/%s --token dyt_…`", name, strings.Join(names, ", "), name, name)
+	return nil, fmt.Errorf("no remote named %q (there are: %s): run `deskyard remote list`, or add it with `deskyard remote add %s https://host/%s --token dyt_…`", name, strings.Join(names, ", "), name, name)
 }
 
 func (a *App) envRemote(u string) (*remote.Client, error) {
 	t, err := remote.ParseURL(u)
 	if err != nil {
-		return nil, fmt.Errorf("COMPUTER_URL: %v", err)
+		return nil, fmt.Errorf("DESKYARD_URL: %v", err)
 	}
-	tok := a.Getenv("COMPUTER_TOKEN")
+	tok := a.Getenv("DESKYARD_TOKEN")
 	if tok == "" {
-		return nil, errors.New("COMPUTER_URL is set but COMPUTER_TOKEN isn't: set it to the agent token (dyt_…) for that computer")
+		return nil, errors.New("DESKYARD_URL is set but DESKYARD_TOKEN isn't: set it to the agent token (dyt_…) for that desktop")
 	}
-	return &remote.Client{Alias: t.Computer, Base: t.Base, Computer: t.Computer, Token: tok, HTTP: a.HTTP}, nil
+	return &remote.Client{Alias: t.Desktop, Base: t.Base, Desktop: t.Desktop, Token: tok, HTTP: a.HTTP}, nil
 }
 
 func (a *App) client(r *remote.Remote) *remote.Client {

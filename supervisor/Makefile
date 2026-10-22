@@ -1,4 +1,4 @@
-# Build, test and release the supervisor and the computer command.
+# Build, test and release the supervisor and the deskyard command.
 #
 #   make build         web UI + both binaries into bin/
 #   make test          Go unit tests
@@ -13,9 +13,9 @@ GO       ?= go
 LDFLAGS  := -s -w -X main.version=$(VERSION)
 GOFLAGS_RELEASE := -trimpath -ldflags "$(LDFLAGS)"
 
-# supervisor: Linux and macOS. computer: also Windows, for agents there.
+# supervisor: Linux and macOS. desktop: also Windows, for agents there.
 DESKYARD_PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
-COMPUTER_PLATFORMS   := $(DESKYARD_PLATFORMS) windows/amd64
+DESKYARD_PLATFORMS   := $(DESKYARD_PLATFORMS) windows/amd64
 
 .PHONY: all web build test test-engine typecheck vet release image clean
 
@@ -26,8 +26,8 @@ web:
 	cd web && npm ci && npm run build
 
 build: web
+	$(GO) build -ldflags "-X main.version=$(VERSION)" -o bin/deskyard-supervisor ./cmd/deskyard-supervisor
 	$(GO) build -ldflags "-X main.version=$(VERSION)" -o bin/deskyard ./cmd/deskyard
-	$(GO) build -ldflags "-X main.version=$(VERSION)" -o bin/computer ./cmd/computer
 
 test:
 	$(GO) test ./...
@@ -48,13 +48,13 @@ release: web
 		os=$${p%/*}; arch=$${p#*/}; \
 		echo "supervisor $$os/$$arch"; \
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build $(GOFLAGS_RELEASE) \
-			-o dist/deskyard-$$os-$$arch ./cmd/deskyard; \
+			-o dist/deskyard-supervisor-$$os-$$arch ./cmd/deskyard-supervisor; \
 	done
-	@set -e; for p in $(COMPUTER_PLATFORMS); do \
+	@set -e; for p in $(DESKYARD_PLATFORMS); do \
 		os=$${p%/*}; arch=$${p#*/}; ext=; [ $$os = windows ] && ext=.exe; \
-		echo "computer $$os/$$arch"; \
+		echo "desktop $$os/$$arch"; \
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build $(GOFLAGS_RELEASE) \
-			-o dist/computer-$$os-$$arch$$ext ./cmd/computer; \
+			-o dist/deskyard-$$os-$$arch$$ext ./cmd/deskyard; \
 	done
 	cd dist && shasum -a 256 * > SHA256SUMS
 

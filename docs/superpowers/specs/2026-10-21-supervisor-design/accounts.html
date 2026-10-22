@@ -17,17 +17,17 @@
 <script>
   document.getElementById("top").innerHTML = topBar("accounts");
   const accounts = [
-    { name: "zef", admin: true, last: "Now", computers: null },
-    { name: "anna", last: "Now", computers: ["alice", "research", "notes"] },
-    { name: "sam", last: "3 days ago", computers: ["research"] },
-    { name: "ci", last: "Never", computers: [] },
+    { name: "zef", admin: true, last: "Now", desktops: null },
+    { name: "anna", last: "Now", desktops: ["alice", "research", "notes"] },
+    { name: "sam", last: "3 days ago", desktops: ["research"] },
+    { name: "ci", last: "Never", desktops: [] },
   ];
   document.querySelector("#accounts tbody").innerHTML = accounts.map((a) => `
     <tr>
       <td><span class="account">${av(a.name)} ${a.name}${a.admin ? ' <span class="tag admin">admin</span>' : ""}</span></td>
-      <td>${a.computers === null ? '<span class="muted">Every computer</span>'
-        : a.computers.length ? `<div class="chips">${a.computers.map((c) => `<span class="tag">${c}</span>`).join("")}</div>`
-        : '<span class="muted">No computers yet</span>'}</td>
+      <td>${a.desktops === null ? '<span class="muted">Every desktop</span>'
+        : a.desktops.length ? `<div class="chips">${a.desktops.map((c) => `<span class="tag">${c}</span>`).join("")}</div>`
+        : '<span class="muted">No desktops yet</span>'}</td>
       <td>${a.last}</td>
       <td class="actions"><button class="btn">Edit</button> <button class="btn icon" aria-label="More">⋯</button></td>
     </tr>`).join("");

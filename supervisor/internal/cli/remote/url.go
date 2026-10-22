@@ -1,4 +1,4 @@
-// Package remote keeps the `computer` command's remotes (remotes.json) and
+// Package remote keeps the `deskyard` command's remotes (remotes.json) and
 // talks to a supervisor's agent API.
 package remote
 
@@ -8,17 +8,17 @@ import (
 	"strings"
 )
 
-// Target is a parsed computer URL: the supervisor's base URL and the
-// computer's name (empty when the URL names only the supervisor).
+// Target is a parsed desktop URL: the supervisor's base URL and the
+// desktop's name (empty when the URL names only the supervisor).
 type Target struct {
-	Base     string // scheme://host[:port][/prefix], no trailing slash
-	Computer string
+	Base    string // scheme://host[:port][/prefix], no trailing slash
+	Desktop string
 }
 
-// ParseURL splits a computer URL such as https://host/alice or
+// ParseURL splits a desktop URL such as https://host/alice or
 // http://127.0.0.1:8080/prefix/alice into the supervisor base URL and the
-// computer name (the last path segment). A URL without a path names only
-// the supervisor; the token then decides which computer it is.
+// desktop name (the last path segment). A URL without a path names only
+// the supervisor; the token then decides which desktop it is.
 func ParseURL(raw string) (Target, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
@@ -37,7 +37,7 @@ func ParseURL(raw string) (Target, error) {
 	// A pasted agent API URL: drop the API part.
 	if i := strings.Index("/"+path+"/", "/api/agent/"); i >= 0 {
 		path = strings.Trim(path[:max(i-1, 0)], "/")
-		return Target{Base: u.Scheme + "://" + u.Host + prefix(path), Computer: ""}, nil
+		return Target{Base: u.Scheme + "://" + u.Host + prefix(path), Desktop: ""}, nil
 	}
 	if path == "" {
 		return Target{Base: u.Scheme + "://" + u.Host}, nil
@@ -45,8 +45,8 @@ func ParseURL(raw string) (Target, error) {
 	segs := strings.Split(path, "/")
 	name := segs[len(segs)-1]
 	return Target{
-		Base:     u.Scheme + "://" + u.Host + prefix(strings.Join(segs[:len(segs)-1], "/")),
-		Computer: name,
+		Base:    u.Scheme + "://" + u.Host + prefix(strings.Join(segs[:len(segs)-1], "/")),
+		Desktop: name,
 	}, nil
 }
 
@@ -57,10 +57,10 @@ func prefix(p string) string {
 	return "/" + p
 }
 
-// URL is the human-facing computer URL (base + name).
+// URL is the human-facing desktop URL (base + name).
 func (t Target) URL() string {
-	if t.Computer == "" {
+	if t.Desktop == "" {
 		return t.Base
 	}
-	return t.Base + "/" + t.Computer
+	return t.Base + "/" + t.Desktop
 }

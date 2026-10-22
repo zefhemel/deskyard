@@ -1,6 +1,6 @@
-// Renders the shared top bar and the wall of computers, so the dialog
+// Renders the shared top bar and the wall of desktops, so the dialog
 // mockups can show it dimmed behind them.
-const computers = [
+const desktops = [
   { name: "alice", state: "run", status: "Running for 3 days", img: "alice", cpu: 34, mem: [1.4, 2], viewers: ["zef", "anna"], image: "Debian XFCE 2026.10.15", update: true, access: ["anna"] },
   { name: "research", state: "run", status: "Running for 5 hours", img: "research", cpu: 8, mem: [0.9, null], viewers: ["anna"], image: "Debian XFCE 2026.10.22", access: ["anna"] },
   { name: "build-bot", state: "run", status: "Running for 12 minutes", img: "build-bot", cpu: 91, mem: [3.1, 4], viewers: [], image: "Debian XFCE 2026.10.22" },
@@ -17,10 +17,10 @@ function av(name) { return `<span class="av ${colors[name] || "c1"}" title="${na
 const me = typeof viewer === "string" ? viewer : "zef";
 const isAdmin = me === "zef";
 
-function topBar(page = "computers") {
+function topBar(page = "desktops") {
   const nav = isAdmin ? `
     <nav class="nav">
-      <a href="computers.html" class="${page === "computers" ? "on" : ""}">Computers</a>
+      <a href="desktops.html" class="${page === "desktops" ? "on" : ""}">Desktops</a>
       <a href="images.html" class="${page === "images" ? "on" : ""}">Images</a>
       <a href="accounts.html" class="${page === "accounts" ? "on" : ""}">Accounts</a>
     </nav>` : "";
@@ -30,7 +30,7 @@ function topBar(page = "computers") {
       <div class="meter" style="width:96px"><i style="width:38%"></i></div>` : "";
   return `
   <div class="top">
-    <a class="wordmark" href="computers.html">Deskyard</a>
+    <a class="wordmark" href="desktops.html">Deskyard</a>
     ${nav}
     <div class="host">${host}
       <span class="account">${av(me)} ${me}${isAdmin ? ' <span class="role">admin</span>' : ""}</span>
@@ -38,8 +38,8 @@ function topBar(page = "computers") {
   </div>`;
 }
 
-function visibleComputers() {
-  return isAdmin ? computers : computers.filter((c) => (c.access || []).includes(me));
+function visibleDesktops() {
+  return isAdmin ? desktops : desktops.filter((c) => (c.access || []).includes(me));
 }
 
 function viewersBadge(c) {
@@ -72,7 +72,7 @@ function tile(c) {
     <a href="#desktop-${c.name}" class="monitor" title="Open ${c.name}'s desktop"><div class="screen">${screen}</div></a>
     <div class="tile-meta">
       <div class="tile-row">
-        <div class="who-what"><h2><a href="computer.html">${c.name}</a></h2>
+        <div class="who-what"><h2><a href="details.html">${c.name}</a></h2>
         <span class="status ${cls}">${c.status}</span></div>
         <div class="actions">${actions}</div>
       </div>
@@ -84,5 +84,5 @@ function tile(c) {
 
 function renderWall() {
   document.getElementById("top").innerHTML = topBar();
-  document.getElementById("wall").innerHTML = visibleComputers().map(tile).join("");
+  document.getElementById("wall").innerHTML = visibleDesktops().map(tile).join("");
 }

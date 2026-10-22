@@ -1,6 +1,6 @@
 # The supervisor in a container. From this folder:
 #
-#   DESKYARD_DATA_DIR=/srv/computers docker compose up -d
+#   DESKYARD_DATA_DIR=/srv/desktops docker compose up -d
 #   docker compose logs supervisor     # first start: the generated admin password
 #
 # then open http://localhost:8080.
@@ -30,7 +30,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # The data folder (workspace folders and .deskyard/ state) must be
       # mounted at the SAME path inside as on the host: the supervisor hands
-      # these paths to the engine as bind mounts for computers, and the engine
+      # these paths to the engine as bind mounts for desktops, and the engine
       # resolves them on the host. The supervisor checks this on startup and
       # refuses to run if the paths don't match.
       - ${DESKYARD_DATA_DIR:?set DESKYARD_DATA_DIR to an absolute host path}:${DESKYARD_DATA_DIR:?set DESKYARD_DATA_DIR to an absolute host path}
