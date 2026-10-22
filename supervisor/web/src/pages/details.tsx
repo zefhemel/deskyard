@@ -1,12 +1,13 @@
 import { useState } from "preact/hooks";
 import { useLocation, useRoute } from "preact-iso";
-import { api, type Desktop } from "../api.ts";
+import { api, type Desktop, type Forward } from "../api.ts";
 import { Avatars } from "../components/avatar.tsx";
 import { ChartsPanel } from "../components/charts-panel.tsx";
 import { DesktopMenu, power } from "../components/desktop-menu.tsx";
 import { Monitor } from "../components/screen.tsx";
+import { ForwardLines } from "../components/viewers-popover.tsx";
 import { Page } from "../components/topbar.tsx";
-import { Button, cx, Status, Tag } from "../components/ui.tsx";
+import { btnClass, Button, cx, Status, Tag } from "../components/ui.tsx";
 import { UpgradeDialog } from "../dialogs/upgrade.tsx";
 import { useDesktop, useLive, useNow } from "../live.tsx";
 import { day, limits, names, statusKind, statusLine } from "../lib/format.ts";
@@ -15,7 +16,7 @@ import { AgentsTab } from "./details/agents-tab.tsx";
 import { ProcessesTab } from "./details/processes-tab.tsx";
 import { SettingsTab } from "./details/settings-tab.tsx";
 
-type Tab = "processes" | "agents" | "settings" | "access";
+type Tab = "overview" | "processes" | "agents" | "settings" | "access";
 
 export function DetailsPage() {
   const { params } = useRoute();
@@ -33,7 +34,9 @@ export function DetailsPage() {
       <Page>
         <Crumbs />
         <h1 class="mb-3 text-[30px] font-bold">{name}</h1>
-        <p class="text-muted">There's no desktop with this name, or you can't use it.</p>
+        <p class="text-muted">
+          There's no desktop with this name, or you can't use it.
+        </p>
       </Page>
     );
   }
@@ -55,6 +58,7 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
   const { query, route } = useLocation();
   const now = useNow(10000);
   const tabs: { id: Tab; label: string }[] = [
+    { id: "overview", label: "Overview" },
     { id: "processes", label: "Processes" },
     { id: "agents", label: "Agents" },
     ...(me.admin
@@ -64,18 +68,24 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
         ]
       : []),
   ];
-  const tab: Tab = tabs.find((t) => t.id === query.tab)?.id ?? "processes";
-  const setTab = (t: Tab) => route(`/desktops/${c.name}${t === "processes" ? "" : `?tab=${t}`}`, true);
+  const tab: Tab = tabs.find((t) => t.id === query.tab)?.id ?? "overview";
+  const setTab = (t: Tab) =>
+    route(`/desktops/${c.name}${t === "overview" ? "" : `?tab=${t}`}`, true);
 
   return (
     <Page>
       <Crumbs />
       <div class="mb-[22px] flex flex-wrap items-center gap-x-3.5 gap-y-2">
-        <h1 class="text-[30px] leading-tight font-bold tracking-[-0.02em]">{c.name}</h1>
+        <h1 class="text-[30px] leading-tight font-bold tracking-[-0.02em]">
+          {c.name}
+        </h1>
         <Status kind={statusKind(c)}>{statusLine(c, now)}</Status>
         <div class="ml-auto flex gap-2">
           {c.state === "running" && (
             <>
+              <a href={`/${c.name}/`} class={btnClass("primary")}>
+                Open
+              </a>
               <Button onClick={() => power(c.name, "restart")}>Restart</Button>
               <Button onClick={() => power(c.name, "stop")}>Stop</Button>
             </>
@@ -89,16 +99,10 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
         </div>
       </div>
 
-      <div class="grid grid-cols-[minmax(0,1.55fr)_minmax(320px,1fr)] items-start gap-8 max-[900px]:grid-cols-1">
-        <Monitor desktop={c} job={jobs[c.name]} now={now} big />
-        <div class="flex flex-col gap-4">
-          <ViewersPanel viewers={c.viewers} />
-          <ChartsPanel desktop={c} />
-          <Facts desktop={c} admin={me.admin} onTab={setTab} />
-        </div>
-      </div>
-
-      <nav class="mt-[34px] flex gap-1 overflow-x-auto border-b border-line" role="tablist">
+      <nav
+        class="mb-6 flex gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden border-b border-line"
+        role="tablist"
+      >
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -108,38 +112,74 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
             onClick={() => setTab(t.id)}
             class={cx(
               "-mb-px cursor-pointer border-0 border-b-2 bg-transparent px-3.5 py-2.5 text-sm font-semibold",
-              t.id === tab ? "border-ink text-ink" : "border-transparent text-muted hover:text-ink",
+              t.id === tab
+                ? "border-ink text-ink"
+                : "border-transparent text-muted hover:text-ink",
             )}
           >
             {t.label}
           </button>
         ))}
       </nav>
-      <div class="overflow-hidden rounded-b-[10px] border border-t-0 border-line bg-surface">
-        {tab === "processes" && <ProcessesTab desktop={c} />}
-        {tab === "agents" && <AgentsTab desktop={c} />}
-        {tab === "settings" && <SettingsTab desktop={c} />}
-        {tab === "access" && <AccessTab desktop={c} />}
-      </div>
+      {tab === "overview" ? (
+        <div class="grid grid-cols-[minmax(0,1.55fr)_minmax(320px,1fr)] items-start gap-8 max-[900px]:grid-cols-1">
+          <Monitor desktop={c} job={jobs[c.name]} now={now} big />
+          <div class="flex flex-col gap-4">
+            <ViewersPanel viewers={c.viewers} forwards={c.forwards} />
+            <ChartsPanel desktop={c} />
+            <Facts desktop={c} admin={me.admin} onTab={setTab} />
+          </div>
+        </div>
+      ) : (
+        <div class="overflow-hidden rounded-[10px] border border-line bg-surface">
+          {tab === "processes" && <ProcessesTab desktop={c} />}
+          {tab === "agents" && <AgentsTab desktop={c} />}
+          {tab === "settings" && <SettingsTab desktop={c} />}
+          {tab === "access" && <AccessTab desktop={c} />}
+        </div>
+      )}
     </Page>
   );
 }
 
-function ViewersPanel({ viewers }: { viewers: string[] }) {
+function ViewersPanel({
+  viewers,
+  forwards,
+}: {
+  viewers: string[];
+  forwards: Forward[];
+}) {
   return (
     <div class="flex items-center gap-2.5 rounded-[10px] border border-line bg-surface px-5 py-[18px] text-sm">
       {viewers.length > 0 && <Avatars names={viewers} />}
       <div>
-        <b class="font-semibold">{viewers.length ? `${names(viewers)} ${viewers.length === 1 ? "is" : "are"} viewing` : "Nobody is viewing"}</b>
-        <p class="mt-0 text-[13px] text-muted">Same desktop, one mouse and keyboard. It follows the window of whoever resized last.</p>
+        <b class="font-semibold">
+          {viewers.length
+            ? `${names(viewers)} ${viewers.length === 1 ? "is" : "are"} viewing`
+            : "Nobody is viewing"}
+        </b>
+        <p class="mt-0 text-[13px] text-muted">
+          Same desktop, one mouse and keyboard. It follows the window of whoever
+          resized last.
+        </p>
+        <ForwardLines forwards={forwards} class="mt-1.5" />
       </div>
     </div>
   );
 }
 
-function Facts({ desktop: c, admin, onTab }: { desktop: Desktop; admin: boolean; onTab: (t: Tab) => void }) {
+function Facts({
+  desktop: c,
+  admin,
+  onTab,
+}: {
+  desktop: Desktop;
+  admin: boolean;
+  onTab: (t: Tab) => void;
+}) {
   const [upgrading, setUpgrading] = useState(false);
-  const link = "cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-accent hover:underline";
+  const link =
+    "cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-accent hover:underline";
   return (
     <div class="rounded-[10px] border border-line bg-surface px-5 py-[18px]">
       <dl class="m-0 grid grid-cols-[max-content_1fr] gap-x-[18px] gap-y-[9px] text-sm">
@@ -157,7 +197,11 @@ function Facts({ desktop: c, admin, onTab }: { desktop: Desktop; admin: boolean;
           {admin && c.updateAvailable && (
             <>
               <Tag kind="update">{c.updateAvailable} available</Tag>{" "}
-              <button type="button" class={link} onClick={() => setUpgrading(true)}>
+              <button
+                type="button"
+                class={link}
+                onClick={() => setUpgrading(true)}
+              >
                 Upgrade…
               </button>
             </>
@@ -167,8 +211,14 @@ function Facts({ desktop: c, admin, onTab }: { desktop: Desktop; admin: boolean;
           <>
             <dt class="text-muted">Access</dt>
             <dd class="m-0 min-w-0">
-              {c.access.length ? `${c.access.join(", ")}, and admins` : "Admins only"}{" "}
-              <button type="button" class={link} onClick={() => onTab("access")}>
+              {c.access.length
+                ? `${c.access.join(", ")}, and admins`
+                : "Admins only"}{" "}
+              <button
+                type="button"
+                class={link}
+                onClick={() => onTab("access")}
+              >
                 Change
               </button>
             </dd>

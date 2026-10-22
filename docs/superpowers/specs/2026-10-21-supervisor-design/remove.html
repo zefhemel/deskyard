@@ -9,18 +9,14 @@
 </main>
 <div class="scrim">
   <form class="dialog" aria-labelledby="t">
-    <header><h2 id="t">Remove scratch?</h2><p>The desktop is stopped and removed, with its cache. Its files stay in <span class="mono">~/deskyard/scratch</span>.</p></header>
+    <header><h2 id="t">Remove scratch?</h2><p>The desktop is stopped and removed. Its files in <span class="mono">~/deskyard/scratch</span> (2.1 GB) are deleted too.</p></header>
     <div class="body">
       <div class="field check">
         <input type="checkbox" id="del" checked>
         <label for="del"><b>Also delete its files (2.1 GB)</b><p>Everything installed and saved in the desktop, including browser logins. This can't be undone.</p></label>
       </div>
-      <div class="field">
-        <label for="confirm">Type <span class="mono">scratch</span> to confirm</label>
-        <input id="confirm" type="text" value="scrat">
-      </div>
     </div>
-    <footer><button type="button" class="btn quiet">Cancel</button><button class="btn danger" disabled style="opacity:.5">Remove scratch and its files</button></footer>
+    <footer><button type="button" class="btn quiet">Cancel</button><button class="btn danger">Remove scratch and its files</button></footer>
   </form>
 </div>
 <script src="wall.js"></script><script>renderWall();</script>

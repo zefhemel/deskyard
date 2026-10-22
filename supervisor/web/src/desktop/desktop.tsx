@@ -7,6 +7,7 @@ import { api, type Desktop } from "../api.ts";
 import { Avatar, Avatars } from "../components/avatar.tsx";
 import { power } from "../components/desktop-menu.tsx";
 import { Menu, type MenuItem } from "../components/menu.tsx";
+import { ViewersPopover } from "../components/viewers-popover.tsx";
 import { notify, notifyError } from "../components/toast.tsx";
 import { Button, cx } from "../components/ui.tsx";
 import { useDesktop, useLive } from "../live.tsx";
@@ -72,6 +73,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
   const [frameKey, setFrameKey] = useState(0);
   const [remoteClip, setRemoteClip] = useState<string | null>(null);
   const [clipOpen, setClipOpen] = useState(false);
+  const [viewersOpen, setViewersOpen] = useState(false);
   const [quality, setQuality] = useState(storedQuality);
   const running = c.state === "running";
 
@@ -137,13 +139,10 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
     }
     sendQuality(frame.current, level);
   };
-  const screenshot = () => {
-    const a = document.createElement("a");
-    a.href = api.screenUrl(c.name, { full: true });
-    a.download = `${c.name}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.png`;
-    a.click();
+  const closeViewers = useCallback(() => {
+    setViewersOpen(false);
     refocus();
-  };
+  }, [refocus]);
   const closeClip = useCallback(() => {
     setClipOpen(false);
     refocus();
@@ -168,12 +167,11 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
           { label: "Stop", onSelect: () => power(c.name, "stop") },
         ]
       : []),
-    { label: "Desktop page", onSelect: () => route(`/desktops/${c.name}`), separated: running },
+    { label: "Details", onSelect: () => route(`/desktops/${c.name}`), separated: running },
     ...(me.admin ? [{ label: "Settings", onSelect: () => route(`/desktops/${c.name}?tab=settings`) }] : []),
     // On a phone the bar has no room for these.
     ...(running
       ? [
-          { label: "Screenshot", onSelect: screenshot, separated: true, class: phoneOnly },
           ...keyItems.map((k, i) => ({ ...k, label: <>Send {k.label}</>, separated: i === 0, class: phoneOnly })),
           ...qualities.map((q, i) => ({
             label: `Quality: ${q.label}`,
@@ -208,13 +206,29 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
             Reconnect
           </button>
         )}
-        {c.viewers.length > 0 && (
+        {(c.viewers.length > 0 || c.forwards.length > 0) && (
           <>
             <span class="mx-1.5 h-[22px] w-px bg-[#2e3d52] max-sm:hidden" />
-            <span class="inline-flex min-w-0 items-center gap-2 text-[13px] text-bar-muted" title={names(c.viewers)}>
-              <Avatars names={c.viewers} ring="var(--color-bar)" />
-              <span class="truncate max-md:hidden">{names(c.viewers)}</span>
-            </span>
+            <button
+              type="button"
+              data-viewers-toggle
+              aria-expanded={viewersOpen}
+              aria-label="Viewers and port mappings"
+              class={cx(
+                "inline-flex min-w-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1.5 py-1 text-[13px] text-bar-muted hover:bg-bar-hover",
+                viewersOpen && "bg-bar-hover text-white",
+              )}
+              title={names(c.viewers)}
+              onClick={() => (viewersOpen ? closeViewers() : setViewersOpen(true))}
+            >
+              {c.viewers.length > 0 && (
+                <>
+                  <Avatars names={c.viewers} ring="var(--color-bar)" />
+                  <span class="truncate max-md:hidden">{names(c.viewers)}</span>
+                </>
+              )}
+              {c.forwards.length > 0 && <span class="whitespace-nowrap">⇄ {c.forwards.length}</span>}
+            </button>
           </>
         )}
         <div class="ml-auto flex items-center gap-0.5">
@@ -239,9 +253,6 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
                   </button>
                 )}
               />
-              <button type="button" class={cx(barButton, "max-sm:hidden")} onClick={screenshot}>
-                Screenshot
-              </button>
               <Menu
                 class="max-sm:hidden"
                 items={qualityItems}
@@ -264,6 +275,9 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
             )}
           />
         </div>
+        {viewersOpen && (c.viewers.length > 0 || c.forwards.length > 0) && (
+          <ViewersPopover viewers={c.viewers} forwards={c.forwards} onClose={closeViewers} />
+        )}
         {clipOpen && running && (
           <ClipboardPopover
             name={c.name}

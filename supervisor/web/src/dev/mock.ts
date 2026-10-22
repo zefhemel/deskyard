@@ -188,7 +188,7 @@ setInterval(() => {
   const alice = desktops.find((c) => c.name === "alice");
   if (!alice || alice.state !== "running") return;
   alice.viewers = alice.viewers.includes("sam") ? alice.viewers.filter((v) => v !== "sam") : [...alice.viewers, "sam"];
-  broadcast("viewers", { name: "alice", viewers: alice.viewers });
+  broadcast("viewers", { name: "alice", viewers: alice.viewers, forwards: alice.forwards });
 }, 20000);
 }
 
@@ -292,7 +292,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const c: Desktop = {
       id: `${name}-id`, name, state: "creating", startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/${name}`, image: img.ref, imageTitle: img.title,
       imageVersion: img.version, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus) },
-      access: (b.access as string[]) ?? [], viewers: [], tokens: 0, stats: null,
+      access: (b.access as string[]) ?? [], viewers: [], forwards: [], tokens: 0, stats: null,
     };
     desktops.push(c);
     changed(c);

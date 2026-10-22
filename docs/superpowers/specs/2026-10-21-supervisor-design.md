@@ -226,7 +226,6 @@ The bar, left to right:
 - **Back** to Desktops, the desktop's name and status, and who's viewing (avatars).
 - **Clipboard**: shows the desktop's clipboard text as it changes (from the client's `clipboardrx` message) with Copy, and a box to send text to the desktop's clipboard (`clipboardsnd`). Over HTTPS, copy and paste also go straight to the system clipboard (the iframe gets `allow="clipboard-read; clipboard-write"`).
 - **Keys**: keys the browser would otherwise take: Ctrl+Alt+Del, Super, Alt+Tab, Ctrl+W, Esc, F11.
-- **Screenshot**: downloads a PNG (from `deskyard screenshot`).
 - **Quality**: a few presets (`setvideoquality`).
 - **⋯**: Restart and Stop (for anyone with access), Settings and the details page.
 
@@ -325,7 +324,7 @@ Long operations (create with an image pull, upgrade) run as jobs: the API return
 
 - **Create** (admin): validate name; pull the image if missing and check its contract; make the folder (or reuse an existing one with that name, e.g. a copy made on the host), network; create the container (restart policy `unless-stopped`); connect or publish (see Networks); start; grant access to the accounts chosen in the dialog.
 - **Start / stop / restart** (anyone with access): engine API; stop with a 30 s timeout.
-- **Remove** (admin): stop; remove container and network; remove the desktop's ID from all accounts. The folder is kept unless "also delete files" was ticked (typed-name confirmation).
+- **Remove** (admin): stop; remove container and network; remove the desktop's ID from all accounts. The folder is kept unless "also delete files" was ticked; the dialog itself is the confirmation.
 - **Upgrade / switch image** (admin): see Images.
 
 # Monitoring

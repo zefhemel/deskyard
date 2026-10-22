@@ -27,6 +27,7 @@ function desktop(c: Partial<Desktop> & { name: string }): Desktop {
     settings: { memoryBytes: 0, nanoCpus: 0 },
     access: [],
     viewers: [],
+    forwards: [],
     tokens: 0,
     stats: null,
     ...c,
@@ -42,6 +43,10 @@ export const desktops: Desktop[] = [
     settings: { memoryBytes: 2 * GB, nanoCpus: 2e9 },
     access: ["anna"],
     viewers: ["zef", "anna"],
+    forwards: [
+      { token: "deploy-bot", direction: "in", port: 3000 },
+      { token: "deploy-bot", direction: "out", port: 5173 },
+    ],
     tokens: 2,
     stats: { cpuPercent: 34, memBytes: 1.4 * GB, memLimit: 2 * GB },
   }),

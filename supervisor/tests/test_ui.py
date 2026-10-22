@@ -11,6 +11,7 @@ import requests
 from playwright.sync_api import expect, sync_playwright
 
 from conftest import ADMIN_PASSWORD, IMAGE, ROOT, free_port
+from test_cli import Forward, cli, forwards, local_http, remote  # noqa: F401  (fixtures)
 from test_custom_images import slug  # noqa: F401  (fixture: removes the recipe and its tags)
 
 
@@ -196,4 +197,26 @@ def test_build_log_survives_a_dropped_connection(mock_ui):
         # After the replay it finishes; the replayed log isn't doubled.
         expect(log.get_by_text("is ready to use")).to_be_visible(timeout=30000)
         assert log.get_by_text("Step 1/3 : FROM").count() == 1
+
+
+def test_forwards_shown(cli, remote, forwards, supervisor, name):  # noqa: F811
+    p = free_port()
+    f = forwards(cli, remote, str(p))
+    f.wait_for(f"in {p} {p}")
+    with sync_playwright() as pw:
+        browser, page = signed_in(pw, supervisor.base)
+        page.goto(f"{supervisor.base}/{name}/")
+        chip = page.get_by_role("button", name="Viewers and port mappings")
+        expect(chip).to_be_visible(timeout=30000)
+        chip.click()
+        expect(page.get_by_text(f"cli test: {p} in")).to_be_visible()
+
+        page.goto(f"{supervisor.base}/desktops/{name}")
+        expect(page.get_by_text(f"cli test: {p} in")).to_be_visible(timeout=15000)
+
+        page.goto(f"{supervisor.base}/{name}/")
+        expect(chip).to_be_visible(timeout=30000)
+        assert f.stop() == 0
+        # The button stays for the viewers (this page is one); the mapping count goes.
+        expect(chip.get_by_text("⇄")).to_have_count(0, timeout=3000)
         browser.close()

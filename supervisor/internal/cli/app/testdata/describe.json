@@ -684,6 +684,45 @@
       "exitCodes": "0 ok, 1 error, 2 usage error"
     },
     {
+      "name": "forward",
+      "group": "shell",
+      "summary": "map TCP ports between this machine and the desktop",
+      "usage": "forward [-R] PORT[:PORT]...",
+      "description": "Maps TCP ports both ways until Ctrl-C, over the agent API (no port is opened anywhere else). Each argument is one mapping. PORT or LOCAL:DESKTOP: this machine's 127.0.0.1:LOCAL becomes localhost:DESKTOP in the desktop (a dev server here, reachable by the desktop's browser). -R PORT or -R DESKTOP:LOCAL (reverse; one -R before each such mapping): the desktop's localhost:DESKTOP becomes 127.0.0.1:LOCAL here. Both ends listen on loopback only; the desktop won't listen below 1024 (plain forward only; -R just dials, so -R 80:8080 works). A port in use on either side fails that mapping, which is retried, and the others carry on. When the connection drops (the desktop stops or restarts, the network blips) it keeps its local listeners, closes open connections and reconnects with backoff (1 s up to 30 s). It exits only on Ctrl-C, or when the token is refused. Run it in the background. Inside a desktop it needs -d too.",
+      "arguments": [
+        {
+          "name": "port",
+          "type": "string",
+          "required": true,
+          "variadic": true,
+          "description": "a mapping: PORT or LOCAL:DESKTOP; after -R, PORT or DESKTOP:LOCAL"
+        }
+      ],
+      "flags": [
+        {
+          "name": "--reverse",
+          "short": "-R",
+          "type": "boolean",
+          "description": "the next mapping is reverse: a port in the desktop becomes a port here"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "one line per mapping each time it goes live: \"in LOCAL DESKTOP\" or \"out DESKTOP 127.0.0.1:LOCAL\"; on stderr one line per state change (linked, lost and retrying, port in use)",
+        "fields": {
+          "in": "LOCAL DESKTOP: this machine's port, reachable in the desktop at localhost:DESKTOP",
+          "out": "DESKTOP ADDR: the desktop's port, reachable here at ADDR"
+        }
+      },
+      "examples": [
+        "deskyard -d alice forward 3000 -R 5173",
+        "deskyard -d alice forward 8080:3000 &",
+        "deskyard -d alice forward -R 9229:19229"
+      ],
+      "where": "on the chosen remote (-d NAME); inside a desktop too, since it maps ports between two machines. Ports are LOCAL:DESKTOP, or DESKTOP:LOCAL after -R. The desktop won't listen below 1024. \"Linked to ...\" and the out lines appear when the link is accepted, before the desktop side is known to run",
+      "exitCodes": "0 after Ctrl-C, 1 when the token is refused (401) or no remote is set up, 2 usage error"
+    },
+    {
       "name": "browser connect",
       "group": "browser",
       "summary": "forward the desktop's browser to a local CDP port",

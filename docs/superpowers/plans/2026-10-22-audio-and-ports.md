@@ -362,7 +362,7 @@ spec: "[[superpowers/specs/2026-10-22-audio-and-ports-design|Audio, mic, size lo
   - **Local listeners.** It binds its local listeners first (`127.0.0.1` only) and keeps them across reconnects. For an `out` mapping, a local connection waits up to 10 s for the link, then is closed.
   - **Reconnect.** The backoff is 1, 2, 4, 8, 16, 30, 30 s, and so on. A 409 (stopped desktop) waits like any other failure. A 401 exits 1 with the server's message.
   - **Output.**
-    - On stderr, one line per state change: `Connected to alice: 3000 → alice:3000, alice:5173 → 127.0.0.1:5173`, `Lost alice (desktop stopped), retrying in 4 s`, and `alice:3000: port in use`.
+    - On stderr, one line per state change: `Linked to alice: 3000 → alice:3000, alice:5173 → 127.0.0.1:5173`, `Lost alice (desktop stopped), retrying in 4 s`, and `alice:3000: port in use`.
     - On stdout, one line per mapping once it's live: `in 3000 3000` or `out 5173 127.0.0.1:5173`, so scripts can parse it.
 
 - [ ] **Step 1: Write failing tests.**

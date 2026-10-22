@@ -20,7 +20,7 @@ New here? Run `+"`deskyard guide`"+` (written for AI agents) and `+"`deskyard CO
 `)
 	for _, g := range groups {
 		fmt.Fprintf(w, "\n%s:\n", g.Title)
-		for _, c := range commands {
+		for _, c := range visibleCommands() {
 			if c.Group == g.Name {
 				fmt.Fprintf(w, "  %-36s %s\n", c.Usage, c.Summary)
 			}
@@ -178,7 +178,7 @@ func runDescribe(a *App, _ *call) error {
 		GlobalFlags: globalFlags,
 		Environment: environment,
 		ExitCodes:   exitCodes,
-		Commands:    commands,
+		Commands:    visibleCommands(),
 	}
 	for _, c := range doc.Commands {
 		if c.Args == nil {

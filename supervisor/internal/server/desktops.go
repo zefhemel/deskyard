@@ -25,22 +25,23 @@ type statsJSON struct {
 }
 
 type desktopJSON struct {
-	ID              string       `json:"id"`
-	Name            string       `json:"name"`
-	State           string       `json:"state"`
-	StartedAt       *time.Time   `json:"startedAt"`
-	Created         *time.Time   `json:"created"`
-	Job             *string      `json:"job"`
-	Folder          string       `json:"folder"`
-	Image           string       `json:"image"`
-	ImageTitle      string       `json:"imageTitle"`
-	ImageVersion    string       `json:"imageVersion"`
-	UpdateAvailable *string      `json:"updateAvailable"`
-	Settings        settingsJSON `json:"settings"`
-	Access          []string     `json:"access"`
-	Viewers         []string     `json:"viewers"`
-	Tokens          int          `json:"tokens"`
-	Stats           *statsJSON   `json:"stats"`
+	ID              string        `json:"id"`
+	Name            string        `json:"name"`
+	State           string        `json:"state"`
+	StartedAt       *time.Time    `json:"startedAt"`
+	Created         *time.Time    `json:"created"`
+	Job             *string       `json:"job"`
+	Folder          string        `json:"folder"`
+	Image           string        `json:"image"`
+	ImageTitle      string        `json:"imageTitle"`
+	ImageVersion    string        `json:"imageVersion"`
+	UpdateAvailable *string       `json:"updateAvailable"`
+	Settings        settingsJSON  `json:"settings"`
+	Access          []string      `json:"access"`
+	Viewers         []string      `json:"viewers"`
+	Forwards        []forwardJSON `json:"forwards"`
+	Tokens          int           `json:"tokens"`
+	Stats           *statsJSON    `json:"stats"`
 }
 
 func (s *Server) desktopJSON(ctx context.Context, c desktops.Desktop, a accounts.Account) desktopJSON {
@@ -49,6 +50,7 @@ func (s *Server) desktopJSON(ctx context.Context, c desktops.Desktop, a accounts
 		ImageTitle: c.ImageLabels["org.opencontainers.image.title"], ImageVersion: c.ImageLabels["org.opencontainers.image.version"],
 		Settings: settingsJSON{c.Settings.MemoryBytes, c.Settings.NanoCPUs},
 		Access:   []string{}, Viewers: s.viewers.names(c.Name),
+		Forwards: s.forwards.list(c.Name),
 	}
 	if !c.Created.IsZero() {
 		j.Created = &c.Created
