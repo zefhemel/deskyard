@@ -3,6 +3,7 @@ package activity
 import (
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -46,7 +47,8 @@ type agentState struct {
 	browserStart time.Time
 	browserLast  time.Time
 	hasSession   bool
-	forwardOpen  int
+	forwards     map[int]string // open forwards by sequence number, with their text
+	forwardSeq   int
 	forwardSince time.Time
 }
 
@@ -61,13 +63,18 @@ type desk struct {
 	ref      Ref
 	agents   map[string]*agentState
 	running  map[string]running // by agent ID + "/" + command id
-	events   []event
-	buckets  map[int64]int // inside events per second
+	events   []event            // outside agents' history
+	inEvents []event            // inside programs' history, kept apart so a flood can't evict the above
+	buckets  map[int64]int      // inside events per second
 	watchers map[*watcher]struct{}
 	pub      []Presence // last Present list a callback was told about
 }
 
 type watcher struct{ ch chan ScreenEvent }
+
+// runKey identifies a running command. NUL can't occur in either part (inside
+// ids are cleaned), so two agents' keys never collide.
+func runKey(agent, id string) string { return agent + "\x00" + id }
 
 func (t *Tracker) now() time.Time { return t.Now() }
 
@@ -97,11 +104,25 @@ func (ds *desk) agentState(a Agent, at time.Time) *agentState {
 	return s
 }
 
+// record keeps an item; inside and outside agents have separate budgets of
+// max events each, so inside input can never evict outside history.
 func (ds *desk) record(a Agent, item RecentItem, max int) {
-	ds.events = append(ds.events, event{a.ID, item})
-	if n := len(ds.events) - max; n > 0 {
-		ds.events = slices.Delete(ds.events, 0, n)
+	list := &ds.events
+	if a.Inside {
+		list = &ds.inEvents
 	}
+	*list = append(*list, event{a.ID, item})
+	if n := len(*list) - max; n > 0 {
+		*list = slices.Delete(*list, 0, n)
+	}
+}
+
+// eventsOf is the history list an agent's items live in.
+func (ds *desk) eventsOf(s *agentState) []event {
+	if s.agent.Inside {
+		return ds.inEvents
+	}
+	return ds.events
 }
 
 // mutate runs f under the lock, then publishes any change to presence and
@@ -171,31 +192,35 @@ func (t *Tracker) settle(ds *desk, now time.Time) bool {
 		ds.events = slices.DeleteFunc(ds.events, func(e event) bool { return e.item.T.Before(cutoff) })
 		changed = changed || len(ds.events) != n
 	}
+	if slices.ContainsFunc(ds.inEvents, func(e event) bool { return e.item.T.Before(cutoff) }) {
+		ds.inEvents = slices.DeleteFunc(ds.inEvents, func(e event) bool { return e.item.T.Before(cutoff) })
+		changed = true
+	}
 	for sec := range ds.buckets {
 		if sec < cutoff.Unix() {
 			delete(ds.buckets, sec)
 		}
 	}
+	busy := map[string]bool{} // agents with a command running
+	for _, r := range ds.running {
+		busy[r.agent] = true
+	}
 	for id, s := range ds.agents {
-		if !t.present1(ds, s, now) {
+		if !t.present1(s, busy[id], now) {
 			delete(ds.agents, id)
-			ds.events = slices.DeleteFunc(ds.events, func(e event) bool { return e.agent == id })
+			if s.agent.Inside {
+				ds.inEvents = slices.DeleteFunc(ds.inEvents, func(e event) bool { return e.agent == id })
+			} else {
+				ds.events = slices.DeleteFunc(ds.events, func(e event) bool { return e.agent == id })
+			}
 			changed = true
 		}
 	}
 	return changed
 }
 
-func (t *Tracker) present1(ds *desk, s *agentState, now time.Time) bool {
-	if s.browserOpen > 0 || s.forwardOpen > 0 || t.browserUsing(s, now) || now.Sub(s.lastActive) <= t.Presence {
-		return true
-	}
-	for _, r := range ds.running {
-		if r.agent == s.agent.ID {
-			return true
-		}
-	}
-	return false
+func (t *Tracker) present1(s *agentState, busy bool, now time.Time) bool {
+	return busy || len(s.forwards) > 0 || t.browserUsing(s, now) || now.Sub(s.lastActive) <= t.Presence
 }
 
 func (t *Tracker) present(ds *desk, now time.Time) []Presence {
@@ -215,11 +240,12 @@ func (t *Tracker) present(ds *desk, now time.Time) []Presence {
 	return out
 }
 
-// CmdStart records that a command began running.
+// CmdStart records that a command began running. The working directory is
+// accepted for the caller's convenience but not shown, so it is not kept.
 func (t *Tracker) CmdStart(d Ref, a Agent, id, display, cwd string) {
 	t.mutate(d, func(ds *desk, now time.Time) {
 		ds.agentState(a, now)
-		ds.running[a.ID+"/"+id] = running{agent: a.ID, text: display, since: now}
+		ds.running[runKey(a.ID, id)] = running{agent: a.ID, text: display, since: now}
 	})
 }
 
@@ -230,7 +256,7 @@ func (t *Tracker) CmdEnd(d Ref, a Agent, id string, exit *int) {
 }
 
 func (t *Tracker) cmdEnd(ds *desk, a Agent, id string, exit *int, at time.Time) {
-	key := a.ID + "/" + id
+	key := runKey(a.ID, id)
 	r, ok := ds.running[key]
 	if !ok {
 		return
@@ -252,13 +278,17 @@ func (t *Tracker) Screen(d Ref, a Agent, s ScreenAction) {
 	t.mutate(d, func(ds *desk, now time.Time) { t.screen(ds, a, s, now) })
 }
 
+// liveFor is how recent an action must be to be drawn on the overlay.
+const liveFor = 5 * time.Second
+
 // overlayActions are the screen actions drawn on the viewer's page.
 var overlayActions = []string{"click", "double-click", "triple-click", "drag", "scroll", "key", "hold-key", "type"}
 
 func (t *Tracker) screen(ds *desk, a Agent, s ScreenAction, at time.Time) {
 	ds.agentState(a, at)
 	ds.record(a, RecentItem{Kind: "screen", T: at, Action: s.Action, Count: 1}, t.MaxEvents)
-	if len(ds.watchers) == 0 || !slices.Contains(overlayActions, s.Action) {
+	// An old (backdated) inside event must not be drawn as if it were live.
+	if len(ds.watchers) == 0 || !slices.Contains(overlayActions, s.Action) || t.now().Sub(at) > liveFor {
 		return
 	}
 	ev := ScreenEvent{
@@ -309,17 +339,24 @@ func (t *Tracker) BrowserTouch(d Ref, a Agent) {
 	t.mutate(d, func(ds *desk, now time.Time) { ds.agentState(a, now).browserUse(now) })
 }
 
-// ForwardOpen records an open port forward; call done when it closes.
-func (t *Tracker) ForwardOpen(d Ref, a Agent) (done func()) {
+// ForwardOpen records an open port forward, described by text (for example
+// "3000 in · 5173 out"); call done when it closes.
+func (t *Tracker) ForwardOpen(d Ref, a Agent, text string) (done func()) {
 	var s *agentState
+	var seq int
 	t.mutate(d, func(ds *desk, now time.Time) {
 		s = ds.agentState(a, now)
-		if s.forwardOpen == 0 {
+		if len(s.forwards) == 0 {
 			s.forwardSince = now
 		}
-		s.forwardOpen++
+		if s.forwards == nil {
+			s.forwards = map[int]string{}
+		}
+		s.forwardSeq++
+		seq = s.forwardSeq
+		s.forwards[seq] = text
 	})
-	return t.once(d, a.ID, s, func(s *agentState, now time.Time) { s.forwardOpen-- })
+	return t.once(d, a.ID, s, func(s *agentState, now time.Time) { delete(s.forwards, seq) })
 }
 
 // once makes a done func that undoes an open exactly once, and not at all if
@@ -365,8 +402,13 @@ func (t *Tracker) Inside(d Ref, e Event) bool {
 		if e.T.Before(now.Add(-t.Window)) {
 			return
 		}
-		sec := e.T.Unix()
+		// The rate is counted on our own clock: an event's time is the
+		// sender's claim, and backdating must not buy extra events.
+		sec := now.Unix()
 		if ds.buckets[sec] >= t.InsideRate {
+			return
+		}
+		if _, known := ds.agents[a.ID]; !known && ds.insideAgents() >= maxInsideAgents {
 			return
 		}
 		ds.buckets[sec]++
@@ -376,12 +418,47 @@ func (t *Tracker) Inside(d Ref, e Event) bool {
 			t.screen(ds, a, *e.Screen, e.T)
 		case "cmd-start":
 			ds.agentState(a, e.T)
-			ds.running[a.ID+"/"+e.ID] = running{agent: a.ID, text: e.Cmd, since: e.T, inside: true}
+			ds.capInsideRunning()
+			ds.running[runKey(a.ID, e.ID)] = running{agent: a.ID, text: e.Cmd, since: e.T, inside: true}
 		case "cmd-end":
 			t.cmdEnd(ds, a, e.ID, e.Exit, e.T)
 		}
 	})
 	return accepted
+}
+
+// Bounds on what programs inside a desktop can make the tracker hold.
+const (
+	maxInsideAgents  = 32
+	maxInsideRunning = 256
+)
+
+func (ds *desk) insideAgents() int {
+	n := 0
+	for _, s := range ds.agents {
+		if s.agent.Inside {
+			n++
+		}
+	}
+	return n
+}
+
+// capInsideRunning makes room for one more inside command by dropping the
+// oldest ones.
+func (ds *desk) capInsideRunning() {
+	var keys []string
+	for k, r := range ds.running {
+		if r.inside {
+			keys = append(keys, k)
+		}
+	}
+	if len(keys) < maxInsideRunning {
+		return
+	}
+	slices.SortFunc(keys, func(x, y string) int { return ds.running[x].since.Compare(ds.running[y].since) })
+	for _, k := range keys[:len(keys)-maxInsideRunning+1] {
+		delete(ds.running, k)
+	}
 }
 
 // ResetInside drops the commands running inside the desktop, for when the
@@ -411,6 +488,7 @@ func (t *Tracker) Forget(agentID string) {
 			}
 		}
 		ds.events = slices.DeleteFunc(ds.events, func(e event) bool { return e.agent == agentID })
+		ds.inEvents = slices.DeleteFunc(ds.inEvents, func(e event) bool { return e.agent == agentID })
 		fires = append(fires, t.diff(ds, t.now(), true))
 	}
 	t.mu.Unlock()
@@ -431,7 +509,7 @@ func (t *Tracker) ForgetDesktop(name string) {
 			close(w.ch)
 		}
 		had := len(ds.pub) > 0
-		ds.agents, ds.running, ds.events, ds.pub = nil, nil, nil, nil
+		ds.agents, ds.running, ds.events, ds.inEvents, ds.pub = nil, nil, nil, nil, nil
 		ref, onP, onS := ds.ref, t.OnPresence, t.OnSummary
 		fire = func() {
 			if had && onP != nil {
@@ -457,7 +535,7 @@ func (t *Tracker) Tick() {
 	for name, ds := range t.desks {
 		changed := t.settle(ds, now)
 		fires = append(fires, t.diff(ds, now, changed))
-		if len(ds.agents) == 0 && len(ds.running) == 0 && len(ds.events) == 0 && len(ds.watchers) == 0 {
+		if len(ds.agents) == 0 && len(ds.running) == 0 && len(ds.events) == 0 && len(ds.inEvents) == 0 && len(ds.watchers) == 0 {
 			delete(t.desks, name)
 		}
 	}
@@ -491,7 +569,7 @@ func (t *Tracker) Summary(name string) []Summary {
 	out := []Summary{}
 	for _, p := range t.present(ds, now) {
 		s := ds.agents[p.ID]
-		sum := Summary{Presence: p, Now: []NowItem{}, Recent: recentFor(ds.events, p.ID, cutoff)}
+		sum := Summary{Presence: p, Now: []NowItem{}, Recent: recentFor(ds.eventsOf(s), p.ID, cutoff)}
 		for _, r := range ds.running {
 			if r.agent == p.ID {
 				sum.Now = append(sum.Now, NowItem{Kind: "command", Text: r.text, Since: r.since})
@@ -506,8 +584,17 @@ func (t *Tracker) Summary(name string) []Summary {
 		if t.browserUsing(s, now) {
 			sum.Now = append(sum.Now, NowItem{Kind: "browser", Since: s.browserStart})
 		}
-		if s.forwardOpen > 0 {
-			sum.Now = append(sum.Now, NowItem{Kind: "forward", Since: s.forwardSince})
+		if len(s.forwards) > 0 {
+			seqs := make([]int, 0, len(s.forwards))
+			for q := range s.forwards {
+				seqs = append(seqs, q)
+			}
+			sort.Ints(seqs)
+			texts := make([]string, len(seqs))
+			for i, q := range seqs {
+				texts[i] = s.forwards[q]
+			}
+			sum.Now = append(sum.Now, NowItem{Kind: "forward", Text: strings.Join(texts, ", "), Since: s.forwardSince})
 		}
 		out = append(out, sum)
 	}

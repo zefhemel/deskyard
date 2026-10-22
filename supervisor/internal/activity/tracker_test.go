@@ -160,7 +160,8 @@ func TestRecentLimitAndWindow(t *testing.T) {
 func (r *rig) events(t *testing.T) []event {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.desks["alice"].events
+	ds := r.desks["alice"]
+	return append(append([]event{}, ds.events...), ds.inEvents...)
 }
 
 func TestCopy(t *testing.T) {
@@ -236,11 +237,14 @@ func TestBrowserTouch(t *testing.T) {
 
 func TestForwardKeepsPresent(t *testing.T) {
 	r := newRig()
-	done := r.ForwardOpen(dk, bot)
+	done := r.ForwardOpen(dk, bot, "3000 in · 5173 out")
 	r.adv(20 * time.Minute)
 	r.Tick()
 	if len(r.Present("alice")) != 1 || !hasKind(r.nowItems(), "forward") {
 		t.Fatal("gone")
+	}
+	if n := r.nowItems(); n[0].Text != "3000 in · 5173 out" || !n[0].Since.Equal(t0) {
+		t.Fatalf("%+v", n)
 	}
 	done()
 	r.adv(5*time.Minute + time.Second)
@@ -313,13 +317,23 @@ func TestInsideFloodIsCapped(t *testing.T) {
 		t.Fatalf("accepted %d", n)
 	}
 	r2 := newRig()
-	r2.Now = func() time.Time { return t0.Add(15 * time.Minute) }
-	for i := range 6000 {
-		at := t0.Add(time.Duration(i) * 150 * time.Millisecond)
-		r2.Inside(dk, Event{Agent: "a terminal", Kind: "screen", T: at, Screen: &ck})
+	r2.Screen(dk, bot, click)
+	r2.ForwardOpen(dk, bot, "keeps it present for the 10 minutes") // presence alone lasts 5
+	for range 6000 { // 10 a second over 10 minutes, one wall second each
+		r2.adv(100 * time.Millisecond)
+		r2.Inside(dk, Event{Agent: "a terminal", Kind: "screen", T: r2.now, Screen: &ck})
 	}
-	if got := len(r2.events(t)); got > 5000 {
+	if got := len(r2.events(t)); got > 5001 {
 		t.Fatalf("%d kept", got)
+	}
+	var clicked bool
+	for _, s := range r2.Summary("alice") {
+		if s.ID == "tok1" && len(s.Recent) == 1 && s.Recent[0].Action == "click" {
+			clicked = true
+		}
+	}
+	if !clicked {
+		t.Fatal("inside flood evicted the outside agent's click")
 	}
 	var after Summary
 	for _, s := range r.Summary("alice") {
@@ -423,5 +437,52 @@ func TestCallbacksOutsideLock(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("deadlock")
+	}
+}
+
+func TestInsideBackdatingIsRateLimited(t *testing.T) {
+	r := newRig()
+	ck := click
+	n := 0
+	for i := range 600 {
+		at := t0.Add(-time.Duration(i%800) * time.Second)
+		if r.Inside(dk, Event{Agent: "a terminal", Kind: "screen", T: at, Screen: &ck}) {
+			n++
+		}
+	}
+	if n != 50 {
+		t.Fatalf("accepted %d at one instant", n)
+	}
+}
+
+func TestInsideCaps(t *testing.T) {
+	r := newRig()
+	r.Screen(dk, bot, click)
+	for i := range 400 {
+		if i%40 == 0 {
+			r.adv(time.Second) // stay under the rate limit
+		}
+		r.Inside(dk, Event{Agent: "p", Kind: "cmd-start", ID: fmt.Sprint(i), Cmd: "x", T: r.now})
+	}
+	r.mu.Lock()
+	n := len(r.desks["alice"].running)
+	r.mu.Unlock()
+	if n != maxInsideRunning {
+		t.Fatalf("running %d", n)
+	}
+	for i := range 100 {
+		if i%40 == 0 {
+			r.adv(time.Second)
+		}
+		r.Inside(dk, Event{Agent: fmt.Sprint("prog", i), Kind: "screen", T: r.now, Screen: &ScreenAction{Action: "key"}})
+	}
+	inside := 0
+	for _, p := range r.Present("alice") {
+		if p.Inside {
+			inside++
+		}
+	}
+	if inside != maxInsideAgents || len(r.Present("alice")) != maxInsideAgents+1 {
+		t.Fatalf("inside agents %d", inside)
 	}
 }
