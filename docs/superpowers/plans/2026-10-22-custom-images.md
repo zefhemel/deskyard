@@ -127,7 +127,7 @@ The images can be rebuilt, moved to another base, and clearly marked when they c
 - `func Dockerfile(r Recipe, baseID string, flatpakInBuild bool) string`. Its stages, in order:
   - `FROM <baseID>`;
   - `USER root`;
-  - mise installs into `/opt/mise` (`MISE_DATA_DIR=/opt/mise`, as the base image's Dockerfile does), then each installed tool's executables (`/opt/mise/installs/<tool>/<version>/bin/*`) are linked into `/opt/deskyard/bin`;
+  - mise installs into `/opt/mise` (`MISE_DATA_DIR=/opt/mise`, as the base image's Dockerfile does), then each installed tool's executables are linked into `/opt/deskyard/bin`. Find them with `MISE_DATA_DIR=/opt/mise mise bin-paths <tool>@<version>`: npm tools keep theirs in `node_modules/.bin`, not `bin/`. A tool whose bin paths hold no executables fails the build, so no dangling links;
   - the remotes: each `.flatpakrepo` is fetched into `/etc/deskyard/flatpak-remotes/`, then `flatpak.real --system remote-add`;
   - the Flatpak installs, only if `flatpakInBuild`: `flatpak.real --system install -y --noninteractive <remote> <id>`, or for a `.flatpakref`, `flatpak.real --system install -y --noninteractive --from <url>` (whose remote is then saved like the others);
   - `COPY home-template/ /opt/deskyard/home-template/` (only when there's a template), then `chown -R 1000:1000`;
