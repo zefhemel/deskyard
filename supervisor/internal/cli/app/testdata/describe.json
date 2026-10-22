@@ -754,7 +754,7 @@
       "group": "remote",
       "summary": "save a desktop as a remote",
       "usage": "remote add NAME URL --token dyt_…",
-      "description": "Checks the token against the desktop's agent API and saves the remote in remotes.json ($XDG_CONFIG_HOME/deskyard-desktop, default ~/.config/deskyard; mode 0600). URL is the desktop's address, like https://host/alice. Tokens come from the desktop's Agents tab. The first remote becomes the default.",
+      "description": "Checks the token against the desktop's agent API and saves the remote in remotes.json ($XDG_CONFIG_HOME/deskyard, default ~/.config/deskyard; mode 0600). URL is the desktop's address, like https://host/alice. Tokens come from the desktop's Agents tab. The first remote becomes the default.",
       "arguments": [
         {
           "name": "name",
