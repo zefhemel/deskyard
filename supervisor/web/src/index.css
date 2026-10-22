@@ -29,6 +29,7 @@
 
 @layer base {
   html {
+    scrollbar-gutter: stable;
     background: var(--color-ground);
   }
   body {

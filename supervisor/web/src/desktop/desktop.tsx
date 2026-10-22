@@ -167,7 +167,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
           { label: "Stop", onSelect: () => power(c.name, "stop") },
         ]
       : []),
-    { label: "Desktop page", onSelect: () => route(`/desktops/${c.name}`), separated: running },
+    { label: "Details", onSelect: () => route(`/desktops/${c.name}`), separated: running },
     ...(me.admin ? [{ label: "Settings", onSelect: () => route(`/desktops/${c.name}?tab=settings`) }] : []),
     // On a phone the bar has no room for these.
     ...(running
