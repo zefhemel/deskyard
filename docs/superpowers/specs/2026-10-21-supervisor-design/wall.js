@@ -5,7 +5,7 @@ const computers = [
   { name: "research", state: "run", status: "Running for 5 hours", img: "research", cpu: 8, mem: [0.9, null], viewers: ["anna"], image: "Debian XFCE 2026.10.22", access: ["anna"] },
   { name: "build-bot", state: "run", status: "Running for 12 minutes", img: "build-bot", cpu: 91, mem: [3.1, 4], viewers: [], image: "Debian XFCE 2026.10.22" },
   { name: "notes", state: "run", status: "Running for 2 days", img: "notes", cpu: 2, mem: [0.7, null], viewers: [], image: "Debian XFCE 2026.10.15", update: true, access: ["anna"] },
-  { name: "alice-2", state: "busy", status: "Cloning from alice", progress: 38, progressText: "Copying files, 1.3 of 3.4 GB" },
+  { name: "data-lab", state: "busy", status: "Creating", progress: 38, progressText: "Pulling image, 310 of 820 MB" },
   { name: "scratch", state: "off", status: "Stopped 4 days ago", mem: [0, null], image: "Debian XFCE 2026.10.15" },
 ];
 

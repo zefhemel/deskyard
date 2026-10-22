@@ -12,7 +12,7 @@ Today one `docker compose up` gives one container-computer: a persistent Linux d
 
 With this design the supervisor becomes **the only way to run computers** (decided). The standalone `docker compose` setup, with its password, basic auth, own HTTPS and host ports for agents, goes away; running a single computer means running the supervisor with one computer. That leaves one auth model, one network setup and one way in for agents, instead of two of each.
 
-The supervisor turns this into something like a small VMware for these desktops: one web app where you sign in with your own account and create, open, start, stop, restart, clone, upgrade and remove **computers**, and see what each one is doing (CPU, memory, processes, logs). Computers are **shared**: everyone with access to a computer opens the same desktop, at the same time if they like, the way two people look at one screen. Each computer is reached in the browser at `https://host/<name>/`.
+The supervisor turns this into something like a small VMware for these desktops: one web app where you sign in with your own account and create, open, start, stop, restart, upgrade and remove **computers**, and see what each one is doing (CPU, memory, processes). Computers are **shared**: everyone with access to a computer opens the same desktop, at the same time if they like, the way two people look at one screen. Each computer is reached in the browser at `https://host/<name>/`.
 
 Some users are agents running elsewhere (on a laptop, in CI, in another sandbox). Anyone with access to a computer can give such an agent a token for it; with it, the `computer` command gets a shell, the shared browser and the desktop of that computer over HTTPS.
 
@@ -20,7 +20,7 @@ It ships as one binary, run directly on a machine with Docker or in a small Alpi
 
 # Vocabulary
 
-- **Computer**: one container-computer: a container, its workspace folder and its cache volume. Has a name, e.g. `alice`.
+- **Computer**: one container-computer: a container and its workspace folder. Has a name, e.g. `alice`.
 - **Supervisor**: this app: one Go binary with its web UI built in. (Not to be confused with `supervisord`, which runs the services inside every computer.)
 - **Account**: a person who signs in to the supervisor. Either an **admin** or a regular account.
 - **Access**: the accounts allowed to use a computer, set per computer by admins.
@@ -37,16 +37,16 @@ It ships as one binary, run directly on a machine with Docker or in a small Alpi
 - **One binary.** Go backend with the Preact + Tailwind frontend compiled in. Runs directly on Linux and macOS (amd64, arm64), or as the image `ghcr.io/zefhemel/container-computer-supervisor` (Alpine-based, multi-arch).
 - **Accounts.** Username and password, stored hashed in a JSON file. Admins create accounts and set passwords; there's no reset flow, email or SSO. An account is an admin or not.
 - **Access per computer.** Admins choose which accounts may use each computer. Admins can use every computer.
-- **Shared desktops.** Several viewers on one computer at once, all on the same desktop. While there's one viewer the desktop follows its browser window; with more it keeps its size and each browser scales it.
+- **Shared desktops.** Several viewers on one computer at once, all on the same desktop, which follows the browser window of whoever resized last.
 - A real login page (a form, so password managers fill it) and a session cookie. Computers have no password of their own under the supervisor.
 - A wall of all computers you can use, with a live screen thumbnail, status, CPU, memory and who's viewing; one click to open a desktop.
-- Lifecycle: create, start, stop, restart, remove, clone.
-- Per computer: live CPU and memory (current and last 15 minutes), processes, container logs, settings, access.
+- Lifecycle: create, start, stop, restart, remove.
+- Per computer: live CPU and memory (current and last 15 minutes), processes, settings, access.
 - **Several computer images.** Pick one when creating a computer; see when a newer version of a computer's image is available; upgrade computers to it (security updates, new features) keeping their folder and settings, or switch a computer to another image.
 - Each computer's desktop at `/<name>/` on the supervisor's address (decided: path prefixes, not subdomains).
 - Workspace folders are plain folders on the host (decided), so they can be browsed and backed up with host tools.
 - Works on a laptop out of the box (`http://localhost:8080`), and on a server with automatic HTTPS when given a domain (decided).
-- **Agents from elsewhere.** Anyone with access to a computer can create agent tokens for it (named, optional expiry, revocable). With one, the `computer` command gives an agent a shell (single commands and interactive), file upload and download, the shared browser (CDP, plus a few direct commands) and every desktop action, over HTTPS and WebSockets only. The command describes itself well enough for an agent to learn it from `--help`, `computer guide` and `computer describe --json`.
+- **Agents from elsewhere.** Anyone with access to a computer can create agent tokens for it (named, optional expiry, revocable). With one, the `computer` command gives an agent a shell (single commands and interactive), file upload and download, the shared browser (as a local CDP port) and every desktop action, over HTTPS and WebSockets only. The command describes itself well enough for an agent to learn it from `--help`, `computer guide` and `computer describe --json`.
 - Prepared for Podman: everything goes through an engine interface with one implementation (Docker) for now.
 
 # Non-goals (for now)
@@ -55,11 +55,14 @@ It ships as one binary, run directly on a machine with Docker or in a small Alpi
 - Running computers without the supervisor (decided: the standalone `docker compose` mode is removed).
 - An MCP server mode for the `computer` command (decided: never; the self-describing CLI is the interface).
 - Per-tool permissions on tokens: a shell can do everything the other tools can, so a token is all or nothing for its computer.
-- Self-service: regular accounts can't create, clone, remove or change computers, or manage accounts.
+- Self-service: regular accounts can't create, remove or change computers, or manage accounts.
 - Password resets by email, SSO/OAuth, two-factor login, roles beyond admin/regular.
 - Telling viewers apart on a shared desktop (one mouse, one keyboard; the supervisor knows who is connected, not who clicked).
 - Managing more than one engine host.
-- Snapshots/backups beyond clone.
+- Clone (decided: not in v1; workspace folders are plain host folders, so copy one and create a computer with that name to get a copy), snapshots and backups.
+- Container logs in the UI (decided: dropped; `docker logs` on the host still works for admins).
+- A sudo-capable computer variant (decided: every computer runs with Flatpak support and without sudo; only `/workspace` survives upgrades anyway).
+- A separate cache volume per computer (decided: caches live in `/workspace` like on any Linux machine).
 - Publishing arbitrary ports from computers (an agent's dev server) on the supervisor's address. See "Path prefixes and the shared origin".
 - Managing containers the supervisor didn't create.
 
@@ -75,11 +78,11 @@ It ships as one binary, run directly on a machine with Docker or in a small Alpi
 # Constraints and facts this design rests on
 
 - **The engine socket is root on the host** (rootful Docker and rootful Podman). Whoever can use it owns the machine, so the supervisor is the most privileged thing on it. It never runs agent-provided code, and every request needs a signed-in account.
-- **Computers in Flatpak mode are dangerous as root** (`systempaths=unconfined`: container root can write host `/proc/sys`). The existing rule stays: nothing agent- or internet-reachable in a computer runs as root; the supervisor starts computers with the same security options compose uses today.
+- **Computers are dangerous as root**: every computer runs with Flatpak support (`systempaths=unconfined`, so container root can write host `/proc/sys`). The existing rule stays: nothing agent- or internet-reachable in a computer runs as root, and there's no sudo; the supervisor starts computers with the security options compose uses today for Flatpak mode.
 - **Bind-mount paths given to the engine are host paths.** When the supervisor itself runs in a container, its data folder must be mounted at the same path (see Storage).
 - **KasmVNC already allows shared sessions**: the image starts it with `-AlwaysShared`, so several connections see and drive the same desktop.
 - **The KasmVNC web client** loads its assets with relative URLs (works under a prefix), but opens its WebSocket at `/<path setting>` with `path` defaulting to `websockify`, i.e. at the site root. It stores its settings in `localStorage`, per origin; URL query parameters override them.
-- **The web client's settings are per origin**, so with path prefixes all computers share one set (quality, clipboard). Acceptable. The resize mode is set by the supervisor (see Shared desktops), not by stored settings.
+- **The web client's settings are per origin**, so with path prefixes all computers share one set (quality, clipboard). Acceptable. The resize mode (remote) is set in the frame's URL, not by stored settings.
 - **Container labels can't be changed** without recreating the container. Anything that changes often (access) therefore lives in the supervisor's own files, not in labels.
 
 # Architecture
@@ -91,7 +94,7 @@ browser ──HTTPS──▶ supervisor (one Go binary, on the host or in its ow
                     │                                 (extracted from the computer's image)
                     ├─ /<name>/websockify ──WebSocket──▶ computer <name>:8080 (Caddy ─▶ KasmVNC)
                     ├─ /api/agent/v1/*                agent API (token): exec, shell, files, CDP
-                    └─ engine socket ─▶ create/start/stop/stats/top/logs/exec/pull
+                    └─ engine socket ─▶ create/start/stop/stats/top/exec/pull
 
 agent elsewhere ── computer -c alice … ──HTTPS/WebSocket──▶ /api/agent/v1/*
 ```
@@ -107,15 +110,15 @@ agent elsewhere ── computer -c alice … ──HTTPS/WebSocket──▶ /api
 
 ## Engine
 
-All supervisor logic talks to an engine interface of its own (`internal/engine`), never to an engine SDK directly. Roughly: containers (create, start, stop, remove, inspect, list by label, exec, top, stats stream, logs), networks, volumes, images (pull, inspect, copy files out), events. One implementation now, `internal/engine/docker`, using the Docker Go SDK with API version negotiation; no shelling out to CLIs.
+All supervisor logic talks to an engine interface of its own (`internal/engine`), never to an engine SDK directly. Roughly: containers (create, start, stop, remove, inspect, list by label, exec, top, stats stream), networks, images (pull, inspect, copy files out), events. One implementation now, `internal/engine/docker`, using the Docker Go SDK with API version negotiation; no shelling out to CLIs.
 
 To keep the door open for Podman:
 
 - Everything the supervisor stores on containers is labels, which both engines support the same way.
-- Engine-specific spellings stay in the engine package: security options (Flatpak mode's `systempaths=unconfined`, seccomp profile, devices, capabilities), restart policy, how a computer is reached (see below).
+- Engine-specific spellings stay in the engine package: security options (`systempaths=unconfined` for Flatpak, seccomp profile, devices, capabilities), restart policy, how a computer is reached (see below).
 - No Docker-only conveniences in the design: no `host.docker.internal`, no Compose at runtime.
 - One engine test suite runs against the interface. Adding Podman means a second implementation passing it. Podman's Docker-compatible API (`podman system service`) may let the Docker implementation work as it is; that's the first thing to try.
-- Rootless Podman would change the risk picture for the better (container root isn't host root, which defuses the Flatpak-mode `/proc/sys` issue). Workspace folder ownership then goes through a UID mapping, so ownership is the engine's business, not a hard-coded `PUID:PGID`.
+- Rootless Podman would change the risk picture for the better (container root isn't host root, which defuses the `/proc/sys` issue). Workspace folder ownership then goes through a UID mapping, so ownership is the engine's business, not a hard-coded `PUID:PGID`.
 - Known Podman differences to handle then: restarting computers after a reboot (systemd/quadlet instead of a daemon restart policy), networking in rootless mode, security option names.
 
 ## Networks and reaching a computer
@@ -136,7 +139,7 @@ A computer is only ever run by the supervisor, so the image's front door gets si
 - Caddy (still on 8080, still as user `caddy`) requires the header `X-Container-Computer-Token: <token>` on every request, where the token is 32 random bytes the supervisor generates per computer and passes in `WORKSPACE_PROXY_TOKEN`. Without the variable the computer refuses to start. Caddy then serves KasmVNC's WebSocket and the `/_cdp/` route, and nothing else.
 - Gone from the image: `WORKSPACE_PASSWORD` and its generated password, basic auth, Caddy's HTTPS and domain support (`compose.domain.yaml`), the Origin check (the supervisor does it), and the compose files.
 
-There's no per-computer password: the supervisor login is the only way in. `sudo` behaves as today (`WORKSPACE_SUDO`, off in Flatpak mode).
+There's no per-computer password: the supervisor login is the only way in. There's no `sudo` (`WORKSPACE_SUDO` and the non-Flatpak variant go).
 
 **Only one port.** Today a computer publishes 8080 and, for agents on the host, VNC (5901) and CDP (9222) on `127.0.0.1`. Agents now use the agent API instead, so a computer publishes **nothing** when the supervisor runs in a container, and only 8080 on host `127.0.0.1` when it runs directly (see Networks). The listeners that only existed for those host ports (the VNC bridge on 5901 and CDP on 9222, both on all interfaces) are removed from the image; what's left on the network is Caddy on 8080, behind the token. Inside the computer, CDP on `127.0.0.1:9221` stays for agents running there.
 
@@ -146,7 +149,7 @@ A computer can't be trusted to serve pages on the supervisor's origin: the agent
 
 - The supervisor serves the KasmVNC web client itself, extracted from the computer's **image** (never from the running container): on first use of an image ID it copies `/usr/share/kasmvnc/www` out of a never-started container of that image and caches it per image ID. Client and server versions always match.
 - `/<name>/` is the supervisor's own **desktop page** (part of the web UI, see Desktop page): our chrome around the desktop, with the KasmVNC client in an iframe at `/<name>/vnc/`. We own this UI from day one: the client's own control bar is never shown, and anything people need from it moves into our chrome.
-- The iframe loads `/<name>/vnc/vnc.html?path=<name>/websockify&autoconnect=1` (plus the resize mode, see Shared desktops), so each computer connects to its own WebSocket even though they share stored settings. Query parameters win over the client's stored settings, so a viewer can't end up with the control bar or another computer's path.
+- The iframe loads `/<name>/vnc/vnc.html?path=<name>/websockify&autoconnect=1` `&resize=remote`, so each computer connects to its own WebSocket even though they share stored settings. Query parameters win over the client's stored settings, so a viewer can't end up with the control bar or another computer's path.
 - `/<name>` redirects to `/<name>/`.
 - `/<name>/websockify` is the only thing proxied: a WebSocket to the computer's port 8080, with the token header added and the session cookie removed (the computer never sees it). Anything else under `/<name>/vnc/` that isn't a client file is a 404.
 - Every request under `/<name>/` checks that the signed-in account has access to that computer (admins always do); otherwise 404, so names of other computers don't leak.
@@ -162,9 +165,9 @@ All computers and the UI share one origin, so any script on it can call the API 
 
 ## Names
 
-`^[a-z][a-z0-9-]{0,30}[a-z0-9]$` (DNS label rules, so it also works as a container, network and folder name). Reserved, because they're supervisor routes: `api`, `login`, `logout`, `assets`, `static`, `healthz`, `favicon.ico`, `robots.txt`, and anything starting with `_`. Names can't be changed after creation (rename = clone + remove).
+`^[a-z][a-z0-9-]{0,30}[a-z0-9]$` (DNS label rules, so it also works as a container, network and folder name). Reserved, because they're supervisor routes: `api`, `login`, `logout`, `assets`, `static`, `healthz`, `favicon.ico`, `robots.txt`, and anything starting with `_`. Names can't be changed after creation (to rename: remove it keeping its folder, rename the folder on the host, and create it again).
 
-Engine names: container `cc-<name>`, network `cc-<name>`, cache volume `cc-<name>-cache`.
+Engine names: container `cc-<name>`, network `cc-<name>`.
 
 # Accounts and access
 
@@ -188,7 +191,7 @@ Engine names: container `cc-<name>`, network `cc-<name>`, cache volume `cc-<name
 - **Usernames**: `^[a-z][a-z0-9._-]{0,31}$`, case-insensitive unique.
 - **First start**: if there's no `accounts.json`, the supervisor creates an admin from `SUPERVISOR_ADMIN_USER` (default `admin`) and `SUPERVISOR_ADMIN_PASSWORD`, or a generated password printed once in its log, as the computer image does today.
 - **Admins** create and delete accounts, set any account's password, and make accounts admin or not. The last admin can't be deleted or demoted. Every account can change its own password.
-- **Access** is the `computers` list: computer IDs (the `container-computer.id` label), not names, so a new computer that reuses a removed computer's name doesn't inherit its access. Removing a computer removes its ID from every account; IDs of computers that no longer exist are pruned on startup. A clone gets a new ID and starts with the same access as its source.
+- **Access** is the `computers` list: computer IDs (the `container-computer.id` label), not names, so a new computer that reuses a removed computer's name doesn't inherit its access. Removing a computer removes its ID from every account; IDs of computers that no longer exist are pruned on startup.
 - **Sessions**: signed cookie carrying username and `sessionEpoch`; 30 days, sliding. Changing a password, deleting an account or demoting it bumps the epoch, which signs that account out everywhere. Revoking access to a computer also closes that account's open desktop connections to it.
 
 What each kind of account can do:
@@ -197,8 +200,8 @@ What each kind of account can do:
 | --- | --- | --- |
 | See and open computers | all | those it has access to |
 | Start, stop, restart | all | those it has access to |
-| Processes, logs, activity | all | those it has access to |
-| Create, clone, remove, change settings, upgrade | yes | no |
+| Processes, activity | all | those it has access to |
+| Create, remove, change settings, upgrade | yes | no |
 | Create agent tokens, revoke own | yes | for those it has access to |
 | Revoke anyone's agent tokens | yes | no |
 | Accounts, access, image catalog | yes | no |
@@ -206,10 +209,10 @@ What each kind of account can do:
 
 # Shared desktops
 
-Everyone with access opens the same desktop. KasmVNC already supports this (`-AlwaysShared`); the supervisor adds two things:
+Everyone with access opens the same desktop. KasmVNC already supports this (`-AlwaysShared`); the supervisor adds who's viewing:
 
-- **Who's viewing.** The supervisor knows which account each desktop WebSocket belongs to. Tiles show a viewer count, the computer page lists the names, and the desktop page's chrome shows who's here and a short "anna joined" note when someone joins.
-- **Screen size.** One desktop has one size, so viewers with different windows would keep resizing it. The rule: **with one viewer, the desktop follows that browser window (remote resize); when a second viewer joins, it keeps its current size and every viewer's browser scales it to fit; when only one is left, it follows that viewer's window again.** The supervisor counts WebSockets per computer and pushes the count and names to each open desktop page (server-sent events at `/api/computers/<name>/viewers`); the page switches its frame's resize setting between `remote` and `scale` live. Prototype this first in phase 2: if the client can't switch live, the page reloads the frame with `resize=scale` or `resize=remote` (a reconnect of about a second).
+- The supervisor knows which account each desktop WebSocket belongs to. Tiles show a viewer count, the computer page lists the names, and the desktop page's chrome shows who's here and a short "anna joined" note when someone joins.
+- **Screen size**: every viewer's frame uses remote resize, so the desktop follows the browser window of whoever resized last (decided: no switching between modes). Viewers with different window sizes see it scaled or letterboxed until they resize.
 
 Not in scope: per-viewer cursors, input locks ("only one person drives"), or telling who typed what.
 
@@ -219,12 +222,11 @@ The page at `/<name>/`: a thin bar of our own above the desktop, and the KasmVNC
 
 The bar, left to right:
 
-- **Back** to Computers, the computer's name and status, and who's viewing (avatars; "shared, scaled to fit" while there are several).
+- **Back** to Computers, the computer's name and status, and who's viewing (avatars).
 - **Clipboard**: shows the desktop's clipboard text as it changes (from the client's `clipboardrx` message) with Copy, and a box to send text to the desktop's clipboard (`clipboardsnd`). Over HTTPS, copy and paste also go straight to the system clipboard (the iframe gets `allow="clipboard-read; clipboard-write"`).
 - **Keys**: keys the browser would otherwise take: Ctrl+Alt+Del, Super, Alt+Tab, Ctrl+W, Esc, F11.
 - **Screenshot**: downloads a PNG (from `computer screenshot`).
 - **Quality**: a few presets (`setvideoquality`).
-- **Fullscreen** of the whole page, bar hidden until the pointer reaches the top edge.
 - **⋯**: Restart and Stop (for anyone with access), Settings and the computer page.
 
 Connection state (`connection_state`, `disconnectrx`) shows in the bar: Connecting, Connected, Reconnecting, and a Reconnect button after a failure. Keyboard focus stays in the frame unless the bar is being used.
@@ -242,7 +244,7 @@ An agent that runs somewhere else uses a computer through the `computer` command
 - Anyone with access to a computer creates a token on its Agents tab: a name ("claude on zef's laptop") and an optional expiry (never, 7, 30 or 90 days, or a date). The token is shown once, with the `computer remote add` line to paste into the agent's machine.
 - A token reaches exactly one computer, and only the agent API: shell, files, browser, desktop. Not the UI, not lifecycle, settings, accounts or other computers. A shell can do everything the other tools can, so there are no finer permissions.
 - Format `cct_<id>_<secret>` (32 random bytes). `tokens.json` in the state folder keeps the ID, name, computer ID, a SHA-256 of the secret (the secret is random, so a slow hash adds nothing), who created it and when, the expiry and when it was last used. Written atomically like `accounts.json`.
-- An expired or revoked token stops working at once, and the supervisor closes its open shells, browser connections and streams. Expired tokens stay listed as "Expired" until deleted. Removing a computer deletes its tokens; a clone gets none.
+- An expired or revoked token stops working at once, and the supervisor closes its open shells, browser connections and streams. Expired tokens stay listed as "Expired" until deleted. Removing a computer deletes its tokens.
 - Everyone with access sees all of the computer's tokens and who created them; they can revoke their own, admins can revoke any. A token lives no longer than its creator's access: when the creator loses access to the computer or the account is deleted, their tokens for it are revoked.
 - Every agent API call is logged by the supervisor with the token's name: the command line for exec, the path for files, connect and disconnect for shells and the browser.
 
@@ -253,15 +255,14 @@ All under `/api/agent/v1/`, authenticated with `Authorization: Bearer <token>` (
 | Endpoint | What |
 | --- | --- |
 | `GET /api/agent/v1` | The computer's name, status, image and version, screen size, API version: what `computer remote add` and `computer status` show |
-| `POST /exec` | Run one command: `argv`, optional `stdin`, `cwd`, `env`, `timeout`; returns stdout, stderr (as base64 when not UTF-8) and exit code. Output over 16 MB is cut off and says so |
-| `GET /exec` (WebSocket) | The same, streamed: stdin in, stdout and stderr out as they come, exit code at the end. For long-running commands |
-| `GET /shell` (WebSocket) | An interactive terminal: a PTY running `bash -l`, with resize messages |
-| `GET /files?path=…`, `PUT /files?path=…` | Download and upload one file as a stream (directories as tar with `?tar=1`) |
-| `/cdp/…` (HTTP and WebSocket) | The shared Chromium's DevTools protocol, proxied |
+| `GET /api/agent/v1/exec` (WebSocket) | Run one command: the first message gives `argv`, optional `cwd`, `env` and `tty` (with a size); then stdin goes in and stdout and stderr come out as they arrive, and the last message is the exit code. With `tty` it's an interactive terminal, with resize messages |
+| `/api/agent/v1/cdp/…` (HTTP and WebSocket) | The shared Chromium's DevTools protocol, proxied |
+
+Everything else is built on exec in the CLI: `computer exec` and `computer shell` directly, `computer cp` by streaming through `cat` and `tar` as `user`, and desktop actions by running the in-computer `computer`.
 
 How the supervisor carries these out:
 
-- **Exec, shell and files** use the engine's exec as `user` (UID 1000) in `/workspace`, never as root, with the computer's normal environment. Files go through exec too (`cat`, `tar` as `user`), not the engine's copy API, which writes as root and could change anything in the container.
+- **Exec** uses the engine's exec as `user` (UID 1000) in `/workspace`, never as root, with the computer's normal environment. File copies go through it too, never the engine's copy API, which writes as root and could change anything in the container.
 - **Desktop actions** need no endpoint of their own: the remote `computer` runs the in-computer `computer` (screenshot, click, type, …) through exec. Every desktop tool works remotely as soon as it exists inside.
 - **CDP** goes to the computer's Caddy: Caddy serves `/_cdp/` (HTTP and WebSocket), checks the per-computer proxy token like everything else, and forwards to Chromium's CDP port inside (`cdp-connect`, which starts Chromium if it isn't running). The supervisor rewrites `webSocketDebuggerUrl` and friends in `/json` responses so they point back through itself.
 
@@ -271,7 +272,7 @@ One Go binary (`supervisor/cmd/computer`) replacing today's bash script inside t
 
 - **Remotes**: `computer remote add alice https://host/alice --token cct_…` checks the token against `GET /api/agent/v1` and saves the remote in `~/.config/container-computer/remotes.json` (mode 0600). `computer remote list`, `remove`, and `default alice`. `-c alice` (or `COMPUTER_REMOTE=alice`) picks one; `COMPUTER_URL` and `COMPUTER_TOKEN` work without a config file. Inside a computer with no remote chosen, it acts locally.
 - **Shell**: `computer exec -- cmd args` (exit code passed through; `--json` for stdout, stderr and exit code as one object), `computer shell` (interactive), `computer cp ./local alice:/workspace/x` and back.
-- **Browser**: `computer browser connect [--port 9222]` listens on `127.0.0.1` and forwards to the computer's CDP, so Playwright's `connectOverCDP`, Puppeteer or chrome-devtools tools work as if the browser were local. Direct commands for agents without those: `browser tabs`, `open URL`, `text` (readable page text), `snapshot` (accessibility tree with refs), `click REF`, `type REF TEXT`, `screenshot`, `eval JS`, built on CDP in the CLI.
+- **Browser**: `computer browser connect [--port 9222]` listens on `127.0.0.1` and forwards to the computer's CDP, so Playwright's `connectOverCDP`, Puppeteer or chrome-devtools tools work as if the browser were local. That's the only browser command (decided): for a quick look without browser tooling, agents use the desktop commands.
 - **Desktop**: every `computer` desktop action (`screenshot`, `zoom`, `click`, `type`, `key`, `scroll`, `drag`, …) with the same arguments and output, remote or local.
 - **Self-describing**:
   - `computer --help` and every subcommand's `--help` say what it does, its arguments, an example and what it prints;
@@ -290,13 +291,13 @@ The repository builds computer images under `images/`; it starts with one, `imag
 - Port 8080: Caddy in front of KasmVNC, checking `WORKSPACE_PROXY_TOKEN` as above; the web client at `/usr/share/kasmvnc/www`.
 - The `computer` command, in particular `computer screenshot` for thumbnails and the desktop actions the agent API runs through exec.
 - Caddy's `/_cdp/` route to the shared Chromium's CDP.
-- Settings via the `WORKSPACE_*` environment variables (resolution, sudo, Flatpak mode), and a container health check.
+- Settings via the `WORKSPACE_*` environment variables (start resolution), and a container health check.
 
 **The image catalog** (`images.json`, edited by admins on the Images page) lists the image references computers can be created from, e.g. `ghcr.io/zefhemel/container-computer:latest`. The default catalog has the one image. For each entry the supervisor shows title, version and description from the labels, and how many computers use it.
 
 **Updates.** CI rebuilds each image weekly (Debian security updates) and on changes, tagging `latest` and a dated version (`2026.10.22`). The supervisor checks the catalog's tags against the registry daily and on "Check now" (pull, compare image IDs). A computer whose image ID differs from the newest pulled image for its reference shows "Update available".
 
-**Upgrading** a computer recreates its container on the new image with the same labels, settings, folder and cache; a running computer is stopped and started again (its desktop session and browser tabs are restored, as on any restart). The Images page can upgrade all computers on an image at once. **Switching** a computer to a different image in the catalog is the same operation. What survives is exactly what's under `/workspace`: tools installed with mise, uv and npm, Flatpak apps (installed `--user`), the browser profile, files. Anything installed with `apt` or changed elsewhere in the container is lost; the upgrade dialog says so.
+**Upgrading** a computer recreates its container on the new image with the same labels, settings and folder; a running computer is stopped and started again (its desktop session and browser tabs are restored, as on any restart). The Images page can upgrade all computers on an image at once. **Switching** a computer to a different image in the catalog is the same operation. What survives is exactly what's under `/workspace`: tools installed with mise, uv and npm, Flatpak apps (installed `--user`), the browser profile, files. Anything installed with `apt` or changed elsewhere in the container is lost; the upgrade dialog says so.
 
 # Storage
 
@@ -304,7 +305,6 @@ The repository builds computer images under `images/`; it starts with one, `imag
   - `<name>/`: each computer's workspace folder, owned by UID 1000 (on Linux; irrelevant on Docker Desktop and OrbStack);
   - `.supervisor/`: `accounts.json`, `tokens.json`, `images.json`, `session.key`, `certmagic/`.
 - In a container, the data folder must be mounted **at the same path** (`-v /srv/computers:/srv/computers`), so a path means the same thing to the supervisor and the engine. On startup the supervisor checks this with a marker file and a short-lived helper container, and refuses to start with an explanation if it doesn't match. Run directly, this check is skipped.
-- Cache: a named volume per computer (`cc-<name>-cache`), as today; never cloned or kept on remove.
 
 # Settings per computer
 
@@ -315,27 +315,22 @@ Chosen at creation by an admin, editable later. Applying a change recreates the 
 | Image | the catalog's first entry | see Images |
 | Memory limit | none | the computer may use all the host's memory; presets 1, 2, 4, 8 GB or a custom value |
 | CPUs | none | the computer may use all the host's CPUs; presets 1, 2, 4 or a custom value |
-| Start size | 1280×800 | `WORKSPACE_RESOLUTION`; the size before any viewer resizes it |
-| Flatpak apps | on | off = no special security options, `sudo` possible |
-| Admin rights (sudo) | auto | `WORKSPACE_SUDO`; the UI explains the Flatpak trade-off |
 
-Stored as labels `container-computer.setting.<key>=<value>`, plus environment variables on the container (as `compose.yaml` sets them today). `shm_size` 1g and a 30 s stop timeout as in `compose.yaml`. Access isn't a setting (it lives in `accounts.json`) and changing it doesn't restart anything.
+Stored as labels `container-computer.setting.<key>=<value>`, plus environment variables on the container (as `compose.yaml` sets them today). `shm_size` 1g, a 30 s stop timeout and the Flatpak security options as in `compose.yaml`; the desktop starts at 1280×800 until someone opens it. Access isn't a setting (it lives in `accounts.json`) and changing it doesn't restart anything.
 
 # Operations
 
-Long operations (create with image pull, clone, upgrade) run as jobs: the API returns a job ID and progress streams to the UI. One job per computer at a time.
+Long operations (create with an image pull, upgrade) run as jobs: the API returns a job ID and progress streams to the UI. One job per computer at a time.
 
-- **Create** (admin): validate name; pull the image if missing and check its contract; make folder, cache volume, network; create the container (restart policy `unless-stopped`); connect or publish (see Networks); start; grant access to the accounts chosen in the dialog.
+- **Create** (admin): validate name; pull the image if missing and check its contract; make the folder (or reuse an existing one with that name, e.g. a copy made on the host), network; create the container (restart policy `unless-stopped`); connect or publish (see Networks); start; grant access to the accounts chosen in the dialog.
 - **Start / stop / restart** (anyone with access): engine API; stop with a 30 s timeout.
-- **Remove** (admin): stop; remove container, network, cache volume; remove the computer's ID from all accounts. The folder is kept unless "also delete files" was ticked (typed-name confirmation).
-- **Clone** `alice` → `alice-2` (admin): needs `alice` stopped (the dialog offers "stop, clone, start again"). Copies the folder with `cp -a --reflink=auto` (instant on Btrfs/XFS, a full copy elsewhere) in a helper container of the computer's image, showing bytes copied, then creates `alice-2` with the same settings and access. Cache not copied.
+- **Remove** (admin): stop; remove container and network; remove the computer's ID from all accounts. The folder is kept unless "also delete files" was ticked (typed-name confirmation).
 - **Upgrade / switch image** (admin): see Images.
 
 # Monitoring
 
 - **Stats**: one stats stream per running computer while any UI page is open (and a few minutes after). CPU % and memory (usage minus page cache), against the computer's limits when it has them and the host's CPUs and memory when it doesn't, kept 15 minutes at 5 s resolution in memory. Pushed to the UI over server-sent events (`/api/events`), filtered to the computers the account can see, together with status changes from the engine's event stream and viewer counts.
 - **Processes**: `top` with `-eo pid,user,pcpu,rss,etime,args`, polled every 3 s while the Processes tab is open, sorted by CPU. No kill action in v1.
-- **Logs**: tail 500 lines and follow while the tab is open.
 - **Screen thumbnails**: `computer screenshot` via exec as `user`, scaled to 480 px wide in Go, cached, refreshed every 10 s for running computers while a list showing them is open. Served at `/api/computers/<name>/screen.png`, with the same access check.
 
 # Login
@@ -354,7 +349,7 @@ The top bar has the wordmark, **Computers**, and for admins **Images** and **Acc
 
 **Desktop page** at `/<name>/`: see Desktop page above.
 
-**Computers**, the home page: a wall of live screens, one tile per computer the account can use, with thumbnail, name, status, image, CPU and memory, who's viewing, Open (running) or Start (stopped), and a menu (Restart, Stop; for admins also Clone, Settings, Remove). Admins get New computer.
+**Computers**, the home page: a wall of live screens, one tile per computer the account can use, with thumbnail, name, status, image, CPU and memory, who's viewing, Open (running) or Start (stopped), and a menu (Restart, Stop; for admins also Settings, Remove). Admins get New computer.
 
 ![The computers page, as an admin](2026-10-21-supervisor-design/computers.png)
 
@@ -362,7 +357,7 @@ A regular account sees only its computers, with no New computer and a shorter me
 
 ![The computers page, as a regular account](2026-10-21-supervisor-design/computers-user.png)
 
-**Computer**: bigger live screen with Open desktop; who's viewing; facts (status, image and version, folder, limits, access, agent tokens); charts; tabs Processes, Logs, Agents, and for admins Settings and Access.
+**Computer**: bigger live screen with Open desktop; who's viewing; facts (status, image and version, folder, limits, access, agent tokens); charts; tabs Processes, Agents, and for admins Settings and Access.
 
 ![One computer's page](2026-10-21-supervisor-design/computer.png)
 
@@ -376,13 +371,11 @@ A regular account sees only its computers, with no New computer and a shorter me
 
 ![A created token, shown once](2026-10-21-supervisor-design/token.png)
 
-**New computer** (admin): name (with a live `/<name>/` preview and validation), image from the catalog, memory, CPUs, Flatpak, and who gets access.
+**New computer** (admin): name (with a live `/<name>/` preview and validation), image from the catalog, memory, CPUs, and who gets access.
 
 ![The New computer dialog](2026-10-21-supervisor-design/new.png)
 
-**Clone** and **Remove** dialogs (admin).
-
-![The Clone dialog](2026-10-21-supervisor-design/clone.png)
+**Remove** dialog (admin).
 
 ![The Remove dialog](2026-10-21-supervisor-design/remove.png)
 
@@ -411,7 +404,7 @@ supervisor/
   internal/
     engine/          the engine interface and its test suite
     engine/docker/   the Docker implementation
-    accounts/  auth/  tokens/  agentapi/  computers/  images/  proxy/  stats/  jobs/  web/
+    accounts/  auth/  tokens/  agentapi/  computers/  images/  proxy/  stats/  web/
   web/               Preact + Tailwind app (Vite), built into internal/web/dist, embedded
   tests/             integration tests (pytest + Playwright) against a real engine
   Dockerfile         node build → go build → alpine
@@ -423,24 +416,24 @@ docs/                this SilverBullet space
 
 Today's image moves into `images/debian-xfce/`; its compose files go, and its tests start the container directly with a test token (as the supervisor would). The README's getting-started becomes the supervisor's. CI has two workflows: images (a matrix over `images/*`, weekly and on change; each image builds `computer` from `supervisor/`) and the supervisor (`supervisor` and `computer` binaries attached to GitHub releases, plus the supervisor image).
 
-Changes to the computer image for this design: the Go `computer` command replaces the bash script; the in-computer skills and the README stop mentioning `docker exec` and host ports; Chromium and a terminal no longer open by themselves when a computer starts (Chromium starts on demand, when someone opens it or an agent connects over CDP, as `cdp-connect` already does; a restored desktop session still brings back what was open); Caddy's token check and `/_cdp/` route, with basic auth, password, HTTPS and the Origin check removed; the VNC (5901) and host CDP (9222) listeners removed; rename the user `workspace` to `user` (same UID 1000, home stays `/workspace`, so existing folders keep working); the contract labels.
+Changes to the computer image for this design: the Go `computer` command replaces the bash script; the in-computer skills and the README stop mentioning `docker exec` and host ports; Chromium and a terminal no longer open by themselves when a computer starts (Chromium starts on demand, when someone opens it or an agent connects over CDP, as `cdp-connect` already does; a restored desktop session still brings back what was open); Caddy's token check and `/_cdp/` route, with basic auth, password, HTTPS and the Origin check removed; the VNC (5901) and host CDP (9222) listeners removed; the cache volume and its symlinks (`cache-paths`) removed; sudo and the non-Flatpak variant removed; rename the user `workspace` to `user` (same UID 1000, home stays `/workspace`, so existing folders keep working); the contract labels.
 
 # Testing
 
-- Go unit tests: name and username validation, reserved names, label ↔ settings round-trip, `accounts.json` round-trip and atomic writes, `can()` for every row of the permissions table, sessions and epochs, throttling, Origin checks, proxy paths and the `?path=` redirect, the resize rule (viewer counts → mode).
+- Go unit tests: name and username validation, reserved names, label ↔ settings round-trip, `accounts.json` round-trip and atomic writes, `can()` for every row of the permissions table, sessions and epochs, throttling, Origin checks, proxy paths and the frame URL.
 - The engine test suite, run against Docker in CI (and later Podman).
 - Integration tests in `supervisor/tests` (pytest + Playwright, as today), against a real supervisor, both run directly and in its container:
   - login, wrong password, logout; every route but login is 401/redirect without a session;
   - a regular account doesn't see, open or control a computer it has no access to (UI, API, `/<name>/`, WebSocket all refuse); revoking access closes its open desktop;
   - create → desktop opens at `/<name>/` in our page, without KasmVNC's control bar; clipboard text goes both ways through the bar; two computers open side by side each show their own desktop;
-  - two viewers on one computer see the same desktop; with two the desktop keeps its size, with one it follows the window;
+  - two viewers on one computer see the same desktop, and each sees the other in the bar;
   - stop/start/restart; remove keeps the folder; remove with "delete files" removes it;
-  - clone copies a file from the source folder and copies access;
+  - creating a computer with the name of a folder already in the data folder reuses that folder;
   - a computer publishes no host ports (or only 8080 on `127.0.0.1` with the supervisor run directly) and listens on nothing but 8080 on the network; it can't reach another computer's 8080, nor the supervisor without a session;
   - a computer that replaces its own web server can't get its page served at `/<name>/`;
   - WebSocket with a foreign Origin is refused;
   - upgrade recreates a computer and keeps its folder; an image without the contract label is refused;
-  - an agent token works for its computer only: exec, shell, files, CDP and desktop actions work; another computer's API, the UI API and lifecycle calls refuse it; a revoked or expired token is refused and its open shell is closed;
+  - an agent token works for its computer only: exec, shell, `cp`, CDP and desktop actions work; another computer's API, the UI API and lifecycle calls refuse it; a revoked or expired token is refused and its open shell is closed;
   - exec runs as `user` (`id -u` is 1000), and an uploaded file is owned by `user`;
   - `computer browser connect` lets Playwright drive the shared browser; `computer -c alice screenshot` returns a PNG of alice's screen.
 - The `computer` command: golden tests for `--help`, `guide` and `describe --json`, so changes to its self-description are reviewed.
@@ -448,10 +441,10 @@ Changes to the computer image for this design: the Go `computer` command replace
 # Phases
 
 1. Split the repository (`images/debian-xfce`, CI), rename the user to `user`, token-only Caddy, remove standalone mode and the agent ports, contract labels. Supervisor skeleton: engine interface + Docker, first-start admin, login, list, create, start/stop/restart/remove, proxy, the desktop page (frame, back, status, clipboard); run directly and in a container. Tests.
-2. Accounts and access (pages, `can()`, epochs), shared desktops (viewers, resize rule), the desktop page's full bar.
-3. Monitoring: events stream, stats, thumbnails, processes, logs; the computer page.
+2. Accounts and access (pages, `can()`, epochs), who's viewing, the desktop page's full bar.
+3. Monitoring: events stream, stats, thumbnails, processes; the computer page.
 4. Agent access: tokens and the Agents tab, the agent API, the Go `computer` command (local first, replacing the bash script; then remotes).
-5. Clone, settings editing, image catalog, updates and upgrades, jobs UI.
+5. Settings editing, image catalog, updates and upgrades, job progress.
 6. HTTPS via CertMagic, phone layout, docs, release binaries.
 
 # Left to the builder
@@ -459,6 +452,6 @@ Changes to the computer image for this design: the Go `computer` command replace
 - Exact Go package boundaries, API route shapes, error formats.
 - Charts (hand-rolled SVG is fine).
 - How the engine's event stream and stats streams are multiplexed.
-- How the desktop page switches the client's resize mode, and which client settings it sets directly rather than through `postMessage` (see Shared desktops and Desktop page).
-- The exact wire format of the exec, shell and file WebSockets.
+- Which client settings the desktop page sets directly rather than through `postMessage` (see Desktop page).
+- The exact wire format of the exec WebSocket.
 - Visual polish beyond the mockups.

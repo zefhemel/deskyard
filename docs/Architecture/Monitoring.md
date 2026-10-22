@@ -7,4 +7,4 @@ uses:
   - "[[Architecture/Computer CLI]]"
 spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 ---
-CPU and memory history, processes, logs and screen thumbnails (via `computer screenshot`), streamed to the UI.
+Live CPU and memory with 15 minutes of history, processes and screen thumbnails (via `computer screenshot`), streamed to the UI.
