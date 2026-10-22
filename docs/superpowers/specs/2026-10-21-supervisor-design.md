@@ -14,7 +14,7 @@ With this design the supervisor becomes **the only way to run computers** (decid
 
 The supervisor turns this into something like a small VMware for these desktops: one web app where you sign in with your own account and create, open, start, stop, restart, clone, upgrade and remove **computers**, and see what each one is doing (CPU, memory, processes, logs). Computers are **shared**: everyone with access to a computer opens the same desktop, at the same time if they like, the way two people look at one screen. Each computer is reached in the browser at `https://host/<name>/`.
 
-Some users are agents running elsewhere (on a laptop, in CI, in another sandbox). An admin gives such an agent a token for one computer; with it, the `computer` command gets a shell, the shared browser and the desktop of that computer over HTTPS.
+Some users are agents running elsewhere (on a laptop, in CI, in another sandbox). Anyone with access to a computer can give such an agent a token for it; with it, the `computer` command gets a shell, the shared browser and the desktop of that computer over HTTPS.
 
 It ships as one binary, run directly on a machine with Docker or in a small Alpine container. The audience is a person or a small team running a handful to a few dozen computers on a laptop, a home server or a VPS.
 
@@ -29,7 +29,7 @@ It ships as one binary, run directly on a machine with Docker or in a small Alpi
 - **Engine**: the container engine the supervisor drives: Docker now, Podman later.
 - **Workspace folder**: the computer's `/workspace`, its user's home: a folder on the host under the supervisor's data folder, e.g. `~/computers/alice`.
 - **`user`**: the single Linux user inside every computer. Everyone who opens the computer works as `user`.
-- **Agent token**: a secret an admin creates for one computer, so an agent elsewhere can use that computer through the agent API.
+- **Agent token**: a secret someone with access creates for one computer, so an agent elsewhere can use that computer through the agent API.
 - **`computer` command**: one Go binary. Inside a computer it controls that computer; given a **remote** (a computer's address and an agent token) it does the same over HTTPS.
 
 # Goals
@@ -46,7 +46,7 @@ It ships as one binary, run directly on a machine with Docker or in a small Alpi
 - Each computer's desktop at `/<name>/` on the supervisor's address (decided: path prefixes, not subdomains).
 - Workspace folders are plain folders on the host (decided), so they can be browsed and backed up with host tools.
 - Works on a laptop out of the box (`http://localhost:8080`), and on a server with automatic HTTPS when given a domain (decided).
-- **Agents from elsewhere.** Admins create agent tokens per computer (named, optional expiry, revocable). With one, the `computer` command gives an agent a shell (single commands and interactive), file upload and download, the shared browser (CDP, plus a few direct commands) and every desktop action, over HTTPS and WebSockets only. The command describes itself well enough for an agent to learn it from `--help`, `computer guide` and `computer describe --json`.
+- **Agents from elsewhere.** Anyone with access to a computer can create agent tokens for it (named, optional expiry, revocable). With one, the `computer` command gives an agent a shell (single commands and interactive), file upload and download, the shared browser (CDP, plus a few direct commands) and every desktop action, over HTTPS and WebSockets only. The command describes itself well enough for an agent to learn it from `--help`, `computer guide` and `computer describe --json`.
 - Prepared for Podman: everything goes through an engine interface with one implementation (Docker) for now.
 
 # Non-goals (for now)
@@ -199,6 +199,8 @@ What each kind of account can do:
 | Start, stop, restart | all | those it has access to |
 | Processes, logs, activity | all | those it has access to |
 | Create, clone, remove, change settings, upgrade | yes | no |
+| Create agent tokens, revoke own | yes | for those it has access to |
+| Revoke anyone's agent tokens | yes | no |
 | Accounts, access, image catalog | yes | no |
 | Change own password | yes | yes |
 
@@ -237,15 +239,16 @@ An agent that runs somewhere else uses a computer through the `computer` command
 
 ## Agent tokens
 
-- An admin creates a token on a computer's Agents tab: a name ("claude on zef's laptop") and an optional expiry (never, 7, 30 or 90 days, or a date). The token is shown once, with the `computer remote add` line to paste into the agent's machine.
+- Anyone with access to a computer creates a token on its Agents tab: a name ("claude on zef's laptop") and an optional expiry (never, 7, 30 or 90 days, or a date). The token is shown once, with the `computer remote add` line to paste into the agent's machine.
 - A token reaches exactly one computer, and only the agent API: shell, files, browser, desktop. Not the UI, not lifecycle, settings, accounts or other computers. A shell can do everything the other tools can, so there are no finer permissions.
 - Format `cct_<id>_<secret>` (32 random bytes). `tokens.json` in the state folder keeps the ID, name, computer ID, a SHA-256 of the secret (the secret is random, so a slow hash adds nothing), who created it and when, the expiry and when it was last used. Written atomically like `accounts.json`.
 - An expired or revoked token stops working at once, and the supervisor closes its open shells, browser connections and streams. Expired tokens stay listed as "Expired" until deleted. Removing a computer deletes its tokens; a clone gets none.
+- Everyone with access sees all of the computer's tokens and who created them; they can revoke their own, admins can revoke any. A token lives no longer than its creator's access: when the creator loses access to the computer or the account is deleted, their tokens for it are revoked.
 - Every agent API call is logged by the supervisor with the token's name: the command line for exec, the path for files, connect and disconnect for shells and the browser.
 
 ## The agent API
 
-All under `/api/agent/v1/`, authenticated with `Authorization: Bearer <token>` (no cookies, so no CSRF checks; the session cookie is never accepted here). The computer is the token's; a stopped computer answers 409 with "alice is stopped; an admin or someone with access can start it".
+All under `/api/agent/v1/`, authenticated with `Authorization: Bearer <token>` (no cookies, so no CSRF checks; the session cookie is never accepted here). The computer is the token's; a stopped computer answers 409 with "alice is stopped; someone with access can start it" (decided: agents can't start computers).
 
 | Endpoint | What |
 | --- | --- |
@@ -359,11 +362,11 @@ A regular account sees only its computers, with no New computer and a shorter me
 
 ![The computers page, as a regular account](2026-10-21-supervisor-design/computers-user.png)
 
-**Computer**: bigger live screen with Open desktop; who's viewing; facts (status, image and version, folder, limits, access, agent tokens); charts; tabs Processes, Logs, and for admins Settings, Access and Agents.
+**Computer**: bigger live screen with Open desktop; who's viewing; facts (status, image and version, folder, limits, access, agent tokens); charts; tabs Processes, Logs, Agents, and for admins Settings and Access.
 
 ![One computer's page](2026-10-21-supervisor-design/computer.png)
 
-**Agents** tab (admin): the computer's agent tokens with name, who created them, expiry and last use; New token; Revoke.
+**Agents** tab (anyone with access): the computer's agent tokens with name, who created them, expiry and last use; New token; Revoke (own tokens, or any for admins).
 
 ![A computer's agent tokens](2026-10-21-supervisor-design/agents.png)
 
