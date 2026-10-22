@@ -15,8 +15,9 @@ import (
 )
 
 type settingsJSON struct {
-	MemoryBytes int64 `json:"memoryBytes"`
-	NanoCPUs    int64 `json:"nanoCpus"`
+	MemoryBytes int64  `json:"memoryBytes"`
+	NanoCPUs    int64  `json:"nanoCpus"`
+	Camera      string `json:"camera"` // the host device, "" for none
 }
 
 type statsJSON struct {
@@ -41,6 +42,7 @@ type desktopJSON struct {
 	Access          []string            `json:"access"`
 	Viewers         []string            `json:"viewers"`
 	Mics            []string            `json:"mics"`
+	Cams            []string            `json:"cams"`
 	Webcam          bool                `json:"webcam"`
 	Forwards        []forwardJSON       `json:"forwards"`
 	Agents          []activity.Presence `json:"agents"`
@@ -52,9 +54,9 @@ func (s *Server) desktopJSON(ctx context.Context, c desktops.Desktop, a accounts
 	j := desktopJSON{
 		ID: c.ID, Name: c.Name, State: c.State, Folder: c.Folder, Image: c.Image,
 		ImageTitle: c.ImageLabels["org.opencontainers.image.title"], ImageVersion: c.ImageLabels["org.opencontainers.image.version"],
-		Settings: settingsJSON{c.Settings.MemoryBytes, c.Settings.NanoCPUs},
+		Settings: settingsJSON{c.Settings.MemoryBytes, c.Settings.NanoCPUs, c.Settings.Camera},
 		Access:   []string{}, Viewers: s.viewers.names(c.Name),
-		Mics: s.viewers.mics(c.Name), Webcam: c.Webcam(), Forwards: s.forwards.list(c.Name), Agents: s.activity.Present(c.Name),
+		Mics: s.viewers.mics(c.Name), Cams: s.viewers.cams(c.Name), Webcam: c.Webcam(), Forwards: s.forwards.list(c.Name), Agents: s.activity.Present(c.Name),
 	}
 	if !c.Created.IsZero() {
 		j.Created = &c.Created
@@ -134,7 +136,38 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"cpus": info.CPUs, "memBytes": info.MemBytes, "running": running, "total": total, "memUsed": memUsed,
+		"cameras": s.hostCameras(list, a),
 	})
+}
+
+// cameraJSON is one of the host's virtual cameras and the desktop that has it
+// (named only to accounts that may see that desktop; taken either way).
+type cameraJSON struct {
+	Device  string `json:"device"`
+	Taken   bool   `json:"taken"`
+	Desktop string `json:"desktop,omitempty"`
+}
+
+// hostCameras is null when the engine isn't on this machine: its host's
+// cameras can't be seen from here.
+func (s *Server) hostCameras(list []desktops.Desktop, a accounts.Account) []cameraJSON {
+	if !s.Desktops.Cfg.LocalEngine {
+		return nil
+	}
+	out := []cameraJSON{}
+	for _, dev := range s.Desktops.HostCameras() {
+		cam := cameraJSON{Device: dev}
+		for _, c := range list {
+			if c.Settings.Camera == dev {
+				cam.Taken = true
+				if a.HasAccess(c.ID) {
+					cam.Desktop = c.Name
+				}
+			}
+		}
+		out = append(out, cam)
+	}
+	return out
 }
 
 func (s *Server) handleValidateName(w http.ResponseWriter, r *http.Request) {
@@ -223,6 +256,7 @@ func (s *Server) handleUpdateDesktop(w http.ResponseWriter, r *http.Request) {
 		Image       *string `json:"image"`
 		MemoryBytes *int64  `json:"memoryBytes"`
 		NanoCPUs    *int64  `json:"nanoCpus"`
+		Camera      *string `json:"camera"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad request")
@@ -241,6 +275,16 @@ func (s *Server) handleUpdateDesktop(w http.ResponseWriter, r *http.Request) {
 	if set.MemoryBytes < 0 || set.NanoCPUs < 0 {
 		writeError(w, http.StatusBadRequest, "limits can't be negative")
 		return
+	}
+	if req.Camera != nil {
+		set.Camera = *req.Camera
+		if set.Camera != "" && set.Camera != c.Settings.Camera {
+			// Checked again when the container is made, against a race.
+			if err := s.Desktops.CheckCamera(r.Context(), c.Name, set.Camera); err != nil {
+				writeError(w, errorStatus(err), err.Error())
+				return
+			}
+		}
 	}
 	s.startRecreate(w, a, c.Name, set, "upgrading")
 }

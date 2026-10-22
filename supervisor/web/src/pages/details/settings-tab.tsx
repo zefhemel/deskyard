@@ -1,9 +1,10 @@
 import { useState } from "preact/hooks";
-import { api, type Desktop } from "../../api.ts";
+import { api, type Desktop, type Host } from "../../api.ts";
 import { cpuOptions, ImagePick, memoryOptions } from "../../components/desktop-fields.tsx";
 import { JobProgress, useJob } from "../../components/job.tsx";
 import { notify } from "../../components/toast.tsx";
 import { Button, ErrorText, Field, Note, Seg } from "../../components/ui.tsx";
+import { useLive } from "../../live.tsx";
 import { useFetch } from "../../lib/use-fetch.ts";
 import { UPGRADE_NOTE } from "../../dialogs/upgrade.tsx";
 
@@ -12,11 +13,14 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
   const [image, setImage] = useState(c.image);
   const [memory, setMemory] = useState(c.settings.memoryBytes);
   const [cpus, setCpus] = useState(c.settings.nanoCpus);
+  const [camera, setCamera] = useState(c.settings.camera);
+  const { host } = useLive();
   const run = useJob(() => notify(`${c.name}'s settings are saved`));
 
-  const changed = image !== c.image || memory !== c.settings.memoryBytes || cpus !== c.settings.nanoCpus;
+  const changed = image !== c.image || memory !== c.settings.memoryBytes || cpus !== c.settings.nanoCpus || camera !== c.settings.camera;
   const save = () => {
-    const body: { image?: string; memoryBytes?: number; nanoCpus?: number } = {};
+    const body: { image?: string; memoryBytes?: number; nanoCpus?: number; camera?: string } = {};
+    if (camera !== c.settings.camera) body.camera = camera;
     if (image !== c.image) body.image = image;
     if (memory !== c.settings.memoryBytes) body.memoryBytes = memory;
     if (cpus !== c.settings.nanoCpus) body.nanoCpus = cpus;
@@ -44,6 +48,9 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
         <Field label="CPUs">
           <Seg label="CPUs" options={cpuOptions(cpus)} value={cpus} onChange={setCpus} />
         </Field>
+        <Field label="Camera">
+          <CameraPick desktop={c} host={host} value={camera} onChange={setCamera} />
+        </Field>
       </fieldset>
       {changed && (
         <Note>
@@ -63,6 +70,7 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
               setImage(c.image);
               setMemory(c.settings.memoryBytes);
               setCpus(c.settings.nanoCpus);
+              setCamera(c.settings.camera);
             }}
           >
             Undo changes
@@ -70,5 +78,35 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
         )}
       </div>
     </form>
+  );
+}
+
+/**
+ * The host's virtual camera this desktop has to itself, which its viewers'
+ * webcams feed. One desktop per camera: another desktop's can't be picked.
+ */
+function CameraPick({ desktop: c, host, value, onChange }: { desktop: Desktop; host: Host | null; value: string; onChange: (v: string) => void }) {
+  const cameras = host?.cameras;
+  if (cameras === null) {
+    return <p class="m-0 text-sm text-muted">Cameras aren't available here: the container engine isn't on this machine.</p>;
+  }
+  if (!cameras?.length && !value) {
+    return <p class="m-0 text-sm text-muted">This machine has no virtual camera for desktops (v4l2loopback).</p>;
+  }
+  const list = cameras ?? [];
+  return (
+    <select aria-label="Camera" value={value} onChange={(e) => onChange(e.currentTarget.value)}>
+      <option value="">None</option>
+      {list.map((cam) => {
+        const other = cam.taken && cam.device !== c.settings.camera;
+        return (
+          <option key={cam.device} value={cam.device} disabled={other}>
+            {cam.device}
+            {other ? ` (${cam.desktop ?? "another desktop"} has it)` : ""}
+          </option>
+        );
+      })}
+      {value && !list.some((cam) => cam.device === value) && <option value={value}>{value} (gone from this machine)</option>}
+    </select>
   );
 }

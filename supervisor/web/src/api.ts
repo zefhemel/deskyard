@@ -11,6 +11,16 @@ export interface Host {
   running: number;
   total: number;
   memUsed: number;
+  /** The host's virtual cameras; null when the engine isn't on this machine. */
+  cameras: HostCamera[] | null;
+}
+
+/** A host's virtual camera (v4l2loopback) and the desktop that has it, if any. */
+export interface HostCamera {
+  device: string;
+  taken: boolean;
+  /** Named only when this account can see that desktop. */
+  desktop?: string;
 }
 
 export type DesktopState = "running" | "stopped" | "starting" | "creating" | "upgrading" | "removing";
@@ -24,6 +34,8 @@ export interface Stats {
 export interface Settings {
   memoryBytes: number;
   nanoCpus: number;
+  /** The host's virtual camera this desktop has to itself; "" for none. */
+  camera: string;
 }
 
 export interface Desktop {
@@ -44,7 +56,9 @@ export interface Desktop {
   viewers: string[];
   /** Viewers with a mic on (per stream; gone when the stream closes). */
   mics: string[];
-  /** Whether the running desktop has a virtual camera (the host's v4l2loopback). */
+  /** Viewers with a camera on (per stream, as mics). */
+  cams: string[];
+  /** Whether the running desktop has its virtual camera (settings.camera). */
   webcam: boolean;
   /** Port mappings agents have set up with `deskyard forward`; port is the desktop's. */
   forwards: Forward[];
@@ -146,6 +160,7 @@ export interface ViewersEvent {
   name: string;
   viewers: string[];
   mics: string[];
+  cams: string[];
   forwards: Forward[];
   agents: AgentPresence[];
 }
@@ -265,7 +280,7 @@ export const api = {
     request<JobRef>("POST", "/api/desktops", body),
   power: (name: string, action: "start" | "stop" | "restart") => request<void>("POST", `${c(name)}/${action}`),
   removeDesktop: (name: string, files: boolean) => request<void>("DELETE", c(name) + (files ? "?files=1" : "")),
-  updateSettings: (name: string, body: { image?: string; memoryBytes?: number; nanoCpus?: number }) =>
+  updateSettings: (name: string, body: { image?: string; memoryBytes?: number; nanoCpus?: number; camera?: string }) =>
     request<JobRef>("PATCH", c(name), body),
   setAccess: (name: string, usernames: string[]) => request<void>("PUT", `${c(name)}/access`, { usernames }),
   processes: (name: string) => request<Processes>("GET", `${c(name)}/processes`),
@@ -273,8 +288,12 @@ export const api = {
   stats: (name: string) => request<StatsHistory>("GET", `${c(name)}/stats`),
   folder: (name: string) => request<FolderSize>("GET", `${c(name)}/folder`),
   keys: (name: string, keys: string) => request<void>("POST", `${c(name)}/keys`, { keys }),
-  /** This page's mic badge: tab is the frame's tab id, as on its stream. */
-  mic: (name: string, on: boolean, tab: string) => request<void>("POST", `${c(name)}/mic`, { on, tab }),
+  /**
+   * This page's mic or camera badge: tab is the frame's tab id, as on its
+   * stream; seq numbers the page's reports, so a late one never undoes a newer.
+   */
+  capture: (name: string, kind: "mic" | "cam", on: boolean, tab: string, seq: number) =>
+    request<void>("POST", `${c(name)}/${kind}`, { on, tab, seq }),
   upgrade: (name: string) => request<JobRef>("POST", `${c(name)}/upgrade`),
   validateName: (name: string) => request<NameCheck>("GET", `/api/validate-name?name=${enc(name)}`),
   screenUrl: (name: string, opts: { full?: boolean; bust?: number } = {}) => {

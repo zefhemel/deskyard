@@ -325,28 +325,32 @@ func validTab(tab string) bool {
 	return true
 }
 
-// handleMic records whether the mic of one of the account's streams (the one
-// from that browser tab) is on, for everyone's mic badges. The badge goes
-// with the stream.
-func (s *Server) handleMic(w http.ResponseWriter, r *http.Request) {
-	c, a, ok := s.desktopFor(w, r, auth.View)
-	if !ok {
-		return
+// handleCapture records whether the mic or the camera ({kind}) of one of the
+// account's streams (the one from that browser tab) is on, for everyone's
+// badges. The badge goes with the stream. The page numbers its reports
+// (seq), so a late one never undoes a newer one.
+func (s *Server) handleCapture(kind capture) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c, a, ok := s.desktopFor(w, r, auth.View)
+		if !ok {
+			return
+		}
+		var req struct {
+			On  bool   `json:"on"`
+			Tab string `json:"tab"`
+			Seq int64  `json:"seq"`
+		}
+		if err := readJSON(r, &req); err != nil || req.Tab == "" || !validTab(req.Tab) || req.Seq < 0 {
+			writeError(w, http.StatusBadRequest, `{"on": bool, "tab": id, "seq": number} expected`)
+			return
+		}
+		if !s.viewers.setCapture(c.Name, a.Username, req.Tab, kind, req.On, req.Seq) {
+			writeError(w, http.StatusConflict, "no stream from that tab")
+			return
+		}
+		s.publishViewers(c.Name, c.ID)
+		w.WriteHeader(http.StatusNoContent)
 	}
-	var req struct {
-		On  bool   `json:"on"`
-		Tab string `json:"tab"`
-	}
-	if err := readJSON(r, &req); err != nil || req.Tab == "" || !validTab(req.Tab) {
-		writeError(w, http.StatusBadRequest, `{"on": bool, "tab": id} expected`)
-		return
-	}
-	if !s.viewers.setMic(c.Name, a.Username, req.Tab, req.On) {
-		writeError(w, http.StatusConflict, "no stream from that tab")
-		return
-	}
-	s.publishViewers(c.Name, c.ID)
-	w.WriteHeader(http.StatusNoContent)
 }
 
 // clientFiles extracts Selkies' web client from desktop images (never from

@@ -4,7 +4,6 @@
 package desktops
 
 import (
-	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -16,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"sync"
@@ -50,6 +50,9 @@ type Settings struct {
 	Image       string
 	MemoryBytes int64 // 0: no limit
 	NanoCPUs    int64 // 0: no limit
+	// Camera is the host's virtual camera (a v4l2loopback /dev/videoN) the
+	// desktop has to itself, which viewers' webcams feed; "" for none.
+	Camera string
 }
 
 // Desktop is what the supervisor knows about one desktop, read from its container.
@@ -74,6 +77,9 @@ type Config struct {
 	InContainer bool
 	SelfID      string // the supervisor's own container, when InContainer
 	SysDir      string // the host's /sys, for its virtual cameras ("" is /sys)
+	// LocalEngine: the engine runs on this machine (a unix socket), so the
+	// host's cameras are the ones in SysDir. Elsewhere there are none to give.
+	LocalEngine bool
 }
 
 type Service struct {
@@ -84,6 +90,7 @@ type Service struct {
 	mu      sync.Mutex
 	busy    map[string]string // name → transient state
 	imgInfo map[string]engine.Image
+	camMu   sync.Mutex // held while a camera is checked and given
 }
 
 func New(e engine.Engine, cfg Config, log *slog.Logger) *Service {
@@ -149,7 +156,7 @@ func (s *Service) fromContainer(ctx context.Context, c engine.Container) Desktop
 	comp := Desktop{
 		ID: c.Labels[LabelID], Name: name, Image: c.Image, ImageID: c.ImageID,
 		StartedAt: c.StartedAt, Folder: filepath.Join(s.Cfg.DataDir, name), Container: c,
-		Settings: Settings{Image: c.Image, MemoryBytes: c.MemoryBytes, NanoCPUs: c.NanoCPUs},
+		Settings: Settings{Image: c.Image, MemoryBytes: c.MemoryBytes, NanoCPUs: c.NanoCPUs, Camera: cameraOf(c.Devices)},
 	}
 	comp.Created, _ = time.Parse(time.RFC3339, c.Labels[LabelCreated])
 	comp.ImageLabels = s.image(ctx, c.ImageID).Labels
@@ -365,7 +372,14 @@ func (s *Service) createContainer(ctx context.Context, name, id, token string, c
 		Network: containerName(name), Aliases: []string{containerName(name)},
 		MemoryBytes: set.MemoryBytes, NanoCPUs: set.NanoCPUs, ShmBytes: shmBytes,
 		Flatpak: true, Restart: "unless-stopped",
-		Devices: Cameras(cmp.Or(s.Cfg.SysDir, "/sys")),
+	}
+	if set.Camera != "" {
+		s.camMu.Lock()
+		defer s.camMu.Unlock()
+		if err := s.cameraFree(ctx, name, set.Camera); err != nil {
+			return err
+		}
+		spec.Devices = []string{set.Camera}
 	}
 	if !s.Cfg.InContainer {
 		zero := 0
@@ -428,8 +442,22 @@ func (s *Service) Recreate(ctx context.Context, name string, set Settings, progr
 	return s.Get(ctx, name)
 }
 
+// Start starts a stopped desktop. One whose camera has gone from the host
+// (the module unloaded, a reboot without it) can't start with it, so it is
+// recreated without the camera, which is logged, and started.
 func (s *Service) Start(ctx context.Context, name string) error {
-	if _, err := s.Get(ctx, name); err != nil {
+	c, err := s.Get(ctx, name)
+	if err != nil {
+		return err
+	}
+	err = s.Eng.Start(ctx, containerName(name))
+	if err == nil || c.Settings.Camera == "" || slices.Contains(s.HostCameras(), c.Settings.Camera) {
+		return err
+	}
+	s.Log.Warn("camera gone from the host; recreating the desktop without it", "desktop", name, "camera", c.Settings.Camera, "err", err)
+	set := c.Settings
+	set.Camera = ""
+	if _, err := s.Recreate(ctx, name, set, func(string, float64) {}); err != nil {
 		return err
 	}
 	return s.Eng.Start(ctx, containerName(name))

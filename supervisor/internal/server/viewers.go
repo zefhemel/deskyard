@@ -9,15 +9,27 @@ import (
 )
 
 // viewers tracks the open desktop streams per desktop, with the account
-// each belongs to, the browser tab it comes from, whether that tab's mic is
-// on, and a way to close it (when access is revoked).
+// each belongs to, the browser tab it comes from, whether that tab's mic and
+// camera are on, and a way to close it (when access is revoked).
 type conn struct {
 	username  string
 	tab       string // the page's id for its browser tab ("" if it sent none)
 	desktopID string
 	cancel    context.CancelFunc
-	mic       bool // guarded by viewers.mu
+	// guarded by viewers.mu: what the tab's page last said, and the sequence
+	// number it said it with (a page numbers its reports; older ones lose).
+	on  [captureKinds]bool
+	seq [captureKinds]int64
 }
+
+// A capture a page reports for everyone's badges.
+type capture int
+
+const (
+	captureMic capture = iota
+	captureCam
+	captureKinds
+)
 
 type viewers struct {
 	mu     sync.Mutex
@@ -58,27 +70,42 @@ func (v *viewers) names(name string) []string {
 	return out
 }
 
-// setMic turns the mic badge of an account's stream from one tab on or off.
-// It reports false when that account has no stream from that tab.
-func (v *viewers) setMic(name, username, tab string, on bool) bool {
+// setCapture turns the mic or camera badge of an account's stream from one
+// tab on or off. seq orders a page's reports: one numbered no higher than the
+// last applied for that capture is ignored (0 is unnumbered and always
+// applies). It reports false when that account has no stream from that tab.
+func (v *viewers) setCapture(name, username, tab string, kind capture, on bool, seq int64) bool {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	found := false
 	for c := range v.byName[name] {
-		if c.username == username && c.tab == tab {
-			c.mic, found = on, true
+		if c.username != username || c.tab != tab {
+			continue
+		}
+		found = true
+		if seq > 0 && seq <= c.seq[kind] {
+			continue
+		}
+		c.on[kind] = on
+		if seq > 0 {
+			c.seq[kind] = seq
 		}
 	}
 	return found
 }
 
 // mics lists the accounts with a mic on in a desktop, each once, sorted.
-func (v *viewers) mics(name string) []string {
+func (v *viewers) mics(name string) []string { return v.capturing(name, captureMic) }
+
+// cams lists the accounts with a camera on in a desktop, each once, sorted.
+func (v *viewers) cams(name string) []string { return v.capturing(name, captureCam) }
+
+func (v *viewers) capturing(name string, kind capture) []string {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	out := []string{}
 	for c := range v.byName[name] {
-		if c.mic && !slices.Contains(out, c.username) {
+		if c.on[kind] && !slices.Contains(out, c.username) {
 			out = append(out, c.username)
 		}
 	}
@@ -118,7 +145,7 @@ func (s *Server) publishViewers(name, desktopID string) {
 
 func (s *Server) sendViewers(name, desktopID string) {
 	s.events.publish(event{kind: "viewers", desktopID: desktopID,
-		data: map[string]any{"name": name, "viewers": s.viewers.names(name), "mics": s.viewers.mics(name), "forwards": s.forwards.list(name),
+		data: map[string]any{"name": name, "viewers": s.viewers.names(name), "mics": s.viewers.mics(name), "cams": s.viewers.cams(name), "forwards": s.forwards.list(name),
 			"agents": s.activity.Present(name)}})
 }
 

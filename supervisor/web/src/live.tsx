@@ -105,7 +105,7 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
     });
     es.addEventListener("viewers", (e: MessageEvent<string>) => {
       const v = JSON.parse(e.data) as ViewersEvent;
-      setDesktops((list) => (list ? list.map((c) => (c.name === v.name ? { ...c, viewers: v.viewers, mics: v.mics, forwards: v.forwards, agents: v.agents ?? c.agents } : c)) : list));
+      setDesktops((list) => (list ? list.map((c) => (c.name === v.name ? { ...c, viewers: v.viewers, mics: v.mics, cams: v.cams, forwards: v.forwards, agents: v.agents ?? c.agents } : c)) : list));
     });
     es.addEventListener("activity", (e: MessageEvent<string>) => {
       const a = JSON.parse(e.data) as ActivityEvent;

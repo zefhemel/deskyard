@@ -14,12 +14,24 @@ export function thumbBust(now: number): number {
   return Math.floor(now / 10000);
 }
 
-export function ViewersBadge({ viewers, mics = [], agents = [], long }: { viewers: string[]; mics?: string[]; agents?: AgentPresence[]; long?: boolean }) {
+export function ViewersBadge({
+  viewers,
+  mics = [],
+  cams = [],
+  agents = [],
+  long,
+}: {
+  viewers: string[];
+  mics?: string[];
+  cams?: string[];
+  agents?: AgentPresence[];
+  long?: boolean;
+}) {
   if (!viewers.length && !agents.length) return null;
   const label = badgeLabel(viewers, agents, long);
   return (
     <span class="absolute top-2.5 left-2.5 inline-flex items-center gap-1.5 rounded-full bg-[rgba(15,21,29,.78)] py-[3px] pr-[9px] pl-1 text-[12.5px] font-semibold text-white">
-      <Avatars names={viewers} mics={mics} agents={agents} ring={glassRing} size={22} />
+      <Avatars names={viewers} mics={mics} cams={cams} agents={agents} ring={glassRing} size={22} />
       {label}
     </span>
   );
@@ -55,7 +67,7 @@ export function Monitor({ desktop: c, job, now, big }: MonitorProps) {
           onError={() => setBroken(true)}
           onLoad={() => setBroken(false)}
         />
-        <ViewersBadge viewers={c.viewers} mics={c.mics} agents={c.agents} long={big} />
+        <ViewersBadge viewers={c.viewers} mics={c.mics} cams={c.cams} agents={c.agents} long={big} />
         <span
           class={cx(
             "absolute rounded-[7px] bg-accent font-semibold text-white shadow-[0_6px_16px_-6px_rgba(10,16,24,.6)] transition-opacity",

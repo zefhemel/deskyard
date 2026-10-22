@@ -94,7 +94,7 @@ export interface DeskyardScreen {
   on(type: "deskyard.state", fn: (state: ConnectionState) => void): () => void;
   on(type: "deskyard.display", fn: (display: Display) => void): () => void;
   on(type: "deskyard.media", fn: (media: Media) => void): () => void;
-  on(type: "deskyard.alert", fn: (text: string) => void): () => void;
+  on(type: "deskyard.alert", fn: (alert: { kind: Capture; text: string }) => void): () => void;
   on(type: string, fn: (data: Record<string, unknown>) => void): () => void;
   state(): ConnectionState;
   display(): Display;

@@ -75,13 +75,19 @@ func newTestServer(t *testing.T) (*Server, *httptest.Server) {
 }
 
 func newTestServerWith(t *testing.T, e fakeEngine) (*Server, *httptest.Server) {
+	return newTestServerCfg(t, e, desktops.Config{Subnet: "10.0.0.0/16"})
+}
+
+// newTestServerCfg is newTestServerWith with the desktops' config (DataDir is set here).
+func newTestServerCfg(t *testing.T, e fakeEngine, cfg desktops.Config) (*Server, *httptest.Server) {
 	dir := t.TempDir()
+	cfg.DataDir = dir
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	accts, _ := accounts.Load(dir)
 	_, _ = accts.EnsureAdmin("admin", "pw")
 	_, _ = accts.Create("anna", "pw", false, nil)
 	s, err := New(Options{Log: log, Eng: e, Accounts: accts, StateDir: dir, DefaultImage: "img",
-		Desktops: desktops.New(e, desktops.Config{DataDir: dir, Subnet: "10.0.0.0/16"}, log),
+		Desktops: desktops.New(e, cfg, log),
 		UI:       fstest.MapFS{"index.html": {Data: []byte("<!doctype html>ui")}, "assets/a.js": {Data: []byte("js")}}})
 	if err != nil {
 		t.Fatal(err)

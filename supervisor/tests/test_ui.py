@@ -735,6 +735,29 @@ def test_sound_per_viewer(supervisor, desktop, name):
     in_desktop(name, "pkill", "paplay", check=False)
 
 
+def test_joiner_keeps_owner_sound(supervisor, desktop, name):
+    # Pages joining beside the owner with their sound off (first visits)
+    # don't turn the owner's sound off.
+    play_tone(name)
+    with sync_playwright() as p:
+        browser = p.chromium.launch(args=["--autoplay-policy=no-user-gesture-required"])
+        a = sign_in(browser, supervisor.base)
+        open_desktop(a, supervisor.base, name)
+        a.wait_for_function(f"{SCREEN}.display().owner === true", timeout=15000)
+        audio_switch(a, "Desktop sound").click()
+        assert wait_until(lambda: quiet(a) < 1.5, 10), quiet(a)
+        for _ in range(2):
+            b = sign_in(browser, supervisor.base)
+            open_desktop(b, supervisor.base, name)
+            time.sleep(4)
+            assert quiet(a) < 1.5 and a.evaluate(f"{MEDIA}.sound"), quiet(a)
+            assert quiet(b) > 2.5, quiet(b)
+            b.context.close()
+            time.sleep(2)
+        browser.close()
+    in_desktop(name, "pkill", "paplay", check=False)
+
+
 def test_mic_badge_and_reload(supervisor, admin, desktop, name, tmp_path):
     # The mic goes into the desktop, where apps hear it, and everyone sees
     # the badge. After a reload it's off, and the badge is gone.
@@ -770,6 +793,57 @@ def test_mic_badge_and_reload(supervisor, admin, desktop, name, tmp_path):
         time.sleep(2)
         assert page.evaluate(f"{MEDIA}.mic") is False
         assert admin.desktop(name)["mics"] == []
+        browser.close()
+
+
+def test_mic_quick_off_on_keeps_badge(supervisor, admin, desktop, name, tmp_path):
+    # Off and straight back on (a double click): the mic ends up live, and
+    # so does its badge. The badge always matches the live mic.
+    tone = tone_file(tmp_path / "t.wav", 700)
+    with sync_playwright() as p:
+        browser = mic_browser(p, tone)
+        page = sign_in(browser, supervisor.base)
+        open_desktop(page, supervisor.base, name)
+        mic = audio_switch(page, "My mic")
+        mic.click()
+        page.wait_for_function(f"{MEDIA}.mic", timeout=15000)
+        expect(mic_badge(page, "admin")).to_be_visible(timeout=10000)
+        outcomes = []
+        for delay in (0, 50, 150):
+            mic.click()
+            page.wait_for_timeout(delay)
+            mic.click()
+            time.sleep(4)
+            outcomes.append((delay, page.evaluate(f"{MEDIA}.mic"), admin.desktop(name)["mics"], mic.get_attribute("aria-checked")))
+        assert all(live and mics == ["admin"] and on == "true" for _, live, mics, on in outcomes), outcomes
+        # And on and straight back off: off, with no badge.
+        mic.click()
+        page.wait_for_function(f"!{MEDIA}.mic", timeout=10000)
+        expect(mic_badge(page, "admin")).to_have_count(0, timeout=10000)
+        mic.click()
+        mic.click()
+        time.sleep(4)
+        assert page.evaluate(f"{MEDIA}.mic") is False
+        assert admin.desktop(name)["mics"] == []
+        browser.close()
+
+
+def test_cam_badge(supervisor, admin, desktop, name):
+    # Whose camera is on shows like the mic, from the page's report on its
+    # stream. (Numbered past the page's own reports, which come first.)
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base)
+        open_desktop(page, supervisor.base, name)
+        tab = page.evaluate(f"{SCREEN}.tab")
+        r = page.evaluate("""async (tab) => (await fetch(location.pathname.replace(/\\/$/, '').replace(/^\\//, '/api/desktops/') + '/cam',
+            {method: 'POST', body: JSON.stringify({on: true, tab, seq: 1e9})})).status""", tab)
+        assert r == 204
+        expect(page.locator('[data-avatar="admin"] [data-cam-badge]')).to_be_visible(timeout=10000)
+        assert admin.desktop(name)["cams"] == ["admin"]
+        page.reload()
+        open_desktop(page, supervisor.base, name)
+        expect(page.locator('[data-avatar="admin"] [data-cam-badge]')).to_have_count(0, timeout=10000)
+        assert admin.desktop(name)["cams"] == []
         browser.close()
 
 
@@ -813,7 +887,12 @@ def test_two_mics(supervisor, admin, desktop, name, tmp_path):
             assert wait_until(lambda: admin.desktop(name)["viewers"] == [user])
             time.sleep(2)
             assert admin.desktop(name)["mics"] == [user]
-            assert wait_until(lambda: hears(name, 1300), 20, 1)
+            assert b.evaluate(f"{MEDIA}.mic") is True
+            if not wait_until(lambda: hears(name, 1300), 20, 1):
+                # Seen in 2 of ~20 runs (unexplained); what the sound server had then.
+                state = docker("exec", "-u", "user", f"deskyard-{name}", "bash", "-lc",
+                               "pactl info | grep Default; pactl list short sinks; pactl list short sources; pactl list short sink-inputs").stdout
+                raise AssertionError(f"B's mic no longer reaches the desktop; B: {b.evaluate(f'JSON.stringify({MEDIA})')}\n{state}")
             bb.close()
     finally:
         admin.delete(f"/api/accounts/{user}")
@@ -830,4 +909,7 @@ def test_webcam_disabled_without_device(supervisor, admin, desktop, name, browse
         camera = audio_switch(page, "My camera")
         expect(camera).to_be_disabled()
         expect(page.get_by_role("dialog", name="Audio").get_by_text("This machine has no virtual camera for desktops")).to_be_visible()
+        # An admin can't give it one either.
+        page.goto(f"{supervisor.base}/desktops/{name}?tab=settings")
+        expect(page.get_by_text("This machine has no virtual camera for desktops (v4l2loopback).")).to_be_visible(timeout=15000)
         browser.close()

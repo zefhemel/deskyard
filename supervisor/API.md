@@ -12,7 +12,7 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 | `POST /api/logout` | | 204, clears the cookie |
 | `GET /api/me` | | `Me` = `{"username","admin":bool}` |
 | `POST /api/me/password` | `{"current","new"}` | 204 (signs out everywhere else; the response re-issues this session) |
-| `GET /api/host` | | `{"cpus":n,"memBytes":n,"running":n,"total":n,"memUsed":n}` (counts over desktops the account can see) |
+| `GET /api/host` | | `{"cpus":n,"memBytes":n,"running":n,"total":n,"memUsed":n,"cameras":[{"device","taken","desktop"?}] or null}` (counts over desktops the account can see). `cameras` are the host's virtual cameras (v4l2loopback: `/dev/videoN` under `/sys/devices/virtual/video4linux`) and whether a desktop has each (named when the account can see it); null when the engine isn't on this machine (not a unix socket), whose cameras can't be seen |
 
 ### Desktops
 
@@ -27,10 +27,11 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
   "image": "ghcr.io/zefhemel/deskyard-debian-xfce:latest",
   "imageTitle": "Debian XFCE", "imageVersion": "2026.10.15",
   "updateAvailable": "2026.10.22" | null,
-  "settings": {"memoryBytes": 0, "nanoCpus": 0},
+  "settings": {"memoryBytes": 0, "nanoCpus": 0, "camera": ""},
   "access": ["anna"],
   "viewers": ["zef", "anna"],
   "mics": ["anna"],
+  "cams": [],
   "webcam": false,
   "forwards": [{"token": "deploy-bot", "direction": "in", "port": 3000}, {"token": "deploy-bot", "direction": "out", "port": 5173}],
   "agents": [{"id": "k3j9…", "name": "deploy-bot", "owner": "zef", "inside": false, "color": "#2457c5", "active": true, "lastActive": "…"}],
@@ -39,7 +40,7 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 }
 ```
 
-`memoryBytes`/`nanoCpus` 0 mean no limit; `memLimit` is then the host's memory. `cpuPercent` is relative to the desktop's CPU limit, or to all host CPUs without one (0–100). `access` lists regular accounts only (admins can use everything) and is only filled for admins. `viewers` are the accounts with a stream open (each once, sorted); `mics` those of them with a mic on, as their pages report it (see `POST /api/desktops/{name}/mic`). `webcam` is true while the desktop runs with a virtual camera: the supervisor passes the host's v4l2loopback devices (`/dev/video*` under `/sys/devices/virtual/video4linux`) into a desktop when its container is made, and viewers' webcams feed it. `forwards` are the port mappings agent tokens have open on the desktop (`deskyard forward`): `in` maps a port of the agent's machine into the desktop, `out` a desktop port out to the agent's machine; `port` is always the desktop's port (the agent's own port numbers aren't shown). Each entry is listed once, sorted by token, direction and port; an `in` port appears once the desktop is listening on it. `created` survives upgrades and settings changes (null for desktops made before it was recorded). `job` is the running create, upgrade or settings job, which anyone who can see the desktop may follow. `agents` are the agents present on the desktop (always a list, sorted by name then id): agent tokens (`id` is the token's id, `owner` the account that made it) and programs running inside the desktop (`inside: true`, `id` `inside:<program>`, `owner` empty). An agent is present while something it started is running, a browser connection or port mapping is open, or for 5 minutes after its last action; `active` means an action in the last 10 seconds; `color` is fixed per id. A desktop's own page is at `/<name>/`.
+`memoryBytes`/`nanoCpus` 0 mean no limit; `memLimit` is then the host's memory. `cpuPercent` is relative to the desktop's CPU limit, or to all host CPUs without one (0–100). `access` lists regular accounts only (admins can use everything) and is only filled for admins. `viewers` are the accounts with a stream open (each once, sorted); `mics` and `cams` those of them with a mic or camera on, as their pages report it (see `POST /api/desktops/{name}/mic`). `settings.camera` is the host's virtual camera the desktop has to itself ("" for none; an admin gives one in the settings), and `webcam` is true while it runs with it, for viewers' webcams to feed. `forwards` are the port mappings agent tokens have open on the desktop (`deskyard forward`): `in` maps a port of the agent's machine into the desktop, `out` a desktop port out to the agent's machine; `port` is always the desktop's port (the agent's own port numbers aren't shown). Each entry is listed once, sorted by token, direction and port; an `in` port appears once the desktop is listening on it. `created` survives upgrades and settings changes (null for desktops made before it was recorded). `job` is the running create, upgrade or settings job, which anyone who can see the desktop may follow. `agents` are the agents present on the desktop (always a list, sorted by name then id): agent tokens (`id` is the token's id, `owner` the account that made it) and programs running inside the desktop (`inside: true`, `id` `inside:<program>`, `owner` empty). An agent is present while something it started is running, a browser connection or port mapping is open, or for 5 minutes after its last action; `active` means an action in the last 10 seconds; `color` is fixed per id. A desktop's own page is at `/<name>/`.
 
 | Method and path | Body | Response |
 | --- | --- | --- |
@@ -48,7 +49,7 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 | `POST /api/desktops` (admin) | `{"name","image","memoryBytes","nanoCpus","access":[usernames]}` | 202 `{"job": id}` |
 | `POST /api/desktops/{name}/start` \| `stop` \| `restart` | | 204 |
 | `DELETE /api/desktops/{name}?files=1` (admin) | | 204; `files=1` also deletes the workspace folder |
-| `PATCH /api/desktops/{name}` (admin) | `{"image"?, "memoryBytes"?, "nanoCpus"?}` | 202 `{"job": id}` (recreates the container) |
+| `PATCH /api/desktops/{name}` (admin) | `{"image"?, "memoryBytes"?, "nanoCpus"?, "camera"?}` | 202 `{"job": id}` (recreates the container); 400 for a camera that isn't one of the host's, 409 for one another desktop has. `camera` is a device from `GET /api/host`'s `cameras`, or "" for none. A desktop whose camera has gone from the host (when it's started) is recreated without it, which is logged |
 | `PUT /api/desktops/{name}/access` (admin) | `{"usernames":[…]}` | 204 |
 | `GET /api/desktops/{name}/screen.png` | `?full=1` for full size | PNG, 480 px wide by default; 409 when stopped |
 | `GET /api/desktops/{name}/processes` | | `{"titles":[…],"rows":[[…]]}` (columns PID, USER, %CPU, RSS (KiB), ELAPSED, COMMAND) |
@@ -57,7 +58,7 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 | `GET /api/desktops/{name}/activity` | | `Activity` (below) |
 | `GET /api/desktops/{name}/screen-events` | | server-sent events (below) |
 | `POST /api/desktops/{name}/keys` | `{"keys":"ctrl+alt+Delete"}` (xdotool syntax) | 204 |
-| `POST /api/desktops/{name}/mic` | `{"on":bool,"tab":id}` | 204; 400 without a valid `tab`; 409 when the account has no stream open from that tab. Sets the mic badge of the stream opened with `?tab=<id>` (see Desktop below); the badge goes when that stream closes |
+| `POST /api/desktops/{name}/mic`, `…/cam` | `{"on":bool,"tab":id,"seq"?:n}` | 204; 400 without a valid `tab` or with a negative `seq`; 409 when the account has no stream open from that tab. Sets the mic or camera badge of the stream opened with `?tab=<id>` (see Desktop below); the badge goes when that stream closes. `seq` numbers a page's reports: one numbered no higher than the last applied for that badge is ignored (still 204), so a late report never undoes a newer one |
 | `POST /api/desktops/{name}/upgrade` (admin) | | 202 `{"job": id}` |
 | `GET /api/validate-name?name=x` (admin) | | `{"ok":bool,"error"?:string,"folder":path,"folderExists":bool}` |
 
@@ -101,7 +102,7 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 - `event: desktop` — a `Desktop` that appeared or changed
 - `event: removed` — `{"name"}`
 - `event: stats` — `{"name","cpuPercent","memBytes","memLimit","t"}` every 5 s per running desktop
-- `event: viewers` — `{"name","viewers":[usernames],"mics":[usernames],"forwards":[…],"agents":[…]}` (as in `Desktop`), when someone starts or stops viewing, turns a mic on or off, or a mapping opens or closes (sent at most every 250 ms per desktop; the last state always follows), and at once when the agents present change (one arrives or leaves, or turns active or idle)
+- `event: viewers` — `{"name","viewers":[usernames],"mics":[usernames],"cams":[usernames],"forwards":[…],"agents":[…]}` (as in `Desktop`), when someone starts or stops viewing, turns a mic on or off, or a mapping opens or closes (sent at most every 250 ms per desktop; the last state always follows), and at once when the agents present change (one arrives or leaves, or turns active or idle)
 - `event: activity` — an `Activity` (as from `GET /api/desktops/{name}/activity`), when what agents do on the desktop changes (sent at most once a second per desktop; the last state always follows)
 
 ### Accounts (admin)

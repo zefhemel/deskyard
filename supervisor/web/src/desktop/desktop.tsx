@@ -110,7 +110,7 @@ function Centered({ children }: { children: ComponentChildren }) {
 }
 
 function Desktop({ desktop: c }: { desktop: Desktop }) {
-  const { me } = useLive();
+  const { me, host } = useLive();
   const { route } = useLocation();
   const frame = useRef<HTMLIFrameElement>(null);
   const [conn, setConn] = useState<ConnectionState>("connecting");
@@ -316,7 +316,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
               title={[...(c.viewers.length ? [names(c.viewers)] : []), ...c.agents.map(agentTitle)].join(", ")}
               onClick={() => (viewersOpen ? closeViewers() : setViewersOpen(true))}
             >
-              {(c.viewers.length > 0 || c.agents.length > 0) && <Avatars names={c.viewers} mics={c.mics} agents={c.agents} ring="var(--color-bar)" />}
+              {(c.viewers.length > 0 || c.agents.length > 0) && <Avatars names={c.viewers} mics={c.mics} cams={c.cams} agents={c.agents} ring="var(--color-bar)" />}
               {c.viewers.length > 0 && <span class="truncate max-md:hidden">{names(c.viewers)}</span>}
               {c.forwards.length > 0 && <span class="whitespace-nowrap">⇄ {c.forwards.length}</span>}
             </button>
@@ -325,7 +325,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
         <div class="ml-auto flex items-center gap-0.5">
           {showing && (
             <>
-              <AudioControl name={c.name} screen={screen} connected={conn === "connected"} webcam={c.webcam} />
+              <AudioControl name={c.name} screen={screen} connected={conn === "connected"} webcam={c.webcam} host={host} admin={me.admin} />
               <button
                 type="button"
                 aria-pressed={owner === true && locked !== null}
@@ -390,7 +390,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
           />
         </div>
         {viewersOpen && (c.viewers.length > 0 || c.forwards.length > 0 || c.agents.length > 0) && (
-          <ViewersPopover name={c.name} viewers={c.viewers} mics={c.mics} forwards={c.forwards} agents={c.agents} onClose={closeViewers} />
+          <ViewersPopover name={c.name} viewers={c.viewers} mics={c.mics} cams={c.cams} forwards={c.forwards} agents={c.agents} onClose={closeViewers} />
         )}
         {clipOpen && showing && (
           <ClipboardPopover

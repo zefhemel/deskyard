@@ -139,12 +139,12 @@
   // neither.
   const contexts = new Set();
   const capturing = new WeakSet();
-  let meterContext = null;
+  let makingMeter = false; // while our own meter's context is made
   const playback = () => {
     let last = null;
     for (const c of contexts) {
       if (c.state === "closed") contexts.delete(c);
-      else if (!capturing.has(c) && c !== meterContext) last = c;
+      else if (!capturing.has(c)) last = c;
     }
     return last;
   };
@@ -155,6 +155,7 @@
     window[name] = class extends Base {
       constructor(...args) {
         super(...args);
+        if (makingMeter) return;
         contexts.add(this);
         addListener.call(this, "statechange", notePlaying);
         notePlaying();
@@ -201,24 +202,28 @@
     allowed.webcam = false;
   };
 
-  // Selkies tells capture failures with alert(); the page shows them, and
-  // only for a capture it asked for.
+  // Selkies tells capture failures with alert(); the page gets them as
+  // {kind, text}, and only for a capture it asked for.
   const alerts = new Set();
   window.alert = (text) => {
     text = String(text);
     console.warn("Selkies:", text);
     const kind = /^Microphone/.test(text) ? "microphone" : /^Webcam/.test(text) ? "webcam" : null;
-    if (kind && !allowed[kind]) return;
-    for (const fn of alerts) try { fn(text); } catch {}
+    if (!kind || !allowed[kind]) return;
+    for (const fn of alerts) try { fn({ kind, text }); } catch {}
   };
 
   let meter = null;
+  let meterContext = null;
   const micLevel = () => {
     if (!media.mic || !micStream || micStream.getAudioTracks().every((t) => t.readyState !== "live")) return 0;
     try {
       if (!meter || meter.stream !== micStream) {
         if (meter) meter.source.disconnect();
-        meterContext ||= new AudioContext();
+        if (!meterContext) {
+          makingMeter = true;
+          try { meterContext = new AudioContext(); } finally { makingMeter = false; }
+        }
         if (meterContext.state === "suspended") meterContext.resume().catch(() => {});
         const analyser = meterContext.createAnalyser();
         analyser.fftSize = 1024;
@@ -302,6 +307,11 @@
       sendOwn = (data) => send.call(t, data);
       setDisplay({ owner: null, width: 0, height: 0, settings: null });
       forbid();
+      // A capture still live from the last connection stops: this one's
+      // page hasn't asked for it, and the last stream took its badge.
+      for (const [kind, live] of [["microphone", media.mic], ["webcam", media.webcam]]) {
+        if (live) window.postMessage({ type: "pipelineControl", pipeline: kind, enabled: false }, location.origin);
+      }
       setState(t.readyState === PageWebSocket.OPEN ? "connected" : "connecting");
       t.addEventListener("open", () => transport === t && setState("connected"));
       t.addEventListener("close", () => {
@@ -329,7 +339,8 @@
      * Calls fn with each message of that type from Selkies' client; returns a
      * function that stops it. The type "deskyard.state" gets each new state(),
      * "deskyard.display" each new display(), "deskyard.media" each new
-     * media() and "deskyard.alert" the text of Selkies' capture errors.
+     * media() and "deskyard.alert" Selkies' capture errors as {kind, text}
+     * (kind "microphone" or "webcam").
      */
     on(type, fn) {
       if (type === "deskyard.state") {
@@ -389,7 +400,9 @@
      * until the page says otherwise or the connection ends.
      */
     allowCapture(kind, on) {
-      if (kind in allowed) allowed[kind] = !!on;
+      if (!(kind in allowed)) return;
+      // Only on an open stream: the page's badge is on that stream.
+      allowed[kind] = !!on && !!transport && transport.readyState === PageWebSocket.OPEN;
     },
     /**
      * The camera the webcam captures from ("" for the browser's default), from

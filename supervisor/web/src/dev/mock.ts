@@ -105,7 +105,11 @@ function streamJob(res: ServerResponse, id: string): void {
 function host() {
   const list = visible();
   const running = list.filter((c) => c.state === "running");
-  return { cpus: 8, memBytes: 16 * GB, running: running.length, total: list.length, memUsed: running.reduce((s, c) => s + (c.stats?.memBytes ?? 0), 0) };
+  const cameras = ["/dev/video0", "/dev/video1"].map((device) => {
+    const owner = list.find((c) => c.settings.camera === device);
+    return { device, taken: !!owner, ...(owner ? { desktop: owner.name } : {}) };
+  });
+  return { cpus: 8, memBytes: 16 * GB, running: running.length, total: list.length, memUsed: running.reduce((s, c) => s + (c.stats?.memBytes ?? 0), 0), cameras };
 }
 
 // Stats every 5 s and a visitor now and then, so the pages move. Started by
@@ -125,7 +129,7 @@ setInterval(() => {
   const alice = desktops.find((c) => c.name === "alice");
   if (!alice || alice.state !== "running") return;
   alice.viewers = alice.viewers.includes("sam") ? alice.viewers.filter((v) => v !== "sam") : [...alice.viewers, "sam"];
-  broadcast("viewers", { name: "alice", viewers: alice.viewers, mics: alice.mics, forwards: alice.forwards, agents: alice.agents });
+  broadcast("viewers", { name: "alice", viewers: alice.viewers, mics: alice.mics, cams: alice.cams, forwards: alice.forwards, agents: alice.agents });
 }, 20000);
 // The agents' summaries move on, as they would from the supervisor (once a second at most).
 setInterval(() => {
@@ -270,8 +274,8 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const img = images.find((i) => i.ref === b.image) ?? images[0]!;
     const c: Desktop = {
       id: `${name}-id`, name, state: "creating", startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/${name}`, image: img.ref, imageTitle: img.title,
-      imageVersion: img.version, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus) },
-      access: (b.access as string[]) ?? [], viewers: [], mics: [], webcam: false, forwards: [], agents: [], tokens: 0, stats: null,
+      imageVersion: img.version, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), camera: "" },
+      access: (b.access as string[]) ?? [], viewers: [], mics: [], cams: [], webcam: false, forwards: [], agents: [], tokens: 0, stats: null,
     };
     desktops.push(c);
     changed(c);
@@ -346,6 +350,10 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
       if (typeof b.memoryBytes === "number") c.settings.memoryBytes = b.memoryBytes;
       if (typeof b.nanoCpus === "number") c.settings.nanoCpus = b.nanoCpus;
       if (typeof b.image === "string") c.image = b.image;
+      if (typeof b.camera === "string") {
+        c.settings.camera = b.camera;
+        c.webcam = b.camera !== "" && c.state === "running";
+      }
       changed(c);
     }, c.name));
   }
@@ -366,10 +374,11 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     }, c.name));
   }
   if (sub === "keys") return json(res, 204);
-  if (sub === "mic" && method === "POST") {
+  if ((sub === "mic" || sub === "cam") && method === "POST") {
     const on = (await readBody(req)).on === true;
     const me = "zef";
-    c.mics = on ? [...new Set([...c.mics, me])] : c.mics.filter((m) => m !== me);
+    const key = sub === "mic" ? "mics" : "cams";
+    c[key] = on ? [...new Set([...c[key], me])] : c[key].filter((m) => m !== me);
     if (on && !c.viewers.includes(me)) c.viewers = [...c.viewers, me];
     changed(c);
     return json(res, 204);
