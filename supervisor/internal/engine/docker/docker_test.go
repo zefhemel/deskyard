@@ -5,7 +5,7 @@ package docker
 import (
 	"testing"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/engine/enginetest"
+	"github.com/zefhemel/deskyard/supervisor/internal/engine/enginetest"
 )
 
 func TestDocker(t *testing.T) {

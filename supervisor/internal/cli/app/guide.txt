@@ -1,4 +1,4 @@
-computer guide: how to work on a container computer
+computer guide: how to work on a Deskyard computer
 
 WHAT A COMPUTER IS
 A computer is a Debian Linux container with an XFCE desktop and one shared
@@ -21,7 +21,7 @@ WHERE YOU ARE
 - Inside a computer: every command acts on it directly. No setup.
 - Anywhere else: talk to it through a remote. A token comes from the
   computer's Agents tab; then:
-    computer remote add alice https://host/alice --token cct_...
+    computer remote add alice https://host/alice --token dyt_...
     computer -c alice status
   The first remote is the default; -c NAME or COMPUTER_REMOTE picks
   another. COMPUTER_URL + COMPUTER_TOKEN work without saving anything.

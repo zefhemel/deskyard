@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/auth"
-	"github.com/zefhemel/container-computer/supervisor/internal/computers"
-	"github.com/zefhemel/container-computer/supervisor/internal/store"
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
+	"github.com/zefhemel/deskyard/supervisor/internal/store"
 )
 
 // catalog is the list of images computers can be made from (images.json),

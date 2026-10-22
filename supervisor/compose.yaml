@@ -1,42 +1,42 @@
 # The supervisor in a container. From this folder:
 #
-#   SUPERVISOR_DATA_DIR=/srv/computers docker compose up -d
+#   DESKYARD_DATA_DIR=/srv/computers docker compose up -d
 #   docker compose logs supervisor     # first start: the generated admin password
 #
 # then open http://localhost:8080.
 #
-# Put SUPERVISOR_DATA_DIR (and optionally SUPERVISOR_ADMIN_PASSWORD,
-# SUPERVISOR_DOMAIN) in a .env file next to this one to avoid typing them.
+# Put DESKYARD_DATA_DIR (and optionally DESKYARD_ADMIN_PASSWORD,
+# DESKYARD_DOMAIN) in a .env file next to this one to avoid typing them.
 
 services:
   supervisor:
-    image: ghcr.io/zefhemel/container-computer-supervisor:latest
+    image: ghcr.io/zefhemel/deskyard:latest
     # To build from source instead: docker compose up -d --build
     build: .
     pull_policy: missing
     restart: unless-stopped
     environment:
-      SUPERVISOR_DATA_DIR: ${SUPERVISOR_DATA_DIR:?set SUPERVISOR_DATA_DIR to an absolute host path}
+      DESKYARD_DATA_DIR: ${DESKYARD_DATA_DIR:?set DESKYARD_DATA_DIR to an absolute host path}
       # First start only: the admin's password. Leave it unset and one is
       # generated and printed once in the log.
-      SUPERVISOR_ADMIN_PASSWORD: ${SUPERVISOR_ADMIN_PASSWORD:-}
+      DESKYARD_ADMIN_PASSWORD: ${DESKYARD_ADMIN_PASSWORD:-}
       # A public domain pointing at this host: HTTPS with an automatic
       # certificate on ports 80 and 443 (see ports below).
-      SUPERVISOR_DOMAIN: ${SUPERVISOR_DOMAIN:-}
+      DESKYARD_DOMAIN: ${DESKYARD_DOMAIN:-}
     volumes:
       # The engine socket. Whoever can use it is root on this host, so the
       # supervisor is the most privileged thing here: keep it updated and
       # don't expose it without HTTPS.
       - /var/run/docker.sock:/var/run/docker.sock
-      # The data folder (workspace folders and .supervisor/ state) must be
+      # The data folder (workspace folders and .deskyard/ state) must be
       # mounted at the SAME path inside as on the host: the supervisor hands
       # these paths to the engine as bind mounts for computers, and the engine
       # resolves them on the host. The supervisor checks this on startup and
       # refuses to run if the paths don't match.
-      - ${SUPERVISOR_DATA_DIR:?set SUPERVISOR_DATA_DIR to an absolute host path}:${SUPERVISOR_DATA_DIR:?set SUPERVISOR_DATA_DIR to an absolute host path}
+      - ${DESKYARD_DATA_DIR:?set DESKYARD_DATA_DIR to an absolute host path}:${DESKYARD_DATA_DIR:?set DESKYARD_DATA_DIR to an absolute host path}
     ports:
       # Only this machine can reach it. To reach it from elsewhere, put your
-      # own HTTPS proxy or Tailscale in front, or set SUPERVISOR_DOMAIN and
+      # own HTTPS proxy or Tailscale in front, or set DESKYARD_DOMAIN and
       # replace this line with:
       #   - "80:80"
       #   - "443:443"

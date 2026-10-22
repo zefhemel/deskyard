@@ -15,7 +15,7 @@ ARTIFACTS = REPO / "tests" / "artifacts"
 def image() -> str:
     if os.environ.get("AC_IMAGE"):
         return os.environ["AC_IMAGE"]
-    tag = "container-computer:test"
+    tag = "deskyard-debian-xfce:test"
     subprocess.run(["docker", "build", "-q", "-t", tag, "-f", str(REPO / "Dockerfile"), str(REPO.parent.parent)], check=True,
                    stdout=subprocess.DEVNULL)
     return tag
@@ -24,7 +24,7 @@ def image() -> str:
 @pytest.fixture(scope="session")
 def next_image(image) -> str:
     """A different image tag derived from the test image, standing in for an upgrade."""
-    tag = "container-computer:test-next"
+    tag = "deskyard-debian-xfce:test-next"
     docker("build", "-q", "-t", tag, "-", input=f"FROM {image}\nRUN echo next > /etc/workspace/build-id\n")
     return tag
 

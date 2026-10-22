@@ -16,9 +16,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/accounts"
-	"github.com/zefhemel/container-computer/supervisor/internal/auth"
-	"github.com/zefhemel/container-computer/supervisor/internal/store"
+	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
+	"github.com/zefhemel/deskyard/supervisor/internal/store"
 )
 
 // Agent tokens: one computer each, an optional expiry, revocable; stored as
@@ -82,12 +82,12 @@ func (ts *tokenStore) create(name, computerID, createdBy string, expires *time.T
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	ts.list = append(ts.list, t)
-	return t, "cct_" + t.ID + "_" + secret, ts.save()
+	return t, "dyt_" + t.ID + "_" + secret, ts.save()
 }
 
 // check resolves a bearer token; it returns the token when valid.
 func (ts *tokenStore) check(bearer string) (token, bool) {
-	rest, ok := strings.CutPrefix(bearer, "cct_")
+	rest, ok := strings.CutPrefix(bearer, "dyt_")
 	if !ok {
 		return token{}, false
 	}

@@ -47,7 +47,7 @@ def test_status_and_auth(admin, computer, name):
     st = requests.get(admin.base + "/api/agent/v1", headers=h, timeout=10).json()
     assert st["name"] == name and st["state"] == "running" and st["screen"]["width"] > 0
     assert requests.get(admin.base + "/api/agent/v1", cookies=admin.cookies, timeout=5).status_code == 401
-    assert requests.get(admin.base + "/api/agent/v1", headers={"Authorization": "Bearer cct_nope_x"}, timeout=5).status_code == 401
+    assert requests.get(admin.base + "/api/agent/v1", headers={"Authorization": "Bearer dyt_nope_x"}, timeout=5).status_code == 401
     # The token can't use the UI API.
     assert requests.get(admin.base + "/api/computers", headers=h, timeout=5).status_code == 401
 

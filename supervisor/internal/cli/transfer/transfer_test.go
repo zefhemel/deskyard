@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/cli/clitest"
-	"github.com/zefhemel/container-computer/supervisor/internal/cli/execws"
-	"github.com/zefhemel/container-computer/supervisor/internal/cli/remote"
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/clitest"
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/execws"
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/remote"
 )
 
 func TestParseEndpoint(t *testing.T) {

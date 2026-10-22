@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/cli/clitest"
-	"github.com/zefhemel/container-computer/supervisor/internal/cli/remote"
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/clitest"
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/remote"
 )
 
 var update = flag.Bool("update", false, "rewrite the golden files in testdata")
@@ -191,7 +191,7 @@ func TestRemoteCommands(t *testing.T) {
 	f := clitest.New(t, "alice")
 	h := newHarness(t)
 
-	r := h.run("remote", "add", "al", f.ComputerURL(), "--token", "cct_bad_token")
+	r := h.run("remote", "add", "al", f.ComputerURL(), "--token", "dyt_bad_token")
 	if r.code != 1 || !strings.Contains(r.stderr, "token rejected (401): ask someone with access to alice") {
 		t.Errorf("bad token: %+v", r)
 	}

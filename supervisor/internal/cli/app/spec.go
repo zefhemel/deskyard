@@ -205,13 +205,13 @@ func init() {
 
 		// Remotes
 		{Name: "remote add", Group: "remote", Summary: "save a computer as a remote",
-			Usage: "remote add NAME URL --token cct_…",
-			Desc:  "Checks the token against the computer's agent API and saves the remote in remotes.json (" + "$XDG_CONFIG_HOME/container-computer, default ~/.config/container-computer; mode 0600). URL is the computer's address, like https://host/alice. Tokens come from the computer's Agents tab. The first remote becomes the default.",
+			Usage: "remote add NAME URL --token dyt_…",
+			Desc:  "Checks the token against the computer's agent API and saves the remote in remotes.json (" + "$XDG_CONFIG_HOME/deskyard-computer, default ~/.config/deskyard; mode 0600). URL is the computer's address, like https://host/alice. Tokens come from the computer's Agents tab. The first remote becomes the default.",
 			Args: []Arg{{Name: "name", Type: "string", Required: true, Desc: "local name for the remote (letters, digits, . _ -)"},
 				{Name: "url", Type: "string", Required: true, Desc: "the computer's URL, e.g. https://host/alice"}},
-			Flags:    []Flag{{Name: "--token", Type: "string", Value: "TOKEN", Desc: "agent token (cct_…); defaults to $COMPUTER_TOKEN"}},
+			Flags:    []Flag{{Name: "--token", Type: "string", Value: "TOKEN", Desc: "agent token (dyt_…); defaults to $COMPUTER_TOKEN"}},
 			Output:   Output{Type: "text", Desc: "a confirmation line"},
-			Examples: []string{"computer remote add alice https://computers.example.com/alice --token cct_…"},
+			Examples: []string{"computer remote add alice https://computers.example.com/alice --token dyt_…"},
 			Where:    whereLocal, Exit: exitStd, run: runRemoteAdd},
 		{Name: "remote list", Group: "remote", Summary: "list saved remotes",
 			Usage: "remote list [--json]", Desc: "Lists the saved remotes; * marks the default.",

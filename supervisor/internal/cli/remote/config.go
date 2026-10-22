@@ -31,8 +31,8 @@ var nameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
 // ValidName reports whether name can be used as a remote name.
 func ValidName(name string) bool { return nameRE.MatchString(name) }
 
-// DefaultPath is $XDG_CONFIG_HOME/container-computer/remotes.json, falling
-// back to ~/.config/container-computer/remotes.json.
+// DefaultPath is $XDG_CONFIG_HOME/deskyard/remotes.json, falling
+// back to ~/.config/deskyard/remotes.json.
 func DefaultPath() (string, error) {
 	dir := os.Getenv("XDG_CONFIG_HOME")
 	if dir == "" {
@@ -42,7 +42,7 @@ func DefaultPath() (string, error) {
 		}
 		dir = filepath.Join(home, ".config")
 	}
-	return filepath.Join(dir, "container-computer", "remotes.json"), nil
+	return filepath.Join(dir, "deskyard", "remotes.json"), nil
 }
 
 // Load reads the config at path; a missing file is an empty config.
@@ -136,9 +136,9 @@ func (c *Config) Remove(name string) bool {
 	return true
 }
 
-// MaskToken shows a token's ID part only: cct_abc123_… .
+// MaskToken shows a token's ID part only: dyt_abc123_… .
 func MaskToken(tok string) string {
-	if len(tok) > 4 && tok[:4] == "cct_" {
+	if len(tok) > 4 && tok[:4] == "dyt_" {
 		rest := tok[4:]
 		for i := 0; i < len(rest); i++ {
 			if rest[i] == '_' {

@@ -1,4 +1,4 @@
-module github.com/zefhemel/container-computer/supervisor
+module github.com/zefhemel/deskyard/supervisor
 
 go 1.27.1
 

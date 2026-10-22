@@ -15,10 +15,10 @@ import (
 	"syscall"
 	"text/tabwriter"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/cli/cdp"
-	"github.com/zefhemel/container-computer/supervisor/internal/cli/execws"
-	"github.com/zefhemel/container-computer/supervisor/internal/cli/remote"
-	"github.com/zefhemel/container-computer/supervisor/internal/cli/transfer"
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/cdp"
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/execws"
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/remote"
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/transfer"
 )
 
 // ---- cp
@@ -123,10 +123,10 @@ func runRemoteAdd(a *App, c *call) error {
 	}
 	tok := c.str("--token", a.Getenv("COMPUTER_TOKEN"))
 	if tok == "" {
-		return usagef(c.cmd, "no token: pass --token cct_… (create one on the computer's Agents tab)")
+		return usagef(c.cmd, "no token: pass --token dyt_… (create one on the computer's Agents tab)")
 	}
-	if !strings.HasPrefix(tok, "cct_") {
-		return usagef(c.cmd, "that doesn't look like an agent token (they start with cct_): copy it from the computer's Agents tab")
+	if !strings.HasPrefix(tok, "dyt_") {
+		return usagef(c.cmd, "that doesn't look like an agent token (they start with dyt_): copy it from the computer's Agents tab")
 	}
 	t, err := remote.ParseURL(rawURL)
 	if err != nil {
@@ -196,7 +196,7 @@ func runRemoteList(a *App, c *call) error {
 		return enc.Encode(rows)
 	}
 	if len(cfg.Remotes) == 0 {
-		fmt.Fprintln(a.Stdout, "No remotes. Get a token on a computer's Agents tab, then: computer remote add NAME https://host/NAME --token cct_…")
+		fmt.Fprintln(a.Stdout, "No remotes. Get a token on a computer's Agents tab, then: computer remote add NAME https://host/NAME --token dyt_…")
 		return nil
 	}
 	tw := tabwriter.NewWriter(a.Stdout, 0, 0, 2, ' ', 0)

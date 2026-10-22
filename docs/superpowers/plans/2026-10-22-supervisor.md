@@ -20,13 +20,13 @@ spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 ## Global Constraints
 
 - Nothing agent- or internet-reachable in a computer runs as root; there is no sudo in computers; exec through the engine always runs as `user` (UID 1000).
-- Every supervisor route except `/login` and its assets needs a session; the agent API takes only `Authorization: Bearer cct_…`, everything else only the session cookie.
+- Every supervisor route except `/login` and its assets needs a session; the agent API takes only `Authorization: Bearer dyt_…`, everything else only the session cookie.
 - The supervisor never proxies HTTP content from a computer: only `/<name>/websockify` and the agent CDP route are proxied; the KasmVNC client is served from files extracted from the computer's **image**.
-- Labels: `container-computer.managed=true`, `container-computer.name`, `container-computer.id`, `container-computer.setting.<key>`, `container-computer.port` (host mode); image labels `container-computer.contract=1`, `org.opencontainers.image.title|version|description`.
+- Labels: `deskyard.managed=true`, `deskyard.name`, `deskyard.id`, `deskyard.setting.<key>`, `deskyard.port` (host mode); image labels `deskyard.contract=1`, `org.opencontainers.image.title|version|description`.
 - Names `^[a-z][a-z0-9-]{0,30}[a-z0-9]$`; reserved `api login logout assets static healthz favicon.ico robots.txt` and `_*`. Usernames `^[a-z][a-z0-9._-]{0,31}$`.
-- Engine objects: container `cc-<name>`, network `cc-<name>` with a /28 from `SUPERVISOR_SUBNET` (default `10.213.0.0/16`).
-- Config: `SUPERVISOR_LISTEN` (default `127.0.0.1:8080`), `SUPERVISOR_DOMAIN`, `SUPERVISOR_DATA_DIR` (default `~/computers`), `SUPERVISOR_ENGINE_HOST`, `SUPERVISOR_SUBNET`, `SUPERVISOR_ADMIN_USER` (default `admin`), `SUPERVISOR_ADMIN_PASSWORD`, `SUPERVISOR_IMAGE` (default first catalog entry `ghcr.io/zefhemel/container-computer:latest`).
-- State files in `$SUPERVISOR_DATA_DIR/.supervisor/`, mode 0600, written atomically (temp file + rename) under a lock.
+- Engine objects: container `deskyard-<name>`, network `deskyard-<name>` with a /28 from `DESKYARD_SUBNET` (default `10.213.0.0/16`).
+- Config: `DESKYARD_LISTEN` (default `127.0.0.1:8080`), `DESKYARD_DOMAIN`, `DESKYARD_DATA_DIR` (default `~/deskyard`), `DESKYARD_ENGINE_HOST`, `DESKYARD_SUBNET`, `DESKYARD_ADMIN_USER` (default `admin`), `DESKYARD_ADMIN_PASSWORD`, `DESKYARD_IMAGE` (default first catalog entry `ghcr.io/zefhemel/deskyard-debian-xfce:latest`).
+- State files in `$DESKYARD_DATA_DIR/.deskyard/`, mode 0600, written atomically (temp file + rename) under a lock.
 - Computer containers: `shm_size` 1g, 30 s stop timeout, restart `unless-stopped`, security options `seccomp=<flatpak profile>`, `apparmor=unconfined`, `systempaths=unconfined`; no memory or CPU limit unless set.
 - All frontend code is TypeScript in strict mode; no hand-written JavaScript.
 
@@ -48,8 +48,8 @@ spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 - Move: `Dockerfile`, `rootfs/`, `tests/` → `images/debian-xfce/`; `seccomp/flatpak.json` → `supervisor/internal/engine/docker/flatpak-seccomp.json` (`scripts/gen-seccomp.py` writes there)
 - Delete: `compose.yaml`, `compose.domain.yaml`, `compose.no-flatpak.yaml`, `.env.example`, `skills/`, `scripts/install-host-skills.sh`, `rootfs/etc/workspace/cache-paths`, `rootfs/etc/xdg/autostart/workspace-terminal.desktop`, `rootfs/usr/local/bin/workspace-autostart-terminal`, `images/debian-xfce/tests/test_compose.py`, `test_cache.py`
 - Modify: `images/debian-xfce/Dockerfile`, `rootfs/usr/local/bin/workspace-init`, `start-caddy`, `rootfs/etc/caddy/Caddyfile`, `rootfs/etc/supervisor/conf.d/workspace.conf`, every `rootfs` file naming the user `workspace`, the skills under `rootfs/opt/workspace/skills/`, `images/debian-xfce/tests/sandbox.py` and the tests
-- Image changes: user `workspace` → `user` (UID/GID 1000, home `/workspace`; PUID/PGID gone); no `sudo` package or sudoers; no websocat, `vnc` and `cdp-host` programs; Chromium `autostart=false`; no cache volume (`XDG_CACHE_HOME`, `NPM_CONFIG_CACHE` back under `/workspace`); no system volume, password or HTTPS; `VOLUME ["/workspace"]`; labels `container-computer.contract=1` and OCI title/description/version (`ARG VERSION=dev`).
-- Caddy: `:8080`, every request needs header `X-Container-Computer-Token` equal to `{$WORKSPACE_PROXY_TOKEN}` (else 401); `/_cdp/*` strips the prefix and proxies to `127.0.0.1:9221` with `Host: localhost`; everything else to `127.0.0.1:6080`. `workspace-init` refuses to start (exit 1, message) without `WORKSPACE_PROXY_TOKEN`.
+- Image changes: user `workspace` → `user` (UID/GID 1000, home `/workspace`; PUID/PGID gone); no `sudo` package or sudoers; no websocat, `vnc` and `cdp-host` programs; Chromium `autostart=false`; no cache volume (`XDG_CACHE_HOME`, `NPM_CONFIG_CACHE` back under `/workspace`); no system volume, password or HTTPS; `VOLUME ["/workspace"]`; labels `deskyard.contract=1` and OCI title/description/version (`ARG VERSION=dev`).
+- Caddy: `:8080`, every request needs header `X-Deskyard-Token` equal to `{$WORKSPACE_PROXY_TOKEN}` (else 401); `/_cdp/*` strips the prefix and proxies to `127.0.0.1:9221` with `Host: localhost`; everything else to `127.0.0.1:6080`. `workspace-init` refuses to start (exit 1, message) without `WORKSPACE_PROXY_TOKEN`.
 
 - [x] **Step 1:** `git mv` the files; delete the dropped ones; update `.dockerignore`.
 - [x] **Step 2:** Change `tests/sandbox.py`: start with `-e WORKSPACE_PROXY_TOKEN=test-token`, publish only 8080, `exec` default user `user`; `web_url` requests carry the token header; readiness = display up and `GET /` with token → 200 and without → 401; CDP checks go through `/_cdp/json/version`.
@@ -60,13 +60,13 @@ spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 
 ### Task 2: Go module, config and state files
 
-**Files:** `supervisor/go.mod` (module `github.com/zefhemel/container-computer/supervisor`), `supervisor/cmd/supervisor/main.go`, `supervisor/internal/config/config.go`, `supervisor/internal/store/store.go` (+ `_test.go`)
+**Files:** `supervisor/go.mod` (module `github.com/zefhemel/deskyard/supervisor`), `supervisor/cmd/deskyard/main.go`, `supervisor/internal/config/config.go`, `supervisor/internal/store/store.go` (+ `_test.go`)
 
 **Interfaces:**
 - Produces: `config.Load() (config.Config, error)` with fields `Listen, Domain, DataDir, StateDir, EngineHost, Subnet, AdminUser, AdminPassword, DefaultImage string; InContainer bool`; `store.ReadJSON(path string, v any) error` (missing file → `fs.ErrNotExist`), `store.WriteJSON(path string, v any) error` (0600, temp + rename), `store.Locked(fn func() error) error`.
 
 - [x] **Step 1:** Tests: `WriteJSON` then `ReadJSON` round-trips; file mode is 0600; a crash between temp write and rename leaves the old file (write temp, don't rename, read old).
-- [x] **Step 2:** Implement; `config.Load` defaults per Global Constraints; `InContainer` = `/.dockerenv` exists or `SUPERVISOR_IN_CONTAINER=1`.
+- [x] **Step 2:** Implement; `config.Load` defaults per Global Constraints; `InContainer` = `/.dockerenv` exists or `DESKYARD_IN_CONTAINER=1`.
 - [x] **Step 3:** `go test ./...` passes; commit.
 
 ### Task 3: Engine interface and Docker implementation
@@ -92,7 +92,7 @@ spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 
 **Interfaces:**
 - Produces: `accounts.Store` with `Load(dir)`, `EnsureAdmin(user, password string) (generated string, err error)`, `Get(username) (Account, bool)`, `List() []Account`, `Put(Account) error`, `Delete(username) error`, `SetPassword(username, pw string) error` (bumps epoch), `Grant(username, computerID string)`, `Revoke(username, computerID string)`, `ForgetComputer(computerID string)`; `Account{Username, PasswordHash string; Admin bool; SessionEpoch int; Computers []string; Created, LastLogin time.Time}`.
-- `auth.HashPassword(pw) string` (argon2id m=65536,t=3,p=2, PHC string), `auth.CheckPassword(hash, pw) bool`; `auth.Sessions{Key []byte}` with `Issue(w, username, epoch)`, `Read(r) (username string, epoch int, ok bool)`, cookie `cc_session` HttpOnly, SameSite=Strict, Path=/, Secure under HTTPS, 30 days sliding; `auth.Throttle` (5 failures per username or IP → 1 attempt / 10 s); `auth.Can(a Account, action Action, computerID string) bool` with actions `View, Power, Manage, ManageAccounts, CreateToken, RevokeAnyToken`.
+- `auth.HashPassword(pw) string` (argon2id m=65536,t=3,p=2, PHC string), `auth.CheckPassword(hash, pw) bool`; `auth.Sessions{Key []byte}` with `Issue(w, username, epoch)`, `Read(r) (username string, epoch int, ok bool)`, cookie `deskyard_session` HttpOnly, SameSite=Strict, Path=/, Secure under HTTPS, 30 days sliding; `auth.Throttle` (5 failures per username or IP → 1 attempt / 10 s); `auth.Can(a Account, action Action, computerID string) bool` with actions `View, Power, Manage, ManageAccounts, CreateToken, RevokeAnyToken`.
 
 - [x] **Step 1:** Tests: hash/verify; `EnsureAdmin` creates `admin` once with a 24-char generated password when none is given; the last admin can't be deleted or demoted; epoch bump invalidates a session; throttle; `Can` table from the spec's permissions table (every row).
 - [x] **Step 2:** Implement; commit.
@@ -104,8 +104,8 @@ spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 **Interfaces:**
 - Consumes: `engine.Engine`, `accounts.Store`.
 - Produces: `computers.ValidName(string) error`; `computers.Settings{Image string; MemoryBytes, NanoCPUs int64}` ↔ labels; `computers.Service` with `List(ctx) ([]Computer, error)`, `Get(ctx, name) (Computer, error)`, `Create(ctx, CreateRequest, progress func(string)) (Computer, error)`, `Start/Stop/Restart/Remove(ctx, name string, deleteFiles bool)`, `Target(ctx, name) (addr string, token string, err error)` (where the proxy connects); `Computer{ID, Name, State, Image, ImageID string; Settings Settings; Folder string; StartedAt time.Time}`; `CreateRequest{Name string; Settings Settings; Access []string}`.
-- Network allocation: list `cc-*` networks' subnets, pick the first free /28 in `SUPERVISOR_SUBNET`.
-- Reach: in a container, connect self to `cc-<name>` and use `cc-<name>:8080` (alias); directly, publish 8080 on `127.0.0.1:<free port>` (label `container-computer.port`) and use that. On startup, reconnect self to every managed computer's network.
+- Network allocation: list `cc-*` networks' subnets, pick the first free /28 in `DESKYARD_SUBNET`.
+- Reach: in a container, connect self to `deskyard-<name>` and use `deskyard-<name>:8080` (alias); directly, publish 8080 on `127.0.0.1:<free port>` (label `deskyard.port`) and use that. On startup, reconnect self to every managed computer's network.
 - The per-computer token is generated at create, passed as `WORKSPACE_PROXY_TOKEN` and read back from the container's env on inspect (no extra state).
 - Same-path check (container mode): write a marker into `DataDir`, run `alpine` with the same path mounted, `test -f` it; refuse to start otherwise.
 
@@ -139,7 +139,7 @@ spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 **Files:** `supervisor/Makefile`, `supervisor/Dockerfile` (node build → go build → alpine), `supervisor/compose.yaml`, `.github/workflows/{images.yml,supervisor.yml}`, `supervisor/tests/{conftest.py,test_supervisor.py}` (+ `pyproject.toml`)
 
 - [ ] **Step 1:** Integration tests (supervisor run directly against OrbStack with a temporary data dir and the test image): login and logout, every route but login needs a session; create → desktop page shows the desktop without KasmVNC's control bar; clipboard both ways; two computers side by side; stop/start/restart; remove keeps the folder, "delete files" removes it; reuse of an existing folder; a computer publishes only 8080 on 127.0.0.1 and can't reach another computer's 8080; foreign Origin WebSocket refused; replacing a computer's web server doesn't change what `/<name>/vnc/` serves.
-- [ ] **Step 2:** The same tests pass with the supervisor in its container (`SUPERVISOR_TEST_MODE=container`).
+- [ ] **Step 2:** The same tests pass with the supervisor in its container (`DESKYARD_TEST_MODE=container`).
 - [ ] **Step 3:** CI: images matrix over `images/*` (weekly cron + on change, tags `latest` and date), supervisor binaries + image; commit.
 
 # Phase 2: accounts, access, viewers
@@ -171,7 +171,7 @@ spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 
 ### Task 12: Tokens and the Agents tab
 
-- `tokens.json`: `{id, name, computerID, hash, createdBy, created, expires, lastUsed}`; format `cct_<id>_<secret>` (id 8 chars, secret 32 random bytes base64url); SHA-256 of the secret.
+- `tokens.json`: `{id, name, computerID, hash, createdBy, created, expires, lastUsed}`; format `dyt_<id>_<secret>` (id 8 chars, secret 32 random bytes base64url); SHA-256 of the secret.
 - API: `GET/POST /api/computers/{name}/tokens`, `DELETE /api/computers/{name}/tokens/{id}`; anyone with access creates and revokes own, admins any; expiry and revocation close open connections; tokens of a creator who loses access or is deleted are revoked.
 - UI: Agents tab, New token dialog (name, expiry never/7/30/90 days/date), Token created dialog with the `computer remote add` line.
 - [x] Tests: token lifecycle; expiry; creator losing access revokes.
@@ -184,7 +184,7 @@ spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 
 ### Task 14: The `computer` command in Go
 
-- `supervisor/cmd/computer`: local desktop actions (same as the bash script: screenshot, zoom, size, cursor, move, click, double-click, triple-click, mouse-down, mouse-up, drag, type, key, hold-key, scroll, wait) via `xdotool`/`maim`; remotes (`remote add|list|remove|default`, `-c`, `COMPUTER_REMOTE`, `COMPUTER_URL`+`COMPUTER_TOKEN`, `~/.config/container-computer/remotes.json` 0600); `exec`, `shell`, `cp`, `browser connect`, `status`, `guide`, `describe --json`; desktop actions remote = exec `computer …` in the computer.
+- `supervisor/cmd/computer`: local desktop actions (same as the bash script: screenshot, zoom, size, cursor, move, click, double-click, triple-click, mouse-down, mouse-up, drag, type, key, hold-key, scroll, wait) via `xdotool`/`maim`; remotes (`remote add|list|remove|default`, `-c`, `COMPUTER_REMOTE`, `COMPUTER_URL`+`COMPUTER_TOKEN`, `~/.config/deskyard/remotes.json` 0600); `exec`, `shell`, `cp`, `browser connect`, `status`, `guide`, `describe --json`; desktop actions remote = exec `computer …` in the computer.
 - The image builds it from `supervisor/` (multi-stage) and drops the bash script.
 - [x] Tests: golden `--help`, `guide`, `describe --json`; integration: `computer -c alice exec -- id -u` prints 1000; `cp` round-trip; `screenshot` PNG; `browser connect` + Playwright `connect_over_cdp`.
 
@@ -193,7 +193,7 @@ spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 ### Task 15: Settings editing, image catalog and upgrades
 
 - `PATCH /api/computers/{name}` (image, memory, CPUs) recreates the container (same labels/ID/folder/token).
-- `images.json` catalog (default one entry); `GET/POST/DELETE /api/images`; daily + "Check now" update check (pull, compare image IDs); "Update available" per computer; upgrade one or all (job with progress); contract check refuses images without `container-computer.contract=1`.
+- `images.json` catalog (default one entry); `GET/POST/DELETE /api/images`; daily + "Check now" update check (pull, compare image IDs); "Update available" per computer; upgrade one or all (job with progress); contract check refuses images without `deskyard.contract=1`.
 - UI: Settings tab, Images page, Upgrade dialog (what survives).
 - [x] Tests: upgrade recreates and keeps the folder and ID; image without contract label refused.
 
@@ -201,7 +201,7 @@ spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 
 ### Task 16: Finish
 
-- CertMagic HTTPS when `SUPERVISOR_DOMAIN` is set (ports 80/443).
+- CertMagic HTTPS when `DESKYARD_DOMAIN` is set (ports 80/443).
 - Phone layout: wall one column, computer page stacks, desktop bar collapses into a menu.
 - README rewritten around the supervisor; in-computer skills mention `computer` remotes, not `docker exec`; architecture pages flip to `built`.
 - Release workflow: `supervisor` and `computer` binaries for linux/darwin (amd64, arm64) and `computer` for windows, attached to tags.

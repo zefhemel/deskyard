@@ -18,7 +18,7 @@ func freeSubnet(pool netip.Prefix, used []string) (netip.Prefix, error) {
 	}
 	pool = pool.Masked()
 	if !pool.Addr().Is4() {
-		return netip.Prefix{}, fmt.Errorf("SUPERVISOR_SUBNET must be IPv4")
+		return netip.Prefix{}, fmt.Errorf("DESKYARD_SUBNET must be IPv4")
 	}
 	base := pool.Addr().As4()
 	start := uint32(base[0])<<24 | uint32(base[1])<<16 | uint32(base[2])<<8 | uint32(base[3])
@@ -43,7 +43,7 @@ func freeSubnet(pool netip.Prefix, used []string) (netip.Prefix, error) {
 func netipParse(s string) (netip.Prefix, error) {
 	p, err := netip.ParsePrefix(s)
 	if err != nil {
-		return p, fmt.Errorf("SUPERVISOR_SUBNET: %w", err)
+		return p, fmt.Errorf("DESKYARD_SUBNET: %w", err)
 	}
 	return p, nil
 }

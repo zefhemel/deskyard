@@ -29,7 +29,7 @@ export function TopBar() {
   return (
     <div class="flex items-center gap-6 border-b border-line bg-surface px-8 py-3.5 max-[900px]:flex-wrap max-[900px]:gap-x-4 max-[900px]:gap-y-2 max-[900px]:px-4 max-[900px]:py-3">
       <a href="/" class="text-[17px] font-bold tracking-[-0.01em] whitespace-nowrap text-ink no-underline">
-        container-computer <span class="font-medium text-muted">supervisor</span>
+        Deskyard
       </a>
       {me.admin && (
         <nav class="ml-3 flex gap-1 max-[900px]:order-last max-[900px]:ml-0 max-[900px]:w-full">

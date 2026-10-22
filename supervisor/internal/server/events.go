@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/accounts"
-	"github.com/zefhemel/container-computer/supervisor/internal/computers"
+	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 )
 
 // hub fans out UI events (/api/events). Every event concerns one computer;

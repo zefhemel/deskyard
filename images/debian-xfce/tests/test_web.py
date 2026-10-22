@@ -9,7 +9,7 @@ from sandbox import TOKEN_HEADER
 
 def test_requires_token(sandbox):
     assert requests.get(sandbox.web_url, timeout=5).status_code == 401
-    assert requests.get(sandbox.web_url, headers={"X-Container-Computer-Token": "nope"}, timeout=5).status_code == 401
+    assert requests.get(sandbox.web_url, headers={"X-Deskyard-Token": "nope"}, timeout=5).status_code == 401
     assert sandbox.get("/").status_code == 200
     assert requests.get(sandbox.web_url + "/_cdp/json/version", timeout=5).status_code == 401
 
@@ -78,7 +78,7 @@ def websocket_handshake(web_url: str, token: str | None) -> int:
         "Sec-WebSocket-Protocol": "binary",
     }
     if token:
-        headers["X-Container-Computer-Token"] = token
+        headers["X-Deskyard-Token"] = token
     headers["Origin"] = web_url  # browsers always send one; KasmVNC refuses without
     conn.request("GET", "/websockify", headers=headers)
     status = conn.getresponse().status
@@ -91,4 +91,4 @@ def test_websocket_needs_token(sandbox):
 
 
 def test_websocket_with_token(sandbox):
-    assert websocket_handshake(sandbox.web_url, TOKEN_HEADER["X-Container-Computer-Token"]) == 101
+    assert websocket_handshake(sandbox.web_url, TOKEN_HEADER["X-Deskyard-Token"]) == 101

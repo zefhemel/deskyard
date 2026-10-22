@@ -1,4 +1,4 @@
-computer: use a container computer (a Linux desktop with a shared browser) from inside it or from anywhere else.
+computer: use a Deskyard computer (a Linux desktop with a shared browser) from inside it or from anywhere else.
 
 Usage: computer [-c NAME] COMMAND [ARGS...]
 
@@ -31,7 +31,7 @@ Browser:
   browser connect [--port N]           forward the computer's browser to a local CDP port
 
 Remotes:
-  remote add NAME URL --token cct_…    save a computer as a remote
+  remote add NAME URL --token dyt_…    save a computer as a remote
   remote list [--json]                 list saved remotes
   remote remove NAME                   forget a remote
   remote default [NAME]                set or show the default remote

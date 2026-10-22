@@ -18,7 +18,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl procps supervisor dbus dbus-x11 \
         x11-utils xfce4 xfce4-terminal fonts-dejavu-core \
-        chromium socat xdotool maim flatpak \
+        chromium socat xdotool xclip maim flatpak \
     && rm -rf /var/lib/apt/lists/* \
     # rootfs/usr/bin/flatpak wraps the real binary.
     && dpkg-divert --local --rename --divert /usr/bin/flatpak.real --add /usr/bin/flatpak
@@ -90,7 +90,7 @@ EXPOSE 8080
 
 # The image contract the supervisor checks before using an image.
 ARG VERSION=dev
-LABEL container-computer.contract="1" \
+LABEL deskyard.contract="1" \
       org.opencontainers.image.title="Debian XFCE" \
       org.opencontainers.image.description="Debian trixie with XFCE, Chromium, Flatpak, mise and uv" \
       org.opencontainers.image.version="${VERSION}"

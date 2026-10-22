@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/auth"
-	"github.com/zefhemel/container-computer/supervisor/internal/store"
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
+	"github.com/zefhemel/deskyard/supervisor/internal/store"
 )
 
 type Account struct {
@@ -23,7 +23,7 @@ type Account struct {
 	PasswordHash string    `json:"passwordHash"`
 	Admin        bool      `json:"admin"`
 	SessionEpoch int       `json:"sessionEpoch"`
-	Computers    []string  `json:"computers"` // computer IDs (the container-computer.id label)
+	Computers    []string  `json:"computers"` // computer IDs (the deskyard.id label)
 	Created      time.Time `json:"created"`
 	LastLogin    time.Time `json:"lastLogin,omitzero"`
 }

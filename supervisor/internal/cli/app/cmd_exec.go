@@ -12,9 +12,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/cli/execws"
-	"github.com/zefhemel/container-computer/supervisor/internal/cli/remote"
-	"github.com/zefhemel/container-computer/supervisor/internal/cli/term"
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/execws"
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/remote"
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/term"
 )
 
 func runExec(a *App, c *call) error {

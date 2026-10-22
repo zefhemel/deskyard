@@ -17,11 +17,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/accounts"
-	"github.com/zefhemel/container-computer/supervisor/internal/auth"
-	"github.com/zefhemel/container-computer/supervisor/internal/computers"
-	"github.com/zefhemel/container-computer/supervisor/internal/engine"
-	"github.com/zefhemel/container-computer/supervisor/internal/store"
+	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
+	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/store"
 )
 
 type Server struct {

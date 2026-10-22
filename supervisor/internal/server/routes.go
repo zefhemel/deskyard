@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/accounts"
-	"github.com/zefhemel/container-computer/supervisor/internal/auth"
-	"github.com/zefhemel/container-computer/supervisor/internal/computers"
+	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 )
 
 func (s *Server) routes() {

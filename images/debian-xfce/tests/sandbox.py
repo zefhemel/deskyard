@@ -17,7 +17,7 @@ ROOT = REPO.parent.parent
 SECCOMP = ROOT / "supervisor" / "internal" / "engine" / "docker" / "flatpak-seccomp.json"
 TOKEN = "test-token"
 DEFAULT_ENV = {"WORKSPACE_PROXY_TOKEN": TOKEN}
-TOKEN_HEADER = {"X-Container-Computer-Token": TOKEN}
+TOKEN_HEADER = {"X-Deskyard-Token": TOKEN}
 
 
 def docker(*args: str, check: bool = True, input: str | None = None) -> subprocess.CompletedProcess:

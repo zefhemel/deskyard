@@ -20,7 +20,7 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 )
 
 // The seccomp profile computers need for Flatpak's sandbox (bubblewrap):

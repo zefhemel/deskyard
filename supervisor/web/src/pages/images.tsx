@@ -154,7 +154,7 @@ function AddImageDialog({ onClose, onAdded }: { onClose: () => void; onAdded: ()
   return (
     <Dialog
       title="Add image"
-      intro="The supervisor pulls it and checks that it's a container-computer image before adding it to the catalog."
+      intro="The supervisor pulls it and checks that it's a Deskyard computer image before adding it to the catalog."
       onClose={onClose}
       onSubmit={() => ref.trim() && void run.start(() => api.addImage(ref.trim()))}
       footer={
@@ -175,7 +175,7 @@ function AddImageDialog({ onClose, onAdded }: { onClose: () => void; onAdded: ()
           class="mono"
           autocomplete="off"
           spellcheck={false}
-          placeholder="ghcr.io/zefhemel/container-computer:latest"
+          placeholder="ghcr.io/zefhemel/deskyard-debian-xfce:latest"
           disabled={run.running}
           value={ref}
           onInput={(e) => setRef(e.currentTarget.value)}

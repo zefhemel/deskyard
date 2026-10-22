@@ -7,15 +7,15 @@
 #   make image         the supervisor's container image
 
 VERSION ?= dev
-IMAGE   ?= container-computer-supervisor:$(VERSION)
+IMAGE   ?= deskyard:$(VERSION)
 
 GO       ?= go
 LDFLAGS  := -s -w -X main.version=$(VERSION)
 GOFLAGS_RELEASE := -trimpath -ldflags "$(LDFLAGS)"
 
 # supervisor: Linux and macOS. computer: also Windows, for agents there.
-SUPERVISOR_PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
-COMPUTER_PLATFORMS   := $(SUPERVISOR_PLATFORMS) windows/amd64
+DESKYARD_PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+COMPUTER_PLATFORMS   := $(DESKYARD_PLATFORMS) windows/amd64
 
 .PHONY: all web build test test-engine typecheck vet release image clean
 
@@ -26,7 +26,7 @@ web:
 	cd web && npm ci && npm run build
 
 build: web
-	$(GO) build -ldflags "-X main.version=$(VERSION)" -o bin/supervisor ./cmd/supervisor
+	$(GO) build -ldflags "-X main.version=$(VERSION)" -o bin/deskyard ./cmd/deskyard
 	$(GO) build -ldflags "-X main.version=$(VERSION)" -o bin/computer ./cmd/computer
 
 test:
@@ -44,11 +44,11 @@ typecheck:
 release: web
 	rm -rf dist
 	mkdir -p dist
-	@set -e; for p in $(SUPERVISOR_PLATFORMS); do \
+	@set -e; for p in $(DESKYARD_PLATFORMS); do \
 		os=$${p%/*}; arch=$${p#*/}; \
 		echo "supervisor $$os/$$arch"; \
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build $(GOFLAGS_RELEASE) \
-			-o dist/supervisor-$$os-$$arch ./cmd/supervisor; \
+			-o dist/deskyard-$$os-$$arch ./cmd/deskyard; \
 	done
 	@set -e; for p in $(COMPUTER_PLATFORMS); do \
 		os=$${p%/*}; arch=$${p#*/}; ext=; [ $$os = windows ] && ext=.exe; \

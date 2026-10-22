@@ -153,7 +153,7 @@ const log = (t) => (document.getElementById("log").textContent = t);
 post("noVNC_initialized", null);
 post("connection_state", "connecting");
 setTimeout(() => post("connection_state", "connected"), 600);
-setTimeout(() => post("clipboardrx", "https://github.com/zefhemel/container-computer/pull/42"), 1500);
+setTimeout(() => post("clipboardrx", "https://github.com/zefhemel/deskyard/pull/42"), 1500);
 addEventListener("message", (e) => {
   if (e.data.action === "clipboardsnd") log("clipboard ← " + e.data.value);
   if (e.data.action === "setvideoquality") log("quality ← " + e.data.qualityLevel);
@@ -267,7 +267,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     if (i >= 0) images.splice(i, 1);
     return json(res, 204);
   }
-  if (path === "/api/images/check") return json(res, 202, job(["Pulling ghcr.io/zefhemel/container-computer:latest", "Pulling ghcr.io/zefhemel/container-computer:beta"], () => images.forEach((i) => (i.checked = new Date().toISOString()))));
+  if (path === "/api/images/check") return json(res, 202, job(["Pulling ghcr.io/zefhemel/deskyard-debian-xfce:latest", "Pulling ghcr.io/zefhemel/deskyard-debian-xfce:beta"], () => images.forEach((i) => (i.checked = new Date().toISOString()))));
   if (path === "/api/images/upgrade") {
     const b = await readBody(req);
     return json(res, 202, job(["Upgrading", "Starting"], () => {
@@ -337,8 +337,8 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const secret = "Jx3vT9pLr7KzA1mYc5HdE0sWb6NfQ8uRg2iVo4Ce";
     const t: CreatedToken = {
       id, name: String(b.name), createdBy: m.username, created: new Date().toISOString(), expires: (b.expires as string | null) ?? null,
-      lastUsed: null, expired: false, token: `cct_${id}_${secret}`,
-      remoteAdd: `computer remote add ${c.name} https://computers.example.com/${c.name} --token cct_${id}_${secret}`,
+      lastUsed: null, expired: false, token: `dyt_${id}_${secret}`,
+      remoteAdd: `computer remote add ${c.name} https://computers.example.com/${c.name} --token dyt_${id}_${secret}`,
     };
     const { token: _t, remoteAdd: _r, ...listed } = t;
     (tokens[c.name] ??= []).push(listed);
@@ -361,7 +361,7 @@ export function mockApi(): Plugin {
     name: "supervisor-mock-api",
     apply: "serve",
     configureServer(server) {
-      if (process.env.SUPERVISOR_API) return; // proxying to a real supervisor instead
+      if (process.env.DESKYARD_API) return; // proxying to a real supervisor instead
       startTimers();
       server.middlewares.use((req, res, next) => {
         handle(req, res, next).catch((e: unknown) => json(res, 500, { error: String(e) }));

@@ -61,7 +61,7 @@ export function LoginPage() {
           <Mini dark />
         </div>
         <span class="mb-[26px] block text-[19px] font-bold tracking-[-0.01em]">
-          container-computer <span class="font-medium text-muted">supervisor</span>
+          Deskyard
         </span>
         <h1 class="mb-1.5 text-[26px] leading-tight font-bold tracking-[-0.015em]">Sign in</h1>
         <p class="mb-6 text-muted">to use the computers on this machine.</p>

@@ -5,11 +5,11 @@ status: approved
 plan: "[[superpowers/plans/2026-10-22-supervisor|Supervisor plan]]"
 date: "2026-10-21"
 ---
-The supervisor is one Go binary that creates, runs and shares many container-computers ("computers") through the container engine (Docker now, Podman later). It has accounts, and each computer has a list of accounts that may use it. Agents elsewhere use a computer through the same `computer` command that's inside it, with a token an admin hands out. The repository splits into the supervisor and the computer images. Mockups are in the UI section; their HTML sources are in the folder next to this page.
+The supervisor is one Go binary that creates, runs and shares many computers: persistent Linux desktops in containers. The product is called **Deskyard** through the container engine (Docker now, Podman later). It has accounts, and each computer has a list of accounts that may use it. Agents elsewhere use a computer through the same `computer` command that's inside it, with a token an admin hands out. The repository splits into the supervisor and the computer images. Mockups are in the UI section; their HTML sources are in the folder next to this page.
 
 # Intent
 
-Today one `docker compose up` gives one container-computer: a persistent Linux desktop shared by a human and an AI agent. Running several means juggling project names, ports, home folders and passwords by hand, and sharing one with another person means sharing its password.
+Today one `docker compose up` gives one computer: a persistent Linux desktop shared by a human and an AI agent. Running several means juggling project names, ports, home folders and passwords by hand, and sharing one with another person means sharing its password.
 
 With this design the supervisor becomes **the only way to run computers** (decided). The standalone `docker compose` setup, with its password, basic auth, own HTTPS and host ports for agents, goes away; running a single computer means running the supervisor with one computer. That leaves one auth model, one network setup and one way in for agents, instead of two of each.
 
@@ -21,21 +21,21 @@ It ships as one binary, run directly on a machine with Docker or in a small Alpi
 
 # Vocabulary
 
-- **Computer**: one container-computer: a container and its workspace folder. Has a name, e.g. `alice`.
+- **Computer**: a container and its workspace folder. Has a name, e.g. `alice`.
 - **Supervisor**: this app: one Go binary with its web UI built in. (Not to be confused with `supervisord`, which runs the services inside every computer.)
 - **Account**: a person who signs in to the supervisor. Either an **admin** or a regular account.
 - **Access**: the accounts allowed to use a computer, set per computer by admins.
 - **Viewer**: one open desktop connection to a computer (a browser tab). One account can be several viewers.
 - **Computer image**: an OCI image that follows the image contract (see Images). The repository starts with one, `debian-xfce`, today's image.
 - **Engine**: the container engine the supervisor drives: Docker now, Podman later.
-- **Workspace folder**: the computer's `/workspace`, its user's home: a folder on the host under the supervisor's data folder, e.g. `~/computers/alice`.
+- **Workspace folder**: the computer's `/workspace`, its user's home: a folder on the host under the supervisor's data folder, e.g. `~/deskyard/alice`.
 - **`user`**: the single Linux user inside every computer. Everyone who opens the computer works as `user`.
 - **Agent token**: a secret someone with access creates for one computer, so an agent elsewhere can use that computer through the agent API.
 - **`computer` command**: one Go binary. Inside a computer it controls that computer; given a **remote** (a computer's address and an agent token) it does the same over HTTPS.
 
 # Goals
 
-- **One binary.** Go backend with the Preact + Tailwind frontend compiled in. Runs directly on Linux and macOS (amd64, arm64), or as the image `ghcr.io/zefhemel/container-computer-supervisor` (Alpine-based, multi-arch).
+- **One binary.** Go backend with the Preact + Tailwind frontend compiled in. Runs directly on Linux and macOS (amd64, arm64), or as the image `ghcr.io/zefhemel/deskyard` (Alpine-based, multi-arch).
 - **Accounts.** Username and password, stored hashed in a JSON file. Admins create accounts and set passwords; there's no reset flow, email or SSO. An account is an admin or not.
 - **Access per computer.** Admins choose which accounts may use each computer. Admins can use every computer.
 - **Shared desktops.** Several viewers on one computer at once, all on the same desktop, which follows the browser window of whoever resized last.
@@ -100,14 +100,14 @@ browser ──HTTPS──▶ supervisor (one Go binary, on the host or in its ow
 agent elsewhere ── computer -c alice … ──HTTPS/WebSocket──▶ /api/agent/v1/*
 ```
 
-- **One Go binary** serves the UI (built assets embedded with `embed`), the JSON API, the login, and the proxy to computers. HTTPS via CertMagic (Caddy's ACME library) when `SUPERVISOR_DOMAIN` is set; otherwise plain HTTP on `SUPERVISOR_LISTEN` (default `127.0.0.1:8080`).
-- **The engine is the database for computers.** Every computer is a container labelled `container-computer.managed=true`, `container-computer.name=<name>` and `container-computer.id=<uuid>`; its settings are labels too (see Settings). The supervisor keeps no list of computers of its own.
+- **One Go binary** serves the UI (built assets embedded with `embed`), the JSON API, the login, and the proxy to computers. HTTPS via CertMagic (Caddy's ACME library) when `DESKYARD_DOMAIN` is set; otherwise plain HTTP on `DESKYARD_LISTEN` (default `127.0.0.1:8080`).
+- **The engine is the database for computers.** Every computer is a container labelled `deskyard.managed=true`, `deskyard.name=<name>` and `deskyard.id=<uuid>`; its settings are labels too (see Settings). The supervisor keeps no list of computers of its own.
 - **The supervisor's own state** is small and lives in its data folder: accounts and access (`accounts.json`), agent tokens (`tokens.json`), the image catalog (`images.json`), the session signing key and ACME certificates.
 
 ## Running it
 
-- **Directly:** download the binary for your OS (`supervisor-<os>-<arch>` from the releases) and run it. It finds the engine at `SUPERVISOR_ENGINE_HOST`, else `DOCKER_HOST`, else the platform default (`/var/run/docker.sock`, or Docker Desktop's/OrbStack's socket on macOS). The user running it must be able to use that socket (on Linux: the `docker` group, which is root-equivalent; the docs say so). For HTTPS on 80/443 on Linux, the docs show `setcap cap_net_bind_service` or a systemd socket.
-- **In a container:** `ghcr.io/zefhemel/container-computer-supervisor`, Alpine-based, the binary plus CA certificates and tzdata. Mount the engine socket and the data folder (at the same path). A `compose.yaml` in `supervisor/` shows it.
+- **Directly:** download the binary for your OS (`deskyard-<os>-<arch>` from the releases) and run it. It finds the engine at `DESKYARD_ENGINE_HOST`, else `DOCKER_HOST`, else the platform default (`/var/run/docker.sock`, or Docker Desktop's/OrbStack's socket on macOS). The user running it must be able to use that socket (on Linux: the `docker` group, which is root-equivalent; the docs say so). For HTTPS on 80/443 on Linux, the docs show `setcap cap_net_bind_service` or a systemd socket.
+- **In a container:** `ghcr.io/zefhemel/deskyard`, Alpine-based, the binary plus CA certificates and tzdata. Mount the engine socket and the data folder (at the same path). A `compose.yaml` in `supervisor/` shows it.
 
 ## Engine
 
@@ -124,20 +124,20 @@ To keep the door open for Podman:
 
 ## Networks and reaching a computer
 
-Each computer gets its own bridge network `cc-<name>`, so computers can't reach each other where the engine isolates bridge networks (Docker on Linux). OrbStack and Docker Desktop route between bridge networks, so there the per-computer token is what keeps one computer out of another's desktop (Caddy answers 401 without it); the integration tests accept either. The supervisor reaches a computer one of two ways, decided by where it runs:
+Each computer gets its own bridge network `deskyard-<name>`, so computers can't reach each other where the engine isolates bridge networks (Docker on Linux). OrbStack and Docker Desktop route between bridge networks, so there the per-computer token is what keeps one computer out of another's desktop (Caddy answers 401 without it); the integration tests accept either. The supervisor reaches a computer one of two ways, decided by where it runs:
 
-- **Supervisor in a container:** it connects itself to every `cc-<name>` network and reaches `alice` at `cc-alice:8080`. Computers publish nothing. On startup it reconnects to any network of a managed computer it's missing from.
+- **Supervisor in a container:** it connects itself to every `deskyard-<name>` network and reaches `alice` at `cc-alice:8080`. Computers publish nothing. On startup it reconnects to any network of a managed computer it's missing from.
 - **Supervisor on the host:** a host process can't reliably reach container addresses (Docker Desktop, OrbStack, rootless Podman), so each computer publishes its port 8080 on host `127.0.0.1` at a port the supervisor picks, stored as a label.
 
 In both cases the per-computer token (see The computer behind the supervisor) is what lets the supervisor in. On Docker Desktop and OrbStack a computer can reach the host's `127.0.0.1` ports (and so another computer's published port), and without the token it gets 401.
 
-Docker's default address pools only hold about 30 bridge networks, so the supervisor gives each network an explicit /28 from `SUPERVISOR_SUBNET` (default `10.213.0.0/16`, room for 4096 computers).
+Docker's default address pools only hold about 30 bridge networks, so the supervisor gives each network an explicit /28 from `DESKYARD_SUBNET` (default `10.213.0.0/16`, room for 4096 computers).
 
 ## The computer behind the supervisor
 
 A computer is only ever run by the supervisor, so the image's front door gets simpler:
 
-- Caddy (still on 8080, still as user `caddy`) requires the header `X-Container-Computer-Token: <token>` on every request, where the token is 32 random bytes the supervisor generates per computer and passes in `WORKSPACE_PROXY_TOKEN`. Without the variable the computer refuses to start. Caddy then serves KasmVNC's WebSocket and the `/_cdp/` route, and nothing else.
+- Caddy (still on 8080, still as user `caddy`) requires the header `X-Deskyard-Token: <token>` on every request, where the token is 32 random bytes the supervisor generates per computer and passes in `WORKSPACE_PROXY_TOKEN`. Without the variable the computer refuses to start. Caddy then serves KasmVNC's WebSocket and the `/_cdp/` route, and nothing else.
 - Gone from the image: `WORKSPACE_PASSWORD` and its generated password, basic auth, Caddy's HTTPS and domain support (`compose.domain.yaml`), the Origin check (the supervisor does it), and the compose files.
 
 There's no per-computer password: the supervisor login is the only way in. There's no `sudo` (`WORKSPACE_SUDO` and the non-Flatpak variant go).
@@ -168,7 +168,7 @@ All computers and the UI share one origin, so any script on it can call the API 
 
 `^[a-z][a-z0-9-]{0,30}[a-z0-9]$` (DNS label rules, so it also works as a container, network and folder name). Reserved, because they're supervisor routes: `api`, `login`, `logout`, `assets`, `static`, `healthz`, `favicon.ico`, `robots.txt`, the UI's pages `computers`, `images` and `accounts`, and anything starting with `_`. Names can't be changed after creation (to rename: remove it keeping its folder, rename the folder on the host, and create it again).
 
-Engine names: container `cc-<name>`, network `cc-<name>`.
+Engine names: container `deskyard-<name>`, network `deskyard-<name>`.
 
 # Accounts and access
 
@@ -190,9 +190,9 @@ Engine names: container `cc-<name>`, network `cc-<name>`.
 ```
 
 - **Usernames**: `^[a-z][a-z0-9._-]{0,31}$`, case-insensitive unique.
-- **First start**: if there's no `accounts.json`, the supervisor creates an admin from `SUPERVISOR_ADMIN_USER` (default `admin`) and `SUPERVISOR_ADMIN_PASSWORD`, or a generated password printed once in its log, as the computer image does today.
+- **First start**: if there's no `accounts.json`, the supervisor creates an admin from `DESKYARD_ADMIN_USER` (default `admin`) and `DESKYARD_ADMIN_PASSWORD`, or a generated password printed once in its log, as the computer image does today.
 - **Admins** create and delete accounts, set any account's password, and make accounts admin or not. The last admin can't be deleted or demoted. Every account can change its own password.
-- **Access** is the `computers` list: computer IDs (the `container-computer.id` label), not names, so a new computer that reuses a removed computer's name doesn't inherit its access. Removing a computer removes its ID from every account; IDs of computers that no longer exist are pruned on startup.
+- **Access** is the `computers` list: computer IDs (the `deskyard.id` label), not names, so a new computer that reuses a removed computer's name doesn't inherit its access. Removing a computer removes its ID from every account; IDs of computers that no longer exist are pruned on startup.
 - **Sessions**: signed cookie carrying username and `sessionEpoch`; 30 days, sliding. Changing a password, deleting an account or demoting it bumps the epoch, which signs that account out everywhere. Revoking access to a computer also closes that account's open desktop connections to it.
 
 What each kind of account can do:
@@ -244,7 +244,7 @@ An agent that runs somewhere else uses a computer through the `computer` command
 
 - Anyone with access to a computer creates a token on its Agents tab: a name ("claude on zef's laptop") and an optional expiry (never, 7, 30 or 90 days, or a date). The token is shown once, with the `computer remote add` line to paste into the agent's machine.
 - A token reaches exactly one computer, and only the agent API: shell, files, browser, desktop. Not the UI, not lifecycle, settings, accounts or other computers. A shell can do everything the other tools can, so there are no finer permissions.
-- Format `cct_<id>_<secret>` (32 random bytes). `tokens.json` in the state folder keeps the ID, name, computer ID, a SHA-256 of the secret (the secret is random, so a slow hash adds nothing), who created it and when, the expiry and when it was last used. Written atomically like `accounts.json`.
+- Format `dyt_<id>_<secret>` (32 random bytes). `tokens.json` in the state folder keeps the ID, name, computer ID, a SHA-256 of the secret (the secret is random, so a slow hash adds nothing), who created it and when, the expiry and when it was last used. Written atomically like `accounts.json`.
 - An expired or revoked token stops working at once, and the supervisor closes its open shells, browser connections and streams. Expired tokens stay listed as "Expired" until deleted. Removing a computer deletes its tokens.
 - Everyone with access sees all of the computer's tokens and who created them; they can revoke their own, admins can revoke any. A token lives no longer than its creator's access: when the creator loses access to the computer or the account is deleted, their tokens for it are revoked.
 - Every agent API call is logged by the supervisor with the token's name: the command line for exec, the path for files, connect and disconnect for shells and the browser.
@@ -271,7 +271,7 @@ How the supervisor carries these out:
 
 One Go binary (`supervisor/cmd/computer`) replacing today's bash script inside the image, and released for Linux, macOS and Windows for agents elsewhere.
 
-- **Remotes**: `computer remote add alice https://host/alice --token cct_…` checks the token against `GET /api/agent/v1` and saves the remote in `~/.config/container-computer/remotes.json` (mode 0600). `computer remote list`, `remove`, and `default alice`. `-c alice` (or `COMPUTER_REMOTE=alice`) picks one; `COMPUTER_URL` and `COMPUTER_TOKEN` work without a config file. Inside a computer with no remote chosen, it acts locally.
+- **Remotes**: `computer remote add alice https://host/alice --token dyt_…` checks the token against `GET /api/agent/v1` and saves the remote in `~/.config/deskyard/remotes.json` (mode 0600). `computer remote list`, `remove`, and `default alice`. `-c alice` (or `COMPUTER_REMOTE=alice`) picks one; `COMPUTER_URL` and `COMPUTER_TOKEN` work without a config file. Inside a computer with no remote chosen, it acts locally.
 - **Shell**: `computer exec -- cmd args` (exit code passed through; `--json` for stdout, stderr and exit code as one object), `computer shell` (interactive), `computer cp ./local alice:/workspace/x` and back.
 - **Browser**: `computer browser connect [--port 9222]` listens on `127.0.0.1` and forwards to the computer's CDP, so Playwright's `connectOverCDP`, Puppeteer or chrome-devtools tools work as if the browser were local. That's the only browser command (decided): for a quick look without browser tooling, agents use the desktop commands.
 - **Desktop**: every `computer` desktop action (`screenshot`, `zoom`, `click`, `type`, `key`, `scroll`, `drag`, …) with the same arguments and output, remote or local.
@@ -287,14 +287,14 @@ The repository builds computer images under `images/`; it starts with one, `imag
 
 **The image contract** is what the supervisor relies on in any computer image, declared with labels so the supervisor can check it before using an image:
 
-- `container-computer.contract=1` (the supervisor refuses images without it, or with a contract version it doesn't know), plus `org.opencontainers.image.title`, `.version` and `.description` for the UI.
+- `deskyard.contract=1` (the supervisor refuses images without it, or with a contract version it doesn't know), plus `org.opencontainers.image.title`, `.version` and `.description` for the UI.
 - One user, `user`, UID 1000, home `/workspace`. Everything that should survive an upgrade lives under `/workspace`.
 - Port 8080: Caddy in front of KasmVNC, checking `WORKSPACE_PROXY_TOKEN` as above; the web client at `/usr/share/kasmvnc/www`.
 - The `computer` command, in particular `computer screenshot` for thumbnails and the desktop actions the agent API runs through exec.
 - Caddy's `/_cdp/` route to the shared Chromium's CDP.
 - Settings via the `WORKSPACE_*` environment variables (start resolution), and a container health check.
 
-**The image catalog** (`images.json`, edited by admins on the Images page) lists the image references computers can be created from, e.g. `ghcr.io/zefhemel/container-computer:latest`. The default catalog has the one image. For each entry the supervisor shows title, version and description from the labels, and how many computers use it.
+**The image catalog** (`images.json`, edited by admins on the Images page) lists the image references computers can be created from, e.g. `ghcr.io/zefhemel/deskyard-debian-xfce:latest`. The default catalog has the one image. For each entry the supervisor shows title, version and description from the labels, and how many computers use it.
 
 **Updates.** CI rebuilds each image weekly (Debian security updates) and on changes, tagging `latest` and a dated version (`2026.10.22`). The supervisor checks the catalog's tags against the registry daily and on "Check now" (pull, compare image IDs). A computer whose image ID differs from the newest pulled image for its reference shows "Update available".
 
@@ -302,9 +302,9 @@ The repository builds computer images under `images/`; it starts with one, `imag
 
 # Storage
 
-- `SUPERVISOR_DATA_DIR` (default `~/computers` when run directly, required in a container) holds:
+- `DESKYARD_DATA_DIR` (default `~/deskyard` when run directly, required in a container) holds:
   - `<name>/`: each computer's workspace folder, owned by UID 1000 (on Linux; irrelevant on Docker Desktop and OrbStack);
-  - `.supervisor/`: `accounts.json`, `tokens.json`, `images.json`, `session.key`, `certmagic/`.
+  - `.deskyard/`: `accounts.json`, `tokens.json`, `images.json`, `session.key`, `certmagic/`.
 - In a container, the data folder must be mounted **at the same path** (`-v /srv/computers:/srv/computers`), so a path means the same thing to the supervisor and the engine. On startup the supervisor checks this with a marker file and a short-lived helper container, and refuses to start with an explanation if it doesn't match. Run directly, this check is skipped.
 
 # Settings per computer
@@ -317,7 +317,7 @@ Chosen at creation by an admin, editable later. Applying a change recreates the 
 | Memory limit | none | the computer may use all the host's memory; presets 1, 2, 4, 8 GB or a custom value |
 | CPUs | none | the computer may use all the host's CPUs; presets 1, 2, 4 or a custom value |
 
-Stored as labels `container-computer.setting.<key>=<value>`, plus environment variables on the container (as `compose.yaml` sets them today). `shm_size` 1g, a 30 s stop timeout and the Flatpak security options as in `compose.yaml`; the desktop starts at 1280×800 until someone opens it. Access isn't a setting (it lives in `accounts.json`) and changing it doesn't restart anything.
+Stored as labels `deskyard.setting.<key>=<value>`, plus environment variables on the container (as `compose.yaml` sets them today). `shm_size` 1g, a 30 s stop timeout and the Flatpak security options as in `compose.yaml`; the desktop starts at 1280×800 until someone opens it. Access isn't a setting (it lives in `accounts.json`) and changing it doesn't restart anything.
 
 # Operations
 
@@ -400,7 +400,7 @@ The UI must work on a phone (the wall becomes one column; the computer page stac
 
 ```
 supervisor/
-  cmd/supervisor/     the supervisor
+  cmd/deskyard/      the supervisor (the deskyard binary)
   cmd/computer/       the computer command (inside computers and for agents elsewhere)
   internal/
     engine/          the engine interface and its test suite

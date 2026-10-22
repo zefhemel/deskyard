@@ -4,7 +4,7 @@ The contract between the supervisor (Go, `internal/server`), its web UI (`web/`)
 
 ## Sessions (web UI)
 
-The UI authenticates with the `cc_session` cookie (HttpOnly, SameSite=Strict). Every `/api/*` route except `POST /api/login` answers 401 without a session. State-changing requests (POST, PUT, PATCH, DELETE) must carry an `Origin` matching the supervisor's own (browsers' `fetch` does this); otherwise 403.
+The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Strict). Every `/api/*` route except `POST /api/login` answers 401 without a session. State-changing requests (POST, PUT, PATCH, DELETE) must carry an `Origin` matching the supervisor's own (browsers' `fetch` does this); otherwise 403.
 
 | Method and path | Body | Response |
 | --- | --- | --- |
@@ -23,7 +23,7 @@ The UI authenticates with the `cc_session` cookie (HttpOnly, SameSite=Strict). E
   "id": "6f1c…", "name": "alice",
   "state": "running" | "stopped" | "starting" | "creating" | "upgrading" | "removing",
   "startedAt": "…", "folder": "/Users/zef/computers/alice",
-  "image": "ghcr.io/zefhemel/container-computer:latest",
+  "image": "ghcr.io/zefhemel/deskyard-debian-xfce:latest",
   "imageTitle": "Debian XFCE", "imageVersion": "2026.10.15",
   "updateAvailable": "2026.10.22" | null,
   "settings": {"memoryBytes": 0, "nanoCpus": 0},
@@ -83,7 +83,7 @@ The UI authenticates with the `cc_session` cookie (HttpOnly, SameSite=Strict). E
 | Method and path | Body | Response |
 | --- | --- | --- |
 | `GET /api/computers/{name}/tokens` | | `[Token]` (anyone with access) |
-| `POST /api/computers/{name}/tokens` | `{"name","expires": "…"|null}` | 201 `Token` plus `"token":"cct_…"` (shown once) and `"remoteAdd":"computer remote add alice https://host/alice --token cct_…"` |
+| `POST /api/computers/{name}/tokens` | `{"name","expires": "…"|null}` | 201 `Token` plus `"token":"dyt_…"` (shown once) and `"remoteAdd":"computer remote add alice https://host/alice --token dyt_…"` |
 | `DELETE /api/computers/{name}/tokens/{id}` | | 204 (own tokens; admins any) |
 
 ### Images (admin)
@@ -105,7 +105,7 @@ The UI authenticates with the `cc_session` cookie (HttpOnly, SameSite=Strict). E
 
 ## Agent API
 
-Authenticated with `Authorization: Bearer cct_<id>_<secret>` only (cookies are ignored here). The computer is the token's; a computer name in a remote's URL is only a check on the client side. 401 for a missing, unknown, revoked or expired token; 409 `{"error":"alice is stopped; someone with access can start it"}` from `exec` and `cdp` when the computer isn't running (`GET /api/agent/v1` always answers 200 with its `state`). No Origin checks: agents aren't browsers.
+Authenticated with `Authorization: Bearer dyt_<id>_<secret>` only (cookies are ignored here). The computer is the token's; a computer name in a remote's URL is only a check on the client side. 401 for a missing, unknown, revoked or expired token; 409 `{"error":"alice is stopped; someone with access can start it"}` from `exec` and `cdp` when the computer isn't running (`GET /api/agent/v1` always answers 200 with its `state`). No Origin checks: agents aren't browsers.
 
 ### `GET /api/agent/v1`
 

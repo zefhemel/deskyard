@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # The supervisor's container image. Build context: this folder (supervisor/).
-#   docker build -t container-computer-supervisor .
+#   docker build -t deskyard .
 # Run it with compose.yaml next to this file.
 
 # 1. The web UI, built into internal/web/dist (embedded by the Go build).
@@ -22,19 +22,19 @@ ARG TARGETOS TARGETARCH
 ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
-        -o /out/supervisor ./cmd/supervisor
+        -o /out/deskyard ./cmd/deskyard
 
 # 3. The image: the binary, CA certificates (registry pulls, ACME) and tzdata.
 FROM alpine:3.22
 RUN apk add --no-cache ca-certificates tzdata
-COPY --from=build /out/supervisor /usr/local/bin/supervisor
+COPY --from=build /out/deskyard /usr/local/bin/deskyard
 ARG VERSION=dev
-LABEL org.opencontainers.image.title="container-computer supervisor" \
-      org.opencontainers.image.description="Creates, runs and shares container-computers" \
+LABEL org.opencontainers.image.title="Deskyard" \
+      org.opencontainers.image.description="Creates, runs and shares computers" \
       org.opencontainers.image.version="${VERSION}"
-# SUPERVISOR_DATA_DIR has no default here: mount the data folder at the
+# DESKYARD_DATA_DIR has no default here: mount the data folder at the
 # same path as on the host and set it to that path (see compose.yaml).
-ENV SUPERVISOR_IN_CONTAINER=1 \
-    SUPERVISOR_LISTEN=0.0.0.0:8080
+ENV DESKYARD_IN_CONTAINER=1 \
+    DESKYARD_LISTEN=0.0.0.0:8080
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/supervisor"]
+ENTRYPOINT ["/usr/local/bin/deskyard"]

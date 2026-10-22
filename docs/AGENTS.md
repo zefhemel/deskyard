@@ -1,10 +1,10 @@
 ---
 tags: meta
 ---
-Operating manual for agents (and people) adding or changing pages in this space: the design documents and architecture of container-computer. `CLAUDE.md` points here; keep this the only manual.
+Operating manual for agents (and people) adding or changing pages in this space: the design documents and architecture of Deskyard. `CLAUDE.md` points here; keep this the only manual.
 
 # The space
-- The space root is `docs/` in the container-computer repository. It's registered in SilverBullet Desktop as **Container Computer**: use `sb --space "Container Computer" …` for queries and checks.
+- The space root is `docs/` in the Deskyard repository. It's registered in SilverBullet Desktop as **Container Computer**: use `sb --space "Container Computer" …` for queries and checks.
 - Pages are plain Markdown and must stay readable on GitHub: put essential facts in prose, and use queries only for overviews.
 - [[index]] is the entry page. [[CONFIG]] holds the space's Lua configuration. `Library/` holds installed libraries (the Diagrams library, [[Library/silverbullet-diagram/Mermaid]]); don't edit them, they're updated by the Library Manager. `screenshot.png` is the desktop screenshot the repository README shows.
 

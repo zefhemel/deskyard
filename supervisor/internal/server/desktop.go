@@ -14,8 +14,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/auth"
-	"github.com/zefhemel/container-computer/supervisor/internal/computers"
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 )
 
 // serveComputer handles /<name>/…: the desktop page (the UI), the KasmVNC
@@ -111,7 +111,7 @@ func (s *Server) proxyDesktop(w http.ResponseWriter, r *http.Request, c computer
 			pr.Out.Host = addr
 			pr.Out.Header.Del("Cookie")
 			pr.Out.Header.Del("Authorization")
-			pr.Out.Header.Set("X-Container-Computer-Token", token)
+			pr.Out.Header.Set("X-Deskyard-Token", token)
 		},
 		ErrorLog: nil,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {

@@ -1,7 +1,7 @@
 # The supervisor:
 # - test: Go unit tests, go vet, and the web UI's build and type check;
 # - image: a multi-arch image (amd64 and arm64 on native runners) at
-#     ghcr.io/<owner>/container-computer-supervisor
+#     ghcr.io/<owner>/deskyard
 #   tags latest (main), sha-<commit>, and 1.2.3 / 1.2 for release tags v1.2.3;
 #   pull requests build it without pushing;
 # - release (tags v*): supervisor binaries for Linux and macOS and computer
@@ -78,7 +78,7 @@ jobs:
 
       - name: Image name and version
         run: |
-          echo "IMAGE=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/container-computer-supervisor" >> "$GITHUB_ENV"
+          echo "IMAGE=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/deskyard" >> "$GITHUB_ENV"
           if [ "$GITHUB_REF_TYPE" = tag ]; then version="$GITHUB_REF_NAME"; else version="sha-${GITHUB_SHA::7}"; fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
 
@@ -132,7 +132,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Image name (registry paths must be lowercase)
-        run: echo "IMAGE=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/container-computer-supervisor" >> "$GITHUB_ENV"
+        run: echo "IMAGE=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/deskyard" >> "$GITHUB_ENV"
 
       - uses: actions/download-artifact@v4
         with:

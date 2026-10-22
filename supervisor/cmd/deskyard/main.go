@@ -1,5 +1,5 @@
-// Command supervisor runs container-computers and shares them: one binary
-// with its web UI built in. Configuration comes from SUPERVISOR_* variables.
+// Command deskyard runs computers and shares them: one binary
+// with its web UI built in. Configuration comes from DESKYARD_* variables.
 package main
 
 import (
@@ -16,14 +16,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/accounts"
-	"github.com/zefhemel/container-computer/supervisor/internal/computers"
-	"github.com/zefhemel/container-computer/supervisor/internal/config"
-	"github.com/zefhemel/container-computer/supervisor/internal/engine"
-	"github.com/zefhemel/container-computer/supervisor/internal/engine/docker"
-	"github.com/zefhemel/container-computer/supervisor/internal/server"
-	"github.com/zefhemel/container-computer/supervisor/internal/tlsserve"
-	"github.com/zefhemel/container-computer/supervisor/internal/web"
+	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
+	"github.com/zefhemel/deskyard/supervisor/internal/config"
+	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/engine/docker"
+	"github.com/zefhemel/deskyard/supervisor/internal/server"
+	"github.com/zefhemel/deskyard/supervisor/internal/tlsserve"
+	"github.com/zefhemel/deskyard/supervisor/internal/web"
 )
 
 var version = "dev"
@@ -44,22 +44,22 @@ func main() {
 	}
 }
 
-const usage = `supervisor: runs container-computers and shares them in the browser.
+const usage = `deskyard: runs computers (Linux desktops in containers) and shares them in the browser.
 
 Configuration (environment variables):
-  SUPERVISOR_LISTEN          address for HTTP (default 127.0.0.1:8080)
-  SUPERVISOR_DOMAIN          serve HTTPS on :443 (and :80) for this domain, with automatic certificates
-  SUPERVISOR_DATA_DIR        workspace folders and state (default ~/computers; required in a container)
-  SUPERVISOR_ENGINE_HOST     container engine socket (default DOCKER_HOST, else the platform default)
-  SUPERVISOR_SUBNET          address pool for the computers' networks (default 10.213.0.0/16)
-  SUPERVISOR_ADMIN_USER      the first admin's username (default admin)
-  SUPERVISOR_ADMIN_PASSWORD  the first admin's password (default: generated and printed once)
-  SUPERVISOR_IMAGE           the first image in the catalog (default ghcr.io/zefhemel/container-computer:latest)
-  SUPERVISOR_LOG             debug, info (default), warn
+  DESKYARD_LISTEN          address for HTTP (default 127.0.0.1:8080)
+  DESKYARD_DOMAIN          serve HTTPS on :443 (and :80) for this domain, with automatic certificates
+  DESKYARD_DATA_DIR        workspace folders and state (default ~/deskyard; required in a container)
+  DESKYARD_ENGINE_HOST     container engine socket (default DOCKER_HOST, else the platform default)
+  DESKYARD_SUBNET          address pool for the computers' networks (default 10.213.0.0/16)
+  DESKYARD_ADMIN_USER      the first admin's username (default admin)
+  DESKYARD_ADMIN_PASSWORD  the first admin's password (default: generated and printed once)
+  DESKYARD_IMAGE           the first image in the catalog (default ghcr.io/zefhemel/deskyard-debian-xfce:latest)
+  DESKYARD_LOG             debug, info (default), warn
 `
 
 func logLevel() slog.Level {
-	switch strings.ToLower(os.Getenv("SUPERVISOR_LOG")) {
+	switch strings.ToLower(os.Getenv("DESKYARD_LOG")) {
 	case "debug":
 		return slog.LevelDebug
 	case "warn":
@@ -152,7 +152,7 @@ func run(log *slog.Logger) error {
 // a marker the supervisor just wrote.
 func checkSamePath(ctx context.Context, eng engine.Engine, dataDir string) error {
 	token := fmt.Sprintf("%d", time.Now().UnixNano())
-	marker := filepath.Join(dataDir, ".supervisor", "same-path-check")
+	marker := filepath.Join(dataDir, ".deskyard", "same-path-check")
 	if err := os.WriteFile(marker, []byte(token), 0o600); err != nil {
 		return err
 	}
@@ -163,7 +163,7 @@ func checkSamePath(ctx context.Context, eng engine.Engine, dataDir string) error
 			return err
 		}
 	}
-	name := "cc-pathcheck-" + token[len(token)-6:]
+	name := "deskyard-pathcheck-" + token[len(token)-6:]
 	if _, err := eng.Create(ctx, engine.ContainerSpec{
 		Name: name, Image: img, Cmd: []string{"sleep", "30"},
 		Mounts: []engine.Mount{{Source: dataDir, Target: "/check"}},
@@ -174,12 +174,12 @@ func checkSamePath(ctx context.Context, eng engine.Engine, dataDir string) error
 	if err := eng.Start(ctx, name); err != nil {
 		return err
 	}
-	out, _, _, err := engine.Output(ctx, eng, name, engine.ExecSpec{Cmd: []string{"cat", "/check/.supervisor/same-path-check"}})
+	out, _, _, err := engine.Output(ctx, eng, name, engine.ExecSpec{Cmd: []string{"cat", "/check/.deskyard/same-path-check"}})
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(string(out)) != token {
-		return fmt.Errorf("SUPERVISOR_DATA_DIR (%s) must be mounted into the supervisor's container at the same path as on the host (-v %s:%s)", dataDir, dataDir, dataDir)
+		return fmt.Errorf("DESKYARD_DATA_DIR (%s) must be mounted into the supervisor's container at the same path as on the host (-v %s:%s)", dataDir, dataDir, dataDir)
 	}
 	return nil
 }

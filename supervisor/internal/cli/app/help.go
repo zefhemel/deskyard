@@ -12,7 +12,7 @@ import (
 var guideText string
 
 func (a *App) writeOverview(w io.Writer) {
-	fmt.Fprint(w, `computer: use a container computer (a Linux desktop with a shared browser) from inside it or from anywhere else.
+	fmt.Fprint(w, `computer: use a Deskyard computer (a Linux desktop with a shared browser) from inside it or from anywhere else.
 
 Usage: computer [-c NAME] COMMAND [ARGS...]
 
@@ -173,7 +173,7 @@ func runDescribe(a *App, _ *call) error {
 	doc := describeDoc{
 		Name:        "computer",
 		Version:     a.version(),
-		Description: "Use a container computer (a Linux desktop with a shared Chromium) from inside it or remotely through its agent API. Run commands as `computer [-c NAME] <name> <arguments...>`; arguments are positional in the listed order, flags go after the command name.",
+		Description: "Use a Deskyard computer (a Linux desktop with a shared Chromium) from inside it or remotely through its agent API. Run commands as `computer [-c NAME] <name> <arguments...>`; arguments are positional in the listed order, flags go after the command name.",
 		Usage:       "computer [-c NAME] COMMAND [ARGS...]",
 		GlobalFlags: globalFlags,
 		Environment: environment,

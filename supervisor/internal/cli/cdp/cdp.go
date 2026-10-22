@@ -20,7 +20,7 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/cli/remote"
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/remote"
 )
 
 // Forwarder is an http.Handler that proxies to {base}/api/agent/v1/cdp/….

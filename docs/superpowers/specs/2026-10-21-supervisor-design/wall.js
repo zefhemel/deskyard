@@ -30,7 +30,7 @@ function topBar(page = "computers") {
       <div class="meter" style="width:96px"><i style="width:38%"></i></div>` : "";
   return `
   <div class="top">
-    <a class="wordmark" href="computers.html">container-computer <span>supervisor</span></a>
+    <a class="wordmark" href="computers.html">Deskyard</a>
     ${nav}
     <div class="host">${host}
       <span class="account">${av(me)} ${me}${isAdmin ? ' <span class="role">admin</span>' : ""}</span>

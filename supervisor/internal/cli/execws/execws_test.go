@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/cli/clitest"
-	"github.com/zefhemel/container-computer/supervisor/internal/cli/remote"
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/clitest"
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/remote"
 )
 
 func setup(t *testing.T) (*clitest.Fake, *remote.Client) {
@@ -92,7 +92,7 @@ func TestServerError(t *testing.T) {
 func TestAuthAndStopped(t *testing.T) {
 	f, c := setup(t)
 	bad := *c
-	bad.Token = "cct_x_nope"
+	bad.Token = "dyt_x_nope"
 	if _, err := Run(ctx(t), &bad, Request{Argv: []string{"true"}}, IO{}); !remote.IsStatus(err, 401) {
 		t.Errorf("want 401, got %v", err)
 	}

@@ -12,7 +12,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/cli/execws"
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/execws"
 )
 
 // Exec runs a command on the remote computer (execws.Run bound to a client).
@@ -192,7 +192,7 @@ func (w *downloadWriter) start() error {
 		}
 		w.file, w.final, w.out = f, target, f
 	default:
-		return fmt.Errorf("unexpected answer from the computer (is it a container-computer image?)")
+		return fmt.Errorf("unexpected answer from the computer (is it a Deskyard computer image?)")
 	}
 	return nil
 }

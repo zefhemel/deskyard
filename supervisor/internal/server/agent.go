@@ -15,8 +15,8 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/computers"
-	"github.com/zefhemel/container-computer/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
+	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 )
 
 const agentPrefix = "/api/agent/v1"
@@ -25,7 +25,7 @@ const agentPrefix = "/api/agent/v1"
 func (s *Server) serveAgent(w http.ResponseWriter, r *http.Request) {
 	bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "an agent token is required (Authorization: Bearer cct_…)")
+		writeError(w, http.StatusUnauthorized, "an agent token is required (Authorization: Bearer dyt_…)")
 		return
 	}
 	t, ok := s.tokens.check(strings.TrimSpace(bearer))
@@ -249,7 +249,7 @@ func (s *Server) agentCDP(w http.ResponseWriter, r *http.Request, c computers.Co
 			pr.Out.Header.Del("Authorization")
 			pr.Out.Header.Del("Cookie")
 			pr.Out.Header.Del("Origin") // Chromium refuses DevTools WebSockets with an Origin
-			pr.Out.Header.Set("X-Container-Computer-Token", tok)
+			pr.Out.Header.Set("X-Deskyard-Token", tok)
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			if !strings.HasPrefix(rest, "/json") {

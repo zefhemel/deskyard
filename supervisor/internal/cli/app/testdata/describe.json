@@ -1,7 +1,7 @@
 {
   "name": "computer",
   "version": "test",
-  "description": "Use a container computer (a Linux desktop with a shared Chromium) from inside it or remotely through its agent API. Run commands as `computer [-c NAME] <name> <arguments...>`; arguments are positional in the listed order, flags go after the command name.",
+  "description": "Use a Deskyard computer (a Linux desktop with a shared Chromium) from inside it or remotely through its agent API. Run commands as `computer [-c NAME] <name> <arguments...>`; arguments are positional in the listed order, flags go after the command name.",
   "usage": "computer [-c NAME] COMMAND [ARGS...]",
   "globalFlags": [
     {
@@ -713,8 +713,8 @@
       "name": "remote add",
       "group": "remote",
       "summary": "save a computer as a remote",
-      "usage": "remote add NAME URL --token cct_…",
-      "description": "Checks the token against the computer's agent API and saves the remote in remotes.json ($XDG_CONFIG_HOME/container-computer, default ~/.config/container-computer; mode 0600). URL is the computer's address, like https://host/alice. Tokens come from the computer's Agents tab. The first remote becomes the default.",
+      "usage": "remote add NAME URL --token dyt_…",
+      "description": "Checks the token against the computer's agent API and saves the remote in remotes.json ($XDG_CONFIG_HOME/deskyard-computer, default ~/.config/deskyard; mode 0600). URL is the computer's address, like https://host/alice. Tokens come from the computer's Agents tab. The first remote becomes the default.",
       "arguments": [
         {
           "name": "name",
@@ -734,7 +734,7 @@
           "name": "--token",
           "type": "string",
           "value": "TOKEN",
-          "description": "agent token (cct_…); defaults to $COMPUTER_TOKEN"
+          "description": "agent token (dyt_…); defaults to $COMPUTER_TOKEN"
         }
       ],
       "output": {
@@ -742,7 +742,7 @@
         "description": "a confirmation line"
       },
       "examples": [
-        "computer remote add alice https://computers.example.com/alice --token cct_…"
+        "computer remote add alice https://computers.example.com/alice --token dyt_…"
       ],
       "where": "on this machine (no remote needed)",
       "exitCodes": "0 ok, 1 error, 2 usage error"

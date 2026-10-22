@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/cli/clitest"
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/clitest"
 )
 
 func TestParseURL(t *testing.T) {
@@ -54,8 +54,8 @@ func TestConfigRoundTrip(t *testing.T) {
 	if len(c.Remotes) != 0 || c.Default != "" {
 		t.Fatalf("missing file should be empty: %+v", c)
 	}
-	c.Add(&Remote{Name: "alice", URL: "https://h/alice", Base: "https://h", Computer: "alice", Token: "cct_a_s"})
-	c.Add(&Remote{Name: "bob", URL: "https://h/bob", Base: "https://h", Computer: "bob", Token: "cct_b_s"})
+	c.Add(&Remote{Name: "alice", URL: "https://h/alice", Base: "https://h", Computer: "alice", Token: "dyt_a_s"})
+	c.Add(&Remote{Name: "bob", URL: "https://h/bob", Base: "https://h", Computer: "bob", Token: "dyt_b_s"})
 	if c.Default != "alice" {
 		t.Fatalf("first remote should be the default, got %q", c.Default)
 	}
@@ -79,7 +79,7 @@ func TestConfigRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c2.Default != "alice" || len(c2.Remotes) != 2 || c2.Remotes["bob"].Name != "bob" || c2.Remotes["bob"].Token != "cct_b_s" {
+	if c2.Default != "alice" || len(c2.Remotes) != 2 || c2.Remotes["bob"].Name != "bob" || c2.Remotes["bob"].Token != "dyt_b_s" {
 		t.Fatalf("reloaded config differs: %+v", c2)
 	}
 	if got := c2.Sorted(); got[0].Name != "alice" || got[1].Name != "bob" {
@@ -107,13 +107,13 @@ func TestDefaultPathXDG(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p != filepath.Join("/x/cfg", "container-computer", "remotes.json") {
+	if p != filepath.Join("/x/cfg", "deskyard", "remotes.json") {
 		t.Errorf("DefaultPath = %q", p)
 	}
 }
 
 func TestMaskToken(t *testing.T) {
-	if got := MaskToken("cct_abc_secretsecret"); got != "cct_abc_…" {
+	if got := MaskToken("dyt_abc_secretsecret"); got != "dyt_abc_…" {
 		t.Errorf("MaskToken = %q", got)
 	}
 	if strings.Contains(MaskToken("whateverlongsecret"), "secret") {
@@ -146,7 +146,7 @@ func TestInfoAndErrors(t *testing.T) {
 	}
 
 	bad := *c
-	bad.Token = "cct_x_wrong"
+	bad.Token = "dyt_x_wrong"
 	_, err = bad.Info(context.Background())
 	if !IsStatus(err, 401) || !strings.Contains(err.Error(), "ask someone with access to alice for a new token") {
 		t.Errorf("401 error = %v", err)

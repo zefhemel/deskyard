@@ -153,7 +153,7 @@ func (c *Client) explain(status int, msg string) string {
 	name := c.Label()
 	switch status {
 	case http.StatusUnauthorized:
-		return fmt.Sprintf("token rejected (401): ask someone with access to %s for a new token (on its Agents tab; this one is wrong, expired or revoked), then run `computer remote add %s %s --token cct_…` again",
+		return fmt.Sprintf("token rejected (401): ask someone with access to %s for a new token (on its Agents tab; this one is wrong, expired or revoked), then run `computer remote add %s %s --token dyt_…` again",
 			name, aliasOr(c.Alias, name), (&Target{Base: c.Base, Computer: c.Computer}).URL())
 	case http.StatusConflict:
 		if msg == "" {

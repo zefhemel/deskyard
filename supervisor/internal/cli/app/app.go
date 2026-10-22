@@ -13,7 +13,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/cli/remote"
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/remote"
 )
 
 // App holds everything the commands touch, so tests can swap it.
@@ -286,7 +286,7 @@ func (a *App) configPath() (string, error) {
 		return a.ConfigPath, nil
 	}
 	if dir := a.Getenv("XDG_CONFIG_HOME"); dir != "" {
-		return dir + string(os.PathSeparator) + "container-computer" + string(os.PathSeparator) + "remotes.json", nil
+		return dir + string(os.PathSeparator) + "deskyard" + string(os.PathSeparator) + "remotes.json", nil
 	}
 	return remote.DefaultPath()
 }
@@ -300,7 +300,7 @@ func (a *App) loadConfig() (*remote.Config, string, error) {
 	return cfg, p, err
 }
 
-const addHint = "No remotes yet? Get a token on the computer's Agents tab, then run `computer remote add NAME https://host/NAME --token cct_…`"
+const addHint = "No remotes yet? Get a token on the computer's Agents tab, then run `computer remote add NAME https://host/NAME --token dyt_…`"
 
 // target picks the remote to talk to. It returns nil, nil when the command
 // should act locally (inside a computer with no remote chosen).
@@ -352,7 +352,7 @@ func (a *App) namedRemote(name string) (*remote.Client, error) {
 	for _, r := range cfg.Sorted() {
 		names = append(names, r.Name)
 	}
-	return nil, fmt.Errorf("no remote named %q (there are: %s): run `computer remote list`, or add it with `computer remote add %s https://host/%s --token cct_…`", name, strings.Join(names, ", "), name, name)
+	return nil, fmt.Errorf("no remote named %q (there are: %s): run `computer remote list`, or add it with `computer remote add %s https://host/%s --token dyt_…`", name, strings.Join(names, ", "), name, name)
 }
 
 func (a *App) envRemote(u string) (*remote.Client, error) {
@@ -362,7 +362,7 @@ func (a *App) envRemote(u string) (*remote.Client, error) {
 	}
 	tok := a.Getenv("COMPUTER_TOKEN")
 	if tok == "" {
-		return nil, errors.New("COMPUTER_URL is set but COMPUTER_TOKEN isn't: set it to the agent token (cct_…) for that computer")
+		return nil, errors.New("COMPUTER_URL is set but COMPUTER_TOKEN isn't: set it to the agent token (dyt_…) for that computer")
 	}
 	return &remote.Client{Alias: t.Computer, Base: t.Base, Computer: t.Computer, Token: tok, HTTP: a.HTTP}, nil
 }

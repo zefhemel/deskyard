@@ -141,13 +141,13 @@ def test_computer_publishes_only_8080_and_is_isolated(admin, computer, name, sup
     other = "o" + uuid.uuid4().hex[:5]
     admin.create(other)
     try:
-        ports = docker("port", f"cc-{name}").stdout.split()
+        ports = docker("port", f"deskyard-{name}").stdout.split()
         if supervisor.container:
             assert ports == []
         else:
             assert ports[0] == "8080/tcp" and ports[2].startswith("127.0.0.1:") and len(ports) == 3, ports
-        ip = json.loads(docker("inspect", f"cc-{other}").stdout)[0]["NetworkSettings"]["Networks"][f"cc-{other}"]["IPAddress"]
-        r = subprocess.run(["docker", "exec", "-u", "user", f"cc-{name}", "curl", "-s", "-m", "3", "-o", "/dev/null",
+        ip = json.loads(docker("inspect", f"deskyard-{other}").stdout)[0]["NetworkSettings"]["Networks"][f"deskyard-{other}"]["IPAddress"]
+        r = subprocess.run(["docker", "exec", "-u", "user", f"deskyard-{name}", "curl", "-s", "-m", "3", "-o", "/dev/null",
                             "-w", "%{http_code}", f"http://{ip}:8080/"], capture_output=True, text=True)
         # Unreachable where the engine isolates bridge networks (Docker on Linux);
         # where it doesn't (OrbStack, Docker Desktop), the per-computer token refuses it.
@@ -159,7 +159,7 @@ def test_computer_publishes_only_8080_and_is_isolated(admin, computer, name, sup
 def test_replaced_web_server_isnt_served(admin, computer, name):
     """An agent that replaces the computer's web content can't get it served on the supervisor's origin."""
     before = admin.get(f"/{name}/vnc/vnc.html").text
-    subprocess.run(["docker", "exec", "-u", "root", f"cc-{name}", "sh", "-c",
+    subprocess.run(["docker", "exec", "-u", "root", f"deskyard-{name}", "sh", "-c",
                     "echo '<script>evil()</script>' > /usr/share/kasmvnc/www/vnc.html"], check=True)
     assert admin.get(f"/{name}/vnc/vnc.html").text == before
     assert admin.get(f"/{name}/anything-else").status_code == 404
@@ -168,7 +168,7 @@ def test_replaced_web_server_isnt_served(admin, computer, name):
 def test_image_without_contract_refused(admin, name):
     r = admin.post("/api/computers", json={"name": name, "image": "alpine:3.22"})
     st = admin.wait_job(r.json()["job"])
-    assert st["status"] == "failed" and "container-computer image" in st["error"]
+    assert st["status"] == "failed" and "Deskyard computer image" in st["error"]
     assert admin.get(f"/api/computers/{name}").status_code == 404
 
 

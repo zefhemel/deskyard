@@ -8,8 +8,8 @@ const now = Date.now();
 const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
 
 export const FOLDER = "/Users/zef/computers";
-const LATEST = "ghcr.io/zefhemel/container-computer:latest";
-const BETA = "ghcr.io/zefhemel/container-computer:beta";
+const LATEST = "ghcr.io/zefhemel/deskyard-debian-xfce:latest";
+const BETA = "ghcr.io/zefhemel/deskyard-debian-xfce:beta";
 
 function computer(c: Partial<Computer> & { name: string }): Computer {
   return {

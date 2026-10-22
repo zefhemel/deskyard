@@ -13,7 +13,7 @@ log() { echo "[workspace-init] $*"; }
 # Computers only run behind the supervisor, which passes the token Caddy
 # checks on every request.
 if [ -z "${WORKSPACE_PROXY_TOKEN:-}" ]; then
-    echo "[workspace-init] WORKSPACE_PROXY_TOKEN is not set: this image runs only behind the container-computer supervisor" >&2
+    echo "[workspace-init] WORKSPACE_PROXY_TOKEN is not set: this image runs only behind the Deskyard" >&2
     exit 1
 fi
 

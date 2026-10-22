@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/auth"
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 )
 
 func TestFirstAdminAndLastAdminRules(t *testing.T) {

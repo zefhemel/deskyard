@@ -1,8 +1,8 @@
 # Builds every computer image under images/<name>/ for amd64 and arm64 on
 # native runners and publishes one multi-arch image per name to GitHub
 # Container Registry:
-#   debian-xfce   -> ghcr.io/<owner>/container-computer   (the original name)
-#   <other name>  -> ghcr.io/<owner>/container-computer-<name>
+#   debian-xfce   -> ghcr.io/<owner>/deskyard-debian-xfce
+#   <other name>  -> ghcr.io/<owner>/deskyard-<name>
 # Tags (main only): latest, the build date (2026.10.22) and sha-<commit>.
 # The images also build the computer command from supervisor/, so changes
 # there rebuild them too. A weekly run picks up Debian security updates.
@@ -77,8 +77,7 @@ jobs:
 
       - name: Image name (registry paths must be lowercase)
         run: |
-          repo="${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/container-computer"
-          if [ "$NAME" != debian-xfce ]; then repo="${repo}-${NAME}"; fi
+          repo="${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/deskyard-${NAME}"
           echo "IMAGE=$repo" >> "$GITHUB_ENV"
         env:
           NAME: ${{ matrix.image }}
@@ -141,8 +140,7 @@ jobs:
     steps:
       - name: Image name (registry paths must be lowercase)
         run: |
-          repo="${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/container-computer"
-          if [ "$NAME" != debian-xfce ]; then repo="${repo}-${NAME}"; fi
+          repo="${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/deskyard-${NAME}"
           echo "IMAGE=$repo" >> "$GITHUB_ENV"
         env:
           NAME: ${{ matrix.image }}

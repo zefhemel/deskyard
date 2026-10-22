@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 )
 
 const image = "alpine:3.22"
@@ -23,8 +23,8 @@ func Run(t *testing.T, e engine.Engine) {
 	}
 	b := make([]byte, 4)
 	_, _ = rand.Read(b)
-	name := "cc-enginetest-" + hex.EncodeToString(b)
-	labels := map[string]string{"container-computer.enginetest": name}
+	name := "deskyard-enginetest-" + hex.EncodeToString(b)
+	labels := map[string]string{"deskyard.enginetest": name}
 
 	if err := e.CreateNetwork(ctx, name, "", labels); err != nil {
 		t.Fatalf("network: %v", err)
@@ -46,7 +46,7 @@ func Run(t *testing.T, e engine.Engine) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if c.Labels["container-computer.enginetest"] != name || c.Env["HELLO"] != "world" || c.Name != name {
+		if c.Labels["deskyard.enginetest"] != name || c.Env["HELLO"] != "world" || c.Name != name {
 			t.Fatalf("got %+v", c)
 		}
 		list, err := e.List(ctx, labels)

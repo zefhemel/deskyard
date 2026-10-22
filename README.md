@@ -1,4 +1,4 @@
-# container-computer
+# Deskyard
 
 Small, persistent Linux computers in containers, each shared between humans
 and AI agents alike, run and shared by one app: the **supervisor**.
@@ -24,7 +24,7 @@ What's in a computer:
   on the same screen, inside the computer and, with a token, from anywhere
   else.
 - **Persistent installs**: `/workspace` (the user's home) is a plain folder
-  on the host (`~/computers/<name>`). Tools installed with mise, npm, uv or
+  on the host (`~/deskyard/<name>`). Tools installed with mise, npm, uv or
   Flatpak live there and survive restarts and image upgrades.
 - **Agent skills** for Claude Code, Codex and other agents, so they know how
   to use all of the above.
@@ -38,25 +38,25 @@ machine.
 You need Docker (or OrbStack, or Docker Desktop) on Linux or macOS.
 
 **The binary.** Download the supervisor for your machine from the
-[releases](https://github.com/zefhemel/container-computer/releases)
-(`supervisor-linux-amd64`, `-linux-arm64`, `-darwin-amd64`, `-darwin-arm64`)
+[releases](https://github.com/zefhemel/deskyard/releases)
+(`deskyard-linux-amd64`, `-linux-arm64`, `-darwin-amd64`, `-darwin-arm64`)
 and run it:
 
 ```bash
-curl -fsSLo supervisor https://github.com/zefhemel/container-computer/releases/latest/download/supervisor-linux-amd64
+curl -fsSLo deskyard https://github.com/zefhemel/deskyard/releases/latest/download/deskyard-linux-amd64
 chmod +x supervisor
 ./supervisor
 ```
 
-It finds the engine at `SUPERVISOR_ENGINE_HOST`, else `DOCKER_HOST`, else
-the platform's default socket, and keeps everything in `~/computers`.
+It finds the engine at `DESKYARD_ENGINE_HOST`, else `DOCKER_HOST`, else
+the platform's default socket, and keeps everything in `~/deskyard`.
 
 **In a container.** `supervisor/compose.yaml` runs the image
-`ghcr.io/zefhemel/container-computer-supervisor`:
+`ghcr.io/zefhemel/deskyard`:
 
 ```bash
 cd supervisor
-SUPERVISOR_DATA_DIR=/srv/computers docker compose up -d
+DESKYARD_DATA_DIR=/srv/computers docker compose up -d
 ```
 
 The data folder must be an absolute path; it's mounted at the same path
@@ -64,11 +64,11 @@ inside (see Storage).
 
 **Then.** On first start the supervisor creates the account `admin` and
 prints its generated password once in its log (`docker compose logs
-supervisor` in a container), unless you set `SUPERVISOR_ADMIN_PASSWORD`.
+supervisor` in a container), unless you set `DESKYARD_ADMIN_PASSWORD`.
 Open <http://localhost:8080>, sign in, and create a computer: give it a name
 like `alice` and its desktop opens at <http://localhost:8080/alice/>.
 
-**On a server with a domain.** Set `SUPERVISOR_DOMAIN=computers.example.com`,
+**On a server with a domain.** Set `DESKYARD_DOMAIN=computers.example.com`,
 point its DNS at the host and let ports 80 and 443 through: the supervisor
 gets a certificate itself and serves HTTPS. In a container, publish `80:80`
 and `443:443` instead of `127.0.0.1:8080:8080` (the compose file shows
@@ -82,8 +82,8 @@ front.
 Admins create computers with a name, an image from the catalog, and
 optionally a memory and CPU limit (by default a computer may use all of the
 host's). Names are lowercase letters, digits and dashes, start with a letter
-and can't be changed later. Each computer is a container `cc-<name>` on its
-own network `cc-<name>`, so computers can't reach each other.
+and can't be changed later. Each computer is a container `deskyard-<name>` on its
+own network `deskyard-<name>`, so computers can't reach each other.
 
 ### What persists
 
@@ -118,7 +118,7 @@ protocol, such as most Electron and Flatpak apps, aren't restored.
 ### Images and upgrades
 
 The **Images** page holds the catalog of images computers can be created
-from; it starts with `ghcr.io/zefhemel/container-computer:latest`, the
+from; it starts with `ghcr.io/zefhemel/deskyard-debian-xfce:latest`, the
 `debian-xfce` image in this repository. CI rebuilds it weekly (Debian
 security updates) and on every change, tagged `latest` and with the date
 (`2026.10.22`). The supervisor checks for newer versions daily (or on "Check
@@ -132,7 +132,7 @@ Tools installed with mise, uv and npm bring their own runtimes and should
 keep working across Debian versions; if one breaks, reinstall it.
 
 Any image can be added to the catalog if it follows the image contract
-(label `container-computer.contract=1`, user `user` with home `/workspace`,
+(label `deskyard.contract=1`, user `user` with home `/workspace`,
 KasmVNC behind Caddy on 8080); see the design in `docs/`.
 
 ### Flatpak
@@ -203,7 +203,7 @@ shown once, with the line to paste on the agent's machine. Download
 `computer` for that machine from the releases (Linux, macOS, Windows), then:
 
 ```bash
-computer remote add alice https://computers.example.com/alice --token cct_...
+computer remote add alice https://computers.example.com/alice --token dyt_...
 computer -c alice exec -- ls ~            # one command; exit code passed through
 computer -c alice shell                   # interactive shell
 computer cp ./notes.md alice:/workspace/notes.md    # and back
@@ -232,22 +232,22 @@ Environment variables of the supervisor:
 
 | Variable | Default | |
 |---|---|---|
-| `SUPERVISOR_LISTEN` | `127.0.0.1:8080` (`0.0.0.0:8080` in the image) | address for plain HTTP |
-| `SUPERVISOR_DOMAIN` | | serve HTTPS for this domain on 80/443, with an automatic certificate |
-| `SUPERVISOR_DATA_DIR` | `~/computers` (required in a container) | workspace folders, and `.supervisor/` for the supervisor's own state |
-| `SUPERVISOR_ENGINE_HOST` | `DOCKER_HOST`, else the default socket | the engine to drive |
-| `SUPERVISOR_SUBNET` | `10.213.0.0/16` | each computer's network gets a /28 from it |
-| `SUPERVISOR_ADMIN_USER` | `admin` | first start only: the first admin |
-| `SUPERVISOR_ADMIN_PASSWORD` | generated, printed once | first start only: its password |
-| `SUPERVISOR_IMAGE` | `ghcr.io/zefhemel/container-computer:latest` | the catalog's first image |
+| `DESKYARD_LISTEN` | `127.0.0.1:8080` (`0.0.0.0:8080` in the image) | address for plain HTTP |
+| `DESKYARD_DOMAIN` | | serve HTTPS for this domain on 80/443, with an automatic certificate |
+| `DESKYARD_DATA_DIR` | `~/deskyard` (required in a container) | workspace folders, and `.deskyard/` for the supervisor's own state |
+| `DESKYARD_ENGINE_HOST` | `DOCKER_HOST`, else the default socket | the engine to drive |
+| `DESKYARD_SUBNET` | `10.213.0.0/16` | each computer's network gets a /28 from it |
+| `DESKYARD_ADMIN_USER` | `admin` | first start only: the first admin |
+| `DESKYARD_ADMIN_PASSWORD` | generated, printed once | first start only: its password |
+| `DESKYARD_IMAGE` | `ghcr.io/zefhemel/deskyard-debian-xfce:latest` | the catalog's first image |
 
 ### Storage
 
-`SUPERVISOR_DATA_DIR` holds each computer's folder (`<name>/`, owned by UID
-1000) and `.supervisor/` with `accounts.json`, `tokens.json`, `images.json`,
+`DESKYARD_DATA_DIR` holds each computer's folder (`<name>/`, owned by UID
+1000) and `.deskyard/` with `accounts.json`, `tokens.json`, `images.json`,
 the session key and certificates (all mode 0600). The supervisor keeps no
 list of computers of its own: computers are containers with
-`container-computer.*` labels.
+`deskyard.*` labels.
 
 In a container, the data folder must be mounted **at the same path** as on
 the host (`-v /srv/computers:/srv/computers`), because the supervisor hands
@@ -273,13 +273,13 @@ startup and refuses to run, with an explanation, if they don't match.
   as `user`.
 - Over plain HTTP, passwords travel in clear text: keep the default
   `127.0.0.1` binding unless the network is trusted, or set
-  `SUPERVISOR_DOMAIN` for HTTPS.
+  `DESKYARD_DOMAIN` for HTTPS.
 
 ## Repository layout
 
 ```
 supervisor/
-  cmd/supervisor/   the supervisor
+  cmd/deskyard/     the supervisor (the deskyard binary)
   cmd/computer/     the computer command (inside computers and for agents elsewhere)
   internal/         engine interface and Docker implementation, accounts, auth,
                     computers, the HTTP server and proxy, the embedded UI
@@ -304,7 +304,7 @@ The supervisor needs Go and Node 24:
 
 ```bash
 cd supervisor
-make build          # the UI, then bin/supervisor and bin/computer
+make build          # the UI, then bin/deskyard and bin/computer
 make test           # Go unit tests
 make test-engine    # also the tests that drive a real Docker engine
 make typecheck      # the UI's TypeScript

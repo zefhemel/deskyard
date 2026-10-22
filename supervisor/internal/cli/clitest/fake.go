@@ -22,7 +22,7 @@ import (
 )
 
 // Token is the fake's valid token.
-const Token = "cct_test1_secret"
+const Token = "dyt_test1_secret"
 
 // ExecRequest mirrors the first exec message.
 type ExecRequest struct {

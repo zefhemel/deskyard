@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/cli/desktop"
-	"github.com/zefhemel/container-computer/supervisor/internal/cli/execws"
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/desktop"
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/execws"
 )
 
 func runDesktop(a *App, c *call) error {

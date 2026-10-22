@@ -11,19 +11,19 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/accounts"
-	"github.com/zefhemel/container-computer/supervisor/internal/computers"
-	"github.com/zefhemel/container-computer/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
+	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 )
 
 // fakeEngine knows one stopped computer, "alice", and nothing else.
 type fakeEngine struct{ engine.Engine }
 
-var alice = engine.Container{ID: "c1", Name: "cc-alice", State: "exited", ImageID: "sha256:abc",
+var alice = engine.Container{ID: "c1", Name: "deskyard-alice", State: "exited", ImageID: "sha256:abc",
 	Labels: map[string]string{computers.LabelManaged: "true", computers.LabelName: "alice", computers.LabelID: "id-alice"}}
 
 func (fakeEngine) Inspect(_ context.Context, id string) (engine.Container, error) {
-	if id == "cc-alice" || id == "c1" {
+	if id == "deskyard-alice" || id == "c1" {
 		return alice, nil
 	}
 	return engine.Container{}, engine.ErrNotFound

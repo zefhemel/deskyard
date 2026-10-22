@@ -91,7 +91,7 @@ function TokenRow({ computer, token: t, canRevoke, onChanged }: { computer: stri
     <tr class="last:[&>td]:border-b-0">
       <td class={`${td} ${muted}`}>
         <div class="font-semibold">{t.name}</div>
-        <div class="mono mt-0.5 text-[13px] text-muted">cct_{t.id.slice(0, 4)}…</div>
+        <div class="mono mt-0.5 text-[13px] text-muted">dyt_{t.id.slice(0, 4)}…</div>
       </td>
       <td class={`${td} ${muted} whitespace-nowrap`}>
         {t.createdBy}, {day(t.created)}

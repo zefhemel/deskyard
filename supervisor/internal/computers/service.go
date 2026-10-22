@@ -19,16 +19,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 )
 
 const (
-	LabelManaged  = "container-computer.managed"
-	LabelName     = "container-computer.name"
-	LabelID       = "container-computer.id"
-	LabelMemory   = "container-computer.setting.memory"
-	LabelCPUs     = "container-computer.setting.cpus"
-	LabelContract = "container-computer.contract"
+	LabelManaged  = "deskyard.managed"
+	LabelName     = "deskyard.name"
+	LabelID       = "deskyard.id"
+	LabelMemory   = "deskyard.setting.memory"
+	LabelCPUs     = "deskyard.setting.cpus"
+	LabelContract = "deskyard.contract"
 	TokenEnv      = "WORKSPACE_PROXY_TOKEN"
 	Contract      = "1"
 
@@ -66,7 +66,7 @@ func (c Computer) Running() bool { return c.State == "running" }
 
 type Config struct {
 	DataDir     string
-	Subnet      string // SUPERVISOR_SUBNET
+	Subnet      string // DESKYARD_SUBNET
 	InContainer bool
 	SelfID      string // the supervisor's own container, when InContainer
 }
@@ -85,7 +85,7 @@ func New(e engine.Engine, cfg Config, log *slog.Logger) *Service {
 	return &Service{Eng: e, Cfg: cfg, Log: log, busy: map[string]string{}, imgInfo: map[string]engine.Image{}}
 }
 
-func containerName(name string) string { return "cc-" + name }
+func containerName(name string) string { return "deskyard-" + name }
 
 // Begin marks a computer busy for a long operation; Done clears it.
 func (s *Service) Begin(name, state string) error {
@@ -230,7 +230,7 @@ func (s *Service) EnsureImage(ctx context.Context, ref string, progress func(str
 		return engine.Image{}, err
 	}
 	if img.Labels[LabelContract] != Contract {
-		return engine.Image{}, fmt.Errorf("%s isn't a container-computer image (label %s=%s missing)", ref, LabelContract, Contract)
+		return engine.Image{}, fmt.Errorf("%s isn't a Deskyard computer image (label %s=%s missing)", ref, LabelContract, Contract)
 	}
 	return img, nil
 }
@@ -294,7 +294,7 @@ func (s *Service) WaitReady(ctx context.Context, name string, limit time.Duratio
 		addr, token, err := s.Target(ctx, name)
 		if err == nil {
 			req, _ := http.NewRequestWithContext(ctx, "GET", "http://"+addr+"/", nil)
-			req.Header.Set("X-Container-Computer-Token", token)
+			req.Header.Set("X-Deskyard-Token", token)
 			if resp, err := client.Do(req); err == nil {
 				resp.Body.Close()
 				if resp.StatusCode == http.StatusOK {
@@ -466,7 +466,7 @@ func (s *Service) deleteFolder(ctx context.Context, name string) error {
 			return err
 		}
 	}
-	hname := "cc-remove-" + randomHex(4)
+	hname := "deskyard-remove-" + randomHex(4)
 	_, err := s.Eng.Create(ctx, engine.ContainerSpec{
 		Name: hname, Image: helper, Cmd: []string{"rm", "-rf", "/data/" + name},
 		Mounts: []engine.Mount{{Source: s.Cfg.DataDir, Target: "/data"}},

@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	CookieName = "cc_session"
+	CookieName = "deskyard_session"
 	sessionTTL = 30 * 24 * time.Hour
 )
 

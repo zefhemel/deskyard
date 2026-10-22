@@ -1,9 +1,9 @@
 """Integration tests: a real supervisor against the local container engine.
 
-SUPERVISOR_TEST_MODE=direct (default) runs the binary on this machine;
-SUPERVISOR_TEST_MODE=container runs the supervisor image with the socket and
+DESKYARD_TEST_MODE=direct (default) runs the binary on this machine;
+DESKYARD_TEST_MODE=container runs the supervisor image with the socket and
 the data folder mounted at the same path. CC_TEST_IMAGE is the computer image
-(default container-computer:test, built from images/debian-xfce).
+(default deskyard-debian-xfce:test, built from images/debian-xfce).
 """
 
 from __future__ import annotations
@@ -22,8 +22,8 @@ import requests
 
 ROOT = Path(__file__).resolve().parent.parent
 REPO = ROOT.parent
-IMAGE = os.environ.get("CC_TEST_IMAGE", "container-computer:test")
-MODE = os.environ.get("SUPERVISOR_TEST_MODE", "direct")
+IMAGE = os.environ.get("CC_TEST_IMAGE", "deskyard-debian-xfce:test")
+MODE = os.environ.get("DESKYARD_TEST_MODE", "direct")
 ADMIN_PASSWORD = "admin-password"
 
 
@@ -90,21 +90,21 @@ class Supervisor:
 
     def start(self):
         env = {
-            "SUPERVISOR_DATA_DIR": str(self.data), "SUPERVISOR_ADMIN_PASSWORD": ADMIN_PASSWORD,
-            "SUPERVISOR_IMAGE": IMAGE, "SUPERVISOR_SUBNET": "10.215.0.0/20",
+            "DESKYARD_DATA_DIR": str(self.data), "DESKYARD_ADMIN_PASSWORD": ADMIN_PASSWORD,
+            "DESKYARD_IMAGE": IMAGE, "DESKYARD_SUBNET": "10.215.0.0/20",
         }
         if MODE == "container":
-            self.container = f"cc-test-supervisor-{uuid.uuid4().hex[:6]}"
+            self.container = f"deskyard-test-supervisor-{uuid.uuid4().hex[:6]}"
             args = ["run", "-d", "--name", self.container, "-p", f"127.0.0.1:{self.port}:8080",
                     "-v", "/var/run/docker.sock:/var/run/docker.sock", "-v", f"{self.data}:{self.data}"]
             for k, v in env.items():
                 args += ["-e", f"{k}={v}"]
-            docker(*args, "container-computer-supervisor:test")
+            docker(*args, "deskyard:test")
         else:
-            binary = ROOT / "bin" / "supervisor-test"
-            subprocess.run(["go", "build", "-o", str(binary), "./cmd/supervisor"], cwd=ROOT, check=True)
+            binary = ROOT / "bin" / "deskyard-test"
+            subprocess.run(["go", "build", "-o", str(binary), "./cmd/deskyard"], cwd=ROOT, check=True)
             self.log = open(self.data.parent / "supervisor.log", "w")
-            self.proc = subprocess.Popen([str(binary)], env={**os.environ, **env, "SUPERVISOR_LISTEN": f"127.0.0.1:{self.port}"},
+            self.proc = subprocess.Popen([str(binary)], env={**os.environ, **env, "DESKYARD_LISTEN": f"127.0.0.1:{self.port}"},
                                          stdout=self.log, stderr=subprocess.STDOUT)
         deadline = time.time() + 60
         while time.time() < deadline:
@@ -136,7 +136,7 @@ class Supervisor:
 
 
 def remove_managed():
-    ids = docker("ps", "-aq", "--filter", "label=container-computer.managed=true",
+    ids = docker("ps", "-aq", "--filter", "label=deskyard.managed=true",
                  "--filter", "network=bridge", check=False).stdout.split()
     return ids
 
@@ -144,16 +144,16 @@ def remove_managed():
 @pytest.fixture(scope="session")
 def supervisor(tmp_path_factory):
     # A folder the container engine can mount (on macOS: under the home folder).
-    base = Path.home() / ".cache" / "cc-supervisor-tests" / uuid.uuid4().hex[:8]
+    base = Path.home() / ".cache" / "deskyard-tests" / uuid.uuid4().hex[:8]
     base.mkdir(parents=True)
     sup = Supervisor(base)
     if MODE == "container":
-        docker("build", "-q", "-t", "container-computer-supervisor:test", str(ROOT))
+        docker("build", "-q", "-t", "deskyard:test", str(ROOT))
     sup.start()
     yield sup
     sup.stop()
     # Remove what the tests created: computers carry the test supervisor's data path.
-    for name in docker("ps", "-a", "--format", "{{.Names}}", "--filter", "label=container-computer.managed=true", check=False).stdout.split():
+    for name in docker("ps", "-a", "--format", "{{.Names}}", "--filter", "label=deskyard.managed=true", check=False).stdout.split():
         mounts = docker("inspect", "-f", "{{range .Mounts}}{{.Source}} {{end}}", name, check=False).stdout
         if str(sup.data) in mounts:
             docker("rm", "-f", name, check=False)

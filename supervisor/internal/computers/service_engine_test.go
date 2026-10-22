@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zefhemel/container-computer/supervisor/internal/engine/docker"
+	"github.com/zefhemel/deskyard/supervisor/internal/engine/docker"
 )
 
 // The computer image to test with (build it from images/debian-xfce first).
@@ -20,7 +20,7 @@ func testImage() string {
 	if v := os.Getenv("CC_TEST_IMAGE"); v != "" {
 		return v
 	}
-	return "container-computer:test"
+	return "deskyard-debian-xfce:test"
 }
 
 func newService(t *testing.T) *Service {
@@ -62,7 +62,7 @@ func TestLifecycle(t *testing.T) {
 	// Caddy answers with the token, refuses without.
 	waitFor(t, func() bool {
 		req, _ := http.NewRequest("GET", "http://"+addr+"/", nil)
-		req.Header.Set("X-Container-Computer-Token", token)
+		req.Header.Set("X-Deskyard-Token", token)
 		r, err := http.DefaultClient.Do(req)
 		return err == nil && r.StatusCode == 200
 	})

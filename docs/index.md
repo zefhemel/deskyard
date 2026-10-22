@@ -1,4 +1,4 @@
-Design documents for **container-computer**: a Docker image that is a small, persistent Linux desktop shared by a human and an AI agent (the repository's `README.md` explains how to use it). This folder is a SilverBullet space and reads fine as plain Markdown on GitHub too.
+Design documents for **Deskyard**: persistent Linux desktops ("computers") in containers, shared by people and AI agents, run by one supervisor binary (the repository's `README.md` explains how to use it). This folder is a SilverBullet space and reads fine as plain Markdown on GitHub too.
 
 It holds specs and plans, written with the superpowers brainstorming and writing-plans skills and kept in their folders, and the architecture:
 

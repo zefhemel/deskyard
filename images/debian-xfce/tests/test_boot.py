@@ -27,7 +27,7 @@ def test_refuses_to_start_without_token(image, volumes):
     try:
         docker("wait", name)
         logs = docker("logs", name).stderr
-        assert "only behind the container-computer supervisor" in logs
+        assert "only behind the Deskyard" in logs
     finally:
         docker("rm", "-f", name, check=False)
 
