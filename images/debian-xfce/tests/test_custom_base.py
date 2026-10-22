@@ -70,12 +70,25 @@ def test_remote_with_bad_name_is_skipped(make_sandbox, derive):
     assert "bad name" in sb.logs()
 
 
-def test_image_mise_on_path_after_user(make_sandbox, derive):
-    img = derive("RUN mkdir -p /opt/mise/shims && printf '#!/bin/sh\\necho image\\n' > /opt/mise/shims/imgtool"
-                 " && printf '#!/bin/sh\\necho image\\n' > /opt/mise/shims/both && chmod +x /opt/mise/shims/*")
-    sb = make_sandbox(image=img)
-    sb.exec("mkdir -p ~/.local/share/mise/shims && printf '#!/bin/sh\\necho user\\n' > ~/.local/share/mise/shims/both"
-            " && chmod +x ~/.local/share/mise/shims/both")
+def test_base_node_resolves_to_runtimes_not_mise(sandbox):
     for login in (True, False):
-        assert sb.exec("imgtool", login=login).stdout.strip() == "image"
-        assert sb.exec("both", login=login).stdout.strip() == "user"
+        assert sandbox.exec("which node", login=login).stdout.strip() == "/opt/runtimes/node/bin/node"
+    assert sandbox.exec("stat -c %U:%a /opt/deskyard/bin").stdout.strip() == "root:755"
+
+
+@pytest.mark.network
+def test_image_tool_on_path_after_user(make_sandbox, derive):
+    # Install a real tool into /opt/mise and link it the way the recipe build does.
+    img = derive("RUN MISE_YES=1 MISE_DATA_DIR=/opt/mise MISE_CACHE_DIR=/tmp/mc mise install npm:cowsay@1.6.0"
+                 " && rm -rf /tmp/mc"
+                 " && for d in $(MISE_DATA_DIR=/opt/mise mise bin-paths npm:cowsay@1.6.0); do"
+                 " for f in $d/*; do ln -s \"$f\" /opt/deskyard/bin/; done; done")
+    sb = make_sandbox(image=img)
+    for login in (True, False):
+        assert sb.exec("which cowsay", login=login).stdout.strip() == "/opt/deskyard/bin/cowsay"
+        assert "hi" in sb.exec("cowsay hi", login=login).stdout
+    # The user's own shim of the same name wins.
+    sb.exec("mkdir -p ~/.local/share/mise/shims && printf '#!/bin/sh\\necho user\\n' > ~/.local/share/mise/shims/cowsay"
+            " && chmod +x ~/.local/share/mise/shims/cowsay")
+    for login in (True, False):
+        assert sb.exec("cowsay", login=login).stdout.strip() == "user"

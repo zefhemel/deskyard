@@ -61,9 +61,12 @@ RUN MISE_YES=1 MISE_CACHE_DIR=/tmp/mise-cache MISE_DATA_DIR=/opt/mise MISE_CONFI
     && /opt/runtimes/node/bin/node --version \
     && /opt/runtimes/python/bin/python --version
 
-# Where custom images put their starting home and extra Flatpak remotes (empty here).
-RUN mkdir -p /opt/deskyard/home-template /etc/deskyard/flatpak-remotes \
-    && chown 1000:1000 /opt/deskyard/home-template
+# Where custom images put their starting home, tool links and extra Flatpak remotes (empty here).
+# /opt/deskyard/bin (root-owned) holds links to the executables of tools a
+# custom image installs with mise into /opt/mise; it is on PATH after the user's shims.
+RUN mkdir -p /opt/deskyard/home-template /opt/deskyard/bin /etc/deskyard/flatpak-remotes \
+    && chown 1000:1000 /opt/deskyard/home-template \
+    && chmod 755 /opt/deskyard/bin
 
 RUN useradd --system --home-dir /var/lib/caddy --create-home --shell /usr/sbin/nologin caddy \
     && groupadd -g 1000 user \
@@ -82,7 +85,7 @@ ENV HOME=/workspace \
     NPM_CONFIG_PREFIX=/workspace/.npm-global \
     UV_PYTHON_PREFERENCE=only-managed \
     XDG_DATA_DIRS=/workspace/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/usr/local/share:/usr/share \
-    PATH=/workspace/.local/bin:/workspace/.npm-global/bin:/workspace/.local/share/mise/shims:/opt/mise/shims:/opt/runtimes/node/bin:/opt/runtimes/python/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    PATH=/workspace/.local/bin:/workspace/.npm-global/bin:/workspace/.local/share/mise/shims:/opt/deskyard/bin:/opt/runtimes/node/bin:/opt/runtimes/python/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 COPY images/debian-xfce/rootfs/ /
 COPY --from=desktop /desktop /usr/local/bin/deskyard
