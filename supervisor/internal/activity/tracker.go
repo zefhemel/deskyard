@@ -18,7 +18,8 @@ type Tracker struct {
 	ActiveFor     time.Duration // how long after an action it counts as active
 	Window        time.Duration // how much history is kept
 	BrowserLinger time.Duration // how long browser use lasts after the last touch
-	InsideRate    int           // inside events accepted per second per desktop
+	InsideRate    int           // inside events accepted per second per desktop, sustained
+	InsideBurst   int           // inside events accepted at once (a backfill of the whole ring)
 	MaxEvents     int           // events kept per desktop
 	OnPresence    func(Ref)     // the Present list of a desktop may have changed
 	OnSummary     func(Ref)     // the Summary of a desktop may have changed
@@ -36,6 +37,7 @@ func NewTracker() *Tracker {
 		Window:        15 * time.Minute,
 		BrowserLinger: 30 * time.Second,
 		InsideRate:    50,
+		InsideBurst:   5000, // the inside ring's size (cli/app activityMax)
 		MaxEvents:     5000,
 	}
 }
@@ -65,7 +67,7 @@ type desk struct {
 	running  map[string]running // by agent ID + "/" + command id
 	events   []event            // outside agents' history
 	inEvents []event            // inside programs' history, kept apart so a flood can't evict the above
-	buckets  map[int64]int      // inside events per second
+	bucket   tokenBucket        // inside events
 	watchers map[*watcher]struct{}
 	pub      []Presence // last Present list a callback was told about
 }
@@ -84,7 +86,7 @@ func (t *Tracker) desk(d Ref) *desk {
 	}
 	ds := t.desks[d.Name]
 	if ds == nil {
-		ds = &desk{agents: map[string]*agentState{}, running: map[string]running{}, buckets: map[int64]int{}, watchers: map[*watcher]struct{}{}}
+		ds = &desk{agents: map[string]*agentState{}, running: map[string]running{}, watchers: map[*watcher]struct{}{}}
 		t.desks[d.Name] = ds
 	}
 	ds.ref = d
@@ -196,11 +198,6 @@ func (t *Tracker) settle(ds *desk, now time.Time) bool {
 		ds.inEvents = slices.DeleteFunc(ds.inEvents, func(e event) bool { return e.item.T.Before(cutoff) })
 		changed = true
 	}
-	for sec := range ds.buckets {
-		if sec < cutoff.Unix() {
-			delete(ds.buckets, sec)
-		}
-	}
 	busy := map[string]bool{} // agents with a command running
 	for _, r := range ds.running {
 		busy[r.agent] = true
@@ -240,9 +237,8 @@ func (t *Tracker) present(ds *desk, now time.Time) []Presence {
 	return out
 }
 
-// CmdStart records that a command began running. The working directory is
-// accepted for the caller's convenience but not shown, so it is not kept.
-func (t *Tracker) CmdStart(d Ref, a Agent, id, display, cwd string) {
+// CmdStart records that a command began running.
+func (t *Tracker) CmdStart(d Ref, a Agent, id, display string) {
 	t.mutate(d, func(ds *desk, now time.Time) {
 		ds.agentState(a, now)
 		ds.running[runKey(a.ID, id)] = running{agent: a.ID, text: display, since: now}
@@ -305,7 +301,9 @@ func (t *Tracker) screen(ds *desk, a Agent, s ScreenAction, at time.Time) {
 }
 
 // Copy records a file copied into (direction "in") or out of the desktop.
+// The path is shown like a command: without control characters, and cut.
 func (t *Tracker) Copy(d Ref, a Agent, direction, path string, size int64) {
+	path = DisplayPath(path)
 	t.mutate(d, func(ds *desk, now time.Time) {
 		ds.agentState(a, now)
 		ds.record(a, RecentItem{Kind: "copy", T: now, Direction: direction, Path: path, Size: size}, t.MaxEvents)
@@ -385,10 +383,15 @@ func (t *Tracker) once(d Ref, id string, s *agentState, f func(*agentState, time
 }
 
 // Inside records an event from a program running inside the desktop. The
-// event is untrusted: it is sanitised, its time is clamped, and at most
-// InsideRate events a second are taken. It only ever touches that program's
-// own agent. It returns false when the event was dropped.
+// event is untrusted: it is sanitised, its time is clamped, and it is rate
+// limited: a burst of InsideBurst (a backfill of the whole ring), then
+// InsideRate a second. It only ever touches that program's own agent. It
+// returns false when the event was dropped.
 func (t *Tracker) Inside(d Ref, e Event) bool {
+	// The rate comes first, so a dropped event costs next to nothing.
+	if !t.takeInside(d) {
+		return false
+	}
 	e, ok := Sanitize(e)
 	if !ok {
 		return false
@@ -402,16 +405,9 @@ func (t *Tracker) Inside(d Ref, e Event) bool {
 		if e.T.Before(now.Add(-t.Window)) {
 			return
 		}
-		// The rate is counted on our own clock: an event's time is the
-		// sender's claim, and backdating must not buy extra events.
-		sec := now.Unix()
-		if ds.buckets[sec] >= t.InsideRate {
-			return
-		}
 		if _, known := ds.agents[a.ID]; !known && ds.insideAgents() >= maxInsideAgents {
 			return
 		}
-		ds.buckets[sec]++
 		accepted = true
 		switch e.Kind {
 		case "screen":
@@ -425,6 +421,46 @@ func (t *Tracker) Inside(d Ref, e Event) bool {
 		}
 	})
 	return accepted
+}
+
+// takeInside takes one inside event from the desktop's bucket. The bucket
+// runs on our own clock: an event's time is the sender's claim, and
+// backdating must not buy extra events.
+func (t *Tracker) takeInside(d Ref) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.desk(d).bucket.take(t.now(), float64(t.InsideRate), float64(t.InsideBurst))
+}
+
+// tokenBucket holds up to burst tokens and gains rate a second; it starts
+// full.
+type tokenBucket struct {
+	tokens float64
+	last   time.Time
+}
+
+func (b *tokenBucket) fill(now time.Time, rate, burst float64) {
+	if b.last.IsZero() {
+		b.tokens, b.last = burst, now
+	} else if now.After(b.last) {
+		b.tokens = min(burst, b.tokens+now.Sub(b.last).Seconds()*rate)
+		b.last = now
+	}
+}
+
+func (b *tokenBucket) take(now time.Time, rate, burst float64) bool {
+	b.fill(now, rate, burst)
+	if b.tokens < 1 {
+		return false
+	}
+	b.tokens--
+	return true
+}
+
+// full reports whether forgetting the bucket would give nothing away.
+func (b *tokenBucket) full(now time.Time, rate, burst float64) bool {
+	b.fill(now, rate, burst)
+	return b.tokens >= burst
 }
 
 // Bounds on what programs inside a desktop can make the tracker hold.
@@ -535,7 +571,8 @@ func (t *Tracker) Tick() {
 	for name, ds := range t.desks {
 		changed := t.settle(ds, now)
 		fires = append(fires, t.diff(ds, now, changed))
-		if len(ds.agents) == 0 && len(ds.running) == 0 && len(ds.events) == 0 && len(ds.inEvents) == 0 && len(ds.watchers) == 0 {
+		if len(ds.agents) == 0 && len(ds.running) == 0 && len(ds.events) == 0 && len(ds.inEvents) == 0 && len(ds.watchers) == 0 &&
+			ds.bucket.full(now, float64(t.InsideRate), float64(t.InsideBurst)) {
 			delete(t.desks, name)
 		}
 	}
@@ -627,7 +664,7 @@ func (t *Tracker) WatchScreen(name string) (<-chan ScreenEvent, func()) {
 	}
 	ds := t.desks[name]
 	if ds == nil {
-		ds = &desk{ref: Ref{Name: name}, agents: map[string]*agentState{}, running: map[string]running{}, buckets: map[int64]int{}, watchers: map[*watcher]struct{}{}}
+		ds = &desk{ref: Ref{Name: name}, agents: map[string]*agentState{}, running: map[string]running{}, watchers: map[*watcher]struct{}{}}
 		t.desks[name] = ds
 	}
 	ds.watchers[w] = struct{}{}
@@ -644,12 +681,4 @@ func (t *Tracker) WatchScreen(name string) (<-chan ScreenEvent, func()) {
 			delete(ds.watchers, w)
 		}
 	}
-}
-
-// Watched reports whether anyone is subscribed to a desktop's screen events.
-func (t *Tracker) Watched(name string) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	ds := t.desks[name]
-	return ds != nil && len(ds.watchers) > 0
 }

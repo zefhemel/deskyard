@@ -161,3 +161,67 @@ func FuzzMaskText(f *testing.F) {
 		DisplayCommand([]string{s, s})
 	})
 }
+
+// Everything after a typer's `type` word is hidden, however it is run
+// (ruling 18).
+func TestDisplayCommandHidesTypedText(t *testing.T) {
+	cases := []struct {
+		argv []string
+		want string
+	}{
+		// The review's three.
+		{[]string{"bash", "-lc", "deskyard type 'hunter2 correct horse' && deskyard key Return"}, "bash -lc 'deskyard type ••• && deskyard key Return'"},
+		{[]string{"deskyard", "type", "--", "pw", "-h"}, "deskyard type •••"},
+		{[]string{"xdotool", "type", "hunter2"}, "xdotool type •••"},
+		// Bare, and as the parser sees it.
+		{[]string{"deskyard", "type", "hello", "world"}, "deskyard type •••"},
+		{[]string{"/usr/local/bin/deskyard", "-d", "alice", "type", "pw"}, "/usr/local/bin/deskyard -d alice type •••"},
+		{[]string{"deskyard", "type", "--", "-h"}, "deskyard type •••"},
+		{[]string{"deskyard", "type", "-h"}, "deskyard type •••"},
+		{[]string{"xdotool", "type", "--delay", "50", "pw"}, "xdotool type •••"},
+		{[]string{"xdotool", "key", "ctrl+l", "type", "pw"}, "xdotool key ctrl+l type •••"},
+		{[]string{"deskyard", "type"}, "deskyard type"},
+		// Wrapped.
+		{[]string{"sudo", "-u", "user", "deskyard", "type", "pw"}, "sudo -u user deskyard type •••"},
+		{[]string{"env", "DISPLAY=:1", "xdotool", "type", "pw"}, "env DISPLAY=:1 xdotool type •••"},
+		{[]string{"time", "deskyard", "type", "pw"}, "time deskyard type •••"},
+		{[]string{"deskyard", "exec", "--", "deskyard", "type", "pw"}, "deskyard exec -- deskyard type •••"},
+		// In shell strings, to the end of that command.
+		{[]string{"sh", "-c", "deskyard type pw; deskyard key Return"}, "sh -c 'deskyard type •••; deskyard key Return'"},
+		{[]string{"sh", "-c", "deskyard type 'a; b' | cat"}, "sh -c 'deskyard type ••• | cat'"},
+		{[]string{"sh", "-c", `deskyard type "a && b"&& ls`}, "sh -c 'deskyard type •••&& ls'"},
+		{[]string{"sh", "-c", "(deskyard type pw)"}, "sh -c '(deskyard type •••)'"},
+		{[]string{"sh", "-c", "echo $(xdotool type pw) x"}, "sh -c 'echo $(xdotool type •••) x'"},
+		{[]string{"sh", "-c", "`deskyard type pw`"}, "sh -c '`deskyard type •••`'"},
+		{[]string{"sh", "-c", "sudo env A=1 time deskyard type pw\nls"}, "sh -c 'sudo env A=1 time deskyard type ••• ls'"},
+		{[]string{"sh", "-c", "deskyard type -- pw -h"}, "sh -c 'deskyard type •••'"},
+		{[]string{"bash", "-lc", "sh -c 'xdotool type pw'"}, "bash -lc 'sh -c '\\''xdotool type •••'"},
+		{[]string{"deskyard", "exec", "--", "sh", "-c", "deskyard type pw && deskyard key Return"}, "deskyard exec -- sh -c 'deskyard type ••• && deskyard key Return'"},
+		// Not typing: readable.
+		{[]string{"deskyard", "key", "Return"}, "deskyard key Return"},
+		{[]string{"sh", "-c", "type ls; file type"}, "sh -c 'type ls; file type'"},
+		{[]string{"sh", "-c", "deskyard click 1 2; echo type x"}, "sh -c 'deskyard click 1 2; echo type x'"},
+	}
+	for _, c := range cases {
+		if got := DisplayCommand(c.argv); got != c.want {
+			t.Errorf("DisplayCommand(%q) = %q, want %q", c.argv, got, c.want)
+		}
+	}
+}
+
+// The inside path masks the display form again: a typer inside a quoted
+// shell string is found too.
+func TestMaskTextHidesTypedText(t *testing.T) {
+	cases := map[string]string{
+		`bash -lc 'deskyard type '\''hunter2 correct horse'\'' && deskyard key Return'`: "bash -lc 'deskyard type •••",
+		"sh -c 'deskyard type pw; ls'":       "sh -c 'deskyard type •••; ls'",
+		"deskyard type •••":                  "deskyard type •••",
+		`sh -c "xdotool type 'p w'" && ls`:   `sh -c "xdotool type •••`,
+		"deskyard type pw\ndeskyard key Tab": "deskyard type •••\ndeskyard key Tab",
+	}
+	for in, want := range cases {
+		if got := MaskText(in); got != want {
+			t.Errorf("MaskText(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

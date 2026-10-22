@@ -107,6 +107,7 @@ func hasMysql(words []string) bool {
 // mysql-like command (an argument of its argv).
 func maskText(s string, withMysql bool) string {
 	s = lineCont.ReplaceAllString(s, " ") // a backslash-newline continues the command
+	s = maskTyped(s)
 	var b strings.Builder
 	last := 0
 	for _, loc := range append(cmdSep.FindAllStringIndex(s, -1), []int{len(s), len(s)}) {
@@ -194,16 +195,121 @@ func containsLetter(s string) bool {
 	return false
 }
 
+// Typed text. `deskyard type …` and `xdotool type …` type whatever follows,
+// a password as easily as a sentence, so everything after the type word is
+// hidden: however the command is wrapped (sudo, env, time, a subshell, a
+// shell string) and whether or not it parses as a screen action. Only the
+// overlay's count of typed characters says how much was typed.
+
+// typers are the commands whose `type` subcommand types its arguments.
+var typers = []string{"deskyard", "xdotool"}
+
+// isTyper reports whether a word runs a typer, however it is opened:
+// deskyard, /usr/bin/xdotool, (deskyard, $(deskyard, {deskyard.
+func isTyper(w string) bool {
+	return slices.Contains(typers, path.Base(strings.TrimLeft(w, "$({\\")))
+}
+
+// typedFrom is the index of the argv word after which everything is typed
+// text, or -1: a `type` word after a typer.
+func typedFrom(argv []string) int {
+	i := slices.IndexFunc(argv, isTyper)
+	if i < 0 {
+		return -1
+	}
+	if k := slices.Index(argv[i+1:], "type"); k >= 0 {
+		return i + 1 + k
+	}
+	return -1
+}
+
+// cmdEnd are the characters that end a simple command in shell text: a
+// separator, or the end of a subshell.
+const cmdEnd = ";&|\n)`"
+
+// maskTyped hides what a typer types in shell text, up to the end of that
+// command. Quotes don't hide a typer from it: in `bash -lc 'deskyard type
+// …'` (a display form, quoted again) the inner command is found too.
+func maskTyped(s string) string {
+	var b strings.Builder
+	last := 0      // s is written up to here
+	typer := false // a typer runs in the current command
+	for i := 0; i < len(s); {
+		switch c := s[i]; {
+		case strings.IndexByte(cmdEnd, c) >= 0:
+			typer = false
+			i++
+			continue
+		case strings.IndexByte(" \t'\"", c) >= 0:
+			i++
+			continue
+		}
+		j := i
+		for j < len(s) && strings.IndexByte(cmdEnd+" \t'\"", s[j]) < 0 {
+			j++
+		}
+		switch w := s[i:j]; {
+		case !typer:
+			typer = isTyper(w)
+		case w == "type":
+			end := typedEnd(s, j)
+			if strings.TrimSpace(s[j:end]) != "" {
+				b.WriteString(s[last:j])
+				b.WriteString(" " + masked)
+				if end < len(s) && (s[end-1] == ' ' || s[end-1] == '\t') {
+					b.WriteByte(' ')
+				}
+				last = end
+			}
+			typer = false
+			j = end
+		}
+		i = j
+	}
+	b.WriteString(s[last:])
+	return b.String()
+}
+
+// typedEnd is where the typed text from i ends: at the first unquoted cmdEnd
+// character, or the end of s.
+func typedEnd(s string, i int) int {
+	var quote byte
+	for ; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			} else if c == '\\' && quote == '"' {
+				i++
+			}
+		case c == '\'' || c == '"':
+			quote = c
+		case c == '\\':
+			i++
+		case strings.IndexByte(cmdEnd, c) >= 0:
+			return i
+		}
+	}
+	return len(s)
+}
+
 // DisplayCommand is argv as one masked line for people to read: values after
-// secret flags and secret-looking strings are •••, arguments with spaces or
-// quotes are single-quoted, and it is cut at 120 characters with "…".
+// secret flags, secret-looking strings and typed text are •••, arguments
+// with spaces or quotes are single-quoted, and it is cut at 120 characters
+// with "…".
 func DisplayCommand(argv []string) string {
 	var b strings.Builder
 	hide := false
 	withMysql := hasMysql(argv)
+	typed := typedFrom(argv)
 	for i, arg := range argv {
 		if i > 0 {
 			b.WriteByte(' ')
+		}
+		if typed >= 0 && i > typed {
+			b.WriteString(masked) // all of the typed text, as one
+			break
 		}
 		arg = plainText(cutRunes(arg, maxArg)) // keeps newlines for the masking pass
 		var next string
@@ -229,6 +335,18 @@ func DisplayCommand(argv []string) string {
 		return cutRunes(s, maxDisplay) + "…"
 	}
 	return s
+}
+
+// DisplayPath is a file path for people to read: control and format
+// characters are gone, and a path longer than 120 characters keeps its end
+// (the file name), behind "…".
+func DisplayPath(p string) string {
+	p = strings.TrimSpace(flatten(plainText(cutRunes(p, maxArg))))
+	if n := utf8.RuneCountInString(p); n > maxDisplay {
+		r := []rune(p)
+		return "…" + string(r[n-maxDisplay:])
+	}
+	return p
 }
 
 // plainText replaces tabs and other control characters with spaces, line

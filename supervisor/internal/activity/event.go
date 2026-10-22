@@ -17,7 +17,6 @@ type Event struct {
 	Screen *ScreenAction `json:"screen,omitempty"`
 	ID     string        `json:"id,omitempty"`  // pairs cmd-start and cmd-end
 	Cmd    string        `json:"cmd,omitempty"` // display form
-	Cwd    string        `json:"cwd,omitempty"`
 	Exit   *int          `json:"exit,omitempty"`
 }
 
@@ -25,7 +24,6 @@ type Event struct {
 const (
 	maxAgent = 40
 	maxID    = 32
-	maxCwd   = 200
 	maxKeys  = 8
 	maxKey   = 32
 	maxPos   = 65535
@@ -57,7 +55,6 @@ func Sanitize(e Event) (Event, bool) {
 			return Event{}, false
 		}
 		out.Cmd = cutCmd(strings.TrimSpace(flatten(MaskText(plainText(cutRunes(e.Cmd, maxIn))))))
-		out.Cwd = clean(e.Cwd, maxCwd)
 		if e.Exit != nil {
 			x := *e.Exit
 			out.Exit = &x

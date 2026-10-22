@@ -145,6 +145,8 @@ func (s *Server) handleScreenEvents(w http.ResponseWriter, r *http.Request) {
 	if sse == nil {
 		return
 	}
+	keepAlive := time.NewTicker(25 * time.Second)
+	defer keepAlive.Stop()
 	for {
 		select {
 		case ev, open := <-events:
@@ -155,7 +157,7 @@ func (s *Server) handleScreenEvents(w http.ResponseWriter, r *http.Request) {
 			sse.send("screen", string(b))
 		case <-ctx.Done():
 			return
-		case <-time.After(25 * time.Second):
+		case <-keepAlive.C:
 			sse.comment()
 		}
 	}

@@ -34,9 +34,9 @@ type insideCursor struct {
 }
 
 // readInside feeds the lines of an inside stream to the tracker, advancing
-// cur. The stream is hostile input: lines over 8 KiB, lines that aren't JSON
-// and events that fail Sanitize are skipped, as are events at or before the
-// cursor (duplicates after a reconnect).
+// cur. The stream is hostile input: lines over 8 KiB and lines that aren't
+// JSON are skipped, as are events at or before the cursor (duplicates after a
+// reconnect); the tracker drops events that fail Sanitize.
 func readInside(ctx context.Context, body io.Reader, ref activity.Ref, tr *activity.Tracker, cur *insideCursor) error {
 	br := bufio.NewReaderSize(body, insideMaxLine)
 	discarding := false
@@ -62,9 +62,7 @@ func readInside(ctx context.Context, body io.Reader, ref activity.Ref, tr *activ
 			continue
 		}
 		cur.Seq = e.Seq
-		if e, ok := activity.Sanitize(e); ok {
-			tr.Inside(ref, e)
-		}
+		tr.Inside(ref, e) // which rate-limits, then sanitizes
 	}
 	return ctx.Err()
 }

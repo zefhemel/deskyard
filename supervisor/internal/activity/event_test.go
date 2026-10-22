@@ -18,9 +18,9 @@ func TestSanitize(t *testing.T) {
 		}
 		return out
 	}
-	e := good(Event{Agent: runes(100), Kind: "cmd-start", ID: runes(50), Cmd: "deploy --token abc", Cwd: runes(300)})
-	if utf8.RuneCountInString(e.Agent) != 40 || utf8.RuneCountInString(e.ID) != 32 || utf8.RuneCountInString(e.Cwd) != 200 {
-		t.Errorf("caps: %d %d %d", utf8.RuneCountInString(e.Agent), utf8.RuneCountInString(e.ID), utf8.RuneCountInString(e.Cwd))
+	e := good(Event{Agent: runes(100), Kind: "cmd-start", ID: runes(50), Cmd: "deploy --token abc"})
+	if utf8.RuneCountInString(e.Agent) != 40 || utf8.RuneCountInString(e.ID) != 32 {
+		t.Errorf("caps: %d %d", utf8.RuneCountInString(e.Agent), utf8.RuneCountInString(e.ID))
 	}
 	if e.Cmd != "deploy --token •••" {
 		t.Errorf("cmd = %q", e.Cmd)
@@ -103,9 +103,9 @@ func TestSanitize(t *testing.T) {
 		good(Event{Agent: "a", Kind: "screen", Screen: &ScreenAction{Action: a, Pos: make([]int, n)}})
 	}
 	// Format characters (bidi overrides, zero-width) are dropped.
-	e = good(Event{Agent: "a\u202eb\u200b", Kind: "cmd-end", Cwd: "/x\u202ey", Cmd: "ls \u202e"})
-	if e.Agent != "ab" || e.Cwd != "/xy" || e.Cmd != "ls" {
-		t.Errorf("format chars: %q %q %q", e.Agent, e.Cwd, e.Cmd)
+	e = good(Event{Agent: "a\u202eb\u200b", Kind: "cmd-end", Cmd: "ls \u202e"})
+	if e.Agent != "ab" || e.Cmd != "ls" {
+		t.Errorf("format chars: %q %q", e.Agent, e.Cmd)
 	}
 	e = good(Event{Agent: "a", Kind: "cmd-end", Cmd: "x dyt_ab\u200bcd"})
 	if strings.Contains(e.Cmd, "dyt_") || strings.Contains(e.Cmd, "cd") {
@@ -117,9 +117,9 @@ func TestSanitize(t *testing.T) {
 		t.Errorf("newline: %q", e.Cmd)
 	}
 	// Control characters can't reach the UI.
-	e = good(Event{Agent: "a\x1b[2J\nb", Kind: "cmd-end", Cwd: "/x\x00y"})
-	if strings.ContainsAny(e.Agent+e.Cwd, "\x1b\n\x00") {
-		t.Errorf("control chars: %q %q", e.Agent, e.Cwd)
+	e = good(Event{Agent: "a\x1b[2J\nb", Kind: "cmd-end", Cmd: "ls\x00x"})
+	if strings.ContainsAny(e.Agent+e.Cmd, "\x1b\n\x00") {
+		t.Errorf("control chars: %q %q", e.Agent, e.Cmd)
 	}
 }
 
@@ -153,7 +153,7 @@ func FuzzSanitize(f *testing.F) {
 			return
 		}
 		if utf8.RuneCountInString(out.Agent) > 40 || utf8.RuneCountInString(out.Cmd) > 121 ||
-			utf8.RuneCountInString(out.Cwd) > 200 || utf8.RuneCountInString(out.ID) > 32 {
+			utf8.RuneCountInString(out.ID) > 32 {
 			t.Fatalf("over cap: %+v", out)
 		}
 		if out.Screen != nil {

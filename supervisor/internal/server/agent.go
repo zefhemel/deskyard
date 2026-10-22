@@ -187,7 +187,7 @@ func (s *Server) agentExec(w http.ResponseWriter, r *http.Request, c desktops.De
 		s.activity.Screen(ref, agent, act)
 	} else if !isCopy {
 		id := randomID(8)
-		s.activity.CmdStart(ref, agent, id, activity.DisplayCommand(start.Argv), start.Cwd)
+		s.activity.CmdStart(ref, agent, id, activity.DisplayCommand(start.Argv))
 		var once sync.Once
 		ended = func(exit *int) { once.Do(func() { s.activity.CmdEnd(ref, agent, id, exit) }) }
 	}

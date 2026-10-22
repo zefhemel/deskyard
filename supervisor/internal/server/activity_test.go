@@ -236,17 +236,22 @@ func TestScreenEventsStream(t *testing.T) {
 			}
 		}
 	}()
-	for !s.activity.Watched("alice") {
-		time.Sleep(5 * time.Millisecond)
-	}
-	s.activity.Screen(aliceRef, bot, click)
-	select {
-	case got := <-lines:
-		if !strings.Contains(got, "event: screen\n") || !strings.Contains(got, `"action":"click"`) || !strings.Contains(got, `"pos":[10,20]`) {
-			t.Errorf("stream = %q", got)
+	// Click until the stream, once subscribed, passes one on.
+	deadline := time.After(2 * time.Second)
+	for got := ""; !strings.Contains(got, "event: screen\n"); {
+		s.activity.Screen(aliceRef, bot, click)
+		select {
+		case got = <-lines:
+			if !strings.Contains(got, "event: screen\n") {
+				continue // a comment line, before the subscription
+			}
+			if !strings.Contains(got, `"action":"click"`) || !strings.Contains(got, `"pos":[10,20]`) {
+				t.Errorf("stream = %q", got)
+			}
+		case <-time.After(20 * time.Millisecond):
+		case <-deadline:
+			t.Fatal("no screen event")
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("no screen event")
 	}
 
 	// Taking away access closes the stream, even with nothing to send.

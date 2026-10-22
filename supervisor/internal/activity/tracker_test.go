@@ -3,8 +3,10 @@ package activity
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 var t0 = time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
@@ -30,6 +32,14 @@ func newRig() *rig {
 }
 
 func (r *rig) adv(d time.Duration) { r.now = r.now.Add(d) }
+
+// watched reports whether anyone is subscribed to alice's screen events.
+func (r *rig) watched() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ds := r.desks["alice"]
+	return ds != nil && len(ds.watchers) > 0
+}
 
 func (r *rig) recent() []RecentItem { return r.Summary("alice")[0].Recent }
 func (r *rig) nowItems() []NowItem  { return r.Summary("alice")[0].Now }
@@ -65,7 +75,7 @@ func TestPresenceFollowsActivity(t *testing.T) {
 
 func TestRunningCommandKeepsPresent(t *testing.T) {
 	r := newRig()
-	r.CmdStart(dk, bot, "c1", "npm test", "/workspace")
+	r.CmdStart(dk, bot, "c1", "npm test")
 	r.adv(20 * time.Minute)
 	r.Tick()
 	if len(r.Present("alice")) != 1 {
@@ -79,7 +89,7 @@ func TestRunningCommandKeepsPresent(t *testing.T) {
 
 func TestCommandEnds(t *testing.T) {
 	r := newRig()
-	r.CmdStart(dk, bot, "c1", "npm test", "/workspace")
+	r.CmdStart(dk, bot, "c1", "npm test")
 	r.adv(2 * time.Second)
 	three := 3
 	r.CmdEnd(dk, bot, "nope", &three)
@@ -94,7 +104,7 @@ func TestCommandEnds(t *testing.T) {
 	if len(r.nowItems()) != 0 {
 		t.Fatal("still running")
 	}
-	r.CmdStart(dk, bot, "c2", "sleep 9", "/")
+	r.CmdStart(dk, bot, "c2", "sleep 9")
 	r.CmdEnd(dk, bot, "c2", nil)
 	got = r.recent()
 	if len(got) != 2 || !got[0].Disconnected || got[0].Exit != nil {
@@ -132,12 +142,12 @@ func TestScreenMerge(t *testing.T) {
 
 func TestRecentLimitAndWindow(t *testing.T) {
 	r := newRig()
-	r.CmdStart(dk, bot, "old", "old one", "/")
+	r.CmdStart(dk, bot, "old", "old one")
 	r.CmdEnd(dk, bot, "old", new(int))
 	r.adv(14 * time.Minute)
 	for i := range 25 {
 		id := fmt.Sprint("c", i)
-		r.CmdStart(dk, bot, id, "cmd "+id, "/")
+		r.CmdStart(dk, bot, id, "cmd "+id)
 		r.CmdEnd(dk, bot, id, new(int))
 		r.adv(time.Second)
 	}
@@ -162,6 +172,20 @@ func (r *rig) events(t *testing.T) []event {
 	defer r.mu.Unlock()
 	ds := r.desks["alice"]
 	return append(append([]event{}, ds.events...), ds.inEvents...)
+}
+
+func TestCopyPathIsCleaned(t *testing.T) {
+	r := newRig()
+	long := "/workspace/" + strings.Repeat("d/", 100) + "report.pdf"
+	r.Copy(dk, bot, "out", "/x\x1b[2J\u202e/y\nz", 1)
+	r.Copy(dk, bot, "out", long, 1)
+	got := r.recent()
+	if got[1].Path != "/x [2J/y z" {
+		t.Errorf("control chars: %q", got[1].Path)
+	}
+	if p := got[0].Path; utf8.RuneCountInString(p) != 121 || !strings.HasPrefix(p, "…") || !strings.HasSuffix(p, "/report.pdf") {
+		t.Errorf("long path: %q", p)
+	}
 }
 
 func TestCopy(t *testing.T) {
@@ -264,7 +288,7 @@ func TestInsideAgents(t *testing.T) {
 	if len(p) != 1 || p[0].ID != "inside:a terminal" || p[0].Name != "a terminal" || !p[0].Inside || p[0].Owner != "" {
 		t.Fatalf("%+v", p)
 	}
-	r.CmdStart(dk, bot, "c1", "outside", "/")
+	r.CmdStart(dk, bot, "c1", "outside")
 	r.Inside(dk, Event{Agent: "a terminal", Kind: "cmd-end", ID: "c1", T: t0})
 	if n := r.Summary("alice"); len(n) != 2 || !hasKind(n[1].Now, "command") && !hasKind(n[0].Now, "command") {
 		t.Fatalf("%+v", n)
@@ -308,13 +332,34 @@ func TestInsideFloodIsCapped(t *testing.T) {
 	before := r.Summary("alice")[0]
 	ck := click
 	n := 0
-	for range 60 {
+	for range 6000 { // all at one instant: the burst, no more
 		if r.Inside(dk, Event{Agent: "a terminal", Kind: "screen", T: t0, Screen: &ck}) {
 			n++
 		}
 	}
-	if n != 50 {
-		t.Fatalf("accepted %d", n)
+	if n != 5000 {
+		t.Fatalf("burst accepted %d", n)
+	}
+	var after Summary
+	for _, s := range r.Summary("alice") {
+		if s.ID == "tok1" {
+			after = s
+		}
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("outside agent changed:\n%+v\n%+v", before, after)
+	}
+	n = 0
+	for range 100 { // then a sustained flood: 200 a second for 10 seconds
+		r.adv(100 * time.Millisecond)
+		for range 20 {
+			if r.Inside(dk, Event{Agent: "a terminal", Kind: "screen", T: r.now, Screen: &ck}) {
+				n++
+			}
+		}
+	}
+	if n < 495 || n > 505 {
+		t.Fatalf("sustained flood accepted %d in 10 s", n)
 	}
 	r2 := newRig()
 	r2.Screen(dk, bot, click)
@@ -334,15 +379,6 @@ func TestInsideFloodIsCapped(t *testing.T) {
 	}
 	if !clicked {
 		t.Fatal("inside flood evicted the outside agent's click")
-	}
-	var after Summary
-	for _, s := range r.Summary("alice") {
-		if s.ID == "tok1" {
-			after = s
-		}
-	}
-	if !reflect.DeepEqual(before, after) {
-		t.Fatalf("outside agent changed:\n%+v\n%+v", before, after)
 	}
 }
 
@@ -377,11 +413,11 @@ func TestForget(t *testing.T) {
 
 func TestWatchScreen(t *testing.T) {
 	r := newRig()
-	if r.Watched("alice") {
+	if r.watched() {
 		t.Fatal("watched")
 	}
 	ch, cancel := r.WatchScreen("alice")
-	if !r.Watched("alice") {
+	if !r.watched() {
 		t.Fatal("not watched")
 	}
 	for _, a := range []string{"click", "move", "drag", "screenshot", "scroll", "zoom", "key", "mouse-down", "mouse-up", "hold-key", "type"} {
@@ -412,7 +448,7 @@ func TestWatchScreen(t *testing.T) {
 	cancel()
 	for range ch {
 	}
-	if r.Watched("alice") {
+	if r.watched() {
 		t.Fatal("still watched")
 	}
 	ch2, cancel2 := r.WatchScreen("alice")
@@ -444,14 +480,72 @@ func TestInsideBackdatingIsRateLimited(t *testing.T) {
 	r := newRig()
 	ck := click
 	n := 0
-	for i := range 600 {
+	for i := range 6000 {
 		at := t0.Add(-time.Duration(i%800) * time.Second)
 		if r.Inside(dk, Event{Agent: "a terminal", Kind: "screen", T: at, Screen: &ck}) {
 			n++
 		}
 	}
-	if n != 50 {
+	if n != 5000 {
 		t.Fatalf("accepted %d at one instant", n)
+	}
+}
+
+// A backfill replays the ring at once: all of it counts, newest included.
+func TestInsideBackfill(t *testing.T) {
+	r := newRig()
+	r.adv(time.Hour)
+	start := r.now.Add(-10 * time.Minute)
+	for i := range 60 { // 120 events over 10 minutes, the last a few seconds ago
+		at := start.Add(time.Duration(i) * 10 * time.Second)
+		id := fmt.Sprint(i)
+		if !r.Inside(dk, Event{Agent: "claude", Kind: "cmd-start", ID: id, Cmd: "cmd " + id, T: at}) ||
+			!r.Inside(dk, Event{Agent: "claude", Kind: "cmd-end", ID: id, Exit: new(int), T: at.Add(5 * time.Second)}) {
+			t.Fatalf("event %d dropped", i)
+		}
+	}
+	sums := r.Summary("alice")
+	if len(sums) != 1 || sums[0].ID != "inside:claude" {
+		t.Fatalf("present: %+v", sums)
+	}
+	if len(sums[0].Now) != 0 {
+		t.Fatalf("still running: %+v", sums[0].Now)
+	}
+	if rec := sums[0].Recent; len(rec) == 0 || rec[0].Text != "cmd 59" {
+		t.Fatalf("recent: %+v", rec)
+	}
+
+	// A start in the replay, its end after it: nothing is left running.
+	r.Inside(dk, Event{Agent: "claude", Kind: "cmd-start", ID: "late", Cmd: "make", T: r.now})
+	if len(r.nowItems()) != 1 {
+		t.Fatal("start not taken")
+	}
+	r.adv(2 * time.Second)
+	r.Inside(dk, Event{Agent: "claude", Kind: "cmd-end", ID: "late", Exit: new(int), T: r.now})
+	if now := r.nowItems(); len(now) != 0 {
+		t.Fatalf("stuck running: %+v", now)
+	}
+}
+
+// A dropped event never reaches the tracker's state, so it's cheap; a
+// bucket that isn't full keeps its desktop.
+func TestInsideDroppedEarly(t *testing.T) {
+	r := newRig()
+	r.InsideBurst, r.InsideRate = 1, 1
+	r.Inside(dk, Event{Agent: "a", Kind: "screen", T: t0, Screen: &ScreenAction{Action: "bogus"}}) // invalid, but takes the token
+	if r.Inside(dk, Event{Agent: "a", Kind: "screen", T: t0, Screen: &ScreenAction{Action: "key"}}) {
+		t.Fatal("over the limit, accepted")
+	}
+	r.Tick()
+	r.mu.Lock()
+	_, kept := r.desks["alice"]
+	r.mu.Unlock()
+	if !kept {
+		t.Fatal("desk forgotten with an empty bucket: the limit would reset")
+	}
+	r.adv(time.Second)
+	if !r.Inside(dk, Event{Agent: "a", Kind: "screen", T: r.now, Screen: &ScreenAction{Action: "key"}}) {
+		t.Fatal("not refilled")
 	}
 }
 
