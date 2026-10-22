@@ -38,6 +38,8 @@ export interface Desktop {
   image: string;
   imageTitle: string;
   imageVersion: string;
+  /** The image's starting home holds secrets: desktops made from it start signed in as whoever made it. */
+  imageSecrets: boolean;
   updateAvailable: string | null;
   settings: Settings;
   access: string[];
@@ -53,6 +55,12 @@ export interface Desktop {
 export interface Processes {
   titles: string[];
   rows: (string | number)[][];
+}
+
+export interface Tool {
+  tool: string;
+  version: string;
+  source: "desktop" | "image";
 }
 
 export interface StatsPoint {
@@ -113,6 +121,28 @@ export interface CatalogImage {
   desktops: string[];
   behind: string[];
   checked: string | null;
+  /** Built here from a recipe (see `recipe`). */
+  custom: boolean;
+  /** Its starting home holds secrets: desktops made from it are signed in as whoever made it. */
+  secrets: boolean;
+  /** Its base has a newer image in the catalog than the one it was built on. */
+  baseUpdated: boolean;
+  recipe: string | null;
+}
+
+export type Remote = { name: string; repoFile: string } | { name: string; url: string; gpgKey: string };
+export type Flatpak = { id: string; remote?: string } | { ref: string };
+
+export interface Recipe {
+  slug: string;
+  name: string;
+  base: string;
+  mise?: string[];
+  remotes?: Remote[];
+  flatpaks?: Flatpak[];
+  commands?: string;
+  homeFrom?: "image";
+  secrets?: boolean;
 }
 
 export interface FolderSize {
@@ -120,6 +150,39 @@ export interface FolderSize {
   bytes: number;
   /** False when some directories couldn't be read, so bytes is a lower bound. */
   complete: boolean;
+}
+
+export type HomeGroupName = "tools" | "flatpak" | "settings" | "dotfiles" | "browser" | "other";
+
+/** One group of a desktop's home folder, for an image made from it. */
+export interface HomeGroup {
+  name: HomeGroupName;
+  /** What the group copies: its files without its secrets. */
+  bytes: number;
+  paths: string[];
+  /** Left out unless ticked one by one. */
+  secrets: string[];
+}
+
+export interface ImageScan {
+  groups: HomeGroup[];
+  /** The desktop's own Flatpak apps, installed again system-wide in the image. */
+  flatpaks: { id: string; remote: string }[];
+  remotes: { name: string; url: string }[];
+  /** Everything that could be copied, secrets included. */
+  totalBytes: number;
+  /** What the image would leave out, and why. */
+  notes: string[];
+}
+
+export interface ImageFromDesktop {
+  name: string;
+  slug: string;
+  groups: HomeGroupName[];
+  /** Secrets to include, as the scan lists them. */
+  include: string[];
+  /** Also save this recipe on the new image once it's built, to add tools on top later. */
+  recipe?: { slug: string; name: string };
 }
 
 export interface JobRef {
@@ -260,15 +323,19 @@ export const api = {
     request<JobRef>("POST", "/api/desktops", body),
   power: (name: string, action: "start" | "stop" | "restart") => request<void>("POST", `${c(name)}/${action}`),
   removeDesktop: (name: string, files: boolean) => request<void>("DELETE", c(name) + (files ? "?files=1" : "")),
-  updateSettings: (name: string, body: { image?: string; memoryBytes?: number; nanoCpus?: number }) =>
+  updateSettings: (name: string, body: { image?: string; memoryBytes?: number; nanoCpus?: number; confirmSecrets?: boolean }) =>
     request<JobRef>("PATCH", c(name), body),
   setAccess: (name: string, usernames: string[]) => request<void>("PUT", `${c(name)}/access`, { usernames }),
   processes: (name: string) => request<Processes>("GET", `${c(name)}/processes`),
+  tools: (name: string) => request<Tool[]>("GET", `${c(name)}/tools`),
   activity: (name: string) => request<ActivityEvent>("GET", `${c(name)}/activity`),
   stats: (name: string) => request<StatsHistory>("GET", `${c(name)}/stats`),
   folder: (name: string) => request<FolderSize>("GET", `${c(name)}/folder`),
+  imageScan: (name: string) => request<ImageScan>("GET", `${c(name)}/image-scan`),
+  imageFromDesktop: (name: string, body: ImageFromDesktop) => request<JobRef>("POST", `${c(name)}/image`, body),
   keys: (name: string, keys: string) => request<void>("POST", `${c(name)}/keys`, { keys }),
-  upgrade: (name: string) => request<JobRef>("POST", `${c(name)}/upgrade`),
+  /** `confirmSecrets`: the admin confirmed that the desktop's accounts may use the secrets of the image it moves onto. */
+  upgrade: (name: string, confirmSecrets = false) => request<JobRef>("POST", `${c(name)}/upgrade`, confirmSecrets ? { confirmSecrets } : undefined),
   validateName: (name: string) => request<NameCheck>("GET", `/api/validate-name?name=${enc(name)}`),
   screenUrl: (name: string, opts: { full?: boolean; bust?: number } = {}) => {
     const q = new URLSearchParams();
@@ -294,7 +361,14 @@ export const api = {
   addImage: (ref: string) => request<JobRef>("POST", "/api/images", { ref }),
   removeImage: (ref: string) => request<void>("DELETE", `/api/images?ref=${enc(ref)}`),
   checkImages: () => request<JobRef>("POST", "/api/images/check"),
-  upgradeImage: (ref: string) => request<JobRef>("POST", "/api/images/upgrade", { ref }),
+  upgradeImage: (ref: string, confirmSecrets = false) => request<JobRef>("POST", "/api/images/upgrade", { ref, confirmSecrets }),
+
+  recipes: () => request<Recipe[]>("GET", "/api/recipes"),
+  createRecipe: (recipe: Recipe) => request<JobRef>("POST", "/api/recipes", recipe),
+  updateRecipe: (recipe: Recipe) => request<JobRef>("PUT", `/api/recipes/${enc(recipe.slug)}`, recipe),
+  removeRecipe: (slug: string) => request<void>("DELETE", `/api/recipes/${enc(slug)}`),
+  rebuildRecipe: (slug: string) => request<JobRef>("POST", `/api/recipes/${enc(slug)}/rebuild`),
+  cancelJob: (id: string) => request<void>("POST", `/api/jobs/${enc(id)}/cancel`),
 };
 
 /** Follows a job's event stream until it is done or failed. Returns a function that stops following. */

@@ -22,6 +22,7 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/recipes"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 )
 
@@ -46,6 +47,10 @@ type Server struct {
 	thumbs     *thumbnails
 	tokens     *tokenStore
 	images     *catalog
+	recipes    *recipes.Store
+	builds     builds
+	// smokeTest starts a throwaway desktop of a freshly built image.
+	smokeTest func(ctx context.Context, imageID string) error
 
 	activity       *activity.Tracker
 	activityPub    *throttle
@@ -72,6 +77,10 @@ func New(o Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Build contexts a crash left behind hold copies of home folders.
+	if err := os.RemoveAll(filepath.Join(o.StateDir, buildsDir)); err != nil {
+		o.Log.Warn("removing old build contexts", "err", err)
+	}
 	s := &Server{
 		Log: o.Log, Eng: o.Eng, Desktops: o.Desktops, Accounts: o.Accounts,
 		Sessions: &auth.Sessions{Key: key, Secure: o.Secure}, Throttle: &auth.Throttle{},
@@ -90,6 +99,8 @@ func New(o Options) (*Server, error) {
 	if s.images, err = loadCatalog(o.StateDir, o.DefaultImage); err != nil {
 		return nil, err
 	}
+	s.recipes = recipes.NewStore(filepath.Join(o.StateDir, "recipes.json"))
+	s.smokeTest = s.smokeTestDesktop
 	o.Accounts.OnChange = s.accountsChanged
 	s.routes()
 	return s, nil

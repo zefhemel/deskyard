@@ -15,6 +15,7 @@ var ErrNotFound = errors.New("not found")
 
 type Mount struct {
 	Source, Target string // Source is a host path
+	ReadOnly       bool
 }
 
 type ContainerSpec struct {
@@ -35,6 +36,11 @@ type ContainerSpec struct {
 	Flatpak bool
 	Restart string // "unless-stopped", "no"
 	Cmd     []string
+	// Entrypoint replaces the image's entrypoint when set.
+	Entrypoint []string
+	// NoHealthcheck turns off the image's HEALTHCHECK, which would otherwise
+	// run the image's own command in the container.
+	NoHealthcheck bool
 }
 
 type Container struct {
@@ -86,6 +92,16 @@ type Network struct {
 type Image struct {
 	ID     string
 	Labels map[string]string
+	User   string // the image's USER, "" for root
+	Arch   string // e.g. amd64, arm64
+}
+
+// BuildSpec describes an image build from a tar build context.
+type BuildSpec struct {
+	Context    io.Reader // tar archive
+	Dockerfile string    // path of the Dockerfile inside Context
+	Labels     map[string]string
+	NoCache    bool
 }
 
 type PullProgress struct {
@@ -126,6 +142,18 @@ type Engine interface {
 	// CopyFromImage returns a tar stream of path inside the image, read from a
 	// never-started container of it.
 	CopyFromImage(ctx context.Context, ref, path string) (io.ReadCloser, error)
+	// CopyToContainer extracts a tar archive into dir inside a container
+	// (created or running).
+	CopyToContainer(ctx context.Context, id, dir string, archive io.Reader) error
+	// Build builds an image, passing each line of build output to log.
+	// Cancelling ctx stops the build.
+	Build(ctx context.Context, spec BuildSpec, log func(line string)) (imageID string, err error)
+	// RemoveImage returns ErrNotFound if ref doesn't exist, and an error
+	// mentioning "in use" if a container uses it.
+	RemoveImage(ctx context.Context, ref string) error
+	Tag(ctx context.Context, imageID, ref string) error
+	// ImageTags lists the tags of a repository ("name:tag" → image ID).
+	ImageTags(ctx context.Context, repo string) (map[string]string, error)
 	Events(ctx context.Context) (<-chan Event, error)
 	Info(ctx context.Context) (HostInfo, error)
 }

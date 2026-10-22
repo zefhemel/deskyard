@@ -1,7 +1,7 @@
 ---
 displayName: Custom images design
 tags: spec
-status: approved
+status: implemented
 plan: "[[superpowers/plans/2026-10-22-custom-images|Custom images plan]]"
 date: "2026-10-22"
 ---

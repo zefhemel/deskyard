@@ -39,12 +39,15 @@ func (fakeEngine) Info(context.Context) (engine.HostInfo, error) {
 }
 
 func newTestServer(t *testing.T) (*Server, *httptest.Server) {
+	return newTestServerWith(t, fakeEngine{})
+}
+
+func newTestServerWith(t *testing.T, e engine.Engine) (*Server, *httptest.Server) {
 	dir := t.TempDir()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	accts, _ := accounts.Load(dir)
 	_, _ = accts.EnsureAdmin("admin", "pw")
 	_, _ = accts.Create("anna", "pw", false, nil)
-	e := fakeEngine{}
 	s, err := New(Options{Log: log, Eng: e, Accounts: accts, StateDir: dir, DefaultImage: "img",
 		Desktops: desktops.New(e, desktops.Config{DataDir: dir, Subnet: "10.0.0.0/16"}, log),
 		UI:       fstest.MapFS{"index.html": {Data: []byte("<!doctype html>ui")}, "assets/a.js": {Data: []byte("js")}}})

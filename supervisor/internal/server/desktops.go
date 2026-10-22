@@ -2,8 +2,14 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
+	"path"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -36,6 +42,7 @@ type desktopJSON struct {
 	Image           string              `json:"image"`
 	ImageTitle      string              `json:"imageTitle"`
 	ImageVersion    string              `json:"imageVersion"`
+	ImageSecrets    bool                `json:"imageSecrets"`
 	UpdateAvailable *string             `json:"updateAvailable"`
 	Settings        settingsJSON        `json:"settings"`
 	Access          []string            `json:"access"`
@@ -50,8 +57,9 @@ func (s *Server) desktopJSON(ctx context.Context, c desktops.Desktop, a accounts
 	j := desktopJSON{
 		ID: c.ID, Name: c.Name, State: c.State, Folder: c.Folder, Image: c.Image,
 		ImageTitle: c.ImageLabels["org.opencontainers.image.title"], ImageVersion: c.ImageLabels["org.opencontainers.image.version"],
-		Settings: settingsJSON{c.Settings.MemoryBytes, c.Settings.NanoCPUs},
-		Access:   []string{}, Viewers: s.viewers.names(c.Name),
+		ImageSecrets: c.ImageLabels[labelSecrets] == "true",
+		Settings:     settingsJSON{c.Settings.MemoryBytes, c.Settings.NanoCPUs},
+		Access:       []string{}, Viewers: s.viewers.names(c.Name),
 		Forwards: s.forwards.list(c.Name), Agents: s.activity.Present(c.Name),
 	}
 	if !c.Created.IsZero() {
@@ -142,7 +150,7 @@ func (s *Server) handleValidateName(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.URL.Query().Get("name")
 	res := map[string]any{"ok": true, "folderExists": false}
-	if err := desktops.ValidName(name); err != nil {
+	if err := desktops.ValidNewName(name); err != nil {
 		res["ok"], res["error"] = false, err.Error()
 	} else if _, err := s.Desktops.Get(r.Context(), name); err == nil {
 		res["ok"], res["error"] = false, "a desktop with that name already exists"
@@ -169,7 +177,7 @@ func (s *Server) handleCreateDesktop(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
-	if err := desktops.ValidName(req.Name); err != nil {
+	if err := desktops.ValidNewName(req.Name); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -218,9 +226,10 @@ func (s *Server) handleUpdateDesktop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Image       *string `json:"image"`
-		MemoryBytes *int64  `json:"memoryBytes"`
-		NanoCPUs    *int64  `json:"nanoCpus"`
+		Image          *string `json:"image"`
+		MemoryBytes    *int64  `json:"memoryBytes"`
+		NanoCPUs       *int64  `json:"nanoCpus"`
+		ConfirmSecrets bool    `json:"confirmSecrets"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad request")
@@ -240,7 +249,39 @@ func (s *Server) handleUpdateDesktop(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "limits can't be negative")
 		return
 	}
+	if set.Image != c.Image && !s.secretsConfirmed(w, r, set.Image, []desktops.Desktop{c}, req.ConfirmSecrets) {
+		return
+	}
 	s.startRecreate(w, a, c.Name, set, "upgrading")
+}
+
+// secretsConfirmed answers 409 unless confirmed is set when moving these
+// desktops onto ref would let accounts use secrets: ref's image contains
+// secrets (its starting home holds someone's sign-ins) and some of the
+// desktops have accounts other than admins. The UI asks first, as it does
+// when giving access to such a desktop.
+func (s *Server) secretsConfirmed(w http.ResponseWriter, r *http.Request, ref string, cs []desktops.Desktop, confirmed bool) bool {
+	if confirmed {
+		return true
+	}
+	img, err := s.Eng.ImageInspect(r.Context(), ref)
+	if err != nil || img.Labels[labelSecrets] != "true" {
+		return true
+	}
+	var who []string
+	for _, c := range cs {
+		for _, u := range s.Accounts.WithAccess(c.ID) {
+			if !slices.Contains(who, u) {
+				who = append(who, u)
+			}
+		}
+	}
+	if len(who) == 0 {
+		return true
+	}
+	writeError(w, http.StatusConflict, ref+" contains secrets and "+strings.Join(who, ", ")+
+		" can use these desktops: confirm with confirmSecrets")
+	return false
 }
 
 // startRecreate runs Recreate as a job (settings changes and upgrades).
@@ -299,6 +340,18 @@ func (s *Server) handlePower(w http.ResponseWriter, r *http.Request) {
 	case "upgrade":
 		c, a, ok := s.desktopFor(w, r, auth.Manage)
 		if !ok {
+			return
+		}
+		var req struct {
+			ConfirmSecrets bool `json:"confirmSecrets"`
+		}
+		if r.ContentLength != 0 {
+			if err := readJSON(r, &req); err != nil {
+				writeError(w, http.StatusBadRequest, "bad request")
+				return
+			}
+		}
+		if !s.secretsConfirmed(w, r, c.Image, []desktops.Desktop{c}, req.ConfirmSecrets) {
 			return
 		}
 		set := c.Settings
@@ -441,4 +494,120 @@ func (s *Server) handleProcesses(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"titles": titles, "rows": rows})
+}
+
+// Tool is one mise tool installed in a desktop: by the desktop's user
+// ("desktop") or in its image under /opt/mise ("image").
+type Tool struct {
+	Tool    string `json:"tool"`
+	Version string `json:"version"`
+	Source  string `json:"source"`
+}
+
+const (
+	maxToolsOutput = 1 << 20 // mise's output comes from the desktop: bound it
+	maxTools       = 500
+	maxToolText    = 100
+	imageMiseDir   = "/opt/mise"
+)
+
+// handleTools lists the mise tools of a running desktop and where each one is
+// installed. A desktop that is stopped, has no mise, or answers with anything
+// odd has no tools to show: that is an empty list, not an error.
+func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
+	c, _, ok := s.desktopFor(w, r, auth.View)
+	if !ok {
+		return
+	}
+	tools := []Tool{}
+	if c.Running() {
+		ctx, cancel := timeout(r, 10*time.Second)
+		defer cancel()
+		if t, err := s.miseTools(ctx, c); err == nil {
+			tools = t
+		}
+	}
+	writeJSON(w, http.StatusOK, tools)
+}
+
+func (s *Server) miseTools(ctx context.Context, c desktops.Desktop) ([]Tool, error) {
+	// The image's tools live in /opt/mise, apart from the desktop's own
+	// MISE_DATA_DIR; mise lists them as well when told to look there.
+	env := append(append([]string{}, execEnv...), "MISE_SHARED_INSTALL_DIRS="+imageMiseDir+"/installs")
+	p, err := s.Eng.Exec(ctx, c.Container.ID, engine.ExecSpec{
+		Cmd:  []string{"timeout", "-k", "1", "8", "mise", "ls", "--json"},
+		User: "user", WorkDir: "/workspace", Env: env,
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer p.Close()
+	go func() { // a hung exec must not outlive the request
+		<-ctx.Done()
+		p.Close()
+	}()
+	if p.Stderr != nil {
+		go io.Copy(io.Discard, io.LimitReader(p.Stderr, maxToolsOutput)) //nolint:errcheck
+	}
+	out, err := io.ReadAll(io.LimitReader(p.Stdout, maxToolsOutput+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(out) > maxToolsOutput {
+		return nil, errors.New("mise output too large")
+	}
+	if code, err := p.Wait(); err != nil || code != 0 {
+		return nil, errors.New("mise failed")
+	}
+	return parseMiseTools(out)
+}
+
+// parseMiseTools reads `mise ls --json`: an object of tool name to the list of
+// its installed versions. Entries that don't look right are skipped.
+func parseMiseTools(out []byte) ([]Tool, error) {
+	var all map[string]json.RawMessage
+	if err := json.Unmarshal(out, &all); err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(all))
+	for n := range all {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	tools := []Tool{}
+	for _, n := range names {
+		var entries []json.RawMessage
+		if json.Unmarshal(all[n], &entries) != nil {
+			continue
+		}
+		for _, raw := range entries {
+			var v struct {
+				Version     string `json:"version"`
+				InstallPath string `json:"install_path"`
+				Installed   *bool  `json:"installed"`
+			}
+			if json.Unmarshal(raw, &v) != nil {
+				continue
+			}
+			if v.Version == "" || v.InstallPath == "" || (v.Installed != nil && !*v.Installed) {
+				continue
+			}
+			source := "desktop"
+			if p := path.Clean(v.InstallPath); p == imageMiseDir || strings.HasPrefix(p, imageMiseDir+"/") {
+				source = "image"
+			}
+			tools = append(tools, Tool{clip(n), clip(v.Version), source})
+			if len(tools) >= maxTools {
+				return tools, nil
+			}
+		}
+	}
+	return tools, nil
+}
+
+func clip(s string) string {
+	if len(s) > maxToolText {
+		return strings.ToValidUTF8(s[:maxToolText], "")
+	}
+	return s
 }

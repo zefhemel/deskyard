@@ -28,6 +28,18 @@ func ValidName(name string) error {
 	return nil
 }
 
+// SmokePrefix starts the names of the throwaway desktops that test a freshly
+// built image; nobody else may use it.
+const SmokePrefix = "build-check-"
+
+// ValidNewName is ValidName for a desktop someone creates.
+func ValidNewName(name string) error {
+	if strings.HasPrefix(name, SmokePrefix) {
+		return fmt.Errorf("names starting with %q are reserved by the supervisor", SmokePrefix)
+	}
+	return ValidName(name)
+}
+
 // IsReserved reports whether a top-level path segment belongs to the supervisor.
 func IsReserved(segment string) bool {
 	return reserved[segment] || strings.HasPrefix(segment, "_")

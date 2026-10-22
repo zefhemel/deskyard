@@ -3,12 +3,15 @@ package docker
 
 import (
 	"context"
+	"crypto/rand"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/netip"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,6 +20,7 @@ import (
 	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/jsonstream"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 
@@ -70,7 +74,11 @@ func (d *Docker) Create(ctx context.Context, s engine.ContainerSpec) (string, er
 		Env:          env,
 		Labels:       s.Labels,
 		Cmd:          s.Cmd,
+		Entrypoint:   s.Entrypoint,
 		ExposedPorts: network.PortSet{port8080: {}},
+	}
+	if s.NoHealthcheck {
+		cfg.Healthcheck = &container.HealthConfig{Test: []string{"NONE"}}
 	}
 	hc := &container.HostConfig{
 		ShmSize: s.ShmBytes,
@@ -83,7 +91,11 @@ func (d *Docker) Create(ctx context.Context, s engine.ContainerSpec) (string, er
 		hc.RestartPolicy = container.RestartPolicy{Name: container.RestartPolicyMode(s.Restart)}
 	}
 	for _, m := range s.Mounts {
-		hc.Binds = append(hc.Binds, m.Source+":"+m.Target)
+		bind := m.Source + ":" + m.Target
+		if m.ReadOnly {
+			bind += ":ro"
+		}
+		hc.Binds = append(hc.Binds, bind)
 	}
 	if s.Flatpak {
 		hc.SecurityOpt = []string{"seccomp=" + flatpakSeccomp, "apparmor=unconfined"}
@@ -430,8 +442,128 @@ func (d *Docker) ImageInspect(ctx context.Context, ref string) (engine.Image, er
 	img := engine.Image{ID: res.ID}
 	if res.Config != nil {
 		img.Labels = res.Config.Labels
+		img.User = res.Config.User
 	}
+	img.Arch = res.Architecture
 	return img, nil
+}
+
+func (d *Docker) Build(ctx context.Context, spec engine.BuildSpec, log func(string)) (string, error) {
+	// The classic builder ignores BuildCancel and, when the connection drops,
+	// leaves the current step's container running. Step containers inherit
+	// the build's extra hosts, so a unique entry marks them and lets a
+	// cancelled build's containers be found and removed.
+	marker := newBuildMarker()
+	defer func() {
+		if ctx.Err() != nil {
+			d.removeBuildContainers(context.WithoutCancel(ctx), marker)
+		}
+	}()
+	res, err := d.c.ImageBuild(ctx, spec.Context, client.ImageBuildOptions{
+		Dockerfile: spec.Dockerfile, Labels: spec.Labels, ExtraHosts: []string{marker},
+		NoCache: spec.NoCache, Remove: true, ForceRemove: true,
+	})
+	if err != nil {
+		return "", wrap(err)
+	}
+	defer res.Body.Close()
+	var imageID string
+	dec := json.NewDecoder(res.Body)
+	for {
+		var msg jsonstream.Message
+		if err := dec.Decode(&msg); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if ctx.Err() != nil {
+				return "", ctx.Err()
+			}
+			return "", err
+		}
+		if msg.Error != nil {
+			return "", errors.New(msg.Error.Message)
+		}
+		if msg.Aux != nil {
+			var aux struct{ ID string }
+			if json.Unmarshal(*msg.Aux, &aux) == nil && aux.ID != "" {
+				imageID = aux.ID
+			}
+		}
+		if log != nil {
+			for _, l := range strings.Split(strings.TrimRight(msg.Stream+msg.Status, "\n"), "\n") {
+				if l != "" {
+					log(l)
+				}
+			}
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if imageID == "" {
+		return "", errors.New("build finished without an image id")
+	}
+	return imageID, nil
+}
+
+func newBuildMarker() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return "deskyard-build-" + hex.EncodeToString(b) + ":127.0.0.1"
+}
+
+// removeBuildContainers force-removes every container started by the build
+// carrying marker. The daemon notices a dropped connection asynchronously, so
+// the step's container may still be starting; look for a short while.
+func (d *Docker) removeBuildContainers(ctx context.Context, marker string) {
+	for range 20 {
+		found := false
+		if res, err := d.c.ContainerList(ctx, client.ContainerListOptions{All: true}); err == nil {
+			for _, c := range res.Items {
+				in, err := d.c.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
+				if err != nil || in.Container.HostConfig == nil || !slices.Contains(in.Container.HostConfig.ExtraHosts, marker) {
+					continue
+				}
+				found = true
+				_, _ = d.c.ContainerRemove(ctx, c.ID, client.ContainerRemoveOptions{Force: true})
+			}
+		}
+		if found {
+			return
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
+func (d *Docker) RemoveImage(ctx context.Context, ref string) error {
+	_, err := d.c.ImageRemove(ctx, ref, client.ImageRemoveOptions{PruneChildren: true})
+	if err != nil && errdefs.IsConflict(err) {
+		return fmt.Errorf("image in use: %v", err)
+	}
+	return wrap(err)
+}
+
+func (d *Docker) Tag(ctx context.Context, imageID, ref string) error {
+	_, err := d.c.ImageTag(ctx, client.ImageTagOptions{Source: imageID, Target: ref})
+	return wrap(err)
+}
+
+func (d *Docker) ImageTags(ctx context.Context, repo string) (map[string]string, error) {
+	f := client.Filters{}
+	f.Add("reference", repo)
+	res, err := d.c.ImageList(ctx, client.ImageListOptions{Filters: f})
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for _, img := range res.Items {
+		for _, t := range img.RepoTags {
+			if i := strings.LastIndex(t, ":"); i > 0 && t[:i] == repo {
+				out[t] = img.ID
+			}
+		}
+	}
+	return out, nil
 }
 
 func (d *Docker) CopyFromImage(ctx context.Context, ref, path string) (io.ReadCloser, error) {
@@ -450,6 +582,11 @@ func (d *Docker) CopyFromImage(ctx context.Context, ref, path string) (io.ReadCl
 		return nil, wrap(err)
 	}
 	return readCloser{res.Content, func() error { err := res.Content.Close(); remove(); return err }}, nil
+}
+
+func (d *Docker) CopyToContainer(ctx context.Context, id, dir string, archive io.Reader) error {
+	_, err := d.c.CopyToContainer(ctx, id, client.CopyToContainerOptions{DestinationPath: dir, Content: archive})
+	return wrap(err)
 }
 
 type readCloser struct {

@@ -6,8 +6,8 @@ import { readFileSync, existsSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
-import type { Desktop, CreatedToken, Job } from "../api.ts";
-import { accounts, activityOf, desktops, FOLDER, images, processRows, refreshImages, tokens } from "./mock-data.ts";
+import type { Desktop, CreatedToken, Job, Recipe } from "../api.ts";
+import { accounts, activityOf, desktops, FOLDER, homeScan, images, processRows, recipes, refreshImages, tokens } from "./mock-data.ts";
 
 const GB = 1024 ** 3;
 const imgDir = fileURLToPath(new URL("../../../../docs/superpowers/specs/2026-10-21-supervisor-design/img/", import.meta.url));
@@ -82,7 +82,71 @@ function job(messages: string[], after: () => void, desktop?: string): { job: st
   return { job: id };
 }
 
+// Builds: each log line is one update with no progress, like the real stream.
+const builds = new Map<string, { rec: Recipe; lines: string[]; fail: boolean; cancelled: boolean; dropped: boolean }>();
+
+function buildJob(rec: Recipe): { job: string } {
+  const id = `build${jobSeq++}`;
+  const fail = (rec.commands ?? "").includes("fail");
+  const lines = [
+    "Taking the base image",
+    "Building",
+    "Step 1/3 : FROM sha256:4e8e1bc97dfc",
+    ...Array.from({ length: 6 }, (_, i) => ` ---> layer ${i}`),
+    "Step 2/3 : USER root",
+    " ---> Running in 5c2a91",
+    "Step 3/3 : RUN echo build commands",
+    ...Array.from({ length: 40 }, (_, i) => `installing package ${i + 1} of 40`),
+    ...(fail ? ["E: Unable to locate package nonsense", "The command '/bin/sh -c apt-get install nonsense' returned a non-zero code: 100"] : ["Successfully built 8d1f", "Checking the image", "Starting a test desktop"]),
+  ];
+  builds.set(id, { rec, lines, fail, cancelled: false, dropped: false });
+  return { job: id };
+}
+
+function finishBuild(rec: Recipe): void {
+  const ref = `deskyard-custom/${rec.slug}:latest`;
+  let img = images.find((i) => i.ref === ref);
+  if (!img) {
+    img = { ref, title: rec.name, version: "", description: "", desktops: [], behind: [], checked: null, custom: true, secrets: !!rec.secrets, baseUpdated: false, recipe: rec.slug };
+    images.push(img);
+  }
+  img.title = rec.name;
+  img.version = new Date().toISOString().slice(0, 16).replace("T", " ");
+  img.baseUpdated = false;
+}
+
+function streamBuild(res: ServerResponse, id: string): void {
+  const b = builds.get(id)!;
+  sse(res);
+  const send = (j: Job) => res.write(`data: ${JSON.stringify(j)}\n\n`);
+  let i = 0;
+  const t = setInterval(() => {
+    if (b.cancelled) {
+      clearInterval(t);
+      send({ status: "failed", message: "Cancelled", progress: null, error: "cancelled" });
+      return res.end();
+    }
+    // A command containing "drop" cuts the first connection mid-build, like a network blip.
+    if (i === 12 && !b.dropped && (b.rec.commands ?? "").includes("drop")) {
+      b.dropped = true;
+      clearInterval(t);
+      return res.end();
+    }
+    const line = b.lines[i++];
+    if (line !== undefined) return send({ status: "running", message: line, progress: null });
+    clearInterval(t);
+    if (b.fail) send({ status: "failed", message: "Failed", progress: null, error: "the build failed: The command '/bin/sh -c apt-get install nonsense' returned a non-zero code: 100" });
+    else {
+      finishBuild(b.rec);
+      send({ status: "done", message: "Done", progress: 1 });
+    }
+    res.end();
+  }, 120);
+  res.on("close", () => clearInterval(t));
+}
+
 function streamJob(res: ServerResponse, id: string): void {
+  if (builds.has(id)) return streamBuild(res, id);
   const j = jobs.get(id);
   if (!j) return json(res, 404, { error: "no such job" });
   sse(res);
@@ -208,6 +272,13 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     res.on("close", () => streams.delete(res));
     return;
   }
+  const cancel = /^\/api\/jobs\/([^/]+)\/cancel$/.exec(path);
+  if (cancel?.[1] && method === "POST") {
+    const b = builds.get(cancel[1]);
+    if (!b) return json(res, 409, { error: "this job can't be cancelled, or has finished" });
+    b.cancelled = true;
+    return json(res, 204);
+  }
   const jobMatch = /^\/api\/jobs\/([^/]+)$/.exec(path);
   if (jobMatch?.[1]) return streamJob(res, jobMatch[1]);
 
@@ -224,7 +295,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const img = images.find((i) => i.ref === b.image) ?? images[0]!;
     const c: Desktop = {
       id: `${name}-id`, name, state: "creating", startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/${name}`, image: img.ref, imageTitle: img.title,
-      imageVersion: img.version, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus) },
+      imageVersion: img.version, imageSecrets: img.secrets, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus) },
       access: (b.access as string[]) ?? [], viewers: [], forwards: [], agents: [], tokens: 0, stats: null,
     };
     desktops.push(c);
@@ -263,13 +334,34 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const b = await readBody(req);
     if (!String(b.ref).includes(":")) return json(res, 400, { error: "Give a reference with a tag." });
     return json(res, 202, job(["Pulling " + String(b.ref), "Checking the image contract"], () => {
-      images.push({ ref: String(b.ref), title: "Custom image", version: "1.0", description: "Added in the mock", desktops: [], behind: [], checked: new Date().toISOString() });
+      images.push({ ref: String(b.ref), title: "Added image", version: "1.0", description: "Added in the mock", desktops: [], behind: [], checked: new Date().toISOString(), custom: false, secrets: false, baseUpdated: false, recipe: null });
     }));
   }
   if (path === "/api/images" && method === "DELETE") {
     const i = images.findIndex((x) => x.ref === url.searchParams.get("ref"));
     if (i >= 0) images.splice(i, 1);
     return json(res, 204);
+  }
+  if (path === "/api/recipes" && method === "GET") return json(res, 200, [...recipes].sort((a, b) => a.slug.localeCompare(b.slug)));
+  if (path === "/api/recipes" && method === "POST") {
+    const rec = (await readBody(req)) as unknown as Recipe;
+    if (recipes.some((r) => r.slug === rec.slug)) return json(res, 409, { error: `a recipe named ${rec.slug} already exists` });
+    recipes.push(rec);
+    return json(res, 202, buildJob(rec));
+  }
+  const rcp = /^\/api\/recipes\/([^/]+)(?:\/(rebuild))?$/.exec(path);
+  if (rcp?.[1]) {
+    const rec = recipes.find((r) => r.slug === rcp[1]);
+    if (!rec) return json(res, 404, { error: "no such recipe" });
+    if (rcp[2] === "rebuild" && method === "POST") return json(res, 202, buildJob(rec));
+    if (method === "DELETE") {
+      recipes.splice(recipes.indexOf(rec), 1);
+      return json(res, 204);
+    }
+    if (method === "PUT") {
+      Object.assign(rec, await readBody(req));
+      return json(res, 202, buildJob(rec));
+    }
   }
   if (path === "/api/images/check") return json(res, 202, job(["Pulling ghcr.io/zefhemel/deskyard-debian-xfce:latest", "Pulling ghcr.io/zefhemel/deskyard-debian-xfce:beta"], () => images.forEach((i) => (i.checked = new Date().toISOString()))));
   if (path === "/api/images/upgrade") {
@@ -323,6 +415,20 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   if (sub === "activity") return json(res, 200, activityOf(c));
   if (sub === "stats") return json(res, 200, history(c));
   if (sub === "folder") return json(res, 200, { path: c.folder, bytes: 3.2 * GB, complete: true });
+  if (sub === "image-scan" && method === "GET") {
+    await new Promise((r) => setTimeout(r, 400));
+    return json(res, 200, homeScan);
+  }
+  if (sub === "image" && method === "POST") {
+    const b = await readBody(req);
+    const include = (b.include as string[]) ?? [];
+    const rec: Recipe = { slug: String(b.slug), name: String(b.name), base: c.image, homeFrom: "image", secrets: include.length > 0 || c.imageSecrets };
+    if (recipes.some((r) => r.slug === rec.slug)) return json(res, 409, { error: `a recipe named ${rec.slug} already exists` });
+    recipes.push(rec);
+    const onTop = b.recipe as { slug: string; name: string } | undefined;
+    if (onTop) recipes.push({ slug: onTop.slug, name: onTop.name, base: `deskyard-custom/${rec.slug}:latest`, secrets: rec.secrets });
+    return json(res, 202, buildJob(rec));
+  }
   if (sub === "processes") {
     return json(res, 200, {
       titles: ["PID", "USER", "%CPU", "RSS", "ELAPSED", "COMMAND"],

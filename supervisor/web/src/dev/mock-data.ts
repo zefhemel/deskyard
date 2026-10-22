@@ -1,5 +1,5 @@
 // Fake data for the dev-server mock (mock.ts). Never part of the build.
-import type { Account, ActivityEvent, AgentPresence, AgentSummary, CatalogImage, Desktop, Token } from "../api.ts";
+import type { Account, ActivityEvent, AgentPresence, AgentSummary, CatalogImage, Desktop, ImageScan, Recipe, Token } from "../api.ts";
 
 const GB = 1024 ** 3;
 const HOUR = 3600 * 1000;
@@ -8,6 +8,7 @@ const now = Date.now();
 const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
 
 export const FOLDER = "/Users/zef/deskyard";
+const PLAIN = { custom: false, secrets: false, baseUpdated: false, recipe: null } as const;
 const LATEST = "ghcr.io/zefhemel/deskyard-debian-xfce:latest";
 const BETA = "ghcr.io/zefhemel/deskyard-debian-xfce:beta";
 
@@ -37,6 +38,7 @@ function desktop(c: Partial<Desktop> & { name: string }): Desktop {
     image: LATEST,
     imageTitle: "Debian XFCE",
     imageVersion: "2026.10.22",
+    imageSecrets: false,
     updateAvailable: null,
     settings: { memoryBytes: 0, nanoCpus: 0 },
     access: [],
@@ -84,7 +86,45 @@ export const desktops: Desktop[] = [
   }),
   desktop({ name: "data-lab", state: "creating", startedAt: "", imageVersion: "" }),
   desktop({ name: "scratch", state: "stopped", startedAt: "", imageVersion: "2026.10.15", updateAvailable: "2026.10.22" }),
+  desktop({
+    name: "work",
+    state: "stopped",
+    startedAt: "",
+    image: "deskyard-custom/work-signed-in:latest",
+    imageTitle: "Work, signed in",
+    imageVersion: "2026-10-20 09:14",
+    updateAvailable: "2026-10-22 08:30",
+    imageSecrets: true,
+  }),
 ];
+
+/** What GET /api/desktops/{name}/image-scan finds in every mock desktop. */
+export const homeScan: ImageScan = {
+  groups: [
+    { name: "tools", bytes: 1.3 * GB, paths: [".config/mise", ".local/bin", ".local/share/mise", ".npm-global"], secrets: [] },
+    { name: "flatpak", bytes: 48 * 1024 ** 2, paths: [".var"], secrets: [] },
+    { name: "settings", bytes: 22 * 1024 ** 2, paths: [".config/Code", ".config/gh", ".config/xfce4"], secrets: [".config/gh/hosts.yml"] },
+    { name: "dotfiles", bytes: 41 * 1024, paths: [".bashrc", ".codex", ".gitconfig", ".profile", ".vimrc"], secrets: [".bash_history", ".codex/auth.json", ".ssh"] },
+    { name: "browser", bytes: 310 * 1024 ** 2, paths: [".config/chromium-shared"], secrets: [
+        ".config/chromium-shared/Default/Cookies",
+        ".config/chromium-shared/Default/IndexedDB",
+        ".config/chromium-shared/Default/Local Extension Settings",
+        ".config/chromium-shared/Default/Local Storage",
+        ".config/chromium-shared/Default/Login Data",
+      ] },
+    { name: "other", bytes: 6.4 * GB, paths: ["Downloads", "Notes", "projects"], secrets: ["projects/api/.env"] },
+  ],
+  flatpaks: [
+    { id: "org.gimp.GIMP", remote: "flathub" },
+    { id: "org.gnome.Builder", remote: "gnome-nightly" },
+  ],
+  remotes: [
+    { name: "flathub", url: "https://dl.flathub.org/repo/" },
+    { name: "gnome-nightly", url: "https://nightly.gnome.org/repo/" },
+  ],
+  totalBytes: 8.2 * GB,
+  notes: [],
+};
 
 export const accounts: (Account & { password: string })[] = [
   { username: "zef", admin: true, desktops: [], created: iso(30 * DAY), lastLogin: iso(0), password: "zef" },
@@ -92,6 +132,23 @@ export const accounts: (Account & { password: string })[] = [
   { username: "sam", admin: false, desktops: ["research"], created: iso(10 * DAY), lastLogin: iso(3 * DAY), password: "sam" },
   { username: "ci", admin: false, desktops: [], created: iso(2 * DAY), lastLogin: null, password: "ci" },
 ];
+
+function customImage(slug: string, title: string, description: string, over: Partial<CatalogImage>): CatalogImage {
+  return {
+    ref: `deskyard-custom/${slug}:latest`,
+    title,
+    version: "2026-10-20 09:14",
+    description,
+    desktops: [],
+    behind: [],
+    checked: null,
+    custom: true,
+    secrets: false,
+    baseUpdated: false,
+    recipe: slug,
+    ...over,
+  };
+}
 
 export const images: CatalogImage[] = [
   {
@@ -102,6 +159,7 @@ export const images: CatalogImage[] = [
     desktops: [],
     behind: [],
     checked: iso(2 * HOUR),
+    ...PLAIN,
   },
   {
     ref: BETA,
@@ -111,7 +169,17 @@ export const images: CatalogImage[] = [
     desktops: [],
     behind: [],
     checked: iso(2 * HOUR),
+    ...PLAIN,
   },
+  customImage("python-lab", "Python lab", "Python 3.13, uv and JupyterLab", {}),
+  customImage("work-signed-in", "Work, signed in", "Chromium and the work apps, signed in to everything", { secrets: true }),
+  customImage("video-tools", "Video tools", "Kdenlive and ffmpeg", { baseUpdated: true }),
+];
+
+export const recipes: Recipe[] = [
+  { slug: "python-lab", name: "Python lab", base: LATEST, mise: ["python@3.13", "uv"], commands: "uv tool install jupyterlab" },
+  { slug: "work-signed-in", name: "Work, signed in", base: LATEST, homeFrom: "image", secrets: true, flatpaks: [{ id: "org.mozilla.firefox" }] },
+  { slug: "video-tools", name: "Video tools", base: LATEST, flatpaks: [{ id: "org.kde.kdenlive" }], commands: "apt-get update && apt-get install -y ffmpeg" },
 ];
 
 export const tokens: Record<string, Token[]> = {

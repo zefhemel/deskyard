@@ -1,4 +1,4 @@
-import type { Desktop, Settings } from "../api.ts";
+import type { Desktop, Settings, Tool } from "../api.ts";
 
 const GB = 1024 ** 3;
 
@@ -124,6 +124,24 @@ export function names(list: string[]): string {
 
 export function plural(n: number, word: string, many = `${word}s`): string {
   return `${n} ${n === 1 ? word : many}`;
+}
+
+/** mise tools as "node 24.22 (this desktop) · 24.30 in the image, cowsay 1.6 (image)". */
+export function toolsLine(tools: Tool[]): string {
+  const byTool = new Map<string, { desktop: string[]; image: string[] }>();
+  for (const t of tools) {
+    const e = byTool.get(t.tool) ?? { desktop: [], image: [] };
+    byTool.set(t.tool, e);
+    e[t.source === "image" ? "image" : "desktop"].push(t.version);
+  }
+  return [...byTool]
+    .map(([name, { desktop, image }]) => {
+      const d = desktop.join(", ");
+      const i = image.join(", ");
+      if (d && i) return `${name} ${d} (this desktop) · ${i} in the image`;
+      return `${name} ${d || i} (${d ? "this desktop" : "image"})`;
+    })
+    .join(", ");
 }
 
 /** "12 s", "4 min", "1 h 30 min" (for commands and browser sessions). */

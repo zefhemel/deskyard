@@ -1,5 +1,5 @@
 // The ⋯ menu of a desktop (tile, desktop page): Restart, Stop, and for
-// admins Settings and Remove….
+// admins Settings, the page's own admin actions, and Remove….
 import { useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { api, type Desktop } from "../api.ts";
@@ -13,7 +13,18 @@ export function power(name: string, action: "start" | "stop" | "restart"): void 
   api.power(name, action).catch(notifyError);
 }
 
-export function DesktopMenu({ desktop: c, power: withPower = true, onRemoved }: { desktop: Desktop; power?: boolean; onRemoved?: () => void }) {
+export function DesktopMenu({
+  desktop: c,
+  power: withPower = true,
+  adminItems = [],
+  onRemoved,
+}: {
+  desktop: Desktop;
+  power?: boolean;
+  /** More admin actions, before Remove…. */
+  adminItems?: MenuItem[];
+  onRemoved?: () => void;
+}) {
   const { me } = useLive();
   const { route } = useLocation();
   const [removing, setRemoving] = useState(false);
@@ -26,6 +37,7 @@ export function DesktopMenu({ desktop: c, power: withPower = true, onRemoved }: 
   if (withPower && c.state === "stopped") items.push({ label: "Start", onSelect: () => power(c.name, "start") });
   if (me.admin) {
     items.push({ label: "Settings", onSelect: () => route(`/desktops/${c.name}?tab=settings`) });
+    items.push(...adminItems);
     items.push({ label: "Remove…", danger: true, separated: true, onSelect: () => setRemoving(true) });
   }
   if (!items.length) return null;

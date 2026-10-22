@@ -3,12 +3,14 @@
 package desktops
 
 import (
+	"archive/tar"
 	"context"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -132,4 +134,49 @@ func waitFor(t *testing.T, ok func() bool) {
 		time.Sleep(time.Second)
 	}
 	t.Fatal("timed out")
+}
+
+func TestFolderTar(t *testing.T) {
+	s := newService(t)
+	ctx := context.Background()
+	name := "cct-" + randomHex(3)
+	folder := filepath.Join(s.Cfg.DataDir, name)
+	_ = os.MkdirAll(filepath.Join(folder, ".config/app"), 0o755)
+	_ = os.WriteFile(filepath.Join(folder, ".config/app/settings.json"), []byte("hi"), 0o644)
+	_ = os.WriteFile(filepath.Join(folder, "private"), []byte("secret"), 0o600)
+	_ = os.Symlink("/etc/passwd", filepath.Join(folder, "link"))
+
+	rc, err := s.FolderTar(ctx, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	tr := tar.NewReader(rc)
+	for {
+		h, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(tr)
+		got[h.Name] = string(b) + h.Linkname
+	}
+	if err := rc.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got["./.config/app/settings.json"] != "hi" || got["./private"] != "secret" || got["./link"] != "/etc/passwd" {
+		t.Errorf("tar: %v", got)
+	}
+	// The helper is gone, and the folder is as it was (mounted read-only).
+	cs, _ := s.Eng.List(ctx, nil)
+	for _, c := range cs {
+		if strings.HasPrefix(c.Name, "deskyard-read-") {
+			t.Errorf("helper %s left behind", c.Name)
+		}
+	}
+	if _, err := s.FolderTar(ctx, "cct-missing"); err == nil {
+		t.Error("a missing folder read without error")
+	}
 }

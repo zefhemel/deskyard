@@ -23,6 +23,7 @@ func (s *Server) routes() {
 	h("GET /api/host", s.handleHost)
 	h("GET /api/events", s.handleEvents)
 	h("GET /api/jobs/{id}", s.handleJob)
+	h("POST /api/jobs/{id}/cancel", s.handleCancelJob)
 
 	h("GET /api/desktops", s.handleListDesktops)
 	h("POST /api/desktops", s.handleCreateDesktop)
@@ -36,6 +37,9 @@ func (s *Server) routes() {
 	h("GET /api/desktops/{name}/processes", s.handleProcesses)
 	h("GET /api/desktops/{name}/stats", s.handleStats)
 	h("GET /api/desktops/{name}/folder", s.handleFolder)
+	h("GET /api/desktops/{name}/tools", s.handleTools)
+	h("GET /api/desktops/{name}/image-scan", s.handleImageScan)
+	h("POST /api/desktops/{name}/image", s.handleImageFromDesktop)
 	h("GET /api/desktops/{name}/activity", s.handleActivity)
 	h("GET /api/desktops/{name}/screen-events", s.handleScreenEvents)
 	h("GET /api/desktops/{name}/tokens", s.handleListTokens)
@@ -52,6 +56,12 @@ func (s *Server) routes() {
 	h("DELETE /api/images", s.handleRemoveImage)
 	h("POST /api/images/check", s.handleCheckImages)
 	h("POST /api/images/upgrade", s.handleUpgradeImage)
+
+	h("GET /api/recipes", s.handleListRecipes)
+	h("POST /api/recipes", s.handleCreateRecipe)
+	h("PUT /api/recipes/{slug}", s.handleUpdateRecipe)
+	h("POST /api/recipes/{slug}/rebuild", s.handleRebuildRecipe)
+	h("DELETE /api/recipes/{slug}", s.handleDeleteRecipe)
 
 	m.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such API route")

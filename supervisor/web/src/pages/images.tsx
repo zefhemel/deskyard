@@ -1,12 +1,15 @@
-import { useState } from "preact/hooks";
-import { api, type CatalogImage } from "../api.ts";
+import { useEffect, useRef, useState } from "preact/hooks";
+import { api, type CatalogImage, type Recipe } from "../api.ts";
 import { JobProgress, useJob } from "../components/job.tsx";
 import { notify, notifyError } from "../components/toast.tsx";
 import { Page, PageHead } from "../components/topbar.tsx";
-import { Button, Dialog, ErrorText, Field, Tag } from "../components/ui.tsx";
+import { Button, Dialog, ErrorText, Field, LockBadge, Tag } from "../components/ui.tsx";
+import { BuildLogDialog } from "../dialogs/build-log.tsx";
+import { RecipeDialog } from "../dialogs/recipe.tsx";
 import { UPGRADE_NOTE, UpgradeDialog } from "../dialogs/upgrade.tsx";
 import { useLive } from "../live.tsx";
 import { ago, plural } from "../lib/format.ts";
+import { followJob } from "../lib/follow-job.ts";
 import { useFetch } from "../lib/use-fetch.ts";
 
 const th = "border-b border-line px-4 py-[11px] text-left text-[13px] font-semibold text-muted";
@@ -14,8 +17,69 @@ const td = "border-b border-hairline px-4 py-[13px] align-middle";
 
 export function ImagesPage() {
   const images = useFetch(() => api.images(), "images");
+  const saved = useFetch(() => api.recipes(), "recipes");
   const [adding, setAdding] = useState(false);
   const [upgrading, setUpgrading] = useState<CatalogImage | null>(null);
+  const { desktops } = useLive();
+  // Accounts that can use the desktops an upgrade moves onto an image with secrets.
+  const secretWho = (img: CatalogImage) =>
+    img.secrets ? [...new Set((desktops ?? []).filter((c) => img.behind.includes(c.name)).flatMap((c) => c.access))].sort() : [];
+  // The recipe dialog: `recipe` set means editing it.
+  const [recipe, setRecipe] = useState<{ recipe?: Recipe } | null>(null);
+  const [building, setBuilding] = useState<{ job: string; title: string } | null>(null);
+  const reload = () => {
+    images.reload();
+    saved.reload();
+  };
+
+  const rebuild = (img: CatalogImage) => {
+    if (!img.recipe) return;
+    api.rebuildRecipe(img.recipe).then(({ job }) => setBuilding({ job, title: img.title || img.ref }), notifyError);
+  };
+  const edit = (img: CatalogImage) => {
+    api.recipes().then((all) => {
+      const r = all.find((x) => x.slug === img.recipe);
+      if (r) setRecipe({ recipe: r });
+      else notifyError(new Error("This image's recipe is missing."));
+    }, notifyError);
+  };
+  // Closing the log doesn't stop the build: one watcher per build says when it ends.
+  const watchers = useRef(new Map<string, () => void>());
+  useEffect(() => {
+    const all = watchers.current;
+    return () => {
+      for (const stop of all.values()) stop();
+      all.clear();
+    };
+  }, []);
+  const hideLog = (job: string, title: string, stillRunning: boolean) => {
+    setBuilding(null);
+    if (!stillRunning || watchers.current.has(job)) return;
+    const end = () => {
+      watchers.current.get(job)?.();
+      watchers.current.delete(job);
+    };
+    watchers.current.set(
+      job,
+      followJob(job, {
+        onUpdate: (j) => {
+          if (j.status === "running") return;
+          end();
+          reload();
+          if (j.status === "done") notify(`${title} is built`);
+          else if (j.error === "cancelled") notify(`The build of ${title} was cancelled`);
+          else notify(`The build of ${title} failed: ${j.error ?? j.message}`, { error: true, ms: 8000 });
+        },
+        onReplay: () => undefined,
+        onConnection: () => undefined,
+        onGone: () => {
+          end();
+          reload();
+          notify(`Lost track of the build of ${title} — check the Images list`, { error: true, ms: 8000 });
+        },
+      }),
+    );
+  };
   const check = useJob(() => {
     images.reload();
     notify("Checked every image for updates");
@@ -31,8 +95,9 @@ export function ImagesPage() {
         <Button disabled={check.running} onClick={() => void check.start(() => api.checkImages())}>
           {check.running ? "Checking…" : "Check now"}
         </Button>
-        <Button variant="primary" onClick={() => setAdding(true)}>
-          Add image
+        <Button onClick={() => setAdding(true)}>Add image</Button>
+        <Button variant="primary" onClick={() => setRecipe({})}>
+          New image
         </Button>
       </PageHead>
       <ErrorText error={images.error ?? check.error} />
@@ -49,7 +114,7 @@ export function ImagesPage() {
             </thead>
             <tbody>
               {images.data.map((img) => (
-                <ImageRow key={img.ref} image={img} onUpgrade={() => setUpgrading(img)} onRemoved={images.reload} />
+                <ImageRow key={img.ref} image={img} onUpgrade={() => setUpgrading(img)} onRemoved={reload} onEdit={() => edit(img)} onRebuild={() => rebuild(img)} />
               ))}
               {!images.data.length && (
                 <tr>
@@ -62,6 +127,13 @@ export function ImagesPage() {
           </table>
         </div>
       )}
+      {images.data && saved.data && (
+        <UnbuiltRecipes
+          recipes={saved.data.filter((r) => !images.data?.some((i) => i.ref === `deskyard-custom/${r.slug}:latest`))}
+          onEdit={(r) => setRecipe({ recipe: r })}
+          onRemoved={reload}
+        />
+      )}
       <p class="mt-4 text-sm text-muted">Upgrading recreates a desktop on the newest version and restarts it if it's running. {UPGRADE_NOTE}</p>
       {adding && (
         <AddImageDialog
@@ -70,6 +142,27 @@ export function ImagesPage() {
             setAdding(false);
             images.reload();
           }}
+        />
+      )}
+      {recipe && images.data && (
+        <RecipeDialog
+          {...recipe}
+          images={images.data}
+          onClose={() => setRecipe(null)}
+          onStarted={(job, title) => {
+            setRecipe(null);
+            setBuilding({ job, title });
+            reload();
+          }}
+        />
+      )}
+      {building && (
+        <BuildLogDialog
+          title={building.title}
+          job={building.job}
+          onClose={(running) => hideLog(building.job, building.title, running)}
+          onDone={reload}
+          onLost={reload}
         />
       )}
       {upgrading && (
@@ -82,7 +175,8 @@ export function ImagesPage() {
             </>
           }
           action={`Upgrade ${plural(upgrading.behind.length, "desktop")}`}
-          begin={() => api.upgradeImage(upgrading.ref)}
+          secrets={secretWho(upgrading).length ? { image: upgrading.title || upgrading.ref, who: secretWho(upgrading) } : undefined}
+          begin={() => api.upgradeImage(upgrading.ref, secretWho(upgrading).length > 0)}
           onClose={() => {
             setUpgrading(null);
             images.reload();
@@ -93,7 +187,19 @@ export function ImagesPage() {
   );
 }
 
-function ImageRow({ image: img, onUpgrade, onRemoved }: { image: CatalogImage; onUpgrade: () => void; onRemoved: () => void }) {
+function ImageRow({
+  image: img,
+  onUpgrade,
+  onRemoved,
+  onEdit,
+  onRebuild,
+}: {
+  image: CatalogImage;
+  onUpgrade: () => void;
+  onRemoved: () => void;
+  onEdit: () => void;
+  onRebuild: () => void;
+}) {
   const { desktops } = useLive();
   const version = (name: string) => desktops?.find((c) => c.name === name)?.imageVersion;
   const current = img.desktops.filter((n) => !img.behind.includes(n));
@@ -103,7 +209,11 @@ function ImageRow({ image: img, onUpgrade, onRemoved }: { image: CatalogImage; o
   return (
     <tr class="last:[&>td]:border-b-0">
       <td class={td}>
-        <div class="font-semibold">{img.title || img.ref}</div>
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold">
+          {img.title || img.ref}
+          {img.secrets && <LockBadge />}
+          {img.baseUpdated && <Tag kind="update">Base updated</Tag>}
+        </div>
         <div class="mt-0.5 text-[13px] text-muted">
           {img.description}
           {img.description && " · "}
@@ -132,6 +242,16 @@ function ImageRow({ image: img, onUpgrade, onRemoved }: { image: CatalogImage; o
         )}
       </td>
       <td class={`${td} text-right whitespace-nowrap`}>
+        {img.custom && (
+          <>
+            <Button class="mr-2 h-[30px]! px-[11px]!" onClick={onEdit}>
+              Edit
+            </Button>
+            <Button variant={img.baseUpdated ? "primary" : "default"} class="mr-2 h-[30px]! px-[11px]!" onClick={onRebuild}>
+              Rebuild
+            </Button>
+          </>
+        )}
         {img.behind.length > 0 ? (
           <Button variant="primary" class="h-[30px]! px-[11px]!" onClick={onUpgrade}>
             Upgrade {plural(img.behind.length, "desktop")}…
@@ -139,7 +259,7 @@ function ImageRow({ image: img, onUpgrade, onRemoved }: { image: CatalogImage; o
         ) : (
           img.desktops.length === 0 && (
             <Button class="h-[30px]! px-[11px]!" onClick={remove}>
-              Remove from catalog
+              {img.custom ? "Delete image" : "Remove from catalog"}
             </Button>
           )
         )}
@@ -184,5 +304,40 @@ function AddImageDialog({ onClose, onAdded }: { onClose: () => void; onAdded: ()
       <JobProgress job={run.job} />
       <ErrorText error={run.error} />
     </Dialog>
+  );
+}
+
+/** Recipes saved without an image yet (a recipe on an image made from a desktop): built when first edited. */
+function UnbuiltRecipes({ recipes, onEdit, onRemoved }: { recipes: Recipe[]; onEdit: (r: Recipe) => void; onRemoved: () => void }) {
+  if (!recipes.length) return null;
+  const remove = (r: Recipe) => api.removeRecipe(r.slug).then(onRemoved, notifyError);
+  return (
+    <div class="mt-6 overflow-x-auto rounded-[10px] border border-line bg-surface">
+      <table class="w-full border-collapse text-sm">
+        <thead>
+          <tr>
+            <th class={th}>Saved recipes, not built yet</th>
+            <th class={th}>Based on</th>
+            <th class={th} />
+          </tr>
+        </thead>
+        <tbody>
+          {recipes.map((r) => (
+            <tr key={r.slug}>
+              <td class={td}>
+                <b class="font-semibold">{r.name}</b> {r.secrets && <LockBadge />}
+              </td>
+              <td class={`${td} mono text-[12.5px]`}>{r.base}</td>
+              <td class={`${td} text-right whitespace-nowrap`}>
+                <Button variant="quiet" onClick={() => void remove(r)}>
+                  Delete
+                </Button>{" "}
+                <Button onClick={() => onEdit(r)}>Edit and build</Button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

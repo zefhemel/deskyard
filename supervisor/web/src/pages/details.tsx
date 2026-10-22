@@ -1,4 +1,4 @@
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import { useLocation, useRoute } from "preact-iso";
 import { api, type AgentPresence, type Desktop, type Forward } from "../api.ts";
 import { agentLabel } from "../lib/activity-format.ts";
@@ -8,10 +8,14 @@ import { DesktopMenu, power } from "../components/desktop-menu.tsx";
 import { Monitor } from "../components/screen.tsx";
 import { ForwardLines } from "../components/viewers-popover.tsx";
 import { Page } from "../components/topbar.tsx";
-import { btnClass, Button, cx, Status, Tag } from "../components/ui.tsx";
+import { btnClass, Button, cx, LockBadge, Status, Tag } from "../components/ui.tsx";
+import { BuildLogDialog } from "../dialogs/build-log.tsx";
+import { ImageFromDesktopDialog } from "../dialogs/image-from-desktop.tsx";
 import { UpgradeDialog } from "../dialogs/upgrade.tsx";
+import { notify } from "../components/toast.tsx";
 import { useDesktop, useLive, useNow } from "../live.tsx";
-import { day, limits, names, statusKind, statusLine } from "../lib/format.ts";
+import { day, limits, names, statusKind, statusLine, toolsLine } from "../lib/format.ts";
+import { useFetch } from "../lib/use-fetch.ts";
 import { AccessTab } from "./details/access-tab.tsx";
 import { AgentsTab } from "./details/agents-tab.tsx";
 import { ProcessesTab } from "./details/processes-tab.tsx";
@@ -58,6 +62,8 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
   const { me, jobs } = useLive();
   const { query, route } = useLocation();
   const now = useNow(10000);
+  const [imaging, setImaging] = useState(false);
+  const [building, setBuilding] = useState<{ job: string; title: string } | null>(null);
   const tabs: { id: Tab; label: string }[] = [
     { id: "overview", label: "Overview" },
     { id: "processes", label: "Processes" },
@@ -96,7 +102,12 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
               Start
             </Button>
           )}
-          <DesktopMenu desktop={c} power={false} onRemoved={() => route("/")} />
+          <DesktopMenu
+            desktop={c}
+            power={false}
+            adminItems={[{ label: "New image from this desktop…", onSelect: () => setImaging(true) }]}
+            onRemoved={() => route("/")}
+          />
         </div>
       </div>
 
@@ -139,6 +150,28 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
           {tab === "access" && <AccessTab desktop={c} />}
         </div>
       )}
+      {imaging && (
+        <ImageFromDesktopDialog
+          desktop={c}
+          onClose={() => setImaging(false)}
+          onStarted={(job, title) => {
+            setImaging(false);
+            setBuilding({ job, title });
+          }}
+        />
+      )}
+      {building && (
+        <BuildLogDialog
+          title={building.title}
+          job={building.job}
+          onClose={(running) => {
+            if (running) notify(`${building.title} keeps building: the Images page shows when it's ready`);
+            setBuilding(null);
+          }}
+          onDone={() => undefined}
+          onLost={() => undefined}
+        />
+      )}
     </Page>
   );
 }
@@ -176,6 +209,24 @@ function ViewersPanel({
   );
 }
 
+/** The desktop's mise tools as one line, or "" when it isn't running, has none, or can't say. */
+function useTools(name: string, running: boolean): string {
+  const [line, setLine] = useState("");
+  useEffect(() => {
+    setLine("");
+    if (!running) return;
+    let live = true;
+    api.tools(name).then(
+      (t) => live && setLine(Array.isArray(t) ? toolsLine(t) : ""),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [name, running]);
+  return line;
+}
+
 function Facts({
   desktop: c,
   admin,
@@ -186,6 +237,7 @@ function Facts({
   onTab: (t: Tab) => void;
 }) {
   const [upgrading, setUpgrading] = useState(false);
+  const tools = useTools(c.name, c.state === "running");
   const link =
     "cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-accent hover:underline";
   return (
@@ -202,6 +254,11 @@ function Facts({
         <dt class="text-muted">Image</dt>
         <dd class="m-0 min-w-0 [overflow-wrap:anywhere]">
           {c.imageTitle || c.image} {c.imageVersion}{" "}
+          {c.imageSecrets && (
+            <>
+              <LockBadge />{" "}
+            </>
+          )}
           {admin && c.updateAvailable && (
             <>
               <Tag kind="update">{c.updateAvailable} available</Tag>{" "}
@@ -215,6 +272,12 @@ function Facts({
             </>
           )}
         </dd>
+        {tools && (
+          <>
+            <dt class="text-muted">Tools</dt>
+            <dd class="m-0 min-w-0 [overflow-wrap:anywhere]">{tools}</dd>
+          </>
+        )}
         {admin && (
           <>
             <dt class="text-muted">Access</dt>
@@ -254,20 +317,29 @@ function Facts({
           </>
         )}
       </dl>
-      {upgrading && (
-        <UpgradeDialog
-          title={`Upgrade ${c.name}?`}
-          intro={
-            <>
-              {c.name} is recreated on {c.imageTitle} {c.updateAvailable}
-              {c.state === "running" ? " and restarted." : "."}
-            </>
-          }
-          action={`Upgrade ${c.name}`}
-          begin={() => api.upgrade(c.name)}
-          onClose={() => setUpgrading(false)}
-        />
-      )}
+      {upgrading && <UpgradeDesktop desktop={c} onClose={() => setUpgrading(false)} />}
     </div>
+  );
+}
+
+/** Upgrades one desktop, asking about secrets when its image has them and others use the desktop. */
+function UpgradeDesktop({ desktop: c, onClose }: { desktop: Desktop; onClose: () => void }) {
+  const images = useFetch(() => api.images(), "images");
+  if (!images.data && !images.error) return null;
+  const secrets = (images.data?.find((i) => i.ref === c.image)?.secrets ?? false) && c.access.length > 0;
+  return (
+    <UpgradeDialog
+      title={`Upgrade ${c.name}?`}
+      intro={
+        <>
+          {c.name} is recreated on {c.imageTitle} {c.updateAvailable}
+          {c.state === "running" ? " and restarted." : "."}
+        </>
+      }
+      action={`Upgrade ${c.name}`}
+      secrets={secrets ? { image: c.imageTitle || c.image, who: c.access } : undefined}
+      begin={() => api.upgrade(c.name, secrets)}
+      onClose={onClose}
+    />
   );
 }
