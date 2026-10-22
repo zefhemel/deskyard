@@ -17,11 +17,11 @@ def make_token(client, name, **kw) -> dict:
     return r.json()
 
 
-async def exec_ws(base, token, argv, stdin=b"", tty=False):
+async def exec_ws(base, token, argv, stdin=b"", tty=False, env=None):
     url = base.replace("http", "ws") + "/api/agent/v1/exec"
     out, err, code = b"", b"", None
     async with websockets.connect(url, additional_headers={"Authorization": f"Bearer {token}"}, max_size=None) as ws:
-        await ws.send(json.dumps({"argv": argv, "tty": tty}))
+        await ws.send(json.dumps({"argv": argv, "tty": tty, **({"env": env} if env else {})}))
         if stdin:
             await ws.send(b"\x00" + stdin)
         await ws.send(json.dumps({"eof": True}))

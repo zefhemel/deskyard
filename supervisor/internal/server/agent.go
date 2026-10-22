@@ -11,10 +11,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/activity"
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/transfer"
 	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 )
@@ -102,7 +105,26 @@ func (s *Server) agentStatus(w http.ResponseWriter, r *http.Request, c desktops.
 
 // execEnv overrides variables of the container's environment that a
 // command run for an agent must not see.
-var execEnv = []string{"WORKSPACE_PROXY_TOKEN="}
+// DESKYARD_ACTIVITY=off keeps the in-desktop CLI from recording what the
+// supervisor already records.
+var execEnv = []string{"WORKSPACE_PROXY_TOKEN=", "DESKYARD_ACTIVITY=off"}
+
+// execEnvFor is the environment of a command run for an agent: the agent's
+// variables, then execEnv, so that the agent can't override it.
+func execEnvFor(agentEnv map[string]string) []string {
+	forced := map[string]bool{}
+	for _, kv := range execEnv {
+		k, _, _ := strings.Cut(kv, "=")
+		forced[k] = true
+	}
+	env := make([]string, 0, len(agentEnv)+len(execEnv))
+	for k, v := range agentEnv {
+		if !forced[k] {
+			env = append(env, k+"="+v)
+		}
+	}
+	return append(env, execEnv...)
+}
 
 type execStart struct {
 	Argv []string          `json:"argv"`
@@ -143,13 +165,9 @@ func (s *Server) agentExec(w http.ResponseWriter, r *http.Request, c desktops.De
 	if start.Cwd == "" {
 		start.Cwd = "/workspace"
 	}
-	env := append([]string{}, execEnv...)
-	for k, v := range start.Env {
-		env = append(env, k+"="+v)
-	}
-	s.Log.Info("agent exec", "desktop", c.Name, "token", t.Name, "argv", start.Argv, "tty", start.Tty)
+	s.Log.Info("agent exec", "desktop", c.Name, "token", t.Name, "argv", activity.DisplayCommand(start.Argv), "tty", start.Tty)
 	p, err := s.Eng.Exec(ctx, c.Container.ID, engine.ExecSpec{
-		Cmd: start.Argv, User: "user", WorkDir: start.Cwd, Env: env,
+		Cmd: start.Argv, User: "user", WorkDir: start.Cwd, Env: execEnvFor(start.Env),
 		Tty: start.Tty, Stdin: true, Cols: start.Cols, Rows: start.Rows,
 	})
 	if err != nil {
@@ -157,6 +175,23 @@ func (s *Server) agentExec(w http.ResponseWriter, r *http.Request, c desktops.De
 		return
 	}
 	defer p.Close()
+
+	// The exec started: record it. Nothing here may block or fail the command.
+	ref, agent := refOf(c), s.agentOf(t)
+	var in, out atomic.Int64 // bytes relayed, for a copy
+	copyDir, copyPath, isCopy := transfer.Classify(start.Argv)
+	// ended records the end of a plain command, the first time it's called:
+	// with its exit code, or nil when the WebSocket or context ended first.
+	ended := func(*int) {}
+	if act, ok := activity.ParseScreenArgv(start.Argv); ok {
+		s.activity.Screen(ref, agent, act)
+	} else if !isCopy {
+		id := randomID(8)
+		s.activity.CmdStart(ref, agent, id, activity.DisplayCommand(start.Argv), start.Cwd)
+		var once sync.Once
+		ended = func(exit *int) { once.Do(func() { s.activity.CmdEnd(ref, agent, id, exit) }) }
+	}
+	defer ended(nil)
 
 	var wmu sync.Mutex
 	write := func(stream byte, b []byte) error {
@@ -170,6 +205,9 @@ func (s *Server) agentExec(w http.ResponseWriter, r *http.Request, c desktops.De
 		buf := make([]byte, 32<<10)
 		for {
 			n, err := rd.Read(buf)
+			if n > 0 && stream == 1 {
+				out.Add(int64(n))
+			}
 			if n > 0 && write(stream, buf[:n]) != nil {
 				return
 			}
@@ -190,12 +228,15 @@ func (s *Server) agentExec(w http.ResponseWriter, r *http.Request, c desktops.De
 			typ, b, err := ws.Read(ctx)
 			if err != nil {
 				_ = p.Stdin.Close()
+				ended(nil) // the client is gone, whether or not the command is
 				return
 			}
 			switch typ {
 			case websocket.MessageBinary:
 				if len(b) > 0 && b[0] == 0 {
-					if _, err := p.Stdin.Write(b[1:]); err != nil {
+					n, err := p.Stdin.Write(b[1:])
+					in.Add(int64(n))
+					if err != nil {
 						return
 					}
 				}
@@ -218,6 +259,16 @@ func (s *Server) agentExec(w http.ResponseWriter, r *http.Request, c desktops.De
 	if err != nil && !errors.Is(err, context.Canceled) {
 		fail(err.Error())
 		return
+	}
+	if err == nil {
+		ended(&code)
+		if isCopy && code == 0 {
+			n := in.Load()
+			if copyDir == "out" {
+				n = max(out.Load()-1, 0) // the download script's type byte
+			}
+			s.activity.Copy(ref, agent, copyDir, copyPath, n)
+		}
 	}
 	b, _ := json.Marshal(map[string]int{"exit": code})
 	wmu.Lock()
@@ -278,6 +329,9 @@ func (s *Server) agentCDP(w http.ResponseWriter, r *http.Request, c desktops.Des
 	}
 	if strings.HasPrefix(rest, "/devtools/") {
 		s.Log.Info("agent browser connect", "desktop", c.Name, "token", t.Name)
+		defer s.activity.BrowserOpen(refOf(c), s.agentOf(t))()
+	} else {
+		s.activity.BrowserTouch(refOf(c), s.agentOf(t))
 	}
 	rp.ServeHTTP(w, r)
 }

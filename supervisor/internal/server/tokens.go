@@ -44,6 +44,11 @@ type tokenStore struct {
 	nextID int
 	dirty  bool
 	closed map[string]bool // tokens whose connections were closed on expiry
+
+	// onGone is called, with no lock held, for every token that stops
+	// working: revoked, its creator lost access, its desktop removed, or
+	// expired.
+	onGone func(token)
 }
 
 func loadTokens(stateDir string) (*tokenStore, error) {
@@ -138,11 +143,12 @@ func (ts *tokenStore) activeCount(desktopID string) int {
 
 // remove deletes tokens matching fn and closes their connections.
 func (ts *tokenStore) remove(fn func(token) bool) {
+	var gone []token
 	ts.mu.Lock()
-	defer ts.mu.Unlock()
 	var keep []token
 	for _, t := range ts.list {
 		if fn(t) {
+			gone = append(gone, t)
 			for _, cancel := range ts.open[t.ID] {
 				cancel()
 			}
@@ -154,6 +160,17 @@ func (ts *tokenStore) remove(fn func(token) bool) {
 	if len(keep) != len(ts.list) {
 		ts.list = keep
 		_ = ts.save()
+	}
+	ts.mu.Unlock()
+	ts.notifyGone(gone)
+}
+
+func (ts *tokenStore) notifyGone(gone []token) {
+	if ts.onGone == nil {
+		return
+	}
+	for _, t := range gone {
+		ts.onGone(t)
 	}
 }
 
@@ -196,19 +213,27 @@ func (ts *tokenStore) expireLoop(ctx context.Context, s *Server) {
 			return
 		case <-tick.C:
 		}
-		now := time.Now()
-		ts.mu.Lock()
-		for _, t := range ts.list {
-			if t.expired(now) && !ts.closed[t.ID] {
-				for _, cancel := range ts.open[t.ID] {
-					cancel()
-				}
-				delete(ts.open, t.ID)
-				ts.closed[t.ID] = true
-			}
-		}
-		ts.mu.Unlock()
+		ts.expireNow(time.Now())
 	}
+}
+
+// expireNow closes the connections of tokens that have expired by now, once
+// per token.
+func (ts *tokenStore) expireNow(now time.Time) {
+	var gone []token
+	ts.mu.Lock()
+	for _, t := range ts.list {
+		if t.expired(now) && !ts.closed[t.ID] {
+			for _, cancel := range ts.open[t.ID] {
+				cancel()
+			}
+			delete(ts.open, t.ID)
+			ts.closed[t.ID] = true
+			gone = append(gone, t)
+		}
+	}
+	ts.mu.Unlock()
+	ts.notifyGone(gone)
 }
 
 // --- API ---------------------------------------------------------------------------------

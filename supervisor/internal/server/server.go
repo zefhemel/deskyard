@@ -85,6 +85,7 @@ func New(o Options) (*Server, error) {
 	if s.tokens, err = loadTokens(o.StateDir); err != nil {
 		return nil, err
 	}
+	s.tokens.onGone = func(t token) { s.activity.Forget(t.ID) }
 	if s.images, err = loadCatalog(o.StateDir, o.DefaultImage); err != nil {
 		return nil, err
 	}

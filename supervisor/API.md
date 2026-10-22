@@ -162,6 +162,7 @@ Commands run as `user` (UID 1000) with the desktop's image environment (PATH inc
 - `cols`/`rows` are optional with `tty` (default 80×24); `{"resize"}` without `tty` is ignored.
 - `{"eof"}` closes stdin; with `tty` it sends Ctrl-D. The server sends `{"exit"}` when the process ends, whether or not stdin was closed.
 - A process killed by a signal exits with 128 + the signal number.
+- `DESKYARD_ACTIVITY=off` is always set in the command's environment and can't be overridden by `env`: the supervisor records the command itself (see the activity API), so the in-desktop `deskyard` must not record it again.
 - `{"error"}` only comes instead of running the command (bad first message, the desktop stopped); once output started, the last message is always `{"exit"}`.
 
 ### `GET /api/agent/v1/forward` (WebSocket)

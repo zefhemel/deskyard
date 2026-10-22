@@ -296,17 +296,20 @@ func (s *Server) agentForward(w http.ResponseWriter, r *http.Request, c desktops
 		return
 	}
 	lk := newForwardLink(t.Name, outs)
+	lk.tokenID = t.ID
 	if !s.forwards.tryAdd(c.Name, lk) {
 		fail(fmt.Sprintf("this token already has %d forward links open on this desktop; close one first", maxLinksPerToken))
 		return
 	}
+	// The live mappings (listFor) replace this text in the activity API.
+	defer s.activity.ForwardOpen(refOf(c), s.agentOf(t), "forward")()
 	defer func() {
 		s.forwards.remove(c.Name, lk)
 		s.publishViewers(c.Name, c.ID)
 	}()
 	p, err := s.Eng.Exec(ctx, c.Container.ID, engine.ExecSpec{
 		Cmd: []string{"deskyard", "forward-helper"}, User: "user", WorkDir: "/workspace",
-		Env: append([]string{}, execEnv...), Stdin: true,
+		Env: execEnvFor(nil), Stdin: true,
 	})
 	if err != nil {
 		fail(err.Error())

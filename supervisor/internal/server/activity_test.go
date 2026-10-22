@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -260,5 +261,74 @@ func TestScreenEventsStream(t *testing.T) {
 		case <-timeout:
 			t.Fatal("stream still open after revoke")
 		}
+	}
+}
+
+// within fails the test if f doesn't return: a Tracker callback that took a
+// lock the caller held would deadlock.
+func within(t *testing.T, what string, f func()) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() { f(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("%s deadlocked", what)
+	}
+}
+
+func TestTokenGoneForgetsAgent(t *testing.T) {
+	s, _ := newTestServer(t)
+	mk := func(name string, exp *time.Time) token {
+		tk, _, err := s.tokens.create(name, "id-alice", "admin", exp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.activity.Screen(aliceRef, s.agentOf(tk), click)
+		return tk
+	}
+	var gone []string
+	orig := s.tokens.onGone
+	s.tokens.onGone = func(tk token) { gone = append(gone, tk.ID); orig(tk) }
+
+	// A live forward link of the token: Forget publishes viewers, which reads
+	// the forwards; it must run with no lock held.
+	del := mk("one", nil)
+	lk := newForwardLink("one", []int{5173})
+	lk.tokenID = del.ID
+	s.forwards.tryAdd("alice", lk)
+	within(t, "remove", func() { s.tokens.remove(func(x token) bool { return x.ID == del.ID }) })
+	if len(gone) != 1 || gone[0] != del.ID {
+		t.Fatalf("onGone after delete: %v", gone)
+	}
+
+	past := time.Now().Add(-time.Hour)
+	exp := mk("two", &past)
+	within(t, "expireNow", func() { s.tokens.expireNow(time.Now()); s.tokens.expireNow(time.Now()) })
+	if len(gone) != 2 || gone[1] != exp.ID {
+		t.Fatalf("onGone after expiry (once): %v", gone)
+	}
+	if p := s.activity.Present("alice"); len(p) != 0 {
+		t.Fatalf("still present: %#v", p)
+	}
+}
+
+func TestForwardOpenDoesNotHoldLocks(t *testing.T) {
+	s, _ := newTestServer(t)
+	lk := newForwardLink("deploy-bot", []int{5173})
+	lk.tokenID = bot.ID
+	s.forwards.tryAdd("alice", lk)
+	within(t, "ForwardOpen", func() {
+		done := s.activity.ForwardOpen(aliceRef, bot, "forward")
+		s.forwards.remove("alice", lk)
+		done()
+	})
+}
+
+func TestExecEnvWins(t *testing.T) {
+	env := execEnvFor(map[string]string{"DESKYARD_ACTIVITY": "on", "FOO": "1"})
+	has := func(kv string) bool { return slices.Contains(env, kv) }
+	if !has("DESKYARD_ACTIVITY=off") || !has("FOO=1") || has("DESKYARD_ACTIVITY=on") || !has("WORKSPACE_PROXY_TOKEN=") {
+		t.Errorf("env = %v", env)
 	}
 }
