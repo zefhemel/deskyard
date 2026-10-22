@@ -5,7 +5,7 @@ import { fileSize, names, shortDuration } from "./format.ts";
 export { shortDuration };
 
 /** The overlay label: the name, or "Claude Code (in this desktop)". */
-export function agentLabel(a: AgentPresence): string {
+export function agentLabel(a: Pick<AgentPresence, "name" | "inside">): string {
   return a.inside ? `${a.name} (in this desktop)` : a.name;
 }
 

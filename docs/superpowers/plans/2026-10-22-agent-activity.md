@@ -1,7 +1,7 @@
 ---
 displayName: Agent activity plan
 tags: plan
-status: active
+status: done
 date: "2026-10-22"
 spec: "[[superpowers/specs/2026-10-22-agent-activity-design|Agent activity design]]"
 ---

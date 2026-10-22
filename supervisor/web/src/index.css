@@ -101,3 +101,50 @@
     opacity: 0.3;
   }
 }
+
+/* The activity overlay's marks (desktop/overlay.tsx). */
+@keyframes mark-ripple {
+  from {
+    transform: scale(0.35);
+    opacity: 0.95;
+  }
+  to {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+}
+@keyframes mark-fade {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes mark-nudge {
+  from {
+    transform: translateY(5px);
+  }
+  to {
+    transform: translateY(-5px);
+  }
+}
+@layer components {
+  .mark-ripple {
+    animation: mark-ripple 600ms ease-out both;
+  }
+  /* Shown, then fading out after 1.5 s (or the animation-delay set on it). */
+  .mark-fade-late {
+    animation: mark-fade 300ms ease-in 1500ms both;
+  }
+  .mark-nudge {
+    animation: mark-nudge 800ms ease-out both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    /* No growing rings or moving arrows: the marks only appear and fade. */
+    .mark-ripple {
+      animation-name: mark-fade;
+      animation-duration: 600ms;
+    }
+    .mark-nudge {
+      animation: none;
+    }
+  }
+}

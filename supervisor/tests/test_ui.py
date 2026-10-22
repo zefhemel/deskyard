@@ -139,3 +139,48 @@ def test_agent_presence_and_summary(cli, remote, supervisor, name):  # noqa: F81
         page.goto(f"{supervisor.base}/")
         expect(page.locator("[data-agent]").first).to_be_visible(timeout=15000)
         browser.close()
+
+
+# toViewport (desktop/screen-geometry.ts) worked out in the page from the frame's canvas.
+TO_VIEWPORT = """([x, y]) => {
+    const frame = document.querySelector("iframe");
+    const canvas = frame.contentDocument.querySelector('canvas[tabindex="-1"]');
+    const f = frame.getBoundingClientRect(), c = canvas.getBoundingClientRect();
+    return {left: f.left + frame.clientLeft + c.left + x * c.width / canvas.width,
+            top: f.top + frame.clientTop + c.top + y * c.height / canvas.height};
+}"""
+
+
+def test_overlay_marks(cli, remote, supervisor, name):  # noqa: F811
+    with sync_playwright() as pw:
+        browser, page = signed_in(pw, supervisor.base)
+        page.goto(f"{supervisor.base}/{name}/")
+        expect(page.get_by_text("Connected")).to_be_visible(timeout=30000)
+        page.frame_locator("iframe").locator('canvas[tabindex="-1"]').wait_for(state="attached", timeout=30000)
+        time.sleep(1)  # the screen-events stream is open
+
+        remote("-d", name, "click", "200", "150")
+        click = page.locator('[data-mark="click"]')
+        expect(click).to_be_visible(timeout=5000)
+        expect(click).to_contain_text("cli test")
+        box = click.bounding_box()
+        want = page.evaluate(TO_VIEWPORT, [200, 150])
+        assert abs(box["x"] + box["width"] / 2 - want["left"]) <= 3, (box, want)
+        assert abs(box["y"] + box["height"] / 2 - want["top"]) <= 3, (box, want)
+
+        remote("-d", name, "type", "secret-text")
+        typing = page.locator('[data-mark="typing"]')
+        expect(typing).to_have_text("cli test is typing…", timeout=5000)
+        expect(typing).to_have_count(0, timeout=3000)
+
+        remote("-d", name, "key", "ctrl+l")
+        expect(page.locator('[data-mark="key"]')).to_have_text("⌃L", timeout=5000)
+
+        marks = page.locator("[data-mark]")
+        expect(marks).to_have_count(0, timeout=5000)
+        remote("-d", name, "move", "10", "10")
+        time.sleep(1.5)
+        expect(marks).to_have_count(0)
+
+        assert "secret-text" not in page.content()
+        browser.close()

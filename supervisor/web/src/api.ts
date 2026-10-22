@@ -184,6 +184,20 @@ export interface ActivityEvent {
   name: string;
   agents: AgentSummary[];
 }
+/** A screen action an agent made, from GET /api/desktops/{name}/screen-events. */
+export interface ScreenEvent {
+  agent: Pick<AgentPresence, "id" | "name" | "color" | "inside">;
+  t: string;
+  action: "click" | "double-click" | "triple-click" | "drag" | "scroll" | "key" | "hold-key" | "type";
+  /** [x, y], or [x1, y1, x2, y2] for drag. */
+  pos?: number[];
+  button?: string;
+  dir?: "up" | "down" | "left" | "right";
+  n?: number;
+  keys?: string[];
+  /** type: how many characters, never the text. */
+  chars?: number;
+}
 export interface RemovedEvent {
   name: string;
 }

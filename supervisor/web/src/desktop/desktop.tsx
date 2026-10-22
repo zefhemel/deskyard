@@ -14,6 +14,8 @@ import { useDesktop, useLive } from "../live.tsx";
 import { agentTitle } from "../lib/activity-format.ts";
 import { names } from "../lib/format.ts";
 import { ClipboardPopover } from "./clipboard.tsx";
+import { ActivityOverlay } from "./overlay.tsx";
+import { kasmScreenGeometry } from "./screen-geometry.ts";
 import { type ConnectionState, focusFrame, frameSrc, keyCombos, parseFrameMessage, qualities, sendClipboard, sendQuality } from "./kasm.ts";
 
 const QUALITY_KEY = "cc.desktop.quality";
@@ -300,6 +302,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
       ) : (
         <Stopped desktop={c} />
       )}
+      {running && <ActivityOverlay name={c.name} geometry={() => kasmScreenGeometry(frame.current)} />}
     </>
   );
 }
