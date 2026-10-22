@@ -13,6 +13,7 @@ import { notify, notifyError } from "../components/toast.tsx";
 import { Button, cx } from "../components/ui.tsx";
 import { useDesktop, useLive } from "../live.tsx";
 import { names } from "../lib/format.ts";
+import { DropZone } from "./upload.tsx";
 import { ClipboardPopover } from "./clipboard.tsx";
 import { type ConnectionState, focusFrame, frameSrc, keyCombos, parseFrameMessage, qualities, sendClipboard, sendQuality } from "./kasm.ts";
 
@@ -283,6 +284,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
             )}
           />
         </div>
+        {running && <DropZone desktop={c.name} />}
         {downloadOpen && running && <DownloadDialog desktop={c} onClose={closeDownload} />}
         {viewersOpen && (c.viewers.length > 0 || c.forwards.length > 0) && (
           <ViewersPopover viewers={c.viewers} forwards={c.forwards} onClose={closeViewers} />

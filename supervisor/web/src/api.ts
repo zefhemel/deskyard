@@ -135,6 +135,11 @@ export interface FileListing {
   truncated: boolean;
 }
 
+export interface Uploaded {
+  path: string;
+  bytes: number;
+}
+
 export interface JobRef {
   job: string;
 }
@@ -256,6 +261,38 @@ export const api = {
   checkImages: () => request<JobRef>("POST", "/api/images/check"),
   upgradeImage: (ref: string) => request<JobRef>("POST", "/api/images/upgrade", { ref }),
 };
+
+/** Uploads one file into the desktop's ~/Desktop, reporting progress as 0..1. */
+export function uploadFile(desktop: string, file: File, onProgress: (fraction: number) => void): Promise<Uploaded> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${c(desktop)}/upload?name=${enc(file.name)}`);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total);
+    };
+    xhr.onerror = () => reject(new ApiError(0, "The upload was interrupted"));
+    xhr.onload = () => {
+      if (xhr.status === 401) {
+        goToLogin();
+        reject(new ApiError(401, "Signed out"));
+        return;
+      }
+      let data: unknown;
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch {
+        // not JSON
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(data as Uploaded);
+        return;
+      }
+      const message = data && typeof data === "object" && "error" in data && typeof data.error === "string" ? data.error : `${xhr.status} ${xhr.statusText}`;
+      reject(new ApiError(xhr.status, message));
+    };
+    xhr.send(file);
+  });
+}
 
 /** Follows a job's event stream until it is done or failed. Returns a function that stops following. */
 export function watchJob(id: string, onUpdate: (job: Job) => void): () => void {

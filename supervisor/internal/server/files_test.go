@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -165,6 +166,25 @@ func (e *filesEngine) Exec(_ context.Context, _ string, spec engine.ExecSpec) (*
 		if code == 0 {
 			code = e.tarExit
 		}
+	case "rm": // rm -f -- PATH
+		_ = os.Remove(e.host(args[len(args)-1]))
+	case "sh": // sh -c SCRIPT sh ARGS...: run for real, with /workspace paths mapped to the stand-in folder
+		argv := append([]string{}, spec.Cmd...)
+		for i := 4; i < len(argv); i++ {
+			if strings.HasPrefix(argv[i], "/workspace") {
+				argv[i] = e.host(argv[i])
+			}
+		}
+		cmd := exec.Command(argv[0], argv[1:]...)
+		in, _ := cmd.StdinPipe()
+		o, _ := cmd.StdoutPipe()
+		cmd.Stderr = io.Discard
+		if err := cmd.Start(); err != nil {
+			return nil, err
+		}
+		return &engine.Process{Stdin: in, Stdout: o,
+			Wait:  func() (int, error) { _ = cmd.Wait(); return cmd.ProcessState.ExitCode(), nil },
+			Close: func() { _ = in.Close(); _ = cmd.Process.Kill() }}, nil
 	default:
 		code, stderr = 127, spec.Cmd[0]+": not found"
 	}
