@@ -163,6 +163,7 @@ func (s *Server) handleImageFromDesktop(w http.ResponseWriter, r *http.Request) 
 	opts.home = func(ctx context.Context, tw *tar.Writer) error {
 		return s.copyHome(ctx, c.Name, sel, tw)
 	}
+	opts.keepOnlyIfBuilt = true
 	s.startBuild(w, a, rec, true, opts)
 }
 

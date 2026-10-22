@@ -3,6 +3,8 @@ package server
 import (
 	"archive/tar"
 	"bytes"
+	"context"
+	"errors"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -165,6 +167,31 @@ func TestImageFromDesktop(t *testing.T) {
 		if code, b := bt.do(bt.admin, "POST", "/api/desktops/alice/image", bad); code != 400 {
 			t.Errorf("%v: %d %s", bad, code, b)
 		}
+	}
+}
+
+// A failed first build leaves no recipe behind, so the admin can retry from
+// the desktop under the same name; neither is the recipe on top saved.
+func TestImageFromDesktopFailedBuildForgetsRecipe(t *testing.T) {
+	bt := newBuildTest(t)
+	withDesktop(t, bt, aliceHome)
+	bt.s.smokeTest = func(context.Context, string) error { return errors.New("didn't come up") }
+	body := map[string]any{"name": "Alice's", "slug": "alice-img", "groups": []string{"settings"},
+		"recipe": map[string]string{"slug": "alice-tools", "name": "Alice's tools"}}
+	if st := bt.wait(bt.start("POST", "/api/desktops/alice/image", body)); st.Status != "failed" || !strings.Contains(st.Error, "didn't come up") {
+		t.Fatalf("want a failed build: %+v", st)
+	}
+	for _, slug := range []string{"alice-img", "alice-tools"} {
+		if _, err := bt.s.recipes.Get(slug); !errors.Is(err, recipes.ErrNotFound) {
+			t.Errorf("recipe %s kept after a failed build: %v", slug, err)
+		}
+	}
+	bt.s.smokeTest = func(context.Context, string) error { return nil }
+	if st := bt.wait(bt.start("POST", "/api/desktops/alice/image", body)); st.Status != "done" {
+		t.Fatalf("retry: %+v", st)
+	}
+	if _, err := bt.s.recipes.Get("alice-img"); err != nil {
+		t.Errorf("recipe not kept after the build succeeded: %v", err)
 	}
 }
 

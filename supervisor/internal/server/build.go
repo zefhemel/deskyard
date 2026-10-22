@@ -237,6 +237,12 @@ func (s *Server) startBuild(w http.ResponseWriter, a accounts.Account, rec recip
 		}
 		if err != nil {
 			s.Log.Warn("image build failed", "recipe", rec.Slug, "err", err)
+			if save && opts.keepOnlyIfBuilt {
+				if err := s.recipes.Delete(rec.Slug); err != nil && !errors.Is(err, recipes.ErrNotFound) {
+					s.Log.Warn("removing the recipe of a failed first build", "recipe", rec.Slug, "err", err)
+				}
+				s.events.refresh()
+			}
 		} else {
 			s.Log.Info("image built", "recipe", rec.Slug, "by", a.Username)
 		}
@@ -309,6 +315,10 @@ type buildOptions struct {
 	home func(ctx context.Context, tw *tar.Writer) error
 	// after, when set, runs once the image is built, tagged and in the catalog.
 	after func(log func(string))
+	// keepOnlyIfBuilt removes the recipe startBuild saved when this build
+	// fails: it can't be built again without its first image (an image from a
+	// desktop takes its home template from it), and it would block a retry.
+	keepOnlyIfBuilt bool
 }
 
 var imageUserRE = regexp.MustCompile(`^[A-Za-z0-9._-]+(:[A-Za-z0-9._-]+)?$`)
