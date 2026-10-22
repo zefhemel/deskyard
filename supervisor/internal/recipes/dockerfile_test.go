@@ -143,3 +143,34 @@ func TestWithVersion(t *testing.T) {
 		}
 	}
 }
+
+func TestFlatpakStepAlwaysAddsFlathub(t *testing.T) {
+	for _, fp := range []Flatpak{
+		{ID: "org.example.App", Remote: "other"},
+		{Ref: "https://dl.example.com/app.flatpakref"},
+		{ID: "org.gimp.GIMP"},
+	} {
+		d := Dockerfile(Recipe{Slug: "ab", Name: "n", Base: "b", Flatpaks: []Flatpak{fp}}, baseID, true)
+		add := "remote-add --if-not-exists flathub /etc/workspace/flathub.flatpakrepo"
+		i, j := strings.Index(d, add), strings.Index(d, "install -y")
+		if i < 0 || j < i {
+			t.Errorf("%+v: flathub not added before the install:\n%s", fp, d)
+		}
+	}
+}
+
+func TestSavedRefRemotesKeepTheirGPGKey(t *testing.T) {
+	d := Dockerfile(Recipe{Slug: "ab", Name: "n", Base: "b", Flatpaks: []Flatpak{{Ref: "https://dl.example.com/a.flatpakref"}}}, baseID, true)
+	for _, want := range []string{
+		`/var/lib/flatpak/repo/$name.trustedkeys.gpg`,
+		`GPGKey=%s`, `base64 -w0 "$k"`, `not saving flatpak remote $name`,
+	} {
+		if !strings.Contains(d, want) {
+			t.Errorf("missing %q:\n%s", want, d)
+		}
+	}
+	noRef := Dockerfile(Recipe{Slug: "ab", Name: "n", Base: "b", Flatpaks: []Flatpak{{ID: "org.a.B"}}}, baseID, true)
+	if strings.Contains(noRef, "trustedkeys") {
+		t.Error("remote-saving loop emitted without a .flatpakref")
+	}
+}

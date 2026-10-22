@@ -123,15 +123,9 @@ func remoteStep(rm Remote) string {
 func flatpakStep(apps []Flatpak) string {
 	var b strings.Builder
 	b.WriteString("set -eux; ")
-	needFlathub := false
-	for _, a := range apps {
-		if a.Ref == "" && (a.Remote == "" || a.Remote == defaultRemote) {
-			needFlathub = true
-		}
-	}
-	if needFlathub {
-		fmt.Fprintf(&b, "%s --system remote-add --if-not-exists flathub %s; ", flatpakReal, flathubRepo)
-	}
+	// Always: apps from other remotes and .flatpakref files take their
+	// runtimes from Flathub.
+	fmt.Fprintf(&b, "%s --system remote-add --if-not-exists flathub %s; ", flatpakReal, flathubRepo)
 	hasRef := false
 	for _, a := range apps {
 		if a.Ref != "" {
@@ -148,10 +142,7 @@ func flatpakStep(apps []Flatpak) string {
 	if hasRef {
 		// A .flatpakref adds its own remote. Save it with the others, so
 		// desktops can update from it (workspace-init adds these per user).
-		fmt.Fprintf(&b, "%s --system remotes --columns=name,url | while read -r name url; do ", flatpakReal)
-		fmt.Fprintf(&b, `f="%s/$name.flatpakrepo"; `, remotesDir)
-		b.WriteString(`if [ "$name" != flathub ] && [ ! -e "$f" ]; then printf '[Flatpak Repo]\nTitle=%s\nUrl=%s\n' "$name" "$url" > "$f"; fi; `)
-		b.WriteString("done; ")
+		fmt.Fprintf(&b, "%s", saveRemotesSnippet)
 	}
 	return strings.TrimSuffix(b.String(), "; ")
 }
@@ -161,3 +152,15 @@ func commandsStep(commands string) string {
 	enc := base64.StdEncoding.EncodeToString([]byte(script))
 	return fmt.Sprintf("set -eux; printf %%s '%s' | base64 -d > /tmp/deskyard-commands.sh; bash -eux /tmp/deskyard-commands.sh; rm -f /tmp/deskyard-commands.sh", enc)
 }
+
+// saveRemotesSnippet writes a .flatpakrepo for each system remote that has
+// none yet (those a .flatpakref added), with the remote's GPG key. A remote
+// without a key is skipped: workspace-init would turn it into an unsigned
+// or broken user remote.
+var saveRemotesSnippet = flatpakReal + ` --system remotes --columns=name,url | while read -r name url; do ` +
+	`f="` + remotesDir + `/$name.flatpakrepo"; ` +
+	`k="/var/lib/flatpak/repo/$name.trustedkeys.gpg"; ` +
+	`if [ "$name" = flathub ] || [ -e "$f" ]; then continue; fi; ` +
+	`if [ -s "$k" ]; then printf '[Flatpak Repo]\nTitle=%s\nUrl=%s\nGPGKey=%s\n' "$name" "$url" "$(base64 -w0 "$k")" > "$f"; ` +
+	`else echo "not saving flatpak remote $name: it has no GPG key, so desktops could not verify it" >&2; fi; ` +
+	`done; `
