@@ -1,0 +1,44 @@
+#!/bin/bash
+# One-time updates of panel settings saved by older images, so existing homes
+# get the image's current layout (/etc/xdg/xfce4/panel/default.xml). Each runs
+# once per home; later changes by the user stick.
+markers="$HOME/.config/workspace"
+saved="$HOME/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml"
+
+panel() { xfconf-query -c xfce4-panel "$@" 2>/dev/null; }
+
+# Debian's dock autohides behind any overlapping window, i.e. always behind
+# the maximized Chromium.
+dock_visible() {
+    local behavior
+    behavior=$(panel -p /panels/panel-2/autohide-behavior) || return
+    [ "$behavior" != 1 ] || panel -p /panels/panel-2/autohide-behavior -s 0
+}
+
+# No workspace switcher, clock or user menu in the top panel. Small
+# separators went with them; the expanding one pushes the systray right.
+trim_top_panel() {
+    local ids id keep=()
+    ids=$(panel -p /panels/panel-1/plugin-ids | grep -E '^[0-9]+$') || return
+    for id in $ids; do
+        case $(panel -p "/plugins/plugin-$id") in
+            pager|clock|actions) continue ;;
+            separator) [ "$(panel -p "/plugins/plugin-$id/expand")" = true ] || continue ;;
+        esac
+        keep+=(-t int -s "$id")
+    done
+    panel -p /panels/panel-1/plugin-ids --force-array "${keep[@]}"
+}
+
+# once MARKER STEP: run STEP unless done before. A home without saved panel
+# settings starts from the current defaults, so it needs no step.
+once() {
+    [ -e "$markers/$1" ] && return
+    if [ ! -e "$saved" ] || "$2"; then
+        mkdir -p "$markers"
+        touch "$markers/$1"
+    fi
+}
+
+once migrated-dock-visible dock_visible
+once migrated-top-panel trim_top_panel

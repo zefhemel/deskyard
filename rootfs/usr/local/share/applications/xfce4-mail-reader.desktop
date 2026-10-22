@@ -1,0 +1,6 @@
+[Desktop Entry]
+# Hides Debian's "Mail Reader" launcher (/usr/share/applications): no mail
+# program is installed, so it would open nothing.
+Type=Application
+Name=Mail Reader
+Hidden=true

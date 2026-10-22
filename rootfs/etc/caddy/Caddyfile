@@ -1,0 +1,21 @@
+{
+	admin off
+}
+
+{$WORKSPACE_SITE} {
+	# `route` keeps this order: authentication first.
+	route {
+		basic_auth {
+			workspace {$WORKSPACE_AUTH_HASH}
+		}
+		# Block cross-site WebSocket hijacking: a page on another site must
+		# not reuse the browser's cached login to open the desktop stream.
+		@foreign_ws {
+			path /websockify*
+			header Origin *
+			not expression `{http.request.header.Origin}.endsWith("://" + {http.request.hostport})`
+		}
+		respond @foreign_ws 403
+		reverse_proxy 127.0.0.1:6080
+	}
+}

@@ -1,0 +1,21 @@
+[project]
+name = "container-computer-tests"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = [
+    "pytest>=8",
+    "playwright>=1.48",
+    "pillow>=10",
+    "requests>=2.32",
+    "pyyaml>=6",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+markers = [
+    "network: downloads from the internet",
+    "slow: long-running (minutes)",
+]
+addopts = "-ra"

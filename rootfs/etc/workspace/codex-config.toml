@@ -1,0 +1,6 @@
+# Seeded once by the workspace image; yours to edit.
+#
+# This container is already the sandbox. Codex's own sandbox would block
+# network access, including the shared browser on 127.0.0.1:9221, so let
+# Codex run commands directly.
+sandbox_mode = "danger-full-access"

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clone alice</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<div id="top"></div>
+<main>
+  <div class="page-head"><h1>Computers</h1><a class="btn primary" href="new.html">New computer</a></div>
+  <div class="wall" id="wall"></div>
+</main>
+<div class="scrim">
+  <form class="dialog" aria-labelledby="t">
+    <header><h2 id="t">Clone alice</h2><p>A new computer with a copy of alice's files and settings: installed tools, apps, browser logins.</p></header>
+    <div class="body">
+      <div class="field">
+        <label for="name">Name of the copy</label>
+        <input id="name" type="text" value="alice-2">
+        <div class="hint">Desktop at <span class="mono">/alice-2/</span></div>
+      </div>
+      <div class="field note">alice is running. It will be stopped while its 3.4 GB of files are copied, and started again afterwards. This takes a few minutes.</div>
+    </div>
+    <footer><button type="button" class="btn quiet">Cancel</button><button class="btn primary">Stop alice and clone</button></footer>
+  </form>
+</div>
+<script src="wall.js"></script><script>renderWall();</script>
+</body></html>

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Remove scratch</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<div id="top"></div>
+<main>
+  <div class="page-head"><h1>Computers</h1><a class="btn primary" href="new.html">New computer</a></div>
+  <div class="wall" id="wall"></div>
+</main>
+<div class="scrim">
+  <form class="dialog" aria-labelledby="t">
+    <header><h2 id="t">Remove scratch?</h2><p>The computer is stopped and removed, with its cache. Its files stay in <span class="mono">~/computers/scratch</span>.</p></header>
+    <div class="body">
+      <div class="field check">
+        <input type="checkbox" id="del" checked>
+        <label for="del"><b>Also delete its files (2.1 GB)</b><p>Everything installed and saved in the computer, including browser logins. This can't be undone.</p></label>
+      </div>
+      <div class="field">
+        <label for="confirm">Type <span class="mono">scratch</span> to confirm</label>
+        <input id="confirm" type="text" value="scrat">
+      </div>
+    </div>
+    <footer><button type="button" class="btn quiet">Cancel</button><button class="btn danger" disabled style="opacity:.5">Remove scratch and its files</button></footer>
+  </form>
+</div>
+<script src="wall.js"></script><script>renderWall();</script>
+</body></html>

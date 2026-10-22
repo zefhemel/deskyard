@@ -1,0 +1,5 @@
+# Run with Docker's default security settings; Flatpak apps can't start.
+# Use: COMPOSE_FILE=compose.yaml:compose.no-flatpak.yaml
+services:
+  workspace:
+    security_opt: !reset []

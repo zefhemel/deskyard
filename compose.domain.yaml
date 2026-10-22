@@ -1,0 +1,8 @@
+# Serve the desktop on a public domain with automatic HTTPS (Let's Encrypt).
+# Set WORKSPACE_DOMAIN and point its DNS at this host. One instance per host.
+# Use: COMPOSE_FILE=compose.yaml:compose.domain.yaml
+services:
+  workspace:
+    ports:
+      - "80:80"
+      - "443:443"

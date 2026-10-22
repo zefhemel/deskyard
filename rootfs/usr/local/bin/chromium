@@ -1,0 +1,3 @@
+#!/bin/bash
+# Opens windows in the shared Chromium instead of a separate default profile.
+exec /usr/local/bin/start-chromium "$@"

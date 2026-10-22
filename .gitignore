@@ -1,0 +1,6 @@
+tests/artifacts/
+.superpowers/
+__pycache__/
+.venv/
+.env
+/workspace/

@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>alice</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<div id="top"></div>
+<main>
+  <div class="crumbs"><a href="computers.html">Computers</a></div>
+  <div class="detail-head">
+    <h1>alice</h1>
+    <span class="status run">Running for 3 days</span>
+    <div class="actions">
+      <button class="btn">Restart</button>
+      <button class="btn">Stop</button>
+      <button class="btn">Clone…</button>
+      <button class="btn icon" aria-label="More actions">⋯</button>
+    </div>
+  </div>
+
+  <div class="detail">
+    <a class="monitor" href="#desktop-alice" title="Open alice's desktop">
+      <div class="screen"><img src="img/alice.png" alt=""><span class="open">Open desktop</span></div>
+    </a>
+
+    <div>
+      <div class="panel">
+        <div class="chart-row">
+          <div class="chart-label">CPU, last 15 minutes <b>34%</b></div>
+          <svg class="chart" id="cpu" viewBox="0 0 300 70" preserveAspectRatio="none"></svg>
+        </div>
+        <div class="chart-row">
+          <div class="chart-label">Memory <b>1.4 of 2 GB</b></div>
+          <svg class="chart" id="mem" viewBox="0 0 300 70" preserveAspectRatio="none"></svg>
+        </div>
+      </div>
+      <div class="panel">
+        <dl class="facts">
+          <dt>Desktop</dt><dd><a href="#desktop-alice" class="mono">/alice/</a></dd>
+          <dt>Files</dt><dd class="mono">/Users/zef/computers/alice</dd>
+          <dt>Image</dt><dd><span class="mono">container-computer:latest</span><span class="update">Update available</span></dd>
+          <dt>Limits</dt><dd>2 GB memory, 2 CPUs</dd>
+          <dt>Flatpak apps</dt><dd>On (no sudo)</dd>
+          <dt>Agent ports</dt><dd><span class="mono">127.0.0.1:41022</span> CDP, <span class="mono">127.0.0.1:41021</span> VNC</dd>
+          <dt>Created</dt><dd>12 October</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <nav class="tabs">
+    <a class="on" href="#">Processes</a><a href="#">Logs</a><a href="#">Settings</a>
+  </nav>
+  <div class="tab-body">
+    <table class="procs">
+      <thead><tr><th class="num">PID</th><th>User</th><th class="num">CPU</th><th class="num">Memory</th><th class="num">Running for</th><th>Command</th></tr></thead>
+      <tbody id="procs"></tbody>
+    </table>
+    <div class="tab-foot"><span>27 processes</span><span>Updated every 3 seconds</span></div>
+  </div>
+</main>
+<script src="wall.js"></script>
+<script>
+  document.getElementById("top").innerHTML = topBar();
+
+  // Deterministic wobbly series for the charts.
+  function series(seed, base, swing, n = 90) {
+    let x = seed, out = [];
+    for (let i = 0; i < n; i++) {
+      x = (x * 9301 + 49297) % 233280;
+      const r = x / 233280;
+      const prev = out.length ? out[out.length - 1] : base;
+      out.push(Math.max(1, Math.min(99, prev * 0.7 + (base + (r - 0.5) * swing) * 0.3)));
+    }
+    return out;
+  }
+  function chart(id, data, color) {
+    const w = 300, h = 70, step = w / (data.length - 1);
+    const pts = data.map((v, i) => `${(i * step).toFixed(1)},${(h - (v / 100) * h).toFixed(1)}`);
+    document.getElementById(id).innerHTML = `
+      <line x1="0" y1="${h / 2}" x2="${w}" y2="${h / 2}" stroke="#d3d9e0" stroke-dasharray="3 4" vector-effect="non-scaling-stroke"/>
+      <polygon points="0,${h} ${pts.join(" ")} ${w},${h}" fill="${color}" opacity=".12"/>
+      <polyline points="${pts.join(" ")}" fill="none" stroke="${color}" stroke-width="1.8" vector-effect="non-scaling-stroke"/>`;
+  }
+  const cpu = series(7, 22, 70); cpu.splice(60, 12, ...series(3, 68, 40, 12)); cpu[cpu.length - 1] = 34;
+  chart("cpu", cpu, "#172231");
+  chart("mem", series(11, 66, 8).map((v, i) => v + i * 0.06), "#172231");
+
+  const procs = [
+    [412, "workspace", 18.2, "612 MB", "2 h 14 min", "/usr/lib/chromium/chromium --type=renderer --enable-features=… https://github.com/…"],
+    [3301, "workspace", 9.6, "248 MB", "41 min", "node /workspace/.local/share/claude/versions/2.4.1/cli.js"],
+    [118, "workspace", 3.1, "71 MB", "3 days", "Xkasmvnc :1 -geometry 1280x800 -depth 24 -AlwaysShared -interface 127.0.0.1"],
+    [380, "workspace", 1.4, "186 MB", "2 h 14 min", "/usr/lib/chromium/chromium --remote-debugging-port=9220 --user-data-dir=…"],
+    [2915, "workspace", 0.9, "132 MB", "1 h 02 min", "/app/bin/silverbullet --hostname 127.0.0.1 /workspace/Notes"],
+    [205, "workspace", 0.4, "38 MB", "3 days", "xfce4-panel --display :1.0 --sm-client-id 2f1c…"],
+    [3290, "workspace", 0.2, "9 MB", "41 min", "-bash"],
+    [96, "caddy", 0.1, "31 MB", "3 days", "caddy run --config /etc/caddy/Caddyfile --adapter caddyfile"],
+    [131, "workspace", 0.0, "6 MB", "3 days", "/usr/local/bin/websocat --binary tcp-l:0.0.0.0:5901 ws://127.0.0.1:6080/websockify"],
+    [1, "root", 0.0, "24 MB", "3 days", "/usr/bin/python3 /usr/bin/supervisord -c /etc/supervisor/supervisord.conf"],
+  ];
+  document.getElementById("procs").innerHTML = procs.map(([pid, user, c, mem, up, cmd]) => `
+    <tr><td class="num mono">${pid}</td><td>${user}</td>
+    <td class="num">${c.toFixed(1)}%<span class="bar"><i style="width:${Math.min(100, c * 4)}%"></i></span></td>
+    <td class="num">${mem}</td><td class="num">${up}</td><td class="cmd" title="${cmd}">${cmd}</td></tr>`).join("");
+</script>
+</body></html>

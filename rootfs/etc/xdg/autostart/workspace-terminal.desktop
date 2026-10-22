@@ -1,0 +1,11 @@
+[Desktop Entry]
+# Open a terminal (in /workspace) when the desktop session starts, unless a
+# saved session is being restored.
+# Users can turn this off in Settings > Session and Startup.
+Type=Application
+Name=Terminal
+Comment=Terminal in the home folder
+Exec=/usr/local/bin/workspace-autostart-terminal
+Icon=org.xfce.terminal
+OnlyShowIn=XFCE;
+X-XFCE-Autostart-Override=true

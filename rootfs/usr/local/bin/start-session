@@ -1,0 +1,27 @@
+#!/bin/bash
+# XFCE desktop session on the shared display.
+for _ in $(seq 100); do
+    [ -S /tmp/.X11-unix/X1 ] && break
+    sleep 0.1
+done
+
+# Save the session on logout (XFCE's built-in default is off here), unless
+# the user chose otherwise in Settings > Session and Startup.
+xfconf-query -c xfce4-session -p /general/SaveOnExit >/dev/null 2>&1 \
+    || xfconf-query -c xfce4-session -p /general/SaveOnExit -n -t bool -s true
+
+/usr/local/bin/workspace-migrate-panel
+
+startxfce4 &
+session=$!
+
+# The container stopping sends SIGTERM. Log out of XFCE properly first: that
+# saves the session (open terminals with their folders and tabs, file
+# manager windows, window positions) so the next start restores it.
+save_and_quit() {
+    xfce4-session-logout --logout 2>/dev/null || kill "$session"
+    wait "$session"
+    exit 0
+}
+trap save_and_quit TERM INT
+wait "$session"

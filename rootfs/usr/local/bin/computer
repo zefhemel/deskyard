@@ -1,0 +1,128 @@
+#!/bin/bash
+# computer: screenshot, mouse and keyboard control of the shared display.
+set -euo pipefail
+export DISPLAY=${DISPLAY:-:1}
+
+usage() {
+    cat >&2 <<'EOF'
+usage: computer <action> [args]
+
+  screenshot [FILE|-]               PNG of the whole screen (stdout when omitted or '-'),
+                                    taken after a short settle delay (COMPUTER_SETTLE, default 0.3s)
+  zoom X0 Y0 X1 Y1 [FILE|-]         PNG of just that region, at full resolution
+  size                              print screen size: "W H"
+  cursor                            print mouse position: "X Y"
+  move X Y                          move the mouse
+  click X Y [left|right|middle]     click at X Y (default left)
+  double-click X Y                  double left-click at X Y
+  triple-click X Y                  triple left-click at X Y (selects a line or paragraph)
+  mouse-down [left|right|middle]    press a mouse button at the current position
+  mouse-up [left|right|middle]      release it
+  drag X1 Y1 X2 Y2                  left-drag from X1 Y1 to X2 Y2
+  type TEXT                         type text into the focused window
+  key COMBO...                      press keys, xdotool syntax: ctrl+l Return Escape
+  hold-key KEY SECONDS              hold a key down for SECONDS
+  scroll X Y up|down|left|right [N] scroll N notches (default 3) at X Y
+  wait SECONDS                      pause, e.g. for a page or app to load
+EOF
+    exit 2
+}
+
+need() { [ "$1" -ge "$2" ] || usage; }
+int() { [[ $1 =~ ^[0-9]+$ ]] || usage; }
+num() { [[ $1 =~ ^[0-9]+([.][0-9]+)?$ ]] || usage; }
+button() {
+    case ${1:-left} in
+        left) echo 1 ;; middle) echo 2 ;; right) echo 3 ;; *) usage ;;
+    esac
+}
+png_out() {  # png_out [FILE|-] -- maim args...
+    local out=${1:--}
+    shift
+    if [ "$out" = "-" ]; then maim --format=png "$@" /dev/stdout; else maim --format=png "$@" "$out"; fi
+}
+
+[ $# -ge 1 ] || usage
+action=$1
+shift
+
+case $action in
+    screenshot)
+        sleep "${COMPUTER_SETTLE:-0.3}"
+        png_out "${1:--}"
+        ;;
+    zoom)
+        need $# 4; int "$1"; int "$2"; int "$3"; int "$4"
+        [ "$3" -gt "$1" ] && [ "$4" -gt "$2" ] || usage
+        sleep "${COMPUTER_SETTLE:-0.3}"
+        png_out "${5:--}" -g "$(($3 - $1))x$(($4 - $2))+$1+$2"
+        ;;
+    size)
+        xdotool getdisplaygeometry
+        ;;
+    cursor)
+        eval "$(xdotool getmouselocation --shell)"
+        echo "$X $Y"
+        ;;
+    move)
+        need $# 2; int "$1"; int "$2"
+        xdotool mousemove "$1" "$2"
+        ;;
+    click)
+        need $# 2; int "$1"; int "$2"
+        b=$(button "${3:-left}")
+        xdotool mousemove "$1" "$2" click "$b"
+        ;;
+    double-click)
+        need $# 2; int "$1"; int "$2"
+        xdotool mousemove "$1" "$2" click --repeat 2 --delay 80 1
+        ;;
+    triple-click)
+        need $# 2; int "$1"; int "$2"
+        xdotool mousemove "$1" "$2" click --repeat 3 --delay 80 1
+        ;;
+    mouse-down)
+        b=$(button "${1:-left}")
+        xdotool mousedown "$b"
+        ;;
+    mouse-up)
+        b=$(button "${1:-left}")
+        xdotool mouseup "$b"
+        ;;
+    drag)
+        need $# 4; int "$1"; int "$2"; int "$3"; int "$4"
+        xdotool mousemove "$1" "$2" mousedown 1 mousemove "$3" "$4" mouseup 1
+        ;;
+    type)
+        need $# 1
+        xdotool type --delay 12 -- "$*"
+        ;;
+    key)
+        need $# 1
+        xdotool key --delay 30 -- "$@"
+        ;;
+    hold-key)
+        need $# 2; num "$2"
+        xdotool keydown -- "$1"
+        sleep "$2"
+        xdotool keyup -- "$1"
+        ;;
+    wait)
+        need $# 1; num "$1"
+        sleep "$1"
+        ;;
+    scroll)
+        need $# 3; int "$1"; int "$2"
+        case $3 in
+            up) button=4 ;; down) button=5 ;; left) button=6 ;; right) button=7 ;; *) usage ;;
+        esac
+        n=${4:-3}; int "$n"
+        xdotool mousemove "$1" "$2" click --repeat "$n" "$button"
+        ;;
+    -h|--help|help)
+        usage
+        ;;
+    *)
+        usage
+        ;;
+esac

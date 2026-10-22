@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>New computer</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<div id="top"></div>
+<main>
+  <div class="page-head"><h1>Computers</h1><a class="btn primary" href="new.html">New computer</a></div>
+  <div class="wall" id="wall"></div>
+</main>
+<div class="scrim">
+  <form class="dialog" aria-labelledby="t">
+    <header><h2 id="t">New computer</h2></header>
+    <div class="body">
+      <div class="field">
+        <label for="name">Name</label>
+        <input id="name" type="text" value="data-lab" autofocus>
+        <div class="hint ok">Its desktop will be at <span class="mono">/data-lab/</span> and its files in <span class="mono">~/computers/data-lab</span></div>
+      </div>
+      <div class="two">
+        <div class="field"><span class="label">Memory</span>
+          <div class="seg"><button type="button">1 GB</button><button type="button" class="on">2 GB</button><button type="button">4 GB</button><button type="button">8 GB</button></div></div>
+        <div class="field"><span class="label">CPUs</span>
+          <div class="seg"><button type="button">1</button><button type="button" class="on">2</button><button type="button">4</button></div></div>
+      </div>
+      <div class="field check">
+        <input type="checkbox" id="fp" checked>
+        <label for="fp"><b>Flatpak apps</b><p>Lets the computer run desktop apps from Flathub. Its user can't use sudo while this is on.</p></label>
+      </div>
+      <div class="field check">
+        <input type="checkbox" id="ap">
+        <label for="ap"><b>Agent ports on this machine</b><p>Opens the browser's CDP port and VNC on 127.0.0.1, for agents running outside the computer. No password.</p></label>
+      </div>
+      <details><summary>More settings</summary></details>
+    </div>
+    <footer><button type="button" class="btn quiet">Cancel</button><button class="btn primary">Create computer</button></footer>
+  </form>
+</div>
+<script src="wall.js"></script><script>renderWall();</script>
+</body></html>

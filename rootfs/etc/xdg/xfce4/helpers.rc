@@ -1,0 +1,10 @@
+#
+# Preferred Applications (Debian's xfce4-helpers default, with Chromium as
+# the web browser: Debian's debian-sensible-browser isn't installed, so the
+# dock's web browser button would otherwise ask which browser to use).
+#
+
+WebBrowser=chromium
+MailReader=thunderbird
+TerminalEmulator=debian-x-terminal-emulator
+FileManager=thunar

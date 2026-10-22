@@ -1,0 +1,51 @@
+# One workspace sandbox. Configure with a .env file (see .env.example).
+# Several instances: one directory/.env each, or `docker compose -p NAME`
+# with different ports.
+name: container-computer
+services:
+  workspace:
+    image: ${WORKSPACE_IMAGE:-container-computer:latest}
+    build: .
+    # Default: rebuild on every `up` (cached, so quick) so the container never
+    # runs a stale image after you pull changes. To use the published image
+    # instead, set WORKSPACE_IMAGE=ghcr.io/zefhemel/container-computer:latest
+    # and WORKSPACE_PULL_POLICY=always (see README).
+    pull_policy: ${WORKSPACE_PULL_POLICY:-build}
+    hostname: workspace
+    restart: unless-stopped
+    # Time for the desktop to save its session and Chromium its tabs.
+    stop_grace_period: 30s
+    environment:
+      WORKSPACE_PASSWORD: ${WORKSPACE_PASSWORD:-}
+      WORKSPACE_DOMAIN: ${WORKSPACE_DOMAIN:-}
+      WORKSPACE_RESOLUTION: ${WORKSPACE_RESOLUTION:-1280x800}
+      WORKSPACE_SUDO: ${WORKSPACE_SUDO:-auto}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+    ports:
+      - "${WORKSPACE_WEB_BIND:-127.0.0.1}:${WORKSPACE_WEB_PORT:-8080}:8080"
+      # Agent-only ports: no password, never expose beyond localhost.
+      - "127.0.0.1:${WORKSPACE_VNC_PORT:-5901}:5901"
+      - "127.0.0.1:${WORKSPACE_CDP_PORT:-9222}:9222"
+    volumes:
+      # The home folder: a folder on this machine (created if missing).
+      - ${WORKSPACE_HOME_DIR:-./workspace}:/workspace
+      # Password hash and HTTPS certificates; owned by the container, out of
+      # the agent's reach (see README, "System volume").
+      - system:/var/lib/workspace-system
+      # Caches (downloads, browser components, ...): fine to lose, kept out
+      # of the home folder. List: /etc/workspace/cache-paths in the image.
+      - cache:/var/cache/workspace
+    # Flatpak: lets bubblewrap create its sandbox (see README, "Flatpak").
+    # Turn off with compose.no-flatpak.yaml.
+    security_opt:
+      - seccomp=./seccomp/flatpak.json
+      - apparmor=unconfined
+      - systempaths=unconfined
+    shm_size: 1g
+    mem_limit: 2g
+    cpus: 2
+
+volumes:
+  system:
+  cache:

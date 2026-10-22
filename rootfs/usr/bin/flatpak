@@ -1,0 +1,40 @@
+#!/bin/bash
+# Wrapper around the real flatpak (diverted to flatpak.real):
+# - installs into the user's home by default: a system installation needs
+#   root and PolicyKit, which this sandbox doesn't have;
+# - explains why apps can't start when the container runs with Docker's
+#   default security settings.
+
+cmd=""
+for arg in "$@"; do
+    case $arg in -*) ;; *) cmd=$arg; break ;; esac
+done
+
+if [ "$cmd" = "run" ] &&
+    ! bwrap --unshare-user --unshare-pid --ro-bind / / --proc /proc --dev /dev true 2>/dev/null; then
+    echo "flatpak: apps can't run here because this container uses Docker's default security settings. Start the sandbox with Flatpak support enabled (see README, \"Flatpak\")." >&2
+    exit 1
+fi
+
+case $cmd in
+    install|update|upgrade|uninstall|remove|remote-add|remote-delete|remote-modify|repair|mask|pin|override)
+        explicit=0
+        for arg in "$@"; do
+            case $arg in --user|--system|--installation=*) explicit=1 ;; esac
+        done
+        if [ "$explicit" = 0 ]; then
+            args=()
+            inserted=0
+            for arg in "$@"; do
+                args+=("$arg")
+                if [ "$inserted" = 0 ] && [ "$arg" = "$cmd" ]; then
+                    args+=(--user)
+                    inserted=1
+                fi
+            done
+            set -- "${args[@]}"
+        fi
+        ;;
+esac
+
+exec /usr/bin/flatpak.real "$@"
