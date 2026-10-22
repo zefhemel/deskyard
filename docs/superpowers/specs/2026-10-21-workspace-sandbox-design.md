@@ -9,7 +9,7 @@ The design of the container-computer image itself: one persistent Linux desktop 
 
 Changed since: KasmVNC replaced TigerVNC, noVNC and websockify (one server for X, VNC and the web client); the desktop now resizes to fit the browser window.
 
-To be replaced by the [[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]: agents outside a computer will no longer use `docker exec`, host CDP/VNC ports or the outside-the-sandbox skills. Everything from outside goes through the supervisor's agent API and the `computer` command, and the `docker compose` setup with its password goes away.
+To be replaced by the [[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]: agents outside a computer will no longer use `docker exec`, host CDP/VNC ports or the outside-the-sandbox skills. Everything from outside goes through the supervisor's agent API and the `computer` command, and the `docker compose` setup with its password goes away. Chromium and a terminal will no longer open automatically at start; Chromium starts on demand.
 
 # Intent
 

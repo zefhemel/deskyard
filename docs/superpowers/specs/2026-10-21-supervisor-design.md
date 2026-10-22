@@ -423,7 +423,7 @@ docs/                this SilverBullet space
 
 Today's image moves into `images/debian-xfce/`; its compose files go, and its tests start the container directly with a test token (as the supervisor would). The README's getting-started becomes the supervisor's. CI has two workflows: images (a matrix over `images/*`, weekly and on change; each image builds `computer` from `supervisor/`) and the supervisor (`supervisor` and `computer` binaries attached to GitHub releases, plus the supervisor image).
 
-Changes to the computer image for this design: the Go `computer` command replaces the bash script; the in-computer skills and the README stop mentioning `docker exec` and host ports; Caddy's token check and `/_cdp/` route, with basic auth, password, HTTPS and the Origin check removed; the VNC (5901) and host CDP (9222) listeners removed; rename the user `workspace` to `user` (same UID 1000, home stays `/workspace`, so existing folders keep working); the contract labels.
+Changes to the computer image for this design: the Go `computer` command replaces the bash script; the in-computer skills and the README stop mentioning `docker exec` and host ports; Chromium and a terminal no longer open by themselves when a computer starts (Chromium starts on demand, when someone opens it or an agent connects over CDP, as `cdp-connect` already does; a restored desktop session still brings back what was open); Caddy's token check and `/_cdp/` route, with basic auth, password, HTTPS and the Origin check removed; the VNC (5901) and host CDP (9222) listeners removed; rename the user `workspace` to `user` (same UID 1000, home stays `/workspace`, so existing folders keep working); the contract labels.
 
 # Testing
 
