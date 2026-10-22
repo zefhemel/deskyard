@@ -21,6 +21,16 @@ const (
 	Desktop
 )
 
+// Limits that keep a hostile peer from exhausting memory. Frames from the
+// other end are never trusted: a violation of the window, of stream-id
+// ownership, or of the control-queue bound shuts the mux down (ids, queue) or
+// resets the one stream (window); the caps below answer with a Reset.
+const (
+	maxStreams   = 256
+	maxListeners = 64
+	maxCtrlQueue = 1024 // queued non-Data frames; Data is bounded by windows
+)
+
 // Mux multiplexes listeners and TCP streams over one io.ReadWriteCloser.
 type Mux struct {
 	rw     io.ReadWriteCloser
@@ -40,9 +50,10 @@ type Mux struct {
 	byPort    map[int]*Listener       // CLI: by port, for incoming Open
 	tcpLns    map[uint32]net.Listener // Desktop: by listener id
 
-	qmu sync.Mutex
-	qc  *sync.Cond
-	q   [][]byte
+	qmu  sync.Mutex
+	qc   *sync.Cond
+	q    [][]byte
+	ctrl int // non-Data frames in q
 }
 
 // NewMux wraps rw. framed is true when rw preserves message boundaries (a
@@ -91,8 +102,20 @@ func (m *Mux) send(typ byte, id uint32, payload []byte) error {
 	}
 	f := encodeFrame(typ, id, payload)
 	m.qmu.Lock()
-	m.q = append(m.q, f)
+	over := false
+	if typ != TypeData {
+		m.ctrl++
+		over = m.ctrl > maxCtrlQueue
+	}
+	if !over {
+		m.q = append(m.q, f)
+	}
 	m.qmu.Unlock()
+	if over {
+		// The peer is not reading our replies: stop, don't buffer forever.
+		go m.shutdown(errors.New("forward: peer not reading; control queue full"))
+		return m.doneErr()
+	}
 	m.qc.Signal()
 	return nil
 }
@@ -112,6 +135,9 @@ func (m *Mux) writeLoop() {
 		f := m.q[0]
 		m.q[0] = nil
 		m.q = m.q[1:]
+		if f[0] != TypeData {
+			m.ctrl--
+		}
 		m.qmu.Unlock()
 		if err := writeFrame(m.rw, m.framed, f); err != nil {
 			m.shutdown(err)
@@ -148,6 +174,9 @@ func (m *Mux) dispatch(typ byte, id uint32, payload []byte) {
 			m.send(TypeReset, id, []byte("bad listen request"))
 			return
 		}
+		if !m.validPeerID(id) {
+			return
+		}
 		m.handleListen(id, port)
 	case TypeListening:
 		m.finishListen(id, nil)
@@ -155,6 +184,9 @@ func (m *Mux) dispatch(typ byte, id uint32, payload []byte) {
 		port, err := PortOf(payload)
 		if err != nil {
 			m.send(TypeReset, id, []byte("bad open request"))
+			return
+		}
+		if !m.validPeerID(id) {
 			return
 		}
 		if m.side == Desktop {
@@ -195,6 +227,22 @@ func (m *Mux) dispatch(typ byte, id uint32, payload []byte) {
 	}
 }
 
+// validPeerID checks that id has the parity the peer owns and is not in use;
+// otherwise the peer is broken or hostile and the mux is shut down.
+func (m *Mux) validPeerID(id uint32) bool {
+	peerOdd := m.side == Desktop // the CLI side owns odd ids
+	m.mu.Lock()
+	_, inStream := m.streams[id]
+	_, inLn := m.tcpLns[id]
+	_, inListeners := m.listeners[id]
+	m.mu.Unlock()
+	if (id%2 == 1) != peerOdd || id == 0 || inStream || inLn || inListeners {
+		m.shutdown(errors.New("forward: protocol violation: bad stream id"))
+		return false
+	}
+	return true
+}
+
 func (m *Mux) stream(id uint32) *stream {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -213,12 +261,17 @@ func (m *Mux) finishListen(id uint32, err error) bool {
 	return true
 }
 
+// newStream registers a stream, or returns nil when the mux already holds
+// maxStreams.
 func (m *Mux) newStream(id uint32, port int) *stream {
 	s := &stream{m: m, id: id, port: port, wnd: initialWindow}
 	s.cond = sync.NewCond(&s.mu)
 	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.streams) >= maxStreams {
+		return nil
+	}
 	m.streams[id] = s
-	m.mu.Unlock()
 	return s
 }
 
@@ -293,6 +346,13 @@ func (m *Mux) handleListen(id uint32, port int) {
 		m.send(TypeReset, id, []byte("port below 1024"))
 		return
 	}
+	m.mu.Lock()
+	full := len(m.tcpLns) >= maxListeners
+	m.mu.Unlock()
+	if full {
+		m.send(TypeReset, id, []byte("too many listeners"))
+		return
+	}
 	ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 	if err != nil {
 		msg := err.Error()
@@ -310,6 +370,12 @@ func (m *Mux) handleListen(id uint32, port int) {
 		return
 	default:
 	}
+	if len(m.tcpLns) >= maxListeners {
+		m.mu.Unlock()
+		ln.Close()
+		m.send(TypeReset, id, []byte("too many listeners"))
+		return
+	}
 	m.tcpLns[id] = ln
 	m.mu.Unlock()
 	m.send(TypeListening, id, nil)
@@ -324,6 +390,10 @@ func (m *Mux) acceptLoop(ln net.Listener, port int) {
 		}
 		id := m.allocID()
 		s := m.newStream(id, port)
+		if s == nil {
+			c.Close() // too many streams: refuse this connection
+			continue
+		}
 		if err := m.send(TypeOpen, id, portPayload(port)); err != nil {
 			c.Close()
 			return
@@ -334,12 +404,15 @@ func (m *Mux) acceptLoop(ln net.Listener, port int) {
 
 func (m *Mux) handleOpen(id uint32, port int) {
 	s := m.newStream(id, port) // registered first: Data may arrive while we dial
+	if s == nil {
+		m.send(TypeReset, id, []byte("too many streams"))
+		return
+	}
 	go func() {
 		d := net.Dialer{Timeout: 10 * time.Second}
 		c, err := d.DialContext(context.Background(), "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 		if err != nil {
-			s.abort()
-			m.send(TypeReset, id, []byte(err.Error()))
+			s.reset(err.Error())
 			return
 		}
 		bridge(s, c)
@@ -355,6 +428,7 @@ func bridge(s *stream, c net.Conn) {
 		defer wg.Done()
 		if _, err := io.Copy(s, c); err != nil {
 			c.Close()
+			s.reset("connection failed")
 			return
 		}
 		s.CloseWrite()
@@ -363,6 +437,7 @@ func bridge(s *stream, c net.Conn) {
 		defer wg.Done()
 		if _, err := io.Copy(c, s); err != nil {
 			c.Close()
+			s.reset("connection failed")
 			return
 		}
 		if cw, ok := c.(interface{ CloseWrite() error }); ok {
@@ -394,6 +469,9 @@ func (m *Mux) Listen(port int) (*Listener, error) {
 	if m.side != CLI {
 		return nil, errors.New("forward: Listen is for the CLI side")
 	}
+	if port < 1 || port > 65535 {
+		return nil, errors.New("port out of range")
+	}
 	m.start()
 	id := m.allocID()
 	l := &Listener{m: m, id: id, port: port, ch: make(chan net.Conn, 16), closed: make(chan struct{})}
@@ -402,6 +480,10 @@ func (m *Mux) Listen(port int) (*Listener, error) {
 	if _, taken := m.byPort[port]; taken {
 		m.mu.Unlock()
 		return nil, errors.New("port in use")
+	}
+	if len(m.byPort) >= maxListeners {
+		m.mu.Unlock()
+		return nil, errors.New("too many listeners")
 	}
 	m.pending[id] = res
 	m.byPort[port] = l
@@ -439,11 +521,14 @@ func (m *Mux) handleIncoming(id uint32, port int) {
 		return
 	}
 	s := m.newStream(id, port)
+	if s == nil {
+		m.send(TypeReset, id, []byte("too many streams"))
+		return
+	}
 	select {
 	case l.ch <- s:
 	default:
-		s.abort()
-		m.send(TypeReset, id, []byte("accept queue full"))
+		s.reset("accept queue full")
 	}
 }
 
@@ -488,11 +573,17 @@ func (m *Mux) Dial(port int) (net.Conn, error) {
 	if m.side != CLI {
 		return nil, errors.New("forward: Dial is for the CLI side")
 	}
+	if port < 1 || port > 65535 {
+		return nil, errors.New("port out of range")
+	}
 	m.start()
 	id := m.allocID()
 	s := m.newStream(id, port)
+	if s == nil {
+		return nil, errors.New("too many streams")
+	}
 	if err := m.send(TypeOpen, id, portPayload(port)); err != nil {
-		s.abort()
+		s.onReset(err.Error())
 		return nil, err
 	}
 	return s, nil
@@ -515,6 +606,7 @@ type stream struct {
 	cond      *sync.Cond
 	rbuf      []byte
 	ungranted int  // bytes consumed by Read, not yet granted back
+	rcvd      int  // bytes received and not yet granted back; must stay within initialWindow
 	peerDone  bool // peer half-closed
 	wnd       int  // bytes we may still send
 	wClosed   bool // we sent Close
@@ -537,7 +629,16 @@ func (s *stream) removeIfDone() {
 func (s *stream) onData(p []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed || s.err != nil {
+	if s.err != nil {
+		return
+	}
+	if s.rcvd+len(p) > initialWindow {
+		// The peer sent more than we granted: abort this stream.
+		s.resetLocked("window exceeded")
+		return
+	}
+	s.rcvd += len(p)
+	if s.closed {
 		s.grant(len(p))
 		return
 	}
@@ -566,18 +667,39 @@ func (s *stream) onReset(msg string) {
 
 func (s *stream) onWindow(n int) {
 	s.mu.Lock()
+	if s.wnd+n > initialWindow || n < 0 {
+		s.resetLocked("window overflow")
+		s.mu.Unlock()
+		return
+	}
 	s.wnd += n
 	s.cond.Broadcast()
 	s.mu.Unlock()
 }
 
-// abort fails the stream locally without telling the peer.
-func (s *stream) abort() { s.onReset("aborted") }
+// reset aborts both directions and tells the peer.
+func (s *stream) reset(msg string) {
+	s.mu.Lock()
+	s.resetLocked(msg)
+	s.mu.Unlock()
+}
+
+func (s *stream) resetLocked(msg string) {
+	if s.err != nil {
+		return
+	}
+	s.err = errors.New(msg)
+	s.rbuf, s.rcvd, s.ungranted = nil, 0, 0
+	s.m.send(TypeReset, s.id, []byte(msg))
+	s.cond.Broadcast()
+	s.removeIfDone()
+}
 
 func (s *stream) grant(n int) {
 	if n <= 0 {
 		return
 	}
+	s.rcvd -= n
 	b := []byte{byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)}
 	s.m.send(TypeWindow, s.id, b)
 }
@@ -682,14 +804,28 @@ func (s *stream) CloseWrite() error {
 	return nil
 }
 
+// Close is a full close. While the peer may still send, it aborts with Reset
+// so a remote that keeps streaming stops at once; after the peer's half-close
+// it just closes our direction.
 func (s *stream) Close() error {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.closed = true
-	s.grant(len(s.rbuf) + s.ungranted)
-	s.rbuf, s.ungranted = nil, 0
+	if s.err != nil {
+		return nil
+	}
+	if !s.peerDone {
+		s.resetLocked("closed")
+		return nil
+	}
+	s.rbuf, s.rcvd, s.ungranted = nil, 0, 0
 	s.cond.Broadcast()
-	s.mu.Unlock()
-	return s.CloseWrite()
+	if !s.wClosed {
+		s.wClosed = true
+		s.m.send(TypeClose, s.id, nil)
+	}
+	s.removeIfDone()
+	return nil
 }
 
 func (s *stream) LocalAddr() net.Addr  { return fwdAddr("local") }
