@@ -6,8 +6,8 @@ import { readFileSync, existsSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
-import type { Desktop, CreatedToken, Job } from "../api.ts";
-import { accounts, desktops, FOLDER, images, processRows, refreshImages, tokens } from "./mock-data.ts";
+import type { Desktop, CreatedToken, Job, Recipe } from "../api.ts";
+import { accounts, desktops, FOLDER, images, processRows, recipes, refreshImages, tokens } from "./mock-data.ts";
 
 const GB = 1024 ** 3;
 const imgDir = fileURLToPath(new URL("../../../../docs/superpowers/specs/2026-10-21-supervisor-design/img/", import.meta.url));
@@ -82,7 +82,65 @@ function job(messages: string[], after: () => void, desktop?: string): { job: st
   return { job: id };
 }
 
+// Builds: each log line is one update with no progress, like the real stream.
+const builds = new Map<string, { rec: Recipe; lines: string[]; fail: boolean; cancelled: boolean }>();
+
+function buildJob(rec: Recipe): { job: string } {
+  const id = `build${jobSeq++}`;
+  const fail = (rec.commands ?? "").includes("fail");
+  const lines = [
+    "Taking the base image",
+    "Building",
+    "Step 1/3 : FROM sha256:4e8e1bc97dfc",
+    ...Array.from({ length: 6 }, (_, i) => ` ---> layer ${i}`),
+    "Step 2/3 : USER root",
+    " ---> Running in 5c2a91",
+    "Step 3/3 : RUN echo build commands",
+    ...Array.from({ length: 40 }, (_, i) => `installing package ${i + 1} of 40`),
+    ...(fail ? ["E: Unable to locate package nonsense", "The command '/bin/sh -c apt-get install nonsense' returned a non-zero code: 100"] : ["Successfully built 8d1f", "Checking the image", "Starting a test desktop"]),
+  ];
+  builds.set(id, { rec, lines, fail, cancelled: false });
+  return { job: id };
+}
+
+function finishBuild(rec: Recipe): void {
+  const ref = `deskyard-custom/${rec.slug}:latest`;
+  let img = images.find((i) => i.ref === ref);
+  if (!img) {
+    img = { ref, title: rec.name, version: "", description: "", desktops: [], behind: [], checked: null, custom: true, secrets: !!rec.secrets, baseUpdated: false, recipe: rec.slug };
+    images.push(img);
+  }
+  img.title = rec.name;
+  img.version = new Date().toISOString().slice(0, 16).replace("T", " ");
+  img.baseUpdated = false;
+}
+
+function streamBuild(res: ServerResponse, id: string): void {
+  const b = builds.get(id)!;
+  sse(res);
+  const send = (j: Job) => res.write(`data: ${JSON.stringify(j)}\n\n`);
+  let i = 0;
+  const t = setInterval(() => {
+    if (b.cancelled) {
+      clearInterval(t);
+      send({ status: "failed", message: "Cancelled", progress: null, error: "cancelled" });
+      return res.end();
+    }
+    const line = b.lines[i++];
+    if (line !== undefined) return send({ status: "running", message: line, progress: null });
+    clearInterval(t);
+    if (b.fail) send({ status: "failed", message: "Failed", progress: null, error: "the build failed: The command '/bin/sh -c apt-get install nonsense' returned a non-zero code: 100" });
+    else {
+      finishBuild(b.rec);
+      send({ status: "done", message: "Done", progress: 1 });
+    }
+    res.end();
+  }, 120);
+  res.on("close", () => clearInterval(t));
+}
+
 function streamJob(res: ServerResponse, id: string): void {
+  if (builds.has(id)) return streamBuild(res, id);
   const j = jobs.get(id);
   if (!j) return json(res, 404, { error: "no such job" });
   sse(res);
@@ -204,6 +262,13 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     res.on("close", () => streams.delete(res));
     return;
   }
+  const cancel = /^\/api\/jobs\/([^/]+)\/cancel$/.exec(path);
+  if (cancel?.[1] && method === "POST") {
+    const b = builds.get(cancel[1]);
+    if (!b) return json(res, 409, { error: "this job can't be cancelled, or has finished" });
+    b.cancelled = true;
+    return json(res, 204);
+  }
   const jobMatch = /^\/api\/jobs\/([^/]+)$/.exec(path);
   if (jobMatch?.[1]) return streamJob(res, jobMatch[1]);
 
@@ -259,13 +324,30 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const b = await readBody(req);
     if (!String(b.ref).includes(":")) return json(res, 400, { error: "Give a reference with a tag." });
     return json(res, 202, job(["Pulling " + String(b.ref), "Checking the image contract"], () => {
-      images.push({ ref: String(b.ref), title: "Custom image", version: "1.0", description: "Added in the mock", desktops: [], behind: [], checked: new Date().toISOString() });
+      images.push({ ref: String(b.ref), title: "Added image", version: "1.0", description: "Added in the mock", desktops: [], behind: [], checked: new Date().toISOString(), custom: false, secrets: false, baseUpdated: false, recipe: null });
     }));
   }
   if (path === "/api/images" && method === "DELETE") {
     const i = images.findIndex((x) => x.ref === url.searchParams.get("ref"));
     if (i >= 0) images.splice(i, 1);
     return json(res, 204);
+  }
+  if (path === "/api/recipes" && method === "GET") return json(res, 200, [...recipes].sort((a, b) => a.slug.localeCompare(b.slug)));
+  if (path === "/api/recipes" && method === "POST") {
+    const rec = (await readBody(req)) as unknown as Recipe;
+    if (recipes.some((r) => r.slug === rec.slug)) return json(res, 409, { error: `a recipe named ${rec.slug} already exists` });
+    recipes.push(rec);
+    return json(res, 202, buildJob(rec));
+  }
+  const rcp = /^\/api\/recipes\/([^/]+)(?:\/(rebuild))?$/.exec(path);
+  if (rcp?.[1]) {
+    const rec = recipes.find((r) => r.slug === rcp[1]);
+    if (!rec) return json(res, 404, { error: "no such recipe" });
+    if (rcp[2] === "rebuild" && method === "POST") return json(res, 202, buildJob(rec));
+    if (method === "PUT") {
+      Object.assign(rec, await readBody(req));
+      return json(res, 202, buildJob(rec));
+    }
   }
   if (path === "/api/images/check") return json(res, 202, job(["Pulling ghcr.io/zefhemel/deskyard-debian-xfce:latest", "Pulling ghcr.io/zefhemel/deskyard-debian-xfce:beta"], () => images.forEach((i) => (i.checked = new Date().toISOString()))));
   if (path === "/api/images/upgrade") {

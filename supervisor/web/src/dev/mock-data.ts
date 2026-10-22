@@ -1,5 +1,5 @@
 // Fake data for the dev-server mock (mock.ts). Never part of the build.
-import type { Account, CatalogImage, Desktop, Token } from "../api.ts";
+import type { Account, CatalogImage, Desktop, Recipe, Token } from "../api.ts";
 
 const GB = 1024 ** 3;
 const HOUR = 3600 * 1000;
@@ -8,6 +8,7 @@ const now = Date.now();
 const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
 
 export const FOLDER = "/Users/zef/deskyard";
+const PLAIN = { custom: false, secrets: false, baseUpdated: false, recipe: null } as const;
 const LATEST = "ghcr.io/zefhemel/deskyard-debian-xfce:latest";
 const BETA = "ghcr.io/zefhemel/deskyard-debian-xfce:beta";
 
@@ -70,6 +71,23 @@ export const accounts: (Account & { password: string })[] = [
   { username: "ci", admin: false, desktops: [], created: iso(2 * DAY), lastLogin: null, password: "ci" },
 ];
 
+function customImage(slug: string, title: string, description: string, over: Partial<CatalogImage>): CatalogImage {
+  return {
+    ref: `deskyard-custom/${slug}:latest`,
+    title,
+    version: "2026-10-20 09:14",
+    description,
+    desktops: [],
+    behind: [],
+    checked: null,
+    custom: true,
+    secrets: false,
+    baseUpdated: false,
+    recipe: slug,
+    ...over,
+  };
+}
+
 export const images: CatalogImage[] = [
   {
     ref: LATEST,
@@ -79,6 +97,7 @@ export const images: CatalogImage[] = [
     desktops: [],
     behind: [],
     checked: iso(2 * HOUR),
+    ...PLAIN,
   },
   {
     ref: BETA,
@@ -88,7 +107,17 @@ export const images: CatalogImage[] = [
     desktops: [],
     behind: [],
     checked: iso(2 * HOUR),
+    ...PLAIN,
   },
+  customImage("python-lab", "Python lab", "Python 3.13, uv and JupyterLab", {}),
+  customImage("work-signed-in", "Work, signed in", "Chromium and the work apps, signed in to everything", { secrets: true }),
+  customImage("video-tools", "Video tools", "Kdenlive and ffmpeg", { baseUpdated: true }),
+];
+
+export const recipes: Recipe[] = [
+  { slug: "python-lab", name: "Python lab", base: LATEST, mise: ["python@3.13", "uv"], commands: "uv tool install jupyterlab" },
+  { slug: "work-signed-in", name: "Work, signed in", base: LATEST, homeFrom: "image", secrets: true, flatpaks: [{ id: "org.mozilla.firefox" }] },
+  { slug: "video-tools", name: "Video tools", base: LATEST, flatpaks: [{ id: "org.kde.kdenlive" }], commands: "apt-get update && apt-get install -y ffmpeg" },
 ];
 
 export const tokens: Record<string, Token[]> = {

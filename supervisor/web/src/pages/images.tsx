@@ -1,9 +1,11 @@
 import { useState } from "preact/hooks";
-import { api, type CatalogImage } from "../api.ts";
+import { api, watchJob, type CatalogImage, type Recipe } from "../api.ts";
 import { JobProgress, useJob } from "../components/job.tsx";
 import { notify, notifyError } from "../components/toast.tsx";
 import { Page, PageHead } from "../components/topbar.tsx";
-import { Button, Dialog, ErrorText, Field, Tag } from "../components/ui.tsx";
+import { Button, Dialog, ErrorText, Field, LockBadge, Tag } from "../components/ui.tsx";
+import { BuildLogDialog } from "../dialogs/build-log.tsx";
+import { RecipeDialog } from "../dialogs/recipe.tsx";
 import { UPGRADE_NOTE, UpgradeDialog } from "../dialogs/upgrade.tsx";
 import { useLive } from "../live.tsx";
 import { ago, plural } from "../lib/format.ts";
@@ -16,6 +18,33 @@ export function ImagesPage() {
   const images = useFetch(() => api.images(), "images");
   const [adding, setAdding] = useState(false);
   const [upgrading, setUpgrading] = useState<CatalogImage | null>(null);
+  // The recipe dialog: `recipe` set means editing it.
+  const [recipe, setRecipe] = useState<{ recipe?: Recipe } | null>(null);
+  const [building, setBuilding] = useState<{ job: string; title: string } | null>(null);
+  const reload = images.reload;
+
+  const rebuild = (img: CatalogImage) => {
+    if (!img.recipe) return;
+    api.rebuildRecipe(img.recipe).then(({ job }) => setBuilding({ job, title: img.title || img.ref }), notifyError);
+  };
+  const edit = (img: CatalogImage) => {
+    api.recipes().then((all) => {
+      const r = all.find((x) => x.slug === img.recipe);
+      if (r) setRecipe({ recipe: r });
+      else notifyError(new Error("This image's recipe is missing."));
+    }, notifyError);
+  };
+  // Closing the log doesn't stop the build: say when it ends.
+  const hideLog = (job: string, title: string, stillRunning: boolean) => {
+    setBuilding(null);
+    if (!stillRunning) return;
+    watchJob(job, (j) => {
+      if (j.status === "running") return;
+      reload();
+      if (j.status === "done") notify(`${title} is built`);
+      else notify(j.error === "cancelled" ? `The build of ${title} was cancelled` : `The build of ${title} failed: ${j.error ?? j.message}`, { error: j.error !== "cancelled", ms: 8000 });
+    });
+  };
   const check = useJob(() => {
     images.reload();
     notify("Checked every image for updates");
@@ -31,8 +60,9 @@ export function ImagesPage() {
         <Button disabled={check.running} onClick={() => void check.start(() => api.checkImages())}>
           {check.running ? "Checking…" : "Check now"}
         </Button>
-        <Button variant="primary" onClick={() => setAdding(true)}>
-          Add image
+        <Button onClick={() => setAdding(true)}>Add image</Button>
+        <Button variant="primary" onClick={() => setRecipe({})}>
+          New image
         </Button>
       </PageHead>
       <ErrorText error={images.error ?? check.error} />
@@ -49,7 +79,7 @@ export function ImagesPage() {
             </thead>
             <tbody>
               {images.data.map((img) => (
-                <ImageRow key={img.ref} image={img} onUpgrade={() => setUpgrading(img)} onRemoved={images.reload} />
+                <ImageRow key={img.ref} image={img} onUpgrade={() => setUpgrading(img)} onRemoved={images.reload} onEdit={() => edit(img)} onRebuild={() => rebuild(img)} />
               ))}
               {!images.data.length && (
                 <tr>
@@ -70,6 +100,26 @@ export function ImagesPage() {
             setAdding(false);
             images.reload();
           }}
+        />
+      )}
+      {recipe && images.data && (
+        <RecipeDialog
+          {...recipe}
+          images={images.data}
+          onClose={() => setRecipe(null)}
+          onStarted={(job, title) => {
+            setRecipe(null);
+            setBuilding({ job, title });
+            images.reload();
+          }}
+        />
+      )}
+      {building && (
+        <BuildLogDialog
+          title={building.title}
+          job={building.job}
+          onClose={(running) => hideLog(building.job, building.title, running)}
+          onDone={images.reload}
         />
       )}
       {upgrading && (
@@ -93,7 +143,19 @@ export function ImagesPage() {
   );
 }
 
-function ImageRow({ image: img, onUpgrade, onRemoved }: { image: CatalogImage; onUpgrade: () => void; onRemoved: () => void }) {
+function ImageRow({
+  image: img,
+  onUpgrade,
+  onRemoved,
+  onEdit,
+  onRebuild,
+}: {
+  image: CatalogImage;
+  onUpgrade: () => void;
+  onRemoved: () => void;
+  onEdit: () => void;
+  onRebuild: () => void;
+}) {
   const { desktops } = useLive();
   const version = (name: string) => desktops?.find((c) => c.name === name)?.imageVersion;
   const current = img.desktops.filter((n) => !img.behind.includes(n));
@@ -103,7 +165,11 @@ function ImageRow({ image: img, onUpgrade, onRemoved }: { image: CatalogImage; o
   return (
     <tr class="last:[&>td]:border-b-0">
       <td class={td}>
-        <div class="font-semibold">{img.title || img.ref}</div>
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold">
+          {img.title || img.ref}
+          {img.secrets && <LockBadge />}
+          {img.baseUpdated && <Tag kind="update">Base updated</Tag>}
+        </div>
         <div class="mt-0.5 text-[13px] text-muted">
           {img.description}
           {img.description && " · "}
@@ -132,6 +198,16 @@ function ImageRow({ image: img, onUpgrade, onRemoved }: { image: CatalogImage; o
         )}
       </td>
       <td class={`${td} text-right whitespace-nowrap`}>
+        {img.custom && (
+          <>
+            <Button class="mr-2 h-[30px]! px-[11px]!" onClick={onEdit}>
+              Edit
+            </Button>
+            <Button variant={img.baseUpdated ? "primary" : "default"} class="mr-2 h-[30px]! px-[11px]!" onClick={onRebuild}>
+              Rebuild
+            </Button>
+          </>
+        )}
         {img.behind.length > 0 ? (
           <Button variant="primary" class="h-[30px]! px-[11px]!" onClick={onUpgrade}>
             Upgrade {plural(img.behind.length, "desktop")}…
@@ -139,7 +215,7 @@ function ImageRow({ image: img, onUpgrade, onRemoved }: { image: CatalogImage; o
         ) : (
           img.desktops.length === 0 && (
             <Button class="h-[30px]! px-[11px]!" onClick={remove}>
-              Remove from catalog
+              {img.custom ? "Delete image" : "Remove from catalog"}
             </Button>
           )
         )}

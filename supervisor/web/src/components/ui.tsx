@@ -213,6 +213,21 @@ export function Tag({ kind = "plain", children }: { kind?: TagKind; children: Co
   return <span class={cx("inline-block rounded-full px-2 py-px text-[12.5px] font-semibold whitespace-nowrap", tagKinds[kind])}>{children}</span>;
 }
 
+/** Marks an image whose starting home holds secrets. */
+export function LockBadge({ label = "Secrets" }: { label?: string }) {
+  return (
+    <span
+      title="Desktops made from this start signed in as whoever made it"
+      class="inline-flex items-center gap-1 rounded-full bg-[#fbeceb] px-2 py-px text-[12.5px] font-semibold whitespace-nowrap text-danger"
+    >
+      <svg width="11" height="12" viewBox="0 0 11 12" aria-hidden="true" fill="currentColor">
+        <path d="M3 5V3.5a2.5 2.5 0 0 1 5 0V5h.5A1.5 1.5 0 0 1 10 6.5v4A1.5 1.5 0 0 1 8.5 12h-6A1.5 1.5 0 0 1 1 10.5v-4A1.5 1.5 0 0 1 2.5 5H3Zm1.2 0h2.6V3.5a1.3 1.3 0 0 0-2.6 0V5Z" />
+      </svg>
+      {label}
+    </span>
+  );
+}
+
 const dots = { run: "bg-run", busy: "bg-busy", off: "bg-stop" };
 
 export function Status({ kind, children, class: extra }: { kind: keyof typeof dots; children: ComponentChildren; class?: string }) {

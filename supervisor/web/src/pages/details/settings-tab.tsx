@@ -26,7 +26,7 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
   const catalog = images.data ?? [];
   const list = catalog.some((i) => i.ref === c.image)
     ? catalog
-    : [{ ref: c.image, title: c.imageTitle, version: c.imageVersion, description: "Not in the catalog any more.", desktops: [], behind: [], checked: null }, ...catalog];
+    : [{ ref: c.image, title: c.imageTitle, version: c.imageVersion, description: "Not in the catalog any more.", desktops: [], behind: [], checked: null, custom: false, secrets: false, baseUpdated: false, recipe: null }, ...catalog];
 
   return (
     <form

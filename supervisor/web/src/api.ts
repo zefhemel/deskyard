@@ -109,6 +109,28 @@ export interface CatalogImage {
   desktops: string[];
   behind: string[];
   checked: string | null;
+  /** Built here from a recipe (see `recipe`). */
+  custom: boolean;
+  /** Its starting home holds secrets: desktops made from it are signed in as whoever made it. */
+  secrets: boolean;
+  /** Its base has a newer image in the catalog than the one it was built on. */
+  baseUpdated: boolean;
+  recipe: string | null;
+}
+
+export type Remote = { name: string; repoFile: string } | { name: string; url: string; gpgKey: string };
+export type Flatpak = { id: string; remote?: string } | { ref: string };
+
+export interface Recipe {
+  slug: string;
+  name: string;
+  base: string;
+  mise?: string[];
+  remotes?: Remote[];
+  flatpaks?: Flatpak[];
+  commands?: string;
+  homeFrom?: "image";
+  secrets?: boolean;
 }
 
 export interface FolderSize {
@@ -227,6 +249,12 @@ export const api = {
   removeImage: (ref: string) => request<void>("DELETE", `/api/images?ref=${enc(ref)}`),
   checkImages: () => request<JobRef>("POST", "/api/images/check"),
   upgradeImage: (ref: string) => request<JobRef>("POST", "/api/images/upgrade", { ref }),
+
+  recipes: () => request<Recipe[]>("GET", "/api/recipes"),
+  createRecipe: (recipe: Recipe) => request<JobRef>("POST", "/api/recipes", recipe),
+  updateRecipe: (recipe: Recipe) => request<JobRef>("PUT", `/api/recipes/${enc(recipe.slug)}`, recipe),
+  rebuildRecipe: (slug: string) => request<JobRef>("POST", `/api/recipes/${enc(slug)}/rebuild`),
+  cancelJob: (id: string) => request<void>("POST", `/api/jobs/${enc(id)}/cancel`),
 };
 
 /** Follows a job's event stream until it is done or failed. Returns a function that stops following. */
