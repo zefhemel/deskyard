@@ -84,7 +84,7 @@ These would make it a failure even if it worked:
 - **Recognising screen actions from outside.**
   - An exec is a screen action when `argv[0]`'s base name is `deskyard` and the first non-flag argument is one of the screen subcommands. The global `-d NAME` flag is skipped.
   - Anything wrapped in a shell (`sh -c "deskyard click …"`) is a plain command.
-  - Whatever the form, everything after a `type` word of `deskyard` or `xdotool` is masked in the display form and in logs: wrapped in sudo, env or time, in a shell string or subshell, or rejected by the parser (`deskyard type -- pw -h`).
+  - Whatever the form, everything after a `type` word of `deskyard` or `xdotool` is masked in the display form and in logs, to the end of the display string: wrapped in sudo, env or time, in a shell string or subshell, or rejected by the parser (`deskyard type -- pw -h`).
   - Coordinates are absolute desktop pixels, as the CLI takes them, and are parsed per subcommand: `click x y [button]`, `drag x1 y1 x2 y2`, `scroll x y dir [n]`, and so on.
   - Marks are drawn when the action starts, whatever its exit code.
   - `screenshot` and `zoom` draw nothing; they count in the summary ("took 3 screenshots").

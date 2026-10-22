@@ -33,7 +33,7 @@ What's in a desktop:
 - **Agent presence**: agents working on a desktop, inside it or from
   elsewhere, show up next to the people viewing it, with what they're
   running and have just done, and marks on the screen where they click and
-  type. Typed text and secrets on command lines are never shown.
+  type. Typed text and secrets on command lines are hidden.
 
 The desktop image is Debian 13, `linux/arm64` and `linux/amd64`. About 0.4 GB
 of RAM per running desktop with Chromium open, so several fit on an 8 GB

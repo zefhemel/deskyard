@@ -107,7 +107,7 @@ func hasMysql(words []string) bool {
 // mysql-like command (an argument of its argv).
 func maskText(s string, withMysql bool) string {
 	s = lineCont.ReplaceAllString(s, " ") // a backslash-newline continues the command
-	s = maskTyped(s)
+	s, _ = maskTyped(s)
 	var b strings.Builder
 	last := 0
 	for _, loc := range append(cmdSep.FindAllStringIndex(s, -1), []int{len(s), len(s)}) {
@@ -196,18 +196,22 @@ func containsLetter(s string) bool {
 }
 
 // Typed text. `deskyard type …` and `xdotool type …` type whatever follows,
-// a password as easily as a sentence, so everything after the type word is
-// hidden: however the command is wrapped (sudo, env, time, a subshell, a
-// shell string) and whether or not it parses as a screen action. Only the
-// overlay's count of typed characters says how much was typed.
+// a password as easily as a sentence. Where typed text ends is not looked
+// for (substitutions, heredocs and quoting make that a parser's job): once a
+// typer's `type` word is found, however the command is wrapped (sudo, env,
+// time, a subshell, a shell string) and whether or not it parses as a screen
+// action, everything after it is hidden, to the end of the display string.
+// Only the overlay's count of typed characters says how much was typed.
 
 // typers are the commands whose `type` subcommand types its arguments.
 var typers = []string{"deskyard", "xdotool"}
 
 // isTyper reports whether a word runs a typer, however it is opened:
-// deskyard, /usr/bin/xdotool, (deskyard, $(deskyard, {deskyard.
+// deskyard, /usr/bin/xdotool, (deskyard, $(deskyard, {deskyard,
+// x=$(deskyard, >(deskyard, <(deskyard, \deskyard.
 func isTyper(w string) bool {
-	return slices.Contains(typers, path.Base(strings.TrimLeft(w, "$({\\")))
+	w = w[strings.LastIndexAny(w, "=$({<>\\")+1:]
+	return slices.Contains(typers, path.Base(w))
 }
 
 // typedFrom is the index of the argv word after which everything is typed
@@ -223,75 +227,42 @@ func typedFrom(argv []string) int {
 	return -1
 }
 
-// cmdEnd are the characters that end a simple command in shell text: a
-// separator, or the end of a subshell.
-const cmdEnd = ";&|\n)`"
+// cmdSeps end a simple command in shell text. A subshell's bounds don't:
+// `deskyard -d $(cat f) type x` still types.
+const cmdSeps = ";&|\n"
 
-// maskTyped hides what a typer types in shell text, up to the end of that
-// command. Quotes don't hide a typer from it: in `bash -lc 'deskyard type
-// …'` (a display form, quoted again) the inner command is found too.
-func maskTyped(s string) string {
-	var b strings.Builder
-	last := 0      // s is written up to here
+// maskTyped hides everything after a typer's `type` word in shell text, to
+// the end of s, and reports whether it found one. Quotes don't hide a typer
+// from it: in `bash -lc 'deskyard type …'` (a display form, quoted again)
+// the inner command is found too.
+func maskTyped(s string) (string, bool) {
 	typer := false // a typer runs in the current command
 	for i := 0; i < len(s); {
 		switch c := s[i]; {
-		case strings.IndexByte(cmdEnd, c) >= 0:
+		case strings.IndexByte(cmdSeps, c) >= 0:
 			typer = false
 			i++
 			continue
-		case strings.IndexByte(" \t'\"", c) >= 0:
+		case strings.IndexByte(" \t'\"()`", c) >= 0:
 			i++
 			continue
 		}
 		j := i
-		for j < len(s) && strings.IndexByte(cmdEnd+" \t'\"", s[j]) < 0 {
+		for j < len(s) && strings.IndexByte(cmdSeps+" \t'\"()`", s[j]) < 0 {
 			j++
 		}
 		switch w := s[i:j]; {
 		case !typer:
 			typer = isTyper(w)
 		case w == "type":
-			end := typedEnd(s, j)
-			if strings.TrimSpace(s[j:end]) != "" {
-				b.WriteString(s[last:j])
-				b.WriteString(" " + masked)
-				if end < len(s) && (s[end-1] == ' ' || s[end-1] == '\t') {
-					b.WriteByte(' ')
-				}
-				last = end
+			if strings.TrimSpace(s[j:]) == "" {
+				return s, false // nothing typed
 			}
-			typer = false
-			j = end
+			return s[:j] + " " + masked, true
 		}
 		i = j
 	}
-	b.WriteString(s[last:])
-	return b.String()
-}
-
-// typedEnd is where the typed text from i ends: at the first unquoted cmdEnd
-// character, or the end of s.
-func typedEnd(s string, i int) int {
-	var quote byte
-	for ; i < len(s); i++ {
-		c := s[i]
-		switch {
-		case quote != 0:
-			if c == quote {
-				quote = 0
-			} else if c == '\\' && quote == '"' {
-				i++
-			}
-		case c == '\'' || c == '"':
-			quote = c
-		case c == '\\':
-			i++
-		case strings.IndexByte(cmdEnd, c) >= 0:
-			return i
-		}
-	}
-	return len(s)
+	return s, false
 }
 
 // DisplayCommand is argv as one masked line for people to read: values after
@@ -310,6 +281,9 @@ func DisplayCommand(argv []string) string {
 		if typed >= 0 && i > typed {
 			b.WriteString(masked) // all of the typed text, as one
 			break
+		}
+		if _, ok := maskTyped(plainText(cutRunes(arg, maxArg))); ok {
+			typed = i // a shell string that types: the arguments after it are typed too
 		}
 		arg = plainText(cutRunes(arg, maxArg)) // keeps newlines for the masking pass
 		var next string
