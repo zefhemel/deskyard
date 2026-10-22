@@ -17,6 +17,7 @@ import (
 	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/jsonstream"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 
@@ -432,6 +433,79 @@ func (d *Docker) ImageInspect(ctx context.Context, ref string) (engine.Image, er
 		img.Labels = res.Config.Labels
 	}
 	return img, nil
+}
+
+func (d *Docker) Build(ctx context.Context, spec engine.BuildSpec, log func(string)) (string, error) {
+	res, err := d.c.ImageBuild(ctx, spec.Context, client.ImageBuildOptions{
+		Dockerfile: spec.Dockerfile, Tags: spec.Tags, Labels: spec.Labels,
+		NoCache: spec.NoCache, PullParent: spec.Pull, Remove: true, ForceRemove: true,
+	})
+	if err != nil {
+		return "", wrap(err)
+	}
+	defer res.Body.Close()
+	var imageID string
+	dec := json.NewDecoder(res.Body)
+	for {
+		var msg jsonstream.Message
+		if err := dec.Decode(&msg); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if ctx.Err() != nil {
+				return "", ctx.Err()
+			}
+			return "", err
+		}
+		if msg.Error != nil {
+			return "", errors.New(msg.Error.Message)
+		}
+		if msg.Aux != nil {
+			var aux struct{ ID string }
+			if json.Unmarshal(*msg.Aux, &aux) == nil && aux.ID != "" {
+				imageID = aux.ID
+			}
+		}
+		if log != nil {
+			for _, l := range strings.Split(strings.TrimRight(msg.Stream+msg.Status, "\n"), "\n") {
+				if l != "" {
+					log(l)
+				}
+			}
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if imageID == "" {
+		return "", errors.New("build finished without an image id")
+	}
+	return imageID, nil
+}
+
+func (d *Docker) Commit(ctx context.Context, containerID, ref string, changes []string, labels map[string]string) (string, error) {
+	opts := client.ContainerCommitOptions{Reference: ref, Changes: changes}
+	if len(labels) > 0 {
+		opts.Config = &container.Config{Labels: labels}
+	}
+	res, err := d.c.ContainerCommit(ctx, containerID, opts)
+	if err != nil {
+		return "", wrap(err)
+	}
+	return res.ID, nil
+}
+
+func (d *Docker) RemoveImage(ctx context.Context, ref string) error {
+	_, err := d.c.ImageRemove(ctx, ref, client.ImageRemoveOptions{PruneChildren: true})
+	if err != nil && errdefs.IsConflict(err) {
+		return fmt.Errorf("image in use: %v", err)
+	}
+	return wrap(err)
+}
+
+func (d *Docker) Tag(ctx context.Context, imageID, ref string) error {
+	_, err := d.c.ImageTag(ctx, client.ImageTagOptions{Source: imageID, Target: ref})
+	return wrap(err)
 }
 
 func (d *Docker) CopyFromImage(ctx context.Context, ref, path string) (io.ReadCloser, error) {

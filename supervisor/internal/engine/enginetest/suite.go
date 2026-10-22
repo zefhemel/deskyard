@@ -3,11 +3,15 @@
 package enginetest
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"io"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -105,6 +109,151 @@ func Run(t *testing.T, e engine.Engine) {
 	})
 	t.Run("not found", func(t *testing.T) {
 		if _, err := e.Inspect(ctx, "cc-does-not-exist"); !errors.Is(err, engine.ErrNotFound) {
+			t.Fatalf("want ErrNotFound, got %v", err)
+		}
+	})
+	t.Run("images", func(t *testing.T) { images(t, e) })
+}
+
+func uniqueRef(t *testing.T, e engine.Engine) string {
+	b := make([]byte, 4)
+	_, _ = rand.Read(b)
+	ref := "deskyard-enginetest/img-" + hex.EncodeToString(b) + ":t"
+	t.Cleanup(func() { _ = e.RemoveImage(context.Background(), ref) })
+	return ref
+}
+
+func dockerfileTar(t *testing.T, dockerfile string) io.Reader {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	if err := tw.WriteHeader(&tar.Header{Name: "Dockerfile", Mode: 0o644, Size: int64(len(dockerfile))}); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = tw.Write([]byte(dockerfile))
+	_ = tw.Close()
+	return &buf
+}
+
+func images(t *testing.T, e engine.Engine) {
+	ctx := context.Background()
+
+	t.Run("build and labels", func(t *testing.T) {
+		ref := uniqueRef(t, e)
+		var mu sync.Mutex
+		var lines []string
+		id, err := e.Build(ctx, engine.BuildSpec{
+			Context:    dockerfileTar(t, "FROM "+image+"\nRUN echo hi > /x\n"),
+			Dockerfile: "Dockerfile", Tags: []string{ref}, Labels: map[string]string{"deskyard.enginetest": "yes"},
+		}, func(l string) { mu.Lock(); lines = append(lines, l); mu.Unlock() })
+		if err != nil {
+			t.Fatal(err)
+		}
+		img, err := e.ImageInspect(ctx, id)
+		if err != nil || img.Labels["deskyard.enginetest"] != "yes" {
+			t.Fatalf("inspect %s: %v %+v", id, err, img)
+		}
+		if img2, err := e.ImageInspect(ctx, ref); err != nil || img2.ID != id {
+			t.Fatalf("tag: %v %+v want %s", err, img2, id)
+		}
+		mu.Lock()
+		all := strings.Join(lines, "\n")
+		mu.Unlock()
+		if !strings.Contains(all, "echo hi") && !strings.Contains(all, "hi") {
+			t.Fatalf("log missed the step: %q", all)
+		}
+	})
+	t.Run("build cancel", func(t *testing.T) {
+		cctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		time.AfterFunc(2*time.Second, cancel)
+		start := time.Now()
+		done := make(chan error, 1)
+		go func() {
+			_, err := e.Build(cctx, engine.BuildSpec{
+				Context:    dockerfileTar(t, "FROM "+image+"\nRUN sleep 600\n"),
+				Dockerfile: "Dockerfile", NoCache: true,
+			}, func(string) {})
+			done <- err
+		}()
+		select {
+		case err := <-done:
+			if err == nil {
+				t.Fatal("cancelled build returned no error")
+			}
+			if d := time.Since(start); d > 10*time.Second {
+				t.Fatalf("took %v", d)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("build did not stop within 10s of cancel")
+		}
+	})
+	t.Run("build failure", func(t *testing.T) {
+		_, err := e.Build(ctx, engine.BuildSpec{
+			Context:    dockerfileTar(t, "FROM "+image+"\nRUN false\n"),
+			Dockerfile: "Dockerfile",
+		}, func(string) {})
+		if err == nil || !strings.Contains(err.Error(), "false") {
+			t.Fatalf("want an error naming the failing step, got %v", err)
+		}
+	})
+	t.Run("commit", func(t *testing.T) {
+		ref := uniqueRef(t, e)
+		cid, err := e.Create(ctx, engine.ContainerSpec{Image: image, Cmd: []string{"sh", "-c", "echo committed > /marker"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = e.Remove(context.Background(), cid) })
+		if err := e.Start(ctx, cid); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Second)
+		id, err := e.Commit(ctx, cid, ref, nil, map[string]string{"deskyard.enginetest": "commit"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		img, err := e.ImageInspect(ctx, ref)
+		if err != nil || img.ID != id || img.Labels["deskyard.enginetest"] != "commit" {
+			t.Fatalf("inspect: %v %+v want %s", err, img, id)
+		}
+		r, err := e.CopyFromImage(ctx, ref, "/marker")
+		if err != nil {
+			t.Fatalf("committed image lacks the file: %v", err)
+		}
+		_ = r.Close()
+	})
+	t.Run("tag and remove image", func(t *testing.T) {
+		ref, ref2 := uniqueRef(t, e), uniqueRef(t, e)
+		id, err := e.Build(ctx, engine.BuildSpec{
+			Context: dockerfileTar(t, "FROM "+image+"\nRUN echo tagme > /t\n"), Dockerfile: "Dockerfile", Tags: []string{ref},
+		}, func(string) {})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := e.Tag(ctx, id, ref2); err != nil {
+			t.Fatal(err)
+		}
+		if img, err := e.ImageInspect(ctx, ref2); err != nil || img.ID != id {
+			t.Fatalf("tag: %v %+v", err, img)
+		}
+		cid, err := e.Create(ctx, engine.ContainerSpec{Image: ref, Cmd: []string{"true"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := e.RemoveImage(ctx, ref); err != nil {
+			t.Fatalf("untagging one of two tags: %v", err)
+		}
+		// The last tag is in use by a container.
+		if err := e.RemoveImage(ctx, ref2); err == nil || !strings.Contains(err.Error(), "in use") {
+			t.Fatalf("want an in-use error, got %v", err)
+		}
+		_ = e.Remove(ctx, cid)
+		if err := e.RemoveImage(ctx, ref2); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.ImageInspect(ctx, ref2); !errors.Is(err, engine.ErrNotFound) {
+			t.Fatalf("still there: %v", err)
+		}
+		if err := e.RemoveImage(ctx, ref2); !errors.Is(err, engine.ErrNotFound) {
 			t.Fatalf("want ErrNotFound, got %v", err)
 		}
 	})
