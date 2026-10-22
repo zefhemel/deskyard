@@ -393,12 +393,18 @@ func (s *Server) build(ctx context.Context, rec recipes.Recipe, opts buildOption
 
 	// 7. Tag.
 	stamp, latest := repo+":"+now.Format("20060102-150405"), repo+":latest"
-	prev, prevErr := s.Eng.ImageInspect(ctx, latest)
+	// The current :latest, to put back if this build can't finish. If it
+	// can't be read, stop before touching any tag.
+	prev, prevErr := s.Eng.ImageInspect(context.WithoutCancel(ctx), latest)
+	hadPrev := prevErr == nil
+	if !hadPrev && !errors.Is(prevErr, engine.ErrNotFound) {
+		return fmt.Errorf("reading %s: %w", latest, prevErr)
+	}
 	// untag puts the tags back as they were (the image itself goes in the
 	// deferred clean-up).
 	untag := func() {
 		bg := context.WithoutCancel(ctx)
-		if prevErr == nil {
+		if hadPrev {
 			_ = s.Eng.Tag(bg, prev.ID, latest)
 		} else {
 			_ = s.Eng.RemoveImage(bg, latest)

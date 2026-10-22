@@ -77,6 +77,9 @@ func (d *Docker) Create(ctx context.Context, s engine.ContainerSpec) (string, er
 		Entrypoint:   s.Entrypoint,
 		ExposedPorts: network.PortSet{port8080: {}},
 	}
+	if s.NoHealthcheck {
+		cfg.Healthcheck = &container.HealthConfig{Test: []string{"NONE"}}
+	}
 	hc := &container.HostConfig{
 		ShmSize: s.ShmBytes,
 		Resources: container.Resources{

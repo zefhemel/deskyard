@@ -34,6 +34,8 @@ type buildEngine struct {
 	desktops   []engine.Container
 	scans      map[string]scanOut // image ID → scanner output (default: a clean scan)
 	copied     []string           // CopyToContainer calls: container:dir
+	specs      []engine.ContainerSpec
+	inspectErr map[string]error // ImageInspect fails for these refs
 	pulls      []string
 	pullErr    error
 	builds     []engine.BuildSpec
@@ -75,6 +77,9 @@ func (e *buildEngine) resolve(ref string) (engine.Image, bool) {
 func (e *buildEngine) ImageInspect(_ context.Context, ref string) (engine.Image, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if err := e.inspectErr[ref]; err != nil {
+		return engine.Image{}, err
+	}
 	if img, ok := e.resolve(ref); ok {
 		return img, nil
 	}
@@ -171,6 +176,7 @@ func (e *buildEngine) Create(_ context.Context, spec engine.ContainerSpec) (stri
 		return "", engine.ErrNotFound
 	}
 	e.containers[spec.Name] = img.ID
+	e.specs = append(e.specs, spec)
 	return spec.Name, nil
 }
 
@@ -492,6 +498,11 @@ func TestRootScanRejects(t *testing.T) {
 	if len(bt.e.copied) != 2 || !strings.HasSuffix(bt.e.copied[0], ":/") {
 		t.Errorf("the scanner wasn't copied into both containers: %v", bt.e.copied)
 	}
+	for _, sp := range bt.e.specs {
+		if !sp.NoHealthcheck || sp.Network != "none" || len(sp.Entrypoint) != 2 || sp.Entrypoint[1] != "wait" {
+			t.Errorf("scan container runs something of the image's: %+v", sp)
+		}
+	}
 }
 
 // The scan fails closed: anything but two complete scans fails the build.
@@ -785,5 +796,28 @@ func TestSmokePrefixReserved(t *testing.T) {
 	}
 	if code, b := bt.do(bt.admin, "GET", "/api/validate-name?name=build-check-x1", nil); !strings.Contains(string(b), "reserved") {
 		t.Errorf("validate: %d %s", code, b)
+	}
+}
+
+// If the current :latest can't be read, the build stops before any tag
+// changes, so the working build keeps it.
+func TestUnreadableLatestKeepsTags(t *testing.T) {
+	bt := newBuildTest(t)
+	if st := bt.build(tools("tools", "img")); st.Status != "done" {
+		t.Fatal(st)
+	}
+	first := bt.e.tagsOf("deskyard-custom/tools")
+	bt.e.mu.Lock()
+	bt.e.inspectErr = map[string]error{"deskyard-custom/tools:latest": errors.New("daemon hiccup")}
+	bt.e.mu.Unlock()
+	st := bt.wait(bt.start("POST", "/api/recipes/tools/rebuild", nil))
+	bt.e.mu.Lock()
+	bt.e.inspectErr = nil
+	bt.e.mu.Unlock()
+	if st.Status != "failed" || !strings.Contains(st.Error, "daemon hiccup") {
+		t.Fatalf("want failed: %+v", st)
+	}
+	if got := bt.e.tagsOf("deskyard-custom/tools"); fmt.Sprint(got) != fmt.Sprint(first) {
+		t.Errorf("tags %v, want %v", got, first)
 	}
 }

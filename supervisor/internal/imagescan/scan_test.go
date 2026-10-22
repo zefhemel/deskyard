@@ -129,6 +129,51 @@ func TestFindings(t *testing.T) {
 	}
 }
 
+// The folders above where root runs things count too: owning /opt would let
+// the user swap /opt/deskyard.
+func TestWritableAncestors(t *testing.T) {
+	got := compare(t, func(f map[string]entry) {
+		f["opt/other/x"] = entry{content: "x", mode: 0o644}
+	})
+	if len(got) != 0 {
+		t.Fatalf("baseline: %q", got)
+	}
+	base := scan(t, baseTree())
+	root := makeTree(t, baseTree())
+	if err := os.Chmod(filepath.Join(root, "opt"), 0o777); err != nil {
+		t.Fatal(err)
+	}
+	cur, err := Scan(root, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := Compare(base, cur, opts); len(got) != 1 || got[0] != "/opt (writable by user)" {
+		t.Fatalf("writable /opt: %q", got)
+	}
+	// /opt as a link into the user's folder.
+	files := baseTree()
+	for p := range files {
+		if strings.HasPrefix(p, "opt/") {
+			delete(files, p)
+		}
+	}
+	files["opt"] = entry{link: "/workspace/opt"}
+	if got := Compare(base, scan(t, files), opts); !contains(got, "/opt (links into the user's reach: /workspace/opt)") {
+		t.Fatalf("/opt linked away: %q", got)
+	}
+	// And the root folder itself.
+	root = makeTree(t, baseTree())
+	if err := os.Chmod(root, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if cur, err = Scan(root, opts); err != nil {
+		t.Fatal(err)
+	}
+	if got := Compare(base, cur, opts); !contains(got, "/ (writable by user)") {
+		t.Fatalf("writable /: %q", got)
+	}
+}
+
 func TestAccountChanges(t *testing.T) {
 	for _, c := range []struct {
 		name, passwd, shadow, group, want string

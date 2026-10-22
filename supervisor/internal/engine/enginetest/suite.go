@@ -355,4 +355,36 @@ func images(t *testing.T, e engine.Engine) {
 			t.Fatalf("copied file: %v %d %q", err, code, out)
 		}
 	})
+	t.Run("no healthcheck", func(t *testing.T) {
+		ref := uniqueRef(t, e)
+		// The healthcheck leaves a mark each time it runs.
+		if _, err := e.Build(ctx, engine.BuildSpec{
+			Context:    dockerfileTar(t, "FROM "+image+"\nHEALTHCHECK --interval=1s --start-period=0s CMD touch /checked\n"),
+			Dockerfile: "Dockerfile", Tags: []string{ref},
+		}, func(string) {}); err != nil {
+			t.Fatal(err)
+		}
+		run := func(off bool) bool {
+			cid, err := e.Create(ctx, engine.ContainerSpec{Image: ref, Cmd: []string{"sleep", "30"}, NoHealthcheck: off})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = e.Remove(context.Background(), cid) }()
+			if err := e.Start(ctx, cid); err != nil {
+				t.Fatal(err)
+			}
+			time.Sleep(3 * time.Second)
+			_, _, code, err := engine.Output(ctx, e, cid, engine.ExecSpec{Cmd: []string{"test", "-e", "/checked"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return code == 0
+		}
+		if !run(false) {
+			t.Fatal("the image's healthcheck never ran (the test proves nothing)")
+		}
+		if run(true) {
+			t.Fatal("the healthcheck ran with NoHealthcheck")
+		}
+	})
 }

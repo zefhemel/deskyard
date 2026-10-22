@@ -37,6 +37,9 @@ type ContainerSpec struct {
 	Cmd     []string
 	// Entrypoint replaces the image's entrypoint when set.
 	Entrypoint []string
+	// NoHealthcheck turns off the image's HEALTHCHECK, which would otherwise
+	// run the image's own command in the container.
+	NoHealthcheck bool
 }
 
 type Container struct {

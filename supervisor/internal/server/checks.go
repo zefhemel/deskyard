@@ -43,8 +43,8 @@ func (s *Server) rootScan(ctx context.Context, baseID, newID string) error {
 }
 
 // scanImage runs the scanner, as root, in a throwaway container of ref with
-// no network. The scanner is copied in and also keeps the container up, so
-// nothing in the image runs.
+// no network. The scanner is copied in and also keeps the container up, and
+// the image's healthcheck is off, so nothing in the image runs.
 func (s *Server) scanImage(ctx context.Context, ref string) (imagescan.Result, error) {
 	img, err := s.Eng.ImageInspect(ctx, ref)
 	if err != nil {
@@ -57,7 +57,7 @@ func (s *Server) scanImage(ctx context.Context, ref string) (imagescan.Result, e
 	exe := "deskyard-image-scan-" + randomID(8)
 	id, err := s.Eng.Create(ctx, engine.ContainerSpec{
 		Name: "deskyard-scan-" + randomID(8), Image: img.ID, Network: "none", Restart: "no",
-		Entrypoint: []string{"/" + exe, "wait"},
+		Entrypoint: []string{"/" + exe, "wait"}, NoHealthcheck: true,
 	})
 	if err != nil {
 		return imagescan.Result{}, err

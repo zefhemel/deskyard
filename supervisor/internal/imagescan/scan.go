@@ -81,6 +81,21 @@ var rootRuns = []string{"/usr", "/etc", "/opt/workspace", "/opt/deskyard"}
 
 const homeTemplate = "/opt/deskyard/home-template"
 
+// ancestors are the folders above rootRuns ("/", "/opt"): a user who could
+// write one could swap what's below it.
+var ancestors = func() map[string]bool {
+	m := map[string]bool{}
+	for _, r := range rootRuns {
+		for d := path.Dir(r); ; d = path.Dir(d) {
+			m[d] = true
+			if d == "/" {
+				break
+			}
+		}
+	}
+	return m
+}()
+
 // userPlaces are where a link from rootRuns may not point.
 var userPlaces = []string{"/workspace", "/tmp", "/var/tmp", "/home", "/dev/shm", "/run/workspace"}
 
@@ -158,7 +173,7 @@ func check(root, p, full string, fi fs.FileInfo, o Options) ([]File, error) {
 			out = append(out, File{Path: p, Kind: KindCapability, SHA256: hashFile(full), Detail: hex.EncodeToString(cp)})
 		}
 	}
-	if under(p, rootRuns...) && !under(p, homeTemplate) {
+	if (under(p, rootRuns...) && !under(p, homeTemplate)) || ancestors[p] {
 		if mode&fs.ModeSymlink != 0 {
 			target, err := resolve(root, p)
 			if err != nil {
