@@ -14,6 +14,7 @@ Built and tested: every phase's code exists. The project is now called **Deskyar
   - HTTPS (CertMagic, `DESKYARD_DOMAIN`) is untested: it needs a public host.
   - CI has never run (no GitHub repository at the moment); the workflows pass actionlint. Task 8 step 3 stays open until they have run.
   - Next after the current work: plan and build the agent activity design (`docs/superpowers/specs/2026-10-22-agent-activity-design.md`, approved).
+  - Idea, parked (2026-10-22): a local folder in a desktop. Real mounts need FUSE privileges that desktops don't have, so the idea is live sync instead: `deskyard sync ./dir alice:/path` (read-only or two-way) over the forward protocol, and in Chrome the File System Access API from the desktop page.
   - Later (asked 2026-10-22): README install instructions; a `curl … | sh` installer for the `deskyard` CLI that downloads from a GitHub release; CI that builds both Docker images and the server and CLI binaries, publishing the binaries to an ever-updating "edge" release. Versioned releases come later.
   - On OrbStack/Docker Desktop, bridge networks aren't isolated from each other; the per-desktop token is what keeps desktops out of each other (tests accept 401).
 
