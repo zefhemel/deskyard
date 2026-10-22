@@ -1,7 +1,7 @@
 ---
 displayName: Custom images design
 tags: spec
-status: draft
+status: approved
 date: "2026-10-22"
 ---
 Admins can make their own desktop images in the supervisor's UI, in two ways:
