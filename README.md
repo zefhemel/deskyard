@@ -30,6 +30,10 @@ What's in a desktop:
   Flatpak live there and survive restarts and image upgrades.
 - **Agent skills** for Claude Code, Codex and other agents, so they know how
   to use all of the above.
+- **Agent presence**: agents working on a desktop, inside it or from
+  elsewhere, show up next to the people viewing it, with what they're
+  running and have just done, and marks on the screen where they click and
+  type. Typed text and secrets on command lines are never shown.
 
 The desktop image is Debian 13, `linux/arm64` and `linux/amd64`. About 0.4 GB
 of RAM per running desktop with Chromium open, so several fit on an 8 GB
