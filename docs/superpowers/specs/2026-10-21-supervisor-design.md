@@ -124,7 +124,7 @@ To keep the door open for Podman:
 
 ## Networks and reaching a computer
 
-Each computer gets its own bridge network `cc-<name>`, so computers can't reach each other. The supervisor reaches a computer one of two ways, decided by where it runs:
+Each computer gets its own bridge network `cc-<name>`, so computers can't reach each other where the engine isolates bridge networks (Docker on Linux). OrbStack and Docker Desktop route between bridge networks, so there the per-computer token is what keeps one computer out of another's desktop (Caddy answers 401 without it); the integration tests accept either. The supervisor reaches a computer one of two ways, decided by where it runs:
 
 - **Supervisor in a container:** it connects itself to every `cc-<name>` network and reaches `alice` at `cc-alice:8080`. Computers publish nothing. On startup it reconnects to any network of a managed computer it's missing from.
 - **Supervisor on the host:** a host process can't reliably reach container addresses (Docker Desktop, OrbStack, rootless Podman), so each computer publishes its port 8080 on host `127.0.0.1` at a port the supervisor picks, stored as a label.
@@ -166,7 +166,7 @@ All computers and the UI share one origin, so any script on it can call the API 
 
 ## Names
 
-`^[a-z][a-z0-9-]{0,30}[a-z0-9]$` (DNS label rules, so it also works as a container, network and folder name). Reserved, because they're supervisor routes: `api`, `login`, `logout`, `assets`, `static`, `healthz`, `favicon.ico`, `robots.txt`, and anything starting with `_`. Names can't be changed after creation (to rename: remove it keeping its folder, rename the folder on the host, and create it again).
+`^[a-z][a-z0-9-]{0,30}[a-z0-9]$` (DNS label rules, so it also works as a container, network and folder name). Reserved, because they're supervisor routes: `api`, `login`, `logout`, `assets`, `static`, `healthz`, `favicon.ico`, `robots.txt`, the UI's pages `computers`, `images` and `accounts`, and anything starting with `_`. Names can't be changed after creation (to rename: remove it keeping its folder, rename the folder on the host, and create it again).
 
 Engine names: container `cc-<name>`, network `cc-<name>`.
 

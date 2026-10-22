@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -278,7 +279,42 @@ func (s *Service) Create(ctx context.Context, name string, set Settings, progres
 		cleanup()
 		return Computer{}, err
 	}
+	progress("Starting the desktop", -1)
+	if err := s.WaitReady(ctx, name, 2*time.Minute); err != nil {
+		return Computer{}, err
+	}
 	return s.Get(ctx, name)
+}
+
+// WaitReady waits until the computer's desktop answers through its Caddy.
+func (s *Service) WaitReady(ctx context.Context, name string, limit time.Duration) error {
+	deadline := time.Now().Add(limit)
+	client := &http.Client{Timeout: 3 * time.Second}
+	for {
+		addr, token, err := s.Target(ctx, name)
+		if err == nil {
+			req, _ := http.NewRequestWithContext(ctx, "GET", "http://"+addr+"/", nil)
+			req.Header.Set("X-Container-Computer-Token", token)
+			if resp, err := client.Do(req); err == nil {
+				resp.Body.Close()
+				if resp.StatusCode == http.StatusOK {
+					return nil
+				}
+			}
+		} else if errors.Is(err, ErrStopped) {
+			if c, _ := s.Get(ctx, name); c.Container.State == "exited" {
+				return fmt.Errorf("%s stopped while starting (see its logs: docker logs %s)", name, containerName(name))
+			}
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%s didn't come up within %s", name, limit)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
 }
 
 func (s *Service) createNetwork(ctx context.Context, name, id string) error {
@@ -368,6 +404,9 @@ func (s *Service) Recreate(ctx context.Context, name string, set Settings, progr
 	if wasRunning {
 		progress("Starting", -1)
 		if err := s.Eng.Start(ctx, containerName(name)); err != nil {
+			return Computer{}, err
+		}
+		if err := s.WaitReady(ctx, name, 2*time.Minute); err != nil {
 			return Computer{}, err
 		}
 	}

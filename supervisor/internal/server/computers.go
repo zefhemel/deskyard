@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 
@@ -396,24 +395,26 @@ func (s *Server) handleProcesses(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !c.Running() {
-		writeJSON(w, http.StatusOK, map[string]any{"titles": []string{}, "rows": [][]string{}})
-		return
-	}
-	titles, rows, err := s.Eng.Top(r.Context(), c.Container.ID, "-eo pid,user,pcpu,rss,etime,args")
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	// Busiest first.
-	cpu := slices.Index(titles, "%CPU")
-	if cpu >= 0 {
-		slices.SortStableFunc(rows, func(a, b []string) int { return strings.Compare(padNum(b[cpu]), padNum(a[cpu])) })
+	titles := []string{"PID", "USER", "%CPU", "RSS", "ELAPSED", "COMMAND"}
+	rows := [][]string{}
+	if c.Running() {
+		// ps inside the computer: the engine's own "top" runs the host's ps,
+		// which differs between engines.
+		ctx, cancel := timeout(r, 10*time.Second)
+		defer cancel()
+		out, err := s.execOutput(ctx, c, "ps", "-eo", "pid=,user=,pcpu=,rss=,etime=,args=", "--sort=-pcpu")
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			f := strings.Fields(line)
+			if len(f) < 6 || f[5] == "ps" {
+				continue
+			}
+			rows = append(rows, append(f[:5:5], strings.Join(f[5:], " ")))
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"titles": titles, "rows": rows})
 }
 
-func padNum(s string) string {
-	whole, frac, _ := strings.Cut(s, ".")
-	return strings.Repeat("0", max(0, 8-len(whole))) + whole + "." + frac
-}
