@@ -17,6 +17,7 @@ import { names } from "../lib/format.ts";
 import { AudioControl } from "./audio-panel.tsx";
 import { ClipboardPopover } from "./clipboard.tsx";
 import { ActivityOverlay } from "./overlay.tsx";
+import { DropZone } from "./upload.tsx";
 import {
   browserSupported,
   type ConnectionState,
@@ -422,6 +423,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
           onLoad={onFrameLoad}
         />
       )}
+      {running && <DropZone desktop={c.name} frame={frame} frameKey={frameKey} />}
       {showing && <ActivityOverlay name={c.name} geometry={() => selkiesScreenGeometry(frame.current)} />}
       {downloadOpen && running && <DownloadDialog desktop={c} onClose={closeDownload} />}
     </>
