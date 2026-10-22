@@ -40,6 +40,8 @@ type buildEngine struct {
 	pullErr    error
 	builds     []engine.BuildSpec
 	dockerfile string
+	context    map[string]string // the last build context: name → content ("<dir>", "-> target")
+	folderTar  []byte            // what a folder-reading helper container streams
 	n          int
 
 	// buildFn replaces the default build (an image with the base's labels
@@ -96,18 +98,29 @@ func (e *buildEngine) Pull(_ context.Context, ref string, _ func(engine.PullProg
 func (e *buildEngine) Build(ctx context.Context, spec engine.BuildSpec, log func(string)) (string, error) {
 	tr := tar.NewReader(spec.Context)
 	var df []byte
+	files := map[string]string{}
 	for {
 		h, err := tr.Next()
 		if err != nil {
 			break
 		}
+		b, _ := io.ReadAll(tr)
+		switch h.Typeflag {
+		case tar.TypeDir:
+			files[h.Name] = "<dir>"
+		case tar.TypeSymlink:
+			files[h.Name] = "-> " + h.Linkname
+		default:
+			files[h.Name] = string(b)
+		}
 		if h.Name == "Dockerfile" {
-			df, _ = io.ReadAll(tr)
+			df = b
 		}
 	}
 	e.mu.Lock()
 	e.builds = append(e.builds, spec)
 	e.dockerfile = string(df)
+	e.context = files
 	fn := e.buildFn
 	e.mu.Unlock()
 	if fn != nil {
@@ -217,6 +230,12 @@ func (e *buildEngine) CopyToContainer(_ context.Context, id, dir string, _ io.Re
 }
 
 func (e *buildEngine) Exec(_ context.Context, id string, _ engine.ExecSpec) (*engine.Process, error) {
+	if strings.HasPrefix(id, "deskyard-read-") {
+		return &engine.Process{
+			Stdout: bytes.NewReader(e.folderTar), Stderr: strings.NewReader(""),
+			Wait: func() (int, error) { return 0, nil }, Close: func() {},
+		}, nil
+	}
 	e.mu.Lock()
 	out, ok := e.scans[e.containers[id]]
 	e.mu.Unlock()

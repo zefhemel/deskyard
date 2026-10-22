@@ -91,7 +91,11 @@ func (d *Docker) Create(ctx context.Context, s engine.ContainerSpec) (string, er
 		hc.RestartPolicy = container.RestartPolicy{Name: container.RestartPolicyMode(s.Restart)}
 	}
 	for _, m := range s.Mounts {
-		hc.Binds = append(hc.Binds, m.Source+":"+m.Target)
+		bind := m.Source + ":" + m.Target
+		if m.ReadOnly {
+			bind += ":ro"
+		}
+		hc.Binds = append(hc.Binds, bind)
 	}
 	if s.Flatpak {
 		hc.SecurityOpt = []string{"seccomp=" + flatpakSeccomp, "apparmor=unconfined"}

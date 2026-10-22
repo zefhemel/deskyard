@@ -15,6 +15,7 @@ var ErrNotFound = errors.New("not found")
 
 type Mount struct {
 	Source, Target string // Source is a host path
+	ReadOnly       bool
 }
 
 type ContainerSpec struct {

@@ -37,6 +37,8 @@ func (s *Server) routes() {
 	h("GET /api/desktops/{name}/processes", s.handleProcesses)
 	h("GET /api/desktops/{name}/stats", s.handleStats)
 	h("GET /api/desktops/{name}/folder", s.handleFolder)
+	h("GET /api/desktops/{name}/image-scan", s.handleImageScan)
+	h("POST /api/desktops/{name}/image", s.handleImageFromDesktop)
 	h("GET /api/desktops/{name}/tokens", s.handleListTokens)
 	h("POST /api/desktops/{name}/tokens", s.handleCreateToken)
 	h("DELETE /api/desktops/{name}/tokens/{id}", s.handleDeleteToken)

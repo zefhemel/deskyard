@@ -4,7 +4,7 @@ import { api, type CatalogImage, type Flatpak, type Recipe, type Remote } from "
 import { FlatpakRows, isRefUrl, newKey, RemoteRows, type FlatpakRow, type RemoteRow } from "../components/recipe-fields.tsx";
 import { Button, Dialog, ErrorText, errorMessage, Field } from "../components/ui.tsx";
 
-const SLUG = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
+export const SLUG = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
 const area = "mono min-h-[84px] px-[11px] py-2 leading-[1.5]";
 
 /** "My tools!" → "my-tools": what the image's tag and recipe are called. */

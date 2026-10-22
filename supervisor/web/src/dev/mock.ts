@@ -7,7 +7,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 import type { Desktop, CreatedToken, Job, Recipe } from "../api.ts";
-import { accounts, desktops, FOLDER, images, processRows, recipes, refreshImages, tokens } from "./mock-data.ts";
+import { accounts, desktops, FOLDER, homeScan, images, processRows, recipes, refreshImages, tokens } from "./mock-data.ts";
 
 const GB = 1024 ** 3;
 const imgDir = fileURLToPath(new URL("../../../../docs/superpowers/specs/2026-10-21-supervisor-design/img/", import.meta.url));
@@ -291,7 +291,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const img = images.find((i) => i.ref === b.image) ?? images[0]!;
     const c: Desktop = {
       id: `${name}-id`, name, state: "creating", startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/${name}`, image: img.ref, imageTitle: img.title,
-      imageVersion: img.version, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus) },
+      imageVersion: img.version, imageSecrets: img.secrets, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus) },
       access: (b.access as string[]) ?? [], viewers: [], forwards: [], tokens: 0, stats: null,
     };
     desktops.push(c);
@@ -406,6 +406,18 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   if (sub === "keys") return json(res, 204);
   if (sub === "stats") return json(res, 200, history(c));
   if (sub === "folder") return json(res, 200, { path: c.folder, bytes: 3.2 * GB, complete: true });
+  if (sub === "image-scan" && method === "GET") {
+    await new Promise((r) => setTimeout(r, 400));
+    return json(res, 200, homeScan);
+  }
+  if (sub === "image" && method === "POST") {
+    const b = await readBody(req);
+    const include = (b.include as string[]) ?? [];
+    const rec: Recipe = { slug: String(b.slug), name: String(b.name), base: c.image, homeFrom: "image", secrets: include.length > 0 || c.imageSecrets };
+    if (recipes.some((r) => r.slug === rec.slug)) return json(res, 409, { error: `a recipe named ${rec.slug} already exists` });
+    recipes.push(rec);
+    return json(res, 202, buildJob(rec));
+  }
   if (sub === "processes") {
     return json(res, 200, {
       titles: ["PID", "USER", "%CPU", "RSS", "ELAPSED", "COMMAND"],

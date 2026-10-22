@@ -2,13 +2,15 @@ package server
 
 import (
 	"archive/tar"
-	"bytes"
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -282,9 +284,10 @@ type buildOptions struct {
 	// rebuild pulls a non-custom base first and builds without cache.
 	rebuild bool
 	// home, when set, writes the home template (entries under
-	// "home-template/") into the build context. Without it, a recipe with
-	// HomeFrom "image" takes the template from its current image.
-	home func(tw *tar.Writer) error
+	// "home-template/", the folder itself included) into the build context.
+	// Without it, a recipe with HomeFrom "image" takes the template from its
+	// current image.
+	home func(ctx context.Context, tw *tar.Writer) error
 }
 
 var imageUserRE = regexp.MustCompile(`^[A-Za-z0-9._-]+(:[A-Za-z0-9._-]+)?$`)
@@ -341,6 +344,10 @@ func (s *Server) build(ctx context.Context, rec recipes.Recipe, opts buildOption
 	if err != nil {
 		return err
 	}
+	defer func() {
+		buildCtx.Close()
+		_ = os.Remove(buildCtx.Name())
+	}()
 	now := buildClock()
 	recJSON, _ := json.Marshal(rec)
 	labels := map[string]string{
@@ -357,7 +364,7 @@ func (s *Server) build(ctx context.Context, rec recipes.Recipe, opts buildOption
 	// 4. Build.
 	log("Building")
 	id, err := s.Eng.Build(ctx, engine.BuildSpec{
-		Context: bytes.NewReader(buildCtx), Dockerfile: "Dockerfile", Labels: labels, NoCache: opts.rebuild,
+		Context: buildCtx, Dockerfile: "Dockerfile", Labels: labels, NoCache: opts.rebuild,
 	}, log)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -435,10 +442,26 @@ func (s *Server) build(ctx context.Context, rec recipes.Recipe, opts buildOption
 	return nil
 }
 
-// buildContext is the tar archive the build runs from.
-func (s *Server) buildContext(ctx context.Context, rec recipes.Recipe, dockerfile string, opts buildOptions) ([]byte, error) {
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
+// buildContext writes the tar archive the build runs from to a temporary
+// file (a home template can be large), positioned at its start. The caller
+// closes and removes it.
+func (s *Server) buildContext(ctx context.Context, rec recipes.Recipe, dockerfile string, opts buildOptions) (f *os.File, err error) {
+	dir := filepath.Join(s.StateDir, "builds")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	f, err = os.CreateTemp(dir, "context-*.tar")
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			f.Close()
+			_ = os.Remove(f.Name())
+		}
+	}()
+	bw := bufio.NewWriterSize(f, 1<<20)
+	tw := tar.NewWriter(bw)
 	if err := tw.WriteHeader(&tar.Header{Name: "Dockerfile", Mode: 0o644, Size: int64(len(dockerfile)), ModTime: time.Unix(0, 0)}); err != nil {
 		return nil, err
 	}
@@ -448,16 +471,22 @@ func (s *Server) buildContext(ctx context.Context, rec recipes.Recipe, dockerfil
 	if rec.HomeFrom == recipes.HomeFromImage {
 		home := opts.home
 		if home == nil {
-			home = func(tw *tar.Writer) error { return s.homeFromImage(ctx, customRef(rec.Slug), tw) }
+			home = func(ctx context.Context, tw *tar.Writer) error { return s.homeFromImage(ctx, customRef(rec.Slug), tw) }
 		}
-		if err := home(tw); err != nil {
+		if err := home(ctx, tw); err != nil {
 			return nil, fmt.Errorf("the home template: %w", err)
 		}
 	}
 	if err := tw.Close(); err != nil {
 		return nil, err
 	}
-	return buf.Bytes(), nil
+	if err := bw.Flush(); err != nil {
+		return nil, err
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+	return f, nil
 }
 
 // homeFromImage copies ref's home template into the build context, as

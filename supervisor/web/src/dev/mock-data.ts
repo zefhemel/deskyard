@@ -1,5 +1,5 @@
 // Fake data for the dev-server mock (mock.ts). Never part of the build.
-import type { Account, CatalogImage, Desktop, Recipe, Token } from "../api.ts";
+import type { Account, CatalogImage, Desktop, ImageScan, Recipe, Token } from "../api.ts";
 
 const GB = 1024 ** 3;
 const HOUR = 3600 * 1000;
@@ -23,6 +23,7 @@ function desktop(c: Partial<Desktop> & { name: string }): Desktop {
     image: LATEST,
     imageTitle: "Debian XFCE",
     imageVersion: "2026.10.22",
+    imageSecrets: false,
     updateAvailable: null,
     settings: { memoryBytes: 0, nanoCpus: 0 },
     access: [],
@@ -67,7 +68,38 @@ export const desktops: Desktop[] = [
   }),
   desktop({ name: "data-lab", state: "creating", startedAt: "", imageVersion: "" }),
   desktop({ name: "scratch", state: "stopped", startedAt: "", imageVersion: "2026.10.15", updateAvailable: "2026.10.22" }),
+  desktop({
+    name: "work",
+    state: "stopped",
+    startedAt: "",
+    image: "deskyard-custom/work-signed-in:latest",
+    imageTitle: "Work, signed in",
+    imageVersion: "2026-10-20 09:14",
+    imageSecrets: true,
+  }),
 ];
+
+/** What GET /api/desktops/{name}/image-scan finds in every mock desktop. */
+export const homeScan: ImageScan = {
+  groups: [
+    { name: "tools", bytes: 1.3 * GB, paths: [".config/mise", ".local/bin", ".local/share/mise", ".npm-global"], secrets: [] },
+    { name: "flatpak", bytes: 48 * 1024 ** 2, paths: [".var"], secrets: [] },
+    { name: "settings", bytes: 22 * 1024 ** 2, paths: [".config/Code", ".config/gh", ".config/xfce4"], secrets: [".config/gh/hosts.yml"] },
+    { name: "dotfiles", bytes: 41 * 1024, paths: [".bashrc", ".codex", ".gitconfig", ".profile", ".vimrc"], secrets: [".bash_history", ".codex/auth.json", ".ssh"] },
+    { name: "browser", bytes: 310 * 1024 ** 2, paths: [".config/chromium-shared"], secrets: [".config/chromium-shared/Default/Cookies", ".config/chromium-shared/Default/Login Data"] },
+    { name: "other", bytes: 6.4 * GB, paths: ["Downloads", "Notes", "projects"], secrets: ["projects/api/.env"] },
+  ],
+  flatpaks: [
+    { id: "org.gimp.GIMP", remote: "flathub" },
+    { id: "org.gnome.Builder", remote: "gnome-nightly" },
+  ],
+  remotes: [
+    { name: "flathub", url: "https://dl.flathub.org/repo/" },
+    { name: "gnome-nightly", url: "https://nightly.gnome.org/repo/" },
+  ],
+  totalBytes: 8.2 * GB,
+  notes: [],
+};
 
 export const accounts: (Account & { password: string })[] = [
   { username: "zef", admin: true, desktops: [], created: iso(30 * DAY), lastLogin: iso(0), password: "zef" },

@@ -35,6 +35,7 @@ type desktopJSON struct {
 	Image           string        `json:"image"`
 	ImageTitle      string        `json:"imageTitle"`
 	ImageVersion    string        `json:"imageVersion"`
+	ImageSecrets    bool          `json:"imageSecrets"`
 	UpdateAvailable *string       `json:"updateAvailable"`
 	Settings        settingsJSON  `json:"settings"`
 	Access          []string      `json:"access"`
@@ -48,8 +49,9 @@ func (s *Server) desktopJSON(ctx context.Context, c desktops.Desktop, a accounts
 	j := desktopJSON{
 		ID: c.ID, Name: c.Name, State: c.State, Folder: c.Folder, Image: c.Image,
 		ImageTitle: c.ImageLabels["org.opencontainers.image.title"], ImageVersion: c.ImageLabels["org.opencontainers.image.version"],
-		Settings: settingsJSON{c.Settings.MemoryBytes, c.Settings.NanoCPUs},
-		Access:   []string{}, Viewers: s.viewers.names(c.Name),
+		ImageSecrets: c.ImageLabels[labelSecrets] == "true",
+		Settings:     settingsJSON{c.Settings.MemoryBytes, c.Settings.NanoCPUs},
+		Access:       []string{}, Viewers: s.viewers.names(c.Name),
 		Forwards: s.forwards.list(c.Name),
 	}
 	if !c.Created.IsZero() {

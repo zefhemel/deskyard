@@ -199,6 +199,77 @@ def test_build_log_survives_a_dropped_connection(mock_ui):
         assert log.get_by_text("Step 1/3 : FROM").count() == 1
 
 
+def mock_page(p, base, path):
+    browser = p.chromium.launch()
+    page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
+    page.goto(base + "/login")
+    page.fill("#u", "zef")
+    page.fill("#p", "x")
+    page.get_by_role("button", name="Sign in").click()
+    page.wait_for_url(lambda u: "/login" not in u)
+    page.goto(base + path)
+    return browser, page
+
+
+def test_image_from_desktop_dialog(mock_ui):
+    with sync_playwright() as p:
+        browser, page = mock_page(p, mock_ui, "/desktops/alice")
+        page.get_by_role("button", name="More actions").click()
+        page.get_by_role("menuitem", name="New image from this desktop…").click()
+        dialog = page.get_by_role("dialog")
+        expect(dialog.get_by_text("New image from alice")).to_be_visible()
+        settings = dialog.get_by_role("checkbox", name="App settings")
+        expect(settings).to_be_checked(timeout=10000)
+        # Ticked, with its secret carved out: partly ticked.
+        assert settings.evaluate("e => e.indeterminate")
+        assert not dialog.get_by_role("checkbox", name="Installed tools").evaluate("e => e.indeterminate")
+        secret = dialog.get_by_role("checkbox", name="~/.config/gh/hosts.yml")
+        expect(secret).not_to_be_checked()
+        expect(dialog.get_by_role("checkbox", name="Other files")).not_to_be_checked()
+        expect(dialog.get_by_text("org.gnome.Builder", exact=False)).to_be_visible()
+        # Running: offers to stop it first.
+        expect(dialog.get_by_role("button", name="Stop it first")).to_be_visible()
+
+        # Over 5 GB: a warning (no limit).
+        expect(dialog.get_by_text("more than 5 GB", exact=False)).to_have_count(0)
+        dialog.get_by_role("checkbox", name="Other files").check()
+        expect(dialog.get_by_text("more than 5 GB", exact=False)).to_be_visible()
+        dialog.get_by_role("checkbox", name="Other files").uncheck()
+
+        # Ticking a secret marks the image.
+        expect(dialog.get_by_text("This image will contain secrets")).to_have_count(0)
+        dialog.get_by_role("checkbox", name="~/.codex/auth.json").check()
+        expect(dialog.get_by_text("This image will contain secrets")).to_be_visible()
+
+        with page.expect_request(lambda r: r.method == "POST" and r.url.endswith("/api/desktops/alice/image")) as sent:
+            dialog.get_by_role("button", name="Build", exact=True).click()
+        body = json.loads(sent.value.post_data)
+        assert body == {"name": "alice image", "slug": "alice-image", "groups": ["tools", "flatpak", "settings", "dotfiles", "browser"],
+                        "include": [".codex/auth.json"]}, body
+        expect(page.get_by_role("dialog").get_by_text("Building alice image")).to_be_visible()
+        browser.close()
+
+
+def test_access_to_secret_image_asks_first(mock_ui):
+    with sync_playwright() as p:
+        browser, page = mock_page(p, mock_ui, "/desktops/work?tab=access")
+        page.get_by_role("checkbox", name="sam").check()
+        requests_sent = []
+        page.on("request", lambda r: requests_sent.append(r) if r.method == "PUT" and r.url.endswith("/access") else None)
+        page.get_by_role("button", name="Save").click()
+        dialog = page.get_by_role("dialog")
+        expect(dialog.get_by_text("Give sam access to work?")).to_be_visible()
+        expect(dialog.get_by_text("Work, signed in")).to_be_visible()
+        dialog.get_by_role("button", name="Cancel").click()
+        expect(page.get_by_role("dialog")).to_have_count(0)
+        assert requests_sent == []
+        page.get_by_role("button", name="Save").click()
+        with page.expect_request(lambda r: r.method == "PUT" and r.url.endswith("/access")) as sent:
+            page.get_by_role("dialog").get_by_role("button", name="Give access").click()
+        assert json.loads(sent.value.post_data) == {"usernames": ["sam"]}
+        browser.close()
+
+
 def test_forwards_shown(cli, remote, forwards, supervisor, name):  # noqa: F811
     p = free_port()
     f = forwards(cli, remote, str(p))

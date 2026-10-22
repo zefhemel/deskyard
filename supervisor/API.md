@@ -25,7 +25,7 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
   "startedAt": "…", "created": "…" | null, "job": "a1b2c3d4" | null,
   "folder": "/Users/zef/deskyard/alice",
   "image": "ghcr.io/zefhemel/deskyard-debian-xfce:latest",
-  "imageTitle": "Debian XFCE", "imageVersion": "2026.10.15",
+  "imageTitle": "Debian XFCE", "imageVersion": "2026.10.15", "imageSecrets": false,
   "updateAvailable": "2026.10.22" | null,
   "settings": {"memoryBytes": 0, "nanoCpus": 0},
   "access": ["anna"],
@@ -36,7 +36,7 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 }
 ```
 
-`memoryBytes`/`nanoCpus` 0 mean no limit; `memLimit` is then the host's memory. `cpuPercent` is relative to the desktop's CPU limit, or to all host CPUs without one (0–100). `access` lists regular accounts only (admins can use everything) and is only filled for admins. `forwards` are the port mappings agent tokens have open on the desktop (`deskyard forward`): `in` maps a port of the agent's machine into the desktop, `out` a desktop port out to the agent's machine; `port` is always the desktop's port (the agent's own port numbers aren't shown). Each entry is listed once, sorted by token, direction and port; an `in` port appears once the desktop is listening on it. `created` survives upgrades and settings changes (null for desktops made before it was recorded). `job` is the running create, upgrade or settings job, which anyone who can see the desktop may follow. A desktop's own page is at `/<name>/`.
+`memoryBytes`/`nanoCpus` 0 mean no limit; `memLimit` is then the host's memory. `cpuPercent` is relative to the desktop's CPU limit, or to all host CPUs without one (0–100). `access` lists regular accounts only (admins can use everything) and is only filled for admins. `forwards` are the port mappings agent tokens have open on the desktop (`deskyard forward`): `in` maps a port of the agent's machine into the desktop, `out` a desktop port out to the agent's machine; `port` is always the desktop's port (the agent's own port numbers aren't shown). Each entry is listed once, sorted by token, direction and port; an `in` port appears once the desktop is listening on it. `imageSecrets` is true when the desktop's image contains secrets (its starting home holds someone's sign-ins). `created` survives upgrades and settings changes (null for desktops made before it was recorded). `job` is the running create, upgrade or settings job, which anyone who can see the desktop may follow. A desktop's own page is at `/<name>/`.
 
 | Method and path | Body | Response |
 | --- | --- | --- |
@@ -53,6 +53,8 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 | `GET /api/desktops/{name}/folder` | | `{"path","bytes","complete"}`; `complete` is false when some directories couldn't be read, so `bytes` is a lower bound |
 | `POST /api/desktops/{name}/keys` | `{"keys":"ctrl+alt+Delete"}` (xdotool syntax) | 204 |
 | `POST /api/desktops/{name}/upgrade` (admin) | | 202 `{"job": id}` |
+| `GET /api/desktops/{name}/image-scan` (admin) | | `ImageScan` (see [Images from a desktop](#images-from-a-desktop-admin)) |
+| `POST /api/desktops/{name}/image` (admin) | `{"name","slug","groups":[…],"include":[…]}` | 202 `{"job"}` |
 | `GET /api/validate-name?name=x` (admin) | | `{"ok":bool,"error"?:string,"folder":path,"folderExists":bool}` |
 
 ### Jobs
@@ -139,6 +141,32 @@ A build is a cancellable job (30-minute limit). Each line of the build log comes
 Known limits: Flatpak apps that download extra data while installing (`apply_extra`, e.g. Spotify) may fail to build, since that step needs Flatpak's sandbox, which a plain build doesn't allow. A build's network is the engine's default bridge, so its commands reach the internet and whatever else such a container can: on Docker Desktop and OrbStack that includes services on the host's loopback (`host.docker.internal`), the supervisor's own port among them, which still requires signing in.
 
 A failed or cancelled build leaves no tag, no catalog entry and no image; the recipe stays saved. Labels on a custom image: `deskyard.kind=custom`, `org.opencontainers.image.title` (the recipe name), `org.opencontainers.image.version` (build time, `YYYY-MM-DD HH:MM`), `deskyard.base` (the base's image ID), `deskyard.recipe` (the recipe JSON, so anyone who can inspect the image can read its build commands and remote URLs), and `deskyard.secrets=true` when it has secrets.
+
+### Images from a desktop (admin)
+
+A desktop's home folder becomes the starting home (`/opt/deskyard/home-template`) of a new image built on the desktop's own image, as a recipe with `homeFrom: "image"`.
+
+`GET /api/desktops/{name}/image-scan` reads the folder and gives:
+
+```json
+{
+  "groups": [{"name": "tools", "bytes": 1395864371, "paths": [".local/share/mise", ".npm-global"], "secrets": []},
+             {"name": "dotfiles", "bytes": 41984, "paths": [".bashrc", ".codex"], "secrets": [".codex/auth.json", ".ssh"]}, …],
+  "flatpaks": [{"id": "org.gimp.GIMP", "remote": "flathub"}],
+  "remotes": [{"name": "flathub", "url": "https://dl.flathub.org/repo/"}],
+  "totalBytes": 8804682956,
+  "notes": ["Leaving out the Flatpak remote nightly: it has no GPG key, so the image couldn't verify it."]
+}
+```
+
+- `groups` are always `tools` (`~/.local/share/mise`, `~/.local/bin`, `~/.npm-global`, `~/.local/share/uv`, `~/.config/mise`), `flatpak` (the app data in `~/.var`), `settings` (`~/.config`), `dotfiles` (other top-level entries starting with a dot), `browser` (the shared Chromium's profile, `~/.config/chromium-shared`) and `other`, in that order. `bytes` is what the group copies, without its secrets; `paths` are its folders and files that hold more than secrets. All paths are relative to the home folder.
+- Always left out: caches (`~/.cache`, `~/.npm`, Chromium's caches, `~/.var/app/*/cache`, package caches such as `~/.cargo/registry` or `go/pkg/mod`), the Flatpak installation itself (`~/.local/share/flatpak`), and Deskyard's own state (`.workspace-seeded`, `~/.config/workspace`, X and VNC files).
+- `secrets` are found by path and name only (`internal/recipes/secrets.go`): `~/.ssh`, `~/.gnupg`, keyrings, git credentials, shell history, tool logins (Codex, Claude, Gemini, `gh`, Docker, cloud CLIs' folders), `.npmrc`/`.netrc`/`.pypirc`/`.pgpass`, `.env` files, browser cookies and logins, SSH private keys, key and certificate files, and names with a word like token, secret, credential, password or auth. Names inside installed software (`~/.local/share/mise`, `~/.npm-global`, `node_modules`, …) don't count. A secret folder is listed once and covers what's in it.
+- `totalBytes` is everything that could be copied, secrets included. The UI warns above 5 GB; there is no limit.
+- The Flatpak apps and remotes come from `flatpak list --user --app --columns=application,origin` and `flatpak remotes --user --columns=name,url` in a running desktop, and from the installation's repository in its folder when it is stopped.
+
+`POST /api/desktops/{name}/image` with `{"name","slug","groups":[group names],"include":[secrets, as the scan lists them]}` saves and builds the recipe `{"slug","name","base": <the desktop's image>,"homeFrom":"image","flatpaks","remotes","secrets"}` (202 `{"job"}`, a build as above). With `flatpak` ticked, the desktop's apps are installed again system-wide from their remotes; a remote other than Flathub goes in with the GPG key from the desktop's installation, and one without a key is left out with its apps. The build context's `home-template/` (always there, empty if nothing is ticked) gets the files of the ticked groups without their secrets, plus each included secret whatever its group; files keep their permission bits (no setuid, setgid or sticky), and the image gives them to UID 1000. The image is marked `secrets` when any secret is included or its base has secrets, which passes down to images built on it. 400 for an unknown group or an `include` that isn't a secret; 409 if the slug exists. The folder is read as the build runs: directly where the supervisor can read every file, otherwise through a helper container of `alpine:3.22` that mounts it read-only and streams it as root. A running desktop's files can change while they're copied; stopping it first gives a consistent copy. Rebuilding such a recipe takes the template from its current image.
+
 
 ## Desktop
 

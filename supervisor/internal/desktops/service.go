@@ -4,11 +4,13 @@
 package desktops
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -17,6 +19,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -504,15 +507,12 @@ func (s *Service) deleteFolder(ctx context.Context, name string) error {
 	if err := os.RemoveAll(folder); err == nil {
 		return nil
 	}
-	const helper = "alpine:3.22"
-	if _, err := s.Eng.ImageInspect(ctx, helper); errors.Is(err, engine.ErrNotFound) {
-		if err := s.Eng.Pull(ctx, helper, nil); err != nil {
-			return err
-		}
+	if err := s.ensureHelper(ctx); err != nil {
+		return err
 	}
 	hname := "deskyard-remove-" + randomHex(4)
 	_, err := s.Eng.Create(ctx, engine.ContainerSpec{
-		Name: hname, Image: helper, Cmd: []string{"rm", "-rf", "/data/" + name},
+		Name: hname, Image: helperImage, Cmd: []string{"rm", "-rf", "/data/" + name},
 		Mounts: []engine.Mount{{Source: s.Cfg.DataDir, Target: "/data"}},
 	})
 	if err != nil {
@@ -533,6 +533,95 @@ func (s *Service) deleteFolder(ctx context.Context, name string) error {
 		return fmt.Errorf("could not delete %s", folder)
 	}
 	return nil
+}
+
+// helperImage runs as root over desktop folders whose files the supervisor
+// itself can't read or delete (they belong to UID 1000).
+const helperImage = "alpine:3.22"
+
+func (s *Service) ensureHelper(ctx context.Context) error {
+	if _, err := s.Eng.ImageInspect(ctx, helperImage); errors.Is(err, engine.ErrNotFound) {
+		return s.Eng.Pull(ctx, helperImage, nil)
+	}
+	return nil
+}
+
+// FolderTar streams a desktop's folder as a tar archive (names relative to
+// the folder, starting with "./"), read in a helper container of alpine as
+// root, for when the supervisor can't read the files itself. The folder is
+// mounted read-only. Close removes the helper, and reports a failed or
+// incomplete read.
+func (s *Service) FolderTar(ctx context.Context, name string) (io.ReadCloser, error) {
+	folder := filepath.Join(s.Cfg.DataDir, name)
+	if st, err := os.Stat(folder); err != nil || !st.IsDir() {
+		return nil, fmt.Errorf("%s has no folder", name)
+	}
+	if err := s.ensureHelper(ctx); err != nil {
+		return nil, err
+	}
+	hname := "deskyard-read-" + randomHex(4)
+	if _, err := s.Eng.Create(ctx, engine.ContainerSpec{
+		Name: hname, Image: helperImage, Cmd: []string{"sleep", "86400"},
+		Mounts: []engine.Mount{{Source: folder, Target: "/home-src", ReadOnly: true}},
+	}); err != nil {
+		return nil, err
+	}
+	remove := func() { _ = s.Eng.Remove(context.WithoutCancel(ctx), hname) }
+	if err := s.Eng.Start(ctx, hname); err != nil {
+		remove()
+		return nil, err
+	}
+	p, err := s.Eng.Exec(ctx, hname, engine.ExecSpec{Cmd: []string{"tar", "-C", "/home-src", "-cf", "-", "."}})
+	if err != nil {
+		remove()
+		return nil, err
+	}
+	// Drain stderr while stdout is read (the streams share one connection).
+	var errOut bytes.Buffer
+	errDone := make(chan struct{})
+	go func() {
+		defer close(errDone)
+		if p.Stderr != nil {
+			_, _ = io.Copy(&limitWriter{&errOut, 4096}, p.Stderr)
+		}
+	}()
+	return &helperRead{Reader: p.Stdout, close: func() error {
+		// Whatever wasn't read yet: the archive's end, or the rest after an error.
+		_, _ = io.Copy(io.Discard, p.Stdout)
+		<-errDone
+		code, err := p.Wait()
+		p.Close()
+		remove()
+		if err == nil && code != 0 {
+			err = fmt.Errorf("reading %s failed: %s", name, strings.TrimSpace(errOut.String()))
+		}
+		return err
+	}}, nil
+}
+
+type helperRead struct {
+	io.Reader
+	close func() error
+	once  sync.Once
+	err   error
+}
+
+func (h *helperRead) Close() error {
+	h.once.Do(func() { h.err = h.close() })
+	return h.err
+}
+
+// limitWriter keeps the first n bytes and drops the rest.
+type limitWriter struct {
+	b *bytes.Buffer
+	n int
+}
+
+func (w *limitWriter) Write(p []byte) (int, error) {
+	if room := w.n - w.b.Len(); room > 0 {
+		w.b.Write(p[:min(room, len(p))])
+	}
+	return len(p), nil
 }
 
 // Target is where the proxy reaches a running desktop's port 8080, and the

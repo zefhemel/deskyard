@@ -38,6 +38,8 @@ export interface Desktop {
   image: string;
   imageTitle: string;
   imageVersion: string;
+  /** The image's starting home holds secrets: desktops made from it start signed in as whoever made it. */
+  imageSecrets: boolean;
   updateAvailable: string | null;
   settings: Settings;
   access: string[];
@@ -142,6 +144,37 @@ export interface FolderSize {
   complete: boolean;
 }
 
+export type HomeGroupName = "tools" | "flatpak" | "settings" | "dotfiles" | "browser" | "other";
+
+/** One group of a desktop's home folder, for an image made from it. */
+export interface HomeGroup {
+  name: HomeGroupName;
+  /** What the group copies: its files without its secrets. */
+  bytes: number;
+  paths: string[];
+  /** Left out unless ticked one by one. */
+  secrets: string[];
+}
+
+export interface ImageScan {
+  groups: HomeGroup[];
+  /** The desktop's own Flatpak apps, installed again system-wide in the image. */
+  flatpaks: { id: string; remote: string }[];
+  remotes: { name: string; url: string }[];
+  /** Everything that could be copied, secrets included. */
+  totalBytes: number;
+  /** What the image would leave out, and why. */
+  notes: string[];
+}
+
+export interface ImageFromDesktop {
+  name: string;
+  slug: string;
+  groups: HomeGroupName[];
+  /** Secrets to include, as the scan lists them. */
+  include: string[];
+}
+
 export interface JobRef {
   job: string;
 }
@@ -231,6 +264,8 @@ export const api = {
   processes: (name: string) => request<Processes>("GET", `${c(name)}/processes`),
   stats: (name: string) => request<StatsHistory>("GET", `${c(name)}/stats`),
   folder: (name: string) => request<FolderSize>("GET", `${c(name)}/folder`),
+  imageScan: (name: string) => request<ImageScan>("GET", `${c(name)}/image-scan`),
+  imageFromDesktop: (name: string, body: ImageFromDesktop) => request<JobRef>("POST", `${c(name)}/image`, body),
   keys: (name: string, keys: string) => request<void>("POST", `${c(name)}/keys`, { keys }),
   upgrade: (name: string) => request<JobRef>("POST", `${c(name)}/upgrade`),
   validateName: (name: string) => request<NameCheck>("GET", `/api/validate-name?name=${enc(name)}`),

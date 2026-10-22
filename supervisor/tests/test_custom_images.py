@@ -212,3 +212,116 @@ def test_cancel_build(admin, slug):
         time.sleep(1)
     assert set(build_containers()) - others == set()
     assert tags(slug) == []
+
+
+# --- images from a desktop ------------------------------------------------------------------
+
+@pytest.fixture
+def slugs(admin):
+    """Makes recipe slugs; removes their recipes and tags afterwards, newest
+    first (an image may be the base of a later one)."""
+    made = []
+
+    def make() -> str:
+        made.append("t" + uuid.uuid4().hex[:6])
+        return made[-1]
+
+    yield make
+    for s in reversed(made):
+        admin.delete(f"/api/recipes/{s}")
+        for t in tags(s):
+            docker("rmi", "-f", t, check=False)
+
+
+def from_desktop(admin, desktop: str, slug: str, groups: list[str], include=()) -> tuple[dict, list[str]]:
+    r = admin.post(f"/api/desktops/{desktop}/image",
+                   json={"name": "From " + desktop, "slug": slug, "groups": groups, "include": list(include)})
+    assert r.status_code == 202, r.text
+    return follow(admin, r.json()["job"])
+
+
+def new_desktop(admin, image: str) -> str:
+    n = "t" + uuid.uuid4().hex[:6]
+    r = admin.post("/api/desktops", json={"name": n, "image": image})
+    assert r.status_code == 202, r.text
+    st = admin.wait_job(r.json()["job"])
+    assert st["status"] == "done", st
+    return n
+
+
+def exists(name: str, path: str) -> bool:
+    return docker("exec", "-u", "user", f"deskyard-{name}", "test", "-e", path, check=False).returncode == 0
+
+
+@pytest.mark.network
+@pytest.mark.slow
+def test_image_from_desktop(admin, desktop, name, slugs):
+    if not online("registry.npmjs.org"):
+        pytest.skip("no network: the desktop installs cowsay from npm")
+    user_sh(name, "mkdir -p ~/.config/app ~/.ssh ~/.codex"
+                  " && echo '{\"theme\": \"dark\"}' > ~/.config/app/settings.json"
+                  " && echo private > ~/.ssh/id_test && echo token > ~/.codex/auth.json"
+                  " && mise use -g npm:cowsay && cowsay hi")
+
+    r = admin.get(f"/api/desktops/{name}/image-scan")
+    assert r.status_code == 200, r.text
+    scan = r.json()
+    groups = {g["name"]: g for g in scan["groups"]}
+    assert list(groups) == ["tools", "flatpak", "settings", "dotfiles", "browser", "other"]
+    assert ".ssh" in groups["dotfiles"]["secrets"] and ".codex/auth.json" in groups["dotfiles"]["secrets"]
+    assert ".local/share/mise" in groups["tools"]["paths"] and groups["tools"]["bytes"] > 0
+    assert ".config/app" in groups["settings"]["paths"]
+    assert scan["totalBytes"] >= sum(g["bytes"] for g in scan["groups"])
+    assert scan["flatpaks"] == [] and isinstance(scan["remotes"], list)
+
+    # Settings and tools only: no secrets.
+    plain = slugs()
+    st, log = from_desktop(admin, name, plain, ["settings", "tools"])
+    assert st["status"] == "done", st["error"] + "\n" + "\n".join(log[-40:])
+    ref = f"deskyard-custom/{plain}:latest"
+    assert not catalog(admin)[ref]["secrets"]
+    labels = json.loads(docker("image", "inspect", "-f", "{{json .Config.Labels}}", ref).stdout)
+    assert "deskyard.secrets" not in labels
+    rec = json.loads(labels["deskyard.recipe"])
+    assert rec["homeFrom"] == "image" and rec["base"] == IMAGE and not rec.get("secrets")
+    other = new_desktop(admin, ref)
+    try:
+        assert json.loads(user_sh(other, "cat ~/.config/app/settings.json")) == {"theme": "dark"}
+        assert "moo" in user_sh(other, "cowsay moo")
+        assert not exists(other, "/workspace/.ssh/id_test")
+        assert not exists(other, "/workspace/.codex/auth.json")
+    finally:
+        admin.delete(f"/api/desktops/{other}?files=1")
+
+    # Again, with auth.json ticked: the image contains secrets.
+    secret = slugs()
+    st, log = from_desktop(admin, name, secret, ["settings", "tools"], include=[".codex/auth.json"])
+    assert st["status"] == "done", st["error"] + "\n" + "\n".join(log[-40:])
+    ref = f"deskyard-custom/{secret}:latest"
+    assert catalog(admin)[ref]["secrets"]
+    other = new_desktop(admin, ref)
+    try:
+        assert user_sh(other, "cat ~/.codex/auth.json").strip() == "token"
+        assert not exists(other, "/workspace/.ssh/id_test")
+    finally:
+        admin.delete(f"/api/desktops/{other}?files=1")
+
+
+def test_secret_flag_passes_down(admin, desktop, name, slugs):
+    user_sh(name, "mkdir -p ~/.codex && echo token > ~/.codex/auth.json")
+    secret = slugs()
+    st, log = from_desktop(admin, name, secret, [], include=[".codex/auth.json"])
+    assert st["status"] == "done", st["error"] + "\n" + "\n".join(log[-40:])
+    parent = f"deskyard-custom/{secret}:latest"
+    assert catalog(admin)[parent]["secrets"]
+
+    child = slugs()
+    st, log = build(admin, {"slug": child, "base": parent, "commands": "true"})
+    assert st["status"] == "done", st["error"] + "\n" + "\n".join(log[-40:])
+    assert catalog(admin)[f"deskyard-custom/{child}:latest"]["secrets"]
+
+
+def test_image_from_desktop_refuses_non_secrets_as_include(admin, desktop, name, slugs):
+    r = admin.post(f"/api/desktops/{name}/image",
+                   json={"name": "x", "slug": slugs(), "groups": [], "include": [".bashrc"]})
+    assert r.status_code == 400 and ".bashrc" in r.json()["error"], r.text
