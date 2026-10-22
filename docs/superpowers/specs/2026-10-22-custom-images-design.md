@@ -2,6 +2,7 @@
 displayName: Custom images design
 tags: spec
 status: approved
+plan: "[[superpowers/plans/2026-10-22-custom-images|Custom images plan]]"
 date: "2026-10-22"
 ---
 Admins can make their own desktop images in the supervisor's UI, in two ways:
