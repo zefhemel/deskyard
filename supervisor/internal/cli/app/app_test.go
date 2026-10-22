@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/activity"
 	"github.com/zefhemel/deskyard/supervisor/internal/cli/clitest"
 	"github.com/zefhemel/deskyard/supervisor/internal/cli/remote"
 )
@@ -36,6 +37,8 @@ type harness struct {
 	inside bool
 	config string
 	stdin  string
+	// events collects what the App records (Record/Caller are faked).
+	events []activity.Event
 }
 
 func newHarness(t *testing.T) *harness {
@@ -50,6 +53,8 @@ func (h *harness) run(args ...string) result {
 		ConfigPath: h.config,
 		Inside:     func() bool { return h.inside },
 		Version:    "test",
+		Record:     func(e activity.Event) { h.events = append(h.events, e) },
+		Caller:     func() string { return "a terminal" },
 	}
 	code := a.Run(context.Background(), args)
 	return result{code, out.String(), errb.String()}
