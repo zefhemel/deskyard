@@ -44,8 +44,12 @@ type Command struct {
 	Examples []string `json:"examples"`
 	Where    string   `json:"where"` // where it runs
 	Exit     string   `json:"exitCodes"`
+	// Hidden commands are left out of help, guide and describe: the image
+	// runs them, not people or agents.
+	Hidden bool `json:"-"`
 
 	stopAtArg bool // flags end at the first argument (exec)
+	rawArgs   bool // the command parses its own arguments (forward: -R applies to the next one)
 	run       func(a *App, c *call) error
 }
 
@@ -193,6 +197,21 @@ func init() {
 			Examples: []string{"deskyard cp ./report.pdf alice:/workspace/", "deskyard cp ./site alice:/workspace/site", "deskyard cp alice:/workspace/out.csv ."},
 			Where:    whereRemote, Exit: exitStd, run: runCp},
 
+		{Name: "forward", Group: "shell", Summary: "map TCP ports between this machine and the desktop",
+			Usage: "forward [-R] PORT[:PORT]...",
+			Desc: "Maps TCP ports both ways until Ctrl-C, over the agent API (no port is opened anywhere else). Each argument is one mapping. " +
+				"PORT or LOCAL:DESKTOP: this machine's 127.0.0.1:LOCAL becomes localhost:DESKTOP in the desktop (a dev server here, reachable by the desktop's browser). " +
+				"-R PORT or -R DESKTOP:LOCAL (reverse; one -R before each such mapping): the desktop's localhost:DESKTOP becomes 127.0.0.1:LOCAL here. " +
+				"Both ends listen on loopback only; the desktop refuses ports below 1024. A port in use on either side fails that mapping, which is retried, and the others carry on. " +
+				"When the connection drops (the desktop stops or restarts, the network blips) it keeps its local listeners, closes open connections and reconnects with backoff (1 s up to 30 s). " +
+				"It exits only on Ctrl-C, or when the token is refused. Run it in the background. Inside a desktop it needs -d too.",
+			Args:  []Arg{{Name: "port", Type: "string", Required: true, Variadic: true, Desc: "a mapping: PORT or LOCAL:DESKTOP; after -R, PORT or DESKTOP:LOCAL"}},
+			Flags: []Flag{{Name: "--reverse", Short: "-R", Type: "boolean", Desc: "the next mapping is reverse: a port in the desktop becomes a port here"}},
+			Output: Output{Type: "text", Desc: `one line per mapping each time it goes live: "in LOCAL DESKTOP" or "out DESKTOP 127.0.0.1:LOCAL"; on stderr one line per state change (connected, lost and retrying, port in use)`,
+				Fields: map[string]string{"in": "LOCAL DESKTOP: this machine's port, reachable in the desktop at localhost:DESKTOP", "out": "DESKTOP ADDR: the desktop's port, reachable here at ADDR"}},
+			Examples: []string{"deskyard -d alice forward 3000 -R 5173", "deskyard -d alice forward 8080:3000 &", "deskyard -d alice forward -R 9229:19229"},
+			Where:    whereRemote, Exit: "0 after Ctrl-C, 1 when the token is refused (401) or no remote is set up, 2 usage error", rawArgs: true, run: runForward},
+
 		// Browser
 		{Name: "browser connect", Group: "browser", Summary: "forward the desktop's browser to a local CDP port",
 			Usage: "browser connect [--port N]",
@@ -248,6 +267,12 @@ func init() {
 			Usage: "help [COMMAND...]", Desc: "Prints help for a command, or the overview. Same as COMMAND --help.",
 			Args:   []Arg{{Name: "command", Type: "string", Variadic: true, Desc: "command name, e.g. click or remote add"}},
 			Output: Output{Type: "text", Desc: "help text"}, Examples: []string{"deskyard help cp"}, Where: whereLocal, Exit: exitStd, run: runHelp},
+		{Name: "forward-helper", Group: "shell", Hidden: true, Summary: "the desktop side of deskyard forward",
+			Usage:    "forward-helper",
+			Desc:     "Serves the desktop side of the forward protocol on stdin and stdout (frames with a u32 length prefix): listens on and dials 127.0.0.1 in the desktop. The supervisor runs it as user for /api/agent/v1/forward.",
+			Output:   Output{Type: "bytes", Desc: "protocol frames"},
+			Examples: []string{"deskyard forward-helper"},
+			Where:    "inside a desktop", Exit: exitStd, run: runForwardHelper},
 		{Name: "version", Group: "info", Summary: "print the version",
 			Usage: "version", Desc: "Prints the deskyard command's version.",
 			Output: Output{Type: "text", Desc: "the version"}, Examples: []string{"deskyard version"}, Where: whereLocal, Exit: exitStd, run: runVersion},
@@ -278,6 +303,17 @@ var exitCodes = []struct {
 	{"1", "error (the message on stderr says what to do next)"},
 	{"2", "usage error (bad command, flag or argument)"},
 	{"other", "exec, shell and screen actions pass through the exit code of the command on the desktop"},
+}
+
+// visibleCommands are the commands help and describe list.
+func visibleCommands() []*Command {
+	var out []*Command
+	for _, c := range commands {
+		if !c.Hidden {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 func findCommand(name string) *Command {

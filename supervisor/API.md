@@ -30,12 +30,13 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
   "settings": {"memoryBytes": 0, "nanoCpus": 0},
   "access": ["anna"],
   "viewers": ["zef", "anna"],
+  "forwards": [{"token": "deploy-bot", "direction": "in", "port": 3000}, {"token": "deploy-bot", "direction": "out", "port": 5173}],
   "tokens": 2,
   "stats": {"cpuPercent": 34.2, "memBytes": 1503238553, "memLimit": 2147483648} | null
 }
 ```
 
-`memoryBytes`/`nanoCpus` 0 mean no limit; `memLimit` is then the host's memory. `cpuPercent` is relative to the desktop's CPU limit, or to all host CPUs without one (0–100). `access` lists regular accounts only (admins can use everything) and is only filled for admins. `created` survives upgrades and settings changes (null for desktops made before it was recorded). `job` is the running create, upgrade or settings job, which anyone who can see the desktop may follow. A desktop's own page is at `/<name>/`.
+`memoryBytes`/`nanoCpus` 0 mean no limit; `memLimit` is then the host's memory. `cpuPercent` is relative to the desktop's CPU limit, or to all host CPUs without one (0–100). `access` lists regular accounts only (admins can use everything) and is only filled for admins. `forwards` are the port mappings agent tokens have open on the desktop (`deskyard forward`): `in` maps a port of the agent's machine into the desktop, `out` a desktop port out to the agent's machine; `port` is always the desktop's port (the agent's own port numbers aren't shown). Each entry is listed once, sorted by token, direction and port; an `in` port appears once the desktop is listening on it. `created` survives upgrades and settings changes (null for desktops made before it was recorded). `job` is the running create, upgrade or settings job, which anyone who can see the desktop may follow. A desktop's own page is at `/<name>/`.
 
 | Method and path | Body | Response |
 | --- | --- | --- |
@@ -65,7 +66,7 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 - `event: desktop` — a `Desktop` that appeared or changed
 - `event: removed` — `{"name"}`
 - `event: stats` — `{"name","cpuPercent","memBytes","memLimit","t"}` every 5 s per running desktop
-- `event: viewers` — `{"name","viewers":[usernames]}`
+- `event: viewers` — `{"name","viewers":[usernames],"forwards":[…]}` (as in `Desktop`), when someone starts or stops viewing or a mapping opens or closes
 
 ### Accounts (admin)
 
@@ -107,7 +108,7 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 
 ## Agent API
 
-Authenticated with `Authorization: Bearer dyt_<id>_<secret>` only (cookies are ignored here). The desktop is the token's; a desktop name in a remote's URL is only a check on the client side. 401 for a missing, unknown, revoked or expired token; 409 `{"error":"alice is stopped; someone with access can start it"}` from `exec` and `cdp` when the desktop isn't running (`GET /api/agent/v1` always answers 200 with its `state`). No Origin checks: agents aren't browsers.
+Authenticated with `Authorization: Bearer dyt_<id>_<secret>` only (cookies are ignored here). The desktop is the token's; a desktop name in a remote's URL is only a check on the client side. 401 for a missing, unknown, revoked or expired token; 409 `{"error":"alice is stopped; someone with access can start it"}` from `exec`, `forward` and `cdp` when the desktop isn't running (`GET /api/agent/v1` always answers 200 with its `state`). No Origin checks: agents aren't browsers.
 
 ### `GET /api/agent/v1`
 
@@ -129,6 +130,28 @@ Commands run as `user` (UID 1000) with the desktop's image environment (PATH inc
 - `{"eof"}` closes stdin; with `tty` it sends Ctrl-D. The server sends `{"exit"}` when the process ends, whether or not stdin was closed.
 - A process killed by a signal exits with 128 + the signal number.
 - `{"error"}` only comes instead of running the command (bad first message, the desktop stopped); once output started, the last message is always `{"exit"}`.
+
+### `GET /api/agent/v1/forward` (WebSocket)
+
+TCP port mappings between the agent's machine and the desktop, many connections multiplexed on one WebSocket (`deskyard forward`). The supervisor runs `deskyard forward-helper` in the desktop as `user` (cwd `/workspace`, no TTY) and relays frames between the WebSocket and the helper's stdio, so the desktop side listens on and dials `127.0.0.1` inside the desktop. A forward token can therefore reach any loopback port in its desktop (ports from 1024 up for listening), as its exec can.
+
+1. The client sends one **text** message: `{"forwards":[{"direction":"in"|"out","port":n}]}`, the mappings it will set up, `port` being the desktop's port (1–65535; at most 256 entries). The `out` ports are listed in `Desktop.forwards` while the WebSocket is open; the `in` ports once the desktop listens on them.
+2. Then **binary** messages, one frame each in both directions: `type u8 | stream u32 BE | payload`, at most 32 KiB of payload:
+
+| Type | Name | Payload | Meaning |
+| --- | --- | --- | --- |
+| 1 | Listen | port u16 BE | client → desktop: listen on 127.0.0.1:port; `stream` is the listener id. Refused below 1024 (`port below 1024`) or when taken (`port in use`). |
+| 2 | Listening | | desktop → client: the listen worked |
+| 3 | Open | port u16 BE | a new connection on `stream`: from the client, the desktop dials 127.0.0.1:port; from the desktop, a connection accepted on a listener on that port |
+| 4 | Data | bytes | data on a connection |
+| 5 | Close | | half-close of the sender's direction; on a listener id, stop listening |
+| 6 | Reset | UTF-8 text | the listen or dial failed, or the connection was aborted |
+| 7 | Window | n u32 BE | the sender may receive n more bytes on this connection |
+
+   The client picks odd stream ids, the desktop even ones; an id in use can't be opened again (the desktop side ends the connection). Each connection starts with a 256 KiB window in each direction. A side may have at most 64 listeners and 256 connections at once; beyond that it answers with Reset.
+3. A **text** message from the server is `{"error":"…"}` (the helper couldn't start or failed), followed by the close. The server closes the WebSocket with a reason (`desktop stopped`, …) when the desktop side ends, and with status 1008 when the client sends a text message after the first, a frame shorter than 5 bytes or longer than 32 KiB + 5, a frame of an unknown type, or a Listen beyond 64 listeners pending or open.
+
+The connection closes when the token is revoked or expires, or the desktop stops, restarts or is upgraded; open connections through it are reset. The server pings every 30 s and drops a client that doesn't answer.
 
 ### `/api/agent/v1/cdp/…` (HTTP and WebSocket)
 

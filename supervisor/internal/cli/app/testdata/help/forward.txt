@@ -1,0 +1,35 @@
+deskyard forward: map TCP ports between this machine and the desktop
+
+Usage: deskyard [-d NAME] forward [-R] PORT[:PORT]...
+
+Maps TCP ports both ways until Ctrl-C, over the agent API (no port is opened
+anywhere else). Each argument is one mapping. PORT or LOCAL:DESKTOP: this
+machine's 127.0.0.1:LOCAL becomes localhost:DESKTOP in the desktop (a dev
+server here, reachable by the desktop's browser). -R PORT or -R DESKTOP:LOCAL
+(reverse; one -R before each such mapping): the desktop's localhost:DESKTOP
+becomes 127.0.0.1:LOCAL here. Both ends listen on loopback only; the desktop
+refuses ports below 1024. A port in use on either side fails that mapping,
+which is retried, and the others carry on. When the connection drops (the
+desktop stops or restarts, the network blips) it keeps its local listeners,
+closes open connections and reconnects with backoff (1 s up to 30 s). It exits
+only on Ctrl-C, or when the token is refused. Run it in the background. Inside
+a desktop it needs -d too.
+
+Arguments:
+  PORT       string...   required  a mapping: PORT or LOCAL:DESKTOP; after -R, PORT or DESKTOP:LOCAL
+
+Options:
+  -R, --reverse        the next mapping is reverse: a port in the desktop
+                       becomes a port here
+
+Prints: one line per mapping each time it goes live: "in LOCAL DESKTOP" or
+  "out DESKTOP 127.0.0.1:LOCAL"; on stderr one line per state change
+  (connected, lost and retrying, port in use)
+
+Examples:
+  deskyard -d alice forward 3000 -R 5173
+  deskyard -d alice forward 8080:3000 &
+  deskyard -d alice forward -R 9229:19229
+
+Where: on the chosen remote (-d NAME); inside a desktop without a remote it acts locally
+Exit codes: 0 after Ctrl-C, 1 when the token is refused (401) or no remote is set up, 2 usage error

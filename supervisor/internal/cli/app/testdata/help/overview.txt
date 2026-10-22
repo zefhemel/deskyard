@@ -26,6 +26,7 @@ Shell and files:
   exec [OPTIONS] -- CMD [ARG...]       run a command on the desktop
   shell                                interactive login shell
   cp SRC DST                           copy files to or from a desktop
+  forward [-R] PORT[:PORT]...          map TCP ports between this machine and the desktop
 
 Browser:
   browser connect [--port N]           forward the desktop's browser to a local CDP port

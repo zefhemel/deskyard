@@ -29,6 +29,10 @@ const (
 	maxData       = 32 << 10            // largest Data payload
 	maxFrame      = headerLen + maxData // largest frame accepted
 	initialWindow = 256 << 10           // per stream, each direction
+
+	// MaxFrame is the largest frame (header and payload, without a length
+	// prefix) either side accepts; a relay can drop anything longer.
+	MaxFrame = maxFrame
 )
 
 func encodeFrame(typ byte, stream uint32, payload []byte) []byte {

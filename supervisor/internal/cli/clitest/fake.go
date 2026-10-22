@@ -1,6 +1,7 @@
 // Package clitest is a fake supervisor agent API for the deskyard command's
 // tests: it implements the exec WebSocket from supervisor/API.md by running
-// commands on the test machine, plus the status and CDP endpoints.
+// commands on the test machine, plus the status, CDP and forward endpoints
+// (the forward helper's side runs in the fake, on the test machine).
 package clitest
 
 import (
@@ -19,6 +20,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/zefhemel/deskyard/supervisor/internal/forward"
 )
 
 // Token is the fake's valid token.
@@ -46,6 +49,11 @@ type Fake struct {
 
 	mu    sync.Mutex
 	Execs []ExecRequest
+	// ForwardStatus are answers for the next /forward requests, in order
+	// (e.g. 409, 401), before the fake accepts again.
+	ForwardStatus []int
+	forwardConns  map[*websocket.Conn]bool
+	forwardStarts []string
 }
 
 // New starts a fake for a desktop called name.
@@ -55,6 +63,7 @@ func New(t testing.TB, name string) *Fake {
 	mux.HandleFunc("/api/agent/v1", f.auth(f.info))
 	mux.HandleFunc("/api/agent/v1/exec", f.auth(f.exec))
 	mux.HandleFunc("/api/agent/v1/cdp/", f.auth(f.cdp))
+	mux.HandleFunc("/api/agent/v1/forward", f.auth(f.forward))
 	f.Server = httptest.NewServer(mux)
 	t.Cleanup(f.Close)
 	return f
@@ -242,4 +251,67 @@ func (f *Fake) cdp(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// ForwardStarts returns the first messages of the forward connections the
+// fake accepted, in order.
+func (f *Fake) ForwardStarts() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.forwardStarts...)
+}
+
+// DropForwards closes the open forward connections, as a desktop restart
+// would.
+func (f *Fake) DropForwards() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for c := range f.forwardConns {
+		c.CloseNow()
+	}
+}
+
+// AnswerForwards queues statuses for the next /forward requests.
+func (f *Fake) AnswerForwards(status ...int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ForwardStatus = append(f.ForwardStatus, status...)
+}
+
+// forward plays supervisor and forward-helper: after the first message it
+// serves the desktop side of the forward protocol on this machine.
+func (f *Fake) forward(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	if len(f.ForwardStatus) > 0 {
+		st := f.ForwardStatus[0]
+		f.ForwardStatus = f.ForwardStatus[1:]
+		f.mu.Unlock()
+		msg := map[int]string{http.StatusConflict: f.Name + " is stopped; someone with access can start it", http.StatusUnauthorized: "the token is unknown, revoked or expired"}[st]
+		writeErr(w, st, msg)
+		return
+	}
+	f.mu.Unlock()
+	c, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer c.CloseNow()
+	ctx := r.Context()
+	typ, data, err := c.Read(ctx)
+	if err != nil || typ != websocket.MessageText {
+		return
+	}
+	f.mu.Lock()
+	if f.forwardConns == nil {
+		f.forwardConns = map[*websocket.Conn]bool{}
+	}
+	f.forwardConns[c] = true
+	f.forwardStarts = append(f.forwardStarts, string(data))
+	f.mu.Unlock()
+	defer func() {
+		f.mu.Lock()
+		delete(f.forwardConns, c)
+		f.mu.Unlock()
+	}()
+	forward.NewMux(forward.NewWSMessages(ctx, c), true, forward.Desktop).Serve(ctx)
 }

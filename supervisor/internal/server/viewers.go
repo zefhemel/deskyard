@@ -78,5 +78,5 @@ func (v *viewers) closeAll(name string) {
 
 func (s *Server) publishViewers(name, desktopID string) {
 	s.events.publish(event{kind: "viewers", desktopID: desktopID,
-		data: map[string]any{"name": name, "viewers": s.viewers.names(name)}})
+		data: map[string]any{"name": name, "viewers": s.viewers.names(name), "forwards": s.forwards.list(name)}})
 }
