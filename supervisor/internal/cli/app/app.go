@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/activity"
 	"github.com/zefhemel/deskyard/supervisor/internal/cli/remote"
 )
 
@@ -28,6 +29,13 @@ type App struct {
 	Inside  func() bool
 	HTTP    *http.Client
 	Version string
+	// Record sends an activity event (default activity.Send); Caller names
+	// the program running this command (default: from the process tree).
+	Record func(activity.Event)
+	Caller func() string
+
+	callerName string
+	callerSet  bool
 
 	remoteFlag string // -c
 }
@@ -39,6 +47,8 @@ func New(version string) *App {
 		Getenv:  os.Getenv,
 		Inside:  insideDesktop,
 		Version: version,
+		Record:  activity.Send,
+		Caller:  defaultCaller(os.Getenv),
 	}
 }
 
