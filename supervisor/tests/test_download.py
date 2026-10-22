@@ -2,6 +2,7 @@
 
 import io
 import os
+import time
 import uuid
 import zipfile
 from pathlib import Path
@@ -114,3 +115,41 @@ def test_download_dialog(supervisor, desktop, name, tmp_path):
         expect(dialog.get_by_role("alert")).to_contain_text("/workspace")
         page.screenshot(path=str(tmp_path / "download.png"))
         browser.close()
+
+
+def test_folder_zip_with_hard_links_and_unreadable_files(admin, desktop, name):
+    folder = Path(desktop["folder"])
+    put(desktop["folder"], "mix/one.txt", b"one")
+    os.link(folder / "mix/one.txt", folder / "mix/one-link.txt")
+    put(desktop["folder"], "mix/locked.txt", b"secret")
+    os.chmod(folder / "mix/locked.txt", 0o000)
+    r = admin.get(f"/api/desktops/{name}/download", params={"path": "mix"})
+    assert r.status_code == 200
+    z = zipfile.ZipFile(io.BytesIO(r.content))
+    assert z.read("one.txt") == b"one" and z.read("one-link.txt") == b"one"
+    assert "locked.txt" not in z.namelist()
+
+
+def test_client_abort_leaves_no_tar_or_cat_running(admin, desktop, name):
+    from conftest import docker
+
+    folder = desktop["folder"]
+    for i in range(4):
+        put(folder, f"huge/f{i}.bin", os.urandom(64 * 1024 * 1024))
+    container = docker("ps", "-q", "--filter", f"label=deskyard.name={name}").stdout.split()[0]
+
+    def running():
+        out = docker("exec", container, "ps", "-u", "user", "-o", "comm=").stdout.split()
+        return [c for c in out if c in ("tar", "cat")]
+
+    for path in ["huge", "huge/f0.bin"]:
+        r = admin.get(f"/api/desktops/{name}/download", params={"path": path}, stream=True)
+        assert r.status_code == 200
+        next(r.iter_content(65536))
+        assert running()  # still streaming
+        r.close()
+        for _ in range(20):
+            if not running():
+                break
+            time.sleep(0.5)
+        assert running() == [], f"{path}: left running after the client left"

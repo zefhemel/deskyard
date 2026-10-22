@@ -79,16 +79,17 @@ func (s *Server) resolveFile(ctx context.Context, c desktops.Desktop, p string) 
 
 // fileKind is "dir", "file" or "other" for a resolved path, with its size.
 func (s *Server) fileKind(ctx context.Context, c desktops.Desktop, real string) (kind string, size int64, err error) {
-	out, err := s.execOutput(ctx, c, "stat", "-c", "%F\t%s", "--", real)
+	// find's %y is a letter, so the answer doesn't depend on the desktop's locale.
+	out, err := s.execOutput(ctx, c, "find", real, "-maxdepth", "0", "-printf", `%y\t%s`)
 	if err != nil {
 		return "", 0, errNoSuchFS
 	}
 	f, sz, _ := strings.Cut(strings.TrimSpace(string(out)), "\t")
 	size, _ = strconv.ParseInt(sz, 10, 64)
-	switch {
-	case f == "directory":
+	switch f {
+	case "d":
 		return "dir", size, nil
-	case strings.HasPrefix(f, "regular"):
+	case "f":
 		return "file", size, nil
 	}
 	return "other", size, nil
@@ -140,7 +141,7 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var entries []fileEntry
-	err := s.execStream(ctx, c, []string{"find", real, "-mindepth", "1", "-maxdepth", "1", "-printf", `%Y\t%s\t%T@\t%f\0`},
+	err := s.execStream(ctx, c, 0, []string{"find", real, "-mindepth", "1", "-maxdepth", "1", "-printf", `%Y\t%s\t%T@\t%f\0`},
 		func(out io.Reader) error {
 			var err error
 			entries, err = parseListing(out)
@@ -209,7 +210,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		h.Set("Content-Type", "application/octet-stream")
 		h.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": base}))
 		h.Set("Content-Length", strconv.FormatInt(size, 10))
-		err := s.execStream(ctx, c, []string{"cat", "--", real}, func(out io.Reader) error {
+		err := s.execStream(ctx, c, 0, []string{"cat", "--", real}, func(out io.Reader) error {
 			_, err := io.Copy(w, out)
 			return err
 		})
@@ -219,7 +220,9 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	case "dir":
 		h.Set("Content-Type", "application/zip")
 		h.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": base + ".zip"}))
-		err := s.execStream(ctx, c, []string{"tar", "-C", real, "-cf", "-", "."}, func(out io.Reader) error {
+		// tar exits 1 when a file changed or vanished while it was read; the archive is still
+		// complete. Unreadable files are skipped rather than failing the whole folder.
+		err := s.execStream(ctx, c, 1, []string{"tar", "--ignore-failed-read", "--warning=no-file-changed", "--hard-dereference", "-C", real, "-cf", "-", "."}, func(out io.Reader) error {
 			return tarToZip(w, out)
 		})
 		if err != nil {
@@ -237,10 +240,10 @@ func (s *Server) abortDownload(w http.ResponseWriter, c desktops.Desktop, real s
 	panic(http.ErrAbortHandler)
 }
 
-// execStream runs cmd as the desktop's user and hands its stdout to fn. A
-// non-zero exit is an error, as is fn's.
-func (s *Server) execStream(ctx context.Context, c desktops.Desktop, cmd []string, fn func(stdout io.Reader) error) error {
-	p, err := s.Eng.Exec(ctx, c.Container.ID, engine.ExecSpec{Cmd: cmd, User: "user", WorkDir: filesRoot, Env: execEnv})
+// execStream runs cmd as the desktop's user and hands its stdout to fn. An exit
+// code above okUpTo is an error, as is fn's.
+func (s *Server) execStream(ctx context.Context, c desktops.Desktop, okUpTo int, cmd []string, fn func(stdout io.Reader) error) error {
+	p, err := s.Eng.Exec(ctx, c.Container.ID, engine.ExecSpec{Cmd: cmd, User: "user", WorkDir: filesRoot, Env: append([]string{"LC_ALL=C"}, execEnv...)})
 	if err != nil {
 		return err
 	}
@@ -266,7 +269,7 @@ func (s *Server) execStream(ctx context.Context, c desktops.Desktop, cmd []strin
 		return ferr
 	case werr != nil:
 		return werr
-	case code != 0:
+	case code > okUpTo:
 		return &execError{code, strings.TrimSpace(stderr.String())}
 	}
 	return nil

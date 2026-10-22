@@ -29,7 +29,8 @@ import (
 // stat, find, cat, tar) in Go, so symlinks and ".." resolve for real.
 type filesEngine struct {
 	fakeEngine
-	root string // the folder standing in for /workspace, symlinks resolved
+	root    string // the folder standing in for /workspace, symlinks resolved
+	tarExit int    // tar's exit code after a complete archive (1: "file changed as we read it")
 }
 
 func (e *filesEngine) Inspect(ctx context.Context, id string) (engine.Container, error) {
@@ -81,18 +82,20 @@ func (e *filesEngine) Exec(_ context.Context, _ string, spec engine.ExecSpec) (*
 			}
 			out.WriteString(e.guest(r) + "\n")
 		}
-	case "stat":
-		fi, err := os.Stat(e.host(args[len(args)-1])) // after -c FORMAT
-		if err != nil {
-			code = 1
+	case "find":
+		if len(spec.Cmd) > 3 && spec.Cmd[2] == "-maxdepth" && spec.Cmd[3] == "0" { // type and size of one path
+			fi, err := os.Stat(e.host(spec.Cmd[1]))
+			if err != nil {
+				code = 1
+				break
+			}
+			t := "f"
+			if fi.IsDir() {
+				t = "d"
+			}
+			out.WriteString(t + "\t" + strconv.FormatInt(fi.Size(), 10))
 			break
 		}
-		kind := "regular file"
-		if fi.IsDir() {
-			kind = "directory"
-		}
-		out.WriteString(kind + "\t" + strconv.FormatInt(fi.Size(), 10) + "\n")
-	case "find":
 		ents, err := os.ReadDir(e.host(spec.Cmd[1]))
 		if err != nil {
 			code = 1
@@ -116,25 +119,52 @@ func (e *filesEngine) Exec(_ context.Context, _ string, spec engine.ExecSpec) (*
 			break
 		}
 		out.Write(b)
-	case "tar": // tar -C DIR -cf - .
-		dir := e.host(spec.Cmd[2])
+	case "tar": // tar [flags] -C DIR -cf - .
+		var dir string
+		flags := map[string]bool{}
+		for i := 1; i < len(spec.Cmd); i++ {
+			if spec.Cmd[i] == "-C" {
+				dir = e.host(spec.Cmd[i+1])
+				i++
+			} else {
+				flags[spec.Cmd[i]] = true
+			}
+		}
 		tw := tar.NewWriter(&out)
+		var seen []os.FileInfo
 		_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 			rel, _ := filepath.Rel(dir, p)
 			fi, _ := os.Lstat(p)
+			if d.Name() == "unreadable" {
+				if !flags["--ignore-failed-read"] {
+					code, stderr = 2, "tar: unreadable: Permission denied"
+				}
+				return nil
+			}
 			h, _ := tar.FileInfoHeader(fi, "")
 			h.Name = "./" + rel
 			if rel == "." {
 				h.Name = "./"
 			}
+			if fi.Mode().IsRegular() && !flags["--hard-dereference"] {
+				for k, o := range seen { // GNU tar's second name of a hard link is a header only
+					if os.SameFile(o, fi) {
+						h.Typeflag, h.Linkname, h.Size = tar.TypeLink, "./"+strconv.Itoa(k), 0
+					}
+				}
+				seen = append(seen, fi)
+			}
 			_ = tw.WriteHeader(h)
-			if fi.Mode().IsRegular() {
+			if fi.Mode().IsRegular() && h.Typeflag == tar.TypeReg {
 				b, _ := os.ReadFile(p)
 				_, _ = tw.Write(b)
 			}
 			return nil
 		})
 		_ = tw.Close()
+		if code == 0 {
+			code = e.tarExit
+		}
 	default:
 		code, stderr = 127, spec.Cmd[0]+": not found"
 	}
@@ -369,5 +399,45 @@ func TestTarToZipSkipsLinks(t *testing.T) {
 	}
 	if got := strings.Join(names, ","); got != "ok,evil" {
 		t.Errorf("zip entries %s (a link must not appear, and names stay relative)", got)
+	}
+}
+
+func TestFolderZipSurvivesTarQuirks(t *testing.T) {
+	s, ts, root := newFilesServer(t)
+	e := s.Eng.(*filesEngine)
+	now := time.Now()
+	write(t, filepath.Join(root, "dir", "one.txt"), "one", now)
+	write(t, filepath.Join(root, "dir", "two.txt"), "two", now)
+	write(t, filepath.Join(root, "dir", "unreadable"), "secret", now)
+	if err := os.Link(filepath.Join(root, "dir", "one.txt"), filepath.Join(root, "dir", "one-link.txt")); err != nil {
+		t.Fatal(err)
+	}
+	admin := login(t, ts, "admin")
+	for _, exit := range []int{0, 1} { // 1: "file changed as we read it", the archive is complete
+		e.tarExit = exit
+		code, body, _ := get(t, admin, ts.URL+"/api/desktops/alice/download?path=dir")
+		if code != 200 {
+			t.Fatalf("exit %d: %d", exit, code)
+		}
+		zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[string]string{}
+		for _, f := range zr.File {
+			rc, _ := f.Open()
+			b, _ := io.ReadAll(rc)
+			rc.Close()
+			got[f.Name] = string(b)
+		}
+		want := map[string]string{"one.txt": "one", "one-link.txt": "one", "two.txt": "two"}
+		if len(got) != len(want) {
+			t.Fatalf("exit %d: entries %v, want %v (hard links kept, the unreadable file skipped)", exit, got, want)
+		}
+		for k, v := range want {
+			if got[k] != v {
+				t.Errorf("exit %d: %s = %q, want %q", exit, k, got[k], v)
+			}
+		}
 	}
 }
