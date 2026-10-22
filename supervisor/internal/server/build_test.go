@@ -854,3 +854,23 @@ func TestUnreadableLatestKeepsTags(t *testing.T) {
 		t.Errorf("tags %v, want %v", got, first)
 	}
 }
+
+// A locally built image (never pulled) that's rebuilt counts as the newest
+// once a desktop uses it, so upgrading clears "a newer version".
+func TestLocalRebuildBecomesNewest(t *testing.T) {
+	bt := newBuildTest(t)
+	bt.s.images.setNewest("img", "sha256:old")
+	bt.e.addImage("img", "sha256:rebuilt", "user")
+	if _, err := bt.s.Desktops.EnsureImage(context.Background(), "img", func(string, float64) {}); err != nil {
+		t.Fatal(err)
+	}
+	if got := bt.s.images.newest("img"); got != "sha256:rebuilt" {
+		t.Fatalf("newest: %s", got)
+	}
+	if v := bt.s.images.updateFor(desktops.Desktop{Image: "img", ImageID: "sha256:rebuilt"}); v != nil {
+		t.Errorf("still offers %s", *v)
+	}
+	if v := bt.s.images.updateFor(desktops.Desktop{Image: "img", ImageID: "sha256:old"}); v == nil {
+		t.Error("a desktop on the old image isn't offered the rebuild")
+	}
+}

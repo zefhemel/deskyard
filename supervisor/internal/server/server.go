@@ -99,6 +99,7 @@ func New(o Options) (*Server, error) {
 	if s.images, err = loadCatalog(o.StateDir, o.DefaultImage); err != nil {
 		return nil, err
 	}
+	s.Desktops.ImageUsed = s.images.noteLocal
 	s.recipes = recipes.NewStore(filepath.Join(o.StateDir, "recipes.json"))
 	s.smokeTest = s.smokeTestDesktop
 	o.Accounts.OnChange = s.accountsChanged

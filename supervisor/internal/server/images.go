@@ -83,6 +83,20 @@ func (c *catalog) setNewest(ref, id string) {
 	_ = c.save()
 }
 
+// noteLocal records the image a reference resolves to here, without
+// counting as a check. Locally built images (`:local`) never pull, so this is
+// how a rebuild becomes their newest version.
+func (c *catalog) noteLocal(ref, id string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i := range c.list {
+		if sameRef(c.list[i].Ref, ref) && c.list[i].Newest != id {
+			c.list[i].Newest = id
+			_ = c.save()
+		}
+	}
+}
+
 func (c *catalog) newest(ref string) string {
 	e, _ := c.entry(ref)
 	return e.Newest
@@ -173,6 +187,9 @@ func (s *Server) checkImages(ctx context.Context, progress func(string, float64)
 		progress("Checking "+e.Ref, float64(i)/float64(len(entries)))
 		if err := s.Eng.Pull(ctx, e.Ref, nil); err != nil {
 			errs = append(errs, err)
+			if img, ierr := s.Eng.ImageInspect(ctx, e.Ref); ierr == nil {
+				s.images.noteLocal(e.Ref, img.ID) // a local build
+			}
 			continue
 		}
 		s.Desktops.ForgetImage(e.Ref)
@@ -192,10 +209,11 @@ func (c *catalog) checkLoop(ctx context.Context, s *Server) {
 		img, err := s.Eng.ImageInspect(context.Background(), id)
 		return img.Labels, err == nil
 	}
-	// Record what's already pulled, without pulling, so updates show at once.
+	// Record what each reference is here, without pulling, so updates show
+	// at once and a rebuilt local image counts as the newest.
 	for _, e := range c.entries() {
-		if img, err := s.Eng.ImageInspect(ctx, e.Ref); err == nil && c.newest(e.Ref) == "" {
-			c.setNewest(e.Ref, img.ID)
+		if img, err := s.Eng.ImageInspect(ctx, e.Ref); err == nil {
+			c.noteLocal(e.Ref, img.ID)
 		}
 	}
 	for {

@@ -81,6 +81,9 @@ type Service struct {
 	Eng engine.Engine
 	Cfg Config
 	Log *slog.Logger
+	// ImageUsed, when set, hears which image ID a reference resolved to
+	// whenever a desktop is created or recreated from it.
+	ImageUsed func(ref, id string)
 
 	mu      sync.Mutex
 	busy    map[string]string // name → transient state
@@ -238,6 +241,9 @@ func (s *Service) EnsureImage(ctx context.Context, ref string, progress func(str
 	}
 	if img.Labels[LabelContract] != Contract {
 		return engine.Image{}, fmt.Errorf("%s isn't a Deskyard desktop image (label %s=%s missing)", ref, LabelContract, Contract)
+	}
+	if s.ImageUsed != nil {
+		s.ImageUsed(ref, img.ID)
 	}
 	return img, nil
 }
