@@ -420,6 +420,84 @@ def test_pointerrawupdate_hidden(supervisor, desktop, name):
         browser.close()
 
 
+# A drag of files over the screen, as the browser fires it: in the frame, on
+# Selkies' input layer (#overlayInput, under the pointer), or on our overlay.
+DRAG = """([target, type, files]) => {
+  const dt = new DataTransfer();
+  for (const f of files) dt.items.add(new File([f.content], f.name, {type: 'text/plain'}));
+  const el = target === 'overlay' ? document.querySelector('[data-testid=drop-overlay]') : document.getElementById(target);
+  const ev = new DragEvent(type, {dataTransfer: dt, bubbles: true, cancelable: true});
+  el.dispatchEvent(ev);
+  return ev.defaultPrevented;
+}"""
+
+
+@pytest.mark.parametrize("browser_name", BROWSERS)
+def test_drop_upload(supervisor, desktop, name, browser_name):
+    # Dropping files on Selkies' screen copies them into ~/Desktop through
+    # POST /api/desktops/{name}/upload. The first event of a hover, in the
+    # frame on Selkies' input layer, shows our overlay; Selkies' own upload
+    # (closed in the image) never runs, and nothing navigates the frame.
+    files = [{"name": "dropped.txt", "content": "dropped content\n"}, {"name": "second.txt", "content": "2\n"}]
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base, browser=browser_name)
+        selkies_uploads = []
+        page.on("request", lambda r: selkies_uploads.append(r.url) if r.url.split("?")[0].endswith("/api/upload") else None)
+        open_desktop(page, supervisor.base, name)
+        frame = page.frames[1]
+        frame_url = frame.url
+        overlay = page.get_by_text(f"Drop to copy into {name}")
+
+        assert frame.evaluate(DRAG, ["overlayInput", "dragenter", files]) is True
+        expect(overlay).to_be_visible()
+        assert page.evaluate(DRAG, ["overlay", "drop", files]) is True
+        expect(page.get_by_text("Copied dropped.txt")).to_be_visible(timeout=20000)
+        expect(page.get_by_text("Copied second.txt")).to_be_visible(timeout=20000)
+        expect(overlay).to_be_hidden()
+
+        # A drop that reaches Selkies' input layer before the overlay is up.
+        assert frame.evaluate(DRAG, ["overlayInput", "dragover", [files[0]]]) is True
+        assert frame.evaluate(DRAG, ["overlayInput", "drop", [{"name": "direct.txt", "content": "direct\n"}]]) is True
+        expect(page.get_by_text("Copied direct.txt")).to_be_visible(timeout=20000)
+
+        assert frame.url == frame_url
+        assert page.evaluate(SHOWING), "the frame was reloaded or navigated"
+        assert selkies_uploads == []
+        browser.close()
+    out = in_desktop(name, "sh", "-c", "cd /workspace/Desktop && stat -c '%n %u:%g' dropped.txt second.txt direct.txt && cat dropped.txt second.txt direct.txt; ls -A")
+    lines = out.split("\n")
+    assert lines[:3] == ["dropped.txt 1000:1000", "second.txt 1000:1000", "direct.txt 1000:1000"], out
+    assert "\n".join(lines[3:6]) == "dropped content\n2\ndirect", out
+    assert sorted(lines[6:-1]) == ["direct.txt", "dropped.txt", "second.txt"], out
+
+
+def test_drop_upload_browser_drag(supervisor, desktop, name, tmp_path):
+    # The same through Chromium's own drag input (as a drag from the file
+    # manager arrives): it enters straight over the screen, so the frame
+    # gets the first events, and must show the overlay.
+    src = tmp_path / "native.txt"
+    src.write_text("from a real drag\n")
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base)
+        open_desktop(page, supervisor.base, name)
+        cdp = page.context.new_cdp_session(page)
+        box = page.evaluate("(() => { const r = document.querySelector('iframe').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()")
+        data = {"items": [], "files": [str(src)], "dragOperationsMask": 1}
+
+        def drag(kind, x, y):
+            cdp.send("Input.dispatchDragEvent", {"type": kind, "x": x, "y": y, "data": data})
+
+        drag("dragEnter", *box)
+        drag("dragOver", *box)
+        expect(page.get_by_text(f"Drop to copy into {name}")).to_be_visible(timeout=2000)
+        drag("dragOver", box[0] + 5, box[1] + 5)
+        drag("drop", box[0] + 5, box[1] + 5)
+        expect(page.get_by_text("Copied native.txt")).to_be_visible(timeout=20000)
+        assert page.evaluate(SHOWING)
+        browser.close()
+    assert in_desktop(name, "cat", "/workspace/Desktop/native.txt") == "from a real drag\n"
+
+
 @pytest.mark.parametrize("browser_name", BROWSERS)
 def test_keys_menu(supervisor, desktop, name, browser_name):
     in_desktop(name, "sh", "-c", "setsid xev -name keytest > /tmp/xev.log 2>&1 &")

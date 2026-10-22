@@ -1,7 +1,6 @@
 """Dropping files onto a desktop: POST /api/desktops/{name}/upload."""
 
 import asyncio
-import http.client
 import os
 import socket
 import time
@@ -40,36 +39,41 @@ def test_two_files_land_owned_by_user_and_a_clash_gets_a_number(admin, desktop, 
     assert not any(n.endswith(".part") for n in lines[2:])
 
 
-def test_bad_names_and_oversize_are_refused(admin, desktop, name):
+def test_bad_names_are_refused(admin, desktop, name):
     for n in ["", "a/b", "../x", "..", "a\x00b", "x" * 300]:
         assert up(admin, name, n, b"x").status_code == 400, repr(n)
-    # Declared over 2 GB: refused before any byte is sent.
-    u = urlparse(admin.base)
-    conn = http.client.HTTPConnection(u.hostname, u.port, timeout=10)
-    cookie = "; ".join(f"{k}={v}" for k, v in admin.cookies.items())
-    conn.putrequest("POST", f"/api/desktops/{name}/upload?name=big")
-    for k, v in {"Origin": admin.base, "Cookie": cookie, "Content-Length": str(3 * 1024**3)}.items():
-        conn.putheader(k, v)
-    conn.endheaders()
-    assert conn.getresponse().status == 413
-    conn.close()
     assert not desk(desktop).exists() or list(desk(desktop).iterdir()) == []
 
 
-def test_aborted_upload_leaves_nothing(admin, desktop, name):
-    assert up(admin, name, "seed.txt", b"s").status_code == 200
+def raw_post(admin, name, fname, length):
+    """An upload's request line and headers, declaring `length` bytes; the body is the caller's."""
     u = urlparse(admin.base)
     cookie = "; ".join(f"{k}={v}" for k, v in admin.cookies.items())
     s = socket.create_connection((u.hostname, u.port), timeout=10)
-    s.sendall((f"POST /api/desktops/{name}/upload?name=cut.bin HTTP/1.1\r\nHost: {u.netloc}\r\nOrigin: {admin.base}\r\n"
-               f"Cookie: {cookie}\r\nContent-Length: 104857600\r\n\r\n").encode())
+    s.sendall((f"POST /api/desktops/{name}/upload?name={quote(fname)} HTTP/1.1\r\nHost: {u.netloc}\r\nOrigin: {admin.base}\r\n"
+               f"Cookie: {cookie}\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n").encode())
+    return s
+
+
+def test_upload_limits(admin, desktop, name):
+    # 2 GB + 1 byte: refused with a message before any byte is sent.
+    s = raw_post(admin, name, "big.bin", 2 * 1024**3 + 1)
+    reply = s.makefile("rb").read().decode(errors="replace")
+    s.close()
+    assert reply.startswith("HTTP/1.1 413"), reply
+    assert "over the 2 GB limit" in reply, reply
+
+    # An upload cut off halfway leaves nothing under its name, and no .part.
+    assert up(admin, name, "seed.txt", b"s").status_code == 200
+    s = raw_post(admin, name, "cut.bin", 100 * 1024 * 1024)
     s.sendall(os.urandom(2 * 1024 * 1024))
     time.sleep(1)
     s.close()
+    left = lambda: sorted(p.name for p in desk(desktop).iterdir())  # noqa: E731
     deadline = time.time() + 15
-    while time.time() < deadline and sorted(p.name for p in desk(desktop).iterdir()) != ["seed.txt"]:
+    while time.time() < deadline and left() != ["seed.txt"]:
         time.sleep(0.5)
-    assert sorted(p.name for p in desk(desktop).iterdir()) == ["seed.txt"]
+    assert left() == ["seed.txt"]  # dot files too: no .part left behind
 
 
 def test_access_and_tokens(admin, desktop, name, supervisor):

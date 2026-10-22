@@ -20,10 +20,14 @@ const STALE_MS = 1000;
  * Dropping files anywhere on the desktop page copies them into the desktop's
  * ~/Desktop. A drag over the screen fires its events in the iframe's own
  * window, which never reach the page, so the same listeners go on both the
- * page and the frame (re-attached whenever the frame loads). While a drag is
- * in progress an overlay covers the screen and takes the drop. The overlay
- * can't get stuck: it hides when dragover events stop coming (the pointer left
- * the window, or Escape ended the drag), and on drop or dragend.
+ * page and the frame (re-attached whenever the frame loads). In the frame
+ * they listen first (capture, on its window) and keep a drag of files to
+ * themselves: Selkies' client has its own drop-to-upload on its input layer,
+ * which would take the drop (and stop it reaching us) and send it to an
+ * upload the image keeps closed. While a drag is in progress an overlay
+ * covers the screen and takes the drop. The overlay can't get stuck: it hides
+ * when dragover events stop coming (the pointer left the window, or Escape
+ * ended the drag), and on drop or dragend.
  */
 export function DropZone({ desktop, frame, frameKey, onDone }: { desktop: string; frame: RefObject<HTMLIFrameElement | null>; frameKey: number; onDone?: () => void }) {
   const [over, setOver] = useState(false);
@@ -44,7 +48,8 @@ export function DropZone({ desktop, frame, frameKey, onDone }: { desktop: string
   useEffect(() => {
     const seen = (e: DragEvent) => {
       if (!hasFiles(e)) return false;
-      e.preventDefault(); // allow the drop, and keep the browser (or KasmVNC) from taking the file
+      e.preventDefault(); // allow the drop, and keep the browser from opening the file
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
       lastSeen.current = Date.now();
       return true;
     };
@@ -62,30 +67,31 @@ export function DropZone({ desktop, frame, frameKey, onDone }: { desktop: string
       if (!(e.target instanceof Element && e.target.closest("[data-testid=drop-overlay]"))) upload(e.dataTransfer);
     };
     const end = () => setOver(false);
-    const attach = (w: Window) => {
-      w.addEventListener("dragenter", enter as EventListener);
-      w.addEventListener("dragover", move as EventListener);
-      w.addEventListener("drop", drop as EventListener);
-      w.addEventListener("dragend", end);
+    // In the frame, before anything in it, and no further.
+    const first = (f: (e: DragEvent) => void) => (e: DragEvent) => {
+      if (hasFiles(e)) e.stopPropagation();
+      f(e);
+    };
+    const handlers: Record<string, (e: DragEvent) => void> = { dragenter: enter, dragover: move, drop, dragend: end };
+    const attach = (w: Window, inFrame: boolean) => {
+      const listeners = Object.entries(handlers).map(([type, f]) => [type, (inFrame ? first(f) : f) as EventListener] as const);
+      for (const [type, f] of listeners) w.addEventListener(type, f, inFrame);
       return () => {
         try {
-          w.removeEventListener("dragenter", enter as EventListener);
-          w.removeEventListener("dragover", move as EventListener);
-          w.removeEventListener("drop", drop as EventListener);
-          w.removeEventListener("dragend", end);
+          for (const [type, f] of listeners) w.removeEventListener(type, f, inFrame);
         } catch {
           // the frame is gone
         }
       };
     };
-    const detachPage = attach(window);
+    const detachPage = attach(window, false);
     let detachFrame: (() => void) | undefined;
     const iframe = frame.current;
     const attachFrame = () => {
       detachFrame?.();
       detachFrame = undefined;
       try {
-        if (iframe?.contentWindow) detachFrame = attach(iframe.contentWindow);
+        if (iframe?.contentWindow) detachFrame = attach(iframe.contentWindow, true);
       } catch {
         // not same-origin: nothing to listen to
       }
