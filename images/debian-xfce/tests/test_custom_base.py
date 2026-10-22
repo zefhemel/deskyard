@@ -52,6 +52,22 @@ def test_template_keeps_existing_files(make_sandbox, derive, image, volumes):
     assert sb.exec("cat ~/other").stdout == "other\n"
 
 
+def test_template_dangling_dotfile_links_start(make_sandbox, derive):
+    # Stow-style dotfiles whose targets weren't copied: the desktop still
+    # starts, the links are kept, and nothing is written through them (the
+    # .profile link points where only root could write).
+    img = derive("COPY --chown=1000:1000 tpl/ /opt/deskyard/home-template/\n"
+                 "RUN ln -s dotfiles/bash/.bashrc /opt/deskyard/home-template/.bashrc"
+                 " && ln -s /etc/deskyard-probe /opt/deskyard/home-template/.profile"
+                 " && chown -h 1000:1000 /opt/deskyard/home-template/.bashrc /opt/deskyard/home-template/.profile",
+                 {"tpl/other": "other\n"})
+    sb = make_sandbox(image=img)
+    assert sb.exec("readlink ~/.bashrc").stdout.strip() == "dotfiles/bash/.bashrc"
+    assert sb.exec("readlink ~/.profile").stdout.strip() == "/etc/deskyard-probe"
+    assert sb.exec("test -e /etc/deskyard-probe", check=False).returncode != 0
+    assert sb.exec("cat ~/other").stdout == "other\n"
+
+
 def test_extra_remote_added_for_user(make_sandbox, derive):
     img = derive("COPY extra.flatpakrepo /etc/deskyard/flatpak-remotes/extra.flatpakrepo",
                  {"extra.flatpakrepo": REPO_FILE})

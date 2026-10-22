@@ -30,7 +30,17 @@ if [ ! -e /workspace/.workspace-seeded ]; then
     # reach beyond what the user could write anyway; existing files are kept.
     runuser -u user -- cp -an /opt/deskyard/home-template/. /workspace/ \
         || log "warning: could not copy the home template"
-    cp -an /etc/workspace/skel/. /workspace/
+    # The image's default dotfiles, only under names the home doesn't have yet
+    # (a link counts, dangling or not, so nothing is written through one). As
+    # the user, and never fatal. The skel is flat: top-level names only.
+    for f in /etc/workspace/skel/.[!.]* /etc/workspace/skel/*; do
+        [ -e "$f" ] || continue
+        dest=/workspace/$(basename "$f")
+        if [ -e "$dest" ] || [ -L "$dest" ]; then
+            continue
+        fi
+        runuser -u user -- cp -anT "$f" "$dest" || log "warning: could not copy $(basename "$f") into the home folder"
+    done
     chown -R 1000:1000 /workspace
     touch /workspace/.workspace-seeded
 fi
