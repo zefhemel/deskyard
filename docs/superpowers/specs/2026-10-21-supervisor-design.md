@@ -1,7 +1,8 @@
 ---
 displayName: Supervisor design
 tags: spec
-status: draft
+status: approved
+plan: "[[superpowers/plans/2026-10-22-supervisor|Supervisor plan]]"
 date: "2026-10-21"
 ---
 The supervisor is one Go binary that creates, runs and shares many container-computers ("computers") through the container engine (Docker now, Podman later). It has accounts, and each computer has a list of accounts that may use it. Agents elsewhere use a computer through the same `computer` command that's inside it, with a token an admin hands out. The repository splits into the supervisor and the computer images. Mockups are in the UI section; their HTML sources are in the folder next to this page.
