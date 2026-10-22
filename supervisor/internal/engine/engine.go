@@ -35,6 +35,8 @@ type ContainerSpec struct {
 	Flatpak bool
 	Restart string // "unless-stopped", "no"
 	Cmd     []string
+	// Devices are host devices passed in at the same path (e.g. /dev/video0).
+	Devices []string
 }
 
 type Container struct {
@@ -46,6 +48,7 @@ type Container struct {
 	IP                       map[string]string // network name → address
 	LocalPort                int               // host 127.0.0.1 port published for 8080, 0 if none
 	MemoryBytes, NanoCPUs    int64
+	Devices                  []string // host devices passed in (their paths on the host)
 }
 
 func (c Container) Running() bool { return c.State == "running" || c.State == "restarting" }

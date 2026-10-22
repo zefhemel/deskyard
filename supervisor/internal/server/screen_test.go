@@ -406,3 +406,19 @@ func TestDialGateFreesOnCancel(t *testing.T) {
 	}
 	other()
 }
+
+func TestDesktopReportsWebcam(t *testing.T) {
+	cam := runningDesktop(t, "bob", &upstream{})
+	cam.Devices = []string{"/dev/video0"}
+	_, ts := newTestServerWith(t, fakeEngine{others: []engine.Container{cam, runningDesktop(t, "carol", &upstream{})}})
+	admin := login(t, ts, "admin")
+	for name, want := range map[string]bool{"bob": true, "carol": false, "alice": false} {
+		_, body := get(t, admin, ts.URL+"/api/desktops/"+name)
+		var d struct {
+			Webcam *bool `json:"webcam"`
+		}
+		if err := json.Unmarshal([]byte(body), &d); err != nil || d.Webcam == nil || *d.Webcam != want {
+			t.Errorf("%s: %s (want webcam %v)", name, body, want)
+		}
+	}
+}

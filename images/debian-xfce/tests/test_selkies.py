@@ -172,6 +172,23 @@ def test_speaker_default(sandbox):
     assert "Default Sink: deskyard-speaker" in out, out
 
 
+def test_virtual_mic_at_start(sandbox):
+    # Selkies' virtual mic is there before any viewer's mic, so no viewer's
+    # connection owns it (and takes it away from the others when it ends);
+    # it's the default mic, and the speaker stays the default output.
+    deadline = time.time() + 20
+    while True:
+        sources = sandbox.exec("pactl list short sources", check=False).stdout
+        if "SelkiesVirtualMic" in sources or time.time() > deadline:
+            break
+        time.sleep(1)
+    assert "SelkiesVirtualMic" in sources, sources
+    assert "input" in sandbox.exec("pactl list short sinks").stdout.split()
+    info = sandbox.exec("pactl info").stdout
+    assert "Default Sink: deskyard-speaker" in info
+    assert "Default Source: output.SelkiesVirtualMic" in info, info
+
+
 def test_screen_runs_as_user(sandbox):
     for proc in ("Xvfb", "pipewire", "wireplumber"):
         users = sandbox.exec(f"ps -C {proc} -o user= | sort -u", user="root").stdout.split()

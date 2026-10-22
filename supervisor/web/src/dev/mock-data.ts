@@ -42,6 +42,7 @@ function desktop(c: Partial<Desktop> & { name: string }): Desktop {
     access: [],
     viewers: [],
     mics: [],
+    webcam: false,
     forwards: [],
     agents: [],
     tokens: 0,

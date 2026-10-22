@@ -5,7 +5,8 @@
 //   relative to the top-level page, so drags landed off by our bar's height.
 //   Without it Selkies falls back to pointermove.
 // - Never sends STOP_VIDEO: a tab going to the background must not stop the
-//   desktop's stream for everyone else.
+//   desktop's stream for everyone else. Never sends Selkies' own
+//   START_AUDIO or STOP_AUDIO either: the desktop page turns sound on or off.
 // - Adds ?tab=<id> to the stream URL, so the supervisor can tie this tab's
 //   mic badge to its stream. The id is new on every load of the client.
 // - Makes every load of the client its own Selkies client: Selkies keeps
@@ -17,6 +18,12 @@
 // - Follows the display: whether this page owns it (Selkies' first page sets
 //   the screen size and keeps its encoding; later pages join beside it), the
 //   size it streams at, and the settings it streams with.
+// - Lets Selkies capture the mic or the webcam only while the desktop page
+//   has asked for it, on the current connection: Selkies' client turns them
+//   on by itself in places (it restores them after a reconnect, and on a
+//   desktop app's demand), and a mic must never go live unseen.
+// - Follows sound, mic and webcam (media()), and turns Selkies' alert()s
+//   about them into messages for the page.
 // - window.deskyardScreen, the hooks the desktop page drives Selkies with.
 (() => {
   "use strict";
@@ -73,14 +80,160 @@
   // Selkies opens the stream in a worker ({type: "open", url}) or, without
   // workers, on the page.
   const workerPost = Worker.prototype.postMessage;
+  const streamWorkers = new WeakSet();
   Worker.prototype.postMessage = function (msg, ...rest) {
-    if (msg && msg.type === "open" && typeof msg.url === "string") msg = { ...msg, url: withTab(msg.url) };
+    if (msg && msg.type === "open" && typeof msg.url === "string") {
+      msg = { ...msg, url: withTab(msg.url) };
+      if (!streamWorkers.has(this)) {
+        streamWorkers.add(this);
+        addListener.call(this, "message", (e) => {
+          const m = e.data;
+          const sound = m && (m.type === "audioTick" ||
+            (m.type === "message" && m.data instanceof ArrayBuffer && m.data.byteLength > 1 && new Uint8Array(m.data, 0, 1)[0] === 1));
+          if (sound) media.soundAt = performance.now();
+        });
+      }
+    }
     return workerPost.call(this, msg, ...rest);
   };
   const PageWebSocket = window.WebSocket;
   window.WebSocket = class extends PageWebSocket {
     constructor(url, ...rest) {
       super(withTab(String(url)), ...rest);
+    }
+  };
+
+  // --- sound, mic and webcam --------------------------------------------------
+  // What Selkies' client is doing, from its own status messages (posted on
+  // this window): sound is its audio pipeline for this page, mic and webcam
+  // its captures. playing: its playback AudioContext is running (a browser
+  // holds it back until the user clicks). soundAt: when the stream last
+  // brought this page sound (performance.now(); 0 for never), from the
+  // stream's worker, which passes sound straight to the decoder and tells
+  // the page about once a second.
+  let media = { sound: false, mic: false, webcam: false, playing: false, soundAt: 0 };
+  const mediaListeners = new Set();
+  const setMedia = (m) => {
+    const next = { ...media, ...m };
+    if (next.sound === media.sound && next.mic === media.mic && next.webcam === media.webcam && next.playing === media.playing) {
+      media = next;
+      return;
+    }
+    media = next;
+    for (const fn of mediaListeners) try { fn(media); } catch {}
+  };
+  addListener.call(window, "message", (e) => {
+    const m = e.data;
+    if (e.source !== window || !m || typeof m !== "object") return;
+    if (m.type === "sidebarButtonStatusUpdate" || m.type === "pipelineStatusUpdate") {
+      const d = {};
+      if (typeof m.audio === "boolean") d.sound = m.audio;
+      if (typeof m.microphone === "boolean") d.mic = m.microphone;
+      if (typeof m.webcam === "boolean") d.webcam = m.webcam;
+      setMedia(d);
+    }
+  });
+
+  // Selkies' AudioContexts: its playback one, and the ones it captures the
+  // mic with (they take a MediaStreamSource). Ours, for the level meter, is
+  // neither.
+  const contexts = new Set();
+  const capturing = new WeakSet();
+  let meterContext = null;
+  const playback = () => {
+    let last = null;
+    for (const c of contexts) {
+      if (c.state === "closed") contexts.delete(c);
+      else if (!capturing.has(c) && c !== meterContext) last = c;
+    }
+    return last;
+  };
+  const notePlaying = () => setMedia({ playing: playback()?.state === "running" });
+  for (const name of ["AudioContext", "webkitAudioContext"]) {
+    const Base = window[name];
+    if (typeof Base !== "function") continue;
+    window[name] = class extends Base {
+      constructor(...args) {
+        super(...args);
+        contexts.add(this);
+        addListener.call(this, "statechange", notePlaying);
+        notePlaying();
+      }
+      createMediaStreamSource(...args) {
+        capturing.add(this);
+        notePlaying();
+        return super.createMediaStreamSource(...args);
+      }
+    };
+  }
+
+  // Captures: only what the page allowed, on this connection.
+  const allowed = { microphone: false, webcam: false };
+  let camera = "";
+  let micDevice = "";
+  let micStream = null;
+  const md = navigator.mediaDevices;
+  if (md && typeof md.getUserMedia === "function") {
+    const getUserMedia = md.getUserMedia.bind(md);
+    md.getUserMedia = async (constraints = {}) => {
+      const c = { ...constraints };
+      if ((c.audio && !allowed.microphone) || (c.video && !allowed.webcam)) {
+        throw new DOMException("The desktop page hasn't turned this on", "NotAllowedError");
+      }
+      if (c.video) {
+        c.video = { ...(typeof c.video === "object" ? c.video : {}) };
+        if (camera) c.video.deviceId = { exact: camera };
+        else delete c.video.deviceId;
+      }
+      if (c.audio) {
+        // Selkies asks with echo cancellation and noise suppression on; kept.
+        c.audio = { ...(typeof c.audio === "object" ? c.audio : {}) };
+        if (micDevice) c.audio.deviceId = { exact: micDevice };
+        else delete c.audio.deviceId;
+      }
+      const stream = await getUserMedia(c);
+      if (c.audio) micStream = stream;
+      return stream;
+    };
+  }
+  const forbid = () => {
+    allowed.microphone = false;
+    allowed.webcam = false;
+  };
+
+  // Selkies tells capture failures with alert(); the page shows them, and
+  // only for a capture it asked for.
+  const alerts = new Set();
+  window.alert = (text) => {
+    text = String(text);
+    console.warn("Selkies:", text);
+    const kind = /^Microphone/.test(text) ? "microphone" : /^Webcam/.test(text) ? "webcam" : null;
+    if (kind && !allowed[kind]) return;
+    for (const fn of alerts) try { fn(text); } catch {}
+  };
+
+  let meter = null;
+  const micLevel = () => {
+    if (!media.mic || !micStream || micStream.getAudioTracks().every((t) => t.readyState !== "live")) return 0;
+    try {
+      if (!meter || meter.stream !== micStream) {
+        if (meter) meter.source.disconnect();
+        meterContext ||= new AudioContext();
+        if (meterContext.state === "suspended") meterContext.resume().catch(() => {});
+        const analyser = meterContext.createAnalyser();
+        analyser.fftSize = 1024;
+        const source = meterContext.createMediaStreamSource(micStream);
+        source.connect(analyser);
+        meter = { stream: micStream, source, analyser, data: new Float32Array(analyser.fftSize) };
+      }
+      meter.analyser.getFloatTimeDomainData(meter.data);
+      let sum = 0;
+      for (const v of meter.data) sum += v * v;
+      // On a decibel scale: -60 dB (a quiet room) to 0.
+      const db = 10 * Math.log10(sum / meter.data.length || 1e-12);
+      return Math.min(1, Math.max(0, (db + 60) / 60));
+    } catch {
+      return 0;
     }
   };
 
@@ -126,26 +279,39 @@
     }
   };
   let transport = null;
+  let sendOwn = null; // the transport's send, past our filter
   Object.defineProperty(window, "selkiesTransport", {
     configurable: true,
     get: () => transport,
     set: (t) => {
       transport = t;
       if (!t) {
+        sendOwn = null;
+        forbid();
         setState("disconnected");
         return;
       }
       const send = t.send;
       t.send = function (data) {
         if (data === "STOP_VIDEO") return;
+        // Sound is the desktop page's to turn on or off (setSound); Selkies'
+        // client would ask for it on every connection.
+        if (data === "START_AUDIO" || data === "STOP_AUDIO") return;
         return send.call(this, data);
       };
+      sendOwn = (data) => send.call(t, data);
       setDisplay({ owner: null, width: 0, height: 0, settings: null });
+      forbid();
       setState(t.readyState === PageWebSocket.OPEN ? "connected" : "connecting");
       t.addEventListener("open", () => transport === t && setState("connected"));
-      t.addEventListener("close", () => transport === t && setState("disconnected"));
+      t.addEventListener("close", () => {
+        if (transport !== t) return;
+        forbid();
+        setState("disconnected");
+      });
       t.addEventListener("message", (e) => {
-        if (transport === t && typeof e.data === "string") onText(e.data);
+        if (transport !== t) return;
+        if (typeof e.data === "string") onText(e.data);
       });
     },
   });
@@ -162,7 +328,8 @@
     /**
      * Calls fn with each message of that type from Selkies' client; returns a
      * function that stops it. The type "deskyard.state" gets each new state(),
-     * "deskyard.display" each new display().
+     * "deskyard.display" each new display(), "deskyard.media" each new
+     * media() and "deskyard.alert" the text of Selkies' capture errors.
      */
     on(type, fn) {
       if (type === "deskyard.state") {
@@ -172,6 +339,14 @@
       if (type === "deskyard.display") {
         displayListeners.add(fn);
         return () => displayListeners.delete(fn);
+      }
+      if (type === "deskyard.media") {
+        mediaListeners.add(fn);
+        return () => mediaListeners.delete(fn);
+      }
+      if (type === "deskyard.alert") {
+        alerts.add(fn);
+        return () => alerts.delete(fn);
       }
       const listener = (e) => {
         if (e.source === window && e.origin === location.origin && e.data && e.data.type === type) fn(e.data);
@@ -186,6 +361,64 @@
      * "deskyard.display" on on() gets each change.
      */
     display: () => display,
+    /**
+     * Sound, mic and webcam: {sound, mic, webcam, playing, soundAt}
+     * (see above). The type "deskyard.media" on on() gets each change.
+     */
+    media: () => media,
+    /**
+     * Turns this page's sound on or off; the page says on every connection.
+     * The desktop answers AUDIO_STARTED or AUDIO_STOPPED, which Selkies'
+     * client follows. (Its pipelineControl message would go by the client's
+     * own idea of the sound, which is "on" from the start, also for a page
+     * beside the display's owner that the desktop isn't sending sound to.)
+     * Call it from the click that turns sound on: a browser lets the
+     * playback start then.
+     */
+    setSound(on) {
+      if (transport && sendOwn && transport.readyState === PageWebSocket.OPEN) sendOwn(on ? "START_AUDIO" : "STOP_AUDIO");
+      if (on) this.resumeSound();
+    },
+    /** Starts Selkies' playback if the browser held it back. */
+    resumeSound() {
+      const c = playback();
+      if (c && c.state === "suspended") c.resume().then(notePlaying, () => {});
+    },
+    /**
+     * Lets Selkies capture the mic ("microphone") or the camera ("webcam"),
+     * until the page says otherwise or the connection ends.
+     */
+    allowCapture(kind, on) {
+      if (kind in allowed) allowed[kind] = !!on;
+    },
+    /**
+     * The camera the webcam captures from ("" for the browser's default), from
+     * its next start.
+     */
+    setCamera(deviceId) {
+      camera = String(deviceId || "");
+    },
+    /**
+     * The mic to capture ("" for the browser's default). A live mic moves to
+     * it: Selkies restarts its capture for audioDeviceSelected.
+     */
+    setMic(deviceId) {
+      micDevice = String(deviceId || "");
+      if (media.mic) window.postMessage({ type: "audioDeviceSelected", context: "input", deviceId: micDevice || "default" }, location.origin);
+    },
+    /**
+     * Where this page plays the desktop's sound ("" for the system default).
+     * Selkies takes a chosen device; it has no way back to the default, which
+     * is set here.
+     */
+    setOutput(deviceId) {
+      const id = String(deviceId || "");
+      window.postMessage({ type: "audioDeviceSelected", context: "output", deviceId: id || "default" }, location.origin);
+      const c = playback();
+      if (!id && c && typeof c.setSinkId === "function") c.setSinkId("").catch(() => {});
+    },
+    /** How loud the mic is now, 0 to 1 (0 while it's off). */
+    micLevel,
     /** The element showing the picture, if any. */
     video() {
       for (const id of videoIds) {

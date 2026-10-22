@@ -4,6 +4,7 @@
 package desktops
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -72,6 +73,7 @@ type Config struct {
 	Subnet      string // DESKYARD_SUBNET
 	InContainer bool
 	SelfID      string // the supervisor's own container, when InContainer
+	SysDir      string // the host's /sys, for its virtual cameras ("" is /sys)
 }
 
 type Service struct {
@@ -363,6 +365,7 @@ func (s *Service) createContainer(ctx context.Context, name, id, token string, c
 		Network: containerName(name), Aliases: []string{containerName(name)},
 		MemoryBytes: set.MemoryBytes, NanoCPUs: set.NanoCPUs, ShmBytes: shmBytes,
 		Flatpak: true, Restart: "unless-stopped",
+		Devices: Cameras(cmp.Or(s.Cfg.SysDir, "/sys")),
 	}
 	if !s.Cfg.InContainer {
 		zero := 0

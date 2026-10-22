@@ -44,6 +44,8 @@ export interface Desktop {
   viewers: string[];
   /** Viewers with a mic on (per stream; gone when the stream closes). */
   mics: string[];
+  /** Whether the running desktop has a virtual camera (the host's v4l2loopback). */
+  webcam: boolean;
   /** Port mappings agents have set up with `deskyard forward`; port is the desktop's. */
   forwards: Forward[];
   /** Agents at work in the desktop: from outside (a token) or inside (a program). */
@@ -271,6 +273,8 @@ export const api = {
   stats: (name: string) => request<StatsHistory>("GET", `${c(name)}/stats`),
   folder: (name: string) => request<FolderSize>("GET", `${c(name)}/folder`),
   keys: (name: string, keys: string) => request<void>("POST", `${c(name)}/keys`, { keys }),
+  /** This page's mic badge: tab is the frame's tab id, as on its stream. */
+  mic: (name: string, on: boolean, tab: string) => request<void>("POST", `${c(name)}/mic`, { on, tab }),
   upgrade: (name: string) => request<JobRef>("POST", `${c(name)}/upgrade`),
   validateName: (name: string) => request<NameCheck>("GET", `/api/validate-name?name=${enc(name)}`),
   screenUrl: (name: string, opts: { full?: boolean; bust?: number } = {}) => {

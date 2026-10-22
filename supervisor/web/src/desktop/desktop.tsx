@@ -14,12 +14,14 @@ import { DownloadDialog } from "../dialogs/download.tsx";
 import { useDesktop, useLive } from "../live.tsx";
 import { agentTitle } from "../lib/activity-format.ts";
 import { names } from "../lib/format.ts";
+import { AudioControl } from "./audio-panel.tsx";
 import { ClipboardPopover } from "./clipboard.tsx";
 import { ActivityOverlay } from "./overlay.tsx";
 import {
   browserSupported,
   type ConnectionState,
   defaultQuality,
+  type DeskyardScreen,
   type Display,
   focusFrame,
   frameSrc,
@@ -112,6 +114,8 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
   const { route } = useLocation();
   const frame = useRef<HTMLIFrameElement>(null);
   const [conn, setConn] = useState<ConnectionState>("connecting");
+  // The frame's client, for the Audio panel; null until it loads.
+  const [screen, setScreen] = useState<DeskyardScreen | null>(null);
   const [frameKey, setFrameKey] = useState(0);
   const [remoteClip, setRemoteClip] = useState<string | null>(null);
   const [clipOpen, setClipOpen] = useState(false);
@@ -141,6 +145,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
     for (const f of unsubscribe.current) f();
     unsubscribe.current = [];
     const screen = screenOf(frame.current);
+    setScreen(screen);
     if (!screen) {
       setConn("disconnected"); // not the client: an error page
       return;
@@ -193,6 +198,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
 
   function reconnect() {
     setConn("connecting");
+    setScreen(null);
     setFrameKey((k) => k + 1);
   }
   const sendKeys = (keys: string) => {
@@ -310,7 +316,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
               title={[...(c.viewers.length ? [names(c.viewers)] : []), ...c.agents.map(agentTitle)].join(", ")}
               onClick={() => (viewersOpen ? closeViewers() : setViewersOpen(true))}
             >
-              {(c.viewers.length > 0 || c.agents.length > 0) && <Avatars names={c.viewers} agents={c.agents} ring="var(--color-bar)" />}
+              {(c.viewers.length > 0 || c.agents.length > 0) && <Avatars names={c.viewers} mics={c.mics} agents={c.agents} ring="var(--color-bar)" />}
               {c.viewers.length > 0 && <span class="truncate max-md:hidden">{names(c.viewers)}</span>}
               {c.forwards.length > 0 && <span class="whitespace-nowrap">⇄ {c.forwards.length}</span>}
             </button>
@@ -319,10 +325,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
         <div class="ml-auto flex items-center gap-0.5">
           {showing && (
             <>
-              {/* Sound, mic and webcam: the Audio panel comes next. */}
-              <button type="button" disabled class={cx(barButton, "cursor-default opacity-50 hover:bg-transparent hover:text-bar-text")}>
-                Audio
-              </button>
+              <AudioControl name={c.name} screen={screen} connected={conn === "connected"} webcam={c.webcam} />
               <button
                 type="button"
                 aria-pressed={owner === true && locked !== null}
@@ -387,7 +390,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
           />
         </div>
         {viewersOpen && (c.viewers.length > 0 || c.forwards.length > 0 || c.agents.length > 0) && (
-          <ViewersPopover name={c.name} viewers={c.viewers} forwards={c.forwards} agents={c.agents} onClose={closeViewers} />
+          <ViewersPopover name={c.name} viewers={c.viewers} mics={c.mics} forwards={c.forwards} agents={c.agents} onClose={closeViewers} />
         )}
         {clipOpen && showing && (
           <ClipboardPopover
@@ -414,7 +417,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
           ref={frame}
           src={frameSrc(c.name)}
           title={`${c.name}'s desktop`}
-          allow="clipboard-read; clipboard-write"
+          allow="clipboard-read; clipboard-write; autoplay; microphone; camera; speaker-selection"
           class="block w-full flex-1 border-0"
           onLoad={onFrameLoad}
         />

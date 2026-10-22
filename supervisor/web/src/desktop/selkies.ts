@@ -29,6 +29,22 @@
  * `display()` (from our additions) says which this page is, the stream's
  * size and the display's settings; "deskyard.display" on `on` gets changes.
  *
+ * Sound, mic and webcam (the Audio panel, audio-panel.tsx):
+ * - {type: "setVolume", value}: the playback volume, 0 to 1. It applies once
+ *   the client has set its playback up, so the page sends it again when
+ *   sound starts.
+ * - {type: "pipelineControl", pipeline: "microphone" | "webcam", enabled}:
+ *   starts or stops a capture. Our additions refuse the browser's mic or
+ *   camera unless `allowCapture` allowed it on this connection, so the
+ *   client can never turn either on by itself (it would after a reconnect).
+ * - Sound on and off go through `setSound` (START_AUDIO / STOP_AUDIO on the
+ *   stream; see screen_additions.js for why not pipelineControl), devices
+ *   through `setOutput`, `setMic` and `setCamera`.
+ * - `media()` (and "deskyard.media" on `on`) says what the client is doing,
+ *   from its own status messages; "deskyard.alert" brings its capture errors.
+ * Several viewers' mics are mixed: each connection plays its mic into the
+ * desktop's one virtual mic as its own stream.
+ *
  * From the client (`on`), posted on the frame's own window:
  * - {type: "clipboardContentUpdate", text}: the desktop's clipboard changed
  *   (also once after connecting).
@@ -56,15 +72,40 @@ export interface Display {
   settings: Record<string, unknown> | null;
 }
 
+/** Sound, mic and webcam, as the frame's client has them. */
+export interface Media {
+  /** The desktop sends this page its sound. */
+  sound: boolean;
+  /** The mic is captured and sent into the desktop. */
+  mic: boolean;
+  webcam: boolean;
+  /** The playback is running (a browser holds it back until a click). */
+  playing: boolean;
+  /** When sound last arrived (performance.now() in the frame; 0 for never). */
+  soundAt: number;
+}
+
+export type Capture = "microphone" | "webcam";
+
 /** What our additions put on the frame's window. */
 export interface DeskyardScreen {
   tab: string;
   post(msg: object): void;
   on(type: "deskyard.state", fn: (state: ConnectionState) => void): () => void;
   on(type: "deskyard.display", fn: (display: Display) => void): () => void;
+  on(type: "deskyard.media", fn: (media: Media) => void): () => void;
+  on(type: "deskyard.alert", fn: (text: string) => void): () => void;
   on(type: string, fn: (data: Record<string, unknown>) => void): () => void;
   state(): ConnectionState;
   display(): Display;
+  media(): Media;
+  setSound(on: boolean): void;
+  resumeSound(): void;
+  allowCapture(kind: Capture, on: boolean): void;
+  setCamera(deviceId: string): void;
+  setMic(deviceId: string): void;
+  setOutput(deviceId: string): void;
+  micLevel(): number;
   video(): HTMLVideoElement | HTMLCanvasElement | null;
 }
 
@@ -96,6 +137,22 @@ export function screenOf(frame: HTMLIFrameElement | null): DeskyardScreen | null
     return null;
   }
 }
+
+export function setVolume(screen: DeskyardScreen, volume: number): void {
+  screen.post({ type: "setVolume", value: volume });
+}
+
+/** Starts or stops the mic or the webcam (allowed first, refused after). */
+export function setCapture(screen: DeskyardScreen, kind: Capture, on: boolean): void {
+  if (on) screen.allowCapture(kind, true);
+  screen.post({ type: "pipelineControl", pipeline: kind, enabled: on });
+  if (!on) screen.allowCapture(kind, false);
+}
+
+/** Whether this browser can choose where sound plays. */
+export const canChooseOutput =
+  (typeof AudioContext !== "undefined" && "setSinkId" in AudioContext.prototype) ||
+  (typeof HTMLMediaElement !== "undefined" && "setSinkId" in HTMLMediaElement.prototype);
 
 export function sendClipboard(frame: HTMLIFrameElement | null, text: string): void {
   screenOf(frame)?.post({ type: "clipboardUpdateFromUI", text });

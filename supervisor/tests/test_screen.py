@@ -262,3 +262,44 @@ def test_duplicated_tab_and_reload_keep_the_picture(supervisor, admin, desktop, 
         page.wait_for_function(showing, timeout=15000)
         assert time.time() - start < 15
         browser.close()
+
+
+def test_mic_turns_on_only_for_the_page(supervisor, admin, desktop, name):
+    # Selkies' client would turn the mic on by itself: after a reconnect it
+    # restores what was on. Our additions let it capture only once the
+    # desktop page has asked, for the current connection. (The client on its
+    # own here, without the desktop page around it.)
+    from playwright.sync_api import sync_playwright
+
+    from test_ui import FAKE_MEDIA
+
+    screen = "window.deskyardScreen"
+    with sync_playwright() as p:
+        browser = p.chromium.launch(args=FAKE_MEDIA)
+        page = browser.new_context().new_page()
+        dialogs = []
+        page.on("dialog", lambda d: (dialogs.append(d.message), d.dismiss()))
+        page.goto(supervisor.base + "/login")
+        page.fill("#u", "admin")
+        page.fill("#p", "admin-password")
+        page.get_by_role("button", name="Sign in").click()
+        page.wait_for_url(lambda u: "/login" not in u)
+        page.goto(f"{supervisor.base}/{name}/screen/")
+        page.wait_for_function(f"{screen}?.state() === 'connected'", timeout=30000)
+
+        page.evaluate(f"{screen}.post({{type: 'pipelineControl', pipeline: 'microphone', enabled: true}})")
+        time.sleep(3)
+        assert page.evaluate(f"{screen}.media().mic") is False
+
+        page.evaluate(f"{screen}.allowCapture('microphone', true)")
+        page.evaluate(f"{screen}.post({{type: 'pipelineControl', pipeline: 'microphone', enabled: true}})")
+        page.wait_for_function(f"{screen}.media().mic", timeout=15000)
+
+        # The stream drops; Selkies reconnects and would restore the mic.
+        page.evaluate("window.selkiesTransport.close()")
+        page.wait_for_function(f"{screen}.state() !== 'connected'", timeout=10000)
+        page.wait_for_function(f"{screen}.state() === 'connected'", timeout=30000)
+        time.sleep(4)
+        assert page.evaluate(f"{screen}.media().mic") is False
+        assert dialogs == []
+        browser.close()

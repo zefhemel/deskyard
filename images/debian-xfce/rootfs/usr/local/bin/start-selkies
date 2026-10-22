@@ -23,6 +23,15 @@ for dev in /dev/video*; do
     fi
 done
 
+# Viewers' mics reach apps through Selkies' virtual mic (made at the sound
+# server's start: /etc/pipewire/pipewire-pulse.conf.d/deskyard-mic.conf). It's
+# the default mic from the start, so an app that opens the mic before anyone
+# turns theirs on doesn't record the desktop's own sound instead.
+for _ in $(seq 50); do
+    pactl set-default-source output.SelkiesVirtualMic 2>/dev/null && break
+    sleep 0.2
+done
+
 # The supervisor rewrites Host when proxying, so a browser's Origin never
 # matches it: the supervisor checks the Origin itself and then sends this one.
 export SELKIES_ALLOWED_ORIGINS=http://supervisor.deskyard.invalid

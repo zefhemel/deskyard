@@ -173,7 +173,33 @@ window.deskyardScreen = {
   },
   state: () => state,
   display: () => display,
+  media: () => media,
+  setSound(on) { setMedia({ sound: on, playing: on }); },
+  resumeSound() {},
+  allowCapture(kind, on) { allowed[kind] = on; },
+  setCamera() {},
+  setMic() {},
+  setOutput() {},
+  micLevel: () => (media.mic ? 0.2 + Math.random() * 0.4 : 0),
   video: () => document.getElementById("videoStream"),
+};
+// Sound, mic and webcam: pipelineControl turns a capture on where allowed.
+let media = { sound: false, mic: false, webcam: false, playing: false, soundAt: 0 };
+const allowed = { microphone: false, webcam: false };
+const mediaListeners = new Set();
+function setMedia(m) { media = { ...media, ...m }; for (const fn of mediaListeners) fn(media); }
+const on = window.deskyardScreen.on;
+window.deskyardScreen.on = (type, fn) => {
+  if (type === "deskyard.media") { mediaListeners.add(fn); return () => mediaListeners.delete(fn); }
+  if (type === "deskyard.alert") return () => {};
+  return on(type, fn);
+};
+const post = window.deskyardScreen.post;
+window.deskyardScreen.post = (msg) => {
+  post(msg);
+  if (msg.type === "pipelineControl" && msg.pipeline in allowed) {
+    setTimeout(() => setMedia({ [msg.pipeline === "microphone" ? "mic" : "webcam"]: msg.enabled && allowed[msg.pipeline] }), 300);
+  }
 };
 setTimeout(() => {
   state = "connected";
@@ -245,7 +271,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const c: Desktop = {
       id: `${name}-id`, name, state: "creating", startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/${name}`, image: img.ref, imageTitle: img.title,
       imageVersion: img.version, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus) },
-      access: (b.access as string[]) ?? [], viewers: [], mics: [], forwards: [], agents: [], tokens: 0, stats: null,
+      access: (b.access as string[]) ?? [], viewers: [], mics: [], webcam: false, forwards: [], agents: [], tokens: 0, stats: null,
     };
     desktops.push(c);
     changed(c);
@@ -340,6 +366,14 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     }, c.name));
   }
   if (sub === "keys") return json(res, 204);
+  if (sub === "mic" && method === "POST") {
+    const on = (await readBody(req)).on === true;
+    const me = "zef";
+    c.mics = on ? [...new Set([...c.mics, me])] : c.mics.filter((m) => m !== me);
+    if (on && !c.viewers.includes(me)) c.viewers = [...c.viewers, me];
+    changed(c);
+    return json(res, 204);
+  }
   if (sub === "activity") return json(res, 200, activityOf(c));
   if (sub === "stats") return json(res, 200, history(c));
   if (sub === "folder") return json(res, 200, { path: c.folder, bytes: 3.2 * GB, complete: true });

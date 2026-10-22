@@ -76,12 +76,14 @@ function AgentRows({ name, agents }: { name: string; agents: AgentPresence[] }) 
 export function ViewersPopover({
   name,
   viewers,
+  mics,
   forwards,
   agents,
   onClose,
 }: {
   name: string;
   viewers: string[];
+  mics: string[];
   forwards: Forward[];
   agents: AgentPresence[];
   onClose: () => void;
@@ -119,8 +121,9 @@ export function ViewersPopover({
         <ul class="m-0 mb-1 list-none p-0">
           {viewers.map((v) => (
             <li key={v} class="flex items-center gap-2 py-1 text-sm">
-              <Avatar name={v} size={22} />
+              <Avatar name={v} size={22} mic={mics.includes(v)} />
               <span class="truncate">{v}</span>
+              {mics.includes(v) && <span class="ml-auto flex-none text-[12px] text-muted">mic on</span>}
             </li>
           ))}
         </ul>
