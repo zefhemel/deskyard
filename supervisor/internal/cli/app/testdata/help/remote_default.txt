@@ -1,0 +1,17 @@
+computer remote default: set or show the default remote
+
+Usage: computer [-c NAME] remote default [NAME]
+
+Makes NAME the remote used when no -c or COMPUTER_REMOTE is given; without
+NAME prints the current default.
+
+Arguments:
+  NAME       string      optional  remote name
+
+Prints: without NAME: the default's name, or nothing
+
+Examples:
+  computer remote default alice
+
+Where: on this machine (no remote needed)
+Exit codes: 0 ok, 1 error, 2 usage error

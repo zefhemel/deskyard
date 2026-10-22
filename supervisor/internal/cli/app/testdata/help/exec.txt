@@ -1,0 +1,32 @@
+computer exec: run a command on the computer
+
+Usage: computer [-c NAME] exec [OPTIONS] -- CMD [ARG...]
+
+Runs one command as user (in /workspace unless --cwd) and streams its stdin,
+stdout and stderr; exits with the command's exit code. The command is run as
+given, not through a shell: for pipes, globs or && use `-- bash -lc '...'`.
+
+Arguments:
+  CMD        string...   required  the command and its arguments
+
+Options:
+  --json               buffer the output and print one JSON object
+                       {"stdout","stderr","exit"} instead of streaming; exit 0
+                       when the JSON was printed
+  -t, --tty            run in a terminal (for programs that need one); stdout
+                       and stderr are merged
+  --cwd DIR            working directory on the computer (default /workspace)
+  -e, --env K=V        set an environment variable (repeatable)
+
+Prints: the command's stdout and stderr as they arrive; with --json one object
+  {"stdout":string,"stderr":string,"exit":int}, using
+  "stdoutBase64"/"stderrBase64" (base64) instead when the output isn't
+  UTF-8
+
+Examples:
+  computer -c alice exec -- ls -la
+  computer exec --json -- bash -lc 'cd app && npm test'
+  echo hi | computer exec -- tee /workspace/hi.txt
+
+Where: on the chosen remote (-c NAME); inside a computer without a remote it acts locally
+Exit codes: the command's own exit code; 1 when it couldn't run (connection, token, stopped computer), 2 usage error

@@ -105,7 +105,7 @@ The UI authenticates with the `cc_session` cookie (HttpOnly, SameSite=Strict). E
 
 ## Agent API
 
-Authenticated with `Authorization: Bearer cct_<id>_<secret>` only (cookies are ignored here). The computer is the token's. 401 for a missing, unknown, revoked or expired token; 409 `{"error":"alice is stopped; someone with access can start it"}` when the computer isn't running.
+Authenticated with `Authorization: Bearer cct_<id>_<secret>` only (cookies are ignored here). The computer is the token's; a computer name in a remote's URL is only a check on the client side. 401 for a missing, unknown, revoked or expired token; 409 `{"error":"alice is stopped; someone with access can start it"}` from `exec` and `cdp` when the computer isn't running (`GET /api/agent/v1` always answers 200 with its `state`). No Origin checks: agents aren't browsers.
 
 ### `GET /api/agent/v1`
 
@@ -120,8 +120,14 @@ Authenticated with `Authorization: Bearer cct_<id>_<secret>` only (cookies are i
 3. **Text** messages from the client: `{"resize":[cols,rows]}`, `{"eof":true}` (closes stdin).
 4. The server's last message is **text** `{"exit":code}`, then it closes the WebSocket. An error before starting is text `{"error":"…"}`.
 
-Commands run as `user` (UID 1000) with the computer's login environment (`bash -lc` is the client's choice; the server runs `argv` as given).
+Commands run as `user` (UID 1000) with the computer's image environment (PATH includes the user's tool folders; `argv[0]` is looked up on it; `bash -lc` for a login shell is the client's choice). Details:
+
+- No message size limit beyond 64 MB per message; send stdin in chunks.
+- `cols`/`rows` are optional with `tty` (default 80×24); `{"resize"}` without `tty` is ignored.
+- `{"eof"}` closes stdin; with `tty` it sends Ctrl-D. The server sends `{"exit"}` when the process ends, whether or not stdin was closed.
+- A process killed by a signal exits with 128 + the signal number.
+- `{"error"}` only comes instead of running the command (bad first message, the computer stopped); once output started, the last message is always `{"exit"}`.
 
 ### `/api/agent/v1/cdp/…` (HTTP and WebSocket)
 
-The shared Chromium's DevTools protocol: `GET /api/agent/v1/cdp/json/version`, `/json/list`, `PUT /json/new?url`, and WebSocket `/api/agent/v1/cdp/devtools/…`. In `/json*` responses, `webSocketDebuggerUrl` and `devtoolsFrontendUrl` point back through this path (`ws(s)://<host>/api/agent/v1/cdp/devtools/…`). The first request may take several seconds while Chromium starts.
+The shared Chromium's DevTools protocol: `GET /api/agent/v1/cdp/json/version`, `/json/list`, `PUT /json/new?url`, and WebSocket `/api/agent/v1/cdp/devtools/…`. In `/json*` responses (including `/json/version`), `webSocketDebuggerUrl` is absolute, `ws(s)://<host>/api/agent/v1/cdp/devtools/…`, and the `ws=` parameter in `devtoolsFrontendUrl` is `<host>/api/agent/v1/cdp/devtools/…` (Chromium's own `ws=`/`wss=` choice). The first request may take several seconds while Chromium starts.

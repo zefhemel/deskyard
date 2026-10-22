@@ -1,0 +1,18 @@
+computer type: type text into the focused window
+
+Usage: computer [-c NAME] type TEXT...
+
+Types text into the focused window, as keystrokes. Several arguments are
+joined with spaces. Click the field first; use key for Return, Tab or
+shortcuts.
+
+Arguments:
+  TEXT       string...   required  text to type
+
+Prints: nothing
+
+Examples:
+  computer type 'hello world'
+
+Where: inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)
+Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer

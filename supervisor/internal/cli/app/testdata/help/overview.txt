@@ -1,0 +1,64 @@
+computer: use a container computer (a Linux desktop with a shared browser) from inside it or from anywhere else.
+
+Usage: computer [-c NAME] COMMAND [ARGS...]
+
+New here? Run `computer guide` (written for AI agents) and `computer COMMAND --help`.
+
+Desktop (screen, mouse, keyboard):
+  screenshot [FILE|-]                  PNG of the whole screen
+  zoom X0 Y0 X1 Y1 [FILE|-]            PNG of a region at full resolution
+  size                                 print the screen size
+  cursor                               print the mouse position
+  move X Y                             move the mouse
+  click X Y [left|right|middle]        click at X Y
+  double-click X Y                     double left-click at X Y
+  triple-click X Y                     triple left-click at X Y
+  mouse-down [left|right|middle]       press a mouse button
+  mouse-up [left|right|middle]         release a mouse button
+  drag X1 Y1 X2 Y2                     left-drag from one point to another
+  type TEXT...                         type text into the focused window
+  key COMBO...                         press keys or shortcuts
+  hold-key KEY SECONDS                 hold a key down for a while
+  scroll X Y up|down|left|right [N]    scroll at X Y
+  wait SECONDS                         pause for a while
+
+Shell and files:
+  exec [OPTIONS] -- CMD [ARG...]       run a command on the computer
+  shell                                interactive login shell
+  cp SRC DST                           copy files to or from a computer
+
+Browser:
+  browser connect [--port N]           forward the computer's browser to a local CDP port
+
+Remotes:
+  remote add NAME URL --token cct_…    save a computer as a remote
+  remote list [--json]                 list saved remotes
+  remote remove NAME                   forget a remote
+  remote default [NAME]                set or show the default remote
+
+Information:
+  status [--json]                      show the computer's name, state, image and screen
+  guide                                short manual for AI agents
+  describe --json                      machine-readable description of every command
+  help [COMMAND...]                    help for a command
+  version                              print the version
+
+Choosing a computer:
+  Inside a computer, commands act on it directly. Elsewhere they use a remote:
+  -c NAME, else $COMPUTER_REMOTE, else $COMPUTER_URL + $COMPUTER_TOKEN,
+  else the default remote (`computer remote default`).
+
+Environment:
+  COMPUTER_REMOTE  remote to use when -c isn't given
+  COMPUTER_URL     computer URL (https://host/alice) to use without a remotes.json; needs COMPUTER_TOKEN
+  COMPUTER_TOKEN   agent token for COMPUTER_URL, and the default for `remote add --token`
+  COMPUTER_SETTLE  seconds screenshot and zoom wait before capturing (default 0.3)
+  XDG_CONFIG_HOME  where remotes.json lives (default ~/.config)
+
+Exit codes:
+  0      ok
+  1      error (the message on stderr says what to do next)
+  2      usage error (bad command, flag or argument)
+  other  exec, shell and desktop actions pass through the exit code of the command on the computer
+
+Machine-readable: computer describe --json

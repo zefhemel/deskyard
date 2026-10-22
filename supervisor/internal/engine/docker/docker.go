@@ -236,8 +236,14 @@ func (d *Docker) Exec(ctx context.Context, id string, s engine.ExecSpec) (*engin
 	if err != nil {
 		return nil, wrap(err)
 	}
+	var stdin io.WriteCloser = closeWriter{att.Conn}
+	if s.Tty {
+		// Half-closing a TTY exec's connection ends its output too; a
+		// terminal's end of input is Ctrl-D.
+		stdin = ttyStdin{att.Conn}
+	}
 	p := &engine.Process{
-		Stdin: closeWriter{att.Conn},
+		Stdin: stdin,
 		Close: att.Close,
 		Resize: func(cols, rows uint) error {
 			_, err := d.c.ExecResize(ctx, created.ID, client.ExecResizeOptions{Height: rows, Width: cols})
@@ -285,6 +291,14 @@ func (w closeWriter) Close() error {
 		return cw.CloseWrite()
 	}
 	return nil
+}
+
+type ttyStdin struct{ conn io.Writer }
+
+func (w ttyStdin) Write(b []byte) (int, error) { return w.conn.Write(b) }
+func (w ttyStdin) Close() error {
+	_, err := w.conn.Write([]byte{4})
+	return err
 }
 
 func (d *Docker) Top(ctx context.Context, id string, args string) ([]string, [][]string, error) {

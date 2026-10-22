@@ -1,0 +1,17 @@
+computer remote remove: forget a remote
+
+Usage: computer [-c NAME] remote remove NAME
+
+Removes a saved remote (the token itself stays valid until someone revokes it
+on the Agents tab).
+
+Arguments:
+  NAME       string      required  remote name
+
+Prints: nothing
+
+Examples:
+  computer remote remove alice
+
+Where: on this machine (no remote needed)
+Exit codes: 0 ok, 1 error, 2 usage error

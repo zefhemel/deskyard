@@ -1,0 +1,15 @@
+computer shell: interactive login shell
+
+Usage: computer [-c NAME] shell
+
+Opens an interactive bash login shell on the computer in your terminal (raw
+mode, resizes follow your window). Exit with `exit` or Ctrl-D. For scripted
+use, prefer exec.
+
+Prints: the terminal session
+
+Examples:
+  computer -c alice shell
+
+Where: on the chosen remote (-c NAME); inside a computer without a remote it acts locally
+Exit codes: the shell's exit code; 1 when it couldn't start

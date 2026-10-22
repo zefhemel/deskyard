@@ -1,0 +1,388 @@
+package app
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"flag"
+	"io"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+
+	"github.com/zefhemel/container-computer/supervisor/internal/cli/clitest"
+	"github.com/zefhemel/container-computer/supervisor/internal/cli/remote"
+)
+
+var update = flag.Bool("update", false, "rewrite the golden files in testdata")
+
+type result struct {
+	code           int
+	stdout, stderr string
+}
+
+type harness struct {
+	t      *testing.T
+	env    map[string]string
+	inside bool
+	config string
+	stdin  string
+}
+
+func newHarness(t *testing.T) *harness {
+	return &harness{t: t, env: map[string]string{}, config: filepath.Join(t.TempDir(), "remotes.json")}
+}
+
+func (h *harness) run(args ...string) result {
+	var out, errb bytes.Buffer
+	a := &App{
+		Stdin: strings.NewReader(h.stdin), Stdout: &out, Stderr: &errb,
+		Getenv:     func(k string) string { return h.env[k] },
+		ConfigPath: h.config,
+		Inside:     func() bool { return h.inside },
+		Version:    "test",
+	}
+	code := a.Run(context.Background(), args)
+	return result{code, out.String(), errb.String()}
+}
+
+func golden(t *testing.T, name, got string) {
+	t.Helper()
+	path := filepath.Join("testdata", name)
+	if *update {
+		os.MkdirAll(filepath.Dir(path), 0o755)
+		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("%v (run go test -update to create it)", err)
+	}
+	if string(want) != got {
+		t.Errorf("%s differs from the golden file (run go test ./internal/cli/app -update to accept):\n--- got\n%s", path, got)
+	}
+}
+
+func TestGoldenHelp(t *testing.T) {
+	h := newHarness(t)
+	r := h.run("--help")
+	if r.code != 0 {
+		t.Fatalf("--help exit %d", r.code)
+	}
+	golden(t, "help/overview.txt", r.stdout)
+	for _, c := range commands {
+		args := append(strings.Fields(c.Name), "--help")
+		r := h.run(args...)
+		if r.code != 0 || r.stderr != "" {
+			t.Errorf("%s --help: exit %d stderr %q", c.Name, r.code, r.stderr)
+		}
+		golden(t, "help/"+strings.ReplaceAll(c.Name, " ", "_")+".txt", r.stdout)
+		// help CMD is the same.
+		if r2 := h.run(append([]string{"help"}, strings.Fields(c.Name)...)...); r2.stdout != r.stdout {
+			t.Errorf("help %s differs from %s --help", c.Name, c.Name)
+		}
+	}
+	if r := h.run("remote", "--help"); r.code != 0 || !strings.Contains(r.stdout, "remote add") {
+		t.Errorf("remote --help: %+v", r)
+	}
+}
+
+func TestGoldenGuide(t *testing.T) {
+	r := newHarness(t).run("guide")
+	if r.code != 0 {
+		t.Fatalf("exit %d", r.code)
+	}
+	if n := strings.Count(r.stdout, "\n"); n > 120 {
+		t.Errorf("the guide has %d lines; keep it under 120", n)
+	}
+	golden(t, "guide.txt", r.stdout)
+}
+
+func TestGoldenDescribe(t *testing.T) {
+	r := newHarness(t).run("describe", "--json")
+	if r.code != 0 {
+		t.Fatalf("exit %d: %s", r.code, r.stderr)
+	}
+	var doc struct {
+		Commands []struct {
+			Name string `json:"name"`
+			Args []struct {
+				Name     string `json:"name"`
+				Type     string `json:"type"`
+				Required bool   `json:"required"`
+			} `json:"arguments"`
+			Output struct{ Type string } `json:"output"`
+		} `json:"commands"`
+	}
+	if err := json.Unmarshal([]byte(r.stdout), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Commands) != len(commands) {
+		t.Errorf("describe lists %d commands, want %d", len(doc.Commands), len(commands))
+	}
+	for _, c := range doc.Commands {
+		if c.Output.Type == "" {
+			t.Errorf("%s has no output type", c.Name)
+		}
+	}
+	golden(t, "describe.json", r.stdout)
+}
+
+func TestSpecIsConsistent(t *testing.T) {
+	for _, c := range commands {
+		if c.run == nil || c.Summary == "" || c.Desc == "" || len(c.Examples) == 0 || c.Where == "" || c.Exit == "" || c.Output.Type == "" {
+			t.Errorf("%s: incomplete spec", c.Name)
+		}
+		if !strings.HasPrefix(c.Usage, c.Name) {
+			t.Errorf("%s: usage %q should start with the name", c.Name, c.Usage)
+		}
+	}
+}
+
+func TestUsageErrors(t *testing.T) {
+	h := newHarness(t)
+	h.inside = true
+	for _, args := range [][]string{{}, {"bogus"}, {"click", "1"}, {"zoom", "50", "50", "10", "10"}, {"remote"}, {"remote", "bogus"},
+		{"exec"}, {"cp", "a"}, {"remote", "add", "x"}, {"--nope"}, {"-c"}, {"status", "--bogus"}, {"exec", "--cwd"}} {
+		r := h.run(args...)
+		if r.code != 2 {
+			t.Errorf("%v: exit %d, want 2 (stderr %q)", args, r.code, r.stderr)
+		}
+		if r.stderr == "" {
+			t.Errorf("%v: no message", args)
+		}
+	}
+}
+
+func TestNoRemoteChosen(t *testing.T) {
+	h := newHarness(t)
+	r := h.run("screenshot")
+	if r.code != 1 || !strings.Contains(r.stderr, "no remote chosen: run `computer remote list`, then use -c NAME") {
+		t.Errorf("%+v", r)
+	}
+	r = h.run("-c", "nope", "size")
+	if r.code != 1 || !strings.Contains(r.stderr, `no remote named "nope"`) {
+		t.Errorf("%+v", r)
+	}
+	h.env["COMPUTER_URL"] = "https://h/alice"
+	r = h.run("size")
+	if r.code != 1 || !strings.Contains(r.stderr, "COMPUTER_TOKEN") {
+		t.Errorf("%+v", r)
+	}
+}
+
+func remoteHarness(t *testing.T) (*harness, *clitest.Fake) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake runs commands with sh")
+	}
+	f := clitest.New(t, "alice")
+	h := newHarness(t)
+	if r := h.run("remote", "add", "al", f.ComputerURL(), "--token", clitest.Token); r.code != 0 {
+		t.Fatalf("remote add: %+v", r)
+	}
+	return h, f
+}
+
+func TestRemoteCommands(t *testing.T) {
+	f := clitest.New(t, "alice")
+	h := newHarness(t)
+
+	r := h.run("remote", "add", "al", f.ComputerURL(), "--token", "cct_bad_token")
+	if r.code != 1 || !strings.Contains(r.stderr, "token rejected (401): ask someone with access to alice") {
+		t.Errorf("bad token: %+v", r)
+	}
+	r = h.run("remote", "add", "al", f.URL+"/bob", "--token", clitest.Token)
+	if r.code != 1 || !strings.Contains(r.stderr, `this token is for the computer "alice", not "bob"`) {
+		t.Errorf("wrong computer: %+v", r)
+	}
+	r = h.run("remote", "add", "al", f.ComputerURL(), "--token", clitest.Token)
+	if r.code != 0 || !strings.Contains(r.stdout, "Added remote al") || !strings.Contains(r.stdout, "default") {
+		t.Errorf("add: %+v", r)
+	}
+	// A URL without the computer's name learns it from the token.
+	r = h.run("remote", "add", "two", f.URL, "--token", clitest.Token)
+	if r.code != 0 {
+		t.Errorf("add two: %+v", r)
+	}
+	cfg, err := remote.Load(h.config)
+	if err != nil || cfg.Remotes["two"].Computer != "alice" || cfg.Default != "al" {
+		t.Errorf("config: %+v %v", cfg, err)
+	}
+
+	r = h.run("remote", "list")
+	if r.code != 0 || !strings.Contains(r.stdout, "* al") || strings.Contains(r.stdout, "secret") {
+		t.Errorf("list: %+v", r)
+	}
+	r = h.run("remote", "list", "--json")
+	var rows []map[string]any
+	if json.Unmarshal([]byte(r.stdout), &rows); len(rows) != 2 || rows[0]["default"] != true {
+		t.Errorf("list --json: %s", r.stdout)
+	}
+	if r = h.run("remote", "default", "two"); r.code != 0 {
+		t.Errorf("default: %+v", r)
+	}
+	if r = h.run("remote", "default"); strings.TrimSpace(r.stdout) != "two" {
+		t.Errorf("default shows %q", r.stdout)
+	}
+	if r = h.run("remote", "remove", "two"); r.code != 0 {
+		t.Errorf("remove: %+v", r)
+	}
+	if r = h.run("remote", "remove", "two"); r.code != 1 {
+		t.Errorf("second remove: %+v", r)
+	}
+
+	// Stopped: the token works, so the remote is saved with a note.
+	f.Stopped = true
+	r = h.run("remote", "add", "st", f.ComputerURL(), "--token", clitest.Token)
+	if r.code != 0 || !strings.Contains(r.stdout, "alice is stopped") {
+		t.Errorf("add stopped: %+v", r)
+	}
+	r = h.run("-c", "st", "status")
+	if r.code != 1 || !strings.Contains(r.stderr, "alice is stopped; someone with access can start it") {
+		t.Errorf("status stopped: %+v", r)
+	}
+}
+
+func TestStatusRemote(t *testing.T) {
+	h, _ := remoteHarness(t)
+	r := h.run("status")
+	if r.code != 0 || !strings.Contains(r.stdout, "name:   alice") || !strings.Contains(r.stdout, "screen: 1280x800") {
+		t.Errorf("%+v", r)
+	}
+	r = h.run("status", "--json")
+	var st map[string]any
+	if err := json.Unmarshal([]byte(r.stdout), &st); err != nil || st["state"] != "running" || st["remote"] != "al" {
+		t.Errorf("%s %v", r.stdout, err)
+	}
+}
+
+func TestEnvRemote(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip()
+	}
+	f := clitest.New(t, "alice")
+	h := newHarness(t)
+	h.env["COMPUTER_URL"] = f.ComputerURL()
+	h.env["COMPUTER_TOKEN"] = clitest.Token
+	if r := h.run("size"); r.code != 0 || r.stdout != "1280 800\n" {
+		t.Errorf("%+v", r)
+	}
+}
+
+func TestExecRemote(t *testing.T) {
+	h, f := remoteHarness(t)
+	r := h.run("exec", "--", "sh", "-c", "echo hi; echo oops >&2; exit 7")
+	if r.code != 7 || r.stdout != "hi\n" || r.stderr != "oops\n" {
+		t.Errorf("%+v", r)
+	}
+	r = h.run("exec", "--json", "-e", "A=1", "--cwd", f.Dir, "sh", "-c", "echo $A; printf '\\377' >&2")
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(r.stdout), &obj); err != nil || r.code != 0 {
+		t.Fatalf("%+v %v", r, err)
+	}
+	if obj["stdout"] != "1\n" || obj["exit"] != float64(0) || obj["stderrBase64"] != "/w==" {
+		t.Errorf("json: %v", obj)
+	}
+	reqs := f.Requests()
+	last := reqs[len(reqs)-1]
+	if last.Cwd != f.Dir || last.Env["A"] != "1" {
+		t.Errorf("request: %+v", last)
+	}
+	h.stdin = "piped input"
+	if r := h.run("exec", "--", "cat"); r.stdout != "piped input" {
+		t.Errorf("stdin: %+v", r)
+	}
+}
+
+func TestDesktopRemote(t *testing.T) {
+	h, f := remoteHarness(t)
+	if r := h.run("size"); r.code != 0 || r.stdout != "1280 800\n" {
+		t.Errorf("size: %+v", r)
+	}
+	if r := h.run("screenshot"); r.stdout != string(clitest.FakePNG) {
+		t.Errorf("screenshot to stdout: %q", r.stdout)
+	}
+	file := filepath.Join(t.TempDir(), "shot.png")
+	h.env["COMPUTER_SETTLE"] = "0"
+	if r := h.run("zoom", "0", "0", "10", "10", file); r.code != 0 || r.stdout != "" {
+		t.Errorf("zoom to file: %+v", r)
+	}
+	if b, _ := os.ReadFile(file); string(b) != string(clitest.FakePNG) {
+		t.Errorf("file = %q", b)
+	}
+	reqs := f.Requests()
+	last := reqs[len(reqs)-1]
+	if strings.Join(last.Argv, " ") != "computer zoom 0 0 10 10 -" || last.Env["COMPUTER_SETTLE"] != "0" {
+		t.Errorf("zoom request: %+v", last)
+	}
+	// Usage errors are caught before going remote.
+	n := len(f.Requests())
+	if r := h.run("click", "1"); r.code != 2 || len(f.Requests()) != n {
+		t.Errorf("click 1: %+v", r)
+	}
+	// The remote's exit code passes through.
+	f.Computer = func(args []string, stdout, stderr io.Writer) int {
+		io.WriteString(stderr, "no display\n")
+		return 5
+	}
+	if r := h.run("key", "Return"); r.code != 5 || r.stderr != "no display\n" {
+		t.Errorf("key: %+v", r)
+	}
+}
+
+func TestCpRemote(t *testing.T) {
+	h, f := remoteHarness(t)
+	local := t.TempDir()
+	os.WriteFile(filepath.Join(local, "a.txt"), []byte("A"), 0o644)
+	if r := h.run("cp", filepath.Join(local, "a.txt"), "al:"+f.Dir+"/"); r.code != 0 {
+		t.Fatalf("upload: %+v", r)
+	}
+	if b, _ := os.ReadFile(filepath.Join(f.Dir, "a.txt")); string(b) != "A" {
+		t.Errorf("uploaded %q", b)
+	}
+	if r := h.run("cp", ":"+f.Dir+"/a.txt", filepath.Join(local, "b.txt")); r.code != 0 {
+		t.Fatalf("download: %+v", r)
+	}
+	if b, _ := os.ReadFile(filepath.Join(local, "b.txt")); string(b) != "A" {
+		t.Errorf("downloaded %q", b)
+	}
+	if r := h.run("cp", "x", "y"); r.code != 2 || !strings.Contains(r.stderr, "NAME:/path") {
+		t.Errorf("no remote side: %+v", r)
+	}
+	if r := h.run("cp", "al:/a", "al:/b"); r.code != 2 {
+		t.Errorf("two remotes: %+v", r)
+	}
+}
+
+func TestBrowserConnectInside(t *testing.T) {
+	h := newHarness(t)
+	h.inside = true
+	r := h.run("browser", "connect")
+	if r.code != 0 || r.stdout != "http://127.0.0.1:9221\n" {
+		t.Errorf("%+v", r)
+	}
+}
+
+func TestExecLocal(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip()
+	}
+	h := newHarness(t)
+	h.inside = true
+	r := h.run("exec", "--json", "--", "sh", "-c", "echo local; exit 4")
+	var obj map[string]any
+	json.Unmarshal([]byte(r.stdout), &obj)
+	if obj["stdout"] != "local\n" || obj["exit"] != float64(4) {
+		t.Errorf("%+v", r)
+	}
+	if r := h.run("exec", "--", "sh", "-c", "exit 3"); r.code != 3 {
+		t.Errorf("exit code: %+v", r)
+	}
+	if r := h.run("exec", "--", "no-such-command-xyz"); r.code != 127 {
+		t.Errorf("not found: %+v", r)
+	}
+}

@@ -1,0 +1,25 @@
+computer cp: copy files to or from a computer
+
+Usage: computer [-c NAME] cp SRC DST
+
+Copies a file or directory between this machine and a computer; write the
+computer side as NAME:/path (NAME is a remote; an empty NAME, as in :/path,
+means the chosen remote). A file lands at DST, or inside DST when it is an
+existing directory. A directory's contents land in DST, which is created (like
+`cp -r SRC/. DST`). SRC - reads stdin; DST - writes to stdout (a tar stream
+for a directory). Files land as user; inside a computer, two local paths are
+copied locally.
+
+Arguments:
+  SRC        path        required  local path, -, or NAME:/path
+  DST        path        required  local path, -, or NAME:/path
+
+Prints: nothing, unless DST is - (the file's bytes or a tar stream)
+
+Examples:
+  computer cp ./report.pdf alice:/workspace/
+  computer cp ./site alice:/workspace/site
+  computer cp alice:/workspace/out.csv .
+
+Where: on the chosen remote (-c NAME); inside a computer without a remote it acts locally
+Exit codes: 0 ok, 1 error, 2 usage error

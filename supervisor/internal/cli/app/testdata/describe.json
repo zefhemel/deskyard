@@ -1,0 +1,952 @@
+{
+  "name": "computer",
+  "version": "test",
+  "description": "Use a container computer (a Linux desktop with a shared Chromium) from inside it or remotely through its agent API. Run commands as `computer [-c NAME] <name> <arguments...>`; arguments are positional in the listed order, flags go after the command name.",
+  "usage": "computer [-c NAME] COMMAND [ARGS...]",
+  "globalFlags": [
+    {
+      "name": "-c",
+      "type": "string",
+      "value": "NAME",
+      "description": "use the remote NAME (see `computer remote list`); before the command"
+    },
+    {
+      "name": "--help",
+      "short": "-h",
+      "type": "boolean",
+      "description": "help for the command"
+    }
+  ],
+  "environment": [
+    {
+      "name": "COMPUTER_REMOTE",
+      "description": "remote to use when -c isn't given"
+    },
+    {
+      "name": "COMPUTER_URL",
+      "description": "computer URL (https://host/alice) to use without a remotes.json; needs COMPUTER_TOKEN"
+    },
+    {
+      "name": "COMPUTER_TOKEN",
+      "description": "agent token for COMPUTER_URL, and the default for `remote add --token`"
+    },
+    {
+      "name": "COMPUTER_SETTLE",
+      "description": "seconds screenshot and zoom wait before capturing (default 0.3)"
+    },
+    {
+      "name": "XDG_CONFIG_HOME",
+      "description": "where remotes.json lives (default ~/.config)"
+    }
+  ],
+  "exitCodes": [
+    {
+      "code": "0",
+      "meaning": "ok"
+    },
+    {
+      "code": "1",
+      "meaning": "error (the message on stderr says what to do next)"
+    },
+    {
+      "code": "2",
+      "meaning": "usage error (bad command, flag or argument)"
+    },
+    {
+      "code": "other",
+      "meaning": "exec, shell and desktop actions pass through the exit code of the command on the computer"
+    }
+  ],
+  "commands": [
+    {
+      "name": "screenshot",
+      "group": "desktop",
+      "summary": "PNG of the whole screen",
+      "usage": "screenshot [FILE|-]",
+      "description": "Takes a PNG screenshot of the whole screen, after a short settle delay (COMPUTER_SETTLE seconds, default 0.3) so the screen reflects your last action. Without FILE, or with -, the PNG goes to stdout. Take one before acting and after, to see what happened; coordinates in the image are screen coordinates.",
+      "arguments": [
+        {
+          "name": "file",
+          "type": "path",
+          "required": false,
+          "description": "where to write the PNG on this machine; - or omitted for stdout"
+        }
+      ],
+      "flags": [],
+      "output": {
+        "type": "png",
+        "description": "PNG image bytes on stdout, or nothing when FILE is given (the file is written on this machine)"
+      },
+      "examples": [
+        "computer screenshot shot.png",
+        "computer screenshot > shot.png"
+      ],
+      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+    },
+    {
+      "name": "zoom",
+      "group": "desktop",
+      "summary": "PNG of a region at full resolution",
+      "usage": "zoom X0 Y0 X1 Y1 [FILE|-]",
+      "description": "Takes a PNG of just the region from the top-left corner X0 Y0 to the bottom-right corner X1 Y1 (exclusive), at full resolution: use it to read small text or check details. X1 must be greater than X0 and Y1 greater than Y0.",
+      "arguments": [
+        {
+          "name": "x0",
+          "type": "integer",
+          "required": true,
+          "description": "left edge"
+        },
+        {
+          "name": "y0",
+          "type": "integer",
+          "required": true,
+          "description": "top edge"
+        },
+        {
+          "name": "x1",
+          "type": "integer",
+          "required": true,
+          "description": "right edge (greater than x0)"
+        },
+        {
+          "name": "y1",
+          "type": "integer",
+          "required": true,
+          "description": "bottom edge (greater than y0)"
+        },
+        {
+          "name": "file",
+          "type": "path",
+          "required": false,
+          "description": "where to write the PNG on this machine; - or omitted for stdout"
+        }
+      ],
+      "flags": [],
+      "output": {
+        "type": "png",
+        "description": "PNG image bytes on stdout, or nothing when FILE is given (the file is written on this machine)"
+      },
+      "examples": [
+        "computer zoom 100 50 420 290 detail.png"
+      ],
+      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+    },
+    {
+      "name": "size",
+      "group": "desktop",
+      "summary": "print the screen size",
+      "usage": "size",
+      "description": "Prints the screen size in pixels.",
+      "arguments": [],
+      "flags": [],
+      "output": {
+        "type": "text",
+        "description": "one line \"W H\", e.g. \"1280 800\""
+      },
+      "examples": [
+        "computer size"
+      ],
+      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+    },
+    {
+      "name": "cursor",
+      "group": "desktop",
+      "summary": "print the mouse position",
+      "usage": "cursor",
+      "description": "Prints where the mouse pointer is.",
+      "arguments": [],
+      "flags": [],
+      "output": {
+        "type": "text",
+        "description": "one line \"X Y\", e.g. \"640 400\""
+      },
+      "examples": [
+        "computer cursor"
+      ],
+      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+    },
+    {
+      "name": "move",
+      "group": "desktop",
+      "summary": "move the mouse",
+      "usage": "move X Y",
+      "description": "Moves the mouse pointer to X Y without clicking (to hover, e.g. for tooltips or menus).",
+      "arguments": [
+        {
+          "name": "x",
+          "type": "integer",
+          "required": true,
+          "description": "horizontal pixel position, 0 = left edge"
+        },
+        {
+          "name": "y",
+          "type": "integer",
+          "required": true,
+          "description": "vertical pixel position, 0 = top edge"
+        }
+      ],
+      "flags": [],
+      "output": {
+        "type": "none",
+        "description": "nothing"
+      },
+      "examples": [
+        "computer move 640 400"
+      ],
+      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+    },
+    {
+      "name": "click",
+      "group": "desktop",
+      "summary": "click at X Y",
+      "usage": "click X Y [left|right|middle]",
+      "description": "Moves the mouse to X Y and clicks a button (default left).",
+      "arguments": [
+        {
+          "name": "x",
+          "type": "integer",
+          "required": true,
+          "description": "horizontal pixel position, 0 = left edge"
+        },
+        {
+          "name": "y",
+          "type": "integer",
+          "required": true,
+          "description": "vertical pixel position, 0 = top edge"
+        },
+        {
+          "name": "button",
+          "type": "enum",
+          "required": false,
+          "enum": [
+            "left",
+            "right",
+            "middle"
+          ],
+          "default": "left",
+          "description": "mouse button"
+        }
+      ],
+      "flags": [],
+      "output": {
+        "type": "none",
+        "description": "nothing"
+      },
+      "examples": [
+        "computer click 640 400",
+        "computer click 640 400 right"
+      ],
+      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+    },
+    {
+      "name": "double-click",
+      "group": "desktop",
+      "summary": "double left-click at X Y",
+      "usage": "double-click X Y",
+      "description": "Double-clicks the left button at X Y (selects a word, opens a file).",
+      "arguments": [
+        {
+          "name": "x",
+          "type": "integer",
+          "required": true,
+          "description": "horizontal pixel position, 0 = left edge"
+        },
+        {
+          "name": "y",
+          "type": "integer",
+          "required": true,
+          "description": "vertical pixel position, 0 = top edge"
+        }
+      ],
+      "flags": [],
+      "output": {
+        "type": "none",
+        "description": "nothing"
+      },
+      "examples": [
+        "computer double-click 200 300"
+      ],
+      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+    },
+    {
+      "name": "triple-click",
+      "group": "desktop",
+      "summary": "triple left-click at X Y",
+      "usage": "triple-click X Y",
+      "description": "Triple-clicks the left button at X Y (selects a line or paragraph).",
+      "arguments": [
+        {
+          "name": "x",
+          "type": "integer",
+          "required": true,
+          "description": "horizontal pixel position, 0 = left edge"
+        },
+        {
+          "name": "y",
+          "type": "integer",
+          "required": true,
+          "description": "vertical pixel position, 0 = top edge"
+        }
+      ],
+      "flags": [],
+      "output": {
+        "type": "none",
+        "description": "nothing"
+      },
+      "examples": [
+        "computer triple-click 200 300"
+      ],
+      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+    },
+    {
+      "name": "mouse-down",
+      "group": "desktop",
+      "summary": "press a mouse button",
+      "usage": "mouse-down [left|right|middle]",
+      "description": "Presses a mouse button at the current position and keeps it down (with move and mouse-up, for custom drags).",
+      "arguments": [
+        {
+          "name": "button",
+          "type": "enum",
+          "required": false,
+          "enum": [
+            "left",
+            "right",
+            "middle"
+          ],
+          "default": "left",
+          "description": "mouse button"
+        }
+      ],
+      "flags": [],
+      "output": {
+        "type": "none",
+        "description": "nothing"
+      },
+      "examples": [
+        "computer move 100 100 && computer mouse-down && computer move 300 300 && computer mouse-up"
+      ],
+      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+    },
+    {
+      "name": "mouse-up",
+      "group": "desktop",
+      "summary": "release a mouse button",
+      "usage": "mouse-up [left|right|middle]",
+      "description": "Releases a mouse button pressed with mouse-down.",
+      "arguments": [
+        {
+          "name": "button",
+          "type": "enum",
+          "required": false,
+          "enum": [
+            "left",
+            "right",
+            "middle"
+          ],
+          "default": "left",
+          "description": "mouse button"
+        }
+      ],
+      "flags": [],
+      "output": {
+        "type": "none",
+        "description": "nothing"
+      },
+      "examples": [
+        "computer mouse-up"
+      ],
+      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+    },
+    {
+      "name": "drag",
+      "group": "desktop",
+      "summary": "left-drag from one point to another",
+      "usage": "drag X1 Y1 X2 Y2",
+      "description": "Presses the left button at X1 Y1, moves to X2 Y2 and releases it.",
+      "arguments": [
+        {
+          "name": "x1",
+          "type": "integer",
+          "required": true,
+          "description": "start x"
+        },
+        {
+          "name": "y1",
+          "type": "integer",
+          "required": true,
+          "description": "start y"
+        },
+        {
+          "name": "x2",
+          "type": "integer",
+          "required": true,
+          "description": "end x"
+        },
+        {
+          "name": "y2",
+          "type": "integer",
+          "required": true,
+          "description": "end y"
+        }
+      ],
+      "flags": [],
+      "output": {
+        "type": "none",
+        "description": "nothing"
+      },
+      "examples": [
+        "computer drag 100 100 400 300"
+      ],
+      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+    },
+    {
+      "name": "type",
+      "group": "desktop",
+      "summary": "type text into the focused window",
+      "usage": "type TEXT...",
+      "description": "Types text into the focused window, as keystrokes. Several arguments are joined with spaces. Click the field first; use key for Return, Tab or shortcuts.",
+      "arguments": [
+        {
+          "name": "text",
+          "type": "string",
+          "required": true,
+          "variadic": true,
+          "description": "text to type"
+        }
+      ],
+      "flags": [],
+      "output": {
+        "type": "none",
+        "description": "nothing"
+      },
+      "examples": [
+        "computer type 'hello world'"
+      ],
+      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+    },
+    {
+      "name": "key",
+      "group": "desktop",
+      "summary": "press keys or shortcuts",
+      "usage": "key COMBO...",
+      "description": "Presses keys one after another, in xdotool syntax: Return, Escape, Tab, BackSpace, Up, F5, ctrl+l, ctrl+shift+t, super.",
+      "arguments": [
+        {
+          "name": "combo",
+          "type": "string",
+          "required": true,
+          "variadic": true,
+          "description": "a key or key combination"
+        }
+      ],
+      "flags": [],
+      "output": {
+        "type": "none",
+        "description": "nothing"
+      },
+      "examples": [
+        "computer key ctrl+l",
+        "computer key ctrl+a BackSpace"
+      ],
+      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+    },
+    {
+      "name": "hold-key",
+      "group": "desktop",
+      "summary": "hold a key down for a while",
+      "usage": "hold-key KEY SECONDS",
+      "description": "Holds a key down for SECONDS, then releases it.",
+      "arguments": [
+        {
+          "name": "key",
+          "type": "string",
+          "required": true,
+          "description": "key in xdotool syntax"
+        },
+        {
+          "name": "seconds",
+          "type": "number",
+          "required": true,
+          "description": "how long"
+        }
+      ],
+      "flags": [],
+      "output": {
+        "type": "none",
+        "description": "nothing"
+      },
+      "examples": [
+        "computer hold-key shift 0.5"
+      ],
+      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+    },
+    {
+      "name": "scroll",
+      "group": "desktop",
+      "summary": "scroll at X Y",
+      "usage": "scroll X Y up|down|left|right [N]",
+      "description": "Moves the mouse to X Y and scrolls N notches (default 3) in a direction.",
+      "arguments": [
+        {
+          "name": "x",
+          "type": "integer",
+          "required": true,
+          "description": "horizontal pixel position, 0 = left edge"
+        },
+        {
+          "name": "y",
+          "type": "integer",
+          "required": true,
+          "description": "vertical pixel position, 0 = top edge"
+        },
+        {
+          "name": "direction",
+          "type": "enum",
+          "required": true,
+          "enum": [
+            "up",
+            "down",
+            "left",
+            "right"
+          ],
+          "description": "scroll direction"
+        },
+        {
+          "name": "n",
+          "type": "integer",
+          "required": false,
+          "default": "3",
+          "description": "number of notches"
+        }
+      ],
+      "flags": [],
+      "output": {
+        "type": "none",
+        "description": "nothing"
+      },
+      "examples": [
+        "computer scroll 640 400 down 5"
+      ],
+      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+    },
+    {
+      "name": "wait",
+      "group": "desktop",
+      "summary": "pause for a while",
+      "usage": "wait SECONDS",
+      "description": "Pauses for SECONDS, e.g. for a page or app to load before the next screenshot.",
+      "arguments": [
+        {
+          "name": "seconds",
+          "type": "number",
+          "required": true,
+          "description": "how long"
+        }
+      ],
+      "flags": [],
+      "output": {
+        "type": "none",
+        "description": "nothing"
+      },
+      "examples": [
+        "computer wait 2"
+      ],
+      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer"
+    },
+    {
+      "name": "exec",
+      "group": "shell",
+      "summary": "run a command on the computer",
+      "usage": "exec [OPTIONS] -- CMD [ARG...]",
+      "description": "Runs one command as user (in /workspace unless --cwd) and streams its stdin, stdout and stderr; exits with the command's exit code. The command is run as given, not through a shell: for pipes, globs or && use `-- bash -lc '...'`.",
+      "arguments": [
+        {
+          "name": "cmd",
+          "type": "string",
+          "required": true,
+          "variadic": true,
+          "description": "the command and its arguments"
+        }
+      ],
+      "flags": [
+        {
+          "name": "--json",
+          "type": "boolean",
+          "description": "buffer the output and print one JSON object {\"stdout\",\"stderr\",\"exit\"} instead of streaming; exit 0 when the JSON was printed"
+        },
+        {
+          "name": "--tty",
+          "short": "-t",
+          "type": "boolean",
+          "description": "run in a terminal (for programs that need one); stdout and stderr are merged"
+        },
+        {
+          "name": "--cwd",
+          "type": "string",
+          "value": "DIR",
+          "default": "/workspace",
+          "description": "working directory on the computer"
+        },
+        {
+          "name": "--env",
+          "short": "-e",
+          "type": "string[]",
+          "value": "K=V",
+          "description": "set an environment variable (repeatable)"
+        }
+      ],
+      "output": {
+        "type": "stream",
+        "description": "the command's stdout and stderr as they arrive; with --json one object {\"stdout\":string,\"stderr\":string,\"exit\":int}, using \"stdoutBase64\"/\"stderrBase64\" (base64) instead when the output isn't UTF-8",
+        "fields": {
+          "exit": "exit code",
+          "stderr": "standard error (UTF-8)",
+          "stderrBase64": "standard error, base64, when not UTF-8",
+          "stdout": "standard output (UTF-8)",
+          "stdoutBase64": "standard output, base64, when not UTF-8"
+        }
+      },
+      "examples": [
+        "computer -c alice exec -- ls -la",
+        "computer exec --json -- bash -lc 'cd app && npm test'",
+        "echo hi | computer exec -- tee /workspace/hi.txt"
+      ],
+      "where": "on the chosen remote (-c NAME); inside a computer without a remote it acts locally",
+      "exitCodes": "the command's own exit code; 1 when it couldn't run (connection, token, stopped computer), 2 usage error"
+    },
+    {
+      "name": "shell",
+      "group": "shell",
+      "summary": "interactive login shell",
+      "usage": "shell",
+      "description": "Opens an interactive bash login shell on the computer in your terminal (raw mode, resizes follow your window). Exit with `exit` or Ctrl-D. For scripted use, prefer exec.",
+      "arguments": [],
+      "flags": [],
+      "output": {
+        "type": "stream",
+        "description": "the terminal session"
+      },
+      "examples": [
+        "computer -c alice shell"
+      ],
+      "where": "on the chosen remote (-c NAME); inside a computer without a remote it acts locally",
+      "exitCodes": "the shell's exit code; 1 when it couldn't start"
+    },
+    {
+      "name": "cp",
+      "group": "shell",
+      "summary": "copy files to or from a computer",
+      "usage": "cp SRC DST",
+      "description": "Copies a file or directory between this machine and a computer; write the computer side as NAME:/path (NAME is a remote; an empty NAME, as in :/path, means the chosen remote). A file lands at DST, or inside DST when it is an existing directory. A directory's contents land in DST, which is created (like `cp -r SRC/. DST`). SRC - reads stdin; DST - writes to stdout (a tar stream for a directory). Files land as user; inside a computer, two local paths are copied locally.",
+      "arguments": [
+        {
+          "name": "src",
+          "type": "path",
+          "required": true,
+          "description": "local path, -, or NAME:/path"
+        },
+        {
+          "name": "dst",
+          "type": "path",
+          "required": true,
+          "description": "local path, -, or NAME:/path"
+        }
+      ],
+      "flags": [],
+      "output": {
+        "type": "none",
+        "description": "nothing, unless DST is - (the file's bytes or a tar stream)"
+      },
+      "examples": [
+        "computer cp ./report.pdf alice:/workspace/",
+        "computer cp ./site alice:/workspace/site",
+        "computer cp alice:/workspace/out.csv ."
+      ],
+      "where": "on the chosen remote (-c NAME); inside a computer without a remote it acts locally",
+      "exitCodes": "0 ok, 1 error, 2 usage error"
+    },
+    {
+      "name": "browser connect",
+      "group": "browser",
+      "summary": "forward the computer's browser to a local CDP port",
+      "usage": "browser connect [--port N]",
+      "description": "Listens on 127.0.0.1:PORT and forwards the Chrome DevTools Protocol to the computer's shared Chromium (the one on its desktop, with the human's logins), so Playwright, Puppeteer or DevTools tools connect as if the browser were local. Prints the URL, then keeps running until Ctrl-C. Run it in the background. Inside a computer it isn't needed: CDP is at http://127.0.0.1:9221.",
+      "arguments": [],
+      "flags": [
+        {
+          "name": "--port",
+          "type": "integer",
+          "value": "N",
+          "default": "9222",
+          "description": "local port (0 = any free port)"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "first line: the local CDP URL (http://127.0.0.1:9222); connection log on stderr"
+      },
+      "examples": [
+        "computer -c alice browser connect &",
+        "# then in Python: p.chromium.connect_over_cdp(\"http://127.0.0.1:9222\")"
+      ],
+      "where": "on the chosen remote (-c NAME); inside a computer without a remote it acts locally",
+      "exitCodes": "0 ok, 1 error, 2 usage error"
+    },
+    {
+      "name": "remote add",
+      "group": "remote",
+      "summary": "save a computer as a remote",
+      "usage": "remote add NAME URL --token cct_…",
+      "description": "Checks the token against the computer's agent API and saves the remote in remotes.json ($XDG_CONFIG_HOME/container-computer, default ~/.config/container-computer; mode 0600). URL is the computer's address, like https://host/alice. Tokens come from the computer's Agents tab. The first remote becomes the default.",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "local name for the remote (letters, digits, . _ -)"
+        },
+        {
+          "name": "url",
+          "type": "string",
+          "required": true,
+          "description": "the computer's URL, e.g. https://host/alice"
+        }
+      ],
+      "flags": [
+        {
+          "name": "--token",
+          "type": "string",
+          "value": "TOKEN",
+          "description": "agent token (cct_…); defaults to $COMPUTER_TOKEN"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "a confirmation line"
+      },
+      "examples": [
+        "computer remote add alice https://computers.example.com/alice --token cct_…"
+      ],
+      "where": "on this machine (no remote needed)",
+      "exitCodes": "0 ok, 1 error, 2 usage error"
+    },
+    {
+      "name": "remote list",
+      "group": "remote",
+      "summary": "list saved remotes",
+      "usage": "remote list [--json]",
+      "description": "Lists the saved remotes; * marks the default.",
+      "arguments": [],
+      "flags": [
+        {
+          "name": "--json",
+          "type": "boolean",
+          "description": "print JSON instead of text"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "a table NAME URL TOKEN (token ID only); with --json an array of {name,url,computer,default}",
+        "fields": {
+          "computer": "computer name on the supervisor",
+          "default": "whether it is the default",
+          "name": "remote name",
+          "url": "computer URL"
+        }
+      },
+      "examples": [
+        "computer remote list"
+      ],
+      "where": "on this machine (no remote needed)",
+      "exitCodes": "0 ok, 1 error, 2 usage error"
+    },
+    {
+      "name": "remote remove",
+      "group": "remote",
+      "summary": "forget a remote",
+      "usage": "remote remove NAME",
+      "description": "Removes a saved remote (the token itself stays valid until someone revokes it on the Agents tab).",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "remote name"
+        }
+      ],
+      "flags": [],
+      "output": {
+        "type": "none",
+        "description": "nothing"
+      },
+      "examples": [
+        "computer remote remove alice"
+      ],
+      "where": "on this machine (no remote needed)",
+      "exitCodes": "0 ok, 1 error, 2 usage error"
+    },
+    {
+      "name": "remote default",
+      "group": "remote",
+      "summary": "set or show the default remote",
+      "usage": "remote default [NAME]",
+      "description": "Makes NAME the remote used when no -c or COMPUTER_REMOTE is given; without NAME prints the current default.",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": false,
+          "description": "remote name"
+        }
+      ],
+      "flags": [],
+      "output": {
+        "type": "text",
+        "description": "without NAME: the default's name, or nothing"
+      },
+      "examples": [
+        "computer remote default alice"
+      ],
+      "where": "on this machine (no remote needed)",
+      "exitCodes": "0 ok, 1 error, 2 usage error"
+    },
+    {
+      "name": "status",
+      "group": "info",
+      "summary": "show the computer's name, state, image and screen",
+      "usage": "status [--json]",
+      "description": "Shows which computer the command talks to and its state, image and screen size.",
+      "arguments": [],
+      "flags": [
+        {
+          "name": "--json",
+          "type": "boolean",
+          "description": "print JSON instead of text"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "\"key: value\" lines; with --json an object",
+        "fields": {
+          "image": "image reference",
+          "imageTitle": "image title",
+          "imageVersion": "image version",
+          "local": "true when acting locally",
+          "name": "computer name",
+          "remote": "remote used (absent locally)",
+          "screen": "{width,height}",
+          "state": "running, stopped, …",
+          "url": "computer URL (absent locally)"
+        }
+      },
+      "examples": [
+        "computer -c alice status"
+      ],
+      "where": "inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)",
+      "exitCodes": "0 ok, 1 error, 2 usage error"
+    },
+    {
+      "name": "guide",
+      "group": "info",
+      "summary": "short manual for AI agents",
+      "usage": "guide",
+      "description": "Prints a short manual: how a computer is laid out, the three ways to work (shell, browser, desktop) and when to use which.",
+      "arguments": [],
+      "flags": [],
+      "output": {
+        "type": "text",
+        "description": "the guide"
+      },
+      "examples": [
+        "computer guide"
+      ],
+      "where": "on this machine (no remote needed)",
+      "exitCodes": "0 ok, 1 error, 2 usage error"
+    },
+    {
+      "name": "describe",
+      "group": "info",
+      "summary": "machine-readable description of every command",
+      "usage": "describe --json",
+      "description": "Prints every command with its arguments, flags, output and exit codes as JSON, to load as tool definitions.",
+      "arguments": [],
+      "flags": [
+        {
+          "name": "--json",
+          "type": "boolean",
+          "description": "JSON output (the only format)"
+        }
+      ],
+      "output": {
+        "type": "json",
+        "description": "{name, version, usage, globalFlags, environment, exitCodes, commands:[{name, group, summary, usage, description, arguments, flags, output, examples, where, exitCodes}]}"
+      },
+      "examples": [
+        "computer describe --json"
+      ],
+      "where": "on this machine (no remote needed)",
+      "exitCodes": "0 ok, 1 error, 2 usage error"
+    },
+    {
+      "name": "help",
+      "group": "info",
+      "summary": "help for a command",
+      "usage": "help [COMMAND...]",
+      "description": "Prints help for a command, or the overview. Same as COMMAND --help.",
+      "arguments": [
+        {
+          "name": "command",
+          "type": "string",
+          "required": false,
+          "variadic": true,
+          "description": "command name, e.g. click or remote add"
+        }
+      ],
+      "flags": [],
+      "output": {
+        "type": "text",
+        "description": "help text"
+      },
+      "examples": [
+        "computer help cp"
+      ],
+      "where": "on this machine (no remote needed)",
+      "exitCodes": "0 ok, 1 error, 2 usage error"
+    },
+    {
+      "name": "version",
+      "group": "info",
+      "summary": "print the version",
+      "usage": "version",
+      "description": "Prints the computer command's version.",
+      "arguments": [],
+      "flags": [],
+      "output": {
+        "type": "text",
+        "description": "the version"
+      },
+      "examples": [
+        "computer version"
+      ],
+      "where": "on this machine (no remote needed)",
+      "exitCodes": "0 ok, 1 error, 2 usage error"
+    }
+  ]
+}

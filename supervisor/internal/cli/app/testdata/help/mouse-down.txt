@@ -1,0 +1,17 @@
+computer mouse-down: press a mouse button
+
+Usage: computer [-c NAME] mouse-down [left|right|middle]
+
+Presses a mouse button at the current position and keeps it down (with move
+and mouse-up, for custom drags).
+
+Arguments:
+  BUTTON     enum        optional  mouse button (left, right, middle); default left
+
+Prints: nothing
+
+Examples:
+  computer move 100 100 && computer mouse-down && computer move 300 300 && computer mouse-up
+
+Where: inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)
+Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer

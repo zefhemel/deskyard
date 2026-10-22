@@ -1,0 +1,24 @@
+computer zoom: PNG of a region at full resolution
+
+Usage: computer [-c NAME] zoom X0 Y0 X1 Y1 [FILE|-]
+
+Takes a PNG of just the region from the top-left corner X0 Y0 to the
+bottom-right corner X1 Y1 (exclusive), at full resolution: use it to read
+small text or check details. X1 must be greater than X0 and Y1 greater than
+Y0.
+
+Arguments:
+  X0         integer     required  left edge
+  Y0         integer     required  top edge
+  X1         integer     required  right edge (greater than x0)
+  Y1         integer     required  bottom edge (greater than y0)
+  FILE       path        optional  where to write the PNG on this machine; - or omitted for stdout
+
+Prints: PNG image bytes on stdout, or nothing when FILE is given (the file is
+  written on this machine)
+
+Examples:
+  computer zoom 100 50 420 290 detail.png
+
+Where: inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)
+Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer

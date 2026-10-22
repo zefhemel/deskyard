@@ -1,0 +1,22 @@
+computer screenshot: PNG of the whole screen
+
+Usage: computer [-c NAME] screenshot [FILE|-]
+
+Takes a PNG screenshot of the whole screen, after a short settle delay
+(COMPUTER_SETTLE seconds, default 0.3) so the screen reflects your last
+action. Without FILE, or with -, the PNG goes to stdout. Take one before
+acting and after, to see what happened; coordinates in the image are screen
+coordinates.
+
+Arguments:
+  FILE       path        optional  where to write the PNG on this machine; - or omitted for stdout
+
+Prints: PNG image bytes on stdout, or nothing when FILE is given (the file is
+  written on this machine)
+
+Examples:
+  computer screenshot shot.png
+  computer screenshot > shot.png
+
+Where: inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)
+Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer

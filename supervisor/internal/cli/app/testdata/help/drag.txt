@@ -1,0 +1,19 @@
+computer drag: left-drag from one point to another
+
+Usage: computer [-c NAME] drag X1 Y1 X2 Y2
+
+Presses the left button at X1 Y1, moves to X2 Y2 and releases it.
+
+Arguments:
+  X1         integer     required  start x
+  Y1         integer     required  start y
+  X2         integer     required  end x
+  Y2         integer     required  end y
+
+Prints: nothing
+
+Examples:
+  computer drag 100 100 400 300
+
+Where: inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)
+Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer

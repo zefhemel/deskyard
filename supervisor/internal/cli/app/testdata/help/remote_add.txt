@@ -1,0 +1,24 @@
+computer remote add: save a computer as a remote
+
+Usage: computer [-c NAME] remote add NAME URL --token cct_…
+
+Checks the token against the computer's agent API and saves the remote in
+remotes.json ($XDG_CONFIG_HOME/container-computer, default
+~/.config/container-computer; mode 0600). URL is the computer's address, like
+https://host/alice. Tokens come from the computer's Agents tab. The first
+remote becomes the default.
+
+Arguments:
+  NAME       string      required  local name for the remote (letters, digits, . _ -)
+  URL        string      required  the computer's URL, e.g. https://host/alice
+
+Options:
+  --token TOKEN        agent token (cct_…); defaults to $COMPUTER_TOKEN
+
+Prints: a confirmation line
+
+Examples:
+  computer remote add alice https://computers.example.com/alice --token cct_…
+
+Where: on this machine (no remote needed)
+Exit codes: 0 ok, 1 error, 2 usage error

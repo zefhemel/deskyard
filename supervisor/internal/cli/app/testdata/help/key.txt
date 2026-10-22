@@ -1,0 +1,18 @@
+computer key: press keys or shortcuts
+
+Usage: computer [-c NAME] key COMBO...
+
+Presses keys one after another, in xdotool syntax: Return, Escape, Tab,
+BackSpace, Up, F5, ctrl+l, ctrl+shift+t, super.
+
+Arguments:
+  COMBO      string...   required  a key or key combination
+
+Prints: nothing
+
+Examples:
+  computer key ctrl+l
+  computer key ctrl+a BackSpace
+
+Where: inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)
+Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer

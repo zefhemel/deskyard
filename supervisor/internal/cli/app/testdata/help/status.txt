@@ -1,0 +1,17 @@
+computer status: show the computer's name, state, image and screen
+
+Usage: computer [-c NAME] status [--json]
+
+Shows which computer the command talks to and its state, image and screen
+size.
+
+Options:
+  --json               print JSON instead of text
+
+Prints: "key: value" lines; with --json an object
+
+Examples:
+  computer -c alice status
+
+Where: inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)
+Exit codes: 0 ok, 1 error, 2 usage error

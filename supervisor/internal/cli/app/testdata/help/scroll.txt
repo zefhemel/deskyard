@@ -1,0 +1,19 @@
+computer scroll: scroll at X Y
+
+Usage: computer [-c NAME] scroll X Y up|down|left|right [N]
+
+Moves the mouse to X Y and scrolls N notches (default 3) in a direction.
+
+Arguments:
+  X          integer     required  horizontal pixel position, 0 = left edge
+  Y          integer     required  vertical pixel position, 0 = top edge
+  DIRECTION  enum        required  scroll direction (up, down, left, right)
+  N          integer     optional  number of notches; default 3
+
+Prints: nothing
+
+Examples:
+  computer scroll 640 400 down 5
+
+Where: inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)
+Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer

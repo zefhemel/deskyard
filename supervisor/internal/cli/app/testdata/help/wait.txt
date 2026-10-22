@@ -1,0 +1,16 @@
+computer wait: pause for a while
+
+Usage: computer [-c NAME] wait SECONDS
+
+Pauses for SECONDS, e.g. for a page or app to load before the next screenshot.
+
+Arguments:
+  SECONDS    number      required  how long
+
+Prints: nothing
+
+Examples:
+  computer wait 2
+
+Where: inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)
+Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer

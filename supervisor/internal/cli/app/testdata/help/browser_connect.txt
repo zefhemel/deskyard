@@ -1,0 +1,23 @@
+computer browser connect: forward the computer's browser to a local CDP port
+
+Usage: computer [-c NAME] browser connect [--port N]
+
+Listens on 127.0.0.1:PORT and forwards the Chrome DevTools Protocol to the
+computer's shared Chromium (the one on its desktop, with the human's logins),
+so Playwright, Puppeteer or DevTools tools connect as if the browser were
+local. Prints the URL, then keeps running until Ctrl-C. Run it in the
+background. Inside a computer it isn't needed: CDP is at
+http://127.0.0.1:9221.
+
+Options:
+  --port N             local port (0 = any free port) (default 9222)
+
+Prints: first line: the local CDP URL (http://127.0.0.1:9222); connection log
+  on stderr
+
+Examples:
+  computer -c alice browser connect &
+  # then in Python: p.chromium.connect_over_cdp("http://127.0.0.1:9222")
+
+Where: on the chosen remote (-c NAME); inside a computer without a remote it acts locally
+Exit codes: 0 ok, 1 error, 2 usage error

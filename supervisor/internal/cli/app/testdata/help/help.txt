@@ -1,0 +1,16 @@
+computer help: help for a command
+
+Usage: computer [-c NAME] help [COMMAND...]
+
+Prints help for a command, or the overview. Same as COMMAND --help.
+
+Arguments:
+  COMMAND    string...   optional  command name, e.g. click or remote add
+
+Prints: help text
+
+Examples:
+  computer help cp
+
+Where: on this machine (no remote needed)
+Exit codes: 0 ok, 1 error, 2 usage error

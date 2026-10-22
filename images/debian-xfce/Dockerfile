@@ -1,4 +1,16 @@
 # syntax=docker/dockerfile:1
+
+# The `computer` command (supervisor/cmd/computer), built for the target
+# platform on the build machine's.
+FROM --platform=$BUILDPLATFORM golang:1.27-trixie AS computer
+WORKDIR /src
+COPY supervisor/go.mod supervisor/go.sum ./
+RUN go mod download
+COPY supervisor/ ./
+ARG TARGETOS TARGETARCH VERSION=dev
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /computer ./cmd/computer
+
 FROM debian:trixie-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -69,6 +81,7 @@ ENV HOME=/workspace \
     PATH=/workspace/.local/bin:/workspace/.npm-global/bin:/workspace/.local/share/mise/shims:/opt/runtimes/node/bin:/opt/runtimes/python/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 COPY images/debian-xfce/rootfs/ /
+COPY --from=computer /computer /usr/local/bin/computer
 
 VOLUME ["/workspace"]
 # The only port: Caddy, which needs the supervisor's per-computer token

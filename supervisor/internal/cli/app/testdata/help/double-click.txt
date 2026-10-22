@@ -1,0 +1,17 @@
+computer double-click: double left-click at X Y
+
+Usage: computer [-c NAME] double-click X Y
+
+Double-clicks the left button at X Y (selects a word, opens a file).
+
+Arguments:
+  X          integer     required  horizontal pixel position, 0 = left edge
+  Y          integer     required  vertical pixel position, 0 = top edge
+
+Prints: nothing
+
+Examples:
+  computer double-click 200 300
+
+Where: inside a computer it acts locally; elsewhere on the chosen remote (-c NAME)
+Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the computer
