@@ -61,6 +61,10 @@ RUN MISE_YES=1 MISE_CACHE_DIR=/tmp/mise-cache MISE_DATA_DIR=/opt/mise MISE_CONFI
     && /opt/runtimes/node/bin/node --version \
     && /opt/runtimes/python/bin/python --version
 
+# Where custom images put their starting home and extra Flatpak remotes (empty here).
+RUN mkdir -p /opt/deskyard/home-template /etc/deskyard/flatpak-remotes \
+    && chown 1000:1000 /opt/deskyard/home-template
+
 RUN useradd --system --home-dir /var/lib/caddy --create-home --shell /usr/sbin/nologin caddy \
     && groupadd -g 1000 user \
     && useradd -u 1000 -g user -d /workspace -M -s /bin/bash user \
@@ -78,7 +82,7 @@ ENV HOME=/workspace \
     NPM_CONFIG_PREFIX=/workspace/.npm-global \
     UV_PYTHON_PREFERENCE=only-managed \
     XDG_DATA_DIRS=/workspace/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/usr/local/share:/usr/share \
-    PATH=/workspace/.local/bin:/workspace/.npm-global/bin:/workspace/.local/share/mise/shims:/opt/runtimes/node/bin:/opt/runtimes/python/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    PATH=/workspace/.local/bin:/workspace/.npm-global/bin:/workspace/.local/share/mise/shims:/opt/mise/shims:/opt/runtimes/node/bin:/opt/runtimes/python/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 COPY images/debian-xfce/rootfs/ /
 COPY --from=desktop /desktop /usr/local/bin/deskyard
@@ -91,6 +95,7 @@ EXPOSE 8080
 # The image contract the supervisor checks before using an image.
 ARG VERSION=dev
 LABEL deskyard.contract="1" \
+      deskyard.kind="desktop" \
       org.opencontainers.image.title="Debian XFCE" \
       org.opencontainers.image.description="Debian trixie with XFCE, Chromium, Flatpak, mise and uv" \
       org.opencontainers.image.version="${VERSION}"

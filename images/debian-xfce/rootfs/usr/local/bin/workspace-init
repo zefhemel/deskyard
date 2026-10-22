@@ -26,6 +26,10 @@ fi
 # --- first start: seed the home folder (never overwrite later) --------------
 if [ ! -e /workspace/.workspace-seeded ]; then
     log "seeding /workspace"
+    # A custom image's starting home. Copied as the user, so nothing in it can
+    # reach beyond what the user could write anyway; existing files are kept.
+    runuser -u user -- cp -an /opt/deskyard/home-template/. /workspace/ \
+        || log "warning: could not copy the home template"
     cp -an /etc/workspace/skel/. /workspace/
     chown -R 1000:1000 /workspace
     touch /workspace/.workspace-seeded
@@ -34,6 +38,20 @@ fi
 # --- Flathub as a per-user remote (installs land in /workspace) -------------
 runuser -u user -- flatpak remote-add --user --if-not-exists flathub /etc/workspace/flathub.flatpakrepo \
     || log "warning: could not add the flathub remote"
+
+# --- extra Flatpak remotes shipped by a custom image --------------------------
+# Regular files only, from the image (not /workspace); the name comes from the
+# file name and must be plain.
+for repo in /etc/deskyard/flatpak-remotes/*.flatpakrepo; do
+    [ -f "$repo" ] && [ ! -L "$repo" ] || continue
+    name=$(basename "$repo" .flatpakrepo)
+    if ! [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]]; then
+        log "skipping Flatpak remote with an unsupported name: $name"
+        continue
+    fi
+    runuser -u user -- flatpak remote-add --user --if-not-exists "$name" "$repo" \
+        || log "warning: could not add the $name remote"
+done
 
 # --- Codex: seed a config once (never touch an existing one) ----------------
 if [ ! -e /workspace/.codex/config.toml ]; then

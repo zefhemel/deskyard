@@ -137,6 +137,10 @@ Any image can be added to the catalog if it follows the image contract
 (label `deskyard.contract=1`, user `user` with home `/workspace`,
 KasmVNC behind Caddy on 8080); see the design in `docs/`.
 
+Images this project builds carry the label `deskyard.kind`: `desktop` for
+the desktop image and `supervisor` for the supervisor. List them with
+`docker images --filter label=deskyard.kind`.
+
 ### Flatpak
 
 Flatpak apps run inside bubblewrap, which needs namespaces that Docker's

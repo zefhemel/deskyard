@@ -29,7 +29,8 @@ FROM alpine:3.22
 RUN apk add --no-cache ca-certificates tzdata
 COPY --from=build /out/deskyard-supervisor /usr/local/bin/deskyard-supervisor
 ARG VERSION=dev
-LABEL org.opencontainers.image.title="Deskyard" \
+LABEL deskyard.kind="supervisor" \
+      org.opencontainers.image.title="Deskyard" \
       org.opencontainers.image.description="Creates, runs and shares desktops" \
       org.opencontainers.image.version="${VERSION}"
 # DESKYARD_DATA_DIR has no default here: mount the data folder at the
