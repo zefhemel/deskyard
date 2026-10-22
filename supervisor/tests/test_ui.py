@@ -108,5 +108,6 @@ def test_forwards_shown(cli, remote, forwards, supervisor, name):  # noqa: F811
         page.goto(f"{supervisor.base}/{name}/")
         expect(chip).to_be_visible(timeout=30000)
         assert f.stop() == 0
-        expect(chip).to_have_count(0, timeout=3000)
+        # The button stays for the viewers (this page is one); the mapping count goes.
+        expect(chip.get_by_text("⇄")).to_have_count(0, timeout=3000)
         browser.close()
