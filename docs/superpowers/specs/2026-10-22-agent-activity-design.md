@@ -3,6 +3,7 @@ displayName: Agent activity design
 tags: spec
 status: approved
 date: "2026-10-22"
+plan: "[[superpowers/plans/2026-10-22-agent-activity|Agent activity plan]]"
 ---
 People watching a desktop can see which agents are working on it and what they're doing:
 - **Presence.** Agents appear next to the people viewing it, as "zef's agent", presence inferred from recent activity.
