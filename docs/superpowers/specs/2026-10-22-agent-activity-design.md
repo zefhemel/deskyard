@@ -1,7 +1,7 @@
 ---
 displayName: Agent activity design
 tags: spec
-status: draft
+status: approved
 date: "2026-10-22"
 ---
 People watching a desktop can see which agents are working on it and what they're doing:
