@@ -92,14 +92,14 @@ The images can be rebuilt, moved to another base, and clearly marked when they c
 - Modify: `images/debian-xfce/rootfs/usr/local/bin/workspace-init`
   - The template copy, per Global Constraints.
   - For each `/etc/deskyard/flatpak-remotes/*.flatpakrepo`, add it as `runuser -u user -- flatpak remote-add --user --if-not-exists <basename> <file>`.
-- Modify: `images/debian-xfce/Dockerfile`: `mkdir -p /opt/deskyard/home-template /etc/deskyard/flatpak-remotes` (empty), and `/opt/mise/shims` on `PATH` after the user's shims.
+- Modify: `images/debian-xfce/Dockerfile`: `mkdir -p /opt/deskyard/home-template /etc/deskyard/flatpak-remotes` (empty), and `/opt/deskyard/bin` (empty, root-owned) on `PATH` after the user's mise shims; `/opt/mise/shims` stays off `PATH`.
 - Test: `images/debian-xfce/tests/test_custom_base.py`.
 
 - [ ] **Step 1: Write failing tests.** Each builds a tiny derived image in the test with `docker build` (`FROM deskyard-debian-xfce:test`, plus `COPY` of files into the template or remotes dirs).
   - `test_template_seeds_new_home`: a new desktop has `/workspace/.config/x/y` from the template, owned by 1000.
   - `test_template_keeps_existing_files`: a folder that already has `.bashrc` (with content A) and no seeded marker keeps A, and gains the template's other files.
   - `test_extra_remote_added_for_user`: `flatpak remotes --user` lists the remote.
-  - `test_image_mise_on_path_after_user`: a tool in `/opt/mise/shims` resolves, and the user's own shim of the same name wins.
+  - `test_image_tool_on_path_after_user`: a real tool installed into `/opt/mise` and linked into `/opt/deskyard/bin` runs, and the user's own shim of the same name wins; `test_base_node_resolves_to_runtimes_not_mise`.
 - [ ] **Step 2: Run.** Build the image, then `uv run pytest test_custom_base.py`. Expect FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run** the tests above, plus `test_privileges.py` and `test_boot.py`. Expect PASS.
