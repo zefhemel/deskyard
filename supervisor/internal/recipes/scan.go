@@ -31,12 +31,14 @@ const flatpakInstall = ".local/share/flatpak"
 var toolPaths = []string{".local/share/mise", ".local/bin", ".npm-global", ".local/share/uv", ".config/mise"}
 
 // leftOut is never copied: caches, the Flatpak installation, and Deskyard's
-// own runtime state.
+// own runtime state. (Not ~/.config/workspace: the panel migrations' run-once
+// markers go with the panel settings, in the settings group, or a desktop
+// made from the image would run them again over the user's panel.)
 var leftOut = []string{
 	".cache", ".npm", ".local/share/Trash", flatpakInstall,
 	".cargo/registry", ".cargo/git", ".rustup/downloads", ".gradle/caches", ".m2/repository", "go/pkg/mod",
 	".pnpm-store", ".local/share/pnpm/store", ".yarn/cache", ".bun/install/cache",
-	".workspace-seeded", ".config/workspace", ".Xauthority", ".ICEauthority", ".xsession-errors",
+	".workspace-seeded", ".Xauthority", ".ICEauthority", ".xsession-errors",
 	".xsession-errors.old", ".dbus", ".vnc",
 	browserProfile + "/SingletonLock", browserProfile + "/SingletonSocket", browserProfile + "/SingletonCookie",
 	browserProfile + "/.open",

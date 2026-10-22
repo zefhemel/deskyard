@@ -308,6 +308,37 @@ def test_image_from_desktop(admin, desktop, name, slugs):
         admin.delete(f"/api/desktops/{other}?files=1")
 
 
+PANEL_TYPES = ("p() { xfconf-query -c xfce4-panel \"$@\"; }"
+               " && for i in $(seq 60); do pgrep -x xfce4-panel >/dev/null && break; sleep 1; done"
+               " && for id in $(p -p /panels/panel-1/plugin-ids | grep -E '^[0-9]+$'); do p -p /plugins/plugin-$id; done")
+
+
+def test_panel_changes_stay_in_image_from_desktop(admin, desktop, name, slugs):
+    """The panel migrations' run-once markers travel with the settings: a
+    pager the user removed doesn't come back in desktops made from the image."""
+    assert "pager" in user_sh(name, PANEL_TYPES).split()
+    user_sh(name, "p() { xfconf-query -c xfce4-panel \"$@\"; }; args=()"
+                  "; for id in $(p -p /panels/panel-1/plugin-ids | grep -E '^[0-9]+$'); do"
+                  " [ \"$(p -p /plugins/plugin-$id)\" = pager ] || args+=(-t int -s $id); done"
+                  "; p -p /panels/panel-1/plugin-ids --force-array \"${args[@]}\"")
+    assert "pager" not in user_sh(name, PANEL_TYPES).split()
+    # Stopping logs out of XFCE, which saves the panel settings.
+    r = admin.post(f"/api/desktops/{name}/stop")
+    assert r.status_code == 204, r.text
+    scan = {g["name"]: g for g in admin.get(f"/api/desktops/{name}/image-scan").json()["groups"]}
+    assert ".config/workspace" in scan["settings"]["paths"] and ".config/xfce4" in scan["settings"]["paths"], scan["settings"]
+
+    s = slugs()
+    st, log = from_desktop(admin, name, s, ["settings"])
+    assert st["status"] == "done", st["error"] + "\n" + "\n".join(log[-40:])
+    other = new_desktop(admin, f"deskyard-custom/{s}:latest")
+    try:
+        types = user_sh(other, PANEL_TYPES).split()
+        assert "pager" not in types and "clock" in types, types
+    finally:
+        admin.delete(f"/api/desktops/{other}?files=1")
+
+
 def test_secret_flag_passes_down(admin, desktop, name, slugs):
     user_sh(name, "mkdir -p ~/.codex && echo token > ~/.codex/auth.json")
     secret = slugs()

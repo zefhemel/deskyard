@@ -31,7 +31,7 @@ func home() fstest.MapFS {
 		".config/gh/hosts.yml":             file(3),
 		".config/gh/config.yml":            file(4),
 		".config/deskyard/remotes.json":    file(9),
-		".config/workspace/panel-migrated": file(1), // Deskyard's own marker
+		".config/workspace/panel-migrated": file(1), // the panel migrations' marker: goes with the settings
 		// browser
 		".config/chromium-shared/Default/Bookmarks":                            file(50),
 		".config/chromium-shared/Default/Cookies":                              file(60),
@@ -98,7 +98,7 @@ func TestScanGroups(t *testing.T) {
 	}{
 		{GroupTools, 100 + 10 + 10 + 20 + 30 + 5, []string{".config/mise", ".local/bin", ".local/share/mise", ".npm-global"}, nil},
 		{GroupFlatpak, 7, []string{".var"}, nil},
-		{GroupSettings, 40 + 4, []string{".config/app", ".config/gh"}, []string{".config/deskyard", ".config/gh/hosts.yml"}},
+		{GroupSettings, 40 + 4 + 1, []string{".config/app", ".config/gh", ".config/workspace"}, []string{".config/deskyard", ".config/gh/hosts.yml"}},
 		{GroupDotfiles, 11 + 18, []string{".bashrc", ".codex"},
 			[]string{".bash_history", ".codex/auth.json", ".git-credentials", ".npmrc", ".ssh"}},
 		{GroupBrowser, 50 + 5 + 6, []string{".config/chromium-shared"},
@@ -134,7 +134,7 @@ func TestCachesAndStateExcluded(t *testing.T) {
 		".cache", ".cache/pip/x", ".npm/_cacache/y", ".var/app/org.gimp.GIMP/cache/thumbs/a.png",
 		".config/chromium-shared/Default/Cache/Cache_Data/f1", ".config/chromium-shared/Default/Code Cache/js/1",
 		".config/chromium-shared/SingletonLock", ".config/chromium-shared/Local State", ".config/chromium-shared/Default/History",
-		".config/chromium-shared/Default/Service Worker/CacheStorage/x", ".workspace-seeded", ".Xauthority", ".config/workspace/x",
+		".config/chromium-shared/Default/Service Worker/CacheStorage/x", ".workspace-seeded", ".Xauthority",
 		".local/share/flatpak/app/x", ".local/share/Trash/files/a",
 	} {
 		if g, ok := Classify(p); ok {
