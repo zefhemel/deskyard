@@ -93,6 +93,7 @@ export const desktops: Desktop[] = [
     image: "deskyard-custom/work-signed-in:latest",
     imageTitle: "Work, signed in",
     imageVersion: "2026-10-20 09:14",
+    updateAvailable: "2026-10-22 08:30",
     imageSecrets: true,
   }),
 ];

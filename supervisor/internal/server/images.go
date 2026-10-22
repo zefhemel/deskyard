@@ -354,22 +354,40 @@ func (s *Server) handleUpgradeImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Ref string `json:"ref"`
+		Ref            string `json:"ref"`
+		ConfirmSecrets bool   `json:"confirmSecrets"`
 	}
 	if err := readJSON(r, &req); err != nil || req.Ref == "" {
 		writeError(w, http.StatusBadRequest, "an image reference is required")
 		return
 	}
-	id := s.jobs.start(a.Username, "", func(ctx context.Context, progress func(string, float64)) error {
+	behindOn := func(ctx context.Context) ([]desktops.Desktop, error) {
 		list, err := s.Desktops.List(ctx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		var behind []desktops.Desktop
 		for _, c := range list {
 			if sameRef(c.Image, req.Ref) && s.images.updateFor(c) != nil {
 				behind = append(behind, c)
 			}
+		}
+		return behind, nil
+	}
+	if !req.ConfirmSecrets {
+		behind, err := behindOn(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if !s.secretsConfirmed(w, r, req.Ref, behind, false) {
+			return
+		}
+	}
+	id := s.jobs.start(a.Username, "", func(ctx context.Context, progress func(string, float64)) error {
+		behind, err := behindOn(ctx)
+		if err != nil {
+			return err
 		}
 		var errs []error
 		for i, c := range behind {

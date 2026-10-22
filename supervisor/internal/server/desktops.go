@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -225,9 +226,10 @@ func (s *Server) handleUpdateDesktop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Image       *string `json:"image"`
-		MemoryBytes *int64  `json:"memoryBytes"`
-		NanoCPUs    *int64  `json:"nanoCpus"`
+		Image          *string `json:"image"`
+		MemoryBytes    *int64  `json:"memoryBytes"`
+		NanoCPUs       *int64  `json:"nanoCpus"`
+		ConfirmSecrets bool    `json:"confirmSecrets"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad request")
@@ -247,7 +249,39 @@ func (s *Server) handleUpdateDesktop(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "limits can't be negative")
 		return
 	}
+	if set.Image != c.Image && !s.secretsConfirmed(w, r, set.Image, []desktops.Desktop{c}, req.ConfirmSecrets) {
+		return
+	}
 	s.startRecreate(w, a, c.Name, set, "upgrading")
+}
+
+// secretsConfirmed answers 409 unless confirmed is set when moving these
+// desktops onto ref would let accounts use secrets: ref's image contains
+// secrets (its starting home holds someone's sign-ins) and some of the
+// desktops have accounts other than admins. The UI asks first, as it does
+// when giving access to such a desktop.
+func (s *Server) secretsConfirmed(w http.ResponseWriter, r *http.Request, ref string, cs []desktops.Desktop, confirmed bool) bool {
+	if confirmed {
+		return true
+	}
+	img, err := s.Eng.ImageInspect(r.Context(), ref)
+	if err != nil || img.Labels[labelSecrets] != "true" {
+		return true
+	}
+	var who []string
+	for _, c := range cs {
+		for _, u := range s.Accounts.WithAccess(c.ID) {
+			if !slices.Contains(who, u) {
+				who = append(who, u)
+			}
+		}
+	}
+	if len(who) == 0 {
+		return true
+	}
+	writeError(w, http.StatusConflict, ref+" contains secrets and "+strings.Join(who, ", ")+
+		" can use these desktops: confirm with confirmSecrets")
+	return false
 }
 
 // startRecreate runs Recreate as a job (settings changes and upgrades).
@@ -306,6 +340,18 @@ func (s *Server) handlePower(w http.ResponseWriter, r *http.Request) {
 	case "upgrade":
 		c, a, ok := s.desktopFor(w, r, auth.Manage)
 		if !ok {
+			return
+		}
+		var req struct {
+			ConfirmSecrets bool `json:"confirmSecrets"`
+		}
+		if r.ContentLength != 0 {
+			if err := readJSON(r, &req); err != nil {
+				writeError(w, http.StatusBadRequest, "bad request")
+				return
+			}
+		}
+		if !s.secretsConfirmed(w, r, c.Image, []desktops.Desktop{c}, req.ConfirmSecrets) {
 			return
 		}
 		set := c.Settings

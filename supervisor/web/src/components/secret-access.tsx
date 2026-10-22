@@ -1,7 +1,7 @@
 // Asks before giving accounts access to desktops whose image contains
 // secrets: desktops made from such an image start signed in as whoever made
 // it, and the people given access can use those sign-ins.
-import { Button, Dialog, LockBadge } from "./ui.tsx";
+import { Button, Dialog, LockBadge, Note } from "./ui.tsx";
 import { names } from "../lib/format.ts";
 
 export interface SecretDesktop {
@@ -59,5 +59,18 @@ export function SecretAccessDialog({
         </>
       }
     />
+  );
+}
+
+/**
+ * Moving a desktop others use onto an image with secrets (an upgrade or a
+ * change of image) lets them use those secrets: said before asking.
+ */
+export function SecretImageNote({ image, who }: { image: string; who: string[] }) {
+  return (
+    <Note danger>
+      <b class="font-semibold">{image}</b> <LockBadge /> is an image that contains secrets: it holds the sign-ins of whoever made it.{" "}
+      {names(who)} can use those sign-ins.
+    </Note>
   );
 }

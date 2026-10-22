@@ -310,6 +310,58 @@ def test_account_given_secret_desktop_asks_first(mock_ui):
         browser.close()
 
 
+def test_upgrade_onto_secret_image_asks_first(mock_ui):
+    with sync_playwright() as p:
+        browser, page = mock_page(p, mock_ui, "/desktops/work")
+        before = page.request.get(mock_ui + "/api/desktops/work").json()["access"]
+        set_access = lambda who: page.request.put(mock_ui + "/api/desktops/work/access", data={"usernames": who})  # noqa: E731
+        try:
+            # Only admins: a plain upgrade.
+            set_access([])
+            page.reload()
+            page.get_by_role("button", name="Upgrade…").click()
+            dialog = page.get_by_role("dialog").filter(has_text="Upgrade work?")
+            expect(dialog.get_by_role("button", name="Upgrade work")).to_be_visible()
+            expect(dialog.get_by_text("contains secrets", exact=False)).to_have_count(0)
+            dialog.get_by_role("button", name="Cancel").click()
+
+            set_access(["sam"])
+            page.reload()
+            page.get_by_role("button", name="Upgrade…").click()
+            dialog = page.get_by_role("dialog").filter(has_text="Upgrade work?")
+            expect(dialog.get_by_text("contains secrets", exact=False)).to_be_visible()
+            expect(dialog.get_by_text("sam can use those sign-ins")).to_be_visible()
+            with page.expect_request(lambda r: r.method == "POST" and r.url.endswith("/api/desktops/work/upgrade")) as sent:
+                dialog.get_by_role("button", name="Upgrade work").click()
+            assert json.loads(sent.value.post_data) == {"confirmSecrets": True}
+        finally:
+            set_access(before)
+        browser.close()
+
+
+def test_image_change_onto_secret_image_asks_first(mock_ui):
+    with sync_playwright() as p:
+        browser, page = mock_page(p, mock_ui, "/desktops/alice?tab=settings")
+        page.get_by_role("radio", name="Work, signed in", exact=False).check()
+        # Seen, not sent: alice stays on her image for the other tests.
+        page.route("**/api/desktops/alice", lambda route: route.abort() if route.request.method == "PATCH" else route.continue_())
+        patches = []
+        page.on("request", lambda r: patches.append(r) if r.method == "PATCH" else None)
+        page.get_by_role("button", name="Save").click()
+        confirm = page.get_by_role("dialog").filter(has_text="Move alice onto Work, signed in?")
+        expect(confirm).to_be_visible()
+        expect(confirm.get_by_text("anna can use those sign-ins")).to_be_visible()
+        confirm.get_by_role("button", name="Cancel").click()
+        expect(confirm).to_have_count(0)
+        assert patches == []
+        page.get_by_role("button", name="Save").click()
+        with page.expect_request(lambda r: r.method == "PATCH" and r.url.endswith("/api/desktops/alice")) as sent:
+            page.get_by_role("dialog").get_by_role("button", name="Move alice").click()
+        body = json.loads(sent.value.post_data)
+        assert body["confirmSecrets"] is True and body["image"] == "deskyard-custom/work-signed-in:latest", body
+        browser.close()
+
+
 def test_image_from_desktop_saves_a_recipe_on_top(mock_ui):
     with sync_playwright() as p:
         browser, page = mock_page(p, mock_ui, "/desktops/research")

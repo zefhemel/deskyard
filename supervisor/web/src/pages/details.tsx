@@ -15,6 +15,7 @@ import { UpgradeDialog } from "../dialogs/upgrade.tsx";
 import { notify } from "../components/toast.tsx";
 import { useDesktop, useLive, useNow } from "../live.tsx";
 import { day, limits, names, statusKind, statusLine, toolsLine } from "../lib/format.ts";
+import { useFetch } from "../lib/use-fetch.ts";
 import { AccessTab } from "./details/access-tab.tsx";
 import { AgentsTab } from "./details/agents-tab.tsx";
 import { ProcessesTab } from "./details/processes-tab.tsx";
@@ -316,20 +317,29 @@ function Facts({
           </>
         )}
       </dl>
-      {upgrading && (
-        <UpgradeDialog
-          title={`Upgrade ${c.name}?`}
-          intro={
-            <>
-              {c.name} is recreated on {c.imageTitle} {c.updateAvailable}
-              {c.state === "running" ? " and restarted." : "."}
-            </>
-          }
-          action={`Upgrade ${c.name}`}
-          begin={() => api.upgrade(c.name)}
-          onClose={() => setUpgrading(false)}
-        />
-      )}
+      {upgrading && <UpgradeDesktop desktop={c} onClose={() => setUpgrading(false)} />}
     </div>
+  );
+}
+
+/** Upgrades one desktop, asking about secrets when its image has them and others use the desktop. */
+function UpgradeDesktop({ desktop: c, onClose }: { desktop: Desktop; onClose: () => void }) {
+  const images = useFetch(() => api.images(), "images");
+  if (!images.data && !images.error) return null;
+  const secrets = (images.data?.find((i) => i.ref === c.image)?.secrets ?? false) && c.access.length > 0;
+  return (
+    <UpgradeDialog
+      title={`Upgrade ${c.name}?`}
+      intro={
+        <>
+          {c.name} is recreated on {c.imageTitle} {c.updateAvailable}
+          {c.state === "running" ? " and restarted." : "."}
+        </>
+      }
+      action={`Upgrade ${c.name}`}
+      secrets={secrets ? { image: c.imageTitle || c.image, who: c.access } : undefined}
+      begin={() => api.upgrade(c.name, secrets)}
+      onClose={onClose}
+    />
   );
 }

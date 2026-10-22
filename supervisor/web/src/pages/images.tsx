@@ -20,6 +20,10 @@ export function ImagesPage() {
   const saved = useFetch(() => api.recipes(), "recipes");
   const [adding, setAdding] = useState(false);
   const [upgrading, setUpgrading] = useState<CatalogImage | null>(null);
+  const { desktops } = useLive();
+  // Accounts that can use the desktops an upgrade moves onto an image with secrets.
+  const secretWho = (img: CatalogImage) =>
+    img.secrets ? [...new Set((desktops ?? []).filter((c) => img.behind.includes(c.name)).flatMap((c) => c.access))].sort() : [];
   // The recipe dialog: `recipe` set means editing it.
   const [recipe, setRecipe] = useState<{ recipe?: Recipe } | null>(null);
   const [building, setBuilding] = useState<{ job: string; title: string } | null>(null);
@@ -171,7 +175,8 @@ export function ImagesPage() {
             </>
           }
           action={`Upgrade ${plural(upgrading.behind.length, "desktop")}`}
-          begin={() => api.upgradeImage(upgrading.ref)}
+          secrets={secretWho(upgrading).length ? { image: upgrading.title || upgrading.ref, who: secretWho(upgrading) } : undefined}
+          begin={() => api.upgradeImage(upgrading.ref, secretWho(upgrading).length > 0)}
           onClose={() => {
             setUpgrading(null);
             images.reload();

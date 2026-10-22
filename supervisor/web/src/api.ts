@@ -323,7 +323,7 @@ export const api = {
     request<JobRef>("POST", "/api/desktops", body),
   power: (name: string, action: "start" | "stop" | "restart") => request<void>("POST", `${c(name)}/${action}`),
   removeDesktop: (name: string, files: boolean) => request<void>("DELETE", c(name) + (files ? "?files=1" : "")),
-  updateSettings: (name: string, body: { image?: string; memoryBytes?: number; nanoCpus?: number }) =>
+  updateSettings: (name: string, body: { image?: string; memoryBytes?: number; nanoCpus?: number; confirmSecrets?: boolean }) =>
     request<JobRef>("PATCH", c(name), body),
   setAccess: (name: string, usernames: string[]) => request<void>("PUT", `${c(name)}/access`, { usernames }),
   processes: (name: string) => request<Processes>("GET", `${c(name)}/processes`),
@@ -334,7 +334,8 @@ export const api = {
   imageScan: (name: string) => request<ImageScan>("GET", `${c(name)}/image-scan`),
   imageFromDesktop: (name: string, body: ImageFromDesktop) => request<JobRef>("POST", `${c(name)}/image`, body),
   keys: (name: string, keys: string) => request<void>("POST", `${c(name)}/keys`, { keys }),
-  upgrade: (name: string) => request<JobRef>("POST", `${c(name)}/upgrade`),
+  /** `confirmSecrets`: the admin confirmed that the desktop's accounts may use the secrets of the image it moves onto. */
+  upgrade: (name: string, confirmSecrets = false) => request<JobRef>("POST", `${c(name)}/upgrade`, confirmSecrets ? { confirmSecrets } : undefined),
   validateName: (name: string) => request<NameCheck>("GET", `/api/validate-name?name=${enc(name)}`),
   screenUrl: (name: string, opts: { full?: boolean; bust?: number } = {}) => {
     const q = new URLSearchParams();
@@ -360,7 +361,7 @@ export const api = {
   addImage: (ref: string) => request<JobRef>("POST", "/api/images", { ref }),
   removeImage: (ref: string) => request<void>("DELETE", `/api/images?ref=${enc(ref)}`),
   checkImages: () => request<JobRef>("POST", "/api/images/check"),
-  upgradeImage: (ref: string) => request<JobRef>("POST", "/api/images/upgrade", { ref }),
+  upgradeImage: (ref: string, confirmSecrets = false) => request<JobRef>("POST", "/api/images/upgrade", { ref, confirmSecrets }),
 
   recipes: () => request<Recipe[]>("GET", "/api/recipes"),
   createRecipe: (recipe: Recipe) => request<JobRef>("POST", "/api/recipes", recipe),

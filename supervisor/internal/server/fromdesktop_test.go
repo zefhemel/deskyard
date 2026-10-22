@@ -4,8 +4,8 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
-	"errors"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -470,4 +470,56 @@ func TestFolderSizeStaysInFolder(t *testing.T) {
 	if n, _ := bt.s.Desktops.FolderSize("alice"); n != 5 {
 		t.Errorf("size %d, want 5", n)
 	}
+}
+
+// Moving desktops that others can use onto an image with secrets needs the
+// same confirmation as giving access: upgrades and image changes are
+// refused without confirmSecrets.
+func TestMovingOntoSecretsNeedsConfirmation(t *testing.T) {
+	bt := newBuildTest(t)
+	withDesktop(t, bt, aliceHome)
+	body := map[string]any{"name": "Alice's", "slug": "alice-img", "groups": []string{}, "include": []string{".codex/auth.json"}}
+	if st := bt.wait(bt.start("POST", "/api/desktops/alice/image", body)); st.Status != "done" {
+		t.Fatalf("build: %+v", st)
+	}
+	const ref = "deskyard-custom/alice-img:latest"
+	// bob runs an older build of the image.
+	bt.e.desktops = append(bt.e.desktops, engine.Container{ID: "c2", Name: "deskyard-bob", Image: ref, ImageID: "sha256:older", State: "exited",
+		Labels: map[string]string{desktops.LabelManaged: "true", desktops.LabelName: "bob", desktops.LabelID: "id-bob"}})
+	for _, id := range []string{"id-alice", "id-bob"} {
+		if err := bt.s.Accounts.SetAccess(id, []string{"anna"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	refused := []struct {
+		method, path string
+		body         map[string]any
+	}{
+		{"POST", "/api/desktops/bob/upgrade", nil},
+		{"POST", "/api/images/upgrade", map[string]any{"ref": ref}},
+		{"PATCH", "/api/desktops/alice", map[string]any{"image": ref}},
+	}
+	for _, c := range refused {
+		var b any
+		if c.body != nil {
+			b = c.body
+		}
+		code, out := bt.do(bt.admin, c.method, c.path, b)
+		if code != 409 || !strings.Contains(string(out), "contains secrets") || !strings.Contains(string(out), "anna") {
+			t.Errorf("%s %s: %d %s", c.method, c.path, code, out)
+		}
+	}
+	for _, c := range refused {
+		b := map[string]any{"confirmSecrets": true}
+		for k, v := range c.body {
+			b[k] = v
+		}
+		bt.wait(bt.start(c.method, c.path, b))
+	}
+	// Nobody but admins: nothing to confirm.
+	if err := bt.s.Accounts.SetAccess("id-bob", nil); err != nil {
+		t.Fatal(err)
+	}
+	bt.e.desktops[1].ImageID = "sha256:older"
+	bt.wait(bt.start("POST", "/api/desktops/bob/upgrade", nil))
 }
