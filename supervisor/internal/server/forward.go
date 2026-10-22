@@ -36,8 +36,9 @@ const maxForwardListens = 64
 // The out ports are as declared; the in ports are the ones the helper
 // confirmed with Listening.
 type forwardLink struct {
-	token string
-	out   []int
+	token   string
+	tokenID string // the token's id, for the token's activity summary
+	out     []int
 
 	mu      sync.Mutex
 	listens map[uint32]int // listener id -> port, Listen seen, no answer yet
@@ -195,6 +196,39 @@ func (f *forwards) list(name string) []forwardJSON {
 		}
 	}
 	return capped
+}
+
+// listFor is the mappings of one token's links on a desktop, each once,
+// sorted by direction and port. Links with no token id belong to no one.
+func (f *forwards) listFor(name, tokenID string) []forwardJSON {
+	if tokenID == "" {
+		return nil
+	}
+	f.mu.Lock()
+	var links []*forwardLink
+	for l := range f.byName[name] {
+		if l.tokenID == tokenID {
+			links = append(links, l)
+		}
+	}
+	f.mu.Unlock()
+	var out []forwardJSON
+	seen := map[forwardJSON]bool{}
+	for _, l := range links {
+		for _, e := range l.entries() {
+			if !seen[e] {
+				seen[e] = true
+				out = append(out, e)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Direction != out[j].Direction {
+			return out[i].Direction < out[j].Direction
+		}
+		return out[i].Port < out[j].Port
+	})
+	return out[:min(len(out), maxListedPerToken)]
 }
 
 type forwardStart struct {

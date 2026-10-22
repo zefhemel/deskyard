@@ -31,12 +31,13 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
   "access": ["anna"],
   "viewers": ["zef", "anna"],
   "forwards": [{"token": "deploy-bot", "direction": "in", "port": 3000}, {"token": "deploy-bot", "direction": "out", "port": 5173}],
+  "agents": [{"id": "k3j9…", "name": "deploy-bot", "owner": "zef", "inside": false, "color": "#2457c5", "active": true, "lastActive": "…"}],
   "tokens": 2,
   "stats": {"cpuPercent": 34.2, "memBytes": 1503238553, "memLimit": 2147483648} | null
 }
 ```
 
-`memoryBytes`/`nanoCpus` 0 mean no limit; `memLimit` is then the host's memory. `cpuPercent` is relative to the desktop's CPU limit, or to all host CPUs without one (0–100). `access` lists regular accounts only (admins can use everything) and is only filled for admins. `forwards` are the port mappings agent tokens have open on the desktop (`deskyard forward`): `in` maps a port of the agent's machine into the desktop, `out` a desktop port out to the agent's machine; `port` is always the desktop's port (the agent's own port numbers aren't shown). Each entry is listed once, sorted by token, direction and port; an `in` port appears once the desktop is listening on it. `created` survives upgrades and settings changes (null for desktops made before it was recorded). `job` is the running create, upgrade or settings job, which anyone who can see the desktop may follow. A desktop's own page is at `/<name>/`.
+`memoryBytes`/`nanoCpus` 0 mean no limit; `memLimit` is then the host's memory. `cpuPercent` is relative to the desktop's CPU limit, or to all host CPUs without one (0–100). `access` lists regular accounts only (admins can use everything) and is only filled for admins. `forwards` are the port mappings agent tokens have open on the desktop (`deskyard forward`): `in` maps a port of the agent's machine into the desktop, `out` a desktop port out to the agent's machine; `port` is always the desktop's port (the agent's own port numbers aren't shown). Each entry is listed once, sorted by token, direction and port; an `in` port appears once the desktop is listening on it. `created` survives upgrades and settings changes (null for desktops made before it was recorded). `job` is the running create, upgrade or settings job, which anyone who can see the desktop may follow. `agents` are the agents present on the desktop (always a list, sorted by name then id): agent tokens (`id` is the token's id, `owner` the account that made it) and programs running inside the desktop (`inside: true`, `id` `inside:<program>`, `owner` empty). An agent is present while something it started is running, a browser connection or port mapping is open, or for 5 minutes after its last action; `active` means an action in the last 10 seconds; `color` is fixed per id. A desktop's own page is at `/<name>/`.
 
 | Method and path | Body | Response |
 | --- | --- | --- |
@@ -51,9 +52,40 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 | `GET /api/desktops/{name}/processes` | | `{"titles":[…],"rows":[[…]]}` (columns PID, USER, %CPU, RSS (KiB), ELAPSED, COMMAND) |
 | `GET /api/desktops/{name}/stats` | | `{"history":[{"t":"…","cpuPercent":n,"memBytes":n}], "memLimit":n}` (15 min at 5 s) |
 | `GET /api/desktops/{name}/folder` | | `{"path","bytes","complete"}`; `complete` is false when some directories couldn't be read, so `bytes` is a lower bound |
+| `GET /api/desktops/{name}/activity` | | `Activity` (below) |
+| `GET /api/desktops/{name}/screen-events` | | server-sent events (below) |
 | `POST /api/desktops/{name}/keys` | `{"keys":"ctrl+alt+Delete"}` (xdotool syntax) | 204 |
 | `POST /api/desktops/{name}/upgrade` (admin) | | 202 `{"job": id}` |
 | `GET /api/validate-name?name=x` (admin) | | `{"ok":bool,"error"?:string,"folder":path,"folderExists":bool}` |
+
+#### Activity
+
+`Activity` is what the agents on a desktop are doing:
+
+```json
+{
+  "name": "alice",
+  "agents": [{
+    "id": "k3j9…", "name": "deploy-bot", "owner": "zef", "inside": false, "color": "#2457c5", "active": true, "lastActive": "…",
+    "now": [
+      {"kind": "command", "text": "npm run build", "since": "…"},
+      {"kind": "browser", "since": "…"},
+      {"kind": "forward", "text": "3000 in · 5173 out", "since": "…"}
+    ],
+    "recent": [
+      {"kind": "screen", "t": "…", "action": "click", "count": 14},
+      {"kind": "command", "t": "…", "text": "sh -c 'exit 3'", "exit": 3, "durationMs": 12},
+      {"kind": "command", "t": "…", "text": "sleep 30", "disconnected": true, "durationMs": 4100},
+      {"kind": "browser", "t": "…", "durationMs": 240000},
+      {"kind": "copy", "t": "…", "direction": "in", "path": "/workspace/f.bin", "size": 1000}
+    ]
+  }]
+}
+```
+
+`agents` has the same entries, in the same order, as `Desktop.agents`, each with `now` (what it is doing: running commands, browser use, its port mappings, `in` and `out` as in `Desktop.forwards`) and `recent` (at most 20 lines, newest first; adjacent screen actions of one kind are merged into one line with a `count`). Summaries cover the last 15 minutes; they are kept in memory only, nothing is stored, and a supervisor restart forgets them. Command texts are masked (secrets show as `•••`) and typed text is never recorded. Signed-in accounts that can see the desktop may read it; agent tokens can't (401), others get 404.
+
+`GET /api/desktops/{name}/screen-events` is a server-sent event stream of the screen actions agents make, for drawing them over the screen: `event: screen` with data a `ScreenEvent`, `{"agent":{"id","name","color","inside"},"t":"…","action":"click","pos":[100,120]}`, plus `button`, `dir`, `n`, `keys` and `chars` where the action has them (`pos` is `[x1,y1,x2,y2]` for `drag`; `type` carries only `chars`, the number of characters). The actions sent are `click`, `double-click`, `triple-click`, `drag`, `scroll`, `key`, `hold-key` and `type`. A comment line keeps the stream alive every 25 s. Who may open it is as for `Activity`; the stream ends when the account loses access or the desktop is removed. Events are only produced while someone is subscribed, and a slow reader misses some.
 
 ### Jobs
 
@@ -66,7 +98,8 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 - `event: desktop` — a `Desktop` that appeared or changed
 - `event: removed` — `{"name"}`
 - `event: stats` — `{"name","cpuPercent","memBytes","memLimit","t"}` every 5 s per running desktop
-- `event: viewers` — `{"name","viewers":[usernames],"forwards":[…]}` (as in `Desktop`), when someone starts or stops viewing or a mapping opens or closes (sent at most every 250 ms per desktop; the last state always follows)
+- `event: viewers` — `{"name","viewers":[usernames],"forwards":[…],"agents":[…]}` (as in `Desktop`), when someone starts or stops viewing or a mapping opens or closes (sent at most every 250 ms per desktop; the last state always follows), and at once when the agents present change (one arrives or leaves, or turns active or idle)
+- `event: activity` — an `Activity` (as from `GET /api/desktops/{name}/activity`), when what agents do on the desktop changes (sent at most once a second per desktop; the last state always follows)
 
 ### Accounts (admin)
 
