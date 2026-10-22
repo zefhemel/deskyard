@@ -228,6 +228,17 @@ else: no other desktops, no lifecycle, settings or accounts. Agents can't
 start a stopped desktop. Revoking a token, or its expiry, closes its open
 connections at once, and a token dies with its creator's access.
 
+### Port mapping
+
+Reach a server on one machine from the other, with the same agent token:
+
+```bash
+deskyard -d alice forward 3000 &      # your 127.0.0.1:3000 is localhost:3000 in the desktop
+deskyard -d alice forward -R 5173 &   # the desktop's localhost:5173 is your 127.0.0.1:5173
+```
+
+The first lets the desktop (or an agent in it) call a service running on your machine; the second lets you open a dev server running in the desktop in your own browser. `8080:3000` maps to a different port, and several mappings can share one command. Everything goes over the existing HTTPS connection (no extra ports are opened on the desktop host) and listens only on `127.0.0.1`; desktop ports below 1024 are refused. If the connection drops or the desktop restarts, `deskyard` reconnects by itself with backoff (up to 30 s) and keeps your local ports bound meanwhile. People watching the desktop see which ports your token maps.
+
 ## Configuration
 
 Environment variables of the supervisor:
