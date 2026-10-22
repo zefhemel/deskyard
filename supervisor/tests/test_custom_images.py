@@ -325,3 +325,43 @@ def test_image_from_desktop_refuses_non_secrets_as_include(admin, desktop, name,
     r = admin.post(f"/api/desktops/{name}/image",
                    json={"name": "x", "slug": slugs(), "groups": [], "include": [".bashrc"]})
     assert r.status_code == 400 and ".bashrc" in r.json()["error"], r.text
+
+
+@pytest.mark.network
+def test_tools_show_overrides(supervisor, admin, desktop, name):
+    """The base image keeps node in /opt/mise; a desktop that installs its own
+    node lists both, with where each one comes from."""
+    if not online("registry.npmjs.org"):
+        pytest.skip("no network: the desktop installs node")
+    r = admin.get(f"/api/desktops/{name}/tools")
+    assert r.status_code == 200, r.text
+    before = r.json()
+    image_node = [t["version"] for t in before if t["tool"] == "node" and t["source"] == "image"]
+    assert image_node and not [t for t in before if t["source"] == "desktop"], before
+
+    out = user_sh(name, "mise use -g node@22 >/dev/null 2>&1; mise ls --json node | grep -c install_path")
+    assert int(out) >= 1
+    tools = admin.get(f"/api/desktops/{name}/tools").json()
+    nodes = {t["source"]: t["version"] for t in tools if t["tool"] == "node"}
+    assert nodes["desktop"].startswith("22.") and nodes["image"] == image_node[0], tools
+
+    from playwright.sync_api import expect, sync_playwright
+    from conftest import ADMIN_PASSWORD
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.goto(supervisor.base + "/")
+        page.wait_for_url("**/login**")
+        page.fill("#u", "admin")
+        page.fill("#p", ADMIN_PASSWORD)
+        page.get_by_role("button", name="Sign in").click()
+        page.wait_for_url(lambda u: "/login" not in u)
+        page.goto(f"{supervisor.base}/desktops/{name}")
+        line = page.get_by_text(f"{nodes['desktop']} (this desktop) · {nodes['image']} in the image")
+        expect(line.first).to_be_visible(timeout=15000)
+        browser.close()
+
+    # Stopped: nothing to show, and not an error.
+    assert admin.post(f"/api/desktops/{name}/stop").status_code in (200, 202, 204)
+    r = admin.get(f"/api/desktops/{name}/tools")
+    assert r.status_code == 200 and r.json() == []
