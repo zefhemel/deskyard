@@ -28,7 +28,12 @@ const (
 const (
 	maxStreams   = 256
 	maxListeners = 64
-	maxCtrlQueue = 1024 // queued non-Data frames; Data is bounded by windows
+	maxCtrlQueue = 1024 // queued non-Data frames
+	// maxQueueBytes bounds Data queued for the transport across the whole mux.
+	// Window credit is chosen by the peer, so it cannot bound our memory:
+	// Write blocks while the queue is over this (streams may overshoot by one
+	// chunk each).
+	maxQueueBytes = 4 << 20
 )
 
 // Mux multiplexes listeners and TCP streams over one io.ReadWriteCloser.
@@ -50,10 +55,11 @@ type Mux struct {
 	byPort    map[int]*Listener       // CLI: by port, for incoming Open
 	tcpLns    map[uint32]net.Listener // Desktop: by listener id
 
-	qmu  sync.Mutex
-	qc   *sync.Cond
-	q    [][]byte
-	ctrl int // non-Data frames in q
+	qmu    sync.Mutex
+	qc     *sync.Cond
+	q      [][]byte
+	ctrl   int // non-Data frames in q
+	qBytes int // Data payload bytes in q
 }
 
 // NewMux wraps rw. framed is true when rw preserves message boundaries (a
@@ -106,6 +112,8 @@ func (m *Mux) send(typ byte, id uint32, payload []byte) error {
 	if typ != TypeData {
 		m.ctrl++
 		over = m.ctrl > maxCtrlQueue
+	} else {
+		m.qBytes += len(payload)
 	}
 	if !over {
 		m.q = append(m.q, f)
@@ -135,14 +143,43 @@ func (m *Mux) writeLoop() {
 		f := m.q[0]
 		m.q[0] = nil
 		m.q = m.q[1:]
+		wake := false
 		if f[0] != TypeData {
 			m.ctrl--
+		} else {
+			wake = m.qBytes >= maxQueueBytes && m.qBytes-(len(f)-headerLen) < maxQueueBytes
+			m.qBytes -= len(f) - headerLen
 		}
 		m.qmu.Unlock()
+		if wake {
+			m.wakeWriters()
+		}
 		if err := writeFrame(m.rw, m.framed, f); err != nil {
 			m.shutdown(err)
 			return
 		}
+	}
+}
+
+func (m *Mux) queueFull() bool {
+	m.qmu.Lock()
+	defer m.qmu.Unlock()
+	return m.qBytes >= maxQueueBytes
+}
+
+// wakeWriters nudges streams blocked in Write on a full queue. Taking each
+// stream's lock orders this after any waiter's queueFull check.
+func (m *Mux) wakeWriters() {
+	m.mu.Lock()
+	ss := make([]*stream, 0, len(m.streams))
+	for _, s := range m.streams {
+		ss = append(ss, s)
+	}
+	m.mu.Unlock()
+	for _, s := range ss {
+		s.mu.Lock()
+		s.cond.Broadcast()
+		s.mu.Unlock()
 	}
 }
 
@@ -299,7 +336,7 @@ func (m *Mux) shutdown(err error) {
 		close(m.done)
 		m.rw.Close()
 		m.qmu.Lock()
-		m.q = nil
+		m.q, m.qBytes, m.ctrl = nil, 0, 0
 		m.qmu.Unlock()
 		m.qc.Broadcast()
 		for _, ch := range pend {
@@ -638,8 +675,8 @@ func (s *stream) onData(p []byte) {
 		return
 	}
 	s.rcvd += len(p)
-	if s.closed {
-		s.grant(len(p))
+	if s.closed || s.peerDone {
+		s.resetLocked("data after close") // the peer sent after its Close
 		return
 	}
 	s.rbuf = append(s.rbuf, p...)
@@ -667,7 +704,7 @@ func (s *stream) onReset(msg string) {
 
 func (s *stream) onWindow(n int) {
 	s.mu.Lock()
-	if s.wnd+n > initialWindow || n < 0 {
+	if s.wnd+n > initialWindow { // n is a u32, never negative
 		s.resetLocked("window overflow")
 		s.mu.Unlock()
 		return
@@ -770,7 +807,7 @@ func (s *stream) Write(p []byte) (int, error) {
 				s.mu.Unlock()
 				return total, io.ErrClosedPipe
 			}
-			if s.wnd > 0 {
+			if s.wnd > 0 && !s.m.queueFull() {
 				break
 			}
 			if s.waitLocked(s.wd) {

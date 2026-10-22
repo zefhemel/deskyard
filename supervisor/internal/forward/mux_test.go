@@ -648,3 +648,104 @@ func TestLocalTCPResetTearsDownPeer(t *testing.T) {
 	waitCount(t, "desktop streams", desk.streamCount)
 	waitCount(t, "cli streams", cli.streamCount)
 }
+
+func (m *Mux) queuedBytes() int {
+	m.qmu.Lock()
+	defer m.qmu.Unlock()
+	return m.qBytes
+}
+
+// A peer that never reads the transport must not make the desktop buffer
+// more than maxQueueBytes (plus one chunk per stream), however much window
+// credit it holds (40 streams hold 10 MiB).
+func TestOutboundQueueBounded(t *testing.T) {
+	a, b := net.Pipe()
+	desk := NewMux(b, false, Desktop)
+	served := make(chan error, 1)
+	go func() { served <- desk.Serve(context.Background()) }()
+	defer a.Close()
+
+	srv := tcpListen(t)
+	go func() {
+		for {
+			c, err := srv.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				chunk := make([]byte, 32<<10)
+				for {
+					if _, err := c.Write(chunk); err != nil {
+						return
+					}
+				}
+			}()
+		}
+	}()
+
+	const streams = 40 // 40 * 256 KiB of window is well over the bound
+	port := portPayload(portOf(srv))
+	for i := 0; i < streams; i++ {
+		if err := writeFrame(a, false, encodeFrame(TypeOpen, uint32(2*i+1), port)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	time.Sleep(time.Second)
+	got := desk.queuedBytes()
+	limit := maxQueueBytes + streams*maxData
+	if got > limit {
+		t.Fatalf("queued %d bytes, limit %d", got, limit)
+	}
+	if got < maxQueueBytes/2 {
+		t.Fatalf("only %d bytes queued: the attack did not run", got)
+	}
+
+	// Now the peer reads: everything flows, nothing deadlocks.
+	total := 0
+	buf := make([]byte, maxFrame)
+	a.SetReadDeadline(time.Now().Add(20 * time.Second))
+	for total < 8<<20 {
+		f, err := readFrame(a, false, buf)
+		if err != nil {
+			t.Fatalf("after %d bytes: %v", total, err)
+		}
+		if typ, _, payload, _ := Peek(f); typ == TypeData {
+			total += len(payload)
+		}
+	}
+	a.Close()
+	select {
+	case <-served:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Serve did not return after the peer closed")
+	}
+}
+
+func TestBlockedWriteReleasedByClose(t *testing.T) {
+	a, b := net.Pipe() // a is never read, so the queue fills
+	cli := NewMux(b, false, CLI)
+	defer a.Close()
+	c, err := cli.Dial(1234)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Fill the transport queue with other streams' data first.
+	var conns []net.Conn
+	for i := 0; i < 20; i++ {
+		x, _ := cli.Dial(1234)
+		conns = append(conns, x)
+		go x.Write(make([]byte, initialWindow))
+	}
+	go c.Write(make([]byte, initialWindow))
+	time.Sleep(300 * time.Millisecond)
+	done := make(chan struct{})
+	go func() { c.Write(make([]byte, 1<<20)); close(done) }()
+	time.Sleep(100 * time.Millisecond)
+	cli.Close()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("blocked Write not released by Close")
+	}
+}
