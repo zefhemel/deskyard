@@ -2,7 +2,8 @@
 # Selkies: streams display :1 and the Deskyard speaker over one WebSocket
 # (/api/websockets) on 127.0.0.1:6080, behind Caddy and the supervisor's token,
 # so its own basic auth is off. The supervisor serves Selkies' web client from
-# the image and proxies only the stream and uploads.
+# the image and proxies only the stream. Uploads go through Deskyard's own
+# endpoint, so Selkies' file transfers are off.
 set -euo pipefail
 
 # The X server, at its starting size (start-xvfb).
@@ -10,6 +11,7 @@ for _ in $(seq 100); do
     [ -e "$XDG_RUNTIME_DIR/xvfb-ready" ] && break
     sleep 0.1
 done
+[ -e "$XDG_RUNTIME_DIR/xvfb-ready" ] || echo "$0: no X server after 10 s; starting anyway" >&2
 
 # The webcam needs a v4l2loopback device the user can write to; without one
 # it stays off (and Selkies' page offers none).
@@ -37,11 +39,14 @@ export SELKIES_ENABLE_BASIC_AUTH=false \
     SELKIES_KEYBOARD_SHORTCUTS='false|locked' \
     SELKIES_UI_SHOW_SIDEBAR=false \
     SELKIES_MICROPHONE_ENABLED=true \
+    SELKIES_MICROPHONE_ON_START=false \
     SELKIES_GAMEPAD_ENABLED=true \
+    SELKIES_JS_SOCKET_PATH="$XDG_RUNTIME_DIR" \
+    SELKIES_UINPUT_GAMEPAD=false \
     SELKIES_WEBCAM_ENABLED="$webcam" \
     SELKIES_WEBCAM_DEVICE="$webcam_device" \
-    SELKIES_FILE_TRANSFERS=upload \
-    SELKIES_FILE_MANAGER_PATH=/workspace/Desktop \
+    SELKIES_WEBCAM_ON_START=false \
+    SELKIES_FILE_TRANSFERS=none \
     SELKIES_PRINTING_ENABLED='false|locked' \
     SELKIES_ENABLE_SHARED='false|locked' \
     SELKIES_ENABLE_PLAYER2='false|locked' \

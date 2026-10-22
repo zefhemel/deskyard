@@ -31,6 +31,9 @@ if ! unshare -Ur true 2>/dev/null; then
     flags+=(--no-sandbox --test-type)
 fi
 
+# Gamepads reach web pages through the Input Interposer.
+. /etc/workspace/gamepads.sh
+
 # While Chromium is open the marker exists, so the next start of the desktop
 # (start-session) brings it back. A person closing it (exit 0) removes the
 # marker; a crash or the container stopping keeps it.

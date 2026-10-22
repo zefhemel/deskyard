@@ -87,13 +87,79 @@ def test_disabled_features(sandbox, method, path):
     assert r.status_code in (403, 404), (path, r.status_code, r.text[:200])
 
 
-def test_upload_lands_on_desktop(sandbox):
-    r = requests.post(sandbox.web_url + "/api/upload", data=b"uploaded",
-                      headers={**TOKEN_HEADER, "X-Upload-Path": "up.txt",
-                               "Content-Type": "application/octet-stream"}, timeout=10)
-    assert r.status_code == 200, r.text
-    assert sandbox.exec("cat ~/Desktop/up.txt").stdout == "uploaded"
-    assert sandbox.exec("stat -c %U ~/Desktop/up.txt").stdout.strip() == "user"
+def test_selkies_upload_refused(sandbox):
+    """Uploads go through Deskyard's own endpoint; Selkies' is closed in Caddy
+    and off in Selkies itself."""
+    headers = {**TOKEN_HEADER, "X-Upload-Path": "up.txt", "Content-Type": "application/octet-stream"}
+    r = requests.post(sandbox.web_url + "/api/upload", data=b"uploaded", headers=headers, timeout=10)
+    assert r.status_code == 404, r.text
+    status = sandbox.exec("curl -s -o /dev/null -w '%{http_code}' -X POST -H 'X-Upload-Path: up.txt'"
+                          " --data-binary uploaded http://127.0.0.1:6080/api/upload").stdout
+    assert status == "403"
+    assert sandbox.exec("test -e ~/Desktop/up.txt", check=False).returncode != 0
+
+
+# Reads /dev/input/js0 through the Input Interposer (preloaded by
+# /etc/workspace/gamepads.sh) until button 0 is pressed; prints each js_event.
+JS_READER = r"""
+import os, struct
+fd = os.open('/dev/input/js0', os.O_RDONLY)
+print('open', flush=True)
+while True:
+    _, value, kind, number = struct.unpack('IhBB', os.read(fd, 8))
+    print(kind, number, value, flush=True)
+    if kind == 1 and number == 0 and value == 1:
+        break
+"""
+
+
+def test_gamepad_reaches_apps(sandbox):
+    """A pad the page sends over the stream shows up as /dev/input/js0 to the
+    desktop's apps, which run with the Input Interposer preloaded."""
+    import base64
+    import subprocess
+
+    ws_url = sandbox.web_url.replace("http://", "ws://") + "/api/websockets"
+    reader: dict = {}
+
+    async def drive():
+        async with websockets.connect(ws_url, additional_headers=TOKEN_HEADER, max_size=None) as ws:
+            await ws.send("SETTINGS," + json.dumps({"displayId": "primary"}))
+            name = base64.b64encode(b"Deskyard test pad").decode()
+            await ws.send(f"js,c,0,{name},4,16")
+            await asyncio.sleep(2)
+            proc = subprocess.Popen(
+                ["docker", "exec", "-u", "user", sandbox.name, "bash", "-lc",
+                 ". /etc/workspace/gamepads.sh && exec timeout 20 /usr/bin/python3 -c \"$0\"", JS_READER],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            reader["proc"] = proc
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline and proc.poll() is None:
+                await asyncio.sleep(0.5)
+                await ws.send("js,b,0,0,1")
+                await asyncio.sleep(0.2)
+                await ws.send("js,b,0,0,0")
+
+    asyncio.run(drive())
+    proc = reader["proc"]
+    out, err = proc.communicate(timeout=20)
+    assert proc.returncode == 0, (out, err)
+    assert out.splitlines()[-1] == "1 0 1", out
+
+
+def test_session_apps_preload_gamepads(sandbox):
+    """XFCE's processes and the shared Chromium run with the gamepad libraries
+    loaded; Selkies doesn't. (Chromium rewrites its environ, so read the maps.)"""
+    sandbox.cdp_json(timeout=60)  # starts Chromium
+
+    def loaded(pid_cmd: str) -> str:
+        return sandbox.exec(f"grep -oE 'selkies_input_interposer.so|fake-udev/libudev.so.1' /proc/$({pid_cmd})/maps"
+                            " | sort -u", check=False).stdout
+
+    for pid_cmd in ("pgrep -o -x xfce4-panel", "pgrep -o -x xfdesktop", "pgrep -o -x chromium"):
+        assert loaded(pid_cmd).split() == ["fake-udev/libudev.so.1", "selkies_input_interposer.so"], pid_cmd
+    assert loaded(SELKIES_PID) == ""
+    sandbox.exec("test -d /dev/input")
 
 
 def test_speaker_default(sandbox):

@@ -11,6 +11,29 @@ ARG TARGETOS TARGETARCH VERSION=dev
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /desktop ./cmd/deskyard
 
+# Gamepads for apps: Selkies' Input Interposer (an LD_PRELOAD library that
+# serves /dev/input/js0-3 and event1000-1003 from Selkies' sockets) and
+# fake-udev (lists those pads to libudev users such as SDL). Neither is in the
+# PyPI wheel, so both are built from Selkies' source at tag 2.1.0, for the
+# target platform.
+FROM debian:trixie-slim AS gamepads
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gcc libc6-dev make \
+    && rm -rf /var/lib/apt/lists/*
+ARG SELKIES_COMMIT=6ee68a7a815956e6745e916741f13335e0b3ff53
+ARG SELKIES_SOURCE_SHA256=b28d7ab88b537c5949cce15444e729ba11147cdf8091861abbe4385f8a0c64eb
+WORKDIR /src
+RUN curl -fsSL -o selkies.tar.gz "https://github.com/selkies-project/selkies/archive/${SELKIES_COMMIT}.tar.gz" \
+    && echo "${SELKIES_SOURCE_SHA256}  selkies.tar.gz" | sha256sum -c - \
+    && tar -xzf selkies.tar.gz --strip-components=1 \
+        "selkies-${SELKIES_COMMIT}/addons/input-interposer" "selkies-${SELKIES_COMMIT}/addons/fake-udev" \
+    # /usr/$LIB/ in LD_PRELOAD resolves to the multiarch directory.
+    && lib=/out/usr/lib/$(gcc -print-multiarch) && mkdir -p "$lib" /out/opt/selkies/lib/fake-udev \
+    && gcc -O2 -shared -fPIC -o "$lib/selkies_input_interposer.so" \
+        addons/input-interposer/input_interposer.c -ldl -pthread \
+    && make -C addons/fake-udev CFLAGS="-O2" \
+    && cp addons/fake-udev/libudev.so.1.0.0-fake /out/opt/selkies/lib/fake-udev/libudev.so.1
+
 FROM debian:trixie-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -89,6 +112,7 @@ ENV HOME=/workspace \
 
 COPY images/debian-xfce/rootfs/ /
 COPY --from=desktop /desktop /usr/local/bin/deskyard
+COPY --from=gamepads /out/ /
 
 VOLUME ["/workspace"]
 # The only port: Caddy, which needs the supervisor's per-desktop token

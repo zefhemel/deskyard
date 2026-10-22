@@ -5,6 +5,7 @@ for _ in $(seq 100); do
     [ -e "$XDG_RUNTIME_DIR/xvfb-ready" ] && break
     sleep 0.1
 done
+[ -e "$XDG_RUNTIME_DIR/xvfb-ready" ] || echo "$0: no X server after 10 s; starting anyway" >&2
 
 # Save the session on logout (XFCE's built-in default is off here), unless
 # the user chose otherwise in Settings > Session and Startup.
@@ -14,6 +15,7 @@ xfconf-query -c xfce4-session -p /general/SaveOnExit >/dev/null 2>&1 \
 /usr/local/bin/workspace-migrate-panel
 
 rm -f "$XDG_RUNTIME_DIR/stopping"
+. /etc/workspace/gamepads.sh
 startxfce4 &
 session=$!
 
