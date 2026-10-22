@@ -3,12 +3,15 @@ package docker
 
 import (
 	"context"
+	"crypto/rand"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/netip"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -436,8 +439,18 @@ func (d *Docker) ImageInspect(ctx context.Context, ref string) (engine.Image, er
 }
 
 func (d *Docker) Build(ctx context.Context, spec engine.BuildSpec, log func(string)) (string, error) {
+	// The classic builder ignores BuildCancel and, when the connection drops,
+	// leaves the current step's container running. Step containers inherit
+	// the build's extra hosts, so a unique entry marks them and lets a
+	// cancelled build's containers be found and removed.
+	marker := newBuildMarker()
+	defer func() {
+		if ctx.Err() != nil {
+			d.removeBuildContainers(context.WithoutCancel(ctx), marker)
+		}
+	}()
 	res, err := d.c.ImageBuild(ctx, spec.Context, client.ImageBuildOptions{
-		Dockerfile: spec.Dockerfile, Tags: spec.Tags, Labels: spec.Labels,
+		Dockerfile: spec.Dockerfile, Tags: spec.Tags, Labels: spec.Labels, ExtraHosts: []string{marker},
 		NoCache: spec.NoCache, PullParent: spec.Pull, Remove: true, ForceRemove: true,
 	})
 	if err != nil {
@@ -481,6 +494,35 @@ func (d *Docker) Build(ctx context.Context, spec engine.BuildSpec, log func(stri
 		return "", errors.New("build finished without an image id")
 	}
 	return imageID, nil
+}
+
+func newBuildMarker() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return "deskyard-build-" + hex.EncodeToString(b) + ":127.0.0.1"
+}
+
+// removeBuildContainers force-removes every container started by the build
+// carrying marker. The daemon notices a dropped connection asynchronously, so
+// the step's container may still be starting; look for a short while.
+func (d *Docker) removeBuildContainers(ctx context.Context, marker string) {
+	for range 20 {
+		found := false
+		if res, err := d.c.ContainerList(ctx, client.ContainerListOptions{All: true}); err == nil {
+			for _, c := range res.Items {
+				in, err := d.c.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
+				if err != nil || in.Container.HostConfig == nil || !slices.Contains(in.Container.HostConfig.ExtraHosts, marker) {
+					continue
+				}
+				found = true
+				_, _ = d.c.ContainerRemove(ctx, c.ID, client.ContainerRemoveOptions{Force: true})
+			}
+		}
+		if found {
+			return
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }
 
 func (d *Docker) Commit(ctx context.Context, containerID, ref string, changes []string, labels map[string]string) (string, error) {

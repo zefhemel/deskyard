@@ -163,29 +163,67 @@ func images(t *testing.T, e engine.Engine) {
 		}
 	})
 	t.Run("build cancel", func(t *testing.T) {
+		ids := func() map[string]string {
+			list, err := e.List(ctx, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			m := map[string]string{}
+			for _, c := range list {
+				if !strings.HasPrefix(c.Name, "deskyard-") { // build containers have engine-generated names
+					m[c.ID] = c.State
+				}
+			}
+			return m
+		}
+		before := ids()
 		cctx, cancel := context.WithCancel(ctx)
 		defer cancel()
-		time.AfterFunc(2*time.Second, cancel)
-		start := time.Now()
+		running := make(chan struct{})
+		var once sync.Once
 		done := make(chan error, 1)
 		go func() {
 			_, err := e.Build(cctx, engine.BuildSpec{
 				Context:    dockerfileTar(t, "FROM "+image+"\nRUN sleep 600\n"),
 				Dockerfile: "Dockerfile", NoCache: true,
-			}, func(string) {})
+			}, func(l string) {
+				if strings.Contains(l, "sleep 600") {
+					once.Do(func() { close(running) })
+				}
+			})
 			done <- err
 		}()
+		select {
+		case <-running:
+		case err := <-done:
+			t.Fatalf("build ended before the sleep step: %v", err)
+		case <-time.After(60 * time.Second):
+			t.Fatal("build never reached the sleep step")
+		}
+		time.Sleep(time.Second) // let the step's container start
+		cancel()
 		select {
 		case err := <-done:
 			if err == nil {
 				t.Fatal("cancelled build returned no error")
 			}
-			if d := time.Since(start); d > 10*time.Second {
-				t.Fatalf("took %v", d)
-			}
 		case <-time.After(10 * time.Second):
-			t.Fatal("build did not stop within 10s of cancel")
+			t.Fatal("build did not return within 10s of cancel")
 		}
+		// The daemon must stop the step too, leaving no build container.
+		var left map[string]string
+		for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(500 * time.Millisecond) {
+			left = map[string]string{}
+			for id, st := range ids() {
+				if _, old := before[id]; !old {
+					left[id] = st
+				}
+			}
+			if len(left) == 0 {
+				return
+			}
+		}
+		t.Fatalf("build containers remain after cancel: %v", left)
 	})
 	t.Run("build failure", func(t *testing.T) {
 		_, err := e.Build(ctx, engine.BuildSpec{
@@ -206,7 +244,18 @@ func images(t *testing.T, e engine.Engine) {
 		if err := e.Start(ctx, cid); err != nil {
 			t.Fatal(err)
 		}
-		time.Sleep(time.Second)
+		for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(100 * time.Millisecond) {
+			c, err := e.Inspect(ctx, cid)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !c.Running() && c.State != "created" {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("container still %s", c.State)
+			}
+		}
 		id, err := e.Commit(ctx, cid, ref, nil, map[string]string{"deskyard.enginetest": "commit"})
 		if err != nil {
 			t.Fatal(err)
