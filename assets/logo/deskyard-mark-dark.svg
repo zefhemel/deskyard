@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <title>Deskyard</title>
+  <defs>
+    <mask id="m-mid"><rect width="48" height="48" fill="#fff"/><rect x="2.9" y="17.9" width="31.2" height="23.2" rx="5.1" fill="#000"/></mask>
+    <mask id="m-back"><rect width="48" height="48" fill="#fff"/><rect x="8.4" y="10.4" width="31.2" height="23.2" rx="5.1" fill="#000"/><rect x="2.9" y="17.9" width="31.2" height="23.2" rx="5.1" fill="#000"/></mask>
+  </defs>
+  <rect x="15" y="4" width="29" height="21" rx="4" fill="#3a4a6a" mask="url(#m-back)"/>
+  <rect x="9.5" y="11.5" width="29" height="21" rx="4" fill="#4a6fc0" mask="url(#m-mid)"/>
+  <rect x="4" y="19" width="29" height="21" rx="4" fill="#5b8cff"/>
+  <circle cx="27" cy="34" r="3" fill="#3ccf8e"/>
+</svg>

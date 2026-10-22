@@ -1,5 +1,6 @@
 import { useState } from "preact/hooks";
 import { api, ApiError } from "../api.ts";
+import { Logo } from "../components/logo.tsx";
 import { Button, Field } from "../components/ui.tsx";
 
 /** Only paths on this origin: never send someone elsewhere after signing in. */
@@ -60,7 +61,8 @@ export function LoginPage() {
           <Mini wide />
           <Mini dark />
         </div>
-        <span class="mb-[26px] block text-[19px] font-bold tracking-[-0.01em]">
+        <span class="mb-[26px] flex items-center gap-2 text-[19px] font-bold tracking-[-0.01em]">
+          <Logo size={26} />
           Deskyard
         </span>
         <h1 class="mb-1.5 text-[26px] leading-tight font-bold tracking-[-0.015em]">Sign in</h1>

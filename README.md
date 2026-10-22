@@ -1,3 +1,5 @@
+<img src="assets/logo/deskyard-mark.svg" width="72" alt="">
+
 # Deskyard
 
 Small, persistent Linux desktops in containers, each shared between humans

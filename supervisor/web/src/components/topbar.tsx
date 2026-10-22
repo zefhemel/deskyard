@@ -6,6 +6,7 @@ import { useLive } from "../live.tsx";
 import { gb } from "../lib/format.ts";
 import { ChangePasswordDialog } from "../dialogs/change-password.tsx";
 import { Avatar } from "./avatar.tsx";
+import { Logo } from "./logo.tsx";
 import { Menu } from "./menu.tsx";
 import { cx, Meter } from "./ui.tsx";
 
@@ -28,7 +29,8 @@ export function TopBar() {
 
   return (
     <div class="flex items-center gap-6 border-b border-line bg-surface px-8 py-3.5 max-[900px]:flex-wrap max-[900px]:gap-x-4 max-[900px]:gap-y-2 max-[900px]:px-4 max-[900px]:py-3">
-      <a href="/" class="text-[17px] font-bold tracking-[-0.01em] whitespace-nowrap text-ink no-underline">
+      <a href="/" class="flex items-center gap-2 text-[17px] font-bold tracking-[-0.01em] whitespace-nowrap text-ink no-underline">
+        <Logo size={24} />
         Deskyard
       </a>
       {me.admin && (
