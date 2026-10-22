@@ -207,10 +207,10 @@ func init() {
 				"It exits only on Ctrl-C, or when the token is refused. Run it in the background. Inside a desktop it needs -d too.",
 			Args:  []Arg{{Name: "port", Type: "string", Required: true, Variadic: true, Desc: "a mapping: PORT or LOCAL:DESKTOP; after -R, PORT or DESKTOP:LOCAL"}},
 			Flags: []Flag{{Name: "--reverse", Short: "-R", Type: "boolean", Desc: "the next mapping is reverse: a port in the desktop becomes a port here"}},
-			Output: Output{Type: "text", Desc: `one line per mapping each time it goes live: "in LOCAL DESKTOP" or "out DESKTOP 127.0.0.1:LOCAL"; on stderr one line per state change (connected, lost and retrying, port in use)`,
+			Output: Output{Type: "text", Desc: `one line per mapping each time it goes live: "in LOCAL DESKTOP" or "out DESKTOP 127.0.0.1:LOCAL"; on stderr one line per state change (linked, lost and retrying, port in use)`,
 				Fields: map[string]string{"in": "LOCAL DESKTOP: this machine's port, reachable in the desktop at localhost:DESKTOP", "out": "DESKTOP ADDR: the desktop's port, reachable here at ADDR"}},
 			Examples: []string{"deskyard -d alice forward 3000 -R 5173", "deskyard -d alice forward 8080:3000 &", "deskyard -d alice forward -R 9229:19229"},
-			Where:    whereRemote, Exit: "0 after Ctrl-C, 1 when the token is refused (401) or no remote is set up, 2 usage error", rawArgs: true, run: runForward},
+			Where:    "on the chosen remote (-d NAME); inside a desktop too, since it maps ports between two machines", Exit: "0 after Ctrl-C, 1 when the token is refused (401) or no remote is set up, 2 usage error", rawArgs: true, run: runForward},
 
 		// Browser
 		{Name: "browser connect", Group: "browser", Summary: "forward the desktop's browser to a local CDP port",

@@ -185,7 +185,7 @@ def test_forward_in(cli, remote, forwards, local_http):
     p = local_http.port
     f = forwards(cli, remote, str(p))
     f.wait_for(f"in {p} {p}")
-    assert f"Connected to {remote.name}: {p} → {remote.name}:{p}" in "".join(f.err)
+    assert f"Linked to {remote.name}: {p} → {remote.name}:{p}" in "".join(f.err)
     r = desktop_curl(remote, p)
     assert r.returncode == 0 and r.stdout == local_http.body
 

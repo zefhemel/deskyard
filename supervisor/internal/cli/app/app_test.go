@@ -410,7 +410,7 @@ func TestForwardArgs(t *testing.T) {
 		}
 	}
 	h := newHarness(t)
-	for _, args := range [][]string{{}, {"abc"}, {"0"}, {"70000"}, {"1:2:3"}, {"3000:"}, {":3000"}, {"-R"}, {"3000", "-R"}, {"-R", "-R", "1"}, {"-X", "3000"}, {"30.5"}} {
+	for _, args := range [][]string{{}, {"abc"}, {"0"}, {"70000"}, {"1:2:3"}, {"3000:"}, {":3000"}, {"-R"}, {"3000", "-R"}, {"-R", "-R", "1"}, {"-X", "3000"}, {"30.5"}, {"3000", "4000:3000"}, {"-R", "1:9000", "-R", "2:9000"}} {
 		r := h.run(append([]string{"-d", "x", "forward"}, args...)...)
 		if r.code != 2 || !strings.Contains(r.stderr, "usage: deskyard forward") {
 			t.Errorf("forward %v: exit %d, want 2 (stderr %q)", args, r.code, r.stderr)
@@ -543,7 +543,7 @@ func TestForwardReconnects(t *testing.T) {
 	if got := f.ForwardStarts()[0]; got != fmt.Sprintf(`{"forwards":[{"direction":"out","port":%d},{"direction":"in","port":%d}]}`, outDesktop, inDesktop) {
 		t.Errorf("first message %s", got)
 	}
-	if !strings.Contains(stderr.String(), fmt.Sprintf("Connected to alice: alice:%d → 127.0.0.1:%d, %d → alice:%d", outDesktop, outLocal, inLocal, inDesktop)) {
+	if !strings.Contains(stderr.String(), fmt.Sprintf("Linked to alice: alice:%d → 127.0.0.1:%d, %d → alice:%d", outDesktop, outLocal, inLocal, inDesktop)) {
 		t.Errorf("stderr: %s", stderr.String())
 	}
 	if got, err := roundTrip(outLocal, "a"); got != "echo a" {

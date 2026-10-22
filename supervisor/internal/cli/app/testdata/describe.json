@@ -708,7 +708,7 @@
       ],
       "output": {
         "type": "text",
-        "description": "one line per mapping each time it goes live: \"in LOCAL DESKTOP\" or \"out DESKTOP 127.0.0.1:LOCAL\"; on stderr one line per state change (connected, lost and retrying, port in use)",
+        "description": "one line per mapping each time it goes live: \"in LOCAL DESKTOP\" or \"out DESKTOP 127.0.0.1:LOCAL\"; on stderr one line per state change (linked, lost and retrying, port in use)",
         "fields": {
           "in": "LOCAL DESKTOP: this machine's port, reachable in the desktop at localhost:DESKTOP",
           "out": "DESKTOP ADDR: the desktop's port, reachable here at ADDR"
@@ -719,7 +719,7 @@
         "deskyard -d alice forward 8080:3000 &",
         "deskyard -d alice forward -R 9229:19229"
       ],
-      "where": "on the chosen remote (-d NAME); inside a desktop without a remote it acts locally",
+      "where": "on the chosen remote (-d NAME); inside a desktop too, since it maps ports between two machines",
       "exitCodes": "0 after Ctrl-C, 1 when the token is refused (401) or no remote is set up, 2 usage error"
     },
     {

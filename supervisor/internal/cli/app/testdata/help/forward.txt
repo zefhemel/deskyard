@@ -24,12 +24,12 @@ Options:
 
 Prints: one line per mapping each time it goes live: "in LOCAL DESKTOP" or
   "out DESKTOP 127.0.0.1:LOCAL"; on stderr one line per state change
-  (connected, lost and retrying, port in use)
+  (linked, lost and retrying, port in use)
 
 Examples:
   deskyard -d alice forward 3000 -R 5173
   deskyard -d alice forward 8080:3000 &
   deskyard -d alice forward -R 9229:19229
 
-Where: on the chosen remote (-d NAME); inside a desktop without a remote it acts locally
+Where: on the chosen remote (-d NAME); inside a desktop too, since it maps ports between two machines
 Exit codes: 0 after Ctrl-C, 1 when the token is refused (401) or no remote is set up, 2 usage error

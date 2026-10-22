@@ -95,6 +95,14 @@ func parseForwardArgs(cmd *Command, args []string) ([]*portMap, error) {
 		if reverse {
 			m.desktop, m.local = p1, p2
 		}
+		for _, o := range maps {
+			if !reverse && !o.reverse && o.desktop == m.desktop {
+				return nil, usagef(cmd, "desktop port %d is mapped twice", m.desktop)
+			}
+			if reverse && o.reverse && o.local == m.local {
+				return nil, usagef(cmd, "local port %d is mapped twice", m.local)
+			}
+		}
 		maps = append(maps, m)
 		reverse = false
 	}
@@ -305,7 +313,7 @@ func (fw *forwarder) link(ctx context.Context, ws *websocket.Conn) error {
 	fw.gen++
 	fw.mux = mux
 	close(fw.up)
-	fw.sayLocked("Connected to %s: %s", fw.cl.Label(), fw.describe())
+	fw.sayLocked("Linked to %s: %s", fw.cl.Label(), fw.describe())
 	for _, m := range fw.maps {
 		if m.reverse && m.bound {
 			fw.announceLocked(m)
