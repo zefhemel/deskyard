@@ -231,6 +231,8 @@ Connection state (`connection_state`, `disconnectrx`) shows in the bar: Connecti
 
 # Agent access
 
+From outside a computer there is exactly one way in for agents: the agent API, used through the `computer` command. Agents don't get `docker exec`, engine access or host ports; the documentation and skills say so, and the outside-the-sandbox skills and the README's `docker exec` instructions are replaced by `computer` remotes. (The supervisor itself uses the engine's exec internally to carry out agent API calls; that's an implementation detail, not an access path.)
+
 An agent that runs somewhere else uses a computer through the `computer` command, the same command and subcommands it would use inside the computer, plus a few that only make sense remotely. Everything goes over the supervisor's HTTPS port: plain HTTP for short calls, WebSockets for anything interactive or streaming.
 
 ## Agent tokens
@@ -418,7 +420,7 @@ docs/                this SilverBullet space
 
 Today's image moves into `images/debian-xfce/`; its compose files go, and its tests start the container directly with a test token (as the supervisor would). The README's getting-started becomes the supervisor's. CI has two workflows: images (a matrix over `images/*`, weekly and on change; each image builds `computer` from `supervisor/`) and the supervisor (`supervisor` and `computer` binaries attached to GitHub releases, plus the supervisor image).
 
-Changes to the computer image for this design: the Go `computer` command replaces the bash script; Caddy's token check and `/_cdp/` route, with basic auth, password, HTTPS and the Origin check removed; the VNC (5901) and host CDP (9222) listeners removed; rename the user `workspace` to `user` (same UID 1000, home stays `/workspace`, so existing folders keep working); the contract labels.
+Changes to the computer image for this design: the Go `computer` command replaces the bash script; the in-computer skills and the README stop mentioning `docker exec` and host ports; Caddy's token check and `/_cdp/` route, with basic auth, password, HTTPS and the Origin check removed; the VNC (5901) and host CDP (9222) listeners removed; rename the user `workspace` to `user` (same UID 1000, home stays `/workspace`, so existing folders keep working); the contract labels.
 
 # Testing
 
