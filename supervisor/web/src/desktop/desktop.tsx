@@ -137,13 +137,6 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
     }
     sendQuality(frame.current, level);
   };
-  const screenshot = () => {
-    const a = document.createElement("a");
-    a.href = api.screenUrl(c.name, { full: true });
-    a.download = `${c.name}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.png`;
-    a.click();
-    refocus();
-  };
   const closeClip = useCallback(() => {
     setClipOpen(false);
     refocus();
@@ -173,7 +166,6 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
     // On a phone the bar has no room for these.
     ...(running
       ? [
-          { label: "Screenshot", onSelect: screenshot, separated: true, class: phoneOnly },
           ...keyItems.map((k, i) => ({ ...k, label: <>Send {k.label}</>, separated: i === 0, class: phoneOnly })),
           ...qualities.map((q, i) => ({
             label: `Quality: ${q.label}`,
@@ -239,9 +231,6 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
                   </button>
                 )}
               />
-              <button type="button" class={cx(barButton, "max-sm:hidden")} onClick={screenshot}>
-                Screenshot
-              </button>
               <Menu
                 class="max-sm:hidden"
                 items={qualityItems}

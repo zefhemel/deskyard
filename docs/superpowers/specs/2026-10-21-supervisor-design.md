@@ -226,7 +226,6 @@ The bar, left to right:
 - **Back** to Desktops, the desktop's name and status, and who's viewing (avatars).
 - **Clipboard**: shows the desktop's clipboard text as it changes (from the client's `clipboardrx` message) with Copy, and a box to send text to the desktop's clipboard (`clipboardsnd`). Over HTTPS, copy and paste also go straight to the system clipboard (the iframe gets `allow="clipboard-read; clipboard-write"`).
 - **Keys**: keys the browser would otherwise take: Ctrl+Alt+Del, Super, Alt+Tab, Ctrl+W, Esc, F11.
-- **Screenshot**: downloads a PNG (from `deskyard screenshot`).
 - **Quality**: a few presets (`setvideoquality`).
 - **⋯**: Restart and Stop (for anyone with access), Settings and the details page.
 
