@@ -68,9 +68,17 @@ func parsePort(s string) (int, bool) {
 
 // parseForwardArgs reads PORT[:PORT] mappings; -R (or --reverse) makes the
 // next one reverse.
+// Limits on one forward command; the supervisor and the desktop's helper
+// enforce the same ones.
+const (
+	maxForwardMappings = 256
+	maxForwardIns      = 64
+)
+
 func parseForwardArgs(cmd *Command, args []string) ([]*portMap, error) {
 	var maps []*portMap
 	reverse := false
+	ins := 0
 	for _, arg := range args {
 		switch {
 		case arg == "-R" || arg == "--reverse":
@@ -105,6 +113,14 @@ func parseForwardArgs(cmd *Command, args []string) ([]*portMap, error) {
 		}
 		maps = append(maps, m)
 		reverse = false
+		if len(maps) > maxForwardMappings {
+			return nil, usagef(cmd, "at most %d mappings at once", maxForwardMappings)
+		}
+		if !m.reverse {
+			if ins++; ins > maxForwardIns {
+				return nil, usagef(cmd, "at most %d mappings into the desktop (without -R) at once", maxForwardIns)
+			}
+		}
 	}
 	if reverse {
 		return nil, usagef(cmd, "-R needs a mapping after it, e.g. -R 5173")

@@ -357,8 +357,9 @@ func (m *Mux) Close() error {
 	return nil
 }
 
-// Serve runs the desktop side: it honours Listen (refusing ports below 1024)
-// and Open (dialing loopback) until ctx ends or the transport closes. It
+// Serve runs the mux until ctx ends or the transport closes; either end of a
+// link may call it (the desktop's helper and the CLI both do). It honours the
+// peer's Listen (refusing ports below 1024) and Open (dialing loopback). It
 // returns nil when the peer hangs up cleanly.
 func (m *Mux) Serve(ctx context.Context) error {
 	m.start()
@@ -416,13 +417,31 @@ func (m *Mux) handleListen(id uint32, port int) {
 	m.tcpLns[id] = ln
 	m.mu.Unlock()
 	m.send(TypeListening, id, nil)
-	go m.acceptLoop(ln, port)
+	go m.acceptLoop(ln, id, port)
 }
 
-func (m *Mux) acceptLoop(ln net.Listener, port int) {
+func (m *Mux) acceptLoop(ln net.Listener, lid uint32, port int) {
 	for {
 		c, err := ln.Accept()
 		if err != nil {
+			var ne net.Error
+			if (errors.As(err, &ne) && ne.Timeout()) || errors.Is(err, syscall.EMFILE) ||
+				errors.Is(err, syscall.ENFILE) || errors.Is(err, syscall.ECONNABORTED) { // temporary
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+			m.mu.Lock()
+			cur, ok := m.tcpLns[lid]
+			if ok && cur == ln { // not closed by the peer or a shutdown: report it
+				delete(m.tcpLns, lid)
+			} else {
+				ok = false
+			}
+			m.mu.Unlock()
+			if ok {
+				ln.Close()
+				m.send(TypeReset, lid, []byte("the listener failed: "+err.Error()))
+			}
 			return
 		}
 		id := m.allocID()

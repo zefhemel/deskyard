@@ -139,7 +139,7 @@ func TestForwardRelayTracksListens(t *testing.T) {
 
 func sorted(lk *forwardLink) []forwardJSON {
 	f := newForwards()
-	f.add("d", lk)
+	f.tryAdd("d", lk)
 	return f.list("d")
 }
 
@@ -206,7 +206,7 @@ func TestForwardListedOncePerTokenSorted(t *testing.T) {
 	c := newForwardLink("bot", []int{3000})
 	b.in[1] = 4000
 	for _, l := range []*forwardLink{a, b, c} {
-		f.add("alice", l)
+		f.tryAdd("alice", l)
 	}
 	want := []forwardJSON{{"bot", "in", 4000}, {"bot", "out", 3000}, {"bot", "out", 5173}, {"zed", "out", 9000}}
 	if got := f.list("alice"); !reflect.DeepEqual(got, want) {

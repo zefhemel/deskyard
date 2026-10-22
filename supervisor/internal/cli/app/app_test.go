@@ -618,3 +618,31 @@ func TestForwardPortInUse(t *testing.T) {
 		t.Errorf("exit %d after Ctrl-C", c)
 	}
 }
+
+func TestForwardArgsCaps(t *testing.T) {
+	cmd := findCommand("forward")
+	build := func(ins, outs int) []string {
+		var args []string
+		for i := 0; i < ins; i++ {
+			args = append(args, strconv.Itoa(2000+i))
+		}
+		for i := 0; i < outs; i++ {
+			args = append(args, "-R", strconv.Itoa(5000+i))
+		}
+		return args
+	}
+	for _, c := range []struct {
+		ins, outs int
+		ok        bool
+	}{{64, 0, true}, {65, 0, false}, {64, 192, true}, {64, 193, false}, {0, 256, true}, {0, 257, false}} {
+		_, err := parseForwardArgs(cmd, build(c.ins, c.outs))
+		if (err == nil) != c.ok {
+			t.Errorf("%d in, %d out: err %v, want ok=%v", c.ins, c.outs, err, c.ok)
+		}
+	}
+	h := newHarness(t)
+	r := h.run(append([]string{"-d", "x", "forward"}, build(65, 0)...)...)
+	if r.code != 2 || !strings.Contains(r.stderr, "at most 64 mappings into the desktop") {
+		t.Errorf("65 ins: exit %d, stderr %q", r.code, r.stderr)
+	}
+}

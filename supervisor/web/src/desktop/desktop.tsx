@@ -213,6 +213,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
               type="button"
               data-viewers-toggle
               aria-expanded={viewersOpen}
+              aria-label="Viewers and port mappings"
               class={cx(
                 "inline-flex min-w-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1.5 py-1 text-[13px] text-bar-muted hover:bg-bar-hover",
                 viewersOpen && "bg-bar-hover text-white",

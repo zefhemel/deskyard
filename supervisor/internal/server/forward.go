@@ -121,13 +121,32 @@ type forwards struct {
 
 func newForwards() *forwards { return &forwards{byName: map[string]map[*forwardLink]bool{}} }
 
-func (f *forwards) add(name string, l *forwardLink) {
+// maxLinksPerToken bounds the forward links (each one a docker exec) one
+// token may hold open on a desktop.
+const maxLinksPerToken = 4
+
+// maxListedPerToken bounds the mappings listed for one token. Mappings
+// beyond it still work; viewers just don't see them.
+const maxListedPerToken = 64
+
+// tryAdd registers a link unless its token already has maxLinksPerToken.
+func (f *forwards) tryAdd(name string, l *forwardLink) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	n := 0
+	for o := range f.byName[name] {
+		if o.token == l.token {
+			n++
+		}
+	}
+	if n >= maxLinksPerToken {
+		return false
+	}
 	if f.byName[name] == nil {
 		f.byName[name] = map[*forwardLink]bool{}
 	}
 	f.byName[name][l] = true
+	return true
 }
 
 func (f *forwards) remove(name string, l *forwardLink) {
@@ -168,7 +187,14 @@ func (f *forwards) list(name string) []forwardJSON {
 		}
 		return a.Port < b.Port
 	})
-	return out
+	capped := out[:0]
+	perToken := map[string]int{}
+	for _, e := range out {
+		if perToken[e.Token]++; perToken[e.Token] <= maxListedPerToken {
+			capped = append(capped, e)
+		}
+	}
+	return capped
 }
 
 type forwardStart struct {
@@ -235,6 +261,15 @@ func (s *Server) agentForward(w http.ResponseWriter, r *http.Request, c desktops
 		fail(err.Error())
 		return
 	}
+	lk := newForwardLink(t.Name, outs)
+	if !s.forwards.tryAdd(c.Name, lk) {
+		fail(fmt.Sprintf("this token already has %d forward links open on this desktop; close one first", maxLinksPerToken))
+		return
+	}
+	defer func() {
+		s.forwards.remove(c.Name, lk)
+		s.publishViewers(c.Name, c.ID)
+	}()
 	p, err := s.Eng.Exec(ctx, c.Container.ID, engine.ExecSpec{
 		Cmd: []string{"deskyard", "forward-helper"}, User: "user", WorkDir: "/workspace",
 		Env: append([]string{}, execEnv...), Stdin: true,
@@ -247,17 +282,16 @@ func (s *Server) agentForward(w http.ResponseWriter, r *http.Request, c desktops
 	// Docker multiplexes stdout and stderr: stderr must be drained. Keep
 	// its end for the error message.
 	stderr := &tailBuffer{max: 512}
+	stderrDone := make(chan struct{})
 	if p.Stderr != nil {
-		go io.Copy(stderr, p.Stderr)
+		go func() {
+			defer close(stderrDone)
+			io.Copy(stderr, p.Stderr)
+		}()
+	} else {
+		close(stderrDone)
 	}
-
-	lk := newForwardLink(t.Name, outs)
-	s.forwards.add(c.Name, lk)
 	s.publishViewers(c.Name, c.ID)
-	defer func() {
-		s.forwards.remove(c.Name, lk)
-		s.publishViewers(c.Name, c.ID)
-	}()
 	s.Log.Info("agent forward", "desktop", c.Name, "token", t.Name, "out", outs)
 
 	go keepAlive(ctx, ws)
@@ -270,8 +304,13 @@ func (s *Server) agentForward(w http.ResponseWriter, r *http.Request, c desktops
 			_ = ws.Close(websocket.StatusGoingAway, "desktop stopped")
 			return
 		}
+		code, _ := p.Wait()
+		select { // the helper has exited: its stderr ends shortly
+		case <-stderrDone:
+		case <-time.After(time.Second):
+		}
 		msg, _, _ := strings.Cut(strings.TrimSpace(stderr.String()), "\n")
-		if code, _ := p.Wait(); code != 0 && msg != "" {
+		if code != 0 && msg != "" {
 			fail("the forward helper failed: " + msg)
 			return
 		}

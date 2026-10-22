@@ -82,11 +82,17 @@ PORTS
   Map TCP ports between your machine and a desktop (from outside it):
     deskyard -d alice forward 3000 &       your 127.0.0.1:3000 is localhost:3000 in the desktop
     deskyard -d alice forward -R 5173 &    the desktop's localhost:5173 is your 127.0.0.1:5173
-  Mix several in one command (8080:3000 maps to a different port; -R goes
-  before each reverse one). Loopback only; desktop ports below 1024 are
-  refused. It reconnects by itself when the desktop restarts and prints
-  "in LOCAL DESKTOP" / "out DESKTOP 127.0.0.1:LOCAL" when a mapping is live.
-  The humans see which ports your token maps.
+  Mix several in one command (-R goes before each reverse one). Port
+  order: plain LOCAL:DESKTOP (forward 8080:3000: your 8080 is the desktop's
+  3000); after -R it is DESKTOP:LOCAL (-R 80:8080: the desktop's 80 is your
+  8080). Loopback only; the desktop won't listen below 1024, so plain
+  "forward 80" fails but "-R 80:8080" works (it only dials). On a lost link
+  it reconnects by itself: -R local ports stay bound meanwhile, plain
+  mappings come back in the desktop once the link is back. It prints "in
+  LOCAL DESKTOP" / "out DESKTOP 127.0.0.1:LOCAL" and "Linked to ..." when the
+  link is accepted, a moment before the desktop side is known to run.
+  Limits: 4 links per token, 64 plain and 256 mappings per command. The
+  humans see which ports your token maps.
 
 WORKING ALONGSIDE A HUMAN
 - They see every window you open. Don't close their tabs or windows.

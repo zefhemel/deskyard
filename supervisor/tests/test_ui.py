@@ -97,7 +97,7 @@ def test_forwards_shown(cli, remote, forwards, supervisor, name):  # noqa: F811
     with sync_playwright() as pw:
         browser, page = signed_in(pw, supervisor.base)
         page.goto(f"{supervisor.base}/{name}/")
-        chip = page.get_by_role("button", name="⇄ 1")
+        chip = page.get_by_role("button", name="Viewers and port mappings")
         expect(chip).to_be_visible(timeout=30000)
         chip.click()
         expect(page.get_by_text(f"cli test: {p} in")).to_be_visible()
