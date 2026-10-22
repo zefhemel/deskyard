@@ -5,18 +5,24 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/coder/websocket"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
+	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
+	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/forward"
 )
 
@@ -229,5 +235,218 @@ func TestParseForwardStart(t *testing.T) {
 		if _, err := parseForwardStart([]byte(bad)); err == nil {
 			t.Errorf("%s: accepted", bad)
 		}
+	}
+}
+
+func TestThrottleCoalescesBurst(t *testing.T) {
+	const interval = 100 * time.Millisecond
+	th := newThrottle(interval)
+	var mu sync.Mutex
+	var ran []int
+	record := func(n int) func() {
+		return func() { mu.Lock(); ran = append(ran, n); mu.Unlock() }
+	}
+	snapshot := func() []int { mu.Lock(); defer mu.Unlock(); return append([]int(nil), ran...) }
+
+	for i := 1; i <= 50; i++ {
+		th.do("alice", record(i))
+	}
+	if got := snapshot(); !reflect.DeepEqual(got, []int{1}) {
+		t.Fatalf("right after the burst ran %v, want only the immediate call [1]", got)
+	}
+	// A different key isn't held back by alice's interval.
+	th.do("bob", record(100))
+	if got := snapshot(); !reflect.DeepEqual(got, []int{1, 100}) {
+		t.Fatalf("a second key ran %v, want [1 100]", got)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for len(snapshot()) < 3 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(2 * interval) // nothing more may follow the trailing run
+	if got := snapshot(); !reflect.DeepEqual(got, []int{1, 100, 50}) {
+		t.Fatalf("burst ran %v, want the first call, bob's, then the latest (50) once", got)
+	}
+}
+
+// forwardEngine is a running "alice" whose Exec calls are counted; the
+// helper it starts stays up until the link is closed.
+type forwardEngine struct {
+	fakeEngine
+	execs atomic.Int32
+}
+
+func (e *forwardEngine) Inspect(ctx context.Context, id string) (engine.Container, error) {
+	c, err := e.fakeEngine.Inspect(ctx, id)
+	c.State = "running"
+	return c, err
+}
+
+func (e *forwardEngine) List(context.Context, map[string]string) ([]engine.Container, error) {
+	c := alice
+	c.State = "running"
+	return []engine.Container{c}, nil
+}
+
+func (e *forwardEngine) Exec(context.Context, string, engine.ExecSpec) (*engine.Process, error) {
+	e.execs.Add(1)
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	go io.Copy(io.Discard, inR)
+	return &engine.Process{Stdin: inW, Stdout: outR,
+		Wait:  func() (int, error) { return 0, nil },
+		Close: func() { inW.Close(); outW.Close(); outR.Close() }}, nil
+}
+
+func TestForwardLinkCapPerToken(t *testing.T) {
+	if maxLinksPerToken != 4 {
+		t.Fatalf("maxLinksPerToken is %d; the documented cap is 4", maxLinksPerToken)
+	}
+	t.Run("tryAdd", func(t *testing.T) {
+		f := newForwards()
+		var links []*forwardLink
+		for i := 0; i < maxLinksPerToken; i++ {
+			l := newForwardLink("bot", nil)
+			if !f.tryAdd("alice", l) {
+				t.Fatalf("link %d of %d was refused", i+1, maxLinksPerToken)
+			}
+			links = append(links, l)
+		}
+		if f.tryAdd("alice", newForwardLink("bot", nil)) {
+			t.Fatalf("link %d for one token was accepted", maxLinksPerToken+1)
+		}
+		if !f.tryAdd("alice", newForwardLink("other", nil)) {
+			t.Error("another token's link was refused")
+		}
+		if !f.tryAdd("bob", newForwardLink("bot", nil)) {
+			t.Error("the same token on another desktop was refused")
+		}
+		f.remove("alice", links[0])
+		if !f.tryAdd("alice", newForwardLink("bot", nil)) {
+			t.Error("a new link was refused after one was removed")
+		}
+		if f.tryAdd("alice", newForwardLink("bot", nil)) {
+			t.Error("the cap didn't hold after the replacement")
+		}
+	})
+
+	t.Run("handler refuses before exec", func(t *testing.T) {
+		dir := t.TempDir()
+		log := slog.New(slog.NewTextHandler(io.Discard, nil))
+		accts, _ := accounts.Load(dir)
+		_, _ = accts.EnsureAdmin("admin", "pw")
+		e := &forwardEngine{}
+		s, err := New(Options{Log: log, Eng: e, Accounts: accts, StateDir: dir, DefaultImage: "img",
+			Desktops: desktops.New(e, desktops.Config{DataDir: dir, Subnet: "10.0.0.0/16"}, log),
+			UI:       fstest.MapFS{"index.html": {Data: []byte("ui")}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		srv := httptest.NewServer(s)
+		t.Cleanup(srv.Close)
+		_, bot, err := s.tokens.create("bot", "id-alice", "admin", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, other, err := s.tokens.create("other", "id-alice", "admin", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		dial := func(tok string) (*websocket.Conn, string) {
+			t.Helper()
+			ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+agentPrefix+"/forward",
+				&websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer " + tok}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { ws.CloseNow() })
+			if err := ws.Write(ctx, websocket.MessageText, []byte(`{"forwards":[]}`)); err != nil {
+				t.Fatal(err)
+			}
+			// An accepted link stays quiet; a refused one gets an error and a close.
+			// (Cancelling a Read closes the connection, so read in the background.)
+			msgs := make(chan string, 1)
+			go func() {
+				if typ, b, err := ws.Read(ctx); err == nil && typ == websocket.MessageText {
+					msgs <- string(b)
+				}
+			}()
+			select {
+			case m := <-msgs:
+				return ws, m
+			case <-time.After(300 * time.Millisecond):
+				return ws, ""
+			}
+		}
+		waitExecs := func(n int32) {
+			t.Helper()
+			deadline := time.Now().Add(5 * time.Second)
+			for e.execs.Load() != n && time.Now().Before(deadline) {
+				time.Sleep(5 * time.Millisecond)
+			}
+			if got := e.execs.Load(); got != n {
+				t.Fatalf("%d execs, want %d", got, n)
+			}
+		}
+		var open []*websocket.Conn
+		for i := 0; i < maxLinksPerToken; i++ {
+			ws, msg := dial(bot)
+			if msg != "" {
+				t.Fatalf("link %d refused: %s", i+1, msg)
+			}
+			open = append(open, ws)
+		}
+		waitExecs(maxLinksPerToken)
+		if _, msg := dial(bot); !strings.Contains(msg, "already has") {
+			t.Fatalf("the 5th link got %q, want a refusal", msg)
+		}
+		waitExecs(maxLinksPerToken) // refused before any exec
+		if _, msg := dial(other); msg != "" {
+			t.Fatalf("another token's link refused: %s", msg)
+		}
+		waitExecs(maxLinksPerToken + 1)
+		open[0].CloseNow()
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			ws, msg := dial(bot)
+			if msg == "" {
+				open = append(open, ws)
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("no new link accepted after one closed: %s", msg)
+			}
+		}
+		waitExecs(maxLinksPerToken + 2)
+	})
+}
+
+func TestForwardListCappedPerToken(t *testing.T) {
+	if maxListedPerToken != 64 {
+		t.Fatalf("maxListedPerToken is %d; the documented cap is 64", maxListedPerToken)
+	}
+	f := newForwards()
+	many := newForwardLink("bot", nil)
+	for i := 0; i < maxListedPerToken+36; i++ {
+		many.in[uint32(i)] = 10000 + i
+	}
+	f.tryAdd("alice", many)
+	f.tryAdd("alice", newForwardLink("zed", []int{9000}))
+	f.tryAdd("alice", newForwardLink("abe", []int{1}))
+	got := f.list("alice")
+	perToken := map[string]int{}
+	for _, e := range got {
+		perToken[e.Token]++
+	}
+	if perToken["bot"] != maxListedPerToken {
+		t.Errorf("listed %d mappings for the busy token, want %d", perToken["bot"], maxListedPerToken)
+	}
+	if perToken["zed"] != 1 || perToken["abe"] != 1 {
+		t.Errorf("other tokens listed %v, want one each (sorted before and after the busy one)", perToken)
+	}
+	if len(got) != maxListedPerToken+2 {
+		t.Errorf("%d mappings in all, want %d", len(got), maxListedPerToken+2)
 	}
 }
