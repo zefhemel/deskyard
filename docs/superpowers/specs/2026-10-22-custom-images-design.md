@@ -92,7 +92,13 @@ These would make it a failure even if it worked:
   - `deskyard.secrets=true` when it contains secrets.
 - **Storage.** The supervisor keeps recipes in `.deskyard/recipes.json`. Catalog entries for custom images carry `"custom": true`.
 - **Visible to anyone who can inspect the image:** build commands and remote URLs are saved in the `deskyard.recipe` label. The recipe form says so under the build commands box. *(My call.)*
-- **Base updated.** When the base's catalog entry has a newer image than the custom image's `deskyard.base`, the custom image shows "Base updated" with a **Rebuild** button. This applies down a chain: rebuilding a custom image marks the custom images built on it.
+- **Rebuild, any time.** Every custom image has a **Rebuild** button, on the Images page and in "Edit and rebuild".
+  - A rebuild first pulls the base again (unless the base is itself a custom image), then runs the recipe from scratch with no build cache. So unpinned tools (`npm:@openai/codex`), Flatpak apps and `apt` packages come out at their newest versions.
+  - Its desktops then get "update available" as usual.
+- **Changing the base.** "Edit and rebuild" lets the admin pick a different base, for example another distribution's image or another custom image. The rest of the recipe is kept.
+  - A base without the Deskyard contract is refused, as when adding an image.
+  - A base with the wrong contract version is also refused.
+- **Base updated.** When the base's catalog entry has a newer image than the custom image's `deskyard.base`, the custom image shows a "Base updated" badge next to its Rebuild button. This applies down a chain: rebuilding a custom image marks the custom images built on it.
 
 ## From a desktop
 
@@ -123,6 +129,12 @@ These would make it a failure even if it worked:
   - The template is copied before the image's own skeleton, so the template wins where both have a file.
   - Nothing root runs is ever taken from `/workspace`, as today. *(My call.)*
 - **Chains.** An image made from a desktop that runs on a custom image keeps the parent's template underneath: the parent's layer stays, and the new files overlay it. The "contains secrets" flag passes down a chain: an image built on a secret image contains secrets too. *(My call.)*
+- **It's a recipe too.** An image made from a desktop is saved as a recipe whose parts are:
+  - the desktop's base image;
+  - the Flatpak apps and remotes it found;
+  - a home template.
+
+  So it can be rebuilt, or moved to another base, like any recipe. On a rebuild, the template comes from the current image's `/opt/deskyard/home-template`, which is copied out of that image; no separate copy is kept. *(My call.)*
 - **Save as recipe.** The dialog can also save the result as a recipe whose base is the new image, so tools can be added on top later without starting over.
 
 ## Images with secrets
