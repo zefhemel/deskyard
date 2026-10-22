@@ -17,8 +17,7 @@ What's in a desktop:
 
 - **XFCE desktop in the browser** (KasmVNC). It resizes to fit your browser
   window, and the bar above it has the clipboard, keys the browser would
-  otherwise take (Ctrl+Alt+Del, Alt+Tab, ...), a screenshot button and
-  quality presets.
+  otherwise take (Ctrl+Alt+Del, Alt+Tab, ...) and quality presets.
 - **One shared Chromium** with one profile: log in once on the desktop and
   the agent is logged in too. It starts when someone opens it or an agent
   connects to it.
