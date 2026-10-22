@@ -411,6 +411,12 @@ func (s *Service) Recreate(ctx context.Context, name string, set Settings, progr
 	if _, err := s.EnsureImage(ctx, set.Image, progress); err != nil {
 		return Desktop{}, err
 	}
+	// Its camera gone from the host (a reboot without the module): the new
+	// container can't have it.
+	if set.Camera != "" && set.Camera == c.Settings.Camera && s.cameraGone(set.Camera) {
+		s.Log.Warn("camera gone from the host; recreating the desktop without it", "desktop", name, "camera", set.Camera)
+		set.Camera = ""
+	}
 	wasRunning := c.Container.Running()
 	token := c.Container.Env[TokenEnv]
 	progress("Stopping", -1)
@@ -424,8 +430,18 @@ func (s *Service) Recreate(ctx context.Context, name string, set Settings, progr
 		return Desktop{}, err
 	}
 	if err := s.createContainer(ctx, name, c.ID, token, c.Created, set); err != nil {
-		// Try to bring the old one back so the desktop isn't lost.
-		if err2 := s.createContainer(context.WithoutCancel(ctx), name, c.ID, token, c.Created, c.Settings); err2 != nil {
+		// Bring the old one back so the desktop isn't lost (the engine is its
+		// only record): as it was, or without its camera when that is what
+		// fails (gone, or another desktop's since).
+		back := context.WithoutCancel(ctx)
+		old := c.Settings
+		err2 := s.createContainer(back, name, c.ID, token, c.Created, old)
+		if err2 != nil && old.Camera != "" {
+			s.Log.Warn("bringing the desktop back without its camera", "desktop", name, "camera", old.Camera, "err", err2)
+			old.Camera = ""
+			err2 = s.createContainer(back, name, c.ID, token, c.Created, old)
+		}
+		if err2 != nil {
 			return Desktop{}, errors.Join(err, err2)
 		}
 		return Desktop{}, err
@@ -451,16 +467,41 @@ func (s *Service) Start(ctx context.Context, name string) error {
 		return err
 	}
 	err = s.Eng.Start(ctx, containerName(name))
-	if err == nil || c.Settings.Camera == "" || slices.Contains(s.HostCameras(), c.Settings.Camera) {
+	if err == nil || c.Settings.Camera == "" || !s.cameraGone(c.Settings.Camera) {
 		return err
 	}
-	s.Log.Warn("camera gone from the host; recreating the desktop without it", "desktop", name, "camera", c.Settings.Camera, "err", err)
+	return s.withoutCamera(ctx, c, true)
+}
+
+// cameraGone reports whether a desktop's camera has gone from the host.
+// Only a local engine's host can be looked at; elsewhere none is given.
+func (s *Service) cameraGone(camera string) bool {
+	return s.Cfg.LocalEngine && !slices.Contains(s.HostCameras(), camera)
+}
+
+// withoutCamera recreates a desktop whose camera is gone, without it, and
+// logs it; start starts it afterwards. It marks the desktop busy, and isn't
+// cut short by the caller's deadline: a recreate stopped halfway loses the
+// container.
+func (s *Service) withoutCamera(ctx context.Context, c Desktop, start bool) error {
+	if err := s.Begin(c.Name, "starting"); err != nil {
+		return err
+	}
+	defer s.Done(c.Name)
+	ctx = context.WithoutCancel(ctx)
+	s.Log.Warn("camera gone from the host; recreating the desktop without it", "desktop", c.Name, "camera", c.Settings.Camera)
 	set := c.Settings
 	set.Camera = ""
-	if _, err := s.Recreate(ctx, name, set, func(string, float64) {}); err != nil {
+	if _, err := s.Recreate(ctx, c.Name, set, func(string, float64) {}); err != nil {
 		return err
 	}
-	return s.Eng.Start(ctx, containerName(name))
+	if !start {
+		return nil
+	}
+	if d, err := s.Get(ctx, c.Name); err == nil && d.Container.Running() {
+		return nil
+	}
+	return s.Eng.Start(ctx, containerName(c.Name))
 }
 
 func (s *Service) Stop(ctx context.Context, name string) error {
@@ -471,10 +512,15 @@ func (s *Service) Stop(ctx context.Context, name string) error {
 }
 
 func (s *Service) Restart(ctx context.Context, name string) error {
-	if _, err := s.Get(ctx, name); err != nil {
+	c, err := s.Get(ctx, name)
+	if err != nil {
 		return err
 	}
-	return s.Eng.Restart(ctx, containerName(name), stopTimeout)
+	err = s.Eng.Restart(ctx, containerName(name), stopTimeout)
+	if err == nil || c.Settings.Camera == "" || !s.cameraGone(c.Settings.Camera) {
+		return err
+	}
+	return s.withoutCamera(ctx, c, true)
 }
 
 // Remove stops and removes the container and its network; the workspace
@@ -589,22 +635,40 @@ func (s *Service) Target(ctx context.Context, name string) (addr, token string, 
 	return net.JoinHostPort("127.0.0.1", strconv.Itoa(c.Container.LocalPort)), token, nil
 }
 
-// Reconcile runs at startup: in a container, it reconnects the supervisor to
-// every desktop's network (e.g. after the supervisor's container was recreated).
+// Reconcile runs at startup. In a container, it reconnects the supervisor to
+// every desktop's network (e.g. after the supervisor's container was
+// recreated). And a desktop whose camera has gone from the host (a reboot
+// without the module) is recreated without it, which is logged: started if
+// the engine had tried to start it and failed, left stopped if a user had
+// stopped it.
 func (s *Service) Reconcile(ctx context.Context) error {
-	if !s.Cfg.InContainer {
-		return nil
-	}
-	nets, err := s.Eng.Networks(ctx, map[string]string{LabelManaged: "true"})
-	if err != nil {
-		return err
-	}
-	for _, n := range nets {
-		if err := s.Eng.ConnectNetwork(ctx, n.Name, s.Cfg.SelfID, nil); err != nil && !isAlreadyConnected(err) {
-			s.Log.Warn("reconnecting to network", "network", n.Name, "err", err)
+	var errs []error
+	if s.Cfg.InContainer {
+		nets, err := s.Eng.Networks(ctx, map[string]string{LabelManaged: "true"})
+		if err != nil {
+			errs = append(errs, err)
+		}
+		for _, n := range nets {
+			if err := s.Eng.ConnectNetwork(ctx, n.Name, s.Cfg.SelfID, nil); err != nil && !isAlreadyConnected(err) {
+				s.Log.Warn("reconnecting to network", "network", n.Name, "err", err)
+			}
 		}
 	}
-	return nil
+	list, err := s.List(ctx)
+	if err != nil {
+		return errors.Join(append(errs, err)...)
+	}
+	for _, c := range list {
+		if c.Settings.Camera == "" || !s.cameraGone(c.Settings.Camera) {
+			continue
+		}
+		failed := !c.Container.Running() && c.Container.Error != ""
+		if err := s.withoutCamera(ctx, c, failed); err != nil {
+			s.Log.Warn("recreating a desktop without its gone camera", "desktop", c.Name, "err", err)
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func isAlreadyConnected(err error) bool {

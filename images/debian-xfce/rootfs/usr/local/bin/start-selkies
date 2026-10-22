@@ -23,14 +23,36 @@ for dev in /dev/video*; do
     fi
 done
 
-# Viewers' mics reach apps through Selkies' virtual mic (made at the sound
-# server's start: /etc/pipewire/pipewire-pulse.conf.d/deskyard-mic.conf). It's
-# the default mic from the start, so an app that opens the mic before anyone
-# turns theirs on doesn't record the desktop's own sound instead.
-for _ in $(seq 50); do
-    pactl set-default-source output.SelkiesVirtualMic 2>/dev/null && break
-    sleep 0.2
+# Viewers' mics reach apps through Selkies' virtual mic, made when the sound
+# server starts (/etc/pipewire/pipewire-pulse.conf.d/deskyard-mic.conf). It
+# must be there before Selkies: if Selkies makes it, the first viewer's
+# connection owns it and takes it away when it ends, and every other viewer's
+# mic goes dead for apps. Made here if the sound server didn't; no Selkies
+# without it. It's the default mic, so an app that opens the mic before
+# anyone turns theirs on doesn't record the desktop's own sound instead.
+mic_ready() { pactl list short sources 2>/dev/null | grep -q 'SelkiesVirtualMic'; }
+for _ in $(seq 100); do
+    pactl info >/dev/null 2>&1 && break
+    sleep 0.1
 done
+for _ in $(seq 30); do
+    mic_ready && break
+    sleep 0.1
+done
+if ! mic_ready; then
+    echo "$0: Selkies' virtual mic is missing; loading it" >&2
+    pactl list short sinks 2>/dev/null | grep -qP '^\d+\tinput\t' || pactl load-module module-null-sink sink_name=input >/dev/null || true
+    pactl load-module module-virtual-source source_name=SelkiesVirtualMic master=input.monitor >/dev/null || true
+    for _ in $(seq 50); do
+        mic_ready && break
+        sleep 0.1
+    done
+fi
+if ! mic_ready; then
+    echo "$0: no virtual mic (SelkiesVirtualMic): viewers' mics wouldn't reach apps; not starting Selkies" >&2
+    exit 1
+fi
+pactl set-default-source output.SelkiesVirtualMic 2>/dev/null || pactl set-default-source SelkiesVirtualMic
 
 # The supervisor rewrites Host when proxying, so a browser's Origin never
 # matches it: the supervisor checks the Origin itself and then sends this one.

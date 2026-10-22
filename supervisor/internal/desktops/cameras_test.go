@@ -95,11 +95,18 @@ func (e *fakeEngine) Start(_ context.Context, id string) error {
 	}
 	for _, d := range c.Devices {
 		if !slices.Contains(Cameras(e.sys), d) {
-			return fmt.Errorf("error gathering device information while adding custom device %q: no such file or directory", d)
+			err := fmt.Errorf("error gathering device information while adding custom device %q: no such file or directory", d)
+			c.Error = err.Error()
+			return err
 		}
 	}
-	c.State = "running"
+	c.State, c.Error = "running", ""
 	return nil
+}
+
+func (e *fakeEngine) Restart(ctx context.Context, id string, t time.Duration) error {
+	_ = e.Stop(ctx, id, t)
+	return e.Start(ctx, id)
 }
 
 func (e *fakeEngine) Stop(_ context.Context, id string, _ time.Duration) error {
@@ -206,6 +213,110 @@ func TestNoCamerasFromARemoteEngine(t *testing.T) {
 	}
 	if err := s.CheckCamera(context.Background(), "alice", "/dev/video0"); !errors.Is(err, ErrCameraUnknown) {
 		t.Errorf("%v", err)
+	}
+}
+
+// A desktop can't be lost to its camera: a recreate (a settings change, an
+// upgrade) of one whose camera is gone drops the camera and keeps the desktop.
+func TestRecreateWithAGoneCamera(t *testing.T) {
+	s, eng, sys, log := newCameraService(t, true)
+	ctx := context.Background()
+	addCamera(t, sys, "video0")
+	if err := s.createContainer(ctx, "bob", "id-b", "tok", time.Time{}, Settings{Image: "img", Camera: "/dev/video0"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(sys, "devices")); err != nil {
+		t.Fatal(err)
+	}
+	bob, _ := s.Get(ctx, "bob")
+	set := bob.Settings
+	set.MemoryBytes = 2 << 30
+	if _, err := s.Recreate(ctx, "bob", set, func(string, float64) {}); err != nil {
+		t.Fatal(err)
+	}
+	bob, err := s.Get(ctx, "bob")
+	if err != nil || bob.Settings.Camera != "" || bob.ID != "id-b" || len(eng.cs["deskyard-bob"].Devices) != 0 {
+		t.Fatalf("bob: %v %+v", err, bob)
+	}
+	if !strings.Contains(log.String(), "camera gone from the host") {
+		t.Errorf("not logged: %s", log)
+	}
+	if _, busy := s.Busy()["bob"]; busy {
+		t.Error("bob still busy")
+	}
+}
+
+// A recreate whose new camera fails (another desktop took it meanwhile)
+// brings the old container back; one whose old camera is gone too comes back
+// without it. Either way the desktop stays.
+func TestFailedRecreateKeepsTheDesktop(t *testing.T) {
+	s, eng, sys, _ := newCameraService(t, true)
+	ctx := context.Background()
+	addCamera(t, sys, "video0")
+	addCamera(t, sys, "video1")
+	for _, d := range []struct{ name, cam string }{{"alice", "/dev/video1"}, {"bob", "/dev/video0"}} {
+		if err := s.createContainer(ctx, d.name, "id-"+d.name, "tok", time.Time{}, Settings{Image: "img", Camera: d.cam}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// bob asks for alice's camera (as if she got it while bob's PATCH was on its way).
+	if _, err := s.Recreate(ctx, "bob", Settings{Image: "img", Camera: "/dev/video1"}, func(string, float64) {}); !errors.Is(err, ErrCameraTaken) {
+		t.Fatalf("recreate: %v", err)
+	}
+	if bob, err := s.Get(ctx, "bob"); err != nil || bob.Settings.Camera != "/dev/video0" {
+		t.Fatalf("bob after a failed recreate: %v %+v", err, bob.Settings)
+	}
+	// Now bob's own camera is gone too: he comes back without one.
+	if err := os.RemoveAll(filepath.Join(sys, "devices", "virtual", "video4linux", "video0")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Recreate(ctx, "bob", Settings{Image: "img", Camera: "/dev/video1"}, func(string, float64) {}); !errors.Is(err, ErrCameraTaken) {
+		t.Fatalf("recreate: %v", err)
+	}
+	bob, err := s.Get(ctx, "bob")
+	if err != nil || bob.Settings.Camera != "" || eng.cs["deskyard-bob"].Env[TokenEnv] != "tok" {
+		t.Fatalf("bob after a failed recreate with a gone camera: %v %+v", err, bob.Settings)
+	}
+}
+
+// After a reboot without the module: at the supervisor's start, desktops
+// whose camera is gone are recreated without it. One the engine tried to
+// start (restart policy) and couldn't is started; one a user stopped stays
+// stopped; one without a camera is left alone.
+func TestReconcileGoneCameras(t *testing.T) {
+	s, eng, sys, log := newCameraService(t, true)
+	ctx := context.Background()
+	addCamera(t, sys, "video0")
+	addCamera(t, sys, "video1")
+	for _, d := range []struct{ name, cam string }{{"bob", "/dev/video0"}, {"carol", "/dev/video1"}, {"dan", ""}} {
+		if err := s.createContainer(ctx, d.name, "id-"+d.name, "tok", time.Time{}, Settings{Image: "img", Camera: d.cam}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.RemoveAll(filepath.Join(sys, "devices")); err != nil {
+		t.Fatal(err)
+	}
+	// The engine's restart policy tries bob after the reboot, and fails; carol was stopped.
+	if err := eng.Start(ctx, "deskyard-bob"); err == nil {
+		t.Fatal("bob started without his camera")
+	}
+	if err := s.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	bob, _ := s.Get(ctx, "bob")
+	carol, _ := s.Get(ctx, "carol")
+	dan, _ := s.Get(ctx, "dan")
+	if !bob.Running() || bob.Settings.Camera != "" {
+		t.Errorf("bob: %s %+v", bob.State, bob.Settings)
+	}
+	if carol.Running() || carol.Settings.Camera != "" {
+		t.Errorf("carol: %s %+v", carol.State, carol.Settings)
+	}
+	if dan.Running() || dan.ID != "id-dan" {
+		t.Errorf("dan: %s", dan.State)
+	}
+	if strings.Count(log.String(), "camera gone from the host") != 2 {
+		t.Errorf("log: %s", log)
 	}
 }
 

@@ -49,7 +49,7 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 | `POST /api/desktops` (admin) | `{"name","image","memoryBytes","nanoCpus","access":[usernames]}` | 202 `{"job": id}` |
 | `POST /api/desktops/{name}/start` \| `stop` \| `restart` | | 204 |
 | `DELETE /api/desktops/{name}?files=1` (admin) | | 204; `files=1` also deletes the workspace folder |
-| `PATCH /api/desktops/{name}` (admin) | `{"image"?, "memoryBytes"?, "nanoCpus"?, "camera"?}` | 202 `{"job": id}` (recreates the container); 400 for a camera that isn't one of the host's, 409 for one another desktop has. `camera` is a device from `GET /api/host`'s `cameras`, or "" for none. A desktop whose camera has gone from the host (when it's started) is recreated without it, which is logged |
+| `PATCH /api/desktops/{name}` (admin) | `{"image"?, "memoryBytes"?, "nanoCpus"?, "camera"?}` | 202 `{"job": id}` (recreates the container); 400 for a camera that isn't one of the host's, 409 for one another desktop has. `camera` is a device from `GET /api/host`'s `cameras`, or "" for none. A desktop whose camera has gone from the host is recreated without it, which is logged: when it's started, restarted or recreated, and when the supervisor starts (then started again if the engine had tried to start it and failed; one a user stopped stays stopped) |
 | `PUT /api/desktops/{name}/access` (admin) | `{"usernames":[…]}` | 204 |
 | `GET /api/desktops/{name}/screen.png` | `?full=1` for full size | PNG, 480 px wide by default; 409 when stopped |
 | `GET /api/desktops/{name}/processes` | | `{"titles":[…],"rows":[[…]]}` (columns PID, USER, %CPU, RSS (KiB), ELAPSED, COMMAND) |

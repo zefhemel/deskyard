@@ -113,7 +113,7 @@ func run(log *slog.Logger) error {
 		LocalEngine: desktops.LocalEngine(cfg.EngineHost),
 	}, log)
 	if err := comps.Reconcile(ctx); err != nil {
-		log.Warn("reconnecting to desktops' networks", "err", err)
+		log.Warn("reconciling desktops (networks, gone cameras)", "err", err)
 	}
 
 	ui, err := fs.Sub(web.Dist, "dist")

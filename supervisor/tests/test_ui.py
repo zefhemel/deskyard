@@ -828,6 +828,48 @@ def test_mic_quick_off_on_keeps_badge(supervisor, admin, desktop, name, tmp_path
         browser.close()
 
 
+# Watches, in the page every 30 ms, that a mic live before and after a look
+# at the supervisor has its badge there.
+BADGE_WATCH = """(name) => {
+  window.__viol = []; window.__n = 0;
+  const live = () => document.querySelector('iframe')?.contentWindow?.deskyardScreen?.media?.().mic === true;
+  window.__w = setInterval(async () => {
+    const before = live();
+    let d;
+    try { d = await (await fetch('/api/desktops/' + name)).json(); } catch { return; }
+    window.__n++;
+    if (before && live() && !d.mics.includes('admin')) window.__viol.push(d.mics);
+  }, 30);
+}"""
+
+
+def test_mic_badge_on_a_slow_network(supervisor, admin, desktop, name, tmp_path):
+    # Badge reports take 400 ms. Off, then on-off-on within one round trip:
+    # the mic never goes live while the supervisor says it's off.
+    with sync_playwright() as p:
+        browser = mic_browser(p, tone_file(tmp_path / "t.wav", 700))
+        page = sign_in(browser, supervisor.base)
+        open_desktop(page, supervisor.base, name)
+        mic = audio_switch(page, "My mic")
+        mic.click()
+        page.wait_for_function(f"{MEDIA}.mic", timeout=15000)
+        time.sleep(1)
+        page.evaluate("""() => { const f = window.fetch; window.fetch = async (u, o) => {
+            if (/\\/(mic|cam)$/.test(String(u))) await new Promise((r) => setTimeout(r, 400)); return f(u, o); }; }""")
+        page.evaluate(BADGE_WATCH, name)
+        mic.click()
+        page.wait_for_function(f"!{MEDIA}.mic", timeout=5000)
+        page.wait_for_timeout(50)
+        mic.click()
+        mic.click()
+        mic.click()
+        time.sleep(3)
+        violations, checks = page.evaluate("[window.__viol, window.__n]")
+        assert checks > 30 and violations == [], (violations, checks)
+        assert page.evaluate(f"{MEDIA}.mic") is True and admin.desktop(name)["mics"] == ["admin"]
+        browser.close()
+
+
 def test_cam_badge(supervisor, admin, desktop, name):
     # Whose camera is on shows like the mic, from the page's report on its
     # stream. (Numbered past the page's own reports, which come first.)
@@ -889,7 +931,7 @@ def test_two_mics(supervisor, admin, desktop, name, tmp_path):
             assert admin.desktop(name)["mics"] == [user]
             assert b.evaluate(f"{MEDIA}.mic") is True
             if not wait_until(lambda: hears(name, 1300), 20, 1):
-                # Seen in 2 of ~20 runs (unexplained); what the sound server had then.
+                # (A desktop whose sound server came up before PipeWire did this: fixed in the image.)
                 state = docker("exec", "-u", "user", f"deskyard-{name}", "bash", "-lc",
                                "pactl info | grep Default; pactl list short sinks; pactl list short sources; pactl list short sink-inputs").stdout
                 raise AssertionError(f"B's mic no longer reaches the desktop; B: {b.evaluate(f'JSON.stringify({MEDIA})')}\n{state}")

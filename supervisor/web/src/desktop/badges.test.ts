@@ -18,7 +18,8 @@ function recorder() {
       await new Promise((r) => setTimeout(r, 0));
     }
   };
-  return { sent, send, flush };
+  const flushOne = () => release.shift()?.();
+  return { sent, send, flush, flushOne };
 }
 
 test("reports go one at a time, numbered in order", async () => {
@@ -62,4 +63,67 @@ test("a refused report rejects, and later ones still go", async () => {
   await assert.rejects(b.set("mic", true), /no stream/);
   await b.set("mic", false);
   assert.deepEqual(sent, [1, 2]);
+});
+
+test("a replaced report settles only once its replacement has gone", async () => {
+  const r = recorder();
+  const b = new Badges(r.send);
+  void b.set("mic", false); // in flight
+  await new Promise((r) => setTimeout(r, 0));
+  let settled = false;
+  const replacedOn = b.set("mic", true).then(() => (settled = true));
+  void b.set("mic", false);
+  const lastOn = b.set("mic", true);
+  await new Promise((r) => setTimeout(r, 0));
+  r.flushOne(); // the first "off" lands; the two dropped reports never go
+  await new Promise((r) => setTimeout(r, 0));
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(settled, false); // the last "on" hasn't been confirmed yet
+  assert.deepEqual(r.sent.map(([, on, seq]) => [on, seq]), [
+    [false, 1],
+    [true, 4],
+  ]);
+  r.flushOne();
+  await lastOn;
+  await replacedOn;
+  assert.equal(settled, true);
+});
+
+test("a replaced report rejects when its replacement is refused", async () => {
+  let n = 0;
+  let release: () => void = () => {};
+  const b = new Badges((_k, _on) => {
+    n++;
+    if (n === 1) return new Promise<void>((r) => (release = r));
+    return Promise.reject(new Error("no stream from that tab"));
+  });
+  void b.set("cam", false); // in flight
+  await new Promise((r) => setTimeout(r, 0));
+  const replaced = b.set("cam", true);
+  b.set("cam", false).catch(() => {}); // replaced too, and settles as the last
+  const last = b.set("cam", true);
+  await new Promise((r) => setTimeout(r, 0));
+  release();
+  await assert.rejects(last, /no stream/);
+  await assert.rejects(replaced, /no stream/);
+});
+
+test("settled waits for the newest report, however many came", async () => {
+  const r = recorder();
+  const b = new Badges(r.send);
+  void b.set("mic", true);
+  await new Promise((r) => setTimeout(r, 0));
+  let done = false;
+  const s = b.settled("mic").then(() => (done = true));
+  void b.set("mic", false);
+  r.flushOne(); // the first "on" lands
+  await new Promise((r) => setTimeout(r, 0));
+  void b.set("mic", true); // made while the "off" is in flight
+  await new Promise((r) => setTimeout(r, 0));
+  r.flushOne(); // the "off" lands
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(done, false);
+  r.flushOne(); // the last "on" lands
+  await s;
+  assert.equal(b.wants("mic"), true);
 });

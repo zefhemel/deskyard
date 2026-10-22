@@ -15,6 +15,7 @@ export class Badges {
   private chain: Promise<unknown> = Promise.resolve();
   private want: Record<Badge, boolean> = { mic: false, cam: false };
   private latest: Record<Badge, number> = { mic: 0, cam: 0 };
+  private results: Record<Badge, Promise<void>> = { mic: Promise.resolve(), cam: Promise.resolve() };
   private readonly send: SendBadge;
 
   constructor(send: SendBadge) {
@@ -27,16 +28,41 @@ export class Badges {
   }
 
   /**
-   * Sets the badge. Resolves once the supervisor has it, or when a newer
-   * report made meanwhile replaced it (then it was never sent); rejects
-   * when the supervisor refused it.
+   * Sets the badge. Resolves once the supervisor has it; rejects when the
+   * supervisor refused it. A report replaced by a newer one for the same
+   * badge before it went is never sent, and settles as that newer one does:
+   * resolving means the supervisor has the badge's latest state, which may
+   * not be this one (check what is wanted now).
    */
   set(kind: Badge, on: boolean): Promise<void> {
     this.want[kind] = on;
     const mine = ++this.seq;
-    const p = this.chain.then(() => (this.want[kind] === on && this.latest[kind] === mine ? this.send(kind, on, mine) : undefined));
     this.latest[kind] = mine;
-    this.chain = p.catch(() => undefined);
-    return p;
+    let replaced = false;
+    const turn = this.chain.then(() => {
+      if (this.latest[kind] !== mine) {
+        replaced = true;
+        return undefined;
+      }
+      return this.send(kind, on, mine);
+    });
+    this.chain = turn.catch(() => undefined);
+    // At the time it is dropped, the newest report for the badge is what
+    // replaced this one (its own result, not waiting on this one's).
+    const result: Promise<void> = turn.then(() => (replaced ? this.results[kind] : undefined));
+    this.results[kind] = result;
+    return result;
+  }
+
+  /**
+   * Waits until the newest report for the badge has settled (rejecting if
+   * the supervisor refused it): then the supervisor has wants(kind).
+   */
+  async settled(kind: Badge): Promise<void> {
+    for (;;) {
+      const r = this.results[kind];
+      await r;
+      if (r === this.results[kind]) return;
+    }
   }
 }

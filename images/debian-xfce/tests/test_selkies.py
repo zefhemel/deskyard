@@ -189,6 +189,15 @@ def test_virtual_mic_at_start(sandbox):
     assert "Default Source: output.SelkiesVirtualMic" in info, info
 
 
+def test_sound_server_ran_its_commands(sandbox):
+    # pipewire-pulse waits for PipeWire, so the virtual mic in its pulse.cmd
+    # is made by it (not by start-selkies' fallback, nor by Selkies).
+    sandbox.exec("pactl list short sources | grep -q SelkiesVirtualMic")
+    logs = docker("logs", sandbox.name).stdout + docker("logs", sandbox.name).stderr
+    assert "can't run command" not in logs, [l for l in logs.splitlines() if "can't run command" in l]
+    assert "virtual mic is missing" not in logs
+
+
 def test_screen_runs_as_user(sandbox):
     for proc in ("Xvfb", "pipewire", "wireplumber"):
         users = sandbox.exec(f"ps -C {proc} -o user= | sort -u", user="root").stdout.split()

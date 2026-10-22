@@ -120,7 +120,10 @@ function useCapture(kind: Capture, here: { current: Here }, prepare: (s: Deskyar
     c.wasLive = false;
     setOn(true);
     try {
+      // Until the supervisor has the newest report: an "on" replaced by
+      // later clicks settles as they do, and only an "on" it has counts.
       await badges.set(badgeOf[kind], true);
+      await badges.settled(badgeOf[kind]);
     } catch (e) {
       if (here.current.conn === conn && c.intent) {
         c.intent = false;
@@ -130,7 +133,7 @@ function useCapture(kind: Capture, here: { current: Here }, prepare: (s: Deskyar
       return;
     }
     // Turned off, or a new connection, meanwhile: the badge follows (reconcile).
-    if (here.current.conn !== conn || !c.intent) return;
+    if (here.current.conn !== conn || !c.intent || !badges.wants(badgeOf[kind])) return;
     prepare(s);
     setCapture(s, kind, true);
     if (startMs) {

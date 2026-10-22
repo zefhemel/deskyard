@@ -166,6 +166,7 @@ func (d *Docker) Inspect(ctx context.Context, id string) (engine.Container, erro
 	}
 	if r.State != nil {
 		c.State = string(r.State.Status)
+		c.Error = r.State.Error
 		if t, err := time.Parse(time.RFC3339Nano, r.State.StartedAt); err == nil {
 			c.StartedAt = t
 		}
