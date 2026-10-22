@@ -1,0 +1,91 @@
+@import "tailwindcss";
+@import "@fontsource-variable/public-sans";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+
+/* The palette and type of the mockups (docs/superpowers/specs/2026-10-21-supervisor-design/style.css). */
+@theme {
+  --color-ground: #e3e6ea;
+  --color-surface: #f6f7f9;
+  --color-ink: #172231;
+  --color-muted: #5e6a7a;
+  --color-line: #cbd2da;
+  --color-hairline: #e3e7ec;
+  --color-track: #d3d9e0;
+  --color-bezel: #1f2733;
+  --color-glass: #0f151d;
+  --color-accent: #2457c5;
+  --color-run: #1e8a5a;
+  --color-stop: #8b95a3;
+  --color-busy: #b7791f;
+  --color-danger: #b23a2e;
+  --color-bar: #172231;
+  --color-bar-hover: #26344a;
+  --color-bar-text: #c5cdd8;
+  --color-bar-muted: #9fb0c3;
+  --font-sans: "Public Sans Variable", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+@layer base {
+  html {
+    background: var(--color-ground);
+  }
+  body {
+    margin: 0;
+    font: 15px/1.45 var(--font-sans);
+    color: var(--color-ink);
+    font-variant-numeric: tabular-nums;
+  }
+  a {
+    color: var(--color-accent);
+  }
+  code,
+  .mono {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+  }
+  input[type="text"],
+  input[type="password"],
+  input[type="date"],
+  select,
+  textarea {
+    width: 100%;
+    border: 1px solid var(--color-line);
+    border-radius: 7px;
+    background: #fff;
+    font: inherit;
+    color: var(--color-ink);
+  }
+  input[type="text"],
+  input[type="password"],
+  input[type="date"],
+  select {
+    height: 38px;
+    padding: 0 11px;
+  }
+  input:focus,
+  select:focus,
+  textarea:focus {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+    border-color: var(--color-accent);
+  }
+  input[type="checkbox"],
+  input[type="radio"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--color-accent);
+    flex: none;
+  }
+}
+
+/* The indeterminate progress bar. */
+@keyframes slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}

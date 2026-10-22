@@ -50,7 +50,7 @@ The UI authenticates with the `cc_session` cookie (HttpOnly, SameSite=Strict). E
 | `GET /api/computers/{name}/stats` | | `{"history":[{"t":"…","cpuPercent":n,"memBytes":n}], "memLimit":n}` (15 min at 5 s) |
 | `POST /api/computers/{name}/keys` | `{"keys":"ctrl+alt+Delete"}` (xdotool syntax) | 204 |
 | `POST /api/computers/{name}/upgrade` (admin) | | 202 `{"job": id}` |
-| `GET /api/validate-name?name=x` (admin) | | `{"ok":bool,"error"?:string,"folderExists":bool}` |
+| `GET /api/validate-name?name=x` (admin) | | `{"ok":bool,"error"?:string,"folder":path,"folderExists":bool}` |
 
 ### Jobs
 
@@ -100,7 +100,7 @@ The UI authenticates with the `cc_session` cookie (HttpOnly, SameSite=Strict). E
 
 ## Desktop
 
-- `/<name>/` serves the UI's desktop page (the SPA's `index.html`); the page frames `/<name>/vnc/vnc.html?path=<name>/websockify&autoconnect=1&resize=remote&reconnect=1&show_control_bar=0` (`show_control_bar` hides KasmVNC's own controls; the page talks to the frame with `postMessage`).
+- `/<name>/` serves the UI's desktop page (the SPA's `index.html`); the page frames `/<name>/vnc/vnc.html?path=<name>/websockify&autoconnect=1&resize=remote&reconnect=1&clipboard_up=1&clipboard_down=1&clipboard_seamless=1`. Framed without `show_control_bar` (any value, even `0`, shows it), KasmVNC hides its own controls and turns the clipboard off unless the `clipboard_*` parameters say otherwise; the page talks to the frame with `postMessage` (see `web/src/desktop/kasm.ts`).
 - `/<name>/vnc/*` are the KasmVNC client files (from the computer's image), `/<name>/websockify` the desktop WebSocket.
 
 ## Agent API

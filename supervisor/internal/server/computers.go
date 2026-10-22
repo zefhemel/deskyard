@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -126,6 +127,7 @@ func (s *Server) handleValidateName(w http.ResponseWriter, r *http.Request) {
 		res["ok"], res["error"] = false, "a computer with that name already exists"
 	} else {
 		res["folderExists"] = s.Computers.FolderExists(name)
+		res["folder"] = filepath.Join(s.Computers.Cfg.DataDir, name)
 	}
 	writeJSON(w, http.StatusOK, res)
 }
