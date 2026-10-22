@@ -1,7 +1,8 @@
 ---
 displayName: Audio, mic, size lock and port mapping design
 tags: spec
-status: draft
+status: approved
+plan: "[[superpowers/plans/2026-10-22-audio-and-ports|Audio and ports plan]]"
 date: "2026-10-22"
 ---
 Four additions to Deskyard, built on the [[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]:
