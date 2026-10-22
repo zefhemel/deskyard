@@ -2,7 +2,8 @@
 // Start when it's stopped, progress while it's busy.
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
-import { api, type Desktop, type Job } from "../api.ts";
+import { api, type AgentPresence, type Desktop, type Job } from "../api.ts";
+import { agentLabel } from "../lib/activity-format.ts";
 import { names } from "../lib/format.ts";
 import { Avatars } from "./avatar.tsx";
 import { Button, cx, errorMessage, Progress } from "./ui.tsx";
@@ -14,16 +15,18 @@ export function thumbBust(now: number): number {
   return Math.floor(now / 10000);
 }
 
-export function ViewersBadge({ viewers, long }: { viewers: string[]; long?: boolean }) {
-  if (!viewers.length) return null;
-  const label = long
+export function ViewersBadge({ viewers, agents = [], long }: { viewers: string[]; agents?: AgentPresence[]; long?: boolean }) {
+  if (!viewers.length && !agents.length) return null;
+  const people = long
     ? `${names(viewers)} ${viewers.length === 1 ? "is" : "are"} viewing`
     : viewers.length === 1
       ? viewers[0]
       : `${viewers.length} viewing`;
+  const bots = agents.length === 1 ? (long ? `${agentLabel(agents[0]!)} is here` : agents[0]!.name) : `${agents.length} agents${long ? " here" : ""}`;
+  const label = [viewers.length ? people : "", agents.length ? bots : ""].filter(Boolean).join(" · ");
   return (
     <span class="absolute top-2.5 left-2.5 inline-flex items-center gap-1.5 rounded-full bg-[rgba(15,21,29,.78)] py-[3px] pr-[9px] pl-1 text-[12.5px] font-semibold text-white">
-      <Avatars names={viewers} ring={glassRing} size={22} />
+      <Avatars names={viewers} agents={agents} ring={glassRing} size={22} />
       {label}
     </span>
   );
@@ -59,7 +62,7 @@ export function Monitor({ desktop: c, job, now, big }: MonitorProps) {
           onError={() => setBroken(true)}
           onLoad={() => setBroken(false)}
         />
-        <ViewersBadge viewers={c.viewers} long={big} />
+        <ViewersBadge viewers={c.viewers} agents={c.agents} long={big} />
         <span
           class={cx(
             "absolute rounded-[7px] bg-accent font-semibold text-white shadow-[0_6px_16px_-6px_rgba(10,16,24,.6)] transition-opacity",

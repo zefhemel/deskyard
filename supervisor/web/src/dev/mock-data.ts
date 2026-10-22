@@ -1,5 +1,5 @@
 // Fake data for the dev-server mock (mock.ts). Never part of the build.
-import type { Account, CatalogImage, Desktop, Token } from "../api.ts";
+import type { Account, ActivityEvent, AgentPresence, AgentSummary, CatalogImage, Desktop, Token } from "../api.ts";
 
 const GB = 1024 ** 3;
 const HOUR = 3600 * 1000;
@@ -10,6 +10,21 @@ const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
 export const FOLDER = "/Users/zef/deskyard";
 const LATEST = "ghcr.io/zefhemel/deskyard-debian-xfce:latest";
 const BETA = "ghcr.io/zefhemel/deskyard-debian-xfce:beta";
+
+const AGENT_COLORS: Record<string, string> = { "deploy-bot": "#e0457b", "Claude Code": "#d97706", "nightly CI": "#2f9e8f" };
+
+/** A mock agent last active `secsAgo` seconds ago (active means in the last 10). */
+function agent(name: string, owner: string, inside: boolean, secsAgo: number): AgentPresence {
+  return {
+    id: inside ? `inside:${name.toLowerCase().replace(/ /g, "-")}` : `tok-${name.replace(/ /g, "-")}`,
+    name,
+    owner,
+    inside,
+    color: AGENT_COLORS[name] ?? "#6b7280",
+    active: secsAgo < 10,
+    lastActive: iso(secsAgo * 1000),
+  };
+}
 
 function desktop(c: Partial<Desktop> & { name: string }): Desktop {
   return {
@@ -27,6 +42,7 @@ function desktop(c: Partial<Desktop> & { name: string }): Desktop {
     access: [],
     viewers: [],
     forwards: [],
+    agents: [],
     tokens: 0,
     stats: null,
     ...c,
@@ -46,6 +62,7 @@ export const desktops: Desktop[] = [
       { token: "deploy-bot", direction: "in", port: 3000 },
       { token: "deploy-bot", direction: "out", port: 5173 },
     ],
+    agents: [agent("deploy-bot", "zef", false, 2), agent("Claude Code", "", true, 4), agent("nightly CI", "anna", false, 270)],
     tokens: 2,
     stats: { cpuPercent: 34, memBytes: 1.4 * GB, memLimit: 2 * GB },
   }),
@@ -54,6 +71,7 @@ export const desktops: Desktop[] = [
     name: "build-bot",
     startedAt: iso(12 * 60 * 1000),
     settings: { memoryBytes: 4 * GB, nanoCpus: 4e9 },
+    agents: [agent("deploy-bot", "zef", false, 1)],
     stats: { cpuPercent: 91, memBytes: 3.1 * GB, memLimit: 4 * GB },
   }),
   desktop({
@@ -123,4 +141,44 @@ export function refreshImages(): void {
     img.desktops = on.map((c) => c.name);
     img.behind = on.filter((c) => c.updateAvailable).map((c) => c.name);
   }
+}
+
+const ago = (secs: number) => iso(secs * 1000);
+
+/** What each mock agent has been doing, newest first. Times are relative to now so the page looks alive. */
+function summaryOf(a: AgentPresence): AgentSummary {
+  if (a.name === "deploy-bot") {
+    return {
+      ...a,
+      now: [
+        { kind: "command", text: "npm test -- --watch", since: ago(125) },
+        { kind: "browser", since: ago(40) },
+        { kind: "forward", text: "3000 in · 5173 out", since: ago(600) },
+      ],
+      recent: [
+        { kind: "screen", t: ago(3), action: "click", count: 14 },
+        { kind: "screen", t: ago(20), action: "type", count: 3 },
+        { kind: "command", t: ago(70), text: "make", exit: 0, durationMs: 12_000 },
+        { kind: "command", t: ago(130), text: "sleep 30", disconnected: true, durationMs: 4_000 },
+        { kind: "screen", t: ago(200), action: "screenshot", count: 3 },
+        { kind: "browser", t: ago(300), durationMs: 240_000 },
+        { kind: "copy", t: ago(420), direction: "in", path: "/workspace/report.pdf", size: 1_200_000 },
+      ],
+    };
+  }
+  if (a.name === "Claude Code") {
+    return {
+      ...a,
+      now: [{ kind: "command", text: "go test ./...", since: ago(18) }],
+      recent: [
+        { kind: "command", t: ago(60), text: "git status --short", exit: 0, durationMs: 300 },
+        { kind: "command", t: ago(300), text: "rg activity supervisor/", exit: 1, durationMs: 2_000 },
+      ],
+    };
+  }
+  return { ...a, now: [], recent: [{ kind: "screen", t: ago(280), action: "screenshot", count: 1 }] };
+}
+
+export function activityOf(c: Desktop): ActivityEvent {
+  return { name: c.name, agents: c.agents.map(summaryOf) };
 }

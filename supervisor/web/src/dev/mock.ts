@@ -7,7 +7,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 import type { Desktop, CreatedToken, Job } from "../api.ts";
-import { accounts, desktops, FOLDER, images, processRows, refreshImages, tokens } from "./mock-data.ts";
+import { accounts, activityOf, desktops, FOLDER, images, processRows, refreshImages, tokens } from "./mock-data.ts";
 
 const GB = 1024 ** 3;
 const imgDir = fileURLToPath(new URL("../../../../docs/superpowers/specs/2026-10-21-supervisor-design/img/", import.meta.url));
@@ -124,8 +124,12 @@ setInterval(() => {
   const alice = desktops.find((c) => c.name === "alice");
   if (!alice || alice.state !== "running") return;
   alice.viewers = alice.viewers.includes("sam") ? alice.viewers.filter((v) => v !== "sam") : [...alice.viewers, "sam"];
-  broadcast("viewers", { name: "alice", viewers: alice.viewers, forwards: alice.forwards });
+  broadcast("viewers", { name: "alice", viewers: alice.viewers, forwards: alice.forwards, agents: alice.agents });
 }, 20000);
+// The agents' summaries move on, as they would from the supervisor (once a second at most).
+setInterval(() => {
+  for (const c of desktops) if (c.agents.length) broadcast("activity", activityOf(c));
+}, 5000);
 }
 
 function history(c: Desktop) {
@@ -221,7 +225,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const c: Desktop = {
       id: `${name}-id`, name, state: "creating", startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/${name}`, image: img.ref, imageTitle: img.title,
       imageVersion: img.version, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus) },
-      access: (b.access as string[]) ?? [], viewers: [], forwards: [], tokens: 0, stats: null,
+      access: (b.access as string[]) ?? [], viewers: [], forwards: [], agents: [], tokens: 0, stats: null,
     };
     desktops.push(c);
     changed(c);
@@ -316,6 +320,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     }, c.name));
   }
   if (sub === "keys") return json(res, 204);
+  if (sub === "activity") return json(res, 200, activityOf(c));
   if (sub === "stats") return json(res, 200, history(c));
   if (sub === "folder") return json(res, 200, { path: c.folder, bytes: 3.2 * GB, complete: true });
   if (sub === "processes") {

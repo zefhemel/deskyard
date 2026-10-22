@@ -125,3 +125,20 @@ export function names(list: string[]): string {
 export function plural(n: number, word: string, many = `${word}s`): string {
   return `${n} ${n === 1 ? word : many}`;
 }
+
+/** "12 s", "4 min", "1 h 30 min" (for commands and browser sessions). */
+export function shortDuration(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return `${s} s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} min`;
+  return `${Math.floor(m / 60)} h ${m % 60} min`;
+}
+
+/** A file's size the way file managers show it (powers of 1000): "1.2 MB", "340 KB". */
+export function fileSize(n: number): string {
+  if (n >= 1e9) return `${trim(n / 1e9)} GB`;
+  if (n >= 1e6) return `${trim(n / 1e6)} MB`;
+  if (n >= 1e3) return `${Math.round(n / 1e3)} KB`;
+  return `${n} B`;
+}

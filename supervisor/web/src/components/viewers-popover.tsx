@@ -1,8 +1,11 @@
 // Who is viewing a desktop, and the port mappings agents have set up with
 // `deskyard forward`. The popover is the desktop bar's; ForwardLines is also
 // the details page's "viewing" card.
-import { useEffect, useRef } from "preact/hooks";
-import type { Forward } from "../api.ts";
+import { useEffect, useRef, useState } from "preact/hooks";
+import type { AgentPresence, Forward } from "../api.ts";
+import { agentTitle } from "../lib/activity-format.ts";
+import { AgentAvatar } from "./agent-avatar.tsx";
+import { AgentSummary, useActivity } from "./agent-summary.tsx";
 import { Avatar } from "./avatar.tsx";
 
 /** One line per token, "deploy-bot: 3000 in · 5173 out", in first-seen order. */
@@ -29,7 +32,60 @@ export function ForwardLines({ forwards, class: extra }: { forwards: Forward[]; 
   );
 }
 
-export function ViewersPopover({ viewers, forwards, onClose }: { viewers: string[]; forwards: Forward[]; onClose: () => void }) {
+const hasHover = () => window.matchMedia("(hover: hover)").matches;
+
+/** The agents, one row each. Hovering a row (where there is hover) or clicking/tapping it opens its summary. */
+function AgentRows({ name, agents }: { name: string; agents: AgentPresence[] }) {
+  const summaries = useActivity(name);
+  // Hovering opens a row for as long as the pointer is on it; a click keeps it open.
+  const [open, setOpen] = useState<{ id: string; pinned: boolean } | null>(null);
+  return (
+    <ul class="m-0 mb-1 list-none p-0">
+      {agents.map((a) => {
+        const expanded = open?.id === a.id;
+        return (
+          <li
+            key={a.id}
+            onMouseEnter={() => hasHover() && setOpen((o) => (o?.id === a.id ? o : { id: a.id, pinned: false }))}
+            onMouseLeave={() => setOpen((o) => (o?.id === a.id && !o.pinned ? null : o))}
+          >
+            <button
+              type="button"
+              aria-expanded={expanded}
+              class="flex w-full cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-0 py-1 text-left text-sm text-ink hover:bg-hairline"
+              onClick={() => setOpen(expanded && open?.pinned ? null : { id: a.id, pinned: true })}
+            >
+              <AgentAvatar agent={a} size={22} />
+              <span class="min-w-0 flex-1 truncate">{agentTitle(a)}</span>
+              <span aria-hidden="true" class="text-[10px] text-muted">
+                {expanded ? "▴" : "▾"}
+              </span>
+            </button>
+            {expanded && (
+              <div class="mt-0.5 mb-1.5 ml-[30px]">
+                <AgentSummary summary={summaries?.find((s) => s.id === a.id)} />
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+export function ViewersPopover({
+  name,
+  viewers,
+  forwards,
+  agents,
+  onClose,
+}: {
+  name: string;
+  viewers: string[];
+  forwards: Forward[];
+  agents: AgentPresence[];
+  onClose: () => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,7 +112,7 @@ export function ViewersPopover({ viewers, forwards, onClose }: { viewers: string
   return (
     <div
       ref={ref}
-      class="absolute top-[50px] left-2.5 z-40 w-[300px] max-w-[calc(100vw-20px)] rounded-[10px] bg-surface p-3.5 text-ink shadow-[0_18px_40px_-12px_rgba(0,0,0,.6)]"
+      class="absolute top-[50px] left-2.5 z-40 w-[320px] max-w-[calc(100vw-20px)] max-h-[calc(100dvh-70px)] overflow-y-auto rounded-[10px] bg-surface p-3.5 text-ink shadow-[0_18px_40px_-12px_rgba(0,0,0,.6)]"
     >
       <h3 class="mb-1.5 text-[13px] font-semibold text-muted">Viewing</h3>
       {viewers.length ? (
@@ -70,6 +126,12 @@ export function ViewersPopover({ viewers, forwards, onClose }: { viewers: string
         </ul>
       ) : (
         <p class="m-0 mb-1 text-sm text-muted">Nobody</p>
+      )}
+      {agents.length > 0 && (
+        <>
+          <h3 class="mt-3 mb-1.5 text-[13px] font-semibold text-muted">Agents</h3>
+          <AgentRows name={name} agents={agents} />
+        </>
       )}
       {forwards.length > 0 && (
         <>
