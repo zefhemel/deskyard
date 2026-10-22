@@ -1,26 +1,98 @@
-"""The web UI in a real browser, against the real supervisor and a real desktop."""
+"""The web UI in a real browser, against the real supervisor and a real desktop.
 
+The desktop page's tests run in Chromium, Firefox and WebKit. Firefox is
+skipped where Playwright's Firefox can't start on the machine.
+"""
+
+import re
 import subprocess
 import time
 
 import pytest
 
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import expect, sync_playwright
 
 from conftest import ADMIN_PASSWORD, free_port
 from test_cli import Forward, cli, forwards, local_http, remote  # noqa: F401  (fixtures)
 
+BROWSERS = ["chromium", "firefox", "webkit"]
 
-def signed_in(p, base, user="admin", password=ADMIN_PASSWORD, **ctx):
-    browser = p.chromium.launch()
-    page = browser.new_context(viewport={"width": 1280, "height": 860}, **ctx).new_page()
+# The frame's hooks (supervisor/internal/server/screen_additions.js).
+SCREEN = "document.querySelector('iframe')?.contentWindow?.deskyardScreen"
+SHOWING = f"{SCREEN}?.state() === 'connected' && {SCREEN}.video() !== null"
+
+
+def launch(p, browser="chromium"):
+    try:
+        return getattr(p, browser).launch()
+    except PlaywrightError as e:
+        if browser == "firefox" and "Could not find profile folder" in str(e):
+            pytest.skip("Playwright's Firefox doesn't start on this machine (Could not find profile folder)")
+        raise
+
+
+def signed_in(p, base, user="admin", password=ADMIN_PASSWORD, browser="chromium", **ctx):
+    b = launch(p, browser)
+    ctx.setdefault("viewport", {"width": 1280, "height": 860})
+    page = b.new_context(**ctx).new_page()
     page.goto(base + "/")
     page.wait_for_url("**/login**")
     page.fill("#u", user)
     page.fill("#p", password)
     page.get_by_role("button", name="Sign in").click()
     page.wait_for_url(lambda u: "/login" not in u)
-    return browser, page
+    return b, page
+
+
+def open_desktop(page, base, name, status=True):
+    """The desktop page, showing the picture (status: and saying so; a phone doesn't)."""
+    page.goto(f"{base}/{name}/")
+    if status:
+        expect(page.get_by_text("Connected", exact=True)).to_be_visible(timeout=30000)
+    page.wait_for_function(SHOWING, timeout=30000)
+
+
+def in_desktop(name, *args, check=True) -> str:
+    """Runs a command as the desktop's user, on its screen."""
+    r = subprocess.run(["docker", "exec", "-u", "user", "-e", "DISPLAY=:1", f"deskyard-{name}", *args],
+                       capture_output=True, text=True)
+    if check:
+        assert r.returncode == 0, r.stderr
+    return r.stdout
+
+
+def screen_size(name) -> tuple[int, int]:
+    w, h = in_desktop(name, "xdotool", "getdisplaygeometry").split()
+    return int(w), int(h)
+
+
+def wait_until(f, timeout=15.0, every=0.3):
+    deadline = time.time() + timeout
+    while True:
+        v = f()
+        if v or time.time() > deadline:
+            return v
+        time.sleep(every)
+
+
+# Where the picture is shown, in page coordinates, and the remote screen's
+# size in pixels: Selkies keeps its canvas buffer at the size it streams and
+# shows the picture in its video element (or a canvas) with the same CSS box.
+PICTURE = """() => {
+    const frame = document.querySelector("iframe");
+    const w = frame.contentWindow;
+    const shown = w.deskyardScreen.video().getBoundingClientRect();
+    const canvas = w.document.getElementById("videoCanvas");
+    const f = frame.getBoundingClientRect();
+    return {left: f.left + frame.clientLeft + shown.left, top: f.top + frame.clientTop + shown.top,
+            width: shown.width, height: shown.height, remoteWidth: canvas.width, remoteHeight: canvas.height,
+            frameWidth: frame.clientWidth, frameHeight: frame.clientHeight};
+}"""
+
+
+def to_page(pic, x, y):
+    return (pic["left"] + x * pic["width"] / pic["remoteWidth"], pic["top"] + y * pic["height"] / pic["remoteHeight"])
 
 
 def test_sign_in_and_see_the_wall(supervisor, desktop, name, tmp_path):
@@ -45,51 +117,212 @@ def test_wrong_password_shows_an_error(supervisor):
         browser.close()
 
 
-@pytest.mark.skip(reason="drives KasmVNC's frame messages; Task 3 rewrites the desktop page for Selkies")
-def test_desktop_page_frames_the_desktop_without_kasm_controls(supervisor, desktop, name, tmp_path):
+@pytest.mark.parametrize("browser_name", BROWSERS)
+def test_desktop_page_shows_stream(supervisor, desktop, name, browser_name, tmp_path):
     with sync_playwright() as p:
-        browser, page = signed_in(p, supervisor.base, permissions=["clipboard-read", "clipboard-write"])
-        page.goto(f"{supervisor.base}/{name}/")
-        frame = page.frame_locator("iframe")
-        frame.locator("canvas").first.wait_for(state="attached", timeout=30000)
-        expect(page.get_by_text("Connected")).to_be_visible(timeout=30000)
-        time.sleep(2)
-        # KasmVNC's own control bar is hidden; ours is there.
-        assert not frame.locator("#noVNC_control_bar").is_visible()
-        expect(page.get_by_role("button", name="Clipboard")).to_be_visible()
-        page.screenshot(path=str(tmp_path / "desktop.png"))
+        browser, page = signed_in(p, supervisor.base, browser=browser_name)
+        open_desktop(page, supervisor.base, name)
+        assert page.frames[1].url == f"{supervisor.base}/{name}/screen/"
+        # The picture fills the frame, at the frame's size.
+        pic = page.evaluate(PICTURE)
+        assert abs(pic["width"] - pic["frameWidth"]) <= 2 and abs(pic["height"] - pic["frameHeight"]) <= 2, pic
+        # Selkies' own sidebar and controls are nowhere; ours are, in the spec's order.
+        visible = page.frames[1].evaluate("""() => [...document.querySelectorAll('[class*="sidebar"], [id*="sidebar"]')]
+            .filter(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'; })
+            .map(e => String(e.className))""")
+        assert visible == []
+        xs = []
+        for n in ("Audio", "Lock size", "Clipboard", "Keys", "Quality", "Download", "More"):
+            b = page.get_by_role("button", name=n, exact=True)
+            expect(b).to_be_visible()
+            xs.append(b.bounding_box()["x"])
+        assert xs == sorted(xs), xs
+        page.screenshot(path=str(tmp_path / f"desktop-{browser_name}.png"))
+        browser.close()
+
+
+@pytest.mark.parametrize("browser_name", BROWSERS)
+def test_clipboard_both_ways(supervisor, desktop, name, browser_name):
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base, browser=browser_name)
+        open_desktop(page, supervisor.base, name)
 
         # Page → desktop.
         page.get_by_role("button", name="Clipboard").click()
         page.locator("textarea").fill("from-the-page-42")
         page.get_by_role("button", name=f"Paste into {name}").click()
-        deadline = time.time() + 15
-        got = ""
-        while time.time() < deadline:
-            got = subprocess.run(["docker", "exec", "-u", "user", f"deskyard-{name}", "xclip", "-o", "-selection", "clipboard"],
-                                 capture_output=True, text=True).stdout
-            if got == "from-the-page-42":
-                break
-            time.sleep(0.5)
-        assert got == "from-the-page-42"
+        clip = lambda: in_desktop(name, "xclip", "-o", "-selection", "clipboard", check=False)  # noqa: E731
+        assert wait_until(lambda: clip() == "from-the-page-42"), clip()
 
         # Desktop → page.
-        subprocess.run(["docker", "exec", "-u", "user", f"deskyard-{name}", "sh", "-c",
-                        "printf from-the-desktop-7 | setsid xclip -selection clipboard"], check=True)
+        in_desktop(name, "sh", "-c", "printf from-the-desktop-7 | setsid xclip -selection clipboard")
         if not page.get_by_text("Send to").is_visible():
             page.get_by_role("button", name="Clipboard").click()
         expect(page.get_by_text("from-the-desktop-7")).to_be_visible(timeout=15000)
         browser.close()
 
 
-def test_stopped_desktop_page(supervisor, admin, desktop, name):
-    admin.post(f"/api/desktops/{name}/stop")
+@pytest.mark.parametrize("browser_name", BROWSERS)
+def test_lock_size(supervisor, desktop, name, browser_name):
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base, browser=browser_name)
+        open_desktop(page, supervisor.base, name)
+        lock = page.get_by_role("button", name="Lock size", exact=True)
+        expect(lock).to_have_attribute("aria-pressed", "false")
+        size = screen_size(name)
+
+        lock.click()
+        expect(lock).to_have_attribute("aria-pressed", "true")
+        page.set_viewport_size({"width": 900, "height": 700})
+        time.sleep(2)
+        # The remote screen keeps its size; the picture is scaled to fit the frame.
+        assert screen_size(name) == size
+        pic = page.evaluate(PICTURE)
+        assert pic["width"] <= pic["frameWidth"] + 1 and pic["height"] <= pic["frameHeight"] + 1, pic
+        assert abs(pic["width"] - pic["frameWidth"]) <= 1 or abs(pic["height"] - pic["frameHeight"]) <= 1, pic
+        assert abs(pic["width"] / pic["height"] - pic["remoteWidth"] / pic["remoteHeight"]) < 0.01, pic
+
+        # Remembered in this browser.
+        page.reload()
+        expect(page.get_by_text("Connected", exact=True)).to_be_visible(timeout=30000)
+        expect(lock).to_have_attribute("aria-pressed", "true")
+        time.sleep(2)
+        assert screen_size(name) == size
+
+        # Unticked, the remote screen follows the frame again.
+        lock.click()
+        expect(lock).to_have_attribute("aria-pressed", "false")
+        frame = page.evaluate("[document.querySelector('iframe').clientWidth, document.querySelector('iframe').clientHeight]")
+        follows = lambda: all(abs(a - b) <= 8 for a, b in zip(screen_size(name), frame))  # noqa: E731
+        assert wait_until(follows), (screen_size(name), frame)
+        browser.close()
+
+
+def test_drag_lands_right(supervisor, desktop, name):
+    # Inside our frame Chromium's pointerrawupdate reports positions relative
+    # to the top-level page, so drags landed off by the bar's height until
+    # the served client additions hid it.
+    in_desktop(name, "sh", "-c", "setsid xfce4-terminal --title dragme --geometry 60x12+300+250 >/dev/null 2>&1 &")
+    win = wait_until(lambda: in_desktop(name, "xdotool", "search", "--name", "^dragme$", check=False).split(), 20)
+    assert win, "no terminal window"
+    win = win[0]
+
+    def position():
+        # The client area's top left on the screen. (xdotool getwindowgeometry
+        # counts the window manager's frame twice.)
+        out = in_desktop(name, "xwininfo", "-id", win)
+        x = re.search(r"Absolute upper-left X:\s+(\d+)", out).group(1)
+        y = re.search(r"Absolute upper-left Y:\s+(\d+)", out).group(1)
+        return int(x), int(y)
+
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base)
+        open_desktop(page, supervisor.base, name)
+        time.sleep(1)
+        x0, y0 = position()
+        top = int(in_desktop(name, "xprop", "-id", win, "_NET_FRAME_EXTENTS").split("=")[1].split(",")[2])
+        a = (x0 + 150, y0 - top // 2)  # on the title bar
+        b = (a[0] + 180, a[1] + 120)
+        pic = page.evaluate(PICTURE)
+        pa, pb = to_page(pic, *a), to_page(pic, *b)
+        page.mouse.move(*pa)
+        page.mouse.down()
+        for i in range(1, 21):
+            page.mouse.move(pa[0] + (pb[0] - pa[0]) * i / 20, pa[1] + (pb[1] - pa[1]) * i / 20)
+            time.sleep(0.02)
+        page.mouse.up()
+        time.sleep(1)
+        mouse = in_desktop(name, "xdotool", "getmouselocation")
+        mx, my = (int(v) for v in re.search(r"x:(\d+) y:(\d+)", mouse).groups())
+        assert abs(mx - b[0]) <= 4 and abs(my - b[1]) <= 4, (mouse, b)
+        x1, y1 = position()
+        assert abs((x1 - x0) - (b[0] - a[0])) <= 4 and abs((y1 - y0) - (b[1] - a[1])) <= 4, ((x0, y0), (x1, y1), a, b)
+        browser.close()
+
+
+def video_settings_lines(name) -> list[str]:
+    """Selkies' log lines about the primary display's video settings."""
+    logs = subprocess.run(["docker", "logs", f"deskyard-{name}"], capture_output=True, text=True)
+    return [line for line in (logs.stdout + logs.stderr).splitlines()
+            if "Applying video settings for 'primary'" in line or "Video parameters changed for 'primary'" in line
+            or "settings applied for 'primary'" in line]
+
+
+@pytest.mark.parametrize("browser_name", BROWSERS)
+def test_quality_preset_applies(supervisor, desktop, name, browser_name):
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base, browser=browser_name)
+        open_desktop(page, supervisor.base, name)
+        time.sleep(1)
+        before = len(video_settings_lines(name))
+        page.get_by_role("button", name="Quality", exact=True).click()
+        page.get_by_role("menuitemcheckbox", name=re.compile("^Low")).click()
+        # The desktop's stream takes it live.
+        applied = lambda: any("Applying video settings" in line for line in video_settings_lines(name)[before:])  # noqa: E731
+        assert wait_until(applied), video_settings_lines(name)[before:]
+        # A new load of the page streams at it too: Low is 2 Mbit/s at 30 frames a second.
+        page.reload()
+        expect(page.get_by_text("Connected", exact=True)).to_be_visible(timeout=30000)
+        latest = lambda: (video_settings_lines(name) or [""])[-1]  # noqa: E731
+        assert wait_until(lambda: latest().endswith("2000 kbps, 30 fps.")), video_settings_lines(name)[-3:]
+        page.get_by_role("button", name="Quality", exact=True).click()
+        expect(page.get_by_role("menuitemcheckbox", name=re.compile("^Low"))).to_have_attribute("aria-checked", "true")
+        browser.close()
+
+
+@pytest.mark.parametrize("browser_name", BROWSERS)
+def test_keys_menu(supervisor, desktop, name, browser_name):
+    in_desktop(name, "sh", "-c", "setsid xev -name keytest > /tmp/xev.log 2>&1 &")
+    win = wait_until(lambda: in_desktop(name, "xdotool", "search", "--name", "^keytest$", check=False).split(), 20)
+    assert win, "no xev window"
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base, browser=browser_name)
+        open_desktop(page, supervisor.base, name)
+        in_desktop(name, "xdotool", "windowactivate", "--sync", win[-1])
+        page.get_by_role("button", name="Keys", exact=True).click()
+        page.get_by_role("menuitem", name="Esc", exact=True).click()
+        assert wait_until(lambda: "Escape" in in_desktop(name, "cat", "/tmp/xev.log")), "no Escape on the desktop"
+        # The keyboard goes back to the desktop.
+        page.wait_for_function("document.activeElement === document.querySelector('iframe')", timeout=5000)
+        browser.close()
+
+
+@pytest.mark.parametrize("browser_name", BROWSERS)
+def test_stopped_desktop_page(supervisor, admin, desktop, name, browser_name):
+    admin.post(f"/api/desktops/{name}/stop")
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base, browser=browser_name)
         page.goto(f"{supervisor.base}/{name}/")
         expect(page.get_by_text("is stopped")).to_be_visible(timeout=15000)
+        expect(page.locator("iframe")).to_have_count(0)
         page.get_by_role("button", name="Start").click()
-        page.frame_locator("iframe").locator("canvas").first.wait_for(state="attached", timeout=60000)
+        expect(page.get_by_text("Connected", exact=True)).to_be_visible(timeout=90000)
+        page.wait_for_function(SHOWING, timeout=30000)
+        browser.close()
+
+
+def test_unsupported_browser_message(supervisor, desktop, name):
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base)
+        page.add_init_script("delete window.VideoDecoder")
+        page.goto(f"{supervisor.base}/{name}/")
+        message = "This browser can't show Deskyard desktops; use a current Chrome, Firefox or Safari"
+        expect(page.get_by_text(message)).to_be_visible(timeout=15000)
+        expect(page.locator("iframe")).to_have_count(0)
+        browser.close()
+
+
+def test_phone_bar(supervisor, desktop, name):
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base, viewport={"width": 390, "height": 760}, has_touch=True)
+        open_desktop(page, supervisor.base, name, status=False)
+        for n in ("Lock size", "Keys", "Quality", "Download"):
+            expect(page.get_by_role("button", name=n, exact=True)).to_be_hidden()
+        expect(page.get_by_role("button", name="Clipboard", exact=True)).to_be_visible()
+        page.get_by_role("button", name="More", exact=True).click()
+        menu = page.get_by_role("menu")
+        for n in ("Lock size", "Send Esc", "Quality: Low", "Download…"):
+            expect(menu.get_by_text(n, exact=True)).to_be_visible()
         browser.close()
 
 
@@ -143,23 +376,10 @@ def test_agent_presence_and_summary(cli, remote, supervisor, name):  # noqa: F81
         browser.close()
 
 
-# toViewport (desktop/screen-geometry.ts) worked out in the page from the frame's canvas.
-TO_VIEWPORT = """([x, y]) => {
-    const frame = document.querySelector("iframe");
-    const canvas = frame.contentDocument.querySelector('canvas[tabindex="-1"]');
-    const f = frame.getBoundingClientRect(), c = canvas.getBoundingClientRect();
-    return {left: f.left + frame.clientLeft + c.left + x * c.width / canvas.width,
-            top: f.top + frame.clientTop + c.top + y * c.height / canvas.height};
-}"""
-
-
-@pytest.mark.skip(reason="the overlay places marks with KasmVNC's screen geometry; Task 3 plugs in a Selkies ScreenGeometrySource")
 def test_overlay_marks(cli, remote, supervisor, name):  # noqa: F811
     with sync_playwright() as pw:
         browser, page = signed_in(pw, supervisor.base)
-        page.goto(f"{supervisor.base}/{name}/")
-        expect(page.get_by_text("Connected")).to_be_visible(timeout=30000)
-        page.frame_locator("iframe").locator('canvas[tabindex="-1"]').wait_for(state="attached", timeout=30000)
+        open_desktop(page, supervisor.base, name)
         time.sleep(1)  # the screen-events stream is open
 
         remote("-d", name, "click", "200", "150")
@@ -167,9 +387,25 @@ def test_overlay_marks(cli, remote, supervisor, name):  # noqa: F811
         expect(click).to_be_visible(timeout=5000)
         expect(click).to_contain_text("cli test")
         box = click.bounding_box()
-        want = page.evaluate(TO_VIEWPORT, [200, 150])
-        assert abs(box["x"] + box["width"] / 2 - want["left"]) <= 3, (box, want)
-        assert abs(box["y"] + box["height"] / 2 - want["top"]) <= 3, (box, want)
+        want = to_page(page.evaluate(PICTURE), 200, 150)
+        assert abs(box["x"] + box["width"] / 2 - want[0]) <= 3, (box, want)
+        assert abs(box["y"] + box["height"] / 2 - want[1]) <= 3, (box, want)
+
+        # Locked and scaled down, the marks still land on the spot.
+        page.get_by_role("button", name="Lock size", exact=True).click()
+        page.set_viewport_size({"width": 800, "height": 700})
+        page.wait_for_function(f"(() => {{ const f = document.querySelector('iframe'); "
+                               f"return {SCREEN}.video().getBoundingClientRect().width <= f.clientWidth + 1; }})()")
+        time.sleep(1)
+        expect(page.locator("[data-mark]")).to_have_count(0, timeout=5000)
+        remote("-d", name, "click", "600", "400")
+        expect(click).to_be_visible(timeout=5000)
+        box = click.bounding_box()
+        pic = page.evaluate(PICTURE)
+        assert pic["width"] < pic["remoteWidth"] - 50, pic
+        want = to_page(pic, 600, 400)
+        assert abs(box["x"] + box["width"] / 2 - want[0]) <= 3, (box, want)
+        assert abs(box["y"] + box["height"] / 2 - want[1]) <= 3, (box, want)
 
         remote("-d", name, "type", "secret-text")
         typing = page.locator('[data-mark="typing"]')

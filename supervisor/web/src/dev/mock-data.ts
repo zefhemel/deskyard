@@ -126,7 +126,8 @@ export const tokens: Record<string, Token[]> = {
 export const processRows: [number, string, number, number, string, string][] = [
   [412, "user", 18.2, 626688, "02:14:07", "/usr/lib/chromium/chromium --type=renderer --enable-features=… https://github.com/…"],
   [3301, "user", 9.6, 253952, "41:02", "node /workspace/.local/share/claude/versions/2.4.1/cli.js"],
-  [118, "user", 3.1, 72704, "3-01:12:44", "Xkasmvnc :1 -geometry 1280x800 -depth 24 -AlwaysShared -interface 127.0.0.1"],
+  [131, "user", 7.8, 212992, "3-01:12:41", "/opt/selkies/bin/python3 /opt/selkies/bin/selkies --mode websockets --addr 127.0.0.1 --port 6080"],
+  [118, "user", 1.1, 72704, "3-01:12:44", "Xvfb :1 -screen 0 3840x2160x24 +extension RANDR +extension DAMAGE -nolisten tcp"],
   [380, "user", 1.4, 190464, "02:14:09", "/usr/lib/chromium/chromium --remote-debugging-port=9220 --user-data-dir=…"],
   [2915, "user", 0.9, 135168, "01:02:33", "/app/bin/silverbullet --hostname 127.0.0.1 /workspace/Notes"],
   [205, "user", 0.4, 38912, "3-01:12:40", "xfce4-panel --display :1.0 --sm-client-id 2f1c…"],

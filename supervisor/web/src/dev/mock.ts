@@ -146,23 +146,33 @@ function history(c: Desktop) {
   return { history: out, memLimit: c.stats?.memLimit ?? 16 * GB };
 }
 
-/** A stand-in for KasmVNC's vnc.html that speaks the same postMessage protocol (see desktop/kasm.ts). */
-function fakeVnc(name: string): string {
-  return `<!doctype html><html><body style="margin:0;background:#0f151d;height:100vh;display:grid;place-items:center;overflow:hidden">
-<img src="/api/desktops/${name}/screen.png?full=1" style="width:100%;height:100%;object-fit:contain" alt="">
-<canvas tabindex="-1" style="position:fixed;inset:0;width:100%;height:100%;outline:none"></canvas>
+/**
+ * A stand-in for Selkies' client with our additions: window.deskyardScreen
+ * (see desktop/selkies.ts), a picture of the desktop and a log of messages.
+ */
+function fakeScreen(name: string): string {
+  return `<!doctype html><html><body style="margin:0;background:#0f151d;height:100vh;overflow:hidden">
+<canvas id="videoCanvas" width="1280" height="800" style="display:none"></canvas>
+<img id="videoStream" src="/api/desktops/${name}/screen.png?full=1" style="position:absolute;inset:0;width:100%;height:100%;object-fit:fill" alt="">
 <div id="log" style="position:fixed;left:12px;bottom:12px;font:12px monospace;color:#9fb0c3"></div>
 <script>
-const post = (action, value) => parent.postMessage({ action, value }, "*");
 const log = (t) => (document.getElementById("log").textContent = t);
-post("noVNC_initialized", null);
-post("connection_state", "connecting");
-setTimeout(() => post("connection_state", "connected"), 600);
-setTimeout(() => post("clipboardrx", "https://github.com/zefhemel/deskyard/pull/42"), 1500);
-addEventListener("message", (e) => {
-  if (e.data.action === "clipboardsnd") log("clipboard ← " + e.data.value);
-  if (e.data.action === "setvideoquality") log("quality ← " + e.data.qualityLevel);
-});
+let state = "connecting";
+const listeners = new Set();
+window.deskyardScreen = {
+  tab: "devtab",
+  post(msg) { log(JSON.stringify(msg)); },
+  on(type, fn) {
+    if (type === "deskyard.state") { listeners.add(fn); return () => listeners.delete(fn); }
+    const l = (e) => e.data && e.data.type === type && fn(e.data);
+    addEventListener("message", l);
+    return () => removeEventListener("message", l);
+  },
+  state: () => state,
+  video: () => document.getElementById("videoStream"),
+};
+setTimeout(() => { state = "connected"; for (const fn of listeners) fn(state); }, 600);
+setTimeout(() => postMessage({ type: "clipboardContentUpdate", text: "https://github.com/zefhemel/deskyard/pull/42" }, location.origin), 1500);
 </script></body></html>`;
 }
 
@@ -171,10 +181,10 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   const path = url.pathname;
   const method = req.method ?? "GET";
 
-  const vnc = /^\/([a-z][a-z0-9-]*)\/vnc\/vnc\.html$/.exec(path);
-  if (vnc?.[1]) {
+  const screen = /^\/([a-z][a-z0-9-]*)\/screen\/$/.exec(path);
+  if (screen?.[1]) {
     res.setHeader("Content-Type", "text/html");
-    res.end(fakeVnc(vnc[1]));
+    res.end(fakeScreen(screen[1]));
     return;
   }
   if (!path.startsWith("/api/")) return next();
