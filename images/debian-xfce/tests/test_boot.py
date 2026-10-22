@@ -6,6 +6,10 @@ def test_user_and_home(sandbox):
     assert out == ["user", "1000", "/workspace", ":1"]
 
 
+def test_git_and_ssh_are_installed(sandbox):
+    sandbox.exec("git --version && ssh -V")
+
+
 def test_display_size(sandbox):
     assert "1280x800" in sandbox.exec("xdpyinfo -display :1 | grep dimensions").stdout
 

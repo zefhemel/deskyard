@@ -18,7 +18,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl procps supervisor dbus dbus-x11 \
         x11-utils xfce4 xfce4-terminal fonts-dejavu-core \
-        chromium socat xdotool xclip maim flatpak \
+        chromium socat xdotool xclip maim flatpak git openssh-client \
     && rm -rf /var/lib/apt/lists/* \
     # rootfs/usr/bin/flatpak wraps the real binary.
     && dpkg-divert --local --rename --divert /usr/bin/flatpak.real --add /usr/bin/flatpak
