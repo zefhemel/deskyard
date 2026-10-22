@@ -38,6 +38,10 @@ var secretPaths = []string{
 	".cargo/credentials.toml",
 	".gem/credentials",
 	".config/rclone/rclone.conf",
+	".config/glab-cli",
+	".config/configstore",
+	// Deskyard's own CLI: agent tokens for other desktops (deskyard remote add).
+	".config/deskyard",
 	// Cloud CLIs.
 	".aws",
 	".azure",

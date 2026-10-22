@@ -30,6 +30,7 @@ func home() fstest.MapFS {
 		".config/app/settings.json":        file(40),
 		".config/gh/hosts.yml":             file(3),
 		".config/gh/config.yml":            file(4),
+		".config/deskyard/remotes.json":    file(9),
 		".config/workspace/panel-migrated": file(1), // Deskyard's own marker
 		// browser
 		".config/chromium-shared/Default/Bookmarks":                            file(50),
@@ -97,7 +98,7 @@ func TestScanGroups(t *testing.T) {
 	}{
 		{GroupTools, 100 + 10 + 10 + 20 + 30 + 5, []string{".config/mise", ".local/bin", ".local/share/mise", ".npm-global"}, nil},
 		{GroupFlatpak, 7, []string{".var"}, nil},
-		{GroupSettings, 40 + 4, []string{".config/app", ".config/gh"}, []string{".config/gh/hosts.yml"}},
+		{GroupSettings, 40 + 4, []string{".config/app", ".config/gh"}, []string{".config/deskyard", ".config/gh/hosts.yml"}},
 		{GroupDotfiles, 11 + 18, []string{".bashrc", ".codex"},
 			[]string{".bash_history", ".codex/auth.json", ".git-credentials", ".npmrc", ".ssh"}},
 		{GroupBrowser, 50 + 5 + 6, []string{".config/chromium-shared"},
@@ -153,6 +154,7 @@ func TestSecrets(t *testing.T) {
 		".config/chromium-shared/Default/Local Storage/leveldb/1.log", ".config/chromium-shared/Default/Session Storage/x",
 		".config/chromium-shared/Default/IndexedDB/x", ".config/chromium-shared/Default/Extension Cookies",
 		".config/chromium-shared/Default/Local Extension Settings/abc/1.log", ".config/chromium-shared/Profile 1/Login Data",
+		".config/deskyard/remotes.json", ".config/glab-cli/config.yml", ".config/configstore/firebase-tools.json",
 	} {
 		if SecretOf(p) == "" {
 			t.Errorf("%s: not a secret", p)
