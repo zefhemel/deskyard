@@ -111,6 +111,11 @@ func TestSanitize(t *testing.T) {
 	if strings.Contains(e.Cmd, "dyt_") || strings.Contains(e.Cmd, "cd") {
 		t.Errorf("zero-width split dodged the mask: %q", e.Cmd)
 	}
+	// A newline still separates commands for masking, then is gone.
+	e = good(Event{Agent: "a", Kind: "cmd-start", ID: "1", Cmd: "cd /app\nmysql -p hunter2 db"})
+	if e.Cmd != "cd /app mysql -p ••• db" {
+		t.Errorf("newline: %q", e.Cmd)
+	}
 	// Control characters can't reach the UI.
 	e = good(Event{Agent: "a\x1b[2J\nb", Kind: "cmd-end", Cwd: "/x\x00y"})
 	if strings.ContainsAny(e.Agent+e.Cwd, "\x1b\n\x00") {
@@ -162,14 +167,9 @@ func FuzzSanitize(f *testing.F) {
 				}
 			}
 		}
-		if again, ok2 := Sanitize(out); !ok2 || !jsonEq(again, out) {
-			t.Fatalf("not idempotent: %+v vs %+v", out, again)
+		// Running it again may mask more (the newlines are gone), never fail.
+		if _, ok2 := Sanitize(out); !ok2 {
+			t.Fatalf("second pass dropped %+v", out)
 		}
 	})
-}
-
-func jsonEq(a, b Event) bool {
-	x, _ := json.Marshal(a)
-	y, _ := json.Marshal(b)
-	return string(x) == string(y)
 }

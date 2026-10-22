@@ -56,7 +56,7 @@ func Sanitize(e Event) (Event, bool) {
 		if e.Kind == "cmd-start" && out.ID == "" {
 			return Event{}, false
 		}
-		out.Cmd = cutCmd(MaskText(clean(e.Cmd, maxIn)))
+		out.Cmd = cutCmd(strings.TrimSpace(flatten(MaskText(plainText(cutRunes(e.Cmd, maxIn))))))
 		out.Cwd = clean(e.Cwd, maxCwd)
 		if e.Exit != nil {
 			x := *e.Exit
@@ -106,7 +106,7 @@ func clamp(v, hi int) int { return max(0, min(v, hi)) }
 // most n runes.
 func clean(s string, n int) string {
 	s = cutRunes(s, n*4) // bound the work on hostile input; a bad run rarely eats more
-	s = plainText(s)
+	s = flatten(plainText(s))
 	return strings.TrimSpace(cutRunes(s, n))
 }
 
