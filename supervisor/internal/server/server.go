@@ -21,6 +21,7 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/recipes"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 )
 
@@ -42,6 +43,10 @@ type Server struct {
 	thumbs  *thumbnails
 	tokens  *tokenStore
 	images  *catalog
+	recipes *recipes.Store
+	builds  builds
+	// smokeTest starts a throwaway desktop of a freshly built image.
+	smokeTest func(ctx context.Context, imageID string) error
 
 	api *http.ServeMux
 }
@@ -77,6 +82,8 @@ func New(o Options) (*Server, error) {
 	if s.images, err = loadCatalog(o.StateDir, o.DefaultImage); err != nil {
 		return nil, err
 	}
+	s.recipes = recipes.NewStore(filepath.Join(o.StateDir, "recipes.json"))
+	s.smokeTest = s.smokeTestDesktop
 	o.Accounts.OnChange = s.accountsChanged
 	s.routes()
 	return s, nil

@@ -144,6 +144,7 @@ func flatpakStep(apps []Flatpak) string {
 		// desktops can update from it (workspace-init adds these per user).
 		fmt.Fprintf(&b, "%s", saveRemotesSnippet)
 	}
+	b.WriteString(triggersSnippet)
 	return strings.TrimSuffix(b.String(), "; ")
 }
 
@@ -152,6 +153,14 @@ func commandsStep(commands string) string {
 	enc := base64.StdEncoding.EncodeToString([]byte(script))
 	return fmt.Sprintf("set -eux; printf %%s '%s' | base64 -d > /tmp/deskyard-commands.sh; bash -eux /tmp/deskyard-commands.sh; rm -f /tmp/deskyard-commands.sh", enc)
 }
+
+// triggersSnippet runs Flatpak's install triggers (icon cache, desktop and
+// MIME databases of the exports). Flatpak runs them in bubblewrap, which
+// can't create its namespaces in a plain build: the installs succeed but the
+// triggers fail ("bwrap: Creating new namespace failed"). Run them directly;
+// they take the installation's folder.
+const triggersSnippet = `for t in /usr/share/flatpak/triggers/*.trigger; do ` +
+	`[ -x "$t" ] || continue; "$t" /var/lib/flatpak || echo "flatpak trigger $t failed" >&2; done; `
 
 // saveRemotesSnippet writes a .flatpakrepo for each system remote that has
 // none yet (those a .flatpakref added), with the remote's GPG key. A remote

@@ -4,6 +4,7 @@ DESKYARD_TEST_MODE=direct (default) runs the binary on this machine;
 DESKYARD_TEST_MODE=container runs the supervisor image with the socket and
 the data folder mounted at the same path. CC_TEST_IMAGE is the desktop image
 (default deskyard-debian-xfce:test, built from images/debian-xfce).
+DESKYARD_TEST_SUBNET is the desktops' subnet pool (default 10.215.0.0/20).
 """
 
 from __future__ import annotations
@@ -24,6 +25,8 @@ ROOT = Path(__file__).resolve().parent.parent
 REPO = ROOT.parent
 IMAGE = os.environ.get("CC_TEST_IMAGE", "deskyard-debian-xfce:test")
 MODE = os.environ.get("DESKYARD_TEST_MODE", "direct")
+# Another checkout's tests can run at the same time on a different subnet.
+SUBNET = os.environ.get("DESKYARD_TEST_SUBNET", "10.215.0.0/20")
 ADMIN_PASSWORD = "admin-password"
 
 
@@ -91,7 +94,7 @@ class Supervisor:
     def start(self):
         env = {
             "DESKYARD_DATA_DIR": str(self.data), "DESKYARD_ADMIN_PASSWORD": ADMIN_PASSWORD,
-            "DESKYARD_IMAGE": IMAGE, "DESKYARD_SUBNET": "10.215.0.0/20",
+            "DESKYARD_IMAGE": IMAGE, "DESKYARD_SUBNET": SUBNET,
         }
         if MODE == "container":
             self.container = f"deskyard-test-supervisor-{uuid.uuid4().hex[:6]}"

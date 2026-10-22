@@ -56,7 +56,9 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 
 ### Jobs
 
-`GET /api/jobs/{id}` is a server-sent event stream; each `data:` line is `{"status":"running"|"done"|"failed","message":"Pulling image","progress":0.38|null,"error"?:string,"desktop"?:name}`. The stream ends after `done` or `failed`. The account that started a job, admins, and (for a desktop's job) anyone who can see that desktop may follow it; others get 404.
+`GET /api/jobs/{id}` is a server-sent event stream; each `data:` line is `{"status":"running"|"done"|"failed","message":"Pulling image","progress":0.38|null,"error"?:string,"desktop"?:name}`. The stream sends every update in order, starting with the oldest the job keeps (the last 2,000), and ends after `done` or `failed`. The account that started a job, admins, and (for a desktop's job) anyone who can see that desktop may follow it; others get 404.
+
+`POST /api/jobs/{id}/cancel` stops a running image build (its owner or an admin): 204, and the job then fails with error `"cancelled"`. 409 for a job that has finished or can't be cancelled (only builds can); 404 as above.
 
 ### Events
 
@@ -90,7 +92,9 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 
 ### Images (admin)
 
-`CatalogImage` = `{"ref","title","version","description","desktops":[names],"behind":[names],"checked"|null}`
+`CatalogImage` = `{"ref","title","version","description","desktops":[names],"behind":[names],"checked"|null,"custom":bool,"secrets":bool,"baseUpdated":bool,"recipe":slug|null}`
+
+`custom` images are built here from a recipe (`recipe` is its slug); their ref is `deskyard-custom/<slug>:latest`. `secrets` is true when the image's starting home contains secrets (label `deskyard.secrets=true`, passed down to images built on it). `baseUpdated` is true when the custom image's base has a newer image in the catalog than the one it was built on (so rebuilding a custom image marks those built on it).
 
 | Method and path | Body | Response |
 | --- | --- | --- |
@@ -99,6 +103,31 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 | `DELETE /api/images?ref=…` | | 204; 409 while desktops use it |
 | `POST /api/images/check` | | 202 `{"job"}` (pull every ref, recompute updates) |
 | `POST /api/images/upgrade` | `{"ref"}` | 202 `{"job"}` (upgrades every desktop behind on it) |
+
+`DELETE /api/images?ref=…` on a custom image does what `DELETE /api/recipes/{slug}` does. The daily update check (and `POST /api/images/check`) never pulls custom images; `POST /api/images` refuses `deskyard-custom/…` refs.
+
+### Recipes (admin)
+
+`Recipe` = `{"slug","name","base","mise"?:[specs],"remotes"?:[Remote],"flatpaks"?:[Flatpak],"commands"?:string,"homeFrom"?:"image","secrets"?:bool}`, with `Remote` = `{"name","repoFile"}` or `{"name","url","gpgKey"}` (base64) and `Flatpak` = `{"id","remote"?}` (Flathub when `remote` is empty) or `{"ref"}` (a `.flatpakref` URL). `slug` follows the desktop-name rule; `base` must be a catalog ref, and not one built on this recipe.
+
+| Method and path | Body | Response |
+| --- | --- | --- |
+| `GET /api/recipes` | | `[Recipe]`, sorted by slug |
+| `POST /api/recipes` | `Recipe` | 202 `{"job"}`: validates, saves and builds; 400 for an invalid recipe, 409 if the slug exists |
+| `PUT /api/recipes/{slug}` | `Recipe` | 202 `{"job"}`: saves the edit and rebuilds; 404 for an unknown slug |
+| `POST /api/recipes/{slug}/rebuild` | | 202 `{"job"}` |
+| `DELETE /api/recipes/{slug}` | | 204: removes the recipe, its catalog entry and every `deskyard-custom/<slug>` tag; 409 while a desktop uses any of them |
+
+Each recipe builds one at a time: a second build, edit or delete while one runs gets 409 `already building`.
+
+A build is a cancellable job (30-minute limit). Each line of the build log comes as one update, with `message` the line and `progress` null. The build:
+
+1. Takes the base's image ID, pulling the base first on a rebuild or edit unless it is a custom image (a base that can't be pulled but is on this machine is used as it is). The base must carry the Deskyard contract.
+2. Builds `FROM <base image ID>` with the recipe's mise tools, Flatpak remotes and apps, home template and build commands (no build cache on a rebuild or edit), with network access but no Docker socket, host mounts or supervisor network. The image keeps its base's `USER`.
+3. Checks the result: it still carries the contract; compared with the base, it adds no sudo or doas, no setuid or setgid file, and nothing UID 1000 can write under `/usr`, `/etc`, `/opt/workspace` or `/opt/deskyard` (outside `/opt/deskyard/home-template`), with every offending path named in the error; and a throwaway desktop of it (`build-check-…`, removed afterwards) becomes ready within 2 minutes.
+4. Tags it `deskyard-custom/<slug>:<YYYYMMDD-HHMMSS>` and `:latest`, puts `deskyard-custom/<slug>:latest` in the catalog, and removes older timestamp tags no container uses. Desktops on the image then show `updateAvailable`.
+
+A failed or cancelled build leaves no tag, no catalog entry and no image; the recipe stays saved. Labels on a custom image: `deskyard.kind=custom`, `org.opencontainers.image.title` (the recipe name), `org.opencontainers.image.version` (build time, `YYYY-MM-DD HH:MM`), `deskyard.base` (the base's image ID), `deskyard.recipe` (the recipe JSON, so anyone who can inspect the image can read its build commands and remote URLs), and `deskyard.secrets=true` when it has secrets.
 
 ## Desktop
 

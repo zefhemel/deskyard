@@ -74,6 +74,7 @@ func (d *Docker) Create(ctx context.Context, s engine.ContainerSpec) (string, er
 		Env:          env,
 		Labels:       s.Labels,
 		Cmd:          s.Cmd,
+		Entrypoint:   s.Entrypoint,
 		ExposedPorts: network.PortSet{port8080: {}},
 	}
 	hc := &container.HostConfig{
@@ -434,6 +435,7 @@ func (d *Docker) ImageInspect(ctx context.Context, ref string) (engine.Image, er
 	img := engine.Image{ID: res.ID}
 	if res.Config != nil {
 		img.Labels = res.Config.Labels
+		img.User = res.Config.User
 	}
 	return img, nil
 }
@@ -548,6 +550,24 @@ func (d *Docker) RemoveImage(ctx context.Context, ref string) error {
 func (d *Docker) Tag(ctx context.Context, imageID, ref string) error {
 	_, err := d.c.ImageTag(ctx, client.ImageTagOptions{Source: imageID, Target: ref})
 	return wrap(err)
+}
+
+func (d *Docker) ImageTags(ctx context.Context, repo string) (map[string]string, error) {
+	f := client.Filters{}
+	f.Add("reference", repo)
+	res, err := d.c.ImageList(ctx, client.ImageListOptions{Filters: f})
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for _, img := range res.Items {
+		for _, t := range img.RepoTags {
+			if i := strings.LastIndex(t, ":"); i > 0 && t[:i] == repo {
+				out[t] = img.ID
+			}
+		}
+	}
+	return out, nil
 }
 
 func (d *Docker) CopyFromImage(ctx context.Context, ref, path string) (io.ReadCloser, error) {

@@ -306,4 +306,38 @@ func images(t *testing.T, e engine.Engine) {
 			t.Fatalf("want ErrNotFound, got %v", err)
 		}
 	})
+	t.Run("image tags, user and entrypoint", func(t *testing.T) {
+		ref := uniqueRef(t, e)
+		repo := ref[:strings.LastIndex(ref, ":")]
+		ref2 := repo + ":other"
+		t.Cleanup(func() { _ = e.RemoveImage(context.Background(), ref2) })
+		id, err := e.Build(ctx, engine.BuildSpec{
+			Context: dockerfileTar(t, "FROM "+image+"\nRUN echo tags > /t\nUSER nobody\n"), Dockerfile: "Dockerfile", Tags: []string{ref},
+		}, func(string) {})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := e.Tag(ctx, id, ref2); err != nil {
+			t.Fatal(err)
+		}
+		tags, err := e.ImageTags(ctx, repo)
+		if err != nil || len(tags) != 2 || tags[ref] != id || tags[ref2] != id {
+			t.Fatalf("tags of %s: %v %v (want both → %s)", repo, err, tags, id)
+		}
+		if img, err := e.ImageInspect(ctx, id); err != nil || img.User != "nobody" {
+			t.Fatalf("user: %v %+v", err, img)
+		}
+		cid, err := e.Create(ctx, engine.ContainerSpec{Image: ref, Entrypoint: []string{"sleep", "30"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = e.Remove(context.Background(), cid) }()
+		if err := e.Start(ctx, cid); err != nil {
+			t.Fatal(err)
+		}
+		out, _, code, err := engine.Output(ctx, e, cid, engine.ExecSpec{Cmd: []string{"cat", "/proc/1/cmdline"}, User: "root"})
+		if err != nil || code != 0 || !strings.HasPrefix(string(out), "sleep") {
+			t.Fatalf("entrypoint: %v %d %q", err, code, out)
+		}
+	})
 }

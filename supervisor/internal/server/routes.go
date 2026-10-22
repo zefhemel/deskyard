@@ -23,6 +23,7 @@ func (s *Server) routes() {
 	h("GET /api/host", s.handleHost)
 	h("GET /api/events", s.handleEvents)
 	h("GET /api/jobs/{id}", s.handleJob)
+	h("POST /api/jobs/{id}/cancel", s.handleCancelJob)
 
 	h("GET /api/desktops", s.handleListDesktops)
 	h("POST /api/desktops", s.handleCreateDesktop)
@@ -50,6 +51,12 @@ func (s *Server) routes() {
 	h("DELETE /api/images", s.handleRemoveImage)
 	h("POST /api/images/check", s.handleCheckImages)
 	h("POST /api/images/upgrade", s.handleUpgradeImage)
+
+	h("GET /api/recipes", s.handleListRecipes)
+	h("POST /api/recipes", s.handleCreateRecipe)
+	h("PUT /api/recipes/{slug}", s.handleUpdateRecipe)
+	h("POST /api/recipes/{slug}/rebuild", s.handleRebuildRecipe)
+	h("DELETE /api/recipes/{slug}", s.handleDeleteRecipe)
 
 	m.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such API route")

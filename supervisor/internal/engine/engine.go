@@ -35,6 +35,8 @@ type ContainerSpec struct {
 	Flatpak bool
 	Restart string // "unless-stopped", "no"
 	Cmd     []string
+	// Entrypoint replaces the image's entrypoint when set.
+	Entrypoint []string
 }
 
 type Container struct {
@@ -86,6 +88,7 @@ type Network struct {
 type Image struct {
 	ID     string
 	Labels map[string]string
+	User   string // the image's USER, "" for root
 }
 
 // BuildSpec describes an image build from a tar build context.
@@ -146,6 +149,8 @@ type Engine interface {
 	// mentioning "in use" if a container uses it.
 	RemoveImage(ctx context.Context, ref string) error
 	Tag(ctx context.Context, imageID, ref string) error
+	// ImageTags lists the tags of a repository ("name:tag" → image ID).
+	ImageTags(ctx context.Context, repo string) (map[string]string, error)
 	Events(ctx context.Context) (<-chan Event, error)
 	Info(ctx context.Context) (HostInfo, error)
 }
