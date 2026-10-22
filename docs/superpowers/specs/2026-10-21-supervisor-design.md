@@ -324,7 +324,7 @@ Long operations (create with an image pull, upgrade) run as jobs: the API return
 
 - **Create** (admin): validate name; pull the image if missing and check its contract; make the folder (or reuse an existing one with that name, e.g. a copy made on the host), network; create the container (restart policy `unless-stopped`); connect or publish (see Networks); start; grant access to the accounts chosen in the dialog.
 - **Start / stop / restart** (anyone with access): engine API; stop with a 30 s timeout.
-- **Remove** (admin): stop; remove container and network; remove the desktop's ID from all accounts. The folder is kept unless "also delete files" was ticked (typed-name confirmation).
+- **Remove** (admin): stop; remove container and network; remove the desktop's ID from all accounts. The folder is kept unless "also delete files" was ticked; the dialog itself is the confirmation.
 - **Upgrade / switch image** (admin): see Images.
 
 # Monitoring
