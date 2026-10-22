@@ -114,7 +114,6 @@ def test_forwards_shown(cli, remote, forwards, supervisor, name):  # noqa: F811
         browser.close()
 
 
-@pytest.mark.skip(reason="needs the supervisor's agent activity (Tasks 5 and 6 of the agent activity plan) merged")
 def test_agent_presence_and_summary(cli, remote, supervisor, name):  # noqa: F811
     remote("-d", name, "click", "100", "100")
     remote("-d", name, "exec", "--", "true")

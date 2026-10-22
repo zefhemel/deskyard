@@ -307,9 +307,9 @@ def test_housekeeping_not_counted(admin, desktop, name, supervisor):
 
 
 def test_inside_backfill(admin, desktop, name):
-    inside_click(name)  # nobody is looking: nothing reads the stream yet
-    time.sleep(1)
-    assert inside_agents(admin, name) == []
+    # Sent before this test looks. Earlier tests may still keep the reader
+    # running (it lingers after the last look), so don't assert it's unseen.
+    inside_click(name)
     with events_open(admin):
         agents = wait_inside(lambda: inside_agents(admin, name))
         assert [a["id"] for a in agents] == ["inside:a terminal"]
