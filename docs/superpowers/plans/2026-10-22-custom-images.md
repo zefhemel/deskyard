@@ -36,7 +36,7 @@ The images can be rebuilt, moved to another base, and clearly marked when they c
   - No build cache on Rebuild. Rebuild pulls the base first, unless the base is custom.
   - Builds get network access, but no Docker socket, no host mounts and no supervisor network.
 - **Where things go.**
-  - mise tools go in `/opt/mise`, on `PATH` after the desktop's own shims (`/opt/mise/shims`).
+  - mise tools are installed into `/opt/mise`, and their executables are linked into `/opt/deskyard/bin`, which is on `PATH` right after the desktop's own mise shims. `/opt/mise/shims` is not on `PATH`.
   - Flatpak is installed system-wide with `flatpak.real --system`.
   - Extra remotes also go in `/etc/deskyard/flatpak-remotes/<name>.flatpakrepo`.
   - The home template goes in `/opt/deskyard/home-template`, owned by 1000:1000.
@@ -127,7 +127,7 @@ The images can be rebuilt, moved to another base, and clearly marked when they c
 - `func Dockerfile(r Recipe, baseID string, flatpakInBuild bool) string`. Its stages, in order:
   - `FROM <baseID>`;
   - `USER root`;
-  - mise installs into `/opt/mise` (`MISE_DATA_DIR=/opt/mise`, as the base image's Dockerfile does), then `mise reshim`;
+  - mise installs into `/opt/mise` (`MISE_DATA_DIR=/opt/mise`, as the base image's Dockerfile does), then each installed tool's executables (`/opt/mise/installs/<tool>/<version>/bin/*`) are linked into `/opt/deskyard/bin`;
   - the remotes: each `.flatpakrepo` is fetched into `/etc/deskyard/flatpak-remotes/`, then `flatpak.real --system remote-add`;
   - the Flatpak installs, only if `flatpakInBuild`: `flatpak.real --system install -y --noninteractive <remote> <id>`, or for a `.flatpakref`, `flatpak.real --system install -y --noninteractive --from <url>` (whose remote is then saved like the others);
   - `COPY home-template/ /opt/deskyard/home-template/` (only when there's a template), then `chown -R 1000:1000`;
