@@ -7,6 +7,7 @@ import { api, type Desktop } from "../api.ts";
 import { Avatar, Avatars } from "../components/avatar.tsx";
 import { power } from "../components/desktop-menu.tsx";
 import { Menu, type MenuItem } from "../components/menu.tsx";
+import { DownloadDialog } from "../dialogs/download.tsx";
 import { ViewersPopover } from "../components/viewers-popover.tsx";
 import { notify, notifyError } from "../components/toast.tsx";
 import { Button, cx } from "../components/ui.tsx";
@@ -74,6 +75,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
   const [remoteClip, setRemoteClip] = useState<string | null>(null);
   const [clipOpen, setClipOpen] = useState(false);
   const [viewersOpen, setViewersOpen] = useState(false);
+  const [downloadOpen, setDownloadOpen] = useState(false);
   const [quality, setQuality] = useState(storedQuality);
   const running = c.state === "running";
 
@@ -143,6 +145,10 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
     setViewersOpen(false);
     refocus();
   }, [refocus]);
+  const closeDownload = useCallback(() => {
+    setDownloadOpen(false);
+    refocus();
+  }, [refocus]);
   const closeClip = useCallback(() => {
     setClipOpen(false);
     refocus();
@@ -167,6 +173,8 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
           { label: "Stop", onSelect: () => power(c.name, "stop") },
         ]
       : []),
+    // Temporary entry point until the Download button joins the bar.
+    ...(running ? [{ label: "Download…", onSelect: () => setDownloadOpen(true), separated: true }] : []),
     { label: "Desktop page", onSelect: () => route(`/desktops/${c.name}`), separated: running },
     ...(me.admin ? [{ label: "Settings", onSelect: () => route(`/desktops/${c.name}?tab=settings`) }] : []),
     // On a phone the bar has no room for these.
@@ -275,6 +283,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
             )}
           />
         </div>
+        {downloadOpen && running && <DownloadDialog desktop={c} onClose={closeDownload} />}
         {viewersOpen && (c.viewers.length > 0 || c.forwards.length > 0) && (
           <ViewersPopover viewers={c.viewers} forwards={c.forwards} onClose={closeViewers} />
         )}

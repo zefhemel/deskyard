@@ -51,6 +51,8 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 | `GET /api/desktops/{name}/processes` | | `{"titles":[…],"rows":[[…]]}` (columns PID, USER, %CPU, RSS (KiB), ELAPSED, COMMAND) |
 | `GET /api/desktops/{name}/stats` | | `{"history":[{"t":"…","cpuPercent":n,"memBytes":n}], "memLimit":n}` (15 min at 5 s) |
 | `GET /api/desktops/{name}/folder` | | `{"path","bytes","complete"}`; `complete` is false when some directories couldn't be read, so `bytes` is a lower bound |
+| `GET /api/desktops/{name}/files` | `?path=` (default `/workspace`; relative paths start there) | `{"path","entries":[{"name","dir","size","modified"}],"truncated"}`, newest first, at most 2,000 entries; `path` is the resolved folder. Anyone who can see the desktop; session only (an agent token gets 401). 403 outside `/workspace` (symlinks and `..` are resolved inside the desktop first), 404 missing, 400 not a folder, 409 stopped |
+| `GET /api/desktops/{name}/download` | `?path=` | Streams a file, or a folder as a zip (links inside it are left out). Same access and errors as `files`; 400 for anything that is neither a file nor a folder |
 | `POST /api/desktops/{name}/keys` | `{"keys":"ctrl+alt+Delete"}` (xdotool syntax) | 204 |
 | `POST /api/desktops/{name}/upgrade` (admin) | | 202 `{"job": id}` |
 | `GET /api/validate-name?name=x` (admin) | | `{"ok":bool,"error"?:string,"folder":path,"folderExists":bool}` |

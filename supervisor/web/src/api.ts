@@ -120,6 +120,21 @@ export interface FolderSize {
   complete: boolean;
 }
 
+export interface FileEntry {
+  name: string;
+  dir: boolean;
+  size: number;
+  modified: string;
+}
+
+export interface FileListing {
+  /** The folder's real path in the desktop, always /workspace or below. */
+  path: string;
+  entries: FileEntry[];
+  /** True when the folder has more than the 2,000 newest entries shown. */
+  truncated: boolean;
+}
+
 export interface JobRef {
   job: string;
 }
@@ -209,6 +224,9 @@ export const api = {
   processes: (name: string) => request<Processes>("GET", `${c(name)}/processes`),
   stats: (name: string) => request<StatsHistory>("GET", `${c(name)}/stats`),
   folder: (name: string) => request<FolderSize>("GET", `${c(name)}/folder`),
+  files: (name: string, path: string) => request<FileListing>("GET", `${c(name)}/files?path=${enc(path)}`),
+  /** A file, or a folder as a zip; the browser downloads it. */
+  downloadUrl: (name: string, path: string) => `${c(name)}/download?path=${enc(path)}`,
   keys: (name: string, keys: string) => request<void>("POST", `${c(name)}/keys`, { keys }),
   upgrade: (name: string) => request<JobRef>("POST", `${c(name)}/upgrade`),
   validateName: (name: string) => request<NameCheck>("GET", `/api/validate-name?name=${enc(name)}`),
