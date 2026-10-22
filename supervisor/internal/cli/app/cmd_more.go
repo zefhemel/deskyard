@@ -33,7 +33,10 @@ func runCp(a *App, c *call) error {
 			if src.Path == "-" || dst.Path == "-" {
 				return usagef(c.cmd, "- needs a desktop on the other side")
 			}
-			return transfer.LocalCopy(src.Path, dst.Path)
+			end := a.recordCommand([]string{"cp", c.args[0], c.args[1]})
+			err := transfer.LocalCopy(src.Path, dst.Path)
+			end(0, err)
+			return err
 		}
 		return usagef(c.cmd, "neither side is on a desktop: write the desktop side as NAME:/path, e.g. deskyard cp ./file alice:/workspace/ (an empty NAME, :/path, means the chosen remote)")
 	}

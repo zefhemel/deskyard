@@ -82,11 +82,13 @@ func (v *viewers) closeAll(name string) {
 // can't flood the event stream.
 func (s *Server) publishViewers(name, desktopID string) {
 	s.viewersPub.do(name, func() { s.sendViewers(name, desktopID) })
+	s.publishActivity(name, desktopID) // a token's forward item follows its mappings
 }
 
 func (s *Server) sendViewers(name, desktopID string) {
 	s.events.publish(event{kind: "viewers", desktopID: desktopID,
-		data: map[string]any{"name": name, "viewers": s.viewers.names(name), "forwards": s.forwards.list(name)}})
+		data: map[string]any{"name": name, "viewers": s.viewers.names(name), "forwards": s.forwards.list(name),
+			"agents": s.activity.Present(name)}})
 }
 
 // viewersInterval is the least time between two viewers events of a desktop.

@@ -1,7 +1,7 @@
 ---
 displayName: Agent activity design
 tags: spec
-status: approved
+status: implemented
 date: "2026-10-22"
 plan: "[[superpowers/plans/2026-10-22-agent-activity|Agent activity plan]]"
 ---
@@ -84,6 +84,7 @@ These would make it a failure even if it worked:
 - **Recognising screen actions from outside.**
   - An exec is a screen action when `argv[0]`'s base name is `deskyard` and the first non-flag argument is one of the screen subcommands. The global `-d NAME` flag is skipped.
   - Anything wrapped in a shell (`sh -c "deskyard click …"`) is a plain command.
+  - Whatever the form, everything after a `type` word of `deskyard` or `xdotool` is masked in the display form and in logs, to the end of the display string: wrapped in sudo, env or time, in a shell string or subshell, or rejected by the parser (`deskyard type -- pw -h`).
   - Coordinates are absolute desktop pixels, as the CLI takes them, and are parsed per subcommand: `click x y [button]`, `drag x1 y1 x2 y2`, `scroll x y dir [n]`, and so on.
   - Marks are drawn when the action starts, whatever its exit code.
   - `screenshot` and `zoom` draw nothing; they count in the summary ("took 3 screenshots").
@@ -100,7 +101,7 @@ These would make it a failure even if it worked:
 - **Untrusted input.** Masking runs in `deskyard` before an event is written. The stream is writable by anything running as `user`, so the supervisor treats it as untrusted:
   - it caps the length of every field;
   - it masks again;
-  - it allows at most 50 events a second per desktop, dropping the rest;
+  - it allows at most 50 events a second per desktop, after a burst as large as the ring (so a backfill is taken whole), dropping the rest;
   - it never uses inside events to change outside agents.
 
 ## Secrets
