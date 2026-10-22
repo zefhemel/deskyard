@@ -5,6 +5,12 @@ status: active
 date: "2026-10-22"
 spec: "[[superpowers/specs/2026-10-22-audio-and-ports-design|Audio, mic, size lock and port mapping design]]"
 ---
+# Status
+
+- **Execution:** subagent-driven.
+- **Image size:** the audio packages may grow the image; report the measured increase.
+- **Lag gate:** if Task 3's checkpoint measures more than 200 ms of sound lag on OrbStack, stop and ask before Task 4.
+
 # Audio, Mic, Size Lock and Port Mapping Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
