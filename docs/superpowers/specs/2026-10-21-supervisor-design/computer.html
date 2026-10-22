@@ -18,10 +18,14 @@
 
   <div class="detail">
     <a class="monitor" href="#desktop-alice" title="Open alice's desktop">
-      <div class="screen"><img src="img/alice.png" alt=""><span class="open">Open desktop</span></div>
+      <div class="screen"><img src="img/alice.png" alt=""><span class="viewers"><span class="avs"><span class="av c1">z</span><span class="av c2">a</span></span>zef and anna are viewing</span><span class="open">Open desktop</span></div>
     </a>
 
     <div>
+      <div class="panel viewers-panel">
+        <span class="avs"><span class="av c1">z</span><span class="av c2">a</span></span>
+        <div><b>zef and anna are viewing</b><p>Shared: the desktop keeps its size and each browser scales it. With one viewer it follows their window.</p></div>
+      </div>
       <div class="panel">
         <div class="chart-row">
           <div class="chart-label">CPU, last 15 minutes <b>34%</b></div>
@@ -36,7 +40,8 @@
         <dl class="facts">
           <dt>Desktop</dt><dd><a href="#desktop-alice" class="mono">/alice/</a></dd>
           <dt>Files</dt><dd class="mono">/Users/zef/computers/alice</dd>
-          <dt>Image</dt><dd><span class="mono">container-computer:latest</span><span class="update">Update available</span></dd>
+          <dt>Image</dt><dd>Debian XFCE 2026.10.15 <span class="tag update">2026.10.22 available</span> <a href="#">Upgrade…</a></dd>
+          <dt>Access</dt><dd>anna, and admins <a href="#">Change</a></dd>
           <dt>Limits</dt><dd>2 GB memory, 2 CPUs</dd>
           <dt>Flatpak apps</dt><dd>On (no sudo)</dd>
           <dt>Agent ports</dt><dd><span class="mono">127.0.0.1:41022</span> CDP, <span class="mono">127.0.0.1:41021</span> VNC</dd>
@@ -47,7 +52,7 @@
   </div>
 
   <nav class="tabs">
-    <a class="on" href="#">Processes</a><a href="#">Logs</a><a href="#">Settings</a>
+    <a class="on" href="#">Processes</a><a href="#">Logs</a><a href="#">Settings</a><a href="#">Access</a>
   </nav>
   <div class="tab-body">
     <table class="procs">
@@ -85,15 +90,15 @@
   chart("mem", series(11, 66, 8).map((v, i) => v + i * 0.06), "#172231");
 
   const procs = [
-    [412, "workspace", 18.2, "612 MB", "2 h 14 min", "/usr/lib/chromium/chromium --type=renderer --enable-features=… https://github.com/…"],
-    [3301, "workspace", 9.6, "248 MB", "41 min", "node /workspace/.local/share/claude/versions/2.4.1/cli.js"],
-    [118, "workspace", 3.1, "71 MB", "3 days", "Xkasmvnc :1 -geometry 1280x800 -depth 24 -AlwaysShared -interface 127.0.0.1"],
-    [380, "workspace", 1.4, "186 MB", "2 h 14 min", "/usr/lib/chromium/chromium --remote-debugging-port=9220 --user-data-dir=…"],
-    [2915, "workspace", 0.9, "132 MB", "1 h 02 min", "/app/bin/silverbullet --hostname 127.0.0.1 /workspace/Notes"],
-    [205, "workspace", 0.4, "38 MB", "3 days", "xfce4-panel --display :1.0 --sm-client-id 2f1c…"],
-    [3290, "workspace", 0.2, "9 MB", "41 min", "-bash"],
+    [412, "user", 18.2, "612 MB", "2 h 14 min", "/usr/lib/chromium/chromium --type=renderer --enable-features=… https://github.com/…"],
+    [3301, "user", 9.6, "248 MB", "41 min", "node /workspace/.local/share/claude/versions/2.4.1/cli.js"],
+    [118, "user", 3.1, "71 MB", "3 days", "Xkasmvnc :1 -geometry 1280x800 -depth 24 -AlwaysShared -interface 127.0.0.1"],
+    [380, "user", 1.4, "186 MB", "2 h 14 min", "/usr/lib/chromium/chromium --remote-debugging-port=9220 --user-data-dir=…"],
+    [2915, "user", 0.9, "132 MB", "1 h 02 min", "/app/bin/silverbullet --hostname 127.0.0.1 /workspace/Notes"],
+    [205, "user", 0.4, "38 MB", "3 days", "xfce4-panel --display :1.0 --sm-client-id 2f1c…"],
+    [3290, "user", 0.2, "9 MB", "41 min", "-bash"],
     [96, "caddy", 0.1, "31 MB", "3 days", "caddy run --config /etc/caddy/Caddyfile --adapter caddyfile"],
-    [131, "workspace", 0.0, "6 MB", "3 days", "/usr/local/bin/websocat --binary tcp-l:0.0.0.0:5901 ws://127.0.0.1:6080/websockify"],
+    [131, "user", 0.0, "6 MB", "3 days", "/usr/local/bin/websocat --binary tcp-l:0.0.0.0:5901 ws://127.0.0.1:6080/websockify"],
     [1, "root", 0.0, "24 MB", "3 days", "/usr/bin/python3 /usr/bin/supervisord -c /etc/supervisor/supervisord.conf"],
   ];
   document.getElementById("procs").innerHTML = procs.map(([pid, user, c, mem, up, cmd]) => `

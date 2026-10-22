@@ -16,6 +16,13 @@
         <input id="name" type="text" value="data-lab" autofocus>
         <div class="hint ok">Its desktop will be at <span class="mono">/data-lab/</span> and its files in <span class="mono">~/computers/data-lab</span></div>
       </div>
+      <div class="field">
+        <span class="label">Image</span>
+        <div class="image-pick">
+          <label class="on"><input type="radio" name="img" checked><span><b>Debian XFCE</b> <span class="muted">2026.10.22</span><p>Debian trixie with XFCE, Chromium, Flatpak, mise and uv. <span class="mono">ghcr.io/zefhemel/container-computer:latest</span></p></span></label>
+          <label><input type="radio" name="img"><span><b>Debian XFCE, beta</b> <span class="muted">2026.10.22-beta</span><p>Next week's image, for trying changes. <span class="mono">ghcr.io/zefhemel/container-computer:beta</span></p></span></label>
+        </div>
+      </div>
       <div class="two">
         <div class="field"><span class="label">Memory</span>
           <div class="seg"><button type="button">1 GB</button><button type="button" class="on">2 GB</button><button type="button">4 GB</button><button type="button">8 GB</button></div></div>
@@ -30,7 +37,16 @@
         <input type="checkbox" id="ap">
         <label for="ap"><b>Agent ports on this machine</b><p>Opens the browser's CDP port and VNC on 127.0.0.1, for agents running outside the computer. No password.</p></label>
       </div>
-      <details><summary>More settings</summary></details>
+      <div class="field">
+        <span class="label">Who can use it</span>
+        <div class="picks">
+          <label><input type="checkbox" checked disabled> zef <span class="tag admin">admin</span> <span class="muted">admins can use every computer</span></label>
+          <label><input type="checkbox" checked> anna</label>
+          <label><input type="checkbox"> sam</label>
+          <label><input type="checkbox"> ci</label>
+        </div>
+      </div>
+      <details><summary>More settings: start size, sudo</summary></details>
     </div>
     <footer><button type="button" class="btn quiet">Cancel</button><button class="btn primary">Create computer</button></footer>
   </form>

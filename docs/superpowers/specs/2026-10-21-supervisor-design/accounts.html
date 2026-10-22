@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Accounts</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<div id="top"></div>
+<main>
+  <div class="page-head">
+    <h1>Accounts</h1>
+    <div class="btns"><button class="btn primary">New account</button></div>
+  </div>
+  <table class="list" id="accounts">
+    <thead><tr><th>Account</th><th>Can use</th><th>Last signed in</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+</main>
+<script src="wall.js"></script>
+<script>
+  document.getElementById("top").innerHTML = topBar("accounts");
+  const accounts = [
+    { name: "zef", admin: true, last: "Now", computers: null },
+    { name: "anna", last: "Now", computers: ["alice", "research", "notes"] },
+    { name: "sam", last: "3 days ago", computers: ["research"] },
+    { name: "ci", last: "Never", computers: [] },
+  ];
+  document.querySelector("#accounts tbody").innerHTML = accounts.map((a) => `
+    <tr>
+      <td><span class="account">${av(a.name)} ${a.name}${a.admin ? ' <span class="tag admin">admin</span>' : ""}</span></td>
+      <td>${a.computers === null ? '<span class="muted">Every computer</span>'
+        : a.computers.length ? `<div class="chips">${a.computers.map((c) => `<span class="tag">${c}</span>`).join("")}</div>`
+        : '<span class="muted">No computers yet</span>'}</td>
+      <td>${a.last}</td>
+      <td class="actions"><button class="btn">Edit</button> <button class="btn icon" aria-label="More">⋯</button></td>
+    </tr>`).join("");
+</script>
+</body></html>
