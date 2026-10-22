@@ -62,12 +62,18 @@ func (s *Server) serveClientFile(w http.ResponseWriter, r *http.Request, c compu
 		writeError(w, http.StatusBadGateway, "the desktop client isn't available")
 		return
 	}
-	clean := path.Clean("/" + file)
-	if clean == "/" {
-		clean = "/vnc.html"
-	}
+	clean := cleanClientPath(file)
 	w.Header().Set("Cache-Control", "no-cache")
 	http.ServeFile(w, r, filepath.Join(dir, filepath.FromSlash(clean)))
+}
+
+// cleanClientPath keeps a requested client file inside the client's folder.
+func cleanClientPath(file string) string {
+	clean := path.Clean("/" + file)
+	if clean == "/" {
+		return "/vnc.html"
+	}
+	return clean
 }
 
 // proxyDesktop proxies the desktop WebSocket to the computer, adding the
