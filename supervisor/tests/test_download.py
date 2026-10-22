@@ -153,3 +153,58 @@ def test_client_abort_leaves_no_tar_or_cat_running(admin, desktop, name):
                 break
             time.sleep(0.5)
         assert running() == [], f"{path}: left running after the client left"
+
+
+LUMINANCE_JS = """(rgb) => {
+  const c = rgb.match(/[\\d.]+/g).slice(0, 3).map(Number).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+}"""
+
+
+def test_download_dialog_names_are_readable_and_hidden_files_toggle(supervisor, desktop, name):
+    from playwright.sync_api import expect, sync_playwright
+
+    from test_ui import signed_in
+
+    for rel in ["Documents/a.txt", "visible.txt", ".secret/x", ".hidden.txt"]:
+        put(desktop["folder"], rel, b"x")
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base)
+        page.evaluate("localStorage.removeItem('deskyard.showHidden')")
+        page.goto(f"{supervisor.base}/{name}/")
+        page.get_by_role("button", name="More").click()
+        page.get_by_role("menuitem", name="Download…").click()
+        dialog = page.get_by_role("dialog")
+        folder = dialog.get_by_role("button", name="Documents")
+        expect(folder).to_be_visible(timeout=15000)
+
+        def contrast(locator):
+            fg = locator.evaluate("e => getComputedStyle(e).color")
+            bg = dialog.evaluate("e => getComputedStyle(e).backgroundColor")
+            assert fg != bg
+            lf, lb = page.evaluate(LUMINANCE_JS, fg), page.evaluate(LUMINANCE_JS, bg)
+            return (max(lf, lb) + 0.05) / (min(lf, lb) + 0.05)
+
+        assert contrast(folder) >= 4.5
+        assert contrast(dialog.get_by_text("visible.txt", exact=True)) >= 4.5
+        folder.hover()
+        assert contrast(folder) >= 4.5
+        folder.focus()
+        assert contrast(folder) >= 4.5
+
+        # Hidden entries are off by default, listed after the visible ones when on, and remembered.
+        toggle = dialog.get_by_label("Show hidden files", exact=False)
+        assert not toggle.is_checked()
+        expect(dialog.get_by_text(".hidden.txt", exact=True)).to_have_count(0)
+        toggle.check()
+        names = [t.strip() for t in dialog.locator("ul li").all_inner_texts()]
+        order = [n for n in names if any(k in n for k in ("Documents", "visible.txt", ".secret", ".hidden.txt"))]
+        flat = " ".join(order)
+        assert flat.index("Documents") < flat.index("visible.txt") < flat.index(".secret") < flat.index(".hidden.txt"), order
+        assert contrast(dialog.get_by_text(".hidden.txt", exact=True)) >= 4.5
+        assert page.evaluate("localStorage.getItem('deskyard.showHidden')") == "1"
+        page.reload()
+        page.get_by_role("button", name="More").click()
+        page.get_by_role("menuitem", name="Download…").click()
+        expect(page.get_by_role("dialog").get_by_label("Show hidden files", exact=False)).to_be_checked(timeout=15000)
+        browser.close()

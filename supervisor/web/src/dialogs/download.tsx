@@ -4,6 +4,15 @@ import { ago, bytes } from "../lib/format.ts";
 import { btnClass, Button, Dialog, ErrorText, errorMessage } from "../components/ui.tsx";
 
 const ROOT = "/workspace";
+const HIDDEN_KEY = "deskyard.showHidden";
+
+function storedShowHidden(): boolean {
+  try {
+    return localStorage.getItem(HIDDEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 /** Browse a desktop's files under /workspace and download a file, or a folder as a zip. */
 export function DownloadDialog({ desktop, onClose }: { desktop: Desktop; onClose: () => void }) {
@@ -11,6 +20,15 @@ export function DownloadDialog({ desktop, onClose }: { desktop: Desktop; onClose
   const [box, setBox] = useState(ROOT);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showHidden, setShowHidden] = useState(storedShowHidden);
+  const chooseHidden = (on: boolean) => {
+    setShowHidden(on);
+    try {
+      localStorage.setItem(HIDDEN_KEY, on ? "1" : "0");
+    } catch {
+      // not remembered
+    }
+  };
 
   const go = async (path: string) => {
     setLoading(true);
@@ -33,8 +51,13 @@ export function DownloadDialog({ desktop, onClose }: { desktop: Desktop; onClose
   const here = listing?.path ?? ROOT;
   const parent = here.slice(0, Math.max(here.lastIndexOf("/"), 0)) || ROOT;
   const join = (name: string) => `${here}/${name}`;
-  // Folders first, each group newest first (the server's order).
-  const entries = listing ? [...listing.entries.filter((e) => e.dir), ...listing.entries.filter((e) => !e.dir)] : [];
+  // Folders first, then files, each newest first (the server's order); names starting with a dot come last, and only when asked for.
+  const all = listing?.entries ?? [];
+  const shown = all.filter((e) => !e.name.startsWith("."));
+  const hidden = showHidden ? all.filter((e) => e.name.startsWith(".")) : [];
+  const folderFirst = (l: typeof all) => [...l.filter((e) => e.dir), ...l.filter((e) => !e.dir)];
+  const entries = [...folderFirst(shown), ...folderFirst(hidden)];
+  const hiddenCount = all.length - shown.length;
 
   return (
     <Dialog
@@ -72,17 +95,21 @@ export function DownloadDialog({ desktop, onClose }: { desktop: Desktop; onClose
         </Button>
       </div>
       <ErrorText error={error} />
+      <label class="mb-2 flex cursor-pointer items-center gap-2 text-[13px] text-muted">
+        <input type="checkbox" class="w-auto" checked={showHidden} onChange={(e) => chooseHidden(e.currentTarget.checked)} />
+        Show hidden files{listing && hiddenCount > 0 ? ` (${hiddenCount})` : ""}
+      </label>
       <ul class="m-0 mb-3 max-h-[340px] list-none overflow-auto p-0" aria-busy={loading}>
-        {listing && entries.length === 0 && <li class="py-2 text-muted">This folder is empty.</li>}
+        {listing && shown.length === 0 && hidden.length === 0 && <li class="py-2 text-muted">{hiddenCount > 0 && !showHidden ? "Only hidden files here." : "This folder is empty."}</li>}
         {entries.map((e) => (
           <li key={e.name} class="flex items-center gap-2.5 border-b border-line py-1.5 last:border-b-0">
             {e.dir ? (
-              <button type="button" class="min-w-0 flex-1 truncate text-left font-semibold hover:underline" onClick={() => void go(join(e.name))}>
-                <span aria-hidden="true">▸ </span>
+              <button type="button" class="min-w-0 flex-1 cursor-pointer truncate border-0 bg-transparent p-0 text-left font-semibold text-ink hover:underline focus-visible:underline" onClick={() => void go(join(e.name))}>
+                <span aria-hidden="true" class="text-muted">▸ </span>
                 {e.name}
               </button>
             ) : (
-              <span class="min-w-0 flex-1 truncate">{e.name}</span>
+              <span class="min-w-0 flex-1 truncate text-ink">{e.name}</span>
             )}
             <span class="flex-none text-[13px] text-muted">
               {e.dir ? "" : `${bytes(e.size)}, `}
