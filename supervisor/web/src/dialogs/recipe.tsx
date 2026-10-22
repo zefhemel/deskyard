@@ -136,12 +136,14 @@ export function RecipeDialog({
           label="Name"
           htmlFor="rc-name"
           hint={
-            slug ? (
+            SLUG.test(slug) ? (
               <>
                 Its reference will be <span class="mono">deskyard-custom/{slug}:latest</span>
               </>
+            ) : name.trim() ? (
+              <span class="text-danger">The name needs at least 2 letters or digits, starting with a letter: they make up the image's reference.</span>
             ) : (
-              "Start with a letter."
+              "Give the image a name."
             )
           }
         >

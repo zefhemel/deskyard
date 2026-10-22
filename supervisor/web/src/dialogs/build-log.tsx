@@ -2,9 +2,10 @@
 // update is one log line), keeps itself scrolled to the end unless the reader
 // scrolled up, and marks the step that failed.
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { api, watchJob, type Job } from "../api.ts";
+import { api, type Job } from "../api.ts";
 import { notifyError } from "../components/toast.tsx";
 import { Button, cx, Dialog } from "../components/ui.tsx";
+import { followJob } from "../lib/follow-job.ts";
 
 const STEP = /^Step \d+\/\d+ : /;
 const CANCELLED = "cancelled";
@@ -15,14 +16,31 @@ export function failedStep(lines: string[]): number {
   return -1;
 }
 
-export function BuildLogDialog({ title, job: id, onClose, onDone }: { title: string; job: string; onClose: (stillRunning: boolean) => void; onDone: () => void }) {
+export function BuildLogDialog({
+  title,
+  job: id,
+  onClose,
+  onDone,
+  onLost,
+}: {
+  title: string;
+  job: string;
+  onClose: (stillRunning: boolean) => void;
+  onDone: () => void;
+  /** The server forgot the job: what became of the build is unknown. */
+  onLost: () => void;
+}) {
   const [lines, setLines] = useState<string[]>([]);
   const [final, setFinal] = useState<Job | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [offline, setOffline] = useState(false);
+  const [gone, setGone] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const stuck = useRef(true);
   const done = useRef(onDone);
   done.current = onDone;
+  const lost = useRef(onLost);
+  lost.current = onLost;
 
   useEffect(() => {
     // Lines arrive in bursts (the stream replays the history first): batch the renders.
@@ -34,16 +52,34 @@ export function BuildLogDialog({ title, job: id, onClose, onDone }: { title: str
       pending = [];
       if (add.length) setLines((l) => l.concat(add));
     };
-    const stop = watchJob(id, (j) => {
-      if (j.status === "running") {
-        if (j.message) pending.push(j.message);
-        if (timer === undefined) timer = window.setTimeout(flush, 60);
-        return;
-      }
-      window.clearTimeout(timer);
-      flush();
-      setFinal(j);
-      if (j.status === "done") done.current();
+    const stop = followJob(id, {
+      onUpdate: (j) => {
+        if (j.status === "running") {
+          if (j.message) pending.push(j.message);
+          if (timer === undefined) timer = window.setTimeout(flush, 60);
+          return;
+        }
+        window.clearTimeout(timer);
+        timer = undefined;
+        flush();
+        setFinal(j);
+        if (j.status === "done") done.current();
+      },
+      // The history comes again from the start.
+      onReplay: () => {
+        window.clearTimeout(timer);
+        timer = undefined;
+        pending = [];
+        setLines([]);
+      },
+      onConnection: setOffline,
+      onGone: () => {
+        window.clearTimeout(timer);
+        timer = undefined;
+        flush();
+        setGone(true);
+        lost.current();
+      },
     });
     return () => {
       stop();
@@ -56,7 +92,7 @@ export function BuildLogDialog({ title, job: id, onClose, onDone }: { title: str
     if (el && stuck.current) el.scrollTop = el.scrollHeight;
   }, [lines, final]);
 
-  const running = final === null;
+  const running = final === null && !gone;
   const failed = final?.status === "failed";
   const wasCancelled = failed && final.error === CANCELLED;
   const step = failed && !wasCancelled ? failedStep(lines) : -1;
@@ -104,6 +140,16 @@ export function BuildLogDialog({ title, job: id, onClose, onDone }: { title: str
           </div>
         ))}
       </div>
+      {running && offline && (
+        <p class="mb-3.5 text-sm text-muted" role="status">
+          Lost the connection to the build. It keeps going on the server; reconnecting…
+        </p>
+      )}
+      {gone && (
+        <p class="mb-3.5 text-sm text-danger" role="alert">
+          Lost track of the build — check the Images list.
+        </p>
+      )}
       {final?.status === "done" && (
         <p class="mb-3.5 text-sm text-run" role="status">
           {title} is ready to use.

@@ -83,7 +83,7 @@ function job(messages: string[], after: () => void, desktop?: string): { job: st
 }
 
 // Builds: each log line is one update with no progress, like the real stream.
-const builds = new Map<string, { rec: Recipe; lines: string[]; fail: boolean; cancelled: boolean }>();
+const builds = new Map<string, { rec: Recipe; lines: string[]; fail: boolean; cancelled: boolean; dropped: boolean }>();
 
 function buildJob(rec: Recipe): { job: string } {
   const id = `build${jobSeq++}`;
@@ -99,7 +99,7 @@ function buildJob(rec: Recipe): { job: string } {
     ...Array.from({ length: 40 }, (_, i) => `installing package ${i + 1} of 40`),
     ...(fail ? ["E: Unable to locate package nonsense", "The command '/bin/sh -c apt-get install nonsense' returned a non-zero code: 100"] : ["Successfully built 8d1f", "Checking the image", "Starting a test desktop"]),
   ];
-  builds.set(id, { rec, lines, fail, cancelled: false });
+  builds.set(id, { rec, lines, fail, cancelled: false, dropped: false });
   return { job: id };
 }
 
@@ -124,6 +124,12 @@ function streamBuild(res: ServerResponse, id: string): void {
     if (b.cancelled) {
       clearInterval(t);
       send({ status: "failed", message: "Cancelled", progress: null, error: "cancelled" });
+      return res.end();
+    }
+    // A command containing "drop" cuts the first connection mid-build, like a network blip.
+    if (i === 12 && !b.dropped && (b.rec.commands ?? "").includes("drop")) {
+      b.dropped = true;
+      clearInterval(t);
       return res.end();
     }
     const line = b.lines[i++];

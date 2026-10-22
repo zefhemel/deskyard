@@ -1,5 +1,5 @@
-import { useState } from "preact/hooks";
-import { api, watchJob, type CatalogImage, type Recipe } from "../api.ts";
+import { useEffect, useRef, useState } from "preact/hooks";
+import { api, type CatalogImage, type Recipe } from "../api.ts";
 import { JobProgress, useJob } from "../components/job.tsx";
 import { notify, notifyError } from "../components/toast.tsx";
 import { Page, PageHead } from "../components/topbar.tsx";
@@ -9,6 +9,7 @@ import { RecipeDialog } from "../dialogs/recipe.tsx";
 import { UPGRADE_NOTE, UpgradeDialog } from "../dialogs/upgrade.tsx";
 import { useLive } from "../live.tsx";
 import { ago, plural } from "../lib/format.ts";
+import { followJob } from "../lib/follow-job.ts";
 import { useFetch } from "../lib/use-fetch.ts";
 
 const th = "border-b border-line px-4 py-[11px] text-left text-[13px] font-semibold text-muted";
@@ -34,16 +35,42 @@ export function ImagesPage() {
       else notifyError(new Error("This image's recipe is missing."));
     }, notifyError);
   };
-  // Closing the log doesn't stop the build: say when it ends.
+  // Closing the log doesn't stop the build: one watcher per build says when it ends.
+  const watchers = useRef(new Map<string, () => void>());
+  useEffect(() => {
+    const all = watchers.current;
+    return () => {
+      for (const stop of all.values()) stop();
+      all.clear();
+    };
+  }, []);
   const hideLog = (job: string, title: string, stillRunning: boolean) => {
     setBuilding(null);
-    if (!stillRunning) return;
-    watchJob(job, (j) => {
-      if (j.status === "running") return;
-      reload();
-      if (j.status === "done") notify(`${title} is built`);
-      else notify(j.error === "cancelled" ? `The build of ${title} was cancelled` : `The build of ${title} failed: ${j.error ?? j.message}`, { error: j.error !== "cancelled", ms: 8000 });
-    });
+    if (!stillRunning || watchers.current.has(job)) return;
+    const end = () => {
+      watchers.current.get(job)?.();
+      watchers.current.delete(job);
+    };
+    watchers.current.set(
+      job,
+      followJob(job, {
+        onUpdate: (j) => {
+          if (j.status === "running") return;
+          end();
+          reload();
+          if (j.status === "done") notify(`${title} is built`);
+          else if (j.error === "cancelled") notify(`The build of ${title} was cancelled`);
+          else notify(`The build of ${title} failed: ${j.error ?? j.message}`, { error: true, ms: 8000 });
+        },
+        onReplay: () => undefined,
+        onConnection: () => undefined,
+        onGone: () => {
+          end();
+          reload();
+          notify(`Lost track of the build of ${title} — check the Images list`, { error: true, ms: 8000 });
+        },
+      }),
+    );
   };
   const check = useJob(() => {
     images.reload();
@@ -120,6 +147,7 @@ export function ImagesPage() {
           job={building.job}
           onClose={(running) => hideLog(building.job, building.title, running)}
           onDone={images.reload}
+          onLost={images.reload}
         />
       )}
       {upgrading && (
