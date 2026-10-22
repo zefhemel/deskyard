@@ -210,3 +210,55 @@ def test_client_additions_in_a_browser(supervisor, admin, desktop, name):
         assert page.evaluate(f"{screen}.tab") != tab
         assert wait_for(lambda: admin.desktop(name)["mics"] == [])
         browser.close()
+
+
+def test_two_pages_stay_side_by_side(admin, desktop, name):
+    # Two pages with their own Selkies tab ids join beside each other; neither
+    # supersedes the other.
+    docker("exec", "-d", "-u", "user", "-e", "DISPLAY=:1", f"deskyard-{name}", "xfce4-terminal")
+    time.sleep(3)
+    with Stream(admin, name, "pageA") as a:
+        assert wait_for(lambda: a.frames > 0, 15)
+        with Stream(admin, name, "pageB") as b:
+            assert wait_for(lambda: b.frames > 0, 15)
+            before = (a.frames, b.frames)
+            time.sleep(3)
+            # Something changes on screen: both pages get the new picture.
+            for _ in range(5):
+                docker("exec", "-u", "user", "-e", "DISPLAY=:1", f"deskyard-{name}", "xdotool", "type", "--delay", "50", "hello ")
+            time.sleep(1)
+            assert a.error is None and b.error is None, (a.error, b.error)
+            assert a.frames > before[0] and b.frames > before[1], (before, a.frames, b.frames)
+
+
+def test_duplicated_tab_and_reload_keep_the_picture(supervisor, admin, desktop, name):
+    from playwright.sync_api import sync_playwright
+
+    from test_ui import signed_in
+
+    screen = "document.querySelector('iframe')?.contentWindow?.deskyardScreen"
+    showing = f"{screen}?.state() === 'connected' && {screen}.video() !== null"
+
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base)
+        page.goto(f"{supervisor.base}/{name}/")
+        page.wait_for_function(showing, timeout=30000)
+
+        # A duplicated tab (window.open copies sessionStorage, as duplicating does).
+        with page.context.expect_page() as popup_info:
+            page.evaluate("window.open(location.href)")
+        dup = popup_info.value
+        dup.wait_for_function(showing, timeout=30000)
+        time.sleep(5)
+        for pg in (page, dup):
+            assert pg.evaluate(f"{screen}.state()") == "connected"
+            assert pg.evaluate(f"{screen}.video() !== null")
+        assert wait_for(lambda: admin.desktop(name)["viewers"] == ["admin"])
+        dup.close()
+
+        # A reload gets the picture back promptly.
+        start = time.time()
+        page.reload()
+        page.wait_for_function(showing, timeout=15000)
+        assert time.time() - start < 15
+        browser.close()

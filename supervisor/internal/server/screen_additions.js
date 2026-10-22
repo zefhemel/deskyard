@@ -8,9 +8,17 @@
 //   desktop's stream for everyone else.
 // - Adds ?tab=<id> to the stream URL, so the supervisor can tie this tab's
 //   mic badge to its stream. The id is new on every load of the client.
+// - Makes every load of the client its own Selkies client: Selkies keeps
+//   its tab id in sessionStorage, which a duplicated browser tab copies, and
+//   a page with the owner's tab id takes the display over from it.
 // - window.deskyardScreen, the hooks the desktop page drives Selkies with.
 (() => {
   "use strict";
+
+  // --- Selkies' tab id ----------------------------------------------------------
+  // Gone before Selkies' code reads it, so it makes a new one for this load.
+  // (A plain reload's old connection closes on unload anyway.)
+  try { sessionStorage.removeItem("selkies_tab_id"); } catch {}
 
   // --- pointerrawupdate -------------------------------------------------------
   try { delete Window.prototype.onpointerrawupdate; } catch {}
