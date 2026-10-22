@@ -2,11 +2,13 @@ package app
 
 import (
 	"encoding/json"
+	"io/fs"
 	"os"
 	"reflect"
 	"runtime"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/activity"
 )
@@ -113,17 +115,34 @@ func TestNothingRecordedRemotely(t *testing.T) {
 	}
 }
 
-func TestDefaultCaller(t *testing.T) {
-	// The process tree here is go test under a shell or CI: never empty, and
-	// CLAUDECODE=1 names Claude Code when the tree doesn't.
-	env := map[string]string{}
-	c := defaultCaller(func(k string) string { return env[k] })
-	if c() == "" {
-		t.Error("empty caller name")
+func TestCallerFromIgnoresClaudeCodeEnvWhenTreeReadable(t *testing.T) {
+	proc := fstest.MapFS{
+		"50/stat":    {Data: []byte("50 (bash) S 1 1 1 0")},
+		"50/cmdline": {Data: []byte("bash\x00")},
+		"50/comm":    {Data: []byte("bash\n")},
+		"50/fd/0":    {Data: []byte("/dev/pts/3"), Mode: fs.ModeSymlink},
 	}
-	env["CLAUDECODE"] = "1"
-	if got := c(); got != "Claude Code" {
-		t.Errorf("CLAUDECODE=1: %q", got)
+	env := map[string]string{"CLAUDECODE": "1"}
+	getenv := func(k string) string { return env[k] }
+	if got := callerFrom(proc, 50, getenv); got != "a terminal" {
+		t.Errorf("terminal with CLAUDECODE=1: %q", got)
 	}
-	_ = activity.Event{}
+	// Tree out of sight: the env names Claude Code; without it, a terminal.
+	if got := callerFrom(fstest.MapFS{}, 50, getenv); got != "Claude Code" {
+		t.Errorf("unreadable tree, CLAUDECODE=1: %q", got)
+	}
+	env["CLAUDECODE"] = ""
+	if got := callerFrom(fstest.MapFS{}, 50, getenv); got != "a terminal" {
+		t.Errorf("unreadable tree: %q", got)
+	}
+}
+
+func TestRecordSurvivesPanickingCaller(t *testing.T) {
+	h := insideHarness(t)
+	a := &App{Getenv: func(string) string { return "" }, Caller: func() string { panic("boom") },
+		Record: func(e activity.Event) { h.events = append(h.events, e) }}
+	a.record(activity.Event{Kind: "screen"}) // must not panic
+	if len(h.events) != 0 {
+		t.Errorf("recorded: %+v", h.events)
+	}
 }

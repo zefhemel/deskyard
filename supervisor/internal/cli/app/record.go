@@ -3,23 +3,29 @@ package app
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"io/fs"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/activity"
 )
 
-// defaultCaller names the program that ran this `deskyard`. The process tree
-// decides; CLAUDECODE=1 (set by Claude Code for everything it runs) covers a
-// caller whose tree is out of sight, such as a daemonised tool.
+// defaultCaller names the program that ran this `deskyard` from the process
+// tree.
 func defaultCaller(getenv func(string) string) func() string {
-	return func() string {
-		name := activity.CallerName(os.DirFS("/proc"), os.Getppid())
-		if getenv("CLAUDECODE") == "1" && name != "Claude Code" && name != "Codex" {
-			return "Claude Code"
-		}
-		return name
+	return func() string { return callerFrom(os.DirFS("/proc"), os.Getppid(), getenv) }
+}
+
+// callerFrom reads the process tree; only when the tree can't be read at all
+// does CLAUDECODE=1 (set by Claude Code for everything it runs) name Claude
+// Code. It never overrides what the tree says: a terminal or program started
+// from a Claude Code command keeps its own name.
+func callerFrom(proc fs.FS, pid int, getenv func(string) string) string {
+	if _, err := fs.Stat(proc, strconv.Itoa(pid)+"/stat"); err != nil && getenv("CLAUDECODE") == "1" {
+		return "Claude Code"
 	}
+	return activity.CallerName(proc, pid)
 }
 
 // record sends one event to the desktop's activity stream. It is for the
@@ -29,6 +35,7 @@ func (a *App) record(e activity.Event) {
 	if a.Record == nil || a.Getenv("DESKYARD_ACTIVITY") == "off" {
 		return
 	}
+	defer func() { _ = recover() }()
 	if !a.callerSet {
 		a.callerSet = true
 		if a.Caller != nil {
@@ -40,7 +47,6 @@ func (a *App) record(e activity.Event) {
 	}
 	e.Agent = a.callerName
 	e.T = time.Now()
-	defer func() { _ = recover() }()
 	a.Record(e)
 }
 
