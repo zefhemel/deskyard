@@ -100,7 +100,7 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
     });
     es.addEventListener("viewers", (e: MessageEvent<string>) => {
       const v = JSON.parse(e.data) as ViewersEvent;
-      setDesktops((list) => (list ? list.map((c) => (c.name === v.name ? { ...c, viewers: v.viewers } : c)) : list));
+      setDesktops((list) => (list ? list.map((c) => (c.name === v.name ? { ...c, viewers: v.viewers, forwards: v.forwards } : c)) : list));
     });
     let reconnected = false;
     es.onopen = () => {

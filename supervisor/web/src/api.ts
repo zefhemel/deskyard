@@ -42,6 +42,8 @@ export interface Desktop {
   settings: Settings;
   access: string[];
   viewers: string[];
+  /** Port mappings agents have set up with `deskyard forward`; port is the desktop's. */
+  forwards: Forward[];
   tokens: number;
   stats: Stats | null;
 }
@@ -127,9 +129,17 @@ export interface StatsEvent extends Stats {
   name: string;
   t: string;
 }
+export interface Forward {
+  /** The name of the agent token that set it up. */
+  token: string;
+  /** in: this machine's port appears in the desktop; out: the desktop's port appears there. */
+  direction: "in" | "out";
+  port: number;
+}
 export interface ViewersEvent {
   name: string;
   viewers: string[];
+  forwards: Forward[];
 }
 export interface RemovedEvent {
   name: string;

@@ -1,10 +1,11 @@
 import { useState } from "preact/hooks";
 import { useLocation, useRoute } from "preact-iso";
-import { api, type Desktop } from "../api.ts";
+import { api, type Desktop, type Forward } from "../api.ts";
 import { Avatars } from "../components/avatar.tsx";
 import { ChartsPanel } from "../components/charts-panel.tsx";
 import { DesktopMenu, power } from "../components/desktop-menu.tsx";
 import { Monitor } from "../components/screen.tsx";
+import { ForwardLines } from "../components/viewers-popover.tsx";
 import { Page } from "../components/topbar.tsx";
 import { Button, cx, Status, Tag } from "../components/ui.tsx";
 import { UpgradeDialog } from "../dialogs/upgrade.tsx";
@@ -92,7 +93,7 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
       <div class="grid grid-cols-[minmax(0,1.55fr)_minmax(320px,1fr)] items-start gap-8 max-[900px]:grid-cols-1">
         <Monitor desktop={c} job={jobs[c.name]} now={now} big />
         <div class="flex flex-col gap-4">
-          <ViewersPanel viewers={c.viewers} />
+          <ViewersPanel viewers={c.viewers} forwards={c.forwards} />
           <ChartsPanel desktop={c} />
           <Facts desktop={c} admin={me.admin} onTab={setTab} />
         </div>
@@ -125,13 +126,14 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
   );
 }
 
-function ViewersPanel({ viewers }: { viewers: string[] }) {
+function ViewersPanel({ viewers, forwards }: { viewers: string[]; forwards: Forward[] }) {
   return (
     <div class="flex items-center gap-2.5 rounded-[10px] border border-line bg-surface px-5 py-[18px] text-sm">
       {viewers.length > 0 && <Avatars names={viewers} />}
       <div>
         <b class="font-semibold">{viewers.length ? `${names(viewers)} ${viewers.length === 1 ? "is" : "are"} viewing` : "Nobody is viewing"}</b>
         <p class="mt-0 text-[13px] text-muted">Same desktop, one mouse and keyboard. It follows the window of whoever resized last.</p>
+        <ForwardLines forwards={forwards} class="mt-1.5" />
       </div>
     </div>
   );

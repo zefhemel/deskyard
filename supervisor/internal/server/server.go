@@ -34,14 +34,16 @@ type Server struct {
 	StateDir string
 	UI       fs.FS // the built web UI (index.html, assets/…)
 
-	jobs    *jobs
-	events  *hub
-	viewers *viewers
-	clients *clientFiles
-	stats   *statsCollector
-	thumbs  *thumbnails
-	tokens  *tokenStore
-	images  *catalog
+	jobs       *jobs
+	events     *hub
+	viewers    *viewers
+	forwards   *forwards
+	viewersPub *throttle
+	clients    *clientFiles
+	stats      *statsCollector
+	thumbs     *thumbnails
+	tokens     *tokenStore
+	images     *catalog
 
 	api *http.ServeMux
 }
@@ -66,7 +68,7 @@ func New(o Options) (*Server, error) {
 		Log: o.Log, Eng: o.Eng, Desktops: o.Desktops, Accounts: o.Accounts,
 		Sessions: &auth.Sessions{Key: key, Secure: o.Secure}, Throttle: &auth.Throttle{},
 		StateDir: o.StateDir, UI: o.UI,
-		jobs: newJobs(), events: newHub(), viewers: newViewers(),
+		jobs: newJobs(), events: newHub(), viewers: newViewers(), forwards: newForwards(), viewersPub: newThrottle(viewersInterval),
 		clients: &clientFiles{eng: o.Eng, dir: filepath.Join(o.StateDir, "clients")},
 	}
 	s.stats = newStatsCollector(s)

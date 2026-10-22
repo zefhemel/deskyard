@@ -58,6 +58,8 @@ func (s *Server) serveAgent(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case rest == "/exec":
 		s.agentExec(w, r, c, t)
+	case rest == "/forward":
+		s.agentForward(w, r, c, t)
 	case rest == "/cdp" || strings.HasPrefix(rest, "/cdp/"):
 		s.agentCDP(w, r, c, t, strings.TrimPrefix(rest, "/cdp"))
 	default:

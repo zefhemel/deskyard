@@ -166,6 +166,13 @@ func (a *App) run(ctx context.Context, argv []string) error {
 			return a.printHelp(strings.Fields(cmd.Name))
 		}
 		c.args = rest
+	} else if cmd.rawArgs {
+		for _, arg := range rest {
+			if arg == "--help" || arg == "-h" {
+				return a.printHelp(strings.Fields(cmd.Name))
+			}
+		}
+		c.args = rest
 	} else {
 		help, err := parseFlags(c, rest)
 		if err != nil {
@@ -193,7 +200,7 @@ func lookup(argv []string) (*Command, []string) {
 
 func subcommands(parent string) []string {
 	var out []string
-	for _, c := range commands {
+	for _, c := range visibleCommands() {
 		if p, sub, ok := strings.Cut(c.Name, " "); ok && p == parent {
 			out = append(out, sub)
 		}
