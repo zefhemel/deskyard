@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -74,8 +75,18 @@ func TestScreenRoutes(t *testing.T) {
 			t.Errorf("%s: additions not loaded before the client: %s", p, body)
 		}
 	}
-	if got := status(t, admin, "GET", ts.URL+"/alice/screen", ""); got != 302 {
-		t.Errorf("/alice/screen: %d", got)
+	// Every other spelling of the page goes to the one with our additions.
+	for _, p := range []string{"/alice/screen", "/alice/screen/index.html/", "/alice/screen/./index.html",
+		"/alice/screen//index.html", "/alice/screen/assets/../index.html", "/alice/screen/./"} {
+		req, _ := http.NewRequest("GET", ts.URL+p, nil)
+		resp, err := admin.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 302 || resp.Header.Get("Location") != "/alice/screen/" {
+			t.Errorf("%s: %d %s", p, resp.StatusCode, resp.Header.Get("Location"))
+		}
 	}
 	resp, body := get(t, admin, ts.URL+"/alice/screen/deskyard.js")
 	if resp.StatusCode != 200 || resp.Header.Get("Cache-Control") != "no-store" ||
@@ -130,9 +141,12 @@ func TestScreenRoutes(t *testing.T) {
 }
 
 // upstream is a fake desktop Caddy: it records the stream requests it gets.
+// Like Selkies, it accepts a stream within 500 ms of the previous one (all
+// come from one address) and then closes it with 4029.
 type upstream struct {
-	mu   sync.Mutex
-	reqs []*http.Request
+	mu    sync.Mutex
+	reqs  []*http.Request
+	dials []time.Time // when each stream dial arrived
 }
 
 func (u *upstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -147,11 +161,20 @@ func (u *upstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	u.mu.Lock()
+	now := time.Now()
+	tooSoon := len(u.dials) > 0 && now.Sub(u.dials[len(u.dials)-1]) < 500*time.Millisecond
+	u.dials = append(u.dials, now)
+	u.mu.Unlock()
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {
 		return
 	}
 	defer c.CloseNow()
+	if tooSoon {
+		c.Close(4029, "Rate limited: reconnecting too quickly")
+		return
+	}
 	_ = c.Write(r.Context(), websocket.MessageText, []byte("hello"))
 	for {
 		if _, _, err := c.Read(r.Context()); err != nil {
@@ -309,4 +332,77 @@ func TestMicsPerStream(t *testing.T) {
 	if got := v.mics("d"); len(got) != 0 {
 		t.Errorf("after the streams closed: %v", got)
 	}
+}
+
+func TestStreamDialsSpacedOut(t *testing.T) {
+	up := &upstream{}
+	_, ts := newTestServerWith(t, fakeEngine{others: []engine.Container{runningDesktop(t, "bob", up)}})
+	admin := login(t, ts, "admin")
+	hdr := http.Header{"Origin": {ts.URL}, "Cookie": {admin.Jar.Cookies(nil)[0].String()}}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	// Three viewers open the desktop at the same moment: all get the stream.
+	const n = 3
+	errs := make(chan error, n)
+	for i := range n {
+		go func() {
+			ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+"/bob/screen/api/websockets?tab=t"+strconv.Itoa(i),
+				&websocket.DialOptions{HTTPHeader: hdr})
+			if err != nil {
+				errs <- err
+				return
+			}
+			defer ws.CloseNow()
+			_, msg, err := ws.Read(ctx)
+			if err == nil && string(msg) != "hello" {
+				err = fmt.Errorf("got %q", msg)
+			}
+			errs <- err
+		}()
+	}
+	for range n {
+		if err := <-errs; err != nil {
+			t.Error(err)
+		}
+	}
+	up.mu.Lock()
+	defer up.mu.Unlock()
+	if len(up.dials) != n {
+		t.Fatalf("%d dials reached the desktop", len(up.dials))
+	}
+	for i := 1; i < n; i++ {
+		if gap := up.dials[i].Sub(up.dials[i-1]); gap < streamDialGap {
+			t.Errorf("dial %d came %v after the previous", i, gap)
+		}
+	}
+}
+
+func TestDialGateFreesOnCancel(t *testing.T) {
+	g := newDialGates()
+	release, err := g.wait(context.Background(), "d")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := g.wait(ctx, "d"); err == nil {
+		t.Fatal("a second dial got the turn while the first held it")
+	}
+	release()
+	release() // twice is harmless
+	start := time.Now()
+	r2, err := g.wait(context.Background(), "d")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2()
+	if waited := time.Since(start); waited < streamDialGap-10*time.Millisecond {
+		t.Errorf("the next dial waited only %v", waited)
+	}
+	other, err := g.wait(context.Background(), "e") // other desktops don't wait
+	if err != nil {
+		t.Fatal(err)
+	}
+	other()
 }

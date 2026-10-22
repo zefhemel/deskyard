@@ -72,6 +72,12 @@ func (s *Server) serveScreen(w http.ResponseWriter, r *http.Request, c desktops.
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	switch clean := cleanClientPath(file); {
+	case (clean == "/" || clean == "/index.html") && file != "" && file != "index.html":
+		// Any other spelling of the page would serve it without our additions.
+		http.Redirect(w, r, "/"+c.Name+"/screen/", http.StatusFound)
+		return
+	}
 	switch file {
 	case "deskyard.js":
 		w.Header().Set("Cache-Control", "no-store")
@@ -173,6 +179,11 @@ func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, c desktops.
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
+	release, err := s.streamDials.wait(r.Context(), c.Name)
+	if err != nil {
+		return // the client went away while waiting its turn
+	}
+	defer release()
 	a, _ := s.account(r)
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
@@ -185,7 +196,12 @@ func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, c desktops.
 	}()
 	rp := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) { streamRequest(pr.Out, addr, token) },
+		ModifyResponse: func(*http.Response) error {
+			release() // Selkies has answered: the next dial's wait starts now
+			return nil
+		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			release()
 			if !errors.Is(err, context.Canceled) {
 				s.Log.Debug("desktop stream", "desktop", c.Name, "err", err)
 			}
@@ -193,6 +209,62 @@ func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, c desktops.
 		},
 	}
 	rp.ServeHTTP(w, r.WithContext(ctx))
+}
+
+// streamDialGap is the least time between Selkies' answer to one stream dial
+// of a desktop and the next dial. Selkies refuses (close 4029) a connection
+// within 500 ms of the previous one from the same address, and every viewer
+// reaches it from the same address: the desktop's Caddy.
+const streamDialGap = 600 * time.Millisecond
+
+// dialGates spaces out the stream dials of each desktop by streamDialGap, so
+// viewers opening a desktop together, or reconnecting together after a
+// restart, all get in (each waits up to streamDialGap per viewer ahead).
+type dialGates struct {
+	mu    sync.Mutex
+	gates map[string]*dialGate
+}
+
+type dialGate struct {
+	turn chan struct{} // holds one token while a dial is under way
+	last time.Time     // when the previous dial was answered; written by the turn's holder
+}
+
+func newDialGates() *dialGates { return &dialGates{gates: map[string]*dialGate{}} }
+
+// wait takes the desktop's turn to dial, streamDialGap after the previous
+// dial's answer. release, once the answer arrived (or the dial failed), hands
+// the turn on; calling it again does nothing.
+func (g *dialGates) wait(ctx context.Context, name string) (release func(), err error) {
+	g.mu.Lock()
+	d := g.gates[name]
+	if d == nil {
+		d = &dialGate{turn: make(chan struct{}, 1)}
+		g.gates[name] = d
+	}
+	g.mu.Unlock()
+	select {
+	case d.turn <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	if wait := time.Until(d.last.Add(streamDialGap)); wait > 0 {
+		t := time.NewTimer(wait)
+		select {
+		case <-t.C:
+		case <-ctx.Done():
+			t.Stop()
+			<-d.turn
+			return nil, ctx.Err()
+		}
+	}
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			d.last = time.Now()
+			<-d.turn
+		})
+	}, nil
 }
 
 // streamRequest points a request at the desktop's stream endpoint.

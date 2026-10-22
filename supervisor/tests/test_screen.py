@@ -29,6 +29,7 @@ class Stream:
 
     def __init__(self, client, name, tab=None):
         self.url = ws_url(client, name, tab)
+        self.tab = tab or uuid.uuid4().hex[:12]
         self.headers = {"Cookie": cookie_header(client), "Origin": client.base}
         self.opened = threading.Event()
         self.done = threading.Event()
@@ -39,7 +40,9 @@ class Stream:
     async def run(self):
         try:
             async with websockets.connect(self.url, additional_headers=self.headers, max_size=None) as ws:
-                await ws.send("SETTINGS," + json.dumps({"displayId": "primary"}))
+                # Like Selkies' page: with a tabId, a second page joins beside the first
+                # instead of taking the display over.
+                await ws.send("SETTINGS," + json.dumps({"displayId": "primary", "tabId": self.tab}))
                 self.opened.set()
                 while not self.done.is_set():
                     try:
@@ -52,9 +55,15 @@ class Stream:
             self.error = e
             self.opened.set()
 
-    def __enter__(self):
+    def start(self):
         self.thread.start()
+        return self
+
+    def wait_open(self):
         assert self.opened.wait(15) and self.error is None, self.error
+
+    def __enter__(self):
+        self.start().wait_open()
         return self
 
     def __exit__(self, *exc):
@@ -91,6 +100,22 @@ def test_stream_shows_the_desktop_and_counts_as_viewing(admin, desktop, name):
         assert wait_for(lambda: admin.desktop(name)["viewers"] == ["admin"])
         assert wait_for(lambda: s.frames > 0, 15), "no picture from Selkies through the supervisor"
     assert wait_for(lambda: admin.desktop(name)["viewers"] == [])
+
+
+def test_viewers_opening_together_all_get_the_picture(admin, desktop, name):
+    # Selkies refuses a stream within 500 ms of the last from one address, and
+    # every viewer comes from the desktop's Caddy: the supervisor spaces them.
+    streams = [Stream(admin, name, f"tab{i}") for i in range(3)]
+    for s in streams:
+        s.start()
+    try:
+        for s in streams:
+            s.wait_open()
+        assert wait_for(lambda: all(s.frames > 0 for s in streams), 20), [(s.frames, s.error) for s in streams]
+        assert all(s.error is None for s in streams), [s.error for s in streams]
+    finally:
+        for s in streams:
+            s.__exit__()
 
 
 def test_reconnect_probe_and_other_selkies_api(admin, desktop, name):
@@ -151,10 +176,10 @@ def test_client_additions_in_a_browser(supervisor, admin, desktop, name):
         f.wait_for_function("window.deskyardScreen.video() !== null", timeout=30000)
         assert f.evaluate("'onpointerrawupdate' in window") is False
 
-        # The tab id is on the stream URL (the supervisor ties the mic to it),
-        # and shared with the desktop page through sessionStorage.
-        tab = f.evaluate("window.deskyardScreen.tab")
-        assert page.evaluate("sessionStorage.getItem('deskyard.tab')") == tab
+        # The tab id is on the stream URL (the supervisor ties the mic to it);
+        # the desktop page reads it from the frame.
+        tab = page.evaluate("document.querySelector('iframe').contentWindow.deskyardScreen.tab")
+        assert tab == f.evaluate("window.deskyardScreen.tab")
         r = page.evaluate("""async (tab) => (await fetch(location.pathname.replace(/\\/$/, '').replace(/^\\//, '/api/desktops/') + '/mic',
             {method: 'POST', body: JSON.stringify({on: true, tab})})).status""", tab)
         assert r == 204
@@ -175,5 +200,13 @@ def test_client_additions_in_a_browser(supervisor, admin, desktop, name):
         f.wait_for_function("window.__got.length === 1", timeout=10000)
         f.wait_for_function("window.__sent.length > 0", timeout=10000)  # the spy sees the stream's sends
         assert "STOP_VIDEO" not in f.evaluate("window.__sent")
+
+        # A new load of the client (a reload, or a duplicated browser tab,
+        # which copies sessionStorage) gets its own tab id, and the old
+        # stream's mic badge goes with it.
+        page.reload()
+        screen = "document.querySelector('iframe')?.contentWindow?.deskyardScreen"
+        page.wait_for_function(f"{screen}?.state() === 'connected'", timeout=30000)
+        assert page.evaluate(f"{screen}.tab") != tab
+        assert wait_for(lambda: admin.desktop(name)["mics"] == [])
         browser.close()
-    assert wait_for(lambda: admin.desktop(name)["mics"] == [])

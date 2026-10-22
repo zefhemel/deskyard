@@ -7,8 +7,7 @@
 // - Never sends STOP_VIDEO: a tab going to the background must not stop the
 //   desktop's stream for everyone else.
 // - Adds ?tab=<id> to the stream URL, so the supervisor can tie this tab's
-//   mic badge to its stream. The id lives in sessionStorage (deskyard.tab),
-//   which the desktop page shares, being on the same origin.
+//   mic badge to its stream. The id is new on every load of the client.
 // - window.deskyardScreen, the hooks the desktop page drives Selkies with.
 (() => {
   "use strict";
@@ -23,15 +22,10 @@
   };
 
   // --- the tab id -------------------------------------------------------------
-  const tab = (() => {
-    let id = null;
-    try { id = sessionStorage.getItem("deskyard.tab"); } catch {}
-    if (!id || !/^[A-Za-z0-9_-]{1,64}$/.test(id)) {
-      id = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
-      try { sessionStorage.setItem("deskyard.tab", id); } catch {}
-    }
-    return id;
-  })();
+  // New on every load of the client, so a duplicated browser tab (which
+  // copies sessionStorage) never shares it. The desktop page reads it as
+  // frame.contentWindow.deskyardScreen.tab.
+  const tab = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
 
   const withTab = (url) => {
     try {

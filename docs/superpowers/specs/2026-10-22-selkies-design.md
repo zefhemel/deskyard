@@ -94,7 +94,7 @@ These would make it a failure even if it worked:
   - Selkies' file-transfer endpoints (upload and download).
   - Every other Selkies HTTP API is refused.
 - **Retired:** `/<name>/websockify` and the KasmVNC client extraction.
-- **Mic badges.** The desktop page reports mic on/off over the events channel (`POST /api/desktops/{name}/mic {"on": bool}`), tied to that viewer's stream connection. `Desktop.mics` lists the usernames, in Desktop JSON and `viewers` events, next to `viewers` and `forwards`. When the viewer's stream closes, their entry goes away.
+- **Mic badges.** The desktop page reports mic on/off over the events channel (`POST /api/desktops/{name}/mic {"on": bool, "tab": id}`, the tab id being the one on that viewer's stream URL), tied to that viewer's stream connection. `Desktop.mics` lists the usernames, in Desktop JSON and `viewers` events, next to `viewers` and `forwards`. When the viewer's stream closes, their entry goes away.
 - **Download.**
   - `GET /api/desktops/{name}/files?path=…` lists a folder in `/workspace`.
   - `GET /api/desktops/{name}/download?path=…` streams a file, or a folder as a zip.

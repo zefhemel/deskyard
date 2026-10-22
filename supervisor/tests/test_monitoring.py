@@ -86,9 +86,6 @@ def test_two_viewers_see_each_other(admin, desktop, name, supervisor):
     threads = [threading.Thread(target=view, args=(c,)) for c in (admin, anna)]
     for t in threads:
         t.start()
-        # Selkies refuses a second connection from one address (all viewers
-        # come through the supervisor) within 500 ms of the last.
-        time.sleep(0.7)
     try:
         opened.wait(10)
         both = sorted(["admin", user])
