@@ -1,7 +1,8 @@
 #!/bin/bash
 # XFCE desktop session on the shared display.
+# The X server, at its starting size (start-xvfb).
 for _ in $(seq 100); do
-    [ -S /tmp/.X11-unix/X1 ] && break
+    [ -e "$XDG_RUNTIME_DIR/xvfb-ready" ] && break
     sleep 0.1
 done
 

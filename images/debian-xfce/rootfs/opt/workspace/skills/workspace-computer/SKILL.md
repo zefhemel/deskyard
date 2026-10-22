@@ -49,6 +49,6 @@ with `setsid -f flatpak run <app-id>` so it outlives your command.
 ## Leave alone
 
 The services that keep the desktop reachable (Caddy, the `supervisord`
-services: KasmVNC, Chromium, D-Bus). Restarting or
+services: the X server, Selkies, PipeWire, Chromium, D-Bus). Restarting or
 killing them cuts the human off. If the human closes Chromium it stays
 closed until something connects to its CDP port (see `workspace-browser`).

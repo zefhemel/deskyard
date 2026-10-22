@@ -1,5 +1,5 @@
 #!/bin/bash
-# The desktop's only door: KasmVNC's web server and the browser's CDP, for
+# The desktop's only door: Selkies (stream, uploads) and the browser's CDP, for
 # the supervisor alone (it sends WORKSPACE_PROXY_TOKEN with every request).
 set -euo pipefail
 WORKSPACE_PROXY_TOKEN=$(cat /run/caddy/token)

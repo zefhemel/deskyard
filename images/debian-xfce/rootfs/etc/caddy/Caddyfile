@@ -15,6 +15,14 @@
 				header_up Host localhost
 			}
 		}
+		# Selkies' HTTP API: only the stream, uploads and the health probe.
+		# Its screenshots, recordings, printing, downloads, sessions, mode
+		# switch, sharing tokens and metrics stay closed.
+		@closed_api {
+			path /api/*
+			not path /api/websockets /api/websockets/ /api/upload /api/health
+		}
+		respond @closed_api 404
 		reverse_proxy 127.0.0.1:6080
 	}
 }

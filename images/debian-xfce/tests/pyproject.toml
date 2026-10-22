@@ -8,6 +8,7 @@ dependencies = [
     "pillow>=10",
     "requests>=2.32",
     "pyyaml>=6",
+    "websockets>=13",
 ]
 
 [tool.uv]

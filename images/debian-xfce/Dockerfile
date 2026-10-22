@@ -19,20 +19,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl procps supervisor dbus dbus-x11 \
         x11-utils xfce4 xfce4-terminal fonts-dejavu-core \
         chromium socat xdotool xclip maim flatpak \
+        pipewire pipewire-pulse wireplumber pulseaudio-utils \
     && rm -rf /var/lib/apt/lists/* \
     # rootfs/usr/bin/flatpak wraps the real binary.
     && dpkg-divert --local --rename --divert /usr/bin/flatpak.real --add /usr/bin/flatpak
 
-# KasmVNC: X server, VNC server and web client in one (Kasm's own packages).
-ARG KASMVNC_VERSION=1.5.0
-ARG TARGETARCH
-RUN curl -fsSL -o /tmp/kasmvnc.deb \
-        "https://github.com/kasmtech/KasmVNC/releases/download/v${KASMVNC_VERSION}/kasmvncserver_trixie_${KASMVNC_VERSION}_${TARGETARCH}.deb" \
-    && apt-get update && apt-get install -y --no-install-recommends /tmp/kasmvnc.deb \
-    && rm -rf /var/lib/apt/lists/* /tmp/kasmvnc.deb \
-    # English UI for everyone: the client picks a translation by skipping any
-    # English but en-US, so en-GB + Polish browsers got Polish.
-    && rm -r /usr/share/kasmvnc/www/app/locale
+# The screen: Xvfb as the X server, and Selkies streaming it (H.264 and Opus
+# over one WebSocket) with its web client, from PyPI wheels into a venv.
+# Pinned: Selkies 2.1.0 (the latest 2.1.x on 2026-10-22) and the pixelflux and
+# pcmflux versions it requires. Its web client lands in
+# /opt/selkies/lib/python3.13/site-packages/selkies/selkies_web, which the
+# supervisor extracts from the image.
+ARG SELKIES_VERSION=2.1.0 PIXELFLUX_VERSION=2.2.1 PCMFLUX_VERSION=2.2.0
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        xvfb x11-xserver-utils xcvt python3-venv \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3 -m venv /opt/selkies \
+    && /opt/selkies/bin/pip install --no-cache-dir \
+        "selkies==${SELKIES_VERSION}" "pixelflux==${PIXELFLUX_VERSION}" "pcmflux==${PCMFLUX_VERSION}" \
+    && /opt/selkies/bin/selkies --help >/dev/null \
+    && test -f /opt/selkies/lib/python3.13/site-packages/selkies/selkies_web/index.html
 
 COPY --from=caddy:2.11.7 /usr/bin/caddy /usr/local/bin/caddy
 COPY --from=ghcr.io/astral-sh/uv:0.13.4 /uv /uvx /usr/local/bin/
@@ -41,6 +47,7 @@ RUN mkdir -p /etc/workspace \
     && curl -fsSL -o /etc/workspace/flathub.flatpakrepo https://dl.flathub.org/repo/flathub.flatpakrepo
 
 ARG MISE_VERSION=v2026.10.17
+ARG TARGETARCH
 RUN case "$TARGETARCH" in arm64) arch=arm64 ;; amd64) arch=x64 ;; *) echo "unsupported $TARGETARCH" >&2; exit 1 ;; esac \
     && curl -fsSL -o /usr/local/bin/mise \
         "https://github.com/jdx/mise/releases/download/${MISE_VERSION}/mise-${MISE_VERSION}-linux-${arch}" \
@@ -90,15 +97,15 @@ EXPOSE 8080
 
 # The image contract the supervisor checks before using an image.
 ARG VERSION=dev
-LABEL deskyard.contract="1" \
+LABEL deskyard.contract="3" \
       org.opencontainers.image.title="Debian XFCE" \
       org.opencontainers.image.description="Debian trixie with XFCE, Chromium, Flatpak, mise and uv" \
       org.opencontainers.image.version="${VERSION}"
 
-# Desktop + web client. Not Chromium: probing CDP would reopen a browser
+# The X server and Selkies. Not Chromium: probing CDP would reopen a browser
 # the human closed.
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
-    CMD /usr/bin/xdpyinfo -display :1 >/dev/null && /usr/bin/curl -fs -o /dev/null http://127.0.0.1:6080/
+    CMD /usr/bin/xdpyinfo -display :1 >/dev/null && /usr/bin/curl -fs -o /dev/null http://127.0.0.1:6080/api/health
 
 WORKDIR /workspace
 ENTRYPOINT ["/usr/local/bin/workspace-init"]
