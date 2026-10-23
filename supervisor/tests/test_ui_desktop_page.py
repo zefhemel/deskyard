@@ -8,9 +8,10 @@ import time
 import pytest
 from playwright.sync_api import expect, sync_playwright
 
+import netchange
 from conftest import docker
 from helpers import (BROWSERS, PICTURE, SCREEN, SHOWING, audio_switch, fits, frame_size, in_desktop, open_desktop,
-                     screen_size, signed_in, video_settings_lines, wait_until)
+                     screen_size, signed_in, video_settings_lines, wait_loaded, wait_until)
 
 
 def test_sign_in_and_see_the_wall(supervisor, desktop, name, tmp_path):
@@ -144,9 +145,10 @@ def test_stopped_desktop_page(supervisor, admin, desktop, name, browser_name):
         page.goto(f"{supervisor.base}/{name}/")
         expect(page.get_by_text("is stopped")).to_be_visible(timeout=15000)
         expect(page.locator("iframe")).to_have_count(0)
+        seen = netchange.failures(page)
         page.get_by_role("button", name="Start").click()
-        expect(page.get_by_text("Connected", exact=True)).to_be_visible(timeout=90000)
-        page.wait_for_function(SHOWING, timeout=30000)
+        wait_loaded(page, SHOWING, seen, timeout=90000)
+        expect(page.get_by_text("Connected", exact=True)).to_be_visible()
         browser.close()
 
 

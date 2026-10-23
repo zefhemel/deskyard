@@ -183,8 +183,10 @@ def test_client_additions_in_a_browser(supervisor, admin, desktop, name):
 
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base)
+        seen = netchange.failures(page)
         page.goto(f"{supervisor.base}/{name}/")
         # The frame's document, once it's the client's (not the blank one before).
+        wait_loaded(page, "document.querySelector('iframe')?.contentWindow?.deskyardScreen?.state() === 'connected'", seen)
         page.wait_for_function("document.querySelector('iframe')?.contentWindow?.location.pathname.endsWith('/screen/')",
                                timeout=30000)
         f = page.frames[1]

@@ -8,8 +8,9 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect, sync_playwright
 
-from helpers import (BROWSERS, PICTURE, SHOWING, frame_size, in_desktop, mouse_location, open_desktop, screen_size,
-                     signed_in, to_page, wait_until)
+import netchange
+from helpers import (BROWSERS, PICTURE, SCREEN, SHOWING, frame_size, in_desktop, mouse_location, open_desktop, screen_size,
+                     signed_in, to_page, wait_loaded, wait_until)
 
 
 def desk(desktop) -> Path:
@@ -192,7 +193,9 @@ DRAG_JS = """([type, files]) => {
 
 def open_desktop_frame(p, supervisor, name):
     browser, page = signed_in(p, supervisor.base)
+    seen = netchange.failures(page)
     page.goto(f"{supervisor.base}/{name}/")
+    wait_loaded(page, f"{SCREEN}?.state() === 'connected'", seen)
     expect(page.get_by_role("button", name="More")).to_be_visible(timeout=15000)
     frame = page.query_selector("iframe").content_frame()
     frame.wait_for_load_state("load")
