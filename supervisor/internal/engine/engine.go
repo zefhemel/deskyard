@@ -16,6 +16,8 @@ var ErrNotFound = errors.New("not found")
 type Mount struct {
 	Source, Target string // Source is a host path
 	ReadOnly       bool
+	// MustExist uses a strict bind: a missing host source is an error, never created.
+	MustExist bool
 }
 
 type ContainerSpec struct {
@@ -43,6 +45,8 @@ type ContainerSpec struct {
 	// NoHealthcheck turns off the image's HEALTHCHECK, which would otherwise
 	// run the image's own command in the container.
 	NoHealthcheck bool
+	// NoNewPrivileges prevents setuid and file capabilities granting new privileges.
+	NoNewPrivileges bool
 }
 
 type Container struct {

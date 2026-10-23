@@ -1,0 +1,569 @@
+{
+  "run": "dy-share-probe-1533e75e",
+  "environment": {
+    "OperatingSystem": "OrbStack",
+    "KernelVersion": "7.2.9-orbstack-00391-g2b298d05fbd4",
+    "Architecture": "aarch64",
+    "ServerVersion": "29.8.2",
+    "Driver": "overlayfs"
+  },
+  "backends": [
+    {
+      "backend": "mac-bind",
+      "checks": [
+        {
+          "check": "filesystem",
+          "exit": 0,
+          "stdout": "fuse\n0:0",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "denied before grant",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "expected_exit": 2,
+          "matches": false
+        },
+        {
+          "check": "grant and default ACL",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "setfacl: /shared/project: Operation not supported\nsetfacl: /shared/project: Operation not supported",
+          "expected_exit": 0,
+          "matches": false
+        },
+        {
+          "check": "ACL readback after failed grant",
+          "exit": 0,
+          "stdout": "# file: /shared/project\n# owner: 0\n# group: 0\nuser::rwx\ngroup::---\nother::---",
+          "stderr": "",
+          "expected_exit": null,
+          "matches": true
+        },
+        {
+          "check": "owner writes with mode 0700",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "other UID denied by mode 0700",
+          "exit": 0,
+          "stdout": "owned",
+          "stderr": "",
+          "expected_exit": 1,
+          "matches": false
+        }
+      ]
+    },
+    {
+      "backend": "linux-volume",
+      "checks": [
+        {
+          "check": "filesystem",
+          "exit": 0,
+          "stdout": "btrfs\n0:0",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "denied before grant",
+          "exit": 2,
+          "stdout": "",
+          "stderr": "ls: cannot open directory '/shared/project': Permission denied",
+          "expected_exit": 2,
+          "matches": true
+        },
+        {
+          "check": "grant and default ACL",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "writer creates ordinary file",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "reader reads inherited ACL file",
+          "exit": 0,
+          "stdout": "original",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "reader cannot write",
+          "exit": 2,
+          "stdout": "",
+          "stderr": "sh: 1: cannot create /shared/project/ordinary: Permission denied",
+          "expected_exit": 2,
+          "matches": true
+        },
+        {
+          "check": "reader cannot create",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "touch: cannot touch '/shared/project/nope': Permission denied",
+          "expected_exit": 1,
+          "matches": true
+        },
+        {
+          "check": "outsider cannot read",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "cat: /shared/project/ordinary: Permission denied",
+          "expected_exit": 1,
+          "matches": true
+        },
+        {
+          "check": "unprivileged client cannot switch identity",
+          "exit": 127,
+          "stdout": "",
+          "stderr": "setpriv: setresuid failed: Operation not permitted",
+          "expected_exit": 127,
+          "matches": true
+        },
+        {
+          "check": "client cannot change root-owned gate",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "chmod: changing permissions of '/shared/project': Operation not permitted",
+          "expected_exit": 1,
+          "matches": true
+        },
+        {
+          "check": "live grant write",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "downgraded reader cannot modify writer file",
+          "exit": 2,
+          "stdout": "",
+          "stderr": "sh: 1: cannot create /shared/project/ordinary: Permission denied",
+          "expected_exit": 2,
+          "matches": true
+        },
+        {
+          "check": "downgraded reader STILL writes own file",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "owner can override file sharing ACL",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "reader loses access after owner chmod",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "cat: /shared/project/ordinary: Permission denied",
+          "expected_exit": 1,
+          "matches": true
+        },
+        {
+          "check": "application creates private-mode file",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "default ACL cannot override mode 0600",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "cat: /shared/project/private: Permission denied",
+          "expected_exit": 1,
+          "matches": true
+        },
+        {
+          "check": "revocation: absolute denied, retained directory/file FDs usable",
+          "exit": 0,
+          "stdout": "absolute:denied:13\ndirfd:allowed:original\nappended\nopenfd:allowed:original\nappended",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "file ACL revocation cannot revoke open FD",
+          "exit": 0,
+          "stdout": "new-open:denied:13\nopenfd:allowed:original\nappended",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "symlink still obeys target access",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "cat: /tmp/link: Permission denied",
+          "expected_exit": 1,
+          "matches": true
+        },
+        {
+          "check": "ACL readback",
+          "exit": 0,
+          "stdout": "# file: /shared/project\n# owner: 0\n# group: 0\nuser::rwx\nuser:21001:rwx\nuser:21002:r-x\ngroup::---\nmask::rwx\nother::---\ndefault:user::rwx\ndefault:user:21001:rwx\ndefault:user:21002:r-x\ndefault:group::---\ndefault:mask::rwx\ndefault:other::---\n\n# file: /shared/project/ordinary\n# owner: 21001\n# group: 21001\nuser::rw-\nuser:21001:rwx\nuser:21002:r--\ngroup::---\nmask::rwx\nother::---\n\n# file: /shared/project/private\n# owner: 21001\n# group: 21001\nuser::rw-\nuser:21001:rwx\t#effective:---\nuser:21002:r-x\t#effective:---\ngroup::---\nmask::---\nother::---",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "grant persists after client restart",
+          "exit": 0,
+          "stdout": "original\nappended",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "grant persists after client recreation",
+          "exit": 0,
+          "stdout": "original\nappended",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "readonly mount denies owner write",
+          "exit": 2,
+          "stdout": "",
+          "stderr": "sh: 1: cannot create /shared/project/ordinary: Read-only file system",
+          "expected_exit": 2,
+          "matches": true
+        },
+        {
+          "check": "readonly mount denies owner chmod",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "chmod: changing permissions of '/shared/project/ordinary': Read-only file system",
+          "expected_exit": 1,
+          "matches": true
+        },
+        {
+          "check": "new share appears without recreation",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "data survives writer removal",
+          "exit": 0,
+          "stdout": "original\nappended",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        }
+      ]
+    },
+    {
+      "backend": "linux-bind",
+      "checks": [
+        {
+          "check": "filesystem",
+          "exit": 0,
+          "stdout": "btrfs\n0:0",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "denied before grant",
+          "exit": 2,
+          "stdout": "",
+          "stderr": "ls: cannot open directory '/shared/project': Permission denied",
+          "expected_exit": 2,
+          "matches": true
+        },
+        {
+          "check": "grant and default ACL",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "writer creates ordinary file",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "reader reads inherited ACL file",
+          "exit": 0,
+          "stdout": "original",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "reader cannot write",
+          "exit": 2,
+          "stdout": "",
+          "stderr": "sh: 1: cannot create /shared/project/ordinary: Permission denied",
+          "expected_exit": 2,
+          "matches": true
+        },
+        {
+          "check": "reader cannot create",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "touch: cannot touch '/shared/project/nope': Permission denied",
+          "expected_exit": 1,
+          "matches": true
+        },
+        {
+          "check": "outsider cannot read",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "cat: /shared/project/ordinary: Permission denied",
+          "expected_exit": 1,
+          "matches": true
+        },
+        {
+          "check": "unprivileged client cannot switch identity",
+          "exit": 127,
+          "stdout": "",
+          "stderr": "setpriv: setresuid failed: Operation not permitted",
+          "expected_exit": 127,
+          "matches": true
+        },
+        {
+          "check": "client cannot change root-owned gate",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "chmod: changing permissions of '/shared/project': Operation not permitted",
+          "expected_exit": 1,
+          "matches": true
+        },
+        {
+          "check": "live grant write",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "downgraded reader cannot modify writer file",
+          "exit": 2,
+          "stdout": "",
+          "stderr": "sh: 1: cannot create /shared/project/ordinary: Permission denied",
+          "expected_exit": 2,
+          "matches": true
+        },
+        {
+          "check": "downgraded reader STILL writes own file",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "owner can override file sharing ACL",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "reader loses access after owner chmod",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "cat: /shared/project/ordinary: Permission denied",
+          "expected_exit": 1,
+          "matches": true
+        },
+        {
+          "check": "application creates private-mode file",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "default ACL cannot override mode 0600",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "cat: /shared/project/private: Permission denied",
+          "expected_exit": 1,
+          "matches": true
+        },
+        {
+          "check": "revocation: absolute denied, retained directory/file FDs usable",
+          "exit": 0,
+          "stdout": "absolute:denied:13\ndirfd:allowed:original\nappended\nopenfd:allowed:original\nappended",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "file ACL revocation cannot revoke open FD",
+          "exit": 0,
+          "stdout": "new-open:denied:13\nopenfd:allowed:original\nappended",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "symlink still obeys target access",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "cat: /tmp/link: Permission denied",
+          "expected_exit": 1,
+          "matches": true
+        },
+        {
+          "check": "ACL readback",
+          "exit": 0,
+          "stdout": "# file: /shared/project\n# owner: 0\n# group: 0\nuser::rwx\nuser:21001:rwx\nuser:21002:r-x\ngroup::---\nmask::rwx\nother::---\ndefault:user::rwx\ndefault:user:21001:rwx\ndefault:user:21002:r-x\ndefault:group::---\ndefault:mask::rwx\ndefault:other::---\n\n# file: /shared/project/ordinary\n# owner: 21001\n# group: 21001\nuser::rw-\nuser:21001:rwx\nuser:21002:r--\ngroup::---\nmask::rwx\nother::---\n\n# file: /shared/project/private\n# owner: 21001\n# group: 21001\nuser::rw-\nuser:21001:rwx\t#effective:---\nuser:21002:r-x\t#effective:---\ngroup::---\nmask::---\nother::---",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "grant persists after client restart",
+          "exit": 0,
+          "stdout": "original\nappended",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "grant persists after client recreation",
+          "exit": 0,
+          "stdout": "original\nappended",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "readonly mount denies owner write",
+          "exit": 2,
+          "stdout": "",
+          "stderr": "sh: 1: cannot create /shared/project/ordinary: Read-only file system",
+          "expected_exit": 2,
+          "matches": true
+        },
+        {
+          "check": "readonly mount denies owner chmod",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "chmod: changing permissions of '/shared/project/ordinary': Read-only file system",
+          "expected_exit": 1,
+          "matches": true
+        },
+        {
+          "check": "new share appears without recreation",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        },
+        {
+          "check": "data survives writer removal",
+          "exit": 0,
+          "stdout": "original\nappended",
+          "stderr": "",
+          "expected_exit": 0,
+          "matches": true
+        }
+      ]
+    }
+  ],
+  "cleanup": [
+    {
+      "container": "dy-share-probe-1533e75e-linux-bind-readonly",
+      "exit": 0
+    },
+    {
+      "container": "dy-share-probe-1533e75e-linux-bind-reader-recreated",
+      "exit": 0
+    },
+    {
+      "container": "dy-share-probe-1533e75e-linux-bind-outsider",
+      "exit": 0
+    },
+    {
+      "container": "dy-share-probe-1533e75e-linux-bind-admin",
+      "exit": 0
+    },
+    {
+      "container": "dy-share-probe-1533e75e-linux-volume-readonly",
+      "exit": 0
+    },
+    {
+      "container": "dy-share-probe-1533e75e-linux-volume-reader-recreated",
+      "exit": 0
+    },
+    {
+      "container": "dy-share-probe-1533e75e-linux-volume-outsider",
+      "exit": 0
+    },
+    {
+      "container": "dy-share-probe-1533e75e-linux-volume-admin",
+      "exit": 0
+    },
+    {
+      "container": "dy-share-probe-1533e75e-mac-bind-outsider",
+      "exit": 0
+    },
+    {
+      "container": "dy-share-probe-1533e75e-mac-bind-reader",
+      "exit": 0
+    },
+    {
+      "container": "dy-share-probe-1533e75e-mac-bind-writer",
+      "exit": 0
+    },
+    {
+      "container": "dy-share-probe-1533e75e-mac-bind-admin",
+      "exit": 0
+    },
+    {
+      "volume": "dy-share-probe-1533e75e-linux-volume",
+      "exit": 0
+    },
+    {
+      "volume": "dy-share-probe-1533e75e-linux-bind",
+      "exit": 0
+    }
+  ],
+  "docker_desktop": {
+    "available": false,
+    "error": "failed to connect to the docker API at unix:///Users/zef/.docker/run/docker.sock; check if the path is correct and if the daemon is running: dial unix /Users/zef/.docker/run/docker.sock: connect: no such file or directory"
+  }
+}

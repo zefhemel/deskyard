@@ -346,7 +346,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const img = images.find((i) => i.ref === b.image) ?? images[0]!;
     const c: Desktop = {
       id: `${name}-id`, name, state: "creating", startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/${name}`, image: img.ref, imageTitle: img.title,
-      autoReclaim: true, imageVersion: img.version, imageSecrets: img.secrets, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), camera: "" },
+      autoReclaim: true, imageVersion: img.version, imageSecrets: img.secrets, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), camera: "", mounts: [] },
       access: (b.access as string[]) ?? [], viewers: [], mics: [], cams: [], webcam: false, forwards: [], agents: [], tokens: 0, stats: null,
     };
     desktops.push(c);
@@ -452,6 +452,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     return json(res, 202, job(["Recreating the container", "Starting"], () => {
       if (typeof b.memoryBytes === "number") c.settings.memoryBytes = b.memoryBytes;
       if (typeof b.nanoCpus === "number") c.settings.nanoCpus = b.nanoCpus;
+      if (Array.isArray(b.mounts)) c.settings.mounts = b.mounts as Desktop["settings"]["mounts"];
       if (typeof b.image === "string") c.image = b.image;
       if (typeof b.camera === "string") {
         c.settings.camera = b.camera;

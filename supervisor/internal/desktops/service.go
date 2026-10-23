@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -56,6 +57,7 @@ type Settings struct {
 	// Camera is the host's virtual camera (a v4l2loopback /dev/videoN) the
 	// desktop has to itself, which viewers' webcams feed; "" for none.
 	Camera string
+	Mounts []HostMount
 }
 
 // Desktop is what the supervisor knows about one desktop, read from its container.
@@ -165,6 +167,7 @@ func (s *Service) fromContainer(ctx context.Context, c engine.Container) Desktop
 		StartedAt: c.StartedAt, Folder: filepath.Join(s.Cfg.DataDir, name), Container: c,
 		Settings: Settings{Image: c.Image, MemoryBytes: c.MemoryBytes, NanoCPUs: c.NanoCPUs, Camera: cameraOf(c.Devices)},
 	}
+	comp.Settings.Mounts, _ = hostMountsFromLabels(c.Labels)
 	comp.Created, _ = time.Parse(time.RFC3339, c.Labels[LabelCreated])
 	comp.ImageLabels = s.image(ctx, c.ImageID).Labels
 	switch {
@@ -268,6 +271,12 @@ func (s *Service) Create(ctx context.Context, name string, set Settings, progres
 	if _, err := s.Eng.Inspect(ctx, containerName(name)); err == nil {
 		return Desktop{}, ErrExists
 	}
+	if len(set.Mounts) > 0 {
+		progress("Checking host folders", -1)
+	}
+	if err := s.checkHostMountSources(ctx, set.Mounts); err != nil {
+		return Desktop{}, err
+	}
 	if _, err := s.EnsureImage(ctx, set.Image, progress); err != nil {
 		return Desktop{}, err
 	}
@@ -365,7 +374,17 @@ func (s *Service) createNetwork(ctx context.Context, name, id string) error {
 }
 
 func (s *Service) createContainer(ctx context.Context, name, id, token string, created time.Time, set Settings) error {
+	if err := ValidateHostMounts(set.Mounts); err != nil {
+		return err
+	}
 	labels := map[string]string{LabelManaged: "true", LabelName: name, LabelID: id}
+	if len(set.Mounts) > 0 {
+		raw, err := json.Marshal(set.Mounts)
+		if err != nil {
+			return err
+		}
+		labels[LabelHostMounts] = string(raw)
+	}
 	if !created.IsZero() {
 		labels[LabelCreated] = created.UTC().Format(time.RFC3339)
 	}
@@ -381,7 +400,10 @@ func (s *Service) createContainer(ctx context.Context, name, id, token string, c
 		Mounts:  []engine.Mount{{Source: filepath.Join(s.Cfg.DataDir, name), Target: "/workspace"}},
 		Network: containerName(name), Aliases: []string{containerName(name)},
 		MemoryBytes: set.MemoryBytes, NanoCPUs: set.NanoCPUs, ShmBytes: shmBytes,
-		Flatpak: true, Restart: "unless-stopped",
+		Flatpak: true, Restart: "unless-stopped", NoNewPrivileges: len(set.Mounts) > 0,
+	}
+	for _, m := range set.Mounts {
+		spec.Mounts = append(spec.Mounts, engine.Mount{Source: m.Source, Target: m.Target, ReadOnly: m.ReadOnly, MustExist: true})
 	}
 	if set.Camera != "" {
 		s.camMu.Lock()
@@ -416,6 +438,15 @@ func (s *Service) createContainer(ctx context.Context, name, id, token string, c
 func (s *Service) Recreate(ctx context.Context, name string, set Settings, progress func(string, float64)) (Desktop, error) {
 	c, err := s.Get(ctx, name)
 	if err != nil {
+		return Desktop{}, err
+	}
+	if _, err := hostMountsFromLabels(c.Container.Labels); err != nil {
+		return Desktop{}, err
+	}
+	if len(set.Mounts) > 0 {
+		progress("Checking host folders", -1)
+	}
+	if err := s.checkHostMountSources(ctx, set.Mounts); err != nil {
 		return Desktop{}, err
 	}
 	if _, err := s.EnsureImage(ctx, set.Image, progress); err != nil {
@@ -453,6 +484,11 @@ func (s *Service) Recreate(ctx context.Context, name string, set Settings, progr
 		}
 		if err2 != nil {
 			return Desktop{}, errors.Join(err, err2)
+		}
+		if wasRunning {
+			if startErr := s.Eng.Start(back, containerName(name)); startErr != nil {
+				return Desktop{}, errors.Join(err, fmt.Errorf("restarting the previous desktop: %w", startErr))
+			}
 		}
 		return Desktop{}, err
 	}

@@ -6,6 +6,7 @@ It holds use cases, the architecture, and specs and plans written with the super
 - [[Specs]]: what we build and why, one design spec per topic, in `superpowers/specs/`.
 - [[Plans]]: how a spec gets built, step by step, in `superpowers/plans/`.
 - [[Architecture]]: the system's components, built and planned, one page each in `Architecture/`, with diagrams drawn from them.
+- [[superpowers/spikes/2026-10-23-shared-folders|Dynamic shared folders on Mac and Linux investigation]]: filesystem permission limits, live mount feasibility, platform evidence and the recommended implementation approach.
 
 Agents working here: read [[AGENTS]] first.
 

@@ -21,9 +21,10 @@ import (
 )
 
 type settingsJSON struct {
-	MemoryBytes int64  `json:"memoryBytes"`
-	NanoCPUs    int64  `json:"nanoCpus"`
-	Camera      string `json:"camera"` // the host device, "" for none
+	Mounts      []desktops.HostMount `json:"mounts"`
+	MemoryBytes int64                `json:"memoryBytes"`
+	NanoCPUs    int64                `json:"nanoCpus"`
+	Camera      string               `json:"camera"` // the host device, "" for none
 }
 
 type statsJSON struct {
@@ -64,9 +65,12 @@ func (s *Server) desktopJSON(ctx context.Context, c desktops.Desktop, a accounts
 		ID:          c.ID, Name: c.Name, State: c.State, Folder: c.Folder, Image: c.Image,
 		ImageTitle: c.ImageLabels["org.opencontainers.image.title"], ImageVersion: c.ImageLabels["org.opencontainers.image.version"],
 		ImageSecrets: c.ImageLabels[labelSecrets] == "true",
-		Settings:     settingsJSON{c.Settings.MemoryBytes, c.Settings.NanoCPUs, c.Settings.Camera},
+		Settings:     settingsJSON{MemoryBytes: c.Settings.MemoryBytes, NanoCPUs: c.Settings.NanoCPUs, Camera: c.Settings.Camera, Mounts: c.Settings.Mounts},
 		Access:       []string{}, Viewers: s.viewers.names(c.Name),
 		Mics: s.viewers.mics(c.Name), Cams: s.viewers.cams(c.Name), Webcam: c.Webcam(), Forwards: s.forwards.list(c.Name), Agents: s.activity.Present(c.Name),
+	}
+	if j.Settings.Mounts == nil {
+		j.Settings.Mounts = []desktops.HostMount{}
 	}
 	if !c.Created.IsZero() {
 		j.Created = &c.Created
@@ -205,14 +209,19 @@ func (s *Server) handleCreateDesktop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Name        string   `json:"name"`
-		Image       string   `json:"image"`
-		MemoryBytes int64    `json:"memoryBytes"`
-		NanoCPUs    int64    `json:"nanoCpus"`
-		Access      []string `json:"access"`
+		Mounts      []desktops.HostMount `json:"mounts"`
+		Name        string               `json:"name"`
+		Image       string               `json:"image"`
+		MemoryBytes int64                `json:"memoryBytes"`
+		NanoCPUs    int64                `json:"nanoCpus"`
+		Access      []string             `json:"access"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	if err := desktops.ValidateHostMounts(req.Mounts); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := desktops.ValidNewName(req.Name); err != nil {
@@ -245,7 +254,7 @@ func (s *Server) handleCreateDesktop(w http.ResponseWriter, r *http.Request) {
 			s.Desktops.Done(req.Name)
 			s.publishDesktop(ctx, req.Name)
 		}()
-		c, err := s.Desktops.Create(ctx, req.Name, desktops.Settings{Image: req.Image, MemoryBytes: req.MemoryBytes, NanoCPUs: req.NanoCPUs}, progress)
+		c, err := s.Desktops.Create(ctx, req.Name, desktops.Settings{Image: req.Image, MemoryBytes: req.MemoryBytes, NanoCPUs: req.NanoCPUs, Mounts: req.Mounts}, progress)
 		if err != nil {
 			s.Log.Warn("create failed", "desktop", req.Name, "err", err)
 			return err
@@ -264,17 +273,25 @@ func (s *Server) handleUpdateDesktop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Image          *string `json:"image"`
-		MemoryBytes    *int64  `json:"memoryBytes"`
-		NanoCPUs       *int64  `json:"nanoCpus"`
-		Camera         *string `json:"camera"`
-		ConfirmSecrets bool    `json:"confirmSecrets"`
+		Mounts         *[]desktops.HostMount `json:"mounts"`
+		Image          *string               `json:"image"`
+		MemoryBytes    *int64                `json:"memoryBytes"`
+		NanoCPUs       *int64                `json:"nanoCpus"`
+		Camera         *string               `json:"camera"`
+		ConfirmSecrets bool                  `json:"confirmSecrets"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
 	set := c.Settings
+	if req.Mounts != nil {
+		set.Mounts = *req.Mounts
+	}
+	if err := desktops.ValidateHostMounts(set.Mounts); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if req.Image != nil {
 		set.Image = *req.Image
 	}

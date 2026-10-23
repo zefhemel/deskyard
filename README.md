@@ -240,8 +240,8 @@ own network `deskyard-<name>`, so desktops can't reach each other.
 
 ### What persists
 
-Only `/workspace`. It's the folder `<data folder>/<name>` on the host, a
-plain folder you can browse and back up with host tools. Creating a desktop
+A desktop's private persistent folder is `/workspace`: the folder
+`<data folder>/<name>` on the host, which you can browse and back up with host tools. Creating a desktop
 with the name of a folder that already exists reuses that folder, so to copy
 a desktop, copy its folder and create a desktop with the new name.
 Removing a desktop keeps its folder unless you tick "also delete files".
@@ -271,6 +271,40 @@ Flatpak apps do not restore their windows through this protocol.
 Switching desktop images keeps your files, installed Flatpak apps, tools
 and Chromium profile. Each desktop keeps its own settings; open windows
 are not migrated between different desktop environments.
+
+### Host folders
+
+Admins can mount existing host folders into an individual desktop under
+**Settings → Host folders**. Choose **Add host folder**, enter the absolute
+host path and a desktop path such as `/mnt/photos`, and choose read-only
+or read-write access. New entries default to read-only. **Save and restart**
+recreates a running desktop's container; a stopped desktop stays stopped.
+
+Source paths refer to the machine running the container engine. They work
+with the supervisor running directly or in a container; the supervisor
+container does not need those folders mounted into itself. On macOS, the
+container runtime must permit sharing the source folder. Existing host
+permissions must allow the desktop's UID 1000 to access its files; Deskyard
+does not change ownership or permissions of mounted host folders.
+
+A desktop can mount up to 16 folders at non-overlapping paths below `/mnt/`.
+Home and system paths are reserved so desktop initialization cannot change
+mounted host data or replace its runtime. Missing sources and files are
+rejected before the desktop stops; missing folders are never created.
+Source validation requires Docker API 1.44 or newer and recursively read-only
+bind mounts (Linux kernel 5.12 or newer, including the kernel inside a Mac
+container runtime). An
+engine that cannot enforce this fails the check before the desktop stops.
+Desktops with host folders also disable privilege gains through setuid
+executables and file capabilities; user-namespace sandboxes remain available.
+Everyone with access to the desktop, including agents, gets its mounted
+folders. Settings and mounts survive restarts and image upgrades.
+
+Removing a mount never deletes its source. Removing a desktop only deletes
+its private workspace when requested; independently mounted folders elsewhere
+are left alone. Mounted host folders are not included when making an image
+from a desktop. The supervisor's Files and Download views still browse only
+`/workspace`; use desktop apps or the agent CLI for mounted folders.
 
 ### Reclaiming memory
 

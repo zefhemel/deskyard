@@ -21,8 +21,10 @@ import (
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/jsonstream"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
+	"github.com/moby/moby/client/pkg/versions"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 )
@@ -64,6 +66,19 @@ func wrap(err error) error {
 var port8080 = network.MustParsePort("8080/tcp")
 
 func (d *Docker) Create(ctx context.Context, s engine.ContainerSpec) (string, error) {
+	for _, m := range s.Mounts {
+		if !m.MustExist || !m.ReadOnly {
+			continue
+		}
+		ping, err := d.c.Ping(ctx, client.PingOptions{NegotiateAPIVersion: true})
+		if err != nil {
+			return "", wrap(err)
+		}
+		if ping.APIVersion == "" || versions.LessThan(ping.APIVersion, "1.44") || versions.LessThan(d.c.ClientVersion(), "1.44") {
+			return "", fmt.Errorf("host folders require Docker API 1.44 or newer for recursive read-only mounts")
+		}
+		break
+	}
 	env := make([]string, 0, len(s.Env))
 	for k, v := range s.Env {
 		env = append(env, k+"="+v)
@@ -94,6 +109,10 @@ func (d *Docker) Create(ctx context.Context, s engine.ContainerSpec) (string, er
 		hc.RestartPolicy = container.RestartPolicy{Name: container.RestartPolicyMode(s.Restart)}
 	}
 	for _, m := range s.Mounts {
+		if m.MustExist {
+			hc.Mounts = append(hc.Mounts, mount.Mount{Type: mount.TypeBind, Source: m.Source, Target: m.Target, ReadOnly: m.ReadOnly, BindOptions: &mount.BindOptions{ReadOnlyForceRecursive: m.ReadOnly}})
+			continue
+		}
 		bind := m.Source + ":" + m.Target
 		if m.ReadOnly {
 			bind += ":ro"
@@ -106,6 +125,9 @@ func (d *Docker) Create(ctx context.Context, s engine.ContainerSpec) (string, er
 		// read-only /proc and /sys paths (empty lists, not nil, override the defaults).
 		hc.MaskedPaths = []string{}
 		hc.ReadonlyPaths = []string{}
+	}
+	if s.NoNewPrivileges {
+		hc.SecurityOpt = append(hc.SecurityOpt, "no-new-privileges=true")
 	}
 	if s.PublishLocal != nil {
 		hostPort := ""

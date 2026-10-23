@@ -7,6 +7,7 @@ import { SecretImageNote } from "../../components/secret-access.tsx";
 import { Button, Check, Dialog, ErrorText, Field, Note, Seg } from "../../components/ui.tsx";
 import { useLive } from "../../live.tsx";
 import { useFetch } from "../../lib/use-fetch.ts";
+import { HostMountFields } from "../../components/host-mounts.tsx";
 import { UPGRADE_NOTE } from "../../dialogs/upgrade.tsx";
 
 export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
@@ -15,17 +16,21 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
   const [memory, setMemory] = useState(c.settings.memoryBytes);
   const [cpus, setCpus] = useState(c.settings.nanoCpus);
   const [camera, setCamera] = useState(c.settings.camera);
+  const savedMounts = c.settings.mounts ?? [];
+  const [mounts, setMounts] = useState(savedMounts);
+  const mountsChanged = JSON.stringify(mounts) !== JSON.stringify(savedMounts);
   const { host } = useLive();
   const run = useJob(() => notify(`${c.name}'s settings are saved`));
 
   const [confirming, setConfirming] = useState(false);
-  const changed = image !== c.image || memory !== c.settings.memoryBytes || cpus !== c.settings.nanoCpus || camera !== c.settings.camera;
+  const changed = image !== c.image || memory !== c.settings.memoryBytes || cpus !== c.settings.nanoCpus || camera !== c.settings.camera || mountsChanged;
   // Moving a desktop others use onto an image with secrets: ask first, as giving access does.
   const picked = (images.data ?? []).find((i) => i.ref === image);
   const askFirst = image !== c.image && !!picked?.secrets && c.access.length > 0;
   const save = () => {
     setConfirming(false);
-    const body: { image?: string; memoryBytes?: number; nanoCpus?: number; camera?: string; confirmSecrets?: boolean } = {};
+    const body: Parameters<typeof api.updateSettings>[1] = {};
+    if (mountsChanged) body.mounts = mounts;
     if (camera !== c.settings.camera) body.camera = camera;
     if (image !== c.image) body.image = image;
     if (askFirst) body.confirmSecrets = true;
@@ -60,6 +65,7 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
           <Field label="Camera">
             <CameraPick desktop={c} host={host} value={camera} onChange={setCamera} />
           </Field>
+          <HostMountFields mounts={mounts} onChange={setMounts} />
         </fieldset>
         {changed && (
           <Note>
@@ -80,6 +86,7 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
                 setMemory(c.settings.memoryBytes);
                 setCpus(c.settings.nanoCpus);
                 setCamera(c.settings.camera);
+                setMounts(savedMounts);
               }}
             >
               Undo changes
