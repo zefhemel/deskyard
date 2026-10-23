@@ -228,6 +228,22 @@ def signed_in(p, base, user="admin", password=ADMIN_PASSWORD, browser="chromium"
     return b, sign_in(b, base, user, password, **ctx)
 
 
+def wait_loaded(page, expression: str, since: int, timeout=30000):
+    """page.wait_for_function(expression), loading the page again if Chromium
+    failed one of its loads after `since` (netchange.failures, read before the
+    page was opened): what a page loads after its goto, such as the screen's
+    frame, isn't retried by goto."""
+    for attempt in range(1, 4):
+        try:
+            return page.wait_for_function(expression, timeout=timeout)
+        except PlaywrightError:
+            if netchange.failures(page) == since or attempt == 3:
+                raise
+            print(f"wait_loaded: {netchange.CHANGED} on the way; loading the page again")
+            since = netchange.failures(page)
+            page.reload()
+
+
 def open_desktop(page, base, name, status=True):
     """The desktop page, showing the picture (status: and saying so; a phone doesn't).
     Opened again if Chromium failed one of its loads (netchange.py): the screen's

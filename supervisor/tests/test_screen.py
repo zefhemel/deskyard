@@ -11,8 +11,9 @@ import uuid
 import pytest
 import websockets
 
+import netchange
 from conftest import docker
-from helpers import FAKE_MEDIA, make_account, read_events, sign_in, signed_in, wait_until, ws_handshake
+from helpers import FAKE_MEDIA, make_account, read_events, sign_in, signed_in, wait_loaded, wait_until, ws_handshake
 
 
 def ws_url(client, name, tab=None):
@@ -256,14 +257,16 @@ def test_duplicated_tab_and_reload_keep_the_picture(supervisor, admin, desktop, 
 
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base)
+        seen = netchange.failures(page)
         page.goto(f"{supervisor.base}/{name}/")
-        page.wait_for_function(showing, timeout=30000)
+        wait_loaded(page, showing, seen)
 
         # A duplicated tab (window.open copies sessionStorage, as duplicating does).
+        seen = netchange.failures(page)
         with page.context.expect_page() as popup_info:
             page.evaluate("window.open(location.href)")
         dup = popup_info.value
-        dup.wait_for_function(showing, timeout=30000)
+        wait_loaded(dup, showing, seen)
         time.sleep(5)
         for pg in (page, dup):
             assert pg.evaluate(f"{screen}.state()") == "connected"

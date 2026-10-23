@@ -7,9 +7,10 @@ import time
 import pytest
 from playwright.sync_api import expect, sync_playwright
 
+import netchange
 from conftest import ADMIN_PASSWORD
 from helpers import (BROWSERS, PICTURE, SCREEN, SHOWING, fits, frame_size, in_desktop, mouse_location, open_desktop, screen_size,
-                     sign_in, signed_in, to_page, video_settings_lines, wait_until)
+                     sign_in, signed_in, to_page, video_settings_lines, wait_loaded, wait_until)
 
 
 @pytest.mark.parametrize("browser_name", BROWSERS)
@@ -185,8 +186,9 @@ def test_background_tab_doesnt_stall(supervisor, desktop, name):
         # Selkies' client asks for a key frame itself after 3 s without a frame.
         asked = []
         b.on("console", lambda m: "keyframe" in m.text and asked.append(m.text))
+        seen = netchange.failures(b)
         b.goto(f"{supervisor.base}/{name}/")
-        b.wait_for_function(f"{SCREEN}?.state() === 'connected'", timeout=30000)
+        wait_loaded(b, f"{SCREEN}?.state() === 'connected'", seen)
         joined = time.time()
         b.wait_for_function(f"{FRAMES} > 0", timeout=5000)
         first = time.time() - joined
