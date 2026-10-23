@@ -32,6 +32,8 @@ func vpnError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, vpn.ErrNotFound):
 		writeError(w, 400, "VPN connection not found")
+	case errors.Is(err, desktops.ErrRecoveryRequired):
+		writeError(w, 409, err.Error())
 	case errors.Is(err, vpn.ErrConflict):
 		writeError(w, 409, "VPN connection or desktop references changed; refresh and confirm again")
 	case errors.Is(err, vpn.ErrValidation):
@@ -154,7 +156,7 @@ func (s *Server) handleUpdateVPN(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 409, map[string]any{"error": "confirmRestart required; affected desktop sessions will disconnect", "desktops": refs})
 		return
 	}
-	jobID := s.jobs.startResult(a.Username, true, func(ctx context.Context, progress func(string, float64)) (any, error) {
+	jobID := s.jobs.startCommittedResult(a.Username, func(ctx context.Context, progress func(string, float64), commit func(func() error) error) (any, error) {
 		progress("Validating candidate VPN connection", -1)
 		if _, err := s.vpnTests.TestSaved(ctx, id, req.Input); err != nil {
 			return nil, errors.New("VPN validation failed; saved connection is unchanged. Check service credentials, country/server availability and host internet access")
@@ -162,13 +164,19 @@ func (s *Server) handleUpdateVPN(w http.ResponseWriter, r *http.Request) {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		apply := context.WithoutCancel(ctx)
-		for _, ref := range refs {
-			s.viewers.closeAll(ref.Name)
-		}
-		c, results, err := n.UpdateConnection(apply, id, req.ExpectedRevision, req.AffectedDesktopIDs, req.Input, progress)
-		for _, ref := range refs {
-			s.publishDesktop(apply, ref.Name)
+		c, results, err := n.UpdateConnection(ctx, id, req.ExpectedRevision, req.AffectedDesktopIDs, req.Input, progress, func(save func() error) error {
+			if err := commit(save); err != nil {
+				return err
+			}
+			for _, ref := range refs {
+				s.viewers.closeAll(ref.Name)
+			}
+			return nil
+		})
+		if c.ID != "" {
+			for _, ref := range refs {
+				s.publishDesktop(context.WithoutCancel(ctx), ref.Name)
+			}
 		}
 		if err != nil {
 			return nil, errors.New("VPN update failed; refresh connection and desktop status before retrying")

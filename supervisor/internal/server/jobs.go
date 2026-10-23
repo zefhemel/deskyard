@@ -73,6 +73,17 @@ func (js *jobs) run(owner, desktop string, cancellable bool, fn jobFunc) string 
 	return js.runResult(owner, desktop, cancellable, func(ctx context.Context, p func(string, float64)) (any, error) { return nil, fn(ctx, p) })
 }
 func (js *jobs) runResult(owner, desktop string, cancellable bool, fn func(context.Context, func(string, float64)) (any, error)) string {
+	return js.runCommittedResult(owner, desktop, cancellable, func(ctx context.Context, p func(string, float64), _ func(func() error) error) (any, error) {
+		return fn(ctx, p)
+	})
+}
+
+// startCommittedResult is cancellable through admission, then commits under the
+// same mutex used by stop. Once save succeeds, cancellation truthfully conflicts.
+func (js *jobs) startCommittedResult(owner string, fn func(context.Context, func(string, float64), func(func() error) error) (any, error)) string {
+	return js.runCommittedResult(owner, "", true, fn)
+}
+func (js *jobs) runCommittedResult(owner, desktop string, cancellable bool, fn func(context.Context, func(string, float64), func(func() error) error) (any, error)) string {
 	id := randomID(8)
 	ctx, cancel := context.WithCancel(context.Background())
 	j := &job{owner: owner, desktop: desktop, cancellable: cancellable, cancel: cancel,
@@ -90,7 +101,7 @@ func (js *jobs) runResult(owner, desktop string, cancellable bool, fn func(conte
 				st.Progress = &frac
 			}
 			j.set(st)
-		})
+		}, func(save func() error) error { return j.commit(ctx, save) })
 		cancel()
 		st := j.get()
 		st.Progress = nil
@@ -168,6 +179,22 @@ func (j *job) wasCancelled() bool {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	return j.cancelled
+}
+
+func (j *job) commit(ctx context.Context, save func() error) error {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.cancelled {
+		return context.Canceled
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := save(); err != nil {
+		return err
+	}
+	j.cancellable = false
+	return nil
 }
 
 // stop cancels a running cancellable job; it reports false for one that

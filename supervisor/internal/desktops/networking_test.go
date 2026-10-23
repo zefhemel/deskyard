@@ -246,7 +246,7 @@ func TestVPNReferencesPreventDeletionAndRevisionRollout(t *testing.T) {
 		t.Fatalf("references: %+v", refs)
 	}
 	r.fail = true
-	updated, results, err := s.Networking.UpdateConnection(ctx, conn.ID, conn.Revision, []string{refs[0].ID}, vpn.Input{Name: "Changed", Provider: "nordvpn", Country: "Germany"}, noProgress)
+	updated, results, err := s.Networking.UpdateConnection(ctx, conn.ID, conn.Revision, []string{refs[0].ID}, vpn.Input{Name: "Changed", Provider: "nordvpn", Country: "Germany"}, noProgress, nil)
 	if err != nil || updated.Revision != 2 || len(results) != 1 || results[0].Error == "" {
 		t.Fatalf("rollout: %+v %+v %v", updated, results, err)
 	}

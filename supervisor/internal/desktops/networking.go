@@ -40,7 +40,7 @@ type Networking struct {
 	runtime     VPNRuntime
 	service     *Service
 	path        string
-	refs        sync.Mutex
+	refs        contextMutex
 	mu          sync.Mutex
 	records     map[string]networkIntent
 	locks       map[string]chan struct{}
@@ -166,13 +166,17 @@ func (n *Networking) target(name string) (engine.Container, bool) {
 	g, ok := n.gateways[name]
 	return g, ok
 }
-func (n *Networking) fail(r networkIntent) error {
-	r.Error = "VPN network transition failed; retry or repair the selected connection"
+
+// phase is an internal constant, never an engine/provider error or identifier.
+func (n *Networking) fail(r networkIntent, phase recoveryPhase) error {
+	n.service.Log.Warn("desktop network recovery failed", "phase", string(phase))
+	r.Pending = true
+	r.Error = "VPN network transition failed at " + string(phase) + "; retry or repair the selected connection"
 	if r.Settings.VPNConnectionID == "" {
-		r.Error = "Network transition failed; retry to recover"
+		r.Error = "Network transition failed at " + string(phase) + "; retry to recover"
 	}
 	if err := n.saveRecord(r); err != nil {
-		return errors.New("could not persist desktop network recovery state")
+		return errors.New("network recovery failed at " + string(phase) + "; recovery state could not be persisted")
 	}
 	n.setStatus(r.ID, vpn.Status{State: "blocked", Reason: r.Error, ChangedAt: time.Now().UTC()})
 	return errors.New(r.Error)

@@ -23,7 +23,7 @@ func (n *Networking) recover(ctx context.Context, r networkIntent) error {
 		replace = true
 	}
 	if ce != nil && !errors.Is(ce, engine.ErrNotFound) {
-		return errors.New("could not inspect desktop for network recovery")
+		return n.fail(r, phaseInspect)
 	}
 	if r.Settings.VPNConnectionID != "" {
 		conn, err := n.Connections.Get(r.Settings.VPNConnectionID)
@@ -33,7 +33,7 @@ func (n *Networking) recover(ctx context.Context, r networkIntent) error {
 				_ = s.Eng.UpdateRestartPolicy(ctx, c.ID, "no")
 				_ = s.Eng.Stop(ctx, c.ID, stopTimeout)
 			}
-			return n.fail(r)
+			return n.fail(r, phaseConnection)
 		}
 		if conn.Revision != r.AppliedRevision {
 			replace = true
@@ -53,22 +53,24 @@ func (n *Networking) recover(ctx context.Context, r networkIntent) error {
 	if replace {
 		r.Pending = true
 		if err := n.saveRecord(r); err != nil {
-			return err
+			return n.fail(r, phaseSnapshot)
 		}
 		return n.apply(ctx, r, func(string, float64) {})
 	}
 	if c.Restart != "no" && r.Settings.VPNConnectionID != "" {
 		if err := s.Eng.UpdateRestartPolicy(ctx, c.ID, "no"); err != nil {
-			return errors.New("could not disable independent desktop restart")
+			return n.fail(r, phaseRestartPolicy)
 		}
 	}
 	if r.Running && !c.Running() {
 		if err := s.Eng.Start(ctx, c.ID); err != nil {
-			return errors.New("could not start attached desktop")
+			return n.fail(r, phaseStart)
 		}
 	}
 	if !r.Running && c.Running() {
-		return s.Eng.Stop(ctx, c.ID, stopTimeout)
+		if err := s.Eng.Stop(ctx, c.ID, stopTimeout); err != nil {
+			return n.fail(r, phaseStop)
+		}
 	}
 	return nil
 }
@@ -126,6 +128,7 @@ func (n *Networking) Poll(ctx context.Context, changed func(string)) {
 			conn, ve := n.Connections.Get(r.Settings.VPNConnectionID)
 			if r.Pending || ge != nil || !g.Running() || ce != nil || c.NetworkContainer != r.RuntimeID || ve != nil || conn.Revision != r.AppliedRevision {
 				repair, cancelRepair := context.WithTimeout(ctx, 3*time.Minute)
+				// recover persists a safe phase in the journal/status before returning.
 				_ = n.recover(repair, r)
 				cancelRepair()
 			} else {

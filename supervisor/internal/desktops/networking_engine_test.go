@@ -2,12 +2,15 @@ package desktops
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -23,9 +26,10 @@ const pairFixtureLabel = "deskyard.vpn.lifecycle-fixture"
 // shared-engine desktops. Only Networks(nil) may read the global subnet inventory.
 type scopedPairEngine struct {
 	engine.Engine
-	scope           string
-	t               *testing.T
-	observedUDP1194 bool
+	scope            string
+	t                *testing.T
+	observedUDP1194  bool
+	networkSnapshots [][]string
 }
 
 func (e *scopedPairEngine) labels(labels map[string]string) map[string]string {
@@ -110,7 +114,49 @@ func (e *scopedPairEngine) Networks(ctx context.Context, l map[string]string) ([
 	if l != nil {
 		l = e.labels(l)
 	}
-	return e.Engine.Networks(ctx, l)
+	networks, err := e.Engine.Networks(ctx, l)
+	if l == nil && err == nil {
+		var prefixes []string
+		for _, network := range networks {
+			if network.Subnet != "" {
+				prefixes = append(prefixes, network.Subnet)
+			}
+		}
+		slices.Sort(prefixes)
+		if len(e.networkSnapshots) > 0 && !slices.Equal(prefixes, e.networkSnapshots[len(e.networkSnapshots)-1]) {
+			old := e.networkSnapshots[len(e.networkSnapshots)-1]
+			for _, change := range []struct {
+				from, to []string
+				action   string
+			}{{old, prefixes, "removed"}, {prefixes, old, "added"}} {
+				for _, value := range change.from {
+					if !slices.Contains(change.to, value) {
+						prefix, parseErr := netip.ParsePrefix(value)
+						category := "unparsed"
+						if parseErr == nil {
+							category = "outside-private"
+							if prefix.Addr().IsPrivate() {
+								category = "private"
+							}
+							pool := netip.MustParsePrefix("10.217.0.0/16")
+							if pool.Contains(prefix.Addr()) && prefix.Bits() >= pool.Bits() {
+								category = "fixture-pool"
+							}
+						}
+						e.t.Logf("reserved inventory delta: %s category=%s", change.action, category)
+					}
+				}
+			}
+		}
+		e.networkSnapshots = append(e.networkSnapshots, prefixes)
+		if output := os.Getenv("DESKYARD_VPN_DIAGNOSTICS"); output != "" {
+			data, _ := json.MarshalIndent(e.networkSnapshots, "", "  ")
+			if err := os.WriteFile(output, data, 0600); err != nil {
+				e.t.Error("could not save private network diagnostics")
+			}
+		}
+	}
+	return networks, err
 }
 func (e *scopedPairEngine) network(ctx context.Context, name string) error {
 	ns, err := e.Engine.Networks(ctx, e.labels(nil))
@@ -276,7 +322,18 @@ func TestVPNPairedEngineLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err = fresh.Reconcile(ctx); err != nil {
-		t.Fatal(err)
+		// Preserve the first failure as a failed assertion, but inspect and retry
+		// its durable state before cleanup so a recurrence identifies its phase.
+		t.Errorf("initial Reconcile failed: %v", err)
+		failed, getErr := fresh.Get(ctx, name)
+		if getErr != nil || failed.Settings.VPNConnectionID != conn.ID || failed.VPN.State != "blocked" {
+			t.Fatalf("recovery failure lost visible selected intent: getError=%v state=%s", getErr, failed.VPN.State)
+		}
+		t.Logf("persisted failure: state=%s reason=%s desiredRevision=%d appliedRevision=%d", failed.VPN.State, failed.VPN.Reason, failed.VPN.DesiredRevision, failed.VPN.AppliedRevision)
+		if err = fresh.Reconcile(ctx); err != nil {
+			t.Fatalf("retry from persisted failure failed: %v", err)
+		}
+		t.Log("retry recovered from persisted failure; initial failure remains recorded")
 	}
 	d, err = fresh.Get(ctx, name)
 	if err != nil {
@@ -309,20 +366,63 @@ func TestVPNPairedEngineLifecycle(t *testing.T) {
 
 type observedPairRuntime struct {
 	VPNRuntime
-	t *testing.T
+	t         *testing.T
+	lastInput string
 }
 
 func (r *observedPairRuntime) Ensure(ctx context.Context, id, name, network, connection string, exceptions []vpn.Exception, publish bool) (engine.Container, error) {
+	input, _ := json.Marshal([]any{id, name, network, connection, exceptions, publish})
+	if r.lastInput != "" {
+		r.t.Logf("Ensure caller inputs unchanged=%t", r.lastInput == string(input))
+	}
+	r.lastInput = string(input)
 	g, err := r.VPNRuntime.Ensure(ctx, id, name, network, connection, exceptions, publish)
 	if err != nil {
-		r.t.Log("runtime Ensure diagnostic:", err)
+		r.t.Log("runtime Ensure diagnostic:", safeManagerDiagnostic(err))
 	}
 	return g, err
 }
 func (r *observedPairRuntime) Remove(ctx context.Context, id string) error {
 	err := r.VPNRuntime.Remove(ctx, id)
 	if err != nil {
-		r.t.Log("runtime Remove diagnostic:", err)
+		r.t.Log("runtime Remove diagnostic:", safeManagerDiagnostic(err))
 	}
 	return err
+}
+
+// Ensure's engine/control failures are fixed messages, but Store.Get can return
+// a filesystem error. Preserve only verified fixed messages in fixture output.
+func safeManagerDiagnostic(err error) string {
+	if err == nil {
+		return "none"
+	}
+	switch message := err.Error(); message {
+	case "VPN runtime operation canceled", "VPN connection not found",
+		"VPN credentials are unavailable", "VPN reserved networks could not be inspected",
+		"VPN reserved network is invalid", "VPN desktop network is unavailable",
+		"VPN runtime discovery failed", "VPN runtime is stopped; coordinated recovery is required",
+		"VPN ready runtime could not be inspected", "VPN pinned runtime image could not be prepared",
+		"VPN private runtime configuration could not be prepared", "VPN runtime creation identity failed",
+		"VPN runtime creation failed", "VPN runtime start failed", "VPN firewall/control readiness failed",
+		"VPN runtime removal failed", "VPN private runtime cleanup failed",
+		"VPN connection conflict: VPN connection changed during runtime preparation",
+		"VPN connection conflict: multiple VPN runtimes require reconciliation",
+		"VPN connection conflict: VPN runtime configuration requires coordinated replacement":
+		return message
+	}
+	if errors.Is(err, context.Canceled) {
+		return "operation canceled"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "operation deadline exceeded"
+	}
+	return "unclassified manager failure (details redacted)"
+}
+func TestVPNFixtureDiagnosticRedaction(t *testing.T) {
+	if got := safeManagerDiagnostic(errors.New("VPN firewall/control readiness failed")); got != "VPN firewall/control readiness failed" {
+		t.Fatal(got)
+	}
+	if got := safeManagerDiagnostic(errors.New("open /private/credential/path: private-token provider-secret")); strings.Contains(got, "private") || strings.Contains(got, "secret") || strings.Contains(got, "/") {
+		t.Fatal("unsafe diagnostic")
+	}
 }
