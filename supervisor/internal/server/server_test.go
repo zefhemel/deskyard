@@ -74,12 +74,12 @@ func newTestServer(t *testing.T) (*Server, *httptest.Server) {
 	return newTestServerWith(t, fakeEngine{})
 }
 
-func newTestServerWith(t *testing.T, e fakeEngine) (*Server, *httptest.Server) {
+func newTestServerWith(t *testing.T, e engine.Engine) (*Server, *httptest.Server) {
 	return newTestServerCfg(t, e, desktops.Config{Subnet: "10.0.0.0/16"})
 }
 
 // newTestServerCfg is newTestServerWith with the desktops' config (DataDir is set here).
-func newTestServerCfg(t *testing.T, e fakeEngine, cfg desktops.Config) (*Server, *httptest.Server) {
+func newTestServerCfg(t *testing.T, e engine.Engine, cfg desktops.Config) (*Server, *httptest.Server) {
 	dir := t.TempDir()
 	cfg.DataDir = dir
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))

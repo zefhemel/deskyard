@@ -225,7 +225,7 @@ func init() {
 		// Remotes
 		{Name: "remote add", Group: "remote", Summary: "save a desktop as a remote",
 			Usage: "remote add NAME URL --token dyt_…",
-			Desc:  "Checks the token against the desktop's agent API and saves the remote in remotes.json (" + "$XDG_CONFIG_HOME/deskyard-desktop, default ~/.config/deskyard; mode 0600). URL is the desktop's address, like https://host/alice. Tokens come from the desktop's Agents tab. The first remote becomes the default.",
+			Desc:  "Checks the token against the desktop's agent API and saves the remote in remotes.json (" + "$XDG_CONFIG_HOME/deskyard, default ~/.config/deskyard; mode 0600). URL is the desktop's address, like https://host/alice. Tokens come from the desktop's Agents tab. The first remote becomes the default.",
 			Args: []Arg{{Name: "name", Type: "string", Required: true, Desc: "local name for the remote (letters, digits, . _ -)"},
 				{Name: "url", Type: "string", Required: true, Desc: "the desktop's URL, e.g. https://host/alice"}},
 			Flags:    []Flag{{Name: "--token", Type: "string", Value: "TOKEN", Desc: "agent token (dyt_…); defaults to $DESKYARD_TOKEN"}},

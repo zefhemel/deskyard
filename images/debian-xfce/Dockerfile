@@ -41,7 +41,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl procps supervisor dbus dbus-x11 \
         x11-utils xfce4 xfce4-terminal fonts-dejavu-core \
-        chromium socat xdotool xclip maim flatpak \
+        chromium socat xdotool xclip maim flatpak git openssh-client \
         pipewire pipewire-pulse wireplumber pulseaudio-utils \
     && rm -rf /var/lib/apt/lists/* \
     # rootfs/usr/bin/flatpak wraps the real binary.
@@ -91,6 +91,13 @@ RUN MISE_YES=1 MISE_CACHE_DIR=/tmp/mise-cache MISE_DATA_DIR=/opt/mise MISE_CONFI
     && /opt/runtimes/node/bin/node --version \
     && /opt/runtimes/python/bin/python --version
 
+# Where custom images put their starting home, tool links and extra Flatpak remotes (empty here).
+# /opt/deskyard/bin (root-owned) holds links to the executables of tools a
+# custom image installs with mise into /opt/mise; it is on PATH after the user's shims.
+RUN mkdir -p /opt/deskyard/home-template /opt/deskyard/bin /etc/deskyard/flatpak-remotes \
+    && chown 1000:1000 /opt/deskyard/home-template \
+    && chmod 755 /opt/deskyard/bin
+
 RUN useradd --system --home-dir /var/lib/caddy --create-home --shell /usr/sbin/nologin caddy \
     && groupadd -g 1000 user \
     && useradd -u 1000 -g user -d /workspace -M -s /bin/bash user \
@@ -108,7 +115,7 @@ ENV HOME=/workspace \
     NPM_CONFIG_PREFIX=/workspace/.npm-global \
     UV_PYTHON_PREFERENCE=only-managed \
     XDG_DATA_DIRS=/workspace/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/usr/local/share:/usr/share \
-    PATH=/workspace/.local/bin:/workspace/.npm-global/bin:/workspace/.local/share/mise/shims:/opt/runtimes/node/bin:/opt/runtimes/python/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    PATH=/workspace/.local/bin:/workspace/.npm-global/bin:/workspace/.local/share/mise/shims:/opt/deskyard/bin:/opt/runtimes/node/bin:/opt/runtimes/python/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 COPY images/debian-xfce/rootfs/ /
 COPY --from=desktop /desktop /usr/local/bin/deskyard
@@ -122,6 +129,7 @@ EXPOSE 8080
 # The image contract the supervisor checks before using an image.
 ARG VERSION=dev
 LABEL deskyard.contract="3" \
+      deskyard.kind="desktop" \
       org.opencontainers.image.title="Debian XFCE" \
       org.opencontainers.image.description="Debian trixie with XFCE, Chromium, Flatpak, mise and uv" \
       org.opencontainers.image.version="${VERSION}"

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -12,8 +13,8 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 )
 
-// A job is a long operation (create, upgrade, image pull) whose progress the
-// UI follows over server-sent events at /api/jobs/{id}.
+// A job is a long operation (create, upgrade, image pull, image build) whose
+// progress the UI follows over server-sent events at /api/jobs/{id}.
 type jobState struct {
 	Status   string   `json:"status"` // running, done, failed
 	Message  string   `json:"message"`
@@ -22,13 +23,24 @@ type jobState struct {
 	Desktop  string   `json:"desktop,omitempty"`
 }
 
+// maxJobHistory is how many updates a job keeps for its followers. A build
+// sends every log line as an update; a follower that connects late or falls
+// behind sees the last maxJobHistory of them.
+const maxJobHistory = 2000
+
 type job struct {
-	mu      sync.Mutex
-	owner   string
-	desktop string
-	state   jobState
-	subs    []chan jobState
-	done    chan struct{}
+	owner       string
+	desktop     string
+	cancellable bool
+	cancel      context.CancelFunc
+	done        chan struct{}
+
+	mu        sync.Mutex
+	state     jobState
+	history   []jobState // the last maxJobHistory states, oldest first
+	first     int        // sequence number of history[0]
+	changed   chan struct{}
+	cancelled bool
 }
 
 type jobs struct {
@@ -38,15 +50,32 @@ type jobs struct {
 
 func newJobs() *jobs { return &jobs{byID: map[string]*job{}} }
 
+// jobFunc is a job's work. progress reports a message with a fraction, or
+// -1 for none. ctx ends when a cancellable job is cancelled.
+type jobFunc func(ctx context.Context, progress func(string, float64)) error
+
 // start runs fn in the background as a job owned by an account.
-func (js *jobs) start(owner, desktop string, fn func(ctx context.Context, progress func(string, float64)) error) string {
+func (js *jobs) start(owner, desktop string, fn jobFunc) string {
+	return js.run(owner, desktop, false, fn)
+}
+
+// startCancellable is start for jobs that may be stopped half-way (builds):
+// POST /api/jobs/{id}/cancel cancels fn's ctx.
+func (js *jobs) startCancellable(owner string, fn jobFunc) string {
+	return js.run(owner, "", true, fn)
+}
+
+func (js *jobs) run(owner, desktop string, cancellable bool, fn jobFunc) string {
 	id := randomID(8)
-	j := &job{owner: owner, desktop: desktop, state: jobState{Status: "running", Message: "Starting", Desktop: desktop}, done: make(chan struct{})}
+	ctx, cancel := context.WithCancel(context.Background())
+	j := &job{owner: owner, desktop: desktop, cancellable: cancellable, cancel: cancel,
+		done: make(chan struct{}), changed: make(chan struct{})}
+	j.set(jobState{Status: "running", Message: "Starting", Desktop: desktop})
 	js.mu.Lock()
 	js.byID[id] = j
 	js.mu.Unlock()
 	go func() {
-		err := fn(context.Background(), func(msg string, frac float64) {
+		err := fn(ctx, func(msg string, frac float64) {
 			st := j.get()
 			st.Message = msg
 			st.Progress = nil
@@ -55,11 +84,15 @@ func (js *jobs) start(owner, desktop string, fn func(ctx context.Context, progre
 			}
 			j.set(st)
 		})
+		cancel()
 		st := j.get()
 		st.Progress = nil
-		if err != nil {
+		switch {
+		case err != nil && j.wasCancelled():
+			st.Status, st.Error, st.Message = "failed", "cancelled", "Cancelled"
+		case err != nil:
 			st.Status, st.Error, st.Message = "failed", err.Error(), "Failed"
-		} else {
+		default:
 			st.Status, st.Message = "done", "Done"
 		}
 		j.set(st)
@@ -86,6 +119,12 @@ func (js *jobs) forDesktop(name string) (string, bool) {
 	return "", false
 }
 
+func (js *jobs) get(id string) *job {
+	js.mu.Lock()
+	defer js.mu.Unlock()
+	return js.byID[id]
+}
+
 func (j *job) get() jobState {
 	j.mu.Lock()
 	defer j.mu.Unlock()
@@ -94,39 +133,53 @@ func (j *job) get() jobState {
 
 func (j *job) set(st jobState) {
 	j.mu.Lock()
+	defer j.mu.Unlock()
 	j.state = st
-	subs := append([]chan jobState(nil), j.subs...)
-	j.mu.Unlock()
-	for _, c := range subs {
-		select {
-		case c <- st:
-		default:
-		}
+	j.history = append(j.history, st)
+	if n := len(j.history) - maxJobHistory; n > 0 {
+		j.history = append(j.history[:0:0], j.history[n:]...)
+		j.first += n
 	}
+	close(j.changed)
+	j.changed = make(chan struct{})
 }
 
-func (j *job) subscribe() (chan jobState, func()) {
-	c := make(chan jobState, 16)
+// since returns the states from sequence number seq on (or from the oldest
+// kept), the next sequence number, and a channel closed on the next update.
+func (j *job) since(seq int) ([]jobState, int, <-chan struct{}) {
 	j.mu.Lock()
-	j.subs = append(j.subs, c)
-	j.mu.Unlock()
-	return c, func() {
-		j.mu.Lock()
-		defer j.mu.Unlock()
-		for i, x := range j.subs {
-			if x == c {
-				j.subs = append(j.subs[:i], j.subs[i+1:]...)
-				break
-			}
-		}
+	defer j.mu.Unlock()
+	if seq < j.first {
+		seq = j.first
 	}
+	out := slices.Clone(j.history[seq-j.first:])
+	return out, j.first + len(j.history), j.changed
+}
+
+func (j *job) wasCancelled() bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.cancelled
+}
+
+// stop cancels a running cancellable job; it reports false for one that
+// can't be cancelled or has finished.
+func (j *job) stop() bool {
+	j.mu.Lock()
+	ok := j.cancellable && j.state.Status == "running"
+	if ok {
+		j.cancelled = true
+	}
+	j.mu.Unlock()
+	if ok {
+		j.cancel()
+	}
+	return ok
 }
 
 func (s *Server) handleJob(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(r)
-	s.jobs.mu.Lock()
-	j := s.jobs.byID[r.PathValue("id")]
-	s.jobs.mu.Unlock()
+	j := s.jobs.get(r.PathValue("id"))
 	if j == nil || (j.owner != a.Username && !a.Admin && !s.canSeeDesktop(r, a, j.desktop)) {
 		writeError(w, http.StatusNotFound, "no such job")
 		return
@@ -135,31 +188,42 @@ func (s *Server) handleJob(w http.ResponseWriter, r *http.Request) {
 	if sse == nil {
 		return
 	}
-	updates, unsub := j.subscribe()
-	defer unsub()
-	send := func(st jobState) bool {
-		b, _ := json.Marshal(st)
-		sse.send("", string(b))
-		return st.Status != "running"
-	}
-	if send(j.get()) {
-		return
-	}
+	// Every update in order, from the oldest kept: a build's log lines each
+	// come as one.
+	seq := 0
 	for {
-		select {
-		case st := <-updates:
-			if send(st) {
+		states, next, changed := j.since(seq)
+		seq = next
+		for _, st := range states {
+			b, _ := json.Marshal(st)
+			sse.send("", string(b))
+			if st.Status != "running" {
 				return
 			}
-		case <-j.done:
-			send(j.get())
-			return
+		}
+		select {
+		case <-changed:
 		case <-r.Context().Done():
 			return
 		case <-time.After(25 * time.Second):
 			sse.comment()
 		}
 	}
+}
+
+// handleCancelJob stops a cancellable job (a build), for its owner or an admin.
+func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
+	a, _ := s.account(r)
+	j := s.jobs.get(r.PathValue("id"))
+	if j == nil || (j.owner != a.Username && !a.Admin) {
+		writeError(w, http.StatusNotFound, "no such job")
+		return
+	}
+	if !j.stop() {
+		writeError(w, http.StatusConflict, "this job can't be cancelled, or has finished")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // canSeeDesktop: whoever can see a desktop can follow its jobs.
