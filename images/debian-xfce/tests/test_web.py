@@ -15,15 +15,15 @@ def test_requires_token(sandbox):
 
 
 def open_desktop(p, web_url: str, width=1280, height=800):
-    browser = p.chromium.launch()
+    """Selkies' own page, straight from Caddy (the supervisor serves its own copy)."""
+    browser = p.chromium.launch(args=["--mute-audio"])
     ctx = browser.new_context(extra_http_headers=TOKEN_HEADER, viewport={"width": width, "height": height})
-    # A British-English browser that also knows Polish: the client used to pick Polish.
-    ctx.add_init_script("Object.defineProperty(navigator, 'languages', {get: () => ['en-GB', 'pl']})")
     page = ctx.new_page()
     page.goto(web_url)
-    page.wait_for_selector("canvas", state="attached", timeout=30_000)
     page.wait_for_function(
-        "() => [...document.querySelectorAll('canvas')].some(c => c.width > 100)", timeout=30_000)
+        "() => [...document.querySelectorAll('video')].some(v => v.videoWidth > 100)"
+        " || [...document.querySelectorAll('canvas')].some(c => c.width > 100"
+        " && getComputedStyle(c).display !== 'none')", timeout=30_000)
     page.wait_for_timeout(4000)
     return browser, page
 
@@ -55,40 +55,3 @@ def test_desktop_follows_browser_window(sandbox):
         page.wait_for_timeout(3000)
         assert sandbox.exec("deskyard size").stdout.split() == ["1400", "900"]
         browser.close()
-
-
-def test_web_client_in_english(sandbox):
-    with sync_playwright() as p:
-        browser, page = open_desktop(p, sandbox.web_url)
-        menu = page.evaluate("document.body.innerText")
-        browser.close()
-    assert "Settings" in menu and "Clipboard" in menu, menu[:300]
-
-
-def websocket_handshake(web_url: str, token: str | None) -> int:
-    import base64
-    import http.client
-    from urllib.parse import urlparse
-
-    u = urlparse(web_url)
-    conn = http.client.HTTPConnection(u.hostname, u.port, timeout=10)
-    headers = {
-        "Connection": "Upgrade", "Upgrade": "websocket", "Sec-WebSocket-Version": "13",
-        "Sec-WebSocket-Key": base64.b64encode(b"0123456789abcdef").decode(),
-        "Sec-WebSocket-Protocol": "binary",
-    }
-    if token:
-        headers["X-Deskyard-Token"] = token
-    headers["Origin"] = web_url  # browsers always send one; KasmVNC refuses without
-    conn.request("GET", "/websockify", headers=headers)
-    status = conn.getresponse().status
-    conn.close()
-    return status
-
-
-def test_websocket_needs_token(sandbox):
-    assert websocket_handshake(sandbox.web_url, None) == 401
-
-
-def test_websocket_with_token(sandbox):
-    assert websocket_handshake(sandbox.web_url, TOKEN_HEADER["X-Deskyard-Token"]) == 101

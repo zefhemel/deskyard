@@ -32,6 +32,10 @@
     scrollbar-gutter: stable;
     background: var(--color-ground);
   }
+  /* The desktop page never scrolls; a gutter would narrow the remote screen. */
+  html:has([data-desktop-page]) {
+    scrollbar-gutter: auto;
+  }
   body {
     margin: 0;
     font: 15px/1.45 var(--font-sans);

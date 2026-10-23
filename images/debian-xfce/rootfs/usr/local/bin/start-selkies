@@ -1,0 +1,95 @@
+#!/bin/bash
+# Selkies: streams display :1 and the Deskyard speaker over one WebSocket
+# (/api/websockets) on 127.0.0.1:6080, behind Caddy and the supervisor's token,
+# so its own basic auth is off. The supervisor serves Selkies' web client from
+# the image and proxies only the stream. Uploads go through Deskyard's own
+# endpoint, so Selkies' file transfers are off.
+set -euo pipefail
+
+# The X server, at its starting size (start-xvfb).
+for _ in $(seq 100); do
+    [ -e "$XDG_RUNTIME_DIR/xvfb-ready" ] && break
+    sleep 0.1
+done
+[ -e "$XDG_RUNTIME_DIR/xvfb-ready" ] || echo "$0: no X server after 10 s; starting anyway" >&2
+
+# The webcam needs a v4l2loopback device the user can write to; without one
+# it stays off (and Selkies' page offers none).
+webcam='false|locked' webcam_device=false
+for dev in /dev/video*; do
+    if [ -c "$dev" ] && [ -w "$dev" ] && [ -e "/sys/devices/virtual/video4linux/${dev#/dev/}" ]; then
+        webcam=true webcam_device=$dev
+        break
+    fi
+done
+
+# Viewers' mics reach apps through Selkies' virtual mic, made when the sound
+# server starts (/etc/pipewire/pipewire-pulse.conf.d/deskyard-mic.conf). It
+# must be there before Selkies: if Selkies makes it, the first viewer's
+# connection owns it and takes it away when it ends, and every other viewer's
+# mic goes dead for apps. Made here if the sound server didn't; no Selkies
+# without it. It's the default mic, so an app that opens the mic before
+# anyone turns theirs on doesn't record the desktop's own sound instead.
+mic_ready() { pactl list short sources 2>/dev/null | grep -q 'SelkiesVirtualMic'; }
+for _ in $(seq 100); do
+    pactl info >/dev/null 2>&1 && break
+    sleep 0.1
+done
+for _ in $(seq 30); do
+    mic_ready && break
+    sleep 0.1
+done
+if ! mic_ready; then
+    echo "$0: Selkies' virtual mic is missing; loading it" >&2
+    pactl list short sinks 2>/dev/null | grep -qP '^\d+\tinput\t' || pactl load-module module-null-sink sink_name=input >/dev/null || true
+    pactl load-module module-virtual-source source_name=SelkiesVirtualMic master=input.monitor >/dev/null || true
+    for _ in $(seq 50); do
+        mic_ready && break
+        sleep 0.1
+    done
+fi
+if ! mic_ready; then
+    echo "$0: no virtual mic (SelkiesVirtualMic): viewers' mics wouldn't reach apps; not starting Selkies" >&2
+    exit 1
+fi
+pactl set-default-source output.SelkiesVirtualMic 2>/dev/null || pactl set-default-source SelkiesVirtualMic
+
+# The supervisor rewrites Host when proxying, so a browser's Origin never
+# matches it: the supervisor checks the Origin itself and then sends this one.
+export SELKIES_ALLOWED_ORIGINS=http://supervisor.deskyard.invalid
+
+# The audio gate (patches/selkies-audio-gate.diff) is off: it saves 0.6-1.4 %
+# of a core per watched desktop, but loses the first ~90 ms of every sound
+# after silence, which swallows short pings and bells. An image built on this
+# one switches it on with ENV DESKYARD_AUDIO_IDLE_S=3 (seconds of silence
+# before the capture stops).
+export DESKYARD_AUDIO_IDLE_S="${DESKYARD_AUDIO_IDLE_S:-0}"
+
+# What Deskyard doesn't offer is locked off: an unlocked setting is only the
+# page's default, which a page may change. Turbo (encoding every frame, about
+# a quarter of a core per idle viewer instead of 5-8 %) is locked off too.
+export SELKIES_ENABLE_BASIC_AUTH=false \
+    SELKIES_ENABLE_DUAL_MODE='false|locked' \
+    SELKIES_WEB_ROOT=/opt/selkies/lib/python3.13/site-packages/selkies/selkies_web \
+    SELKIES_AUDIO_DEVICE_NAME=deskyard-speaker.monitor \
+    SELKIES_VIDEO_STREAMING_MODE='false|locked' \
+    SELKIES_USE_CSS_SCALING='true|locked' \
+    SELKIES_USE_BROWSER_CURSORS='false|locked' \
+    SELKIES_KEYBOARD_SHORTCUTS='false|locked' \
+    SELKIES_UI_SHOW_SIDEBAR=false \
+    SELKIES_MICROPHONE_ENABLED=true \
+    SELKIES_MICROPHONE_ON_START=false \
+    SELKIES_GAMEPAD_ENABLED=true \
+    SELKIES_JS_SOCKET_PATH="$XDG_RUNTIME_DIR" \
+    SELKIES_UINPUT_GAMEPAD=false \
+    SELKIES_WEBCAM_ENABLED="$webcam" \
+    SELKIES_WEBCAM_DEVICE="$webcam_device" \
+    SELKIES_WEBCAM_ON_START=false \
+    SELKIES_FILE_TRANSFERS=none \
+    SELKIES_PRINTING_ENABLED='false|locked' \
+    SELKIES_ENABLE_SHARED='false|locked' \
+    SELKIES_ENABLE_PLAYER2='false|locked' \
+    SELKIES_ENABLE_PLAYER3='false|locked' \
+    SELKIES_ENABLE_PLAYER4='false|locked' \
+    SELKIES_UI_SIDEBAR_SHOW_SHARING=false
+exec /opt/selkies/bin/selkies --mode websockets --addr 127.0.0.1 --port 6080

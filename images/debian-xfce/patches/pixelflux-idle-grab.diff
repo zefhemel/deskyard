@@ -1,0 +1,120 @@
+diff --git a/pixelflux/src/encoders/software.rs b/pixelflux/src/encoders/software.rs
+index 9a0dc4f..ca4a119 100644
+--- a/pixelflux/src/encoders/software.rs
++++ b/pixelflux/src/encoders/software.rs
+@@ -1162,6 +1162,11 @@ pub fn stripe_bit_depth(settings: &RustCaptureSettings) -> u32 {
+     8
+ }
+ 
++/// Deskyard idle patch: whether the last frame `encode_cpu` saw left the still screen fully
++/// cleaned up. Process-global (one X11 capture per process); upstream would carry it through
++/// the pipeline.
++pub static ENCODER_SETTLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
++
+ /// Fast, non-cryptographic 64-bit content hash used only for in-memory change detection.
+ ///
+ /// Uses xxh3: a SIMD-friendly hash that processes 64-byte blocks with parallel lanes,
+@@ -1438,6 +1443,7 @@ pub fn encode_cpu(
+     hash_damage: bool,
+     force_idr_all: bool,
+ ) -> Vec<EncodedStripe> {
++    ENCODER_SETTLED.store(false, std::sync::atomic::Ordering::Relaxed);
+     let codec = settings.codec;
+     let asked_idr = force_idr_all && !crate::pipeline::periodic_idr_due(settings, frame_counter);
+     let n_processing_stripes = stripe_count(height, codec, settings.video_fullframe);
+@@ -1550,6 +1556,12 @@ pub fn encode_cpu(
+                 );
+                 st.consecutive_changes = 0;
+             }
++            // Deskyard idle patch: nothing to send and every stripe cleaned up (or nothing to
++            // clean up with), so the capture may stop feeding still frames.
++            ENCODER_SETTLED.store(
++                stripes.iter().all(|st| st.paint_over_sent || !paint_over_armed(st)),
++                std::sync::atomic::Ordering::Relaxed,
++            );
+             return Vec::new();
+         }
+     }
+diff --git a/pixelflux/src/x11/mod.rs b/pixelflux/src/x11/mod.rs
+index 7934941..988a846 100644
+--- a/pixelflux/src/x11/mod.rs
++++ b/pixelflux/src/x11/mod.rs
+@@ -105,6 +105,9 @@ pub struct Controls {
+     pub codec: AtomicU32,
+     pub region_dirty: AtomicBool,
+     pub region: Mutex<(i32, i32, i32, i32)>,
++    /// Deskyard idle patch: consecutive frames the encoder turned into no output (the still
++    /// screen is clean), reset by any frame it sends.
++    pub encoder_quiet_frames: AtomicU32,
+     /// What this capture streams and how, for `ScreenCapture::stream_info`.
+     pub report: Arc<crate::report::StreamReport>,
+ }
+@@ -129,6 +132,7 @@ impl Controls {
+             codec: AtomicU32::new(u32::MAX),
+             region_dirty: AtomicBool::new(false),
+             region: Mutex::new((s.capture_x, s.capture_y, s.width, s.height)),
++            encoder_quiet_frames: AtomicU32::new(0),
+             report: crate::report::StreamReport::new("x11"),
+         }
+     }
+@@ -961,6 +965,13 @@ fn encode_loop<F>(
+         FrameTiming::stamp(&mut stripes, frame.captured_ns, encode_start_ns);
+         controls.codec.store(pl.codec().id(), Ordering::Relaxed);
+         pool.recycle(frame.idx);
++        if stripes.is_empty()
++            && crate::encoders::software::ENCODER_SETTLED.load(Ordering::Relaxed)
++        {
++            controls.encoder_quiet_frames.fetch_add(1, Ordering::Relaxed);
++        } else {
++            controls.encoder_quiet_frames.store(0, Ordering::Relaxed);
++        }
+         if !stripes.is_empty() {
+             frame_count += 1;
+             stripe_count += stripes.len() as u64;
+@@ -1272,6 +1283,15 @@ where
+     let mut geometry_check = 0i32;
+     let mut grab_failures = 0u32;
+ 
++    let idle_ms = |name: &str, default: u64| {
++        std::env::var(name).ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(default)
++    };
++    let idle_after = Duration::from_millis(idle_ms("PIXELFLUX_IDLE_AFTER_MS", 2000));
++    let idle_keepalive = Duration::from_millis(idle_ms("PIXELFLUX_IDLE_KEEPALIVE_MS", 1000));
++    let idle_enabled = idle_ms("PIXELFLUX_IDLE", 1) > 0;
++    let idle_quiet_frames = idle_ms("PIXELFLUX_IDLE_QUIET_FRAMES", 2) as u32;
++    let mut idle_last_change = Instant::now();
++    let mut idle_last_grab = Instant::now();
+     let result = (|| -> Result<(), String> {
+         while !controls.stop.load(Ordering::Relaxed) {
+             let fps = f64::from_bits(controls.fps_bits.load(Ordering::Relaxed)).max(1.0);
+@@ -1291,6 +1311,30 @@ where
+             if controls.stop.load(Ordering::Relaxed) {
+                 break;
+             }
++            // Deskyard idle patch: while DAMAGE reports nothing and the encoder has turned the
++            // last IDLE_QUIET_FRAMES frames into no output (the still picture is clean) — or,
++            // for Turbo, whose encoder never goes quiet, nothing changed for IDLE_AFTER — a
++            // timer tick grabs only every IDLE_KEEPALIVE instead of copying the whole root
++            // each period. A reported change still wakes the next frame at once, and so do a
++            // requested keyframe and a client's report of a lost frame (a viewer joining).
++            // Not with the cursor composited in, whose moves the root's DAMAGE does not report.
++            if trigger == TickTrigger::Damage {
++                idle_last_change = woke;
++            }
++            if trigger == TickTrigger::Timer
++                && damage.is_some()
++                && idle_enabled
++                && !controls.capture_cursor.load(Ordering::Relaxed)
++                && !controls.region_dirty.load(Ordering::Relaxed)
++                && !controls.force_idr.load(Ordering::Relaxed)
++                && controls.reference_reports.lock().unwrap().is_empty()
++                && (controls.encoder_quiet_frames.load(Ordering::Relaxed) >= idle_quiet_frames
++                    || woke.saturating_duration_since(idle_last_change) >= idle_after)
++                && woke.saturating_duration_since(idle_last_grab) < idle_keepalive
++            {
++                continue;
++            }
++            idle_last_grab = woke;
+ 
+             if controls.region_dirty.swap(false, Ordering::Acquire) {
+                 let (nx, ny, nw, nh) = *controls.region.lock().unwrap();

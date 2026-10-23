@@ -32,6 +32,8 @@ func (s *Server) routes() {
 	h("PATCH /api/desktops/{name}", s.handleUpdateDesktop)
 	h("DELETE /api/desktops/{name}", s.handleRemoveDesktop)
 	h("POST /api/desktops/{name}/{action}", s.handlePower) // start, stop, restart, upgrade, keys
+	h("POST /api/desktops/{name}/mic", s.handleCapture(captureMic))
+	h("POST /api/desktops/{name}/cam", s.handleCapture(captureCam))
 	h("PUT /api/desktops/{name}/access", s.handleSetAccess)
 	h("GET /api/desktops/{name}/screen.png", s.handleScreen)
 	h("GET /api/desktops/{name}/processes", s.handleProcesses)
@@ -42,6 +44,9 @@ func (s *Server) routes() {
 	h("POST /api/desktops/{name}/image", s.handleImageFromDesktop)
 	h("GET /api/desktops/{name}/activity", s.handleActivity)
 	h("GET /api/desktops/{name}/screen-events", s.handleScreenEvents)
+	h("GET /api/desktops/{name}/files", s.handleFiles)
+	h("GET /api/desktops/{name}/download", s.handleDownload)
+	h("POST /api/desktops/{name}/upload", s.handleUpload)
 	h("GET /api/desktops/{name}/tokens", s.handleListTokens)
 	h("POST /api/desktops/{name}/tokens", s.handleCreateToken)
 	h("DELETE /api/desktops/{name}/tokens/{id}", s.handleDeleteToken)
@@ -186,7 +191,8 @@ func errorStatus(err error) int {
 	case errors.Is(err, desktops.ErrNotFound), errors.Is(err, accounts.ErrNotFound):
 		return http.StatusNotFound
 	case errors.Is(err, desktops.ErrExists), errors.Is(err, accounts.ErrExists),
-		errors.Is(err, desktops.ErrBusy), errors.Is(err, accounts.ErrLastAdmin), errors.Is(err, desktops.ErrStopped):
+		errors.Is(err, desktops.ErrBusy), errors.Is(err, accounts.ErrLastAdmin), errors.Is(err, desktops.ErrStopped),
+		errors.Is(err, desktops.ErrCameraTaken):
 		return http.StatusConflict
 	default:
 		return http.StatusBadRequest

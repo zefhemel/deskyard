@@ -14,7 +14,7 @@ watching, or using the mouse and keyboard, while you work.
     uv tool install PKG            Python CLIs; uv run / uv venv for projects
     flatpak install --user -y --noninteractive flathub APP_ID   desktop apps
   Node and Python come preinstalled.
-- Leave the desktop's services alone (Caddy, KasmVNC, Chromium, D-Bus,
+- Leave the desktop's services alone (Caddy, Selkies, Chromium, D-Bus,
   supervisord): killing them cuts the human off.
 
 WHERE YOU ARE

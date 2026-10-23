@@ -40,7 +40,7 @@ tags: component
 status: built            # built, planned (in a spec, not built), external (not in this repository)
 partOf: "[[Architecture/Desktop]]"   # its container, if any; no label in the link
 uses:                                 # what it depends on or talks to; no labels in these links
-  - "[[Architecture/KasmVNC]]"
+  - "[[Architecture/Selkies]]"
 spec: "[[superpowers/specs/2026-10-21-workspace-sandbox-design|Workspace Sandbox design]]"
 ---
 ```

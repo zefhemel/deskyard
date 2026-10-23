@@ -91,7 +91,7 @@ def test_recipe_builds_and_works(admin, slug, name):
     entry = catalog(admin)[ref]
     assert entry["custom"] and entry["recipe"] == slug and not entry["baseUpdated"] and not entry["secrets"]
     labels = json.loads(docker("image", "inspect", "-f", "{{json .Config.Labels}}", ref).stdout)
-    assert labels["deskyard.kind"] == "custom" and labels["deskyard.contract"] == "1"
+    assert labels["deskyard.kind"] == "custom" and labels["deskyard.contract"] == "3"
     assert json.loads(labels["deskyard.recipe"])["slug"] == slug
 
     r = admin.post("/api/desktops", json={"name": name, "image": ref})

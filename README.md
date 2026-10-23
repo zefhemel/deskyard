@@ -15,9 +15,14 @@ opens the same desktop, at the same time if they like.
 
 What's in a desktop:
 
-- **XFCE desktop in the browser** (KasmVNC). It resizes to fit your browser
-  window, and the bar above it has the clipboard, keys the browser would
-  otherwise take (Ctrl+Alt+Del, Alt+Tab, ...) and quality presets.
+- **XFCE desktop in the browser**, streamed with
+  [Selkies](https://github.com/selkies-project/selkies): picture, sound,
+  your mic, gamepads, and your webcam where the host has a virtual camera.
+  It resizes to fit your browser window (or keeps a locked size), and the
+  bar above it has the clipboard, keys the browser would otherwise take
+  (Ctrl+Alt+Del, Alt+Tab, ...), quality presets, sound and mic, and a
+  Download button. Drop files on the screen to copy them onto the desktop.
+  Badges show who has their mic or camera on.
 - **One shared Chromium** with one profile: log in once on the desktop and
   the agent is logged in too. It starts when someone opens it or an agent
   connects to it.
@@ -137,8 +142,8 @@ Tools installed with mise, uv and npm bring their own runtimes and should
 keep working across Debian versions; if one breaks, reinstall it.
 
 Any image can be added to the catalog if it follows the image contract
-(label `deskyard.contract=1`, user `user` with home `/workspace`,
-KasmVNC behind Caddy on 8080); see the design in `docs/`.
+(label `deskyard.contract=3`, user `user` with home `/workspace`,
+Selkies behind Caddy on 8080); see the design in `docs/`.
 
 Images this project builds carry the label `deskyard.kind`: `desktop` for
 the desktop image and `supervisor` for the supervisor. List them with
@@ -339,7 +344,8 @@ The supervisor needs Go and Node 24:
 cd supervisor
 make build          # the UI, then bin/deskyard-supervisor and bin/deskyard
 make test           # Go unit tests
-make test-engine    # also the tests that drive a real Docker engine
+make test-engine    # also the tests that drive a real Docker engine (builds the
+                    # desktop image first, unless CC_TEST_IMAGE names one)
 make typecheck      # the UI's TypeScript
 make release VERSION=v1.2.3   # cross-compiled binaries in dist/
 make image          # the supervisor's container image

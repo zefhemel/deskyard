@@ -66,6 +66,7 @@ function setState(c: Desktop, state: Desktop["state"], later?: Desktop["state"])
   if (state === "stopped") {
     c.stats = null;
     c.viewers = [];
+    c.mics = [];
   }
   changed(c);
   if (later) setTimeout(() => setState(c, later), 1500);
@@ -168,7 +169,11 @@ function streamJob(res: ServerResponse, id: string): void {
 function host() {
   const list = visible();
   const running = list.filter((c) => c.state === "running");
-  return { cpus: 8, memBytes: 16 * GB, running: running.length, total: list.length, memUsed: running.reduce((s, c) => s + (c.stats?.memBytes ?? 0), 0) };
+  const cameras = ["/dev/video0", "/dev/video1"].map((device) => {
+    const owner = list.find((c) => c.settings.camera === device);
+    return { device, taken: !!owner, ...(owner ? { desktop: owner.name } : {}) };
+  });
+  return { cpus: 8, memBytes: 16 * GB, running: running.length, total: list.length, memUsed: running.reduce((s, c) => s + (c.stats?.memBytes ?? 0), 0), cameras };
 }
 
 // Stats every 5 s and a visitor now and then, so the pages move. Started by
@@ -188,7 +193,7 @@ setInterval(() => {
   const alice = desktops.find((c) => c.name === "alice");
   if (!alice || alice.state !== "running") return;
   alice.viewers = alice.viewers.includes("sam") ? alice.viewers.filter((v) => v !== "sam") : [...alice.viewers, "sam"];
-  broadcast("viewers", { name: "alice", viewers: alice.viewers, forwards: alice.forwards, agents: alice.agents });
+  broadcast("viewers", { name: "alice", viewers: alice.viewers, mics: alice.mics, cams: alice.cams, forwards: alice.forwards, agents: alice.agents });
 }, 20000);
 // The agents' summaries move on, as they would from the supervisor (once a second at most).
 setInterval(() => {
@@ -209,23 +214,69 @@ function history(c: Desktop) {
   return { history: out, memLimit: c.stats?.memLimit ?? 16 * GB };
 }
 
-/** A stand-in for KasmVNC's vnc.html that speaks the same postMessage protocol (see desktop/kasm.ts). */
-function fakeVnc(name: string): string {
-  return `<!doctype html><html><body style="margin:0;background:#0f151d;height:100vh;display:grid;place-items:center;overflow:hidden">
-<img src="/api/desktops/${name}/screen.png?full=1" style="width:100%;height:100%;object-fit:contain" alt="">
-<canvas tabindex="-1" style="position:fixed;inset:0;width:100%;height:100%;outline:none"></canvas>
+/**
+ * A stand-in for Selkies' client with our additions: window.deskyardScreen
+ * (see desktop/selkies.ts), a picture of the desktop and a log of messages.
+ */
+function fakeScreen(name: string): string {
+  return `<!doctype html><html><body style="margin:0;background:#0f151d;height:100vh;overflow:hidden">
+<canvas id="videoCanvas" width="1280" height="800" style="display:none"></canvas>
+<img id="videoStream" src="/api/desktops/${name}/screen.png?full=1" style="position:absolute;inset:0;width:100%;height:100%;object-fit:fill" alt="">
 <div id="log" style="position:fixed;left:12px;bottom:12px;font:12px monospace;color:#9fb0c3"></div>
 <script>
-const post = (action, value) => parent.postMessage({ action, value }, "*");
 const log = (t) => (document.getElementById("log").textContent = t);
-post("noVNC_initialized", null);
-post("connection_state", "connecting");
-setTimeout(() => post("connection_state", "connected"), 600);
-setTimeout(() => post("clipboardrx", "https://github.com/zefhemel/deskyard/pull/42"), 1500);
-addEventListener("message", (e) => {
-  if (e.data.action === "clipboardsnd") log("clipboard ← " + e.data.value);
-  if (e.data.action === "setvideoquality") log("quality ← " + e.data.qualityLevel);
-});
+let state = "connecting";
+const listeners = new Set();
+const displayListeners = new Set();
+let display = { owner: null, width: 0, height: 0, settings: null };
+window.deskyardScreen = {
+  tab: "devtab",
+  post(msg) { log(JSON.stringify(msg)); },
+  on(type, fn) {
+    if (type === "deskyard.state") { listeners.add(fn); return () => listeners.delete(fn); }
+    if (type === "deskyard.display") { displayListeners.add(fn); return () => displayListeners.delete(fn); }
+    const l = (e) => e.data && e.data.type === type && fn(e.data);
+    addEventListener("message", l);
+    return () => removeEventListener("message", l);
+  },
+  state: () => state,
+  display: () => display,
+  media: () => media,
+  setSound(on) { setMedia({ sound: on, playing: on }); },
+  resumeSound() {},
+  allowCapture(kind, on) { allowed[kind] = on; },
+  setCamera() {},
+  setMic() {},
+  setOutput() {},
+  watchSound() { return () => {}; },
+  micLevel: () => (media.mic ? 0.2 + Math.random() * 0.4 : 0),
+  video: () => document.getElementById("videoStream"),
+};
+// Sound, mic and webcam: pipelineControl turns a capture on where allowed.
+let media = { sound: false, mic: false, webcam: false, playing: false, soundAt: 0 };
+const allowed = { microphone: false, webcam: false };
+const mediaListeners = new Set();
+function setMedia(m) { media = { ...media, ...m }; for (const fn of mediaListeners) fn(media); }
+const on = window.deskyardScreen.on;
+window.deskyardScreen.on = (type, fn) => {
+  if (type === "deskyard.media") { mediaListeners.add(fn); return () => mediaListeners.delete(fn); }
+  if (type === "deskyard.alert") return () => {};
+  return on(type, fn);
+};
+const post = window.deskyardScreen.post;
+window.deskyardScreen.post = (msg) => {
+  post(msg);
+  if (msg.type === "pipelineControl" && msg.pipeline in allowed) {
+    setTimeout(() => setMedia({ [msg.pipeline === "microphone" ? "mic" : "webcam"]: msg.enabled && allowed[msg.pipeline] }), 300);
+  }
+};
+setTimeout(() => {
+  state = "connected";
+  for (const fn of listeners) fn(state);
+  display = { owner: true, width: 1280, height: 800, settings: null };
+  for (const fn of displayListeners) fn(display);
+}, 600);
+setTimeout(() => postMessage({ type: "clipboardContentUpdate", text: "https://github.com/zefhemel/deskyard/pull/42" }, location.origin), 1500);
 </script></body></html>`;
 }
 
@@ -234,10 +285,10 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   const path = url.pathname;
   const method = req.method ?? "GET";
 
-  const vnc = /^\/([a-z][a-z0-9-]*)\/vnc\/vnc\.html$/.exec(path);
-  if (vnc?.[1]) {
+  const screen = /^\/([a-z][a-z0-9-]*)\/screen\/$/.exec(path);
+  if (screen?.[1]) {
     res.setHeader("Content-Type", "text/html");
-    res.end(fakeVnc(vnc[1]));
+    res.end(fakeScreen(screen[1]));
     return;
   }
   if (!path.startsWith("/api/")) return next();
@@ -295,8 +346,8 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const img = images.find((i) => i.ref === b.image) ?? images[0]!;
     const c: Desktop = {
       id: `${name}-id`, name, state: "creating", startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/${name}`, image: img.ref, imageTitle: img.title,
-      imageVersion: img.version, imageSecrets: img.secrets, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus) },
-      access: (b.access as string[]) ?? [], viewers: [], forwards: [], agents: [], tokens: 0, stats: null,
+      imageVersion: img.version, imageSecrets: img.secrets, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), camera: "" },
+      access: (b.access as string[]) ?? [], viewers: [], mics: [], cams: [], webcam: false, forwards: [], agents: [], tokens: 0, stats: null,
     };
     desktops.push(c);
     changed(c);
@@ -392,6 +443,10 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
       if (typeof b.memoryBytes === "number") c.settings.memoryBytes = b.memoryBytes;
       if (typeof b.nanoCpus === "number") c.settings.nanoCpus = b.nanoCpus;
       if (typeof b.image === "string") c.image = b.image;
+      if (typeof b.camera === "string") {
+        c.settings.camera = b.camera;
+        c.webcam = b.camera !== "" && c.state === "running";
+      }
       changed(c);
     }, c.name));
   }
@@ -412,6 +467,15 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     }, c.name));
   }
   if (sub === "keys") return json(res, 204);
+  if ((sub === "mic" || sub === "cam") && method === "POST") {
+    const on = (await readBody(req)).on === true;
+    const me = "zef";
+    const key = sub === "mic" ? "mics" : "cams";
+    c[key] = on ? [...new Set([...c[key], me])] : c[key].filter((m) => m !== me);
+    if (on && !c.viewers.includes(me)) c.viewers = [...c.viewers, me];
+    changed(c);
+    return json(res, 204);
+  }
   if (sub === "activity") return json(res, 200, activityOf(c));
   if (sub === "stats") return json(res, 200, history(c));
   if (sub === "folder") return json(res, 200, { path: c.folder, bytes: 3.2 * GB, complete: true });

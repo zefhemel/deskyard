@@ -39,7 +39,7 @@ var leftOut = []string{
 	".cargo/registry", ".cargo/git", ".rustup/downloads", ".gradle/caches", ".m2/repository", "go/pkg/mod",
 	".pnpm-store", ".local/share/pnpm/store", ".yarn/cache", ".bun/install/cache",
 	".workspace-seeded", ".Xauthority", ".ICEauthority", ".xsession-errors",
-	".xsession-errors.old", ".dbus", ".vnc",
+	".xsession-errors.old", ".dbus",
 	browserProfile + "/SingletonLock", browserProfile + "/SingletonSocket", browserProfile + "/SingletonCookie",
 	browserProfile + "/.open",
 }

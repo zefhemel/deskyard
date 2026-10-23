@@ -36,6 +36,8 @@ type ContainerSpec struct {
 	Flatpak bool
 	Restart string // "unless-stopped", "no"
 	Cmd     []string
+	// Devices are host devices passed in at the same path (e.g. /dev/video0).
+	Devices []string
 	// Entrypoint replaces the image's entrypoint when set.
 	Entrypoint []string
 	// NoHealthcheck turns off the image's HEALTHCHECK, which would otherwise
@@ -48,10 +50,14 @@ type Container struct {
 	Labels                   map[string]string
 	Env                      map[string]string
 	State                    string // created, running, paused, restarting, exited, dead
-	StartedAt                time.Time
-	IP                       map[string]string // network name → address
-	LocalPort                int               // host 127.0.0.1 port published for 8080, 0 if none
-	MemoryBytes, NanoCPUs    int64
+	// Error is why the engine's last start failed (e.g. a restart policy's
+	// after a reboot); "" when it didn't, or the container was stopped.
+	Error                 string
+	StartedAt             time.Time
+	IP                    map[string]string // network name → address
+	LocalPort             int               // host 127.0.0.1 port published for 8080, 0 if none
+	MemoryBytes, NanoCPUs int64
+	Devices               []string // host devices passed in (their paths on the host)
 }
 
 func (c Container) Running() bool { return c.State == "running" || c.State == "restarting" }

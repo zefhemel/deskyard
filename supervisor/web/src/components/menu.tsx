@@ -70,7 +70,8 @@ export function Menu({ items, trigger, align = "right", class: extra, onClose }:
               {item.separated && <hr class="mx-1 my-[5px] border-0 border-t border-line" />}
               <button
                 type="button"
-                role="menuitem"
+                role={item.checked === undefined ? "menuitem" : "menuitemcheckbox"}
+                aria-checked={item.checked}
                 class={cx(
                   "flex w-full cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-2.5 py-2 text-left text-[15px] whitespace-nowrap hover:bg-[#e7ebf0]",
                   item.danger ? "text-danger" : "text-ink",
@@ -81,7 +82,11 @@ export function Menu({ items, trigger, align = "right", class: extra, onClose }:
                   onClose?.();
                 }}
               >
-                {item.checked !== undefined && <span class="w-3.5 text-accent">{item.checked ? "✓" : ""}</span>}
+                {item.checked !== undefined && (
+                  <span aria-hidden="true" class="w-3.5 text-accent">
+                    {item.checked ? "✓" : ""}
+                  </span>
+                )}
                 <span>{item.label}</span>
               </button>
             </div>

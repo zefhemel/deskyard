@@ -10,6 +10,8 @@ import requests
 
 from conftest import ADMIN_PASSWORD, IMAGE, Client, docker
 
+SELKIES_WEB = "/opt/selkies/lib/python3.13/site-packages/selkies/selkies_web"
+
 
 def ws_handshake(base, path, cookies=None, origin=None, headers=None) -> int:
     hdrs = {"Connection": "Upgrade", "Upgrade": "websocket", "Sec-WebSocket-Version": "13",
@@ -55,10 +57,10 @@ def test_cross_origin_state_change_refused(admin):
 def test_create_desktop_and_lifecycle(admin, desktop, name, supervisor):
     assert desktop["state"] == "running"
     assert admin.get(f"/{name}/").status_code == 200  # the UI's desktop page
-    assert admin.get(f"/{name}/vnc/vnc.html").status_code == 200
-    assert ws_handshake(admin.base, f"/{name}/websockify", admin.cookies, origin=admin.base) == 101
-    assert ws_handshake(admin.base, f"/{name}/websockify", admin.cookies, origin="https://evil.example") == 403
-    assert ws_handshake(admin.base, f"/{name}/websockify", origin=admin.base) == 401
+    assert admin.get(f"/{name}/screen/").status_code == 200
+    assert ws_handshake(admin.base, f"/{name}/screen/api/websockets", admin.cookies, origin=admin.base) == 101
+    assert ws_handshake(admin.base, f"/{name}/screen/api/websockets", admin.cookies, origin="https://evil.example") == 403
+    assert ws_handshake(admin.base, f"/{name}/screen/api/websockets", origin=admin.base) == 401
     for action, state in [("stop", "stopped"), ("start", "running"), ("restart", "running")]:
         assert admin.post(f"/api/desktops/{name}/{action}").status_code == 204
         assert admin.desktop(name)["state"] == state
@@ -69,7 +71,7 @@ def test_create_desktop_and_lifecycle(admin, desktop, name, supervisor):
         time.sleep(1)
     assert png.status_code == 200 and png.content[:4] == b"\x89PNG"
     procs = admin.get(f"/api/desktops/{name}/processes").json()
-    assert any("Xkasmvnc" in " ".join(r) for r in procs["rows"])
+    assert any("Xvfb" in " ".join(r) for r in procs["rows"])
 
 
 def test_remove_keeps_or_deletes_files(admin, name, supervisor):
@@ -92,9 +94,9 @@ def test_regular_account_sees_only_its_desktops(admin, desktop, name, supervisor
     anna = supervisor.client().login(user, "pw1")
     assert anna.get("/api/desktops").json() == []
     assert anna.get(f"/api/desktops/{name}").status_code == 404
-    assert anna.get(f"/{name}/vnc/vnc.html").status_code == 404
+    assert anna.get(f"/{name}/screen/").status_code == 404
     assert anna.post(f"/api/desktops/{name}/stop").status_code == 404
-    assert ws_handshake(anna.base, f"/{name}/websockify", anna.cookies, origin=anna.base) == 404
+    assert ws_handshake(anna.base, f"/{name}/screen/api/websockets", anna.cookies, origin=anna.base) == 404
     assert anna.post("/api/desktops", json={"name": "nope"}).status_code == 403
     # Grant access: power yes, manage no.
     assert admin.put(f"/api/desktops/{name}/access", json={"usernames": [user]}).status_code == 204
@@ -118,7 +120,7 @@ def test_revoking_access_closes_the_desktop(admin, desktop, name, supervisor):
     cookie = "; ".join(f"{k}={v}" for k, v in anna.cookies.items())
 
     async def run():
-        url = anna.base.replace("http", "ws") + f"/{name}/websockify"
+        url = anna.base.replace("http", "ws") + f"/{name}/screen/api/websockets"
         async with websockets.connect(url, additional_headers={"Cookie": cookie, "Origin": anna.base},
                                       subprotocols=["binary"]) as ws:
             await asyncio.sleep(1)
@@ -158,10 +160,10 @@ def test_desktop_publishes_only_8080_and_is_isolated(admin, desktop, name, super
 
 def test_replaced_web_server_isnt_served(admin, desktop, name):
     """An agent that replaces the desktop's web content can't get it served on the supervisor's origin."""
-    before = admin.get(f"/{name}/vnc/vnc.html").text
+    before = admin.get(f"/{name}/screen/").text
     subprocess.run(["docker", "exec", "-u", "root", f"deskyard-{name}", "sh", "-c",
-                    "echo '<script>evil()</script>' > /usr/share/kasmvnc/www/vnc.html"], check=True)
-    assert admin.get(f"/{name}/vnc/vnc.html").text == before
+                    f"echo '<script>evil()</script>' > {SELKIES_WEB}/index.html"], check=True)
+    assert admin.get(f"/{name}/screen/").text == before
     assert admin.get(f"/{name}/anything-else").status_code == 404
 
 
@@ -191,7 +193,7 @@ def test_settings_change_recreates_and_keeps_folder(admin, desktop, name, superv
     c = admin.desktop(name)
     assert c["id"] == old and c["state"] == "running"
     assert c["created"] == desktop["created"] and c["job"] is None
-    assert c["settings"] == {"memoryBytes": 2 << 30, "nanoCpus": 2_000_000_000}
+    assert c["settings"] == {"memoryBytes": 2 << 30, "nanoCpus": 2_000_000_000, "camera": ""}
     assert (supervisor.data / name / "probe.txt").read_text() == "hi"
 
 
@@ -200,5 +202,5 @@ def test_restart_rediscovers_desktops(supervisor, admin, desktop, name):
     supervisor.start()
     c = supervisor.admin()
     assert c.desktop(name)["state"] == "running"
-    assert ws_handshake(c.base, f"/{name}/websockify", c.cookies, origin=c.base) == 101
+    assert ws_handshake(c.base, f"/{name}/screen/api/websockets", c.cookies, origin=c.base) == 101
     admin.cookies.update(c.cookies)

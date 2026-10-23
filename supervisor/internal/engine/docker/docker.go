@@ -87,6 +87,9 @@ func (d *Docker) Create(ctx context.Context, s engine.ContainerSpec) (string, er
 			NanoCPUs: s.NanoCPUs,
 		},
 	}
+	for _, d := range s.Devices {
+		hc.Devices = append(hc.Devices, container.DeviceMapping{PathOnHost: d, PathInContainer: d, CgroupPermissions: "rwm"})
+	}
 	if s.Restart != "" {
 		hc.RestartPolicy = container.RestartPolicy{Name: container.RestartPolicyMode(s.Restart)}
 	}
@@ -175,6 +178,7 @@ func (d *Docker) Inspect(ctx context.Context, id string) (engine.Container, erro
 	}
 	if r.State != nil {
 		c.State = string(r.State.Status)
+		c.Error = r.State.Error
 		if t, err := time.Parse(time.RFC3339Nano, r.State.StartedAt); err == nil {
 			c.StartedAt = t
 		}
@@ -182,6 +186,9 @@ func (d *Docker) Inspect(ctx context.Context, id string) (engine.Container, erro
 	if r.HostConfig != nil {
 		c.MemoryBytes = r.HostConfig.Memory
 		c.NanoCPUs = r.HostConfig.NanoCPUs
+		for _, d := range r.HostConfig.Devices {
+			c.Devices = append(c.Devices, d.PathOnHost)
+		}
 		if b := r.HostConfig.PortBindings[port8080]; len(b) > 0 {
 			c.LocalPort, _ = strconv.Atoi(b[0].HostPort)
 		}

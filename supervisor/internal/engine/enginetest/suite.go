@@ -38,19 +38,20 @@ func Run(t *testing.T, e engine.Engine) {
 	id, err := e.Create(ctx, engine.ContainerSpec{
 		Name: name, Image: image, Labels: labels, Env: map[string]string{"HELLO": "world"},
 		Network: name, Aliases: []string{"probe"}, PublishLocal: &port,
-		Cmd: []string{"sleep", "600"},
+		Cmd: []string{"sleep", "600"}, Devices: []string{"/dev/zero"},
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	t.Cleanup(func() { _ = e.Remove(context.Background(), id) })
 
-	t.Run("labels and env round-trip", func(t *testing.T) {
+	t.Run("labels, env and devices round-trip", func(t *testing.T) {
 		c, err := e.Inspect(ctx, id)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if c.Labels["deskyard.enginetest"] != name || c.Env["HELLO"] != "world" || c.Name != name {
+		if c.Labels["deskyard.enginetest"] != name || c.Env["HELLO"] != "world" || c.Name != name ||
+			len(c.Devices) != 1 || c.Devices[0] != "/dev/zero" {
 			t.Fatalf("got %+v", c)
 		}
 		list, err := e.List(ctx, labels)
