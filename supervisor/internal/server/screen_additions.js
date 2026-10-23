@@ -24,6 +24,8 @@
 //   desktop app's demand), and a mic must never go live unseen.
 // - Follows sound, mic and webcam (media()), and turns Selkies' alert()s
 //   about them into messages for the page.
+// - Gets a page beside the display's owner a key frame once its client has
+//   dropped its decoders on joining (or on a change of size or settings).
 // - Lets the desktop page's ?avsync=1 readout hear the sound as it reaches
 //   the speakers (watchSound()).
 // - Keeps Selkies from taking the focus out of the desktop page: it focuses
@@ -477,6 +479,47 @@
         if (typeof e.data === "string") onText(e.data);
       });
     },
+  });
+
+  // --- a page beside the owner starts on a key frame ------------------------------
+  // Selkies' client drops its video decoders when its size or its stream
+  // settings change, and a page joining beside the display's owner changes
+  // both as it joins: it takes the display's settings (serverSettings, from
+  // display_settings) and the desktop page locks it to the stream's size
+  // (setManualResolution). The key frame Selkies sends a joining page can
+  // come before that, and is then thrown away: the page shows nothing until
+  // the client asks for another, 3 s on, and Selkies takes a key frame
+  // request from a page beside the owner once a second at most. So when the
+  // client has handled such a message, a page beside the owner asks for its
+  // feed again: Selkies answers START_VIDEO from a page beside the owner
+  // with a reset and a key frame for that page alone. It takes that every
+  // 5 s, so in between the page asks for a key frame, which comes if the
+  // last request was a second ago.
+  const dropsDecoders = new Set(["settings", "serverSettings", "setManualResolution", "resetResolutionToWindow"]);
+  const RESTART_EVERY = 5000;
+  let resync = 0;
+  let resyncFor = null; // the connection it's for
+  let restarted = { for: null, at: -Infinity }; // the last START_VIDEO
+  addListener.call(window, "message", (e) => {
+    if (e.source !== window || e.origin !== location.origin || !e.data) return;
+    if (dropsDecoders.has(e.data.type)) {
+      if (display.owner !== false || !transport) return;
+      // Posted now, it comes after the client handled this message and any
+      // posted with it.
+      resync += 1;
+      resyncFor = transport;
+      window.postMessage({ type: "deskyard.resync", n: resync }, location.origin);
+    } else if (e.data.type === "deskyard.resync" && e.data.n === resync) {
+      if (display.owner === false && transport === resyncFor && sendOwn && transport.readyState === PageWebSocket.OPEN) {
+        const now = performance.now();
+        if (restarted.for !== transport || now - restarted.at >= RESTART_EVERY) {
+          restarted = { for: transport, at: now };
+          sendOwn("START_VIDEO");
+        } else {
+          sendOwn("REQUEST_KEYFRAME");
+        }
+      }
+    }
   });
 
   // --- hooks for the desktop page ----------------------------------------------

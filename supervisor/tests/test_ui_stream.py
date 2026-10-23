@@ -202,6 +202,53 @@ def test_background_tab_doesnt_stall(supervisor, desktop, name):
         browser.close()
 
 
+# In the client's frame: the messages that drop the client's video decoders
+# as a page joins beside the owner (the display's settings, the desktop
+# page's size lock) wait until its first frame shows, as on a slow machine
+# where the join's key frame comes first.
+LATE_JOIN = """(() => {
+    if (window === top) return;
+    const held = [];
+    let shown = false;
+    window.addEventListener("message", (e) => {
+        if (shown || e.source !== window || !e.data) return;
+        if (!["serverSettings", "setScaleLocally", "setManualResolution"].includes(e.data.type)) return;
+        e.stopImmediatePropagation();
+        held.push(e.data);
+    }, true);
+    const t = setInterval(() => {
+        if (!(window.__frames > 0)) return;
+        clearInterval(t);
+        shown = true;
+        window.__released = window.__frames;
+        for (const m of held) window.postMessage(m, location.origin);
+    }, 5);
+})()"""
+
+
+def test_late_join_still_gets_a_key_frame(supervisor, desktop, name):
+    # The join's key frame came before the page dropped its decoders: Selkies
+    # takes the page's own request for another only a second after the
+    # join's, and the screen is still, so nothing else would come.
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        a = sign_in(browser, supervisor.base)
+        open_desktop(a, supervisor.base, name)
+        a.wait_for_function(f"{SCREEN}.display().owner === true", timeout=15000)
+        b = sign_in(browser, supervisor.base)
+        b.context.add_init_script(COUNT_FRAMES)
+        b.context.add_init_script(LATE_JOIN)
+        seen = netchange.failures(b)
+        b.goto(f"{supervisor.base}/{name}/")
+        released = "document.querySelector('iframe')?.contentWindow?.__released"
+        wait_loaded(b, f"{released} !== undefined", seen)
+        t0 = time.time()
+        b.wait_for_function(f"({FRAMES}) > {released}", timeout=5000)
+        # At once; without it, 3 s or never. (Loose: it runs beside other tests.)
+        assert time.time() - t0 < 1, time.time() - t0
+        browser.close()
+
+
 def test_selkies_saved_settings_ignored(supervisor, desktop, name):
     # Selkies' own saved stream settings and manual size are this page's
     # business only through our bar: gone at load, so they never apply.
