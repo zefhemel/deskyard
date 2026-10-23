@@ -1,0 +1,97 @@
+--- a/selkies/websockets_mode.py	2026-10-22 15:41:04
++++ b/selkies/websockets_mode.py	2026-10-22 15:41:05
+@@ -2889,6 +2889,11 @@
+             self.is_pcmflux_capturing = True
+             if self.pcmflux_send_task is None or self.pcmflux_send_task.done():
+                 self.pcmflux_send_task = asyncio.create_task(self._pcmflux_send_audio_chunks())
++            if float(os.environ.get("DESKYARD_AUDIO_IDLE_S", "3")) > 0:
++                gate = getattr(self, "_audio_idle_gate_task", None)
++                if gate is None or gate.done():
++                    self._audio_idle_gate_task = asyncio.create_task(
++                        self._audio_idle_gate(self.pcmflux_module))
+ 
+             data_logger.debug(f"pcmflux audio capture state: {state}.")
+             return True
+@@ -2896,6 +2901,71 @@
+             data_logger.error(f"Failed to start pcmflux audio pipeline: {e}", exc_info=True)
+             await self._stop_pcmflux_pipeline()
+             return False
++
++    async def _audio_idle_gate(self, module: Any) -> None:
++        """Deskyard CPU patch: run pcmflux's capture only while a stream plays into the
++        captured sink. With nothing playing, the capture is stopped after
++        DESKYARD_AUDIO_IDLE_S seconds (the pipeline and send task stay up), so PipeWire's
++        graph and the capture thread sleep; a new sink input starts it again."""
++        import pulsectl_asyncio
++        sink_name = (self.audio_device_name or "").removesuffix(".monitor")
++        idle_after = float(os.environ.get("DESKYARD_AUDIO_IDLE_S", "3"))
++        changed = asyncio.Event()
++        paused = False
++        try:
++            async with pulsectl_asyncio.PulseAsync("selkies-audio-gate") as pulse:
++                async def watch() -> None:
++                    async for _ in pulse.subscribe_events("sink_input"):
++                        changed.set()
++                watcher = asyncio.create_task(watch())
++                try:
++                    quiet_since: Optional[float] = None
++                    while self.pcmflux_module is module:
++                        changed.clear()
++                        sinks = {sk.index: sk.name for sk in await pulse.sink_list()}
++                        playing = any(sinks.get(si.sink) == sink_name and not si.corked
++                                      for si in await pulse.sink_input_list())
++                        now = time.monotonic()
++                        if playing:
++                            quiet_since = None
++                            if paused:
++                                async with self._audio_lock:
++                                    if self.pcmflux_module is not module:
++                                        return
++                                    await asyncio.get_running_loop().run_in_executor(
++                                        None, module.start_capture, self.pcmflux_settings,
++                                        self.pcmflux_callback)
++                                paused = False
++                                data_logger.info("Audio gate: a stream plays, capture resumed.")
++                            await changed.wait()
++                            continue
++                        if quiet_since is None:
++                            quiet_since = now
++                        if not paused and now - quiet_since >= idle_after:
++                            async with self._audio_lock:
++                                if self.pcmflux_module is not module:
++                                    return
++                                await asyncio.get_running_loop().run_in_executor(
++                                    None, module.stop_capture)
++                            paused = True
++                            data_logger.info("Audio gate: nothing plays, capture paused.")
++                        if paused:
++                            await changed.wait()
++                        else:
++                            try:
++                                await asyncio.wait_for(changed.wait(),
++                                                       idle_after - (now - quiet_since) + 0.05)
++                            except asyncio.TimeoutError:
++                                pass
++                finally:
++                    watcher.cancel()
++        except asyncio.CancelledError:
++            raise
++        except Exception as e:
++            data_logger.warning(f"Audio gate stopped ({e}); capture left running.")
++            if paused and self.pcmflux_module is module:
++                await asyncio.get_running_loop().run_in_executor(
++                    None, module.start_capture, self.pcmflux_settings, self.pcmflux_callback)
+ 
+     async def _stop_pcmflux_pipeline(self) -> bool:
+         """Stop the audio capture and broadcast task; idempotent.
+@@ -2908,6 +2978,10 @@
+         
+         data_logger.info("Stopping pcmflux audio pipeline...")
+         self.is_pcmflux_capturing = False
++        gate = getattr(self, "_audio_idle_gate_task", None)
++        if gate is not None and gate is not asyncio.current_task():
++            gate.cancel()
++            self._audio_idle_gate_task = None
+ 
+         if self.pcmflux_send_task:
+             self.pcmflux_send_task.cancel()

@@ -1,0 +1,41 @@
+--- a/selkies/input_handler.py	2026-10-22 15:41:04
++++ b/selkies/input_handler.py	2026-10-22 15:41:05
+@@ -5543,6 +5543,14 @@
+         """
+         try:
+             while True:
++                # Deskyard CPU patch: with nothing held, wait for a key press (gamepads: 1 s).
++                if not self.pressed_keys and not self.gamepad_heartbeats:
++                    wake = self.__dict__.setdefault("_key_sweep_wake", asyncio.Event())
++                    wake.clear()
++                    try:
++                        await asyncio.wait_for(wake.wait(), 1.0)
++                    except asyncio.TimeoutError:
++                        pass
+                 await asyncio.sleep(self.key_sweep_interval)
+                 if not self.pressed_keys and not self.gamepad_heartbeats:
+                     continue
+@@ -5635,6 +5643,12 @@
+         """
+         try:
+             while True:
++                # Deskyard CPU patch: sleep until a key is held instead of ticking at 50 Hz.
++                if not (self.pressed_keys or self.key_suspended or self.key_repeat_state):
++                    wake = self.__dict__.setdefault("_key_held_wake", asyncio.Event())
++                    wake.clear()
++                    if not (self.pressed_keys or self.key_suspended or self.key_repeat_state):
++                        await wake.wait()
+                 await asyncio.sleep(self.key_repeat_tick)
+                 now = time.monotonic()
+                 for keysym, (_beat, live) in list(self.key_suspended.items()):
+@@ -9107,6 +9121,10 @@
+                     self.pressed_keys.pop(oldest_keysym, None)
+                 self.pressed_keys[keysym] = time.monotonic()
+             self.reaped_atomic_keys.discard(keysym)
++            for name in ("_key_held_wake", "_key_sweep_wake"):
++                wake = self.__dict__.get(name)
++                if wake is not None:
++                    wake.set()
+             if self.is_wayland:
+                 self._keyboard_enqueue(("kd", keysym))
+             else:

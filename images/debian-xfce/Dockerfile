@@ -34,6 +34,48 @@ RUN curl -fsSL -o selkies.tar.gz "https://github.com/selkies-project/selkies/arc
     && make -C addons/fake-udev CFLAGS="-O2" \
     && cp addons/fake-udev/libudev.so.1.0.0-fake /out/opt/selkies/lib/fake-udev/libudev.so.1
 
+# pixelflux (Selkies' screen capture and encoder), built from its source at
+# tag 2.2.1 with Deskyard's idle-grab patch (images/debian-xfce/patches). The
+# codec libraries are built from source at the commits pixelflux's own wheel
+# build pins (the before-all script in its pyproject.toml), as the PyPI wheel's
+# are, and land in /opt/pixelflux/lib, which the module finds by its rpath.
+FROM debian:trixie-slim AS pixelflux
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential clang libclang-dev cmake nasm meson ninja-build pkg-config git curl ca-certificates \
+        python3-dev python3-venv libpixman-1-dev libx11-dev libxext-dev libxfixes-dev libdrm-dev \
+        libinput-dev libxkbcommon-dev libgbm-dev libwayland-dev libudev-dev libxcb1-dev \
+    && rm -rf /var/lib/apt/lists/*
+ARG PIXELFLUX_VERSION=2.2.1
+ARG PIXELFLUX_COMMIT=67b6d833fc8eba87f9b15fb4cb3382d923a2fe56
+ARG PIXELFLUX_SOURCE_SHA256=6984b587bf1384445fe3ef82aa37fe07daab224dcf06599eb7454433b48a4ad3
+WORKDIR /src
+RUN curl -fsSL -o /tmp/pixelflux.tar.gz "https://github.com/linuxserver/pixelflux/archive/${PIXELFLUX_COMMIT}.tar.gz" \
+    && echo "${PIXELFLUX_SOURCE_SHA256}  /tmp/pixelflux.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/pixelflux.tar.gz --strip-components=1 && rm /tmp/pixelflux.tar.gz \
+    && grep -qx "version = \"${PIXELFLUX_VERSION}\"" pixelflux/Cargo.toml
+# The codec libraries: the part of the wheel build's before-all script that
+# defines and builds them, without its manylinux/Alpine package installs.
+RUN python3 -c 'import tomllib; s = tomllib.load(open("pyproject.toml", "rb"))["tool"]["cibuildwheel"]["linux"]["before-all"]; head, sep, _ = s.partition("\n    if command -v dnf"); assert sep and "build_codec_libraries()" in head, "pixelflux before-all changed shape"; print(head + "\nbuild_codec_libraries")' > /tmp/codecs.sh \
+    && bash /tmp/codecs.sh && ldconfig && rm -rf /tmp/*
+ARG RUST_VERSION=1.99.1
+RUN url="https://static.rust-lang.org/rustup/dist/$(uname -m)-unknown-linux-gnu/rustup-init" \
+    && curl -fsSL -o /tmp/rustup-init "$url" \
+    && echo "$(curl -fsSL "$url.sha256" | cut -d' ' -f1)  /tmp/rustup-init" | sha256sum -c - \
+    && chmod +x /tmp/rustup-init && /tmp/rustup-init -y --profile minimal --default-toolchain "${RUST_VERSION}" \
+    && rm /tmp/rustup-init
+ENV PATH=/root/.cargo/bin:$PATH
+RUN cargo fetch --locked --manifest-path pixelflux/Cargo.toml \
+    && python3 -m venv /build \
+    && /build/bin/pip install --no-cache-dir setuptools==84.2.1 setuptools-rust==1.13.0 wheel==0.48.0
+# Each patch must apply exactly (git apply allows no fuzz), so a version bump
+# that moves the patched code fails here instead of dropping the patch.
+COPY images/debian-xfce/patches/pixelflux-*.diff /patches/
+RUN for p in /patches/pixelflux-*.diff; do git apply --verbose "$p" || exit 1; done \
+    && RUSTFLAGS="-C link-arg=-Wl,-rpath,/opt/pixelflux/lib" \
+        /build/bin/pip wheel --no-deps --no-build-isolation -w /out/wheels . \
+    && mkdir -p /out/opt/pixelflux/lib && cp -a /usr/local/lib/lib*.so* /out/opt/pixelflux/lib/
+
 FROM debian:trixie-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -48,18 +90,32 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && dpkg-divert --local --rename --divert /usr/bin/flatpak.real --add /usr/bin/flatpak
 
 # The screen: Xvfb as the X server, and Selkies streaming it (H.264 and Opus
-# over one WebSocket) with its web client, from PyPI wheels into a venv.
-# Pinned: Selkies 2.1.0 (the latest 2.1.x on 2026-10-22) and the pixelflux and
-# pcmflux versions it requires. Its web client lands in
+# over one WebSocket) with its web client, into a venv: Selkies and pcmflux
+# from PyPI, pixelflux from the stage above. Pinned: Selkies 2.1.0 (the latest
+# 2.1.x on 2026-10-22) and the pixelflux and pcmflux versions it requires.
+# Selkies' idle-CPU patches (images/debian-xfce/patches) are applied to the
+# installed package, and must apply exactly. Its web client lands in
 # /opt/selkies/lib/python3.13/site-packages/selkies/selkies_web, which the
 # supervisor extracts from the image.
 ARG SELKIES_VERSION=2.1.0 PIXELFLUX_VERSION=2.2.1 PCMFLUX_VERSION=2.2.0
-RUN apt-get update && apt-get install -y --no-install-recommends \
+COPY --from=pixelflux /out/opt/pixelflux/ /opt/pixelflux/
+RUN --mount=type=bind,from=pixelflux,source=/out/wheels,target=/tmp/pixelflux-wheels \
+    --mount=type=bind,source=images/debian-xfce/patches,target=/tmp/patches \
+    apt-get update && apt-get install -y --no-install-recommends \
         xvfb x11-xserver-utils xcvt python3-venv \
     && rm -rf /var/lib/apt/lists/* \
     && python3 -m venv /opt/selkies \
     && /opt/selkies/bin/pip install --no-cache-dir \
-        "selkies==${SELKIES_VERSION}" "pixelflux==${PIXELFLUX_VERSION}" "pcmflux==${PCMFLUX_VERSION}" \
+        "selkies==${SELKIES_VERSION}" /tmp/pixelflux-wheels/pixelflux-${PIXELFLUX_VERSION}-*.whl \
+        "pcmflux==${PCMFLUX_VERSION}" \
+    && cd /opt/selkies/lib/python3.13/site-packages \
+    && for p in /tmp/patches/selkies-*.diff; do git apply --verbose "$p" || exit 1; done \
+    && /opt/selkies/bin/python -m compileall -q selkies \
+    && test ! -e pixelflux.libs \
+    && grep -q PIXELFLUX_IDLE_KEEPALIVE_MS pixelflux.cpython-*.so \
+    && ! ldd pixelflux.cpython-*.so | grep 'not found' \
+    && cd / \
+    && /opt/selkies/bin/python -c 'import pixelflux, pcmflux' \
     && /opt/selkies/bin/selkies --help >/dev/null \
     && test -f /opt/selkies/lib/python3.13/site-packages/selkies/selkies_web/index.html
 
