@@ -22,7 +22,8 @@ What's in a desktop:
   bar above it has the clipboard, keys the browser would otherwise take
   (Ctrl+Alt+Del, Alt+Tab, ...), quality presets, sound and mic, and a
   Download button. Drop files on the screen to copy them onto the desktop.
-  Badges show who has their mic or camera on.
+  Badges show who has their mic or camera on. On phones and narrow tablets,
+  Lock size, Keys, Quality and Download are in the scrollable More menu.
 - **One shared Chromium** with one profile: log in once on the desktop and
   the agent is logged in too. It starts when someone opens it or an agent
   connects to it.

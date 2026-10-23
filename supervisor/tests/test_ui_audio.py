@@ -120,7 +120,27 @@ def play_tone(name):
 
 def quiet(page) -> float:
     """How long ago the stream last brought the page sound, in seconds."""
-    return page.evaluate(f"(performance.now() - {MEDIA}.soundAt) / 1000")
+    # soundAt is measured in the stream frame, whose time origin differs
+    # from the parent page's by however long sign-in and loading took.
+    return page.frames[1].evaluate("(performance.now() - window.deskyardScreen.media().soundAt) / 1000")
+
+
+def test_sound_age_uses_stream_clock():
+    # A slow parent page can create its screen frame seconds later. A fresh
+    # frame timestamp must still count as fresh, regardless of that offset.
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content("<body></body>")
+        page.wait_for_timeout(2000)
+        page.set_content("<iframe srcdoc='<body></body>'></iframe>")
+        page.frames[1].wait_for_load_state()
+        page.frames[1].evaluate("""() => {
+            const media = {sound: true, mic: false, webcam: false, playing: true, soundAt: performance.now()};
+            window.deskyardScreen = {media: () => media};
+        }""")
+        assert 0 <= quiet(page) < 1.5
+        browser.close()
 
 
 @pytest.mark.serial  # seconds of quiet, timed

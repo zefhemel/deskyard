@@ -169,3 +169,6 @@ These would make it a failure even if it worked:
 - **How the connection status is derived.**
 - **The webcam device detection.**
 - **Docs:** architecture pages, retiring the KasmVNC ones, and the README.
+
+# Mobile controls follow-up, 23 October 2026
+The implemented compact toolbar also applies to narrow tablets and phone landscape, below 1024 CSS pixels. More must keep its lower actions reachable by scrolling within the visual viewport and update when that viewport changes. Clipboard drafts survive browser/keyboard focus changes; returning to the screen dismisses the panel. The [[Testing/Mobile 2026-10-23|mobile assessment and fix follow-up]] records reproduced failures, regression checks and the remaining simulator/device limitations.

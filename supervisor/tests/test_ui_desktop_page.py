@@ -99,15 +99,19 @@ def test_lock_size(supervisor, desktop, name, browser_name):
         # Remembered in this browser.
         page.reload()
         expect(page.get_by_text("Connected", exact=True)).to_be_visible(timeout=30000)
-        expect(lock).to_have_attribute("aria-pressed", "true")
+        page.get_by_role("button", name="More", exact=True).click()
+        lock = page.get_by_role("menuitemcheckbox", name="Lock size", exact=True)
+        expect(lock).to_have_attribute("aria-checked", "true")
         page.wait_for_function(SHOWING, timeout=30000)
         assert wait_until(lambda: fits(page.evaluate(PICTURE))), page.evaluate(PICTURE)
         time.sleep(1)  # an unlocked page would have asked for its frame's size by now
         assert screen_size(name) == size
 
-        # Unticked, the remote screen follows the frame again.
+        # Unticked through the compact toolbar's More menu, the screen follows again.
         lock.click()
-        expect(lock).to_have_attribute("aria-pressed", "false")
+        page.get_by_role("button", name="More", exact=True).click()
+        expect(lock).to_have_attribute("aria-checked", "false")
+        page.keyboard.press("Escape")
         frame = frame_size(page)
         follows = lambda: all(abs(a - b) <= 8 for a, b in zip(screen_size(name), frame))  # noqa: E731
         assert wait_until(follows), (screen_size(name), frame)
@@ -156,17 +160,32 @@ def test_unsupported_browser_message(supervisor, desktop, name):
         browser.close()
 
 
-def test_phone_bar(supervisor, desktop, name):
+@pytest.mark.parametrize("viewport", [{"width": 390, "height": 760}, {"width": 744, "height": 1133},
+                                      {"width": 874, "height": 402}, {"width": 375, "height": 600}])
+def test_phone_bar(supervisor, desktop, name, viewport):
     with sync_playwright() as p:
-        browser, page = signed_in(p, supervisor.base, viewport={"width": 390, "height": 760}, has_touch=True)
+        browser, page = signed_in(p, supervisor.base, viewport=viewport, has_touch=True)
         open_desktop(page, supervisor.base, name, status=False)
         for n in ("Lock size", "Keys", "Quality", "Download"):
             expect(page.get_by_role("button", name=n, exact=True)).to_be_hidden()
         expect(page.get_by_role("button", name="Clipboard", exact=True)).to_be_visible()
+        for label in ("Audio", "Clipboard", "More"):
+            box = page.get_by_role("button", name=label, exact=True).bounding_box()
+            assert box and box["x"] >= 0 and box["x"] + box["width"] <= viewport["width"], (label, box)
         page.get_by_role("button", name="More", exact=True).click()
         menu = page.get_by_role("menu")
+        def menu_fits():
+            box = menu.bounding_box()
+            return box and box["y"] >= 0 and box["y"] + box["height"] <= page.viewport_size["height"]
+        assert wait_until(menu_fits, 5), menu.bounding_box()
+        # Rotation/browser chrome can shrink an already-open menu's space.
+        page.set_viewport_size({"width": viewport["width"], "height": 400})
+        assert wait_until(menu_fits, 5), menu.bounding_box()
         for n in ("Lock size", "Send Esc", "Quality: Low", "Download…"):
             expect(menu.get_by_text(n, exact=True)).to_be_visible()
+        # The last action stays reachable even on a short landscape screen.
+        menu.get_by_role("menuitem", name="Download…", exact=True).click()
+        expect(page.get_by_role("dialog")).to_be_visible()
         browser.close()
 
 
@@ -184,4 +203,32 @@ def test_webcam_disabled_without_device(supervisor, admin, desktop, name, browse
         # An admin can't give it one either.
         page.goto(f"{supervisor.base}/desktops/{name}?tab=settings")
         expect(page.get_by_text("This machine has no virtual camera for desktops (v4l2loopback).")).to_be_visible(timeout=15000)
+        browser.close()
+
+
+@pytest.mark.parametrize("browser_name", BROWSERS)
+def test_touch_clipboard_survives_window_blur(supervisor, desktop, name, browser_name):
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base, browser=browser_name,
+                                viewport={"width": 744, "height": 900}, has_touch=True)
+        open_desktop(page, supervisor.base, name, status=False)
+        page.get_by_role("button", name="Clipboard", exact=True).tap()
+        text = page.locator("textarea")
+        text.tap()
+        text.fill("touch-clipboard-42")
+        # A window blur alone does not mean a tap into the remote iframe.
+        page.evaluate("async () => { window.dispatchEvent(new Event('blur')); await new Promise(r => setTimeout(r, 0)); }")
+        expect(text).to_have_value("touch-clipboard-42")
+        page.get_by_role("button", name=f"Paste into {name}").tap()
+        clip = lambda: in_desktop(name, "xclip", "-o", "-selection", "clipboard", check=False)
+        assert wait_until(lambda: clip() == "touch-clipboard-42"), clip()
+        # A real return to the desktop still dismisses the popover.
+        page.get_by_role("button", name="Clipboard", exact=True).tap()
+        text.tap()
+        # The initial load/reconnect can finish while Clipboard is open.
+        page.frames[1].goto(page.frames[1].url)
+        page.wait_for_function(SHOWING, timeout=30000)
+        expect(text).to_be_visible()
+        page.locator("iframe").tap(position={"x": 100, "y": 400})
+        expect(text).to_be_hidden()
         browser.close()

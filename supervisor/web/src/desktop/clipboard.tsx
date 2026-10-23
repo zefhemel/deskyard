@@ -6,11 +6,13 @@ import { Button } from "../components/ui.tsx";
 
 export function ClipboardPopover({
   name,
+  frame,
   remote,
   onSend,
   onClose,
 }: {
   name: string;
+  frame: HTMLIFrameElement | null;
   /** The desktop's clipboard text, or null before it has sent any. */
   remote: string | null;
   onSend: (text: string) => void;
@@ -31,17 +33,37 @@ export function ClipboardPopover({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
-    // A click into the desktop's frame blurs this window.
-    const onBlur = () => onClose();
+    // Mobile keyboard/browser focus changes can blur the window too. Close
+    // only after focus actually enters the desktop frame, keeping the draft.
+    let blurTimer: number | undefined;
+    const onBlur = () => {
+      window.clearTimeout(blurTimer);
+      blurTimer = window.setTimeout(() => {
+        if (document.activeElement instanceof HTMLIFrameElement) onClose();
+      }, 0);
+    };
+    // Selkies prevents default touch focus, so a tap can leave the parent's
+    // textarea active. Observe the actual screen interaction as well as blur.
+    let screenWindow: Window | null | undefined;
+    const attach = () => {
+      screenWindow?.removeEventListener("pointerdown", onClose, true);
+      screenWindow = frame?.contentWindow;
+      screenWindow?.addEventListener("pointerdown", onClose, true);
+    };
+    attach();
+    frame?.addEventListener("load", attach);
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
     window.addEventListener("blur", onBlur);
     return () => {
+      frame?.removeEventListener("load", attach);
+      screenWindow?.removeEventListener("pointerdown", onClose, true);
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
       window.removeEventListener("blur", onBlur);
+      window.clearTimeout(blurTimer);
     };
-  }, [onClose]);
+  }, [frame, onClose]);
 
   return (
     <div
