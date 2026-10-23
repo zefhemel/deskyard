@@ -100,6 +100,11 @@ jobs:
       # The browsers and the system packages they need, cached: fetching the
       # packages from the runner's apt mirror has taken 35-50 minutes. Saved
       # right after, so a failing test run still keeps them.
+      - name: The runner image
+        if: env.SKIP != 'true'
+        id: image
+        run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+
       - name: Restore the browsers
         if: env.SKIP != 'true'
         id: browsers
@@ -108,7 +113,7 @@ jobs:
           path: |
             ~/.cache/ms-playwright
             ~/.cache/playwright-debs
-          key: browsers-${{ env.ImageOS }}-${{ env.ImageVersion }}-${{ hashFiles('images/tests/uv.lock', 'supervisor/tests/uv.lock') }}
+          key: browsers-${{ steps.image.outputs.version }}-${{ hashFiles('images/tests/uv.lock', 'supervisor/tests/uv.lock') }}
 
       - name: Browsers
         if: env.SKIP != 'true'

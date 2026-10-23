@@ -35,7 +35,10 @@ if [ "${#need[@]}" -gt 0 ]; then
         sudo apt-get update
         sudo apt-get install -y -f --no-install-recommends "${need[@]}"
     fi
-    mapfile -t still < <(missing)
+    still=()
+    for p in "${need[@]}"; do
+        [ "$(dpkg-query -W -f='${Status}' "$p" 2>/dev/null)" = "install ok installed" ] || still+=("$p")
+    done
     if [ "${#still[@]}" -gt 0 ]; then
         echo "Still missing: ${still[*]}; installing with apt-get"
         sudo apt-get update
