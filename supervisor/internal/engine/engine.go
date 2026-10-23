@@ -16,6 +16,8 @@ var ErrNotFound = errors.New("not found")
 type Mount struct {
 	Source, Target string // Source is a host path
 	ReadOnly       bool
+	// MustExist uses a strict bind: a missing host source is an error, never created.
+	MustExist bool
 }
 
 type ContainerSpec struct {
@@ -43,6 +45,8 @@ type ContainerSpec struct {
 	// NoHealthcheck turns off the image's HEALTHCHECK, which would otherwise
 	// run the image's own command in the container.
 	NoHealthcheck bool
+	// NoNewPrivileges prevents setuid and file capabilities granting new privileges.
+	NoNewPrivileges bool
 }
 
 type Container struct {
@@ -79,7 +83,10 @@ type Process struct {
 	Stderr io.Reader
 	Resize func(cols, rows uint) error
 	Wait   func() (int, error)
-	Close  func()
+	// Close disposes attached I/O, unblocking reads and writes. It is safe to
+	// call repeatedly or concurrently; command termination is not guaranteed.
+	// Stdin.Close is separate: non-TTY execs retain output after end of input.
+	Close func()
 }
 
 type Stats struct {

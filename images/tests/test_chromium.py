@@ -1,3 +1,4 @@
+import shlex
 import time
 
 import pytest
@@ -151,3 +152,26 @@ def test_closed_chromium_stays_closed_after_restart(fast_health_sandbox):
     sandbox.restart()
     time.sleep(6)  # past start-session's 3 s and two healthchecks
     assert not chromium_running(sandbox)
+
+
+def test_closed_browser_marker_ignores_lingering_renderer(sandbox):
+    # A renderer can still be exiting when the main browser returns. Its
+    # profile argument must not make a cleanly closed browser look open.
+    helper = """import ctypes, os, time
+ctypes.CDLL(None).prctl(15, b'chromium', 0, 0, 0)
+open('/tmp/marker-renderer.pid', 'w').write(str(os.getpid()))
+time.sleep(60)
+"""
+    sandbox.exec("setsid -f /usr/bin/python3 -c " + shlex.quote(helper) +
+                 " --user-data-dir=/workspace/.config/chromium-shared --type=renderer")
+    try:
+        assert wait_until(lambda: sandbox.exec("test -s /tmp/marker-renderer.pid", check=False).returncode == 0)
+        source = sandbox.exec("cat /usr/local/bin/start-chromium").stdout
+        launch = '/usr/bin/chromium "${flags[@]}" "$@"'
+        assert launch in source
+        source = source.replace(launch, 'true "${flags[@]}" "$@"')
+        sandbox.exec("printf %s " + shlex.quote(source) + " > /tmp/start-chromium-marker-test")
+        sandbox.exec("bash /tmp/start-chromium-marker-test")
+        assert sandbox.exec("test ! -e /workspace/.config/chromium-shared/.open", check=False).returncode == 0
+    finally:
+        sandbox.exec('kill "$(cat /tmp/marker-renderer.pid)"', check=False)

@@ -167,7 +167,8 @@ HIDE = """() => {
 
 @pytest.mark.perf
 @pytest.mark.serial  # the first frame within 0.5 s
-def test_background_tab_doesnt_stall(supervisor, desktop, name):
+@pytest.mark.parametrize("lose_initial_frame", [False, True])
+def test_background_tab_doesnt_stall(supervisor, desktop, name, lose_initial_frame):
     # The only viewer's tab goes to the background. Its client would stop the
     # desktop's stream; a viewer joining after that must still get the picture.
     in_desktop(name, "sh", "-c", "setsid xfce4-terminal >/dev/null 2>&1 &")
@@ -183,8 +184,35 @@ def test_background_tab_doesnt_stall(supervisor, desktop, name):
 
         b = sign_in(browser, supervisor.base)
         b.context.add_init_script(COUNT_FRAMES)
+        if lose_initial_frame:
+            # Make the missed join frame deterministic: use the page socket
+            # and withhold video until the client requests a replacement.
+            b.context.route("**/screen/", lambda route: route.fulfill(
+                status=302, headers={"Location": route.request.url + "?socket_worker=false"}))
+            b.context.add_init_script("""(() => {
+                if (window === top) return;
+                const Socket = window.WebSocket;
+                window.WebSocket = class extends Socket {
+                    constructor(...args) {
+                        super(...args);
+                        this.waitingForKeyframeRequest = true;
+                        this.addEventListener('message', event => {
+                            if (!this.waitingForKeyframeRequest || !(event.data instanceof ArrayBuffer)) return;
+                            const kind = new Uint8Array(event.data)[0];
+                            if (kind === 3 || kind === 4) event.stopImmediatePropagation();
+                        });
+                    }
+                    send(data) {
+                        if (data === 'REQUEST_KEYFRAME') this.waitingForKeyframeRequest = false;
+                        return super.send(data);
+                    }
+                };
+            })();""")
         # Selkies' client asks for a key frame itself after 3 s without a frame.
         asked = []
+        events = []
+        b.on("console", lambda m: events.append(m.text))
+        b.on("pageerror", lambda error: events.append(str(error)))
         b.on("console", lambda m: "keyframe" in m.text and asked.append(m.text))
         seen = netchange.failures(b)
         b.goto(f"{supervisor.base}/{name}/")
@@ -193,8 +221,10 @@ def test_background_tab_doesnt_stall(supervisor, desktop, name):
         b.wait_for_function(f"{FRAMES} > 0", timeout=5000)
         first = time.time() - joined
         print(f"first frame {first:.2f} s after joining")
+        if first >= 0.5:
+            print("\n".join(event for event in events if "Deskyard" in event or "reset" in event.lower() or "defined" in event))
         # At once, not at the idle capture's next keepalive grab (1 s).
-        assert first < 0.5, (first, asked)
+        assert first < 0.5, (first, asked, events[-60:])
         # And the picture keeps coming as the screen changes.
         shown = b.evaluate(FRAMES)
         in_desktop(name, "xdotool", "type", "--delay", "50", "still streaming")

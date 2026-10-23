@@ -3,6 +3,7 @@ tags: component
 status: built
 partOf: "[[Architecture/Desktop]]"
 uses:
+  - "[[Architecture/Shared terminal]]"
   - "[[Architecture/Session]]"
   - "[[Architecture/Selkies]]"
   - "[[Architecture/Chromium]]"
@@ -19,3 +20,5 @@ A build-time finalizer disables optional host-management D-Bus helpers. Debian D
 Contract 3, the Selkies client path, proxy boundary, UID/GID 1000, display `:1` and `/workspace` match the existing XFCE image. Shared tests live in `images/tests/`; XFCE panel migrations remain desktop-specific. Native ARM64 builds and runtime checks are recorded in [[Testing/Desktop variants 2026-10-23|Desktop variants testing — 23 October 2026]]; registry publication and amd64 runtime checks remain separate release checks.
 
 MATE's overlay provides the selected Arc/Papirus/Noto appearance, original blue SVG wallpaper and native `deskyard.layout` single bottom panel. Compiled GSettings defaults apply without rewriting saved user values or panel layouts. Its user-mode session adapter seeds the scoped panel CSS only when `~/.config/gtk-3.0/gtk.css` does not already exist (including symlinks). KDE keeps its original appearance. See [[Testing/Theme previews 2026-10-23|Desktop theme previews — 23 October 2026]] for the selected visual direction.
+
+All desktop variants use the common `deskyard-terminal-configure` startup migration and Deskyard Terminal desktop entry. Default native shell launches create independent shared sessions; saved terminal command preferences are migrated on every desktop start. XFCE, MATE and KDE retain their native emulators, option parsing, explicit command execution and native restoration. See [[Architecture/Shared terminal]] for runtime and discovery ownership.

@@ -130,6 +130,93 @@ def mock_page(p, base, path):
     return browser, page
 
 
+def test_desktop_list_recovers_after_failed_first_load(mock_ui):
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        attempts = []
+
+        def desktops(route):
+            attempts.append(route.request.url)
+            if len(attempts) == 1:
+                route.abort("failed")
+            else:
+                route.continue_()
+
+        page.route("**/api/desktops", desktops)
+        page.goto(mock_ui + "/login")
+        page.fill("#u", "zef")
+        page.fill("#p", "x")
+        page.get_by_role("button", name="Sign in").click()
+        expect(page.get_by_text("alice", exact=True).first).to_be_visible(timeout=10000)
+        assert len(attempts) >= 2
+        browser.close()
+
+
+def test_loopback_ui_survives_browser_network_loss(mock_ui):
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_context(offline=True).new_page()
+        logins = []
+        page.on("request", lambda request: logins.append(request) if
+                request.method == "POST" and request.url.endswith("/api/login") else None)
+        page.goto(mock_ui + "/login")
+        page.fill("#u", "zef")
+        page.fill("#p", "x")
+        page.get_by_role("button", name="Sign in").click()
+        expect(page.get_by_text("alice", exact=True).first).to_be_visible(timeout=10000)
+        assert len(logins) == 1
+        browser.close()
+
+
+def test_desktop_list_ignores_failures_from_replaced_refreshes(mock_ui):
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        # Drive reconnection without letting the fake API's event stream
+        # create extra refreshes while requests are deliberately held open.
+        page.add_init_script("""window.testStreams = [];
+            window.EventSource = class extends EventTarget {
+                constructor() { super(); window.testStreams.push(this); }
+                close() {}
+            };""")
+        attempts, pending = [], []
+
+        def desktops(route):
+            attempts.append(route.request.url)
+            if len(attempts) in (1, 3):
+                pending.append(route)
+            else:
+                route.continue_()
+
+        page.route("**/api/desktops", desktops)
+        page.goto(mock_ui + "/login")
+        page.fill("#u", "zef")
+        page.fill("#p", "x")
+        page.get_by_role("button", name="Sign in").click()
+        expect(page.get_by_text("Loading…", exact=True)).to_be_visible()
+        page.wait_for_function("typeof testStreams[0]?.onopen === 'function'")
+        page.evaluate("testStreams[0].onopen(); testStreams[0].onopen()")
+        expect(page.get_by_text("alice", exact=True).first).to_be_visible()
+        pending[0].abort("failed")
+        page.wait_for_timeout(1500)  # past the first retry deadline
+        assert len(attempts) == 2
+
+        with page.expect_request("**/api/desktops"):
+            page.evaluate("testStreams[0].onopen()")
+        # Use client-side navigation so the provider unmounts while its
+        # request is still alive in this document.
+        page.evaluate("""() => {
+            const a = document.createElement('a');
+            a.href = '/login'; document.body.append(a); a.click(); a.remove();
+        }""")
+        expect(page.get_by_role("button", name="Sign in")).to_be_visible()
+        pending[1].abort("failed")
+        page.wait_for_timeout(1500)
+        assert len(attempts) == 3
+        browser.close()
+
+
 def test_image_from_desktop_dialog(mock_ui):
     with sync_playwright() as p:
         browser, page = mock_page(p, mock_ui, "/desktops/alice")

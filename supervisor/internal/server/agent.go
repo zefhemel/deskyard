@@ -166,10 +166,15 @@ func (s *Server) agentExec(w http.ResponseWriter, r *http.Request, c desktops.De
 		start.Cwd = "/workspace"
 	}
 	s.Log.Info("agent exec", "desktop", c.Name, "token", t.Name, "argv", activity.DisplayCommand(start.Argv), "tty", start.Tty)
-	p, err := s.Eng.Exec(ctx, c.Container.ID, engine.ExecSpec{
-		Cmd: start.Argv, User: "user", WorkDir: start.Cwd, Env: execEnvFor(start.Env),
-		Tty: start.Tty, Stdin: true, Cols: start.Cols, Rows: start.Rows,
-	})
+	var p *engine.Process
+	if session, shared := terminalSession(start.Argv, start.Tty); shared {
+		p, err = s.terminalProcess(ctx, c.Container.ID, session, start.Cols, start.Rows)
+	} else {
+		p, err = s.Eng.Exec(ctx, c.Container.ID, engine.ExecSpec{
+			Cmd: start.Argv, User: "user", WorkDir: start.Cwd, Env: execEnvFor(start.Env),
+			Tty: start.Tty, Stdin: true, Cols: start.Cols, Rows: start.Rows,
+		})
+	}
 	if err != nil {
 		fail(err.Error())
 		return

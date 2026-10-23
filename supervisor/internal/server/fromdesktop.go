@@ -280,9 +280,10 @@ func (s *Server) walkHome(ctx context.Context, name string, fn func(rel string, 
 	}
 	targets := make([]string, 0, len(links))
 	for t := range links {
-		if !strings.Contains(t, "\n") {
-			targets = append(targets, t)
+		if strings.Contains(t, "\n") {
+			return fmt.Errorf("can't reread hard link %q: a newline in its name", t)
 		}
+		targets = append(targets, t)
 	}
 	slices.Sort(targets)
 	return walkTar(ctx, s, name, targets, func(rel string, h *tar.Header, content contentFunc) error {
@@ -290,6 +291,9 @@ func (s *Server) walkHome(ctx context.Context, name string, fn func(rel string, 
 			return nil // changed since: no longer the file it was
 		}
 		names := links[rel]
+		if len(names) == 0 {
+			return nil // a requested file became a directory: ignore its children
+		}
 		rd, size, err := content()
 		if err != nil {
 			return err

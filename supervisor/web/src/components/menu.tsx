@@ -8,6 +8,7 @@ export interface MenuItem {
   label: ComponentChildren;
   onSelect: () => void;
   danger?: boolean;
+  disabled?: boolean;
   /** Draw a separator above this item. */
   separated?: boolean;
   checked?: boolean;
@@ -95,8 +96,9 @@ export function Menu({ items, trigger, align = "right", class: extra, onClose }:
                 type="button"
                 role={item.checked === undefined ? "menuitem" : "menuitemcheckbox"}
                 aria-checked={item.checked}
+                disabled={item.disabled}
                 class={cx(
-                  "flex w-full cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-2.5 py-2 text-left text-[15px] whitespace-nowrap hover:bg-[#e7ebf0]",
+                  "flex w-full cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-2.5 py-2 text-left text-[15px] whitespace-nowrap enabled:hover:bg-[#e7ebf0] disabled:cursor-default disabled:opacity-60",
                   item.danger ? "text-danger" : "text-ink",
                 )}
                 onClick={() => {

@@ -175,7 +175,7 @@ def test_settings_change_recreates_and_keeps_folder(admin, desktop, name, superv
     c = admin.desktop(name)
     assert c["id"] == old and c["state"] == "running"
     assert c["created"] == desktop["created"] and c["job"] is None
-    assert c["settings"] == {"memoryBytes": 2 << 30, "nanoCpus": 2_000_000_000, "camera": ""}
+    assert c["settings"] == {"memoryBytes": 2 << 30, "nanoCpus": 2_000_000_000, "camera": "", "mounts": []}
     assert in_desktop(name, "cat", "/workspace/probe.txt") == "hi"
 
 

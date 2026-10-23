@@ -124,7 +124,7 @@ These would make it a failure even if it worked:
 
 ## Selkies' rough edges
 
-- **Background tabs.** A viewer's tab going to the background must never stop the stream for others, or for later viewers. The served client additions stop the client from sending `STOP_VIDEO`. If Selkies stops anyway, the supervisor restarts the stream when a viewer connects. A test covers it: the only viewer's tab goes hidden, a second viewer joins and sees the picture within 5 s.
+- **Background tabs.** A viewer's tab going to the background must never stop the stream for others, or for later viewers. The served client additions stop the client from sending `STOP_VIDEO`. After a client pipeline reset, the served additions promptly request a replacement keyframe if the first picture is missing, with a bounded retry that stops when the picture arrives or the connection ends. Serial tests cover the hidden-owner case and a deliberately lost join frame without relaxing the 0.5-second first-picture assertion.
 - **Idle CPU.** About 12% of a core per idle desktop with a viewer is accepted for now. A separate investigation (the selkies-cpu session) looks at reducing it, and especially at the cost with no viewer. Its findings may add settings or patches before shipping. (They did: three patches shipped; see the plan's "Idle-CPU patches" entry and [[Architecture/Selkies]]. The audio gate is off by default.)
 - **Upstream.** We report the `pointerrawupdate` and background-tab problems upstream, but don't wait for them.
 
@@ -172,3 +172,9 @@ These would make it a failure even if it worked:
 
 # Mobile controls follow-up, 23 October 2026
 The implemented compact toolbar also applies to narrow tablets and phone landscape, below 1024 CSS pixels. More must keep its lower actions reachable by scrolling within the visual viewport and update when that viewport changes. Clipboard drafts survive browser/keyboard focus changes; returning to the screen dismisses the panel. The [[Testing/Mobile 2026-10-23|mobile assessment and fix follow-up]] records reproduced failures, regression checks and the remaining simulator/device limitations.
+
+# Remote resolution presets follow-up, 23 October 2026
+The mobile prototype extends Lock size with a resolution dropdown on large screens and the same choices in the compact More menu. Choosing a preset changes and implicitly locks the remote resolution; Auto fit clears the lock. Available landscape sizes are 800×600, 1024×768, 1280×720, 1280×800 and 1920×1080, with 600×900 and 900×1200 portrait options. The existing per-browser preference and first-viewer ownership rules apply. Resolution choices are unavailable during a focused-window crop.
+
+# Home Screen app follow-up, 23 October 2026
+The mobile prototype provides a standalone manifest and Apple Home Screen metadata/icons, with safe-area layout in portrait and landscape. An installed app starts at the desktop wall and keeps navigation on the supervisor origin. The desktop follows the visible keyboard viewport, correcting iOS standalone metrics against the large viewport. A solid status-bar backdrop plus a 16-pixel iOS standalone buffer keeps the observed native top-edge blur off controls. This is an online remote-desktop app; no offline cache or service worker is introduced. See [[Testing/PWA iOS 27|PWA testing — iOS 27]] for native simulator evidence and limitations.

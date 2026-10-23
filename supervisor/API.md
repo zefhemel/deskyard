@@ -4,15 +4,17 @@ The contract between the supervisor (Go, `internal/server`), its web UI (`web/`)
 
 ## Sessions (web UI)
 
-The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Strict). Every `/api/*` route except `POST /api/login` answers 401 without a session. State-changing requests (POST, PUT, PATCH, DELETE) must carry an `Origin` matching the supervisor's own (browsers' `fetch` does this); otherwise 403.
+The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Strict). Every `/api/*` route except `POST /api/login` and `POST /api/logout` answers 401 without a session. State-changing requests (POST, PUT, PATCH, DELETE) must carry an `Origin` matching the supervisor's own (browsers' `fetch` does this); otherwise 403.
 
 | Method and path | Body | Response |
 | --- | --- | --- |
 | `POST /api/login` | `{"username","password"}` | 200 `Me`, sets the cookie; 401 wrong; 429 throttled |
-| `POST /api/logout` | | 204, clears the cookie |
+| `POST /api/logout` | | 204, clears the cookie and closes this browser login’s terminals; requires same-origin Origin, including when already signed out |
 | `GET /api/me` | | `Me` = `{"username","admin":bool}` |
 | `POST /api/me/password` | `{"current","new"}` | 204 (signs out everywhere else; the response re-issues this session) |
 | `GET /api/host` | | `{"cpus":n,"memBytes":n,"running":n,"total":n,"memUsed":n,"cameras":[{"device","taken","desktop"?}] or null}` (counts over desktops the account can see). `cameras` are the host's virtual cameras (v4l2loopback: `/dev/videoN` under `/sys/devices/virtual/video4linux`) and whether a desktop has each (named when the account can see it); null when the engine isn't on this machine (not a unix socket), whose cameras can't be seen |
+
+`GET /api/host` also includes `memoryReclaim: {"enabled":bool,"reason"?:string}`, the cached startup capability result. The probe checks the full helper path using a disposable container, without reclaiming any existing desktop. Failures disable the optional action and supply a reason; capability detection is retried on supervisor restart. A disabled action returns 501 immediately. Per-desktop checks still run on enabled hosts and do not change the cached host status.
 
 ### Desktops
 
@@ -27,7 +29,8 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
   "image": "ghcr.io/zefhemel/deskyard-debian-xfce:latest",
   "imageTitle": "Debian XFCE", "imageVersion": "2026.10.15", "imageSecrets": false,
   "updateAvailable": "2026.10.22" | null,
-  "settings": {"memoryBytes": 0, "nanoCpus": 0, "camera": ""},
+  "autoReclaim": true, "terminal": true,
+  "settings": {"memoryBytes": 0, "nanoCpus": 0, "camera": "", "mounts": []},
   "access": ["anna"],
   "viewers": ["zef", "anna"],
   "mics": ["anna"],
@@ -40,16 +43,22 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 }
 ```
 
-`memoryBytes`/`nanoCpus` 0 mean no limit; `memLimit` is then the host's memory. `cpuPercent` is relative to the desktop's CPU limit, or to all host CPUs without one (0–100). `access` lists regular accounts only (admins can use everything) and is only filled for admins. `viewers` are the accounts with a stream open (each once, sorted); `mics` and `cams` those of them with a mic or camera on, as their pages report it (see `POST /api/desktops/{name}/mic`). `settings.camera` is the host's virtual camera the desktop has to itself ("" for none; an admin gives one in the settings), and `webcam` is true while it runs with it, for viewers' webcams to feed. `forwards` are the port mappings agent tokens have open on the desktop (`deskyard forward`): `in` maps a port of the agent's machine into the desktop, `out` a desktop port out to the agent's machine; `port` is always the desktop's port (the agent's own port numbers aren't shown). Each entry is listed once, sorted by token, direction and port; an `in` port appears once the desktop is listening on it. `imageSecrets` is true when the desktop's image contains secrets (its starting home holds someone's sign-ins). `created` survives upgrades and settings changes (null for desktops made before it was recorded). `job` is the running create, upgrade or settings job, which anyone who can see the desktop may follow. `agents` are the agents present on the desktop (always a list, sorted by name then id): agent tokens (`id` is the token's id, `owner` the account that made it) and programs running inside the desktop (`inside: true`, `id` `inside:<program>`, `owner` empty). An agent is present while something it started is running, a browser connection or port mapping is open, or for 5 minutes after its last action; `active` means an action in the last 10 seconds; `color` is fixed per id. A desktop's own page is at `/<name>/`.
+`terminal` reports image support (`deskyard.terminal=tmux-v1`), independent of running state. Custom images may opt in only when they supply the shared helper and tmux runtime.
+
+`autoReclaim` is the saved preference, keyed by stable desktop ID in `memory-policy.json`, independent of the host capability flag. On supported hosts the supervisor checks every 30 seconds for running desktops with no viewers for 15 continuous minutes, making one 128 MiB attempt per absence (including failed/partial attempts). Viewer joins, even between checks, reset the timer; supervisor/container restarts and re-enabling the preference start fresh. Active tracked agents (recent actions, running commands, browser use or forwards), lifecycle operations and unknown/stale inside status delay the attempt without consuming it. Automatic work uses the same lifecycle reservation as the manual action; it rechecks viewers, identity, policy and activity after reservation. Apps keep running and a viewer arriving during reclamation can reconnect normally. Idle status must come from a current desktop activity service (`commandsRunning:false` heartbeat less than 45 seconds old); missing/legacy/disconnected activity skips automatic work. Unreported shell/background work cannot be detected; opt out for such workloads.
+
+`memoryBytes`/`nanoCpus` 0 mean no limit; `memLimit` is then the host's memory. `cpuPercent` is relative to the desktop's CPU limit, or to all host CPUs without one (0–100). `access` lists regular accounts only (admins can use everything) and is only filled for admins. `viewers` are the accounts with a desktop stream or browser terminal open (each once, sorted); `mics` and `cams` those of them with a mic or camera on, as their pages report it (see `POST /api/desktops/{name}/mic`). `settings.camera` is the host's virtual camera the desktop has to itself ("" for none; an admin gives one in the settings), and `webcam` is true while it runs with it, for viewers' webcams to feed. `forwards` are the port mappings agent tokens have open on the desktop (`deskyard forward`): `in` maps a port of the agent's machine into the desktop, `out` a desktop port out to the agent's machine; `port` is always the desktop's port (the agent's own port numbers aren't shown). Each entry is listed once, sorted by token, direction and port; an `in` port appears once the desktop is listening on it. `imageSecrets` is true when the desktop's image contains secrets (its starting home holds someone's sign-ins). `created` survives upgrades and settings changes (null for desktops made before it was recorded). `job` is the running create, upgrade or settings job, which anyone who can see the desktop may follow. `agents` are the agents present on the desktop (always a list, sorted by name then id): agent tokens (`id` is the token's id, `owner` the account that made it) and programs running inside the desktop (`inside: true`, `id` `inside:<program>`, `owner` empty). An agent is present while something it started is running, a browser connection or port mapping is open, or for 5 minutes after its last action; `active` means an action in the last 10 seconds; `color` is fixed per id. A desktop's own page is at `/<name>/`.
 
 | Method and path | Body | Response |
 | --- | --- | --- |
 | `GET /api/desktops` | | `[Desktop]` the account can see, sorted by name |
 | `GET /api/desktops/{name}` | | `Desktop`; 404 if missing or not visible |
-| `POST /api/desktops` (admin) | `{"name","image","memoryBytes","nanoCpus","access":[usernames]}` | 202 `{"job": id}` |
+| `POST /api/desktops` (admin) | `{"name","image","memoryBytes","nanoCpus","access":[usernames],"mounts"?:[HostMount]}` | 202 `{"job": id}` |
 | `POST /api/desktops/{name}/start` \| `stop` \| `restart` | | 204 |
+| `PUT /api/desktops/{name}/memory-policy` (admin) | `{"autoReclaim":bool}` | 204. Save the per-desktop automatic policy without recreating/restarting it; default true. Session and same-origin only. 400 missing/invalid boolean, 403 regular accounts with access, 404 without access, 500 persistence failure. |
+| `POST /api/desktops/{name}/reclaim-memory` (admin) | | 200 `{"requestedBytes","beforeBytes","afterBytes","swapBeforeBytes","swapAfterBytes","partial":bool}`. Requests 128 MiB of reclaim while apps run. The before/after values are resident cgroup bytes including file cache; swap values are logical swapped bytes, which can still use compressed RAM. `partial` means the kernel reclaimed less than requested; observed resident memory can grow again. 409 stopped or busy, 501 unsupported engine/kernel or unavailable/disabled swap, 502 helper failure. Session and same-origin only; 403 for regular accounts with access, 404 without access. |
 | `DELETE /api/desktops/{name}?files=1` (admin) | | 204; `files=1` also deletes the workspace folder |
-| `PATCH /api/desktops/{name}` (admin) | `{"image"?, "memoryBytes"?, "nanoCpus"?, "camera"?, "confirmSecrets"?}` | 202 `{"job": id}` (recreates the container); 409 without `confirmSecrets` (see below); 400 for a camera that isn't one of the host's, 409 for one another desktop has. `camera` is a device from `GET /api/host`'s `cameras`, or "" for none. A desktop whose camera has gone from the host is recreated without it, which is logged: when it's started, restarted or recreated, and when the supervisor starts (then started again if the engine had tried to start it and failed; one a user stopped stays stopped) |
+| `PATCH /api/desktops/{name}` (admin) | `{"image"?, "memoryBytes"?, "nanoCpus"?, "camera"?, "mounts"?:[HostMount], "confirmSecrets"?}` | 202 `{"job": id}` (recreates the container); 409 without `confirmSecrets` (see below); 400 for a camera that isn't one of the host's, 409 for one another desktop has. `camera` is a device from `GET /api/host`'s `cameras`, or "" for none. A desktop whose camera has gone from the host is recreated without it, which is logged: when it's started, restarted or recreated, and when the supervisor starts (then started again if the engine had tried to start it and failed; one a user stopped stays stopped) |
 | `PUT /api/desktops/{name}/access` (admin) | `{"usernames":[…]}` | 204 |
 | `GET /api/desktops/{name}/screen.png` | `?full=1` for full size | PNG, 480 px wide by default; 409 when stopped |
 | `GET /api/desktops/{name}/processes` | | `{"titles":[…],"rows":[[…]]}` (columns PID, USER, %CPU, RSS (KiB), ELAPSED, COMMAND) |
@@ -69,6 +78,32 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 | `GET /api/validate-name?name=x` (admin) | | `{"ok":bool,"error"?:string,"folder":path,"folderExists":bool}` |
 
 Moving desktops onto an image that contains secrets (an upgrade, or `PATCH` with another `image`) while accounts other than admins can use them is refused with 409 unless the body has `"confirmSecrets": true`: those accounts could then use the image's sign-ins. The UI asks first, naming the image and the accounts, as it does when giving access to such a desktop.
+
+#### Browser terminal
+
+`GET /api/desktops/{name}/terminal?session=main` upgrades to a WebSocket using the login cookie and View permission. Session names match `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`. Missing login returns 401, invalid/missing Origin 403, inaccessible desktop 404, invalid session 400, stopped/busy/changed desktop or unsupported image 409, and a revoked login or connection limit 429. Unsupported images receive an explicit upgrade instruction. Preflight with the existing desktop JSON (`state`, `terminal`) before opening a socket.
+
+Origin must contain an HTTP(S) scheme and the exact request Host, with no userinfo, path, query or fragment. TLS listeners and Secure deployments require HTTPS. Plain listeners also accept HTTPS origins so a trusted TLS proxy can preserve Host while forwarding over HTTP; forwarded headers are not trusted. The proxy must preserve the public Host and enforce its public TLS policy.
+
+The first client text frame is `{"cols":80,"rows":24}`. Valid dimensions are 2–500 columns and 1–300 rows. The supervisor starts two owned commands as `user` in `/workspace`, with `TERM=xterm-256color`, proxy credentials stripped and activity recording disabled: non-TTY `deskyard terminal-lease SESSION ATTACHMENT_ID`, then TTY `deskyard terminal-attach ATTACHMENT_ID`. The 32-hex-digit attachment ID is generated by the server. The browser cannot supply argv, workdir, environment or user.
+
+Subsequent client binary frames are raw input bytes (64 KiB maximum per frame); text frames are exactly `{"resize":[80,24]}` or `{"ack":N}`. Server text frames are `{"ready":true,"generation":"ID:STARTED_AT"}`, `{"exit":CODE}` or `{"error":"MESSAGE"}`; binary frames are raw output with no stream prefix. Generation combines container ID with UTC `StartedAt` in RFC3339Nano form, changing after restart or recreation. Ready follows registration of the exact tmux attachment and its first terminal output (retained for the renderer), so immediate input cannot race outer-PTY initialization. Exit ends the attachment; opening another terminal is an explicit client action.
+
+Output chunks are at most 16 KiB, with at most 256 KiB awaiting acknowledgement. ACK is a positive count of consumed bytes, no larger than outstanding output; the renderer sends it only after its write callback. Unknown controls, invalid sizes or ACKs close the connection. Four queued input/resize messages bound pending input; a full queue closes the connection. A separate input pump keeps the reader available for ACKs even if the PTY blocks. Initial frame and socket writes have five-second deadlines; exec startup has a ten-second deadline. At most 16 connections per account and 32 per desktop are allowed.
+
+The non-TTY lease creates a private `_deskyard_<ID>` grouped tmux session sharing the named base session’s windows. It emits internal `prepared` and `ready` lines on its own stdout; these are never part of the browser byte stream. Docker propagates non-TTY stdin EOF, including after supervisor process death. EOF triggers bounded removal of only that random grouped session, detaching its client while the base session and other clients retain the same panes/jobs. The EOF watcher starts before creation; bounded creation completes before cleanup. Attach-only execution never recreates a canceled group. There are no additional listeners or terminal services.
+
+The remote CLI still sends the owned `deskyard terminal-helper SESSION` request over the existing agent exec API. Only this exact three-argument TTY request is recognized and executed through the same lease/attach pair; arbitrary agent commands retain existing exec behavior. A remote terminal’s stdin EOF detaches cleanly instead of injecting Ctrl-D into the shared shell. Actual Ctrl-D input bytes still go to the shell. Local/native terminal helpers keep direct tmux attachments.
+
+Browser terminals count as viewers, preventing automatic idle memory reclamation. Logout cancels the exact browser login, identified by a random signed session ID preserved across cookie refresh; legacy signed cookies migrate with a stable identity. Open sockets expire at their original cookie expiry even if another request refreshes that cookie. Account deletion, View revocation, epoch/password changes, stop/delete/restart, external engine stop events and server shutdown cancel attachments. The shell survives attachment loss until it exits or the container stops. Terminal input/output is never recorded in activity or logs.
+
+#### Host folder mounts
+
+`HostMount` is `{"source":"/absolute/engine-host/folder","target":"/mnt/photos","readOnly":true}`. `settings.mounts` is always an array (empty for existing desktops without mounts). `POST /api/desktops` accepts optional `mounts`; `PATCH /api/desktops/{name}` replaces the complete list when an array is supplied. Omission or null preserves the current list on PATCH; `[]` detaches all. The API's omitted `readOnly` defaults to false; the UI defaults new entries to true.
+
+Only admins can configure mounts. Everyone able to use a desktop can access the mounted files with that desktop's permissions. Up to 16 existing source directories are allowed. Source paths must be clean absolute engine-host paths; target paths must be clean paths below `/mnt/`, with no duplicate or nested mount targets. Paths are at most 4096 bytes and may not contain NUL. Invalid configuration is 400; mount-source existence/type failures are reported by the accepted job. The helper verifies sources on the engine host before stopping/replacing a desktop, with read-only strict bind mounts that never create missing directories. The source need not be visible in the supervisor container. Existing host permissions still apply; no source chown/chmod is performed. Strict read-only binds require recursive read-only enforcement, including nested mounts; unsupported engines/kernels fail preflight rather than silently allowing writes. Docker API 1.44 or newer is required so this option cannot be silently ignored. This capability is required even for a requested writable mount because source preflight is read-only. Desktops with host mounts set `no-new-privileges` to prevent setuid/file-capability executables from granting new privileges.
+
+Mount changes use container recreation: running desktops restart and stopped desktops stay stopped. Settings persist in the `deskyard.setting.mounts` container label and survive upgrades and unrelated settings changes. Corrupt saved mount configuration prevents recreation rather than silently dropping mounts. On a failed replacement, rollback restores the old mount configuration and attempts to restart it if it was previously running. Removing a mount does not delete its source; desktop file deletion remains limited to the private workspace. Host folders elsewhere are not deleted or copied into images made from a desktop. Files/download HTTP routes remain scoped to `/workspace`.
 
 #### Activity
 
@@ -277,3 +312,21 @@ The connection closes when the token is revoked or expires, or the desktop stops
 ### `/api/agent/v1/cdp/…` (HTTP and WebSocket)
 
 The shared Chromium's DevTools protocol: `GET /api/agent/v1/cdp/json/version`, `/json/list`, `PUT /json/new?url`, and WebSocket `/api/agent/v1/cdp/devtools/…`. In `/json*` responses (including `/json/version`), `webSocketDebuggerUrl` is absolute, `ws(s)://<host>/api/agent/v1/cdp/devtools/…`, and the `ws=` parameter in `devtoolsFrontendUrl` is `<host>/api/agent/v1/cdp/devtools/…` (Chromium's own `ws=`/`wss=` choice). The first request may take several seconds while Chromium starts.
+
+### Running shared terminal sessions
+
+`GET /api/desktops/{name}/terminal/sessions` requires a signed-in account with View permission. Returns `{"sessions":[{"name":"main"},{"name":"terminal-1"}]}` sorted by name, or `{"sessions":[]}` when there are no live shells. Each row is one base session, including detached shells/jobs; private attachment groups are omitted. Names use the terminal session validation rule above. The response contains no terminal content, process arguments, input or environment and has `Cache-Control: no-store`.
+
+The supervisor executes only `deskyard terminal-list` as `user` in `/workspace`, without a TTY or stdin. The request has a five-second deadline and 64 KiB output limit; the helper has its own four-second deadline. Anonymous requests return 401, missing/inaccessible desktops 404, stopped desktops and images without `tmux-v1` 409, and helper failures or invalid/oversized data 502, using the usual `{"error":"message"}` response. Existing terminal WebSocket and agent exec contracts are unchanged.
+
+## Experimental application/window bridge
+
+Requires the prototype desktop image. All routes require a signed-in account
+with access to the desktop; POST requires the existing same-origin check.
+
+- `GET /api/desktops/{name}/applications`: `{apps: [{id, name}], windows: [{id, title, app, parent, active, minimized, x, y, width, height}]}`. IDs are strings; `parent` is a transient parent window ID or null. `?windows=1` skips application enumeration and returns an empty `apps` array.
+- `POST /api/desktops/{name}/applications`: `{action: "launch" | "activate", id: string}`. Launch accepts a registered `.desktop` ID; activate accepts a decimal X11 window ID. Returns `{id: string | null}`; a null launch result means no matching window was found within six seconds, not that launch failed.
+- A stopped desktop returns 409; malformed action/ID 400; absent helper or invalid/oversized response 502. Helper output is capped at 1 MiB with a 12-second deadline.
+
+These operations share the existing session and its input focus. Window pixels
+are still delivered through the full desktop Selkies stream.

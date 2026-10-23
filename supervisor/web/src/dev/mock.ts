@@ -173,7 +173,7 @@ function host() {
     const owner = list.find((c) => c.settings.camera === device);
     return { device, taken: !!owner, ...(owner ? { desktop: owner.name } : {}) };
   });
-  return { cpus: 8, memBytes: 16 * GB, running: running.length, total: list.length, memUsed: running.reduce((s, c) => s + (c.stats?.memBytes ?? 0), 0), cameras };
+  return { cpus: 8, memBytes: 16 * GB, running: running.length, total: list.length, memUsed: running.reduce((s, c) => s + (c.stats?.memBytes ?? 0), 0), cameras, memoryReclaim: { enabled: true } };
 }
 
 // Stats every 5 s and a visitor now and then, so the pages move. Started by
@@ -346,8 +346,8 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const img = images.find((i) => i.ref === b.image) ?? images[0]!;
     const c: Desktop = {
       id: `${name}-id`, name, state: "creating", startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/${name}`, image: img.ref, imageTitle: img.title,
-      imageVersion: img.version, imageSecrets: img.secrets, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), camera: "" },
-      access: (b.access as string[]) ?? [], viewers: [], mics: [], cams: [], webcam: false, forwards: [], agents: [], tokens: 0, stats: null,
+      autoReclaim: true, imageVersion: img.version, imageSecrets: img.secrets, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), camera: "", mounts: [] },
+      access: (b.access as string[]) ?? [], viewers: [], mics: [], cams: [], webcam: false, terminal: true, forwards: [], agents: [], tokens: 0, stats: null,
     };
     desktops.push(c);
     changed(c);
@@ -441,6 +441,10 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   if (!cm || !c) return json(res, 404, { error: "No such desktop" });
   const sub = cm[2] ?? "";
 
+  if (sub === "terminal/sessions" && method === "GET") {
+    if (c.state !== "running" || !c.terminal) return json(res, 409, { error: "Desktop terminal unavailable" });
+    return json(res, 200, { sessions: [{ name: "main" }, { name: "terminal-1" }, { name: "terminal-2" }] });
+  }
   if (sub === "" && method === "GET") return json(res, 200, visible().find((x) => x.name === c.name));
   if (sub === "" && method === "DELETE") {
     desktops.splice(desktops.indexOf(c), 1);
@@ -452,6 +456,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     return json(res, 202, job(["Recreating the container", "Starting"], () => {
       if (typeof b.memoryBytes === "number") c.settings.memoryBytes = b.memoryBytes;
       if (typeof b.nanoCpus === "number") c.settings.nanoCpus = b.nanoCpus;
+      if (Array.isArray(b.mounts)) c.settings.mounts = b.mounts as Desktop["settings"]["mounts"];
       if (typeof b.image === "string") c.image = b.image;
       if (typeof b.camera === "string") {
         c.settings.camera = b.camera;
@@ -461,6 +466,19 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     }, c.name));
   }
   if (sub === "start") return setState(c, "starting", "running"), json(res, 204);
+  if (sub === "memory-policy" && method === "PUT") {
+    c.autoReclaim = (await readBody(req)).autoReclaim === true;
+    changed(c);
+    return json(res, 204);
+  }
+  if (sub === "reclaim-memory") {
+    if (c.state !== "running") return json(res, 409, { error: "The desktop is stopped" });
+    const beforeBytes = c.stats?.memBytes ?? 512 * 1024 * 1024;
+    const afterBytes = Math.max(0, beforeBytes - 128 * 1024 * 1024);
+    if (c.stats) c.stats.memBytes = afterBytes;
+    return json(res, 200, { requestedBytes: 128 * 1024 * 1024, beforeBytes, afterBytes,
+      swapBeforeBytes: 0, swapAfterBytes: 96 * 1024 * 1024, partial: false });
+  }
   if (sub === "stop") return setState(c, "stopped"), json(res, 204);
   if (sub === "restart") return setState(c, "starting", "running"), json(res, 204);
   if (sub === "access") {
@@ -475,6 +493,13 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
       c.updateAvailable = null;
       setState(c, "running");
     }, c.name));
+  }
+  if (sub === "applications") {
+    if (method === "POST") return json(res, 200, { id: "42" });
+    return json(res, 200, {
+      apps: url.searchParams.get("windows") === "1" ? [] : [{ id: "xfce4-terminal.desktop", name: "Xfce Terminal" }, { id: "chromium.desktop", name: "Chromium" }],
+      windows: [{ id: "42", title: "Terminal — workspace", app: "Xfce4-terminal", parent: null, active: true, minimized: false, x: 0, y: 24, width: 640, height: 480 }],
+    });
   }
   if (sub === "keys") return json(res, 204);
   if ((sub === "mic" || sub === "cam") && method === "POST") {

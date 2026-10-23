@@ -6,6 +6,10 @@ It holds use cases, the architecture, and specs and plans written with the super
 - [[Specs]]: what we build and why, one design spec per topic, in `superpowers/specs/`.
 - [[Plans]]: how a spec gets built, step by step, in `superpowers/plans/`.
 - [[Architecture]]: the system's components, built and planned, one page each in `Architecture/`, with diagrams drawn from them.
+- [[superpowers/spikes/2026-10-23-shared-folders|Dynamic shared folders on Mac and Linux investigation]]: filesystem permission limits, live mount feasibility, platform evidence and the recommended implementation approach.
+
+- [[Testing/Shared terminal 2026-10-23|Shared terminal testing — 23 October 2026]]: the implemented create/join flow, desktop and native mobile evidence, and verification limits.
+- [[superpowers/spikes/2026-10-23-terminal-access|Shared terminal access prototype]]: historical experimental evidence, superseded by the implemented shared terminal.
 
 Agents working here: read [[AGENTS]] first.
 

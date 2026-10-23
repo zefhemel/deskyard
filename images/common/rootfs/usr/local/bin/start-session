@@ -8,6 +8,7 @@ done
 [ -e "$XDG_RUNTIME_DIR/xvfb-ready" ] || exit 1
 
 rm -f "$XDG_RUNTIME_DIR/stopping"
+/usr/local/bin/deskyard-terminal-configure
 session_configure
 . /etc/workspace/gamepads.sh
 

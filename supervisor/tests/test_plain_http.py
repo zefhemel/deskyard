@@ -59,6 +59,24 @@ def has_picture(page) -> bool:
     return ImageStat.Stat(Image.open(BytesIO(shot)).convert("L")).mean[0] > 150
 
 
+@pytest.mark.parametrize("host", ["deskyard.test", "deskyard.invalid"])
+def test_insecure_login_survives_browser_network_loss(supervisor, host):
+    with sync_playwright() as p:
+        browser = p.chromium.launch(args=[f"--host-resolver-rules=MAP {host} 127.0.0.1", "--no-proxy-server"])
+        page = browser.new_page()
+        page.goto(f"http://{host}:{supervisor.port}/login")
+        page.context.set_offline(True)
+        status = page.evaluate("""async password => (await fetch('/api/login', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({username: 'admin', password})
+        })).status""", ADMIN_PASSWORD)
+        assert status == 200
+        assert page.evaluate("isSecureContext") is False
+        assert page.evaluate("async () => (await (await fetch('/api/me')).json()).username") == "admin"
+        assert any(cookie["domain"] == host for cookie in page.context.cookies())
+        browser.close()
+
+
 def test_plain_http_screen(supervisor, desktop, name, remote):
     base = insecure_base(supervisor)
     in_desktop(name, "sh", "-c", "setsid xev -name keytest > /tmp/xev.log 2>&1 &")

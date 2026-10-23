@@ -1,0 +1,97 @@
+#!/usr/bin/python3
+"""Enforce native shared-shell defaults as the desktop user at session startup.
+
+Preserve appearance and all unrelated settings. Explicit emulator commands still
+win over these defaults, as required for Terminal=true applications and restores.
+"""
+import ast
+import os
+from pathlib import Path
+import subprocess
+import shutil
+
+home = Path.home()
+command = '/usr/local/bin/deskyard terminal-new'
+
+def ini(path, section, values):
+    # Change only owned keys. KDE/GLib rc files are not Python INI files;
+    # preserving raw lines keeps comments, translations and escaping intact.
+    lines = path.read_text().splitlines() if path.exists() else []
+    result, current, pending = [], None, dict(values)
+    found = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith('[') and stripped.endswith(']'):
+            if current == section:
+                result.extend(key + '=' + value for key, value in pending.items())
+                pending.clear()
+            current = stripped[1:-1]
+            found = found or current == section
+        if current == section and '=' in line and not stripped.startswith(('#', ';')):
+            key = line.split('=', 1)[0].strip()
+            if key in values:
+                if key in pending:
+                    result.append(key + '=' + pending.pop(key))
+                continue
+        result.append(line)
+    if not found:
+        result.extend(['', '[' + section + ']'])
+    result.extend(key + '=' + value for key, value in pending.items())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('\n'.join(result) + '\n')
+
+def ini_value(path, section, key):
+    current = None
+    for line in path.read_text().splitlines() if path.exists() else []:
+        if line.startswith('[') and line.endswith(']'):
+            current = line[1:-1]
+        elif current == section and line.startswith(key + '='):
+            return line.split('=', 1)[1]
+    return ''
+
+def settings(schema, key, value):
+    subprocess.run(['gsettings', 'set', schema, key, value], check=True)
+
+desktop = os.environ['WORKSPACE_DESKTOP']
+if desktop == 'xfce':
+    ini(home / '.config/xfce4/terminal/terminalrc', 'Configuration', {
+        'RunCustomCommand': 'TRUE', 'CustomCommand': command,
+        'CommandLoginShell': 'FALSE',
+    })
+    # Existing preferred-terminal choices must not bypass the common default.
+    path = home / '.config/xfce4/helpers.rc'
+    lines = path.read_text().splitlines() if path.exists() else []
+    lines = [line for line in lines if not line.startswith('TerminalEmulator=')]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('\n'.join(lines + ['TerminalEmulator=xfce4-terminal', '']))
+elif desktop == 'kde':
+    profiles = home / '.local/share/konsole'
+    config = home / '.config/konsolerc'
+    default = ini_value(config, 'Desktop Entry', 'DefaultProfile')
+    if default and Path(default).name == default and default.endswith('.profile'):
+        path = profiles / default
+        system = Path('/usr/share/konsole') / default
+        if not path.exists() and system.is_file():
+            profiles.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(system, path)
+        if not path.is_file():
+            default = ''
+    else:
+        default = ''
+    if not default:
+        default = 'Deskyard.profile'
+        ini(profiles / default, 'General', {'Name': 'Deskyard', 'Parent': 'FALLBACK/'})
+        ini(config, 'Desktop Entry', {'DefaultProfile': default})
+    for path in profiles.glob('*.profile'):
+        ini(path, 'General', {'Command': command, 'LocalTabTitleFormat': '%w'})
+    ini(home / '.config/kdeglobals', 'General', {'TerminalApplication': 'konsole', 'TerminalService': 'org.kde.konsole.desktop'})
+elif desktop == 'mate':
+    profiles = ast.literal_eval(subprocess.check_output(
+        ['gsettings', 'get', 'org.mate.terminal.global', 'profile-list'], text=True))
+    for profile in profiles:
+        schema = 'org.mate.terminal.profile:/org/mate/terminal/profiles/' + profile + '/'
+        settings(schema, 'custom-command', command)
+        settings(schema, 'use-custom-command', 'true')
+        settings(schema, 'login-shell', 'false')
+    settings('org.mate.applications-terminal', 'exec', 'mate-terminal')
+    settings('org.mate.applications-terminal', 'exec-arg', '-x')

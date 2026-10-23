@@ -24,6 +24,7 @@ Desktop (screen, mouse, keyboard):
 
 Shell and files:
   exec [OPTIONS] -- CMD [ARG...]       run a command on the desktop
+  terminal [SESSION]                   join a shared terminal session
   shell                                interactive login shell
   cp SRC DST                           copy files to or from a desktop
   forward [-R] PORT[:PORT]...          map TCP ports between this machine and the desktop

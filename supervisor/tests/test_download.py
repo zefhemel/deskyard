@@ -100,6 +100,19 @@ def test_download_dialog(supervisor, desktop, name, tmp_path):
         d.value.save_as(path)
         assert d.value.suggested_filename == "hello.txt"
         assert path.read_bytes() == b"hello from the desktop\n"
+        with page.expect_download() as folder_download:
+            dialog.get_by_role("link", name="Download this folder (.zip)").click()
+        folder_path = tmp_path / "docs.zip"
+        folder_download.value.save_as(folder_path)
+        with zipfile.ZipFile(folder_path) as archive:
+            assert archive.read("hello.txt") == b"hello from the desktop\n"
+        dialog.get_by_role("button", name="Up one folder").click()
+        with page.expect_download() as entry_download:
+            dialog.get_by_role("link", name="Download docs as zip").click()
+        entry_path = tmp_path / "entry.zip"
+        entry_download.value.save_as(entry_path)
+        with zipfile.ZipFile(entry_path) as archive:
+            assert archive.read("hello.txt") == b"hello from the desktop\n"
         # A path outside /workspace shows the refusal.
         dialog.get_by_label("Folder path").fill("/etc")
         dialog.get_by_role("button", name="Go").click()

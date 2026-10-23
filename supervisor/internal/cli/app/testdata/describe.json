@@ -633,6 +633,33 @@
       "exitCodes": "the command's own exit code; 1 when it couldn't run (connection, token, stopped desktop), 2 usage error"
     },
     {
+      "name": "terminal",
+      "group": "shell",
+      "summary": "join a shared terminal session",
+      "usage": "terminal [SESSION]",
+      "description": "Joins a shared Bash login shell in /workspace, default main. Browser, CLI and desktop clients share the same session. Inside an existing native shared terminal, press Ctrl-B then s and choose the session instead of nesting this command. Detach with Ctrl-B then D; jobs survive disconnect but end when the desktop restarts. Session names use 1–64 letters, digits, underscores or dashes and start with a letter or digit.",
+      "arguments": [
+        {
+          "name": "session",
+          "type": "string",
+          "required": false,
+          "default": "main",
+          "description": "shared session name"
+        }
+      ],
+      "flags": [],
+      "output": {
+        "type": "stream",
+        "description": "shared terminal input and output"
+      },
+      "examples": [
+        "deskyard -d alice terminal",
+        "deskyard terminal build-2"
+      ],
+      "where": "on the chosen remote (-d NAME); inside a desktop without a remote it acts locally",
+      "exitCodes": "the command's own exit code; 1 when it couldn't run (connection, token, stopped desktop), 2 usage error"
+    },
+    {
       "name": "shell",
       "group": "shell",
       "summary": "interactive login shell",

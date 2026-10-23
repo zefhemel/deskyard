@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "preact/compat";
 import { useEffect, useState } from "preact/hooks";
 import { LocationProvider, Route, Router, useLocation } from "preact-iso";
 import { api, type Me } from "./api.ts";
@@ -10,6 +11,8 @@ import { DesktopPage } from "./desktop/desktop.tsx";
 import { ImagesPage } from "./pages/images.tsx";
 import { LoginPage } from "./pages/login.tsx";
 import { NotFound } from "./pages/not-found.tsx";
+
+const TerminalPage = lazy(() => import("./terminal/terminal.tsx").then((m) => ({ default: m.TerminalPage })));
 
 /**
  * `/<name>/` (one segment with a trailing slash) is a desktop's desktop page;
@@ -45,10 +48,15 @@ function SignedIn() {
   }, []);
   if (!me) return null;
 
+  const terminal = /^\/([a-z][a-z0-9-]*)\/terminal\/$/.exec(url.split("?")[0] ?? "")?.[1];
   const desktop = desktopName(url.split("?")[0] ?? "");
   return (
     <LiveProvider me={me}>
-      {desktop ? (
+      {terminal ? (
+        <Suspense fallback={<p>Loading terminal…</p>}>
+          <TerminalPage key={terminal} name={terminal} />
+        </Suspense>
+      ) : desktop ? (
         <DesktopPage key={desktop} name={desktop} />
       ) : (
         <Router>

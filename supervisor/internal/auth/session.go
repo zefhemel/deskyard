@@ -2,6 +2,7 @@ package auth
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
@@ -38,8 +39,17 @@ func (s *Sessions) sign(payload string) string {
 }
 
 func (s *Sessions) Issue(w http.ResponseWriter, username string, epoch int) {
+	id := make([]byte, 24)
+	if _, err := rand.Read(id); err != nil {
+		panic(err)
+	}
+	s.Refresh(w, SessionClaims{Username: username, Epoch: epoch, ID: base64.RawURLEncoding.EncodeToString(id)})
+}
+
+// Refresh preserves the browser login identity across sliding cookie renewal.
+func (s *Sessions) Refresh(w http.ResponseWriter, c SessionClaims) {
 	exp := s.now().Add(sessionTTL).Unix()
-	payload := fmt.Sprintf("%s|%d|%d", username, epoch, exp)
+	payload := fmt.Sprintf("%s|%d|%d|%s", c.Username, c.Epoch, exp, c.ID)
 	value := base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + s.sign(payload)
 	http.SetCookie(w, &http.Cookie{
 		Name: CookieName, Value: value, Path: "/", HttpOnly: true, Secure: s.Secure,
@@ -52,39 +62,56 @@ func (s *Sessions) Clear(w http.ResponseWriter) {
 		SameSite: http.SameSiteStrictMode, MaxAge: -1})
 }
 
-// Read returns the session's username and epoch, and whether it is valid and
-// unexpired. refresh is true when the cookie is more than a day old, so the
-// caller reissues it (a sliding 30 days).
+// SessionClaims contains verified identity and absolute cookie expiry.
+type SessionClaims struct {
+	Username string
+	Epoch    int
+	ID       string
+	Expires  time.Time
+	Refresh  bool
+}
+
+// Read preserves the existing username/epoch/refresh interface.
 func (s *Sessions) Read(r *http.Request) (username string, epoch int, refresh, ok bool) {
+	c, ok := s.Claims(r)
+	return c.Username, c.Epoch, c.Refresh, ok
+}
+
+// Claims verifies the same signature and expiry as Read. Legacy cookies retain
+// their signed fingerprint as identity when refreshed into the new format.
+func (s *Sessions) Claims(r *http.Request) (SessionClaims, bool) {
+	invalid := SessionClaims{}
 	c, err := r.Cookie(CookieName)
 	if err != nil {
-		return "", 0, false, false
+		return invalid, false
 	}
 	enc, sig, found := strings.Cut(c.Value, ".")
 	if !found {
-		return "", 0, false, false
+		return invalid, false
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(enc)
 	if err != nil {
-		return "", 0, false, false
+		return invalid, false
 	}
 	payload := string(raw)
 	if !hmac.Equal([]byte(sig), []byte(s.sign(payload))) {
-		return "", 0, false, false
+		return invalid, false
 	}
 	parts := strings.Split(payload, "|")
-	if len(parts) != 3 {
-		return "", 0, false, false
+	if len(parts) != 3 && len(parts) != 4 {
+		return invalid, false
 	}
-	epoch, err1 := strconv.Atoi(parts[1])
-	exp, err2 := strconv.ParseInt(parts[2], 10, 64)
-	if err1 != nil || err2 != nil {
-		return "", 0, false, false
+	epoch, e1 := strconv.Atoi(parts[1])
+	exp, e2 := strconv.ParseInt(parts[2], 10, 64)
+	if e1 != nil || e2 != nil || parts[0] == "" || s.now().Unix() >= exp {
+		return invalid, false
 	}
-	now := s.now()
-	if now.Unix() > exp {
-		return "", 0, false, false
+	id := "legacy-" + sig
+	if len(parts) == 4 {
+		id = parts[3]
+		if id == "" {
+			return invalid, false
+		}
 	}
-	refresh = time.Unix(exp, 0).Sub(now) < sessionTTL-24*time.Hour
-	return parts[0], epoch, refresh, true
+	return SessionClaims{Username: parts[0], Epoch: epoch, ID: id, Expires: time.Unix(exp, 0), Refresh: len(parts) == 3 || time.Unix(exp, 0).Sub(s.now()) < sessionTTL-24*time.Hour}, true
 }

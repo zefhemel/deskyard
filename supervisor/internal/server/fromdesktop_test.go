@@ -274,14 +274,18 @@ func TestImageFromDesktopThroughHelperKeepsHardLinks(t *testing.T) {
 		return buf.Bytes()
 	}
 	reg := func(name string) tar.Header { return tar.Header{Name: name, Mode: 0o755, Typeflag: tar.TypeReg} }
-	link := func(name, to string) tar.Header { return tar.Header{Name: name, Mode: 0o755, Typeflag: tar.TypeLink, Linkname: to} }
+	link := func(name, to string) tar.Header {
+		return tar.Header{Name: name, Mode: 0o755, Typeflag: tar.TypeLink, Linkname: to}
+	}
 	bt.e.folderTar = archive(
 		reg("./.cache/store/cli"), reg("./.cache/store/index"),
 		link(mise+"cowsay/cli.js", "./.cache/store/cli"),
 		link(mise+"cowsay/index.js", "./.cache/store/index"), link(mise+"cowthink/index.js", "./.cache/store/index"),
 		reg(mise+"own.js"), link(mise+"own-again.js", mise+"own.js"),
 	)
-	bt.e.folderTarT = archive(reg("./.cache/store/cli"), reg("./.cache/store/index"), reg(mise+"own.js"))
+	// A requested source may become a directory before the second read;
+	// its recursively archived children must not become unrelated exports.
+	bt.e.folderTarT = archive(reg("./.cache/store/cli"), reg("./.cache/store/index"), reg(mise+"own.js"), reg("./unrequested/child"))
 
 	body := map[string]any{"name": "Links", "slug": "links", "groups": []string{"tools"}}
 	if st := bt.wait(bt.start("POST", "/api/desktops/alice/image", body)); st.Status != "done" {
@@ -307,6 +311,36 @@ func TestImageFromDesktopThroughHelperKeepsHardLinks(t *testing.T) {
 	bt.e.mu.Unlock()
 	if want := "./.cache/store/cli\n./.cache/store/index\n" + mise + "own.js\n"; asked != want {
 		t.Errorf("asked the helper for %q, want %q", asked, want)
+	}
+}
+
+func TestHelperHardLinkWithNewlineFailsClearly(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads everything")
+	}
+	bt := newBuildTest(t)
+	bt.e.addImage("alpine:3.22", "sha256:alpine", "")
+	folder := withDesktop(t, bt, map[string]string{"locked": "x"})
+	if err := os.Chmod(filepath.Join(folder, "locked"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	for _, h := range []tar.Header{
+		{Name: "./ordinary", Typeflag: tar.TypeReg},
+		{Name: "./alias", Typeflag: tar.TypeLink, Linkname: "./cache\nentry"},
+	} {
+		if err := tw.WriteHeader(&h); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	bt.e.folderTar = buf.Bytes()
+	err := bt.s.walkHome(context.Background(), "alice", func(string, *tar.Header, contentFunc) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "newline") {
+		t.Fatalf("expected a clear unsupported-name error, got %v", err)
 	}
 }
 

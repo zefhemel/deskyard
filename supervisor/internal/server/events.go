@@ -157,6 +157,10 @@ func (s *Server) watchEngine(ctx context.Context) {
 				continue
 			}
 			switch e.Action {
+			case "die", "stop", "destroy", "restart":
+				s.viewers.closeAll(name)
+			}
+			switch e.Action {
 			case "start", "die", "stop", "create", "destroy", "restart", "pause", "unpause":
 				s.publishDesktop(ctx, name)
 				s.stats.wake()

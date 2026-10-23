@@ -36,8 +36,7 @@ def test_chromium_tabs_restored(sandbox):
 
 
 def terminal_cwds(sandbox):
-    out = sandbox.exec(f"for t in $(pgrep -x {TERMINAL}); do for b in $(pgrep -P $t -x bash); do readlink /proc/$b/cwd; done; done",
-                       check=False).stdout
+    out = sandbox.exec("tmux -S /run/workspace/deskyard-terminal/tmux.sock list-panes -a -F '#{pane_current_path}'", check=False).stdout
     return sorted(out.split())
 
 
