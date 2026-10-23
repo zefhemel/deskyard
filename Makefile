@@ -63,9 +63,9 @@ test-engine: test-image-build
 test-image: test-image-build
 	$(call two_passes,$(IMAGE_TESTS),)
 
-# --dist loadfile: one file's tests stay on one worker (one supervisor).
+# Each worker runs its own supervisor, so tests spread one by one.
 test-supervisor: test-image-build
-	$(call two_passes,$(SUPERVISOR_TESTS),--dist loadfile)
+	$(call two_passes,$(SUPERVISOR_TESTS),)
 
 test-container: test-image-build
 	DESKYARD_TEST_MODE=container $(MAKE) test-supervisor
