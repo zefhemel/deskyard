@@ -97,10 +97,20 @@ class Sandbox:
         docker("rm", "-f", "-v", self.name, check=False)
 
 
+def wait_until(f, timeout: float = 15.0, every: float = 0.3):
+    """Polls f until it returns something true or timeout passes; returns its last value."""
+    deadline = time.time() + timeout
+    while True:
+        v = f()
+        if v or time.time() > deadline:
+            return v
+        time.sleep(every)
+
+
 def run_args(image: str, *, home: str, env: dict[str, str] | None = None,
-             name: str | None = None) -> tuple[str, list[str]]:
+             name: str | None = None, docker_args: list[str] = ()) -> tuple[str, list[str]]:
     name = name or f"ac-test-{uuid.uuid4().hex[:8]}"
-    argv = ["run", "-d", "--name", name, "--shm-size", "1g",
+    argv = ["run", "-d", "--name", name, "--shm-size", "1g", *docker_args,
             "-v", f"{home}:/workspace", "-p", "127.0.0.1::8080",
             "--security-opt", f"seccomp={SECCOMP}", "--security-opt", "apparmor=unconfined",
             "--security-opt", "systempaths=unconfined"]
@@ -110,8 +120,8 @@ def run_args(image: str, *, home: str, env: dict[str, str] | None = None,
 
 
 def start_sandbox(image: str, *, home: str, env: dict[str, str] | None = None,
-                  name: str | None = None, wait: bool = True) -> Sandbox:
-    name, argv = run_args(image, home=home, env=env, name=name)
+                  name: str | None = None, wait: bool = True, docker_args: list[str] = ()) -> Sandbox:
+    name, argv = run_args(image, home=home, env=env, name=name, docker_args=docker_args)
     docker(*argv)
     sb = Sandbox(name)
     if wait:

@@ -22,6 +22,8 @@ def parse_mem(s: str) -> float:
 
 
 @pytest.mark.slow
+@pytest.mark.perf
+@pytest.mark.serial
 def test_three_instances_fit(image, artifacts_dir):
     vols = [Volumes() for _ in range(3)]
     boxes = []
