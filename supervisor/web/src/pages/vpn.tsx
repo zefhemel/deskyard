@@ -1,10 +1,10 @@
 import { useCallback, useState } from "preact/hooks";
-import { api, ApiError, type Job, type SavedVPNConnection, type VPNReference } from "../api.ts";
+import { api, ApiError, type Job, type SavedVPNConnection, type VPNReference, type VPNInput } from "../api.ts";
 import { JobProgress, useJob } from "../components/job.tsx";
 import { Page, PageHead } from "../components/topbar.tsx";
 import { Button, Check, Dialog, ErrorText, Field, Note, errorMessage } from "../components/ui.tsx";
 import { VPNStatus } from "../components/vpn.tsx";
-import { connectionInput, connectionUpdate, type ConnectionForm } from "../lib/vpn-form.ts";
+import { CandidateTestSession, connectionInput, connectionUpdate, type ConnectionForm } from "../lib/vpn-form.ts";
 import { useFetch } from "../lib/use-fetch.ts";
 import { useLive } from "../live.tsx";
 
@@ -91,7 +91,7 @@ function ConnectionDialog({
   const [error, setError] = useState<string | null>(null);
   const [jobID, setJobID] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [submittedForm, setSubmittedForm] = useState("");
+  const [candidate] = useState(() => new CandidateTestSession());
   const [action, setAction] = useState<"test" | "save">("test");
   const { refresh } = useLive();
   const loadPreview = async () => {
@@ -120,33 +120,36 @@ function ConnectionDialog({
     if (active) return;
     setError(null);
     setJobID(null);
-    setAction(kind);
-    setSubmittedForm(JSON.stringify(form));
+    const begin = (input: VPNInput) => {
+      setAction(kind);
+      return run.start(async () => {
+        try {
+          const ref =
+            kind === "test"
+              ? await api.testVPN({ ...input, ...(preview ? { connectionId: preview.id } : {}) })
+              : await api.updateVPN(preview!.id, connectionUpdate(form, preview!));
+          setJobID(ref.job);
+          return ref;
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 409) await loadPreview();
+          throw e;
+        }
+      });
+    };
     try {
-      const input = connectionInput(form, !!preview);
-      if (kind === "save" && preview?.desktops.length && !confirmed) throw new Error("Confirm the affected desktop restart before saving.");
-      if (kind === "save" && !preview) {
-        setBusy(true);
-        const saved = await api.createVPN(input);
-        setPreview({ ...saved, desktops: [] });
-        setForm({ ...form, username: "", password: "" });
-        onSaved();
-        onClose();
-        setError(null);
+      if (kind === "test") {
+        await candidate.start(form, !!preview, begin);
       } else {
-        await run.start(async () => {
-          try {
-            const ref =
-              kind === "test"
-                ? await api.testVPN({ ...input, ...(preview ? { connectionId: preview.id } : {}) })
-                : await api.updateVPN(preview!.id, connectionUpdate(form, preview!));
-            setJobID(ref.job);
-            return ref;
-          } catch (e) {
-            if (e instanceof ApiError && e.status === 409) await loadPreview();
-            throw e;
-          }
-        });
+        const input = connectionInput(form, !!preview);
+        if (preview?.desktops.length && !confirmed) throw new Error("Confirm the affected desktop restart before saving.");
+        if (!preview) {
+          setBusy(true);
+          const saved = await api.createVPN(input);
+          setPreview({ ...saved, desktops: [] });
+          setForm({ ...form, username: "", password: "" });
+          onSaved();
+          onClose();
+        } else await begin(input);
       }
     } catch (e) {
       setError(errorMessage(e));
@@ -240,7 +243,7 @@ function ConnectionDialog({
       </fieldset>
       <JobProgress job={run.job} />
       <ErrorText error={error || run.error} />
-      <ConnectionResult job={action === "test" && submittedForm !== JSON.stringify(form) ? null : run.job} action={action} />
+      <ConnectionResult job={action === "test" ? candidate.result(form, run.job) : run.job} action={action} />
       {preview && !run.job && (
         <p class="text-sm text-muted">
           Saved as {preview.name} · revision {preview.revision}.

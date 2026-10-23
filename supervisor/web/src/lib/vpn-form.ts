@@ -1,4 +1,4 @@
-import type { DesktopVPNSettings, LANException, VPNInput, VPNStatus, VPNUpdate, VPNReference } from "../api.ts";
+import type { DesktopVPNSettings, LANException, VPNInput, VPNStatus, VPNUpdate, VPNReference, Job, Settings, SettingsPatch } from "../api.ts";
 
 export interface ConnectionForm {
   name: string;
@@ -38,7 +38,7 @@ export function desktopVPNPatch(original: DesktopVPNSettings, selection: string,
   const id = selection || null;
   return {
     ...(id !== original.vpnConnectionId ? { vpnConnectionId: id } : {}),
-    ...(JSON.stringify(rules) !== JSON.stringify(original.lanExceptions) ? { lanExceptions: rules } : {}),
+    ...(exceptionPolicyKey(rules) !== exceptionPolicyKey(original.lanExceptions) ? { lanExceptions: rules } : {}),
   };
 }
 
@@ -104,4 +104,78 @@ export function vpnPresentation(vpn: VPNStatus) {
         ? `Last observed exit IP ${vpn.lastExitIp} at ${new Date(vpn.exitIpObservedAt).toLocaleString()}`
         : undefined,
   };
+}
+
+/** Candidate result provenance shared by the test form and its job renderer. */
+export class CandidateTestSession {
+  private submittedForm = "";
+  start<T>(form: ConnectionForm, editing: boolean, begin: (input: VPNInput) => Promise<T>): Promise<T> {
+    const input = connectionInput(form, editing);
+    this.submittedForm = JSON.stringify(form);
+    return begin(input);
+  }
+  result(form: ConnectionForm, job: Job | null): Job | null {
+    return this.submittedForm === JSON.stringify(form) ? job : null;
+  }
+}
+
+export interface DesktopSettingsDraft {
+  image: string;
+  memoryBytes: number;
+  nanoCpus: number;
+  camera: string;
+  vpnConnectionId: string;
+  lan: ExceptionRow[];
+}
+type SavedDesktopSettings = { image: string; settings: Settings };
+function desktopSettingsPatch(saved: SavedDesktopSettings, draft: DesktopSettingsDraft): SettingsPatch {
+  const rules =
+    !draft.vpnConnectionId || JSON.stringify(draft.lan) === JSON.stringify(exceptionRows(saved.settings.lanExceptions))
+      ? saved.settings.lanExceptions
+      : parseExceptions(draft.lan);
+  const patch: SettingsPatch = desktopVPNPatch(saved.settings, draft.vpnConnectionId, rules);
+  if (draft.image !== saved.image) patch.image = draft.image;
+  if (draft.memoryBytes !== saved.settings.memoryBytes) patch.memoryBytes = draft.memoryBytes;
+  if (draft.nanoCpus !== saved.settings.nanoCpus) patch.nanoCpus = draft.nanoCpus;
+  if (draft.camera !== saved.settings.camera) patch.camera = draft.camera;
+  return patch;
+}
+export function desktopSettingsChanged(saved: SavedDesktopSettings, draft: DesktopSettingsDraft): boolean {
+  try {
+    return Object.keys(desktopSettingsPatch(saved, draft)).length > 0;
+  } catch {
+    return true;
+  } // An invalid visible draft still needs correction or Undo.
+}
+export function saveDesktopSettings<T>(
+  saved: SavedDesktopSettings,
+  draft: DesktopSettingsDraft,
+  begin: (patch: SettingsPatch) => Promise<T>,
+): Promise<T> | null {
+  const patch = desktopSettingsPatch(saved, draft);
+  return Object.keys(patch).length ? begin(patch) : null;
+}
+
+/** Compare policy rather than editable spelling, rule order or split/duplicate ports. */
+function exceptionPolicyKey(rules: LANException[]): string {
+  const grouped = new Map<string, LANException>();
+  for (const rule of parseExceptions(exceptionRows(rules))) {
+    const key = `${rule.destination}:${rule.protocol}`;
+    const existing = grouped.get(key);
+    if (existing) existing.ports.push(...rule.ports);
+    else grouped.set(key, rule);
+  }
+  return JSON.stringify(
+    [...grouped.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, rule]) => {
+        const ports: LANException["ports"] = [];
+        for (const port of rule.ports.sort((a, b) => a.start - b.start || a.end - b.end)) {
+          const last = ports.at(-1);
+          if (last && port.start <= last.end + 1) last.end = Math.max(last.end, port.end);
+          else ports.push({ ...port });
+        }
+        return { ...rule, ports };
+      }),
+  );
 }

@@ -1,6 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { connectionInput, desktopVPNPatch, parseExceptions, vpnPresentation, connectionUpdate } from "./vpn-form.ts";
+import {
+  connectionInput,
+  desktopVPNPatch,
+  parseExceptions,
+  vpnPresentation,
+  connectionUpdate,
+  CandidateTestSession,
+  desktopSettingsChanged,
+  saveDesktopSettings,
+} from "./vpn-form.ts";
 
 const form = { name: "Travel", country: "Poland", username: "", password: "" };
 test("blank edit credentials are independently omitted, replacement preserves the other secret", () => {
@@ -75,4 +84,103 @@ test("shared edit submits the exact preview revision and stable desktop IDs", ()
     }),
     { name: "Travel", provider: "nordvpn", country: "Poland", expectedRevision: 7, affectedDesktopIds: ["stable-2", "stable-1"], confirmRestart: true },
   );
+});
+
+test("invalid retest keeps the prior candidate success hidden and makes no second request", async () => {
+  const session = new CandidateTestSession();
+  let requests = 0;
+  const completed = { status: "done" as const, message: "Done", progress: 1, result: { ...status, state: "connected" as const } };
+  const begin = async () => {
+    requests++;
+    return { job: "candidate-a" };
+  };
+  await session.start(form, true, begin);
+  assert.deepEqual(session.result(form, completed), completed);
+  for (const invalid of [
+    { ...form, name: "" },
+    { ...form, country: "" },
+  ]) {
+    assert.equal(session.result(invalid, completed), null);
+    let localError = "";
+    try {
+      await session.start(invalid, true, begin);
+    } catch (e) {
+      localError = (e as Error).message;
+    }
+    assert.match(localError, /name|country/);
+    assert.equal(requests, 1);
+    assert.equal(session.result(invalid, completed), null);
+  }
+});
+
+test("accepted canonical LAN settings clear dirty state and repeated saves make no request or job", async () => {
+  let saved = {
+    image: "img",
+    settings: { memoryBytes: 0, nanoCpus: 0, camera: "", vpnConnectionId: "v1", lanExceptions: [] as import("../api.ts").LANException[] },
+  };
+  const draft = {
+    image: "img",
+    memoryBytes: 0,
+    nanoCpus: 0,
+    camera: "",
+    vpnConnectionId: "v1",
+    lan: [{ destination: "192.168.1.20", protocol: "tcp", ports: "8000-8002,443" }],
+  };
+  let requests = 0;
+  const begin = async (body: import("../api.ts").SettingsPatch) => {
+    requests++;
+    assert.equal(body.vpnConnectionId, undefined);
+    saved = {
+      image: "img",
+      settings: {
+        memoryBytes: 0,
+        nanoCpus: 0,
+        camera: "",
+        vpnConnectionId: "v1",
+        lanExceptions: [
+          {
+            destination: "192.168.1.20/32",
+            protocol: "tcp",
+            ports: [
+              { start: 443, end: 443 },
+              { start: 8000, end: 8002 },
+            ],
+          },
+        ],
+      },
+    };
+    return { job: "settings-1" };
+  };
+  assert.equal(desktopSettingsChanged(saved, draft), true);
+  assert.deepEqual(await saveDesktopSettings(saved, draft, begin), { job: "settings-1" });
+  assert.equal(desktopSettingsChanged(saved, draft), false);
+  assert.equal(await saveDesktopSettings(saved, draft, begin), null);
+  assert.equal(requests, 1);
+  const reformatted = { ...draft, lan: [{ destination: "192.168.1.20/32", protocol: "tcp", ports: "443, 8001-8002,8000,443" }] };
+  assert.equal(desktopSettingsChanged(saved, reformatted), false);
+  assert.equal(await saveDesktopSettings(saved, reformatted, begin), null);
+  assert.equal(requests, 1);
+});
+
+test("No VPN ignores hidden LAN drafts without discarding them and omits saved rules", async () => {
+  const saved = {
+    image: "img",
+    settings: {
+      memoryBytes: 0,
+      nanoCpus: 0,
+      camera: "",
+      vpnConnectionId: "v1",
+      lanExceptions: [{ destination: "192.168.1.20/32", protocol: "tcp" as const, ports: [{ start: 443, end: 443 }] }],
+    },
+  };
+  const hiddenRows = [{ destination: "unfinished", protocol: "tcp", ports: "" }];
+  const draft = { image: "img", memoryBytes: 0, nanoCpus: 0, camera: "", vpnConnectionId: "", lan: hiddenRows };
+  let requests = 0;
+  await saveDesktopSettings(saved, draft, async (body) => {
+    requests++;
+    assert.deepEqual(body, { vpnConnectionId: null });
+    return { job: "disable" };
+  });
+  assert.equal(requests, 1);
+  assert.deepEqual(draft.lan, [{ destination: "unfinished", protocol: "tcp", ports: "" }]);
 });
