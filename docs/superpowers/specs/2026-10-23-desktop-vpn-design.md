@@ -1,8 +1,9 @@
 ---
 displayName: Desktop VPN design
 tags: spec
-status: draft
+status: approved
 date: "2026-10-23"
+plan: "[[superpowers/plans/2026-10-23-desktop-vpn|Desktop VPN plan]]"
 ---
 Administrators can route an individual desktop's internet traffic through a saved NordVPN connection. Deskyard manages a separate VPN container for each enabled desktop, blocks direct internet fallback and keeps the desktop accessible when the tunnel fails. This implements the VPN portion of [[Use cases|the family and small-company use cases]], before a separate custom DNS feature.
 
