@@ -1,25 +1,17 @@
 """Agent activity: the activity API, Desktop.agents and the screen-events stream."""
 
 import asyncio
-import json
 import contextlib
+import json
 import subprocess
 import threading
 import time
-import uuid
 
+import pytest
 import requests
 
 from conftest import free_port
-from test_agent import exec_ws, make_token
-from test_cli import cli, remote, forwards  # noqa: F401  (fixtures)
-
-
-def make_account(admin, desktops):
-    user = "u" + uuid.uuid4().hex[:5]
-    r = admin.post("/api/accounts", json={"username": user, "password": "pw", "admin": False, "desktops": desktops})
-    assert r.status_code == 201, r.text
-    return user
+from helpers import exec_ws, make_account, make_token, wait_until
 
 
 def test_activity_api_shape(admin, desktop, name):
@@ -82,16 +74,6 @@ def summary(admin, name, token_id=None):
         agents = [a for a in agents if a["id"] == token_id]
     assert len(agents) == 1, agents
     return agents[0]
-
-
-def wait_for(fn, timeout=5, what="condition"):
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        v = fn()
-        if v:
-            return v
-        time.sleep(0.25)
-    raise AssertionError(f"timed out waiting for {what}")
 
 
 def has_recent(sum_, **want):
@@ -162,7 +144,7 @@ def test_disconnected_command(admin, desktop, name):
             pass
 
     asyncio.run(go())
-    wait_for(lambda: has_recent(summary(admin, name, t["id"]), text="sleep 30", disconnected=True), 5, "disconnected line")
+    assert wait_until(lambda: has_recent(summary(admin, name, t["id"]), text="sleep 30", disconnected=True), 5), "no disconnected line"
 
 
 def test_agent_cannot_turn_inside_recording_on(admin, desktop, name):
@@ -179,7 +161,7 @@ def test_browser_presence(admin, desktop, name):
     assert any(i["kind"] == "browser" for i in s["now"]), s
 
 
-def test_cp_recorded(cli, remote, admin, name, tmp_path):  # noqa: F811
+def test_cp_recorded(cli, remote, admin, name, tmp_path):
     f = tmp_path / "f.bin"
     f.write_bytes(b"x" * 1000)
     remote("-d", name, "cp", str(f), f"{name}:/workspace/f.bin")
@@ -192,7 +174,7 @@ def test_cp_recorded(cli, remote, admin, name, tmp_path):  # noqa: F811
     assert has_recent(s, kind="copy", direction="out", path="/workspace/f.bin", size=1000), s
 
 
-def test_forward_in_now(cli, remote, forwards, admin, name):  # noqa: F811
+def test_forward_in_now(cli, remote, forwards, admin, name):
     f = forwards(cli, remote, "-R", f"5173:{free_port()}")
     f.wait_for("out 5173")
     s = summary(admin, name)
@@ -208,6 +190,7 @@ def test_revoke_removes_presence(admin, desktop, name):
     assert admin.desktop(name)["agents"] == []
 
 
+@pytest.mark.serial  # 8 s and 20 s around a 12 s expiry
 def test_presence_expires(admin, desktop, name):
     t = make_token(admin, name)
     run(admin, t, ["true"])
@@ -221,6 +204,8 @@ def test_presence_expires(admin, desktop, name):
             return
         time.sleep(1)
     raise AssertionError("agent still listed after 20 s")
+
+
 # --- inside activity: the supervisor reads each desktop's /_activity/ stream ---------------
 
 
@@ -262,20 +247,10 @@ def inside_agents(admin, name):
     return [a for a in admin.desktop(name)["agents"] if a["inside"]]
 
 
-def wait_inside(fn, seconds=15):
-    end = time.time() + seconds
-    while time.time() < end:
-        v = fn()
-        if v:
-            return v
-        time.sleep(0.5)
-    return fn()
-
-
 def test_inside_click_is_a_terminal(admin, desktop, name):
     with events_open(admin):
         inside_click(name)
-        agents = wait_inside(lambda: inside_agents(admin, name))
+        agents = wait_until(lambda: inside_agents(admin, name), 15, 0.5)
         assert [(a["id"], a["name"], a["inside"], a["owner"]) for a in agents] == [("inside:a terminal", "a terminal", True, "")]
         act = admin.get(f"/api/desktops/{name}/activity").json()
         mine = [a for a in act["agents"] if a["id"] == "inside:a terminal"][0]
@@ -311,5 +286,5 @@ def test_inside_backfill(admin, desktop, name):
     # running (it lingers after the last look), so don't assert it's unseen.
     inside_click(name)
     with events_open(admin):
-        agents = wait_inside(lambda: inside_agents(admin, name))
+        agents = wait_until(lambda: inside_agents(admin, name), 15, 0.5)
         assert [a["id"] for a in agents] == ["inside:a terminal"]

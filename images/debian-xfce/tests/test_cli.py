@@ -4,12 +4,18 @@ import time
 from PIL import Image
 from playwright.sync_api import sync_playwright
 
-from sandbox import TOKEN_HEADER
+from sandbox import TOKEN_HEADER, wait_until
 
 PAGE = """data:text/html,<title>desktop-probe</title>
 <body style='margin:0;height:100vh' onclick="document.title='clicked'">
 <input id=i autofocus style='font-size:40px;margin:40px'>
 </body>"""
+
+
+def wait_in_front(sandbox, title: str) -> None:
+    """Waits until the active window is the Chromium page with this title."""
+    active = lambda: sandbox.exec("xdotool getactivewindow getwindowname", check=False).stdout  # noqa: E731
+    assert wait_until(lambda: title in active(), 10), active()
 
 
 def test_screenshot_png(sandbox):
@@ -25,6 +31,7 @@ def test_screenshot_to_file(sandbox):
 
 def test_size_and_cursor(sandbox):
     assert sandbox.exec("deskyard size").stdout.split() == ["1280", "800"]
+    assert "1280x800" in sandbox.exec("xdpyinfo -display :1 | grep dimensions").stdout
     sandbox.exec("deskyard move 100 200")
     assert sandbox.exec("deskyard cursor").stdout.split() == ["100", "200"]
 
@@ -35,7 +42,7 @@ def test_click_and_type_roundtrip(sandbox, artifacts_dir):
         page = browser.contexts[0].new_page()
         page.goto(PAGE)
         page.bring_to_front()
-        time.sleep(1)
+        wait_in_front(sandbox, "desktop-probe")
         sandbox.exec("deskyard click 640 500")
         page.wait_for_function("document.title === 'clicked'", timeout=5000)
         page.focus("#i")
@@ -78,9 +85,9 @@ def test_triple_click_selects_line(sandbox):
     with sync_playwright() as p:
         browser = p.chromium.connect_over_cdp(sandbox.cdp_ws(), headers=TOKEN_HEADER)
         page = browser.contexts[0].new_page()
-        page.goto("data:text/html,<p id=p style='font-size:60px;margin:200px 0 0 0'>select this whole line</p>")
+        page.goto("data:text/html,<title>triple-probe</title><p id=p style='font-size:60px;margin:200px 0 0 0'>select this whole line</p>")
         page.bring_to_front()
-        time.sleep(1)
+        wait_in_front(sandbox, "triple-probe")
         box = page.locator("#p").bounding_box()
         # Page coordinates -> screen: find the page's offset from a known click.
         offset_y = page.evaluate("window.screenY + (window.outerHeight - window.innerHeight)")
@@ -93,14 +100,12 @@ def test_triple_click_selects_line(sandbox):
 def test_mouse_down_up_and_hold_key_and_wait(sandbox):
     sandbox.exec("deskyard mouse-down && deskyard mouse-up && deskyard mouse-down right && deskyard mouse-up right")
     sandbox.exec("deskyard hold-key shift 0.2")
-    import time as _t
-    start = _t.time()
+    start = time.time()
     sandbox.exec("deskyard wait 1")
-    assert _t.time() - start >= 1
+    assert time.time() - start >= 1
 
 
 def test_screenshot_settles_first(sandbox):
-    import time as _t
-    start = _t.time()
+    start = time.time()
     sandbox.exec_bytes("DESKYARD_SETTLE=1 deskyard screenshot")
-    assert _t.time() - start >= 1
+    assert time.time() - start >= 1

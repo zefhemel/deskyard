@@ -1,0 +1,187 @@
+"""The web UI in a real browser, against the real supervisor and a real desktop:
+signing in, and the desktop page's bar. The bar's tests run in Chromium,
+Firefox and WebKit (see conftest.py for when Firefox and WebKit run)."""
+
+import time
+
+import pytest
+from playwright.sync_api import expect, sync_playwright
+
+from conftest import docker
+from helpers import (BROWSERS, PICTURE, SHOWING, audio_switch, fits, frame_size, in_desktop, open_desktop,
+                     screen_size, signed_in, wait_until)
+
+
+def test_sign_in_and_see_the_wall(supervisor, desktop, name, tmp_path):
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base)
+        expect(page.get_by_text(name, exact=True).first).to_be_visible(timeout=15000)
+        expect(page.get_by_text("Deskyard").first).to_be_visible()
+        page.screenshot(path=str(tmp_path / "wall.png"))
+        browser.close()
+
+
+def test_wrong_password_shows_an_error(supervisor):
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.goto(supervisor.base + "/login")
+        page.fill("#u", "admin")
+        page.fill("#p", "wrong")
+        page.get_by_role("button", name="Sign in").click()
+        expect(page.get_by_text("wrong", exact=False).first).to_be_visible()
+        assert "/login" in page.url
+        browser.close()
+
+
+@pytest.mark.parametrize("browser_name", BROWSERS)
+def test_desktop_page_shows_stream(supervisor, desktop, name, browser_name, tmp_path):
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base, browser=browser_name)
+        open_desktop(page, supervisor.base, name)
+        assert page.frames[1].url == f"{supervisor.base}/{name}/screen/"
+        # The picture fills the frame, at the frame's size.
+        pic = page.evaluate(PICTURE)
+        assert abs(pic["width"] - pic["frameWidth"]) <= 2 and abs(pic["height"] - pic["frameHeight"]) <= 2, pic
+        # Selkies' own sidebar and controls are nowhere; ours are, in the spec's order.
+        visible = page.frames[1].evaluate("""() => [...document.querySelectorAll('[class*="sidebar"], [id*="sidebar"]')]
+            .filter(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'; })
+            .map(e => String(e.className))""")
+        assert visible == []
+        xs = []
+        for n in ("Audio", "Lock size", "Clipboard", "Keys", "Quality", "Download", "More"):
+            b = page.get_by_role("button", name=n, exact=True)
+            expect(b).to_be_visible()
+            xs.append(b.bounding_box()["x"])
+        assert xs == sorted(xs), xs
+        page.screenshot(path=str(tmp_path / f"desktop-{browser_name}.png"))
+        browser.close()
+
+
+@pytest.mark.parametrize("browser_name", BROWSERS)
+def test_clipboard_both_ways(supervisor, desktop, name, browser_name):
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base, browser=browser_name)
+        open_desktop(page, supervisor.base, name)
+
+        # Page → desktop.
+        page.get_by_role("button", name="Clipboard").click()
+        page.locator("textarea").fill("from-the-page-42")
+        page.get_by_role("button", name=f"Paste into {name}").click()
+        clip = lambda: in_desktop(name, "xclip", "-o", "-selection", "clipboard", check=False)  # noqa: E731
+        assert wait_until(lambda: clip() == "from-the-page-42"), clip()
+
+        # Desktop → page.
+        in_desktop(name, "sh", "-c", "printf from-the-desktop-7 | setsid xclip -selection clipboard")
+        if not page.get_by_text("Send to").is_visible():
+            page.get_by_role("button", name="Clipboard").click()
+        expect(page.get_by_text("from-the-desktop-7")).to_be_visible(timeout=15000)
+        browser.close()
+
+
+@pytest.mark.parametrize("browser_name", BROWSERS)
+def test_lock_size(supervisor, desktop, name, browser_name):
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base, browser=browser_name)
+        open_desktop(page, supervisor.base, name)
+        lock = page.get_by_role("button", name="Lock size", exact=True)
+        expect(lock).to_have_attribute("aria-pressed", "false")
+        size = screen_size(name)
+
+        lock.click()
+        expect(lock).to_have_attribute("aria-pressed", "true")
+        page.set_viewport_size({"width": 900, "height": 700})
+        # The picture is scaled to fit the frame; the remote screen keeps its size.
+        assert wait_until(lambda: fits(page.evaluate(PICTURE))), page.evaluate(PICTURE)
+        time.sleep(1)  # an unlocked page would have asked for its frame's size by now
+        assert screen_size(name) == size
+
+        # Remembered in this browser.
+        page.reload()
+        expect(page.get_by_text("Connected", exact=True)).to_be_visible(timeout=30000)
+        expect(lock).to_have_attribute("aria-pressed", "true")
+        page.wait_for_function(SHOWING, timeout=30000)
+        assert wait_until(lambda: fits(page.evaluate(PICTURE))), page.evaluate(PICTURE)
+        time.sleep(1)  # an unlocked page would have asked for its frame's size by now
+        assert screen_size(name) == size
+
+        # Unticked, the remote screen follows the frame again.
+        lock.click()
+        expect(lock).to_have_attribute("aria-pressed", "false")
+        frame = frame_size(page)
+        follows = lambda: all(abs(a - b) <= 8 for a, b in zip(screen_size(name), frame))  # noqa: E731
+        assert wait_until(follows), (screen_size(name), frame)
+        browser.close()
+
+
+@pytest.mark.parametrize("browser_name", BROWSERS)
+def test_keys_menu(supervisor, desktop, name, browser_name):
+    in_desktop(name, "sh", "-c", "setsid xev -name keytest > /tmp/xev.log 2>&1 &")
+    win = wait_until(lambda: in_desktop(name, "xdotool", "search", "--name", "^keytest$", check=False).split(), 20)
+    assert win, "no xev window"
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base, browser=browser_name)
+        open_desktop(page, supervisor.base, name)
+        in_desktop(name, "xdotool", "windowactivate", "--sync", win[-1])
+        page.get_by_role("button", name="Keys", exact=True).click()
+        page.get_by_role("menuitem", name="Esc", exact=True).click()
+        assert wait_until(lambda: "Escape" in in_desktop(name, "cat", "/tmp/xev.log")), "no Escape on the desktop"
+        # The keyboard goes back to the desktop.
+        page.wait_for_function("document.activeElement === document.querySelector('iframe')", timeout=5000)
+        browser.close()
+
+
+@pytest.mark.parametrize("browser_name", BROWSERS)
+def test_stopped_desktop_page(supervisor, admin, desktop, name, browser_name):
+    admin.post(f"/api/desktops/{name}/stop")
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base, browser=browser_name)
+        page.goto(f"{supervisor.base}/{name}/")
+        expect(page.get_by_text("is stopped")).to_be_visible(timeout=15000)
+        expect(page.locator("iframe")).to_have_count(0)
+        page.get_by_role("button", name="Start").click()
+        expect(page.get_by_text("Connected", exact=True)).to_be_visible(timeout=90000)
+        page.wait_for_function(SHOWING, timeout=30000)
+        browser.close()
+
+
+def test_unsupported_browser_message(supervisor, desktop, name):
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base)
+        page.add_init_script("delete window.VideoDecoder")
+        page.goto(f"{supervisor.base}/{name}/")
+        message = "This browser can't show Deskyard desktops; use a current Chrome, Firefox or Safari"
+        expect(page.get_by_text(message)).to_be_visible(timeout=15000)
+        expect(page.locator("iframe")).to_have_count(0)
+        browser.close()
+
+
+def test_phone_bar(supervisor, desktop, name):
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base, viewport={"width": 390, "height": 760}, has_touch=True)
+        open_desktop(page, supervisor.base, name, status=False)
+        for n in ("Lock size", "Keys", "Quality", "Download"):
+            expect(page.get_by_role("button", name=n, exact=True)).to_be_hidden()
+        expect(page.get_by_role("button", name="Clipboard", exact=True)).to_be_visible()
+        page.get_by_role("button", name="More", exact=True).click()
+        menu = page.get_by_role("menu")
+        for n in ("Lock size", "Send Esc", "Quality: Low", "Download…"):
+            expect(menu.get_by_text(n, exact=True)).to_be_visible()
+        browser.close()
+
+
+@pytest.mark.parametrize("browser_name", BROWSERS)
+def test_webcam_disabled_without_device(supervisor, admin, desktop, name, browser_name):
+    # This machine has no v4l2loopback device, so desktops get no camera.
+    assert admin.desktop(name)["webcam"] is False
+    assert docker("inspect", "-f", "{{json .HostConfig.Devices}}", f"deskyard-{name}").stdout.strip() in ("null", "[]")
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base, browser=browser_name)
+        open_desktop(page, supervisor.base, name)
+        camera = audio_switch(page, "My camera")
+        expect(camera).to_be_disabled()
+        expect(page.get_by_role("dialog", name="Audio").get_by_text("This machine has no virtual camera for desktops")).to_be_visible()
+        # An admin can't give it one either.
+        page.goto(f"{supervisor.base}/desktops/{name}?tab=settings")
+        expect(page.get_by_text("This machine has no virtual camera for desktops (v4l2loopback).")).to_be_visible(timeout=15000)
+        browser.close()

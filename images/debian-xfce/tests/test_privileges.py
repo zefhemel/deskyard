@@ -29,15 +29,16 @@ def test_only_8080_on_the_network(sandbox):
     assert ports == {8080}, ports
 
 
-def test_root_never_runs_user_binaries(sandbox):
+def test_root_never_runs_user_binaries(make_sandbox):
     """A binary planted in the user's bin dirs must not run as root (healthcheck, init)."""
+    sandbox = make_sandbox(docker_args=["--health-interval=2s"])
     names = ["curl", "xdpyinfo", "caddy", "chown", "install", "rm", "runuser", "flatpak", "dbus-uuidgen"]
     script = "#!/bin/sh\\n[ \"$(id -u)\" = 0 ] && touch /tmp/pwned-$(basename $0)\\nPATH=/usr/local/bin:/usr/bin:/bin exec $(basename $0) \"$@\"\\n"
     for d in ("~/.local/bin", "~/.npm-global/bin"):
         sandbox.exec(f"mkdir -p {d}")
         for n in names:
             sandbox.exec(f"printf '{script}' > {d}/{n} && chmod +x {d}/{n}")
-    time.sleep(25)  # > two healthcheck intervals
+    time.sleep(5)  # > two healthcheck intervals
     sandbox.restart()
-    time.sleep(12)
+    time.sleep(5)
     assert sandbox.exec("ls /tmp/pwned-* 2>/dev/null", check=False).stdout.strip() == ""

@@ -25,6 +25,15 @@ func testImage() string {
 	return "deskyard-debian-xfce:test"
 }
 
+// The desktops' subnet pool: DESKYARD_TEST_SUBNET, as for the pytest suites,
+// so checkouts testing at the same time stay apart.
+func testSubnet() string {
+	if v := os.Getenv("DESKYARD_TEST_SUBNET"); v != "" {
+		return v
+	}
+	return "10.214.0.0/20"
+}
+
 func newService(t *testing.T) *Service {
 	d, err := docker.New("")
 	if err != nil {
@@ -33,7 +42,7 @@ func newService(t *testing.T) *Service {
 	dir := t.TempDir()
 	// Docker Desktop/OrbStack share /Users and /private; t.TempDir lives there on macOS.
 	dir, _ = filepath.EvalSymlinks(dir)
-	return New(d, Config{DataDir: dir, Subnet: "10.214.0.0/20"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return New(d, Config{DataDir: dir, Subnet: testSubnet()}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
 func TestLifecycle(t *testing.T) {

@@ -42,12 +42,15 @@ def test_skill_links_present(sandbox):
             sandbox.exec(f"test -r {d}/{s}/SKILL.md")
 
 
-def test_user_override_kept(sandbox):
+def test_user_changes_kept_across_restart(sandbox):
+    """A skill the user replaced, and a Codex config of their own, stay theirs."""
     sandbox.exec("rm ~/.claude/skills/workspace-browser && mkdir ~/.claude/skills/workspace-browser"
                  " && echo custom > ~/.claude/skills/workspace-browser/SKILL.md")
+    sandbox.exec("echo 'model = \"mine\"' > ~/.codex/config.toml")
     sandbox.restart()
     sandbox.exec("test ! -L ~/.claude/skills/workspace-browser")
     assert sandbox.exec("cat ~/.claude/skills/workspace-browser/SKILL.md").stdout.strip() == "custom"
+    assert sandbox.exec("cat ~/.codex/config.toml").stdout.strip() == 'model = "mine"'
 
 
 @pytest.mark.network
@@ -58,13 +61,6 @@ def test_browser_skill_example_runs(sandbox):
     assert "Example Domain" in out
 
 
-
 def test_codex_config_seeded_with_network_access(sandbox):
     cfg = sandbox.exec("cat ~/.codex/config.toml").stdout
     assert 'sandbox_mode = "danger-full-access"' in cfg
-
-
-def test_existing_codex_config_untouched(sandbox):
-    sandbox.exec("echo 'model = \"mine\"' > ~/.codex/config.toml")
-    sandbox.restart()
-    assert sandbox.exec("cat ~/.codex/config.toml").stdout.strip() == 'model = "mine"'

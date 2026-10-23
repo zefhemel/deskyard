@@ -1,31 +1,11 @@
-"""Events, stats and who's viewing."""
+"""Events, stats and who's viewing. (One viewer: test_screen.test_stream_shows_the_desktop_and_counts_as_viewing.)"""
 
 import asyncio
-import json
 import threading
-import time
-import uuid
 
 import websockets
 
-
-def read_events(client, until, timeout=60):
-    """Collect (event, data) from /api/events until until(events) is true."""
-    events = []
-    with client.get("/api/events", stream=True, timeout=timeout) as r:
-        kind = None
-        deadline = time.time() + timeout
-        for line in r.iter_lines():
-            if line.startswith(b"event: "):
-                kind = line[7:].decode()
-            elif line.startswith(b"data: "):
-                events.append((kind, json.loads(line[6:])))
-                kind = None
-                if until(events):
-                    return events
-            if time.time() > deadline:
-                break
-    raise AssertionError(f"events not seen: {events[-5:]}")
+from helpers import make_account, read_events, wait_until
 
 
 def test_events_list_and_stats(admin, desktop, name):
@@ -37,38 +17,8 @@ def test_events_list_and_stats(admin, desktop, name):
     assert hist["history"] and hist["memLimit"] > 0
 
 
-def test_viewers_are_tracked(admin, desktop, name):
-    cookie = "; ".join(f"{k}={v}" for k, v in admin.cookies.items())
-    opened = threading.Event()
-    done = threading.Event()
-
-    async def view():
-        url = admin.base.replace("http", "ws") + f"/{name}/screen/api/websockets"
-        async with websockets.connect(url, additional_headers={"Cookie": cookie, "Origin": admin.base}, subprotocols=["binary"]):
-            opened.set()
-            while not done.is_set():
-                await asyncio.sleep(0.2)
-
-    t = threading.Thread(target=lambda: asyncio.run(view()))
-    t.start()
-    try:
-        assert opened.wait(10)
-        evs = read_events(admin, lambda es: any(k == "viewers" and d["name"] == name and d["viewers"] == ["admin"] for k, d in es)
-                          or any(k == "desktop" and d["name"] == name and d["viewers"] == ["admin"] for k, d in es))
-        assert evs
-    finally:
-        done.set()
-        t.join(10)
-    for _ in range(20):
-        if admin.desktop(name)["viewers"] == []:
-            break
-        time.sleep(0.5)
-    assert admin.desktop(name)["viewers"] == []
-
-
 def test_two_viewers_see_each_other(admin, desktop, name, supervisor):
-    user = "u" + uuid.uuid4().hex[:5]
-    admin.post("/api/accounts", json={"username": user, "password": "pw", "admin": False, "desktops": [name]})
+    user = make_account(admin, [name])
     anna = supervisor.client().login(user, "pw")
     opened = threading.Barrier(3)
     done = threading.Event()
@@ -91,11 +41,7 @@ def test_two_viewers_see_each_other(admin, desktop, name, supervisor):
         both = sorted(["admin", user])
         # Each sees the other, on the desktop and in the event stream.
         for client in (admin, anna):
-            for _ in range(20):
-                if sorted(client.desktop(name)["viewers"]) == both:
-                    break
-                time.sleep(0.5)
-            assert sorted(client.desktop(name)["viewers"]) == both
+            assert wait_until(lambda: sorted(client.desktop(name)["viewers"]) == both, 10, 0.5), client.desktop(name)["viewers"]
         assert read_events(anna, lambda es: any(k == "desktop" and d["name"] == name and sorted(d["viewers"]) == both for k, d in es))
     finally:
         done.set()
