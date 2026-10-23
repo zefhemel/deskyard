@@ -72,3 +72,5 @@ PWA follow-up verification: 23 UI unit tests, Go/race tests and the build passed
 
 # Landing
 Integrated the current desktop-variant and memory-reclamation changes before landing. The application helper and its dependencies now live in the shared runtime image; application interaction tests still target XFCE. Compact Resolution controls remain visible with an explanation while another viewer owns the screen, while connecting, or while a focused view requires Full desktop. Final review found no actionable blockers.
+
+Final integrated verification: top-level `make test` passed Go vet/race, 23 UI unit tests, Docker engine tests, 93 image tests and 137 supervisor integration/browser tests. Three non-XFCE image checks and nine unavailable Firefox checks were skipped; slow/network/build/performance/WebKit cases retain the default exclusions. The separate WebKit PWA test passed against the rebuilt image. `make build`, SilverBullet lint and `git diff --check` passed.
