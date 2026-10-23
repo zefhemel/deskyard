@@ -1,6 +1,6 @@
 # Deskyard's tests. Which to run when: README.md, "Tests".
 #
-#   make test            the fast default, about 6 minutes: Go (race) and
+#   make test            the fast default, about 7 minutes: Go (race) and
 #                        engine tests, the web UI's, and both pytest suites
 #                        without what's slow, needs the internet, builds
 #                        images, measures, or is WebKit

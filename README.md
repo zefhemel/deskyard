@@ -360,7 +360,7 @@ and, once, `uv run playwright install chromium` in each of
 
 | Command | Runs | When |
 |---|---|---|
-| `make test` | Go (vet, race) and engine tests, the UI's, and both pytest suites without what's slow, needs the internet, builds images, measures timing, or runs WebKit. About 6 minutes. | Before every commit. |
+| `make test` | Go (vet, race) and engine tests, the UI's, and both pytest suites without what's slow, needs the internet, builds images, measures timing, or runs WebKit. About 7 minutes on a quiet Mac, 10 under load. | Before every commit. |
 | `make test-ci` | `make test` plus WebKit and Firefox: what CI runs on a pull request. | To check a browser difference. |
 | `make test-all` | Everything, the supervisor suite also with the supervisor in a container. About 25 minutes; needs the internet. | Before a release, or after touching recipes, image builds (`recipes/`, `imagescan/`, image from a desktop), audio timing, or how the supervisor runs in a container. CI runs it on main and nightly. |
 | `make test-image`, `test-supervisor`, `test-container`, `test-go`, `test-web`, `test-engine` | One part. | While working on it. |
