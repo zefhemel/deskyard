@@ -344,7 +344,8 @@ The supervisor needs Go and Node 24:
 cd supervisor
 make build          # the UI, then bin/deskyard-supervisor and bin/deskyard
 make test           # Go unit tests
-make test-engine    # also the tests that drive a real Docker engine
+make test-engine    # also the tests that drive a real Docker engine (builds the
+                    # desktop image first, unless CC_TEST_IMAGE names one)
 make typecheck      # the UI's TypeScript
 make release VERSION=v1.2.3   # cross-compiled binaries in dist/
 make image          # the supervisor's container image

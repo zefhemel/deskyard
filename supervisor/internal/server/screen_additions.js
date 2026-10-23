@@ -26,6 +26,9 @@
 //   about them into messages for the page.
 // - Lets the desktop page's ?avsync=1 readout hear the sound as it reaches
 //   the speakers (watchSound()).
+// - Keeps Selkies from taking the focus out of the desktop page: it focuses
+//   its text-input host when a stream attaches, which blurred the page and
+//   closed its open menus. That focus waits until this frame has the focus.
 // - window.deskyardScreen, the hooks the desktop page drives Selkies with.
 (() => {
   "use strict";
@@ -61,6 +64,22 @@
     if (type === "pointerrawupdate") return;
     return addListener.call(this, type, ...rest);
   };
+
+  // --- focus ------------------------------------------------------------------
+  // An element's focus() while this frame isn't focused would pull the focus
+  // out of the desktop page; it's applied when the frame gets the focus (the
+  // page's focusFrame, or a click into the screen).
+  const focusElement = HTMLElement.prototype.focus;
+  let pendingFocus = null;
+  HTMLElement.prototype.focus = function (...args) {
+    if (document.hasFocus()) return focusElement.apply(this, args);
+    pendingFocus = { el: this, args };
+  };
+  addListener.call(window, "focus", () => {
+    const p = pendingFocus;
+    pendingFocus = null;
+    if (p && p.el.isConnected) focusElement.apply(p.el, p.args);
+  });
 
   // --- the tab id -------------------------------------------------------------
   // New on every load of the client, so a duplicated browser tab (which

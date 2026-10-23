@@ -427,7 +427,10 @@ def test_background_tab_doesnt_stall(supervisor, desktop, name):
         b.wait_for_function(f"{SCREEN}?.state() === 'connected'", timeout=30000)
         joined = time.time()
         b.wait_for_function(f"{FRAMES} > 0", timeout=5000)
-        print(f"first frame {time.time() - joined:.2f} s after joining")
+        first = time.time() - joined
+        print(f"first frame {first:.2f} s after joining")
+        # At once, not at the idle capture's next keepalive grab (1 s).
+        assert first < 0.5, first
         # And the picture keeps coming as the screen changes.
         shown = b.evaluate(FRAMES)
         in_desktop(name, "xdotool", "type", "--delay", "50", "still streaming")
@@ -923,10 +926,24 @@ def test_forwards_shown(cli, remote, forwards, supervisor, name):  # noqa: F811
 def test_agent_presence_and_summary(cli, remote, supervisor, name):  # noqa: F811
     remote("-d", name, "click", "100", "100")
     remote("-d", name, "exec", "--", "true")
+    # An agent stays present for 12 s after its last action here
+    # (DESKYARD_ACTIVITY_PRESENCE), which a slow run can outlast before the
+    # hover: the row then leaves the popover under the pointer. A running
+    # command keeps the agent present for the whole test.
+    busy = subprocess.Popen([cli, "-d", name, "exec", "--", "sleep", "600"], env=remote.env,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        check_agent_presence_and_summary(supervisor.base, name)
+    finally:
+        busy.terminate()
+        busy.wait(10)
+
+
+def check_agent_presence_and_summary(base, name):
     title = "cli test · admin's agent"
     with sync_playwright() as pw:
-        browser, page = signed_in(pw, supervisor.base)
-        page.goto(f"{supervisor.base}/{name}/")
+        browser, page = signed_in(pw, base)
+        page.goto(f"{base}/{name}/")
         chip = page.get_by_role("button", name="Viewers and port mappings")
         expect(chip).to_be_visible(timeout=30000)
         expect(chip.locator("[data-agent]")).to_have_attribute("title", title)
@@ -939,12 +956,43 @@ def test_agent_presence_and_summary(cli, remote, supervisor, name):  # noqa: F81
         expect(page.get_by_text("clicked", exact=True)).to_be_visible()
         expect(page.get_by_text("true · exit 0")).to_be_visible()
 
-        page.goto(f"{supervisor.base}/desktops/{name}")
+        page.goto(f"{base}/desktops/{name}")
         expect(page.locator("[data-agent]").first).to_be_visible(timeout=15000)
 
-        page.goto(f"{supervisor.base}/")
+        page.goto(f"{base}/")
         expect(page.locator("[data-agent]").first).to_be_visible(timeout=15000)
         browser.close()
+
+
+def test_open_popover_stays_open_when_the_stream_connects(cli, remote, supervisor, name):  # noqa: F811
+    # When the stream connects, Selkies' client focuses its text input and the
+    # page gives the screen focus. Either blurred the window, and the bar's
+    # popovers close on blur: one opened before the stream connected closed by
+    # itself (as test_agent_presence_and_summary's hover found, now and then).
+    remote("-d", name, "exec", "--", "true")  # an agent, so the popover has a row before anyone views
+    busy = subprocess.Popen([cli, "-d", name, "exec", "--", "sleep", "600"], env=remote.env,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    docker("exec", f"deskyard-{name}", "supervisorctl", "stop", "selkies")
+    try:
+        with sync_playwright() as pw:
+            browser, page = signed_in(pw, supervisor.base)
+            page.goto(f"{supervisor.base}/{name}/")
+            chip = page.get_by_role("button", name="Viewers and port mappings")
+            expect(chip).to_be_visible(timeout=30000)
+            chip.click()
+            agents = page.get_by_role("heading", name="Agents")
+            expect(agents).to_be_visible()
+            expect(page.get_by_text("Connected", exact=True)).to_be_hidden()
+            docker("exec", f"deskyard-{name}", "supervisorctl", "start", "selkies")
+            expect(page.get_by_text("Connected", exact=True)).to_be_visible(timeout=30000)
+            page.wait_for_function(SHOWING, timeout=30000)
+            time.sleep(0.5)
+            expect(agents).to_be_visible()
+            browser.close()
+    finally:
+        docker("exec", f"deskyard-{name}", "supervisorctl", "start", "selkies", check=False)
+        busy.terminate()
+        busy.wait(10)
 
 
 def test_overlay_marks(cli, remote, supervisor, name):  # noqa: F811

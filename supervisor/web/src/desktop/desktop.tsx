@@ -154,7 +154,9 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
     }
     const onState = (s: ConnectionState) => {
       setConn(s);
-      if (s === "connected") focusFrame(frame.current);
+      // Not while a panel or menu of the bar is open: focusing the frame blurs
+      // this window, which closes it under the user's pointer.
+      if (s === "connected" && !document.querySelector('[aria-expanded="true"]')) focusFrame(frame.current);
     };
     // What this page has done for the current connection's display.
     let was: Display = { owner: null, width: 0, height: 0, settings: null };
