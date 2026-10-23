@@ -9,7 +9,7 @@ Administrators can route an individual desktop's internet traffic through a save
 
 # Implementation progress
 
-The connection/secret store, typed exception validation and Docker namespace/capability/health/restart primitives are implemented. Runtime enforcement, lifecycle recovery, administrator APIs/UI and the release criteria below remain pending; the feature is not yet available to users. See [[Architecture/VPN connections]] and [[Architecture/Engine adapter]] for the implemented boundaries.
+The connection/secret store, typed exception validation, Docker namespace/capability/health/restart primitives, managed runtime/firewall builder, bounded readiness/status observer and disposable candidate tests are implemented. The controlled WireGuard fixture passes actual traffic, DNS, local-access, loss/recovery, LAN port-limit, IPv6, authenticated control and namespace-isolation checks on OrbStack. Lifecycle recovery, administrator APIs/UI, complete desktop workflows, live NordVPN/OpenVPN authentication and native Linux release checks remain pending; the feature is not yet available to users. See [[Architecture/VPN connections]], [[Architecture/VPN runtime]] and [[Architecture/Engine adapter]] for implemented boundaries. Candidate timeout guidance asks administrators to check service credentials, country/server availability and host connectivity without inferring rejected credentials from health alone.
 
 # Agreed scope
 
