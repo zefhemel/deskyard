@@ -222,6 +222,8 @@ def open_desktop(page, base, name, status=True):
     if status:
         expect(page.get_by_text("Connected", exact=True)).to_be_visible(timeout=30000)
     page.wait_for_function(SHOWING, timeout=30000)
+    # And the remote screen's size is known (PICTURE scales by it).
+    page.wait_for_function(f"{SCREEN}.display()?.width > 0 && {SCREEN}.display()?.height > 0", timeout=30000)
 
 
 def audio_switch(page, label):
