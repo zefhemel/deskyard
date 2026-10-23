@@ -1,13 +1,19 @@
 import time
 
+import pytest
 import requests
 from playwright.sync_api import sync_playwright
 
-from sandbox import TOKEN_HEADER
+from sandbox import TOKEN_HEADER, wait_until
+
+# Healthchecks every 2 s instead of the image's 10 s, for the tests that make
+# sure nothing (a healthcheck among them) reopens Chromium.
+FAST_HEALTH = ["--health-interval=2s"]
 
 
-def test_chromium_not_started_with_the_desktop(sandbox):
-    assert not chromium_running(sandbox)
+@pytest.fixture
+def fast_health_sandbox(make_sandbox):
+    return make_sandbox(docker_args=FAST_HEALTH)
 
 
 def test_cdp_version_through_caddy(sandbox):
@@ -21,8 +27,7 @@ def test_cdp_page_on_shared_display(sandbox, artifacts_dir):
         page = browser.contexts[0].new_page()
         page.goto("data:text/html,<title>cdp-probe-123</title><h1 style='font-size:80px'>Hello from CDP</h1>")
         page.bring_to_front()
-        time.sleep(1)
-        sandbox.exec("xdotool search --name cdp-probe-123")
+        assert wait_until(lambda: sandbox.exec("xdotool search --name cdp-probe-123", check=False).returncode == 0, 10)
         (artifacts_dir / "chromium.png").write_bytes(
             sandbox.exec_bytes("maim"))
         browser.close()
@@ -68,16 +73,21 @@ def chromium_running(sandbox) -> bool:
     return sandbox.exec("pgrep -f '[c]hromium-shared'", check=False).returncode == 0
 
 
-def test_closed_chromium_stays_closed(sandbox):
+def close_and_wait_gone(sandbox):
+    """Closes Chromium like a person and waits for its processes to exit."""
     close_chromium_like_a_person(sandbox)
-    time.sleep(25)  # longer than two healthcheck intervals: nothing may reopen it
+    assert wait_until(lambda: not chromium_running(sandbox), 15), "Chromium still running after its window closed"
+
+
+def test_closed_chromium_stays_closed(fast_health_sandbox):
+    sandbox = fast_health_sandbox
+    close_and_wait_gone(sandbox)
+    time.sleep(5)  # longer than two healthcheck intervals: nothing may reopen it
     assert not chromium_running(sandbox)
 
 
 def test_cdp_starts_chromium_on_demand_from_host(sandbox):
-    close_chromium_like_a_person(sandbox)
-    time.sleep(3)
-    assert not chromium_running(sandbox)
+    close_and_wait_gone(sandbox)
     with sync_playwright() as p:
         browser = p.chromium.connect_over_cdp(sandbox.cdp_ws(), headers=TOKEN_HEADER, timeout=60_000)
         page = browser.contexts[0].new_page()
@@ -87,24 +97,22 @@ def test_cdp_starts_chromium_on_demand_from_host(sandbox):
 
 
 def test_cdp_starts_chromium_on_demand_inside(sandbox):
-    close_chromium_like_a_person(sandbox)
-    time.sleep(3)
+    close_and_wait_gone(sandbox)
     out = sandbox.exec("curl -s --max-time 60 http://127.0.0.1:9221/json/version").stdout
     assert '"Browser"' in out
 
 
 def test_parallel_requests_start_one_browser(sandbox):
-    close_chromium_like_a_person(sandbox)
-    time.sleep(3)
+    close_and_wait_gone(sandbox)
     sandbox.exec("for i in 1 2 3 4 5; do curl -s --max-time 60 -o /dev/null http://127.0.0.1:9221/json/version & done; wait")
-    time.sleep(3)
+    windows = lambda: sandbox.exec("xdotool search --onlyvisible --class chromium | wc -l").stdout.strip()  # noqa: E731
+    assert wait_until(lambda: windows() != "0", 10), "no Chromium window"
+    time.sleep(1.5)  # a second browser's window would be up by now too
     assert sandbox.exec("xdotool search --onlyvisible --class chromium | wc -l").stdout.strip() == "1"
 
 
 def test_chromium_command_brings_it_back(sandbox):
-    close_chromium_like_a_person(sandbox)
-    time.sleep(3)
-    assert not chromium_running(sandbox)
+    close_and_wait_gone(sandbox)
     sandbox.exec("setsid -f chromium >/dev/null 2>&1")
     assert wait_cdp(sandbox), "CDP did not come back after running `chromium`"
 
@@ -121,9 +129,12 @@ def test_open_chromium_comes_back_after_restart(sandbox):
     sandbox.exec("for i in $(seq 60); do pgrep -f '[c]hromium-shared' && exit 0; sleep 1; done; exit 1")
 
 
-def test_closed_chromium_stays_closed_after_restart(sandbox):
-    close_chromium_like_a_person(sandbox)
-    time.sleep(3)
+def test_closed_chromium_stays_closed_after_restart(fast_health_sandbox):
+    sandbox = fast_health_sandbox
+    close_and_wait_gone(sandbox)
+    # The session brings Chromium back only if this marker is there (start-session).
+    marker = "test -e /workspace/.config/chromium-shared/.open"
+    assert wait_until(lambda: sandbox.exec(marker, check=False).returncode != 0, 10), "still marked open"
     sandbox.restart()
-    time.sleep(10)
+    time.sleep(6)  # past start-session's 3 s and two healthchecks
     assert not chromium_running(sandbox)

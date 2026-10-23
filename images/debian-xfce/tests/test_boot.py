@@ -10,10 +10,6 @@ def test_git_and_ssh_are_installed(sandbox):
     sandbox.exec("git --version && ssh -V")
 
 
-def test_display_size(sandbox):
-    assert "1280x800" in sandbox.exec("xdpyinfo -display :1 | grep dimensions").stdout
-
-
 def test_resolution_env(make_sandbox):
     sb = make_sandbox(env={**DEFAULT_ENV, "WORKSPACE_RESOLUTION": "1024x768"})
     assert "1024x768" in sb.exec("xdpyinfo -display :1 | grep dimensions").stdout

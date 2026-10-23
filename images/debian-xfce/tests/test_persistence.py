@@ -20,9 +20,11 @@ def test_installs_survive_image_upgrade(make_sandbox, next_image):
 
 
 @pytest.mark.network
-def test_non_login_exec_finds_tools(sandbox):
+def test_user_runtime_overrides_preinstalled(sandbox):
+    """A node the user installs wins over the image's, in non-login shells too."""
     sandbox.exec("mise use -g node@22", timeout=600)
     assert sandbox.exec("node --version", login=False).stdout.startswith("v22")
+    assert sandbox.exec("node --version").stdout.startswith("v22")
 
 
 def test_skeleton_seeded_once_and_not_overwritten(make_sandbox):
@@ -47,14 +49,7 @@ def test_preinstalled_runtimes(sandbox):
         assert sandbox.exec("node --version", login=login).stdout.startswith("v24."), login
         assert sandbox.exec("python --version", login=login).stdout.startswith("Python 3.13"), login
         assert sandbox.exec("python3 --version", login=login).stdout.startswith("Python 3.13"), login
-    assert sandbox.exec("which node").stdout.strip() == "/opt/runtimes/node/bin/node"
-
-
-@pytest.mark.network
-def test_user_runtime_overrides_preinstalled(make_sandbox):
-    sandbox = make_sandbox()
-    sandbox.exec("mise use -g node@22", timeout=600)
-    assert sandbox.exec("node --version", login=False).stdout.startswith("v22")
+    # (Where node comes from: test_custom_base.test_base_node_resolves_to_runtimes_not_mise.)
 
 
 @pytest.mark.network
