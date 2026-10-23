@@ -83,6 +83,22 @@ func NormalizeExceptions(in []Exception) ([]Exception, error) {
 			combined = append(combined, rule)
 		}
 	}
+	// Any overlapping CIDRs are nested. For each destination, include all
+	// same-transport ancestor rules when checking its effective port allowance.
+	// Looking at the narrowest participating prefix catches every intersection.
+	for _, rule := range combined {
+		destination := netip.MustParsePrefix(rule.Destination)
+		var effective []PortRange
+		for _, candidate := range combined {
+			prefix := netip.MustParsePrefix(candidate.Destination)
+			if candidate.Protocol == rule.Protocol && prefix.Bits() <= destination.Bits() && prefix.Contains(destination.Addr()) {
+				effective = append(effective, candidate.Ports...)
+			}
+		}
+		if _, err := normalizePorts(effective); err != nil {
+			return nil, err
+		}
+	}
 	return combined, nil
 }
 

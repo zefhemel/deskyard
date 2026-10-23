@@ -54,3 +54,52 @@ func TestExceptionsMergeEquivalentRulesAndRejectAggregateCatchAll(t *testing.T) 
 		t.Fatalf("aggregate all-ports allowance accepted: %v", err)
 	}
 }
+
+func TestExceptionsValidateEffectivePortsAcrossNestedPrefixes(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		rules   []Exception
+		invalid bool
+	}{
+		{name: "nested aggregate catch-all", invalid: true, rules: []Exception{
+			{Destination: "192.168.0.0/16", Protocol: "tcp", Ports: []PortRange{{Start: 1, End: 32767}}},
+			{Destination: "192.168.1.0/24", Protocol: "tcp", Ports: []PortRange{{Start: 32768, End: 65535}}},
+		}},
+		{name: "nested aggregate catch-all reversed", invalid: true, rules: []Exception{
+			{Destination: "192.168.1.0/24", Protocol: "tcp", Ports: []PortRange{{Start: 32768, End: 65535}}},
+			{Destination: "192.168.0.0/16", Protocol: "tcp", Ports: []PortRange{{Start: 1, End: 32767}}},
+		}},
+		{name: "three nested ancestors", invalid: true, rules: []Exception{
+			{Destination: "10.0.0.0/8", Protocol: "udp", Ports: []PortRange{{Start: 1, End: 20000}}},
+			{Destination: "10.1.0.0/16", Protocol: "udp", Ports: []PortRange{{Start: 20001, End: 40000}}},
+			{Destination: "10.1.2.3", Protocol: "udp", Ports: []PortRange{{Start: 40001, End: 65535}}},
+		}},
+		{name: "nested limited union", rules: []Exception{
+			{Destination: "192.168.0.0/16", Protocol: "tcp", Ports: []PortRange{{Start: 80}}},
+			{Destination: "192.168.1.0/24", Protocol: "tcp", Ports: []PortRange{{Start: 443}}},
+		}},
+		{name: "nested union retains a port gap", rules: []Exception{
+			{Destination: "192.168.0.0/16", Protocol: "tcp", Ports: []PortRange{{Start: 1, End: 32767}}},
+			{Destination: "192.168.1.0/24", Protocol: "tcp", Ports: []PortRange{{Start: 32769, End: 65535}}},
+		}},
+		{name: "disjoint destinations", rules: []Exception{
+			{Destination: "192.168.1.0/24", Protocol: "tcp", Ports: []PortRange{{Start: 1, End: 32767}}},
+			{Destination: "192.168.2.0/24", Protocol: "tcp", Ports: []PortRange{{Start: 32768, End: 65535}}},
+		}},
+		{name: "different protocols", rules: []Exception{
+			{Destination: "192.168.0.0/16", Protocol: "tcp", Ports: []PortRange{{Start: 1, End: 32767}}},
+			{Destination: "192.168.1.0/24", Protocol: "udp", Ports: []PortRange{{Start: 32768, End: 65535}}},
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := NormalizeExceptions(tc.rules)
+			if tc.invalid {
+				if !errors.Is(err, ErrValidation) {
+					t.Fatalf("effective all-ports allowance accepted: %v", err)
+				}
+			} else if err != nil {
+				t.Fatalf("limited exception rejected: %v", err)
+			}
+		})
+	}
+}
