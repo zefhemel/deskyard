@@ -7,7 +7,6 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
-	"sort"
 	"sync"
 	"time"
 
@@ -72,30 +71,6 @@ func (m *Manager) SetReservedNetworks(prefixes []netip.Prefix) error {
 	return nil
 }
 
-// Collapse covered prefixes so allocating another bridge inside the reserved
-// desktop pool does not change an already enforced gateway policy.
-func canonicalReserved(prefixes []netip.Prefix) []netip.Prefix {
-	sort.Slice(prefixes, func(i, j int) bool {
-		if prefixes[i].Bits() != prefixes[j].Bits() {
-			return prefixes[i].Bits() < prefixes[j].Bits()
-		}
-		return prefixes[i].Addr().Compare(prefixes[j].Addr()) < 0
-	})
-	var out []netip.Prefix
-	for _, prefix := range prefixes {
-		covered := false
-		for _, parent := range out {
-			if parent.Overlaps(prefix) && parent.Bits() <= prefix.Bits() {
-				covered = true
-				break
-			}
-		}
-		if !covered {
-			out = append(out, prefix.Masked())
-		}
-	}
-	return out
-}
 func (m *Manager) directory(id string) string {
 	return filepath.Join(m.stateDir, "vpn", "runtimes", id)
 }
@@ -134,8 +109,9 @@ func (m *Manager) Ensure(ctx context.Context, desktopID, name, network, connecti
 		return engine.Container{}, errors.New("VPN reserved networks could not be inspected")
 	}
 	m.mu.Lock()
-	reserved := append([]netip.Prefix(nil), m.reserved...)
+	configured := append([]netip.Prefix(nil), m.reserved...)
 	m.mu.Unlock()
+	var discovered []netip.Prefix
 	found := false
 	for _, n := range networks {
 		if n.Name == network {
@@ -146,12 +122,15 @@ func (m *Manager) Ensure(ctx context.Context, desktopID, name, network, connecti
 			if e != nil {
 				return engine.Container{}, errors.New("VPN reserved network is invalid")
 			}
-			reserved = append(reserved, p)
+			discovered = append(discovered, p)
 		}
 	}
-	reserved = canonicalReserved(reserved)
 	if !found {
 		return engine.Container{}, errors.New("VPN desktop network is unavailable")
+	}
+	reserved, err := effectiveNetworkReservations(configured, discovered, exceptions)
+	if err != nil {
+		return engine.Container{}, err
 	}
 	config, err := buildRuntime(runtimeInput{DesktopID: desktopID, Name: name, Network: network, Connection: connection, Credentials: credentials, Directory: m.directory(desktopID), Exceptions: exceptions, Reserved: reserved, PublishLocal: publishLocal})
 	if err != nil {

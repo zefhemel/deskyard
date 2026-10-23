@@ -24,12 +24,18 @@ const pairFixtureLabel = "deskyard.vpn.lifecycle-fixture"
 
 // scopedPairEngine prevents reconciliation, events or cleanup from touching
 // shared-engine desktops. Only Networks(nil) may read the global subnet inventory.
+type outputChainDiagnostic struct {
+	Available bool     `json:"available"`
+	Rules     []string `json:"rules,omitempty"`
+}
+
 type scopedPairEngine struct {
 	engine.Engine
 	scope            string
 	t                *testing.T
 	observedUDP1194  bool
 	networkSnapshots [][]string
+	outputSnapshots  []outputChainDiagnostic
 }
 
 func (e *scopedPairEngine) labels(labels map[string]string) map[string]string {
@@ -83,6 +89,24 @@ func (e *scopedPairEngine) Remove(ctx context.Context, id string) error {
 		return err
 	}
 	if c, _ := e.Inspect(ctx, id); c.Labels[vpn.LabelRole] != "" && e.t != nil {
+		// Capture only the owned namespace's rules before removal, including
+		// failed readiness attempts. Console output is structural, never raw.
+		probe, stop := context.WithTimeout(ctx, 2*time.Second)
+		rules, ruleErr := exec.CommandContext(probe, "docker", "exec", id, "iptables", "-S", "OUTPUT").Output()
+		stop()
+		snapshot := outputChainDiagnostic{Available: ruleErr == nil}
+		if ruleErr == nil {
+			snapshot.Rules = strings.Split(strings.TrimSpace(string(rules)), "\n")
+			firstManaged := len(snapshot.Rules) > 1 && snapshot.Rules[1] == "-A OUTPUT -j DYVPN"
+			e.t.Logf("owned gateway pre-remove OUTPUT: managedHookFirst=%t ruleCount=%d", firstManaged, len(snapshot.Rules)-1)
+		}
+		e.outputSnapshots = append(e.outputSnapshots, snapshot)
+		if output := os.Getenv("DESKYARD_VPN_DIAGNOSTICS"); output != "" {
+			data, _ := json.MarshalIndent(e.outputSnapshots, "", "  ")
+			if err := os.WriteFile(output+".output.json", data, 0600); err != nil {
+				e.t.Error("could not save private chain diagnostics")
+			}
+		}
 		b, _ := exec.CommandContext(ctx, "docker", "logs", id).CombinedOutput()
 		seen := map[string]bool{}
 		for _, line := range strings.Split(string(b), "\n") {
