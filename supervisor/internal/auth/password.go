@@ -8,16 +8,31 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
+	"testing"
 
 	"golang.org/x/crypto/argon2"
 )
 
-const (
-	argonMemory  = 64 * 1024
-	argonTime    = 3
-	argonThreads = 2
-	argonKeyLen  = 32
+const argonKeyLen = 32
+
+// The argon2id cost of new hashes. Hashes carry their own parameters, so
+// CheckPassword reads them from the hash. TestProductionParams guards these.
+var (
+	argonMemory  uint32 = 64 * 1024
+	argonTime    uint32 = 3
+	argonThreads uint8  = 2
 )
+
+// UseTestParams makes new hashes cheap (64 KiB, one pass) for the rest of a
+// test binary: every test server hashes and checks passwords, which at the
+// real cost takes about half a second each under the race detector. It
+// panics outside tests.
+func UseTestParams() {
+	if !testing.Testing() {
+		panic("auth.UseTestParams outside a test")
+	}
+	argonMemory, argonTime, argonThreads = 64, 1, 1
+}
 
 // HashPassword returns an argon2id PHC string.
 func HashPassword(pw string) string {
