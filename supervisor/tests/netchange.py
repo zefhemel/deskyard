@@ -11,10 +11,12 @@ OrbStack keep the networks in their VM, so a Mac never sees this.)
 So, for every test (conftest imports this): Page.goto and Page.reload load
 the page again when it or something it loaded failed so, and every browser
 context counts and logs such failures (pytest shows the log with a failed
-test). Loopback UI bootstrap GETs and login use Playwright's request transport,
+test). In Chromium, loopback UI bootstrap GETs and login use Playwright's request transport,
 which is independent of Chromium's network-change detector. Each request
 is sent once; other mutations, downloads, live streams and Selkies' client
-stay on the browser's transport. Waits for late frame loads use `failures`.
+stay on the browser's transport. Mapped insecure test hosts forward only
+bootstrap API calls, keeping their documents' network address space intact.
+Other browsers stay native. Waits for late frame loads use `failures`.
 """
 
 from __future__ import annotations
@@ -81,11 +83,18 @@ def _settle(page: Page):
 _failures: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 # Match bootstrap requests at the routing layer: even route.fallback() needs
 # Python callbacks, so matching media updates would pause them during sleeps.
+BOOTSTRAP_API = r"api/(?:me|host|desktops|images|recipes|login)"
 LOOPBACK = re.compile(
     r"^https?://(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?/"
-    r"(?:api/(?:me|host|desktops|images|recipes|login)"
+    rf"(?:{BOOTSTRAP_API}"
     r"|(?:assets|src|@vite|node_modules)/[^?]*"
     r"|desktops/[^/?]+|[^/?]*)/?(?:\?[^#]*)?$"
+)
+# A fulfilled document loses its network address-space classification. On an
+# insecure mapped host Chromium would then block native loopback subresources.
+# Keep its documents/assets native; only bootstrap API calls need forwarding.
+MAPPED_API = re.compile(
+    rf"^http://deskyard\.(?:invalid|test)(?::\d+)?/{BOOTSTRAP_API}(?:\?[^#]*)?$"
 )
 
 
@@ -98,7 +107,14 @@ def _request_transport(route):
     # No retries here: replaying a mutation after an uncertain response
     # could run it twice. Pass redirects back to the browser as redirects.
     try:
-        route.fulfill(response=route.fetch(max_redirects=0))
+        options = {}
+        parsed = urlsplit(request.url)
+        if parsed.hostname in {"deskyard.invalid", "deskyard.test"}:
+            # Node does not use Chromium's host-resolver-rules. Keep the
+            # original Host/Origin and cookies so this stays an insecure origin.
+            options = {"url": request.url.replace(parsed.hostname, "127.0.0.1", 1),
+                       "headers": {**request.all_headers(), "host": parsed.netloc}}
+        route.fulfill(response=route.fetch(max_redirects=0, **options))
     except Error:
         route.abort("failed")
 
@@ -120,7 +136,9 @@ def _logging(new):
                 print(f"{CHANGED}: {request.method} {request.url}")
 
         ctx.on("requestfailed", note)
-        ctx.route(LOOPBACK, _request_transport)
+        if browser.browser_type.name == "chromium":
+            ctx.route(LOOPBACK, _request_transport)
+            ctx.route(MAPPED_API, _request_transport)
         return made
 
     return run

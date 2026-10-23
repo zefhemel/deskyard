@@ -195,6 +195,7 @@ def test_desktop_list_ignores_failures_from_replaced_refreshes(mock_ui):
         page.fill("#p", "x")
         page.get_by_role("button", name="Sign in").click()
         expect(page.get_by_text("Loading…", exact=True)).to_be_visible()
+        page.wait_for_function("typeof testStreams[0]?.onopen === 'function'")
         page.evaluate("testStreams[0].onopen(); testStreams[0].onopen()")
         expect(page.get_by_text("alice", exact=True).first).to_be_visible()
         pending[0].abort("failed")
