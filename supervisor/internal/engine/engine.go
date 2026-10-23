@@ -83,7 +83,10 @@ type Process struct {
 	Stderr io.Reader
 	Resize func(cols, rows uint) error
 	Wait   func() (int, error)
-	Close  func()
+	// Close disposes attached I/O, unblocking reads and writes. It is safe to
+	// call repeatedly or concurrently; command termination is not guaranteed.
+	// Stdin.Close is separate: non-TTY execs retain output after end of input.
+	Close func()
 }
 
 type Stats struct {

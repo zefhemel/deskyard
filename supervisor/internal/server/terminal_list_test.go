@@ -71,8 +71,7 @@ func TestTerminalSessions(t *testing.T) {
 	}
 }
 
-// Docker's demultiplexer writes synchronous io.Pipes: closing only its socket
-// does not release a producer already blocked on a pipe write.
+// Model an engine process whose disposal releases both attached output streams.
 type terminalListPipeEngine struct {
 	*terminalEngine
 	stdoutR  *io.PipeReader
@@ -106,7 +105,7 @@ func (e *terminalListPipeEngine) Exec(context.Context, string, engine.ExecSpec) 
 			}
 		}
 	}()
-	return &engine.Process{Stdout: e.stdoutR, Stderr: e.stderrR, Wait: func() (int, error) { return 0, nil }, Close: func() {}}, nil
+	return &engine.Process{Stdout: e.stdoutR, Stderr: e.stderrR, Wait: func() (int, error) { return 0, nil }, Close: func() { e.stdoutR.Close(); e.stderrR.Close() }}, nil
 }
 func TestTerminalSessionsPipeCleanup(t *testing.T) {
 	for _, mode := range []string{"stderr", "stdout", "cancellation", "deadline"} {

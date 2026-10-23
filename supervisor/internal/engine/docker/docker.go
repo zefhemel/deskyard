@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/containerd/errdefs"
@@ -285,7 +286,7 @@ func (d *Docker) Exec(ctx context.Context, id string, s engine.ExecSpec) (*engin
 	}
 	p := &engine.Process{
 		Stdin: stdin,
-		Close: att.Close,
+		Close: sync.OnceFunc(att.Close),
 		Resize: func(cols, rows uint) error {
 			_, err := d.c.ExecResize(ctx, created.ID, client.ExecResizeOptions{Height: rows, Width: cols})
 			return err
@@ -302,6 +303,12 @@ func (d *Docker) Exec(ctx context.Context, id string, s engine.ExecSpec) (*engin
 			errW.CloseWithError(err)
 		}()
 		p.Stdout, p.Stderr = outR, errR
+		p.Close = sync.OnceFunc(func() {
+			// Release a demultiplexer blocked on an unread pipe before closing its source.
+			_ = outR.Close()
+			_ = errR.Close()
+			att.Close()
+		})
 	}
 	p.Wait = func() (int, error) { return d.waitExec(ctx, created.ID) }
 	return p, nil

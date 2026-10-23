@@ -31,16 +31,7 @@ func (s *Server) handleTerminalSessions(w http.ResponseWriter, r *http.Request) 
 		writeError(w, 502, "could not list shared terminals; upgrade the desktop image if its helper is unavailable")
 		return
 	}
-	closeProcess := sync.OnceFunc(func() {
-		// Docker demultiplexes into synchronous pipes. Socket closure alone
-		// cannot release a writer already blocked on a pipe after overflow.
-		for _, stream := range []io.Reader{p.Stdout, p.Stderr} {
-			if closer, ok := stream.(io.Closer); ok {
-				_ = closer.Close()
-			}
-		}
-		p.Close()
-	})
+	closeProcess := sync.OnceFunc(p.Close)
 	defer closeProcess()
 	stop := context.AfterFunc(ctx, closeProcess)
 	defer stop()
