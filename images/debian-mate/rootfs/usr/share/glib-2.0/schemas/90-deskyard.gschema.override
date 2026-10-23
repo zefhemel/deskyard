@@ -1,0 +1,37 @@
+[org.mate.session]
+auto-save-session=true
+
+[org.mate.screensaver]
+idle-activation-enabled=false
+lock-enabled=false
+
+[org.mate.Marco.general]
+compositing-manager=false
+theme='Arc'
+titlebar-font='Noto Sans Bold 10'
+
+[org.mate.interface]
+gtk-theme='Arc'
+icon-theme='Papirus'
+font-name='Noto Sans 10'
+document-font-name='Noto Sans 10'
+monospace-font-name='Noto Sans Mono 10'
+
+[org.mate.font-rendering]
+antialiasing='rgba'
+hinting='slight'
+
+[org.mate.background]
+picture-filename='/usr/share/backgrounds/deskyard/mate.svg'
+picture-options='zoom'
+show-desktop-icons=false
+
+[org.mate.panel]
+default-layout='deskyard'
+
+[org.mate.terminal.profile]
+use-system-font=false
+font='Noto Sans Mono 10'
+use-theme-colors=false
+background-color='#172338'
+foreground-color='#edf2fa'

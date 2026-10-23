@@ -96,8 +96,8 @@ These would make it a failure even if it worked:
 
 - **Format.** Events carry a sequence number and a timestamp. The in-desktop ring holds the last 15 minutes, capped at 5,000 events. When it's full, the oldest events are dropped.
 - **Reading it.** The supervisor reads with a cursor and resumes where it left off. On its first connection it backfills the whole ring, so "Recently" and presence also cover what happened before anyone looked.
-- **When it's read.** The supervisor reads while the desktop is running and at least one UI page is open. That's the same rule as stats collection, so wall tiles show inside agents too.
-- **Pairing starts and ends.** A command's start and end events share an id. A start with no end after 15 minutes is dropped.
+- **When it's read.** The supervisor reads while the desktop is running and at least one UI page is open (plus 3 minutes afterwards), or automatic memory reclamation is eligible. That's the same rule as stats collection, so wall tiles show inside agents too.
+- **Pairing starts and ends.** A command's start and end events share an id. Superseding the original 15-minute expiry (2026-10-23): starts remain until their ends, an explicit idle status or an epoch reset, bounded by the existing count caps. The desktop ring separately retains running keys past history expiry and sends `{"kind":"status","commandsRunning":bool}` heartbeats every 15 seconds of inactivity; overflow stays busy until stream restart. Automatic memory reclamation requires a fresh explicit idle report, reconciles missing ends on idle, and invalidates readiness on subsequent activity. Legacy blank heartbeats cannot authorize automatic reclamation.
 - **Untrusted input.** Masking runs in `deskyard` before an event is written. The stream is writable by anything running as `user`, so the supervisor treats it as untrusted:
   - it caps the length of every field;
   - it masks again;

@@ -107,7 +107,7 @@ export function ImagesPage() {
             <thead>
               <tr>
                 <th class={th}>Image</th>
-                <th class={th}>Newest version</th>
+                <th class={th}>Status / version</th>
                 <th class={th}>Desktops</th>
                 <th class={th} />
               </tr>
@@ -203,6 +203,7 @@ function ImageRow({
   const { desktops } = useLive();
   const version = (name: string) => desktops?.find((c) => c.name === name)?.imageVersion;
   const current = img.desktops.filter((n) => !img.behind.includes(n));
+  const install = useJob(onRemoved);
   const remove = () => {
     api.removeImage(img.ref).then(onRemoved, notifyError);
   };
@@ -211,6 +212,7 @@ function ImageRow({
       <td class={td}>
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold">
           {img.title || img.ref}
+          {img.official && <Tag>Official</Tag>}
           {img.secrets && <LockBadge />}
           {img.baseUpdated && <Tag kind="update">Base updated</Tag>}
         </div>
@@ -221,8 +223,14 @@ function ImageRow({
         </div>
       </td>
       <td class={`${td} whitespace-nowrap`}>
-        {img.version || "–"}
+        <Tag kind={img.installed && img.behind.length > 0 ? "update" : undefined}>
+          {!img.installed ? "Available" : img.behind.length > 0 ? "Update available" : "Installed"}
+        </Tag>
+        {img.version && <div class="mt-1 text-[13px]">{img.version}</div>}
+        {!img.installed && <div class="mt-1 text-[13px] text-muted">Not downloaded</div>}
         {img.checked && <div class="mt-0.5 text-[13px] text-muted">pulled {ago(img.checked).toLowerCase()}</div>}
+        <JobProgress job={install.job} />
+        <ErrorText error={install.error} />
       </td>
       <td class={td}>
         {img.desktops.length ? (
@@ -242,6 +250,12 @@ function ImageRow({
         )}
       </td>
       <td class={`${td} text-right whitespace-nowrap`}>
+        {!img.installed && !img.custom && (
+          <Button variant="primary" class="mr-2 h-[30px]! px-[11px]!" disabled={install.running}
+            onClick={() => void install.start(() => api.installImage(img.ref))}>
+            {install.running ? "Installing…" : "Install"}
+          </Button>
+        )}
         {img.custom && (
           <>
             <Button class="mr-2 h-[30px]! px-[11px]!" onClick={onEdit}>
@@ -252,12 +266,12 @@ function ImageRow({
             </Button>
           </>
         )}
-        {img.behind.length > 0 ? (
+        {img.installed && img.behind.length > 0 ? (
           <Button variant="primary" class="h-[30px]! px-[11px]!" onClick={onUpgrade}>
             Upgrade {plural(img.behind.length, "desktop")}…
           </Button>
         ) : (
-          img.desktops.length === 0 && (
+          img.desktops.length === 0 && !img.official && (
             <Button class="h-[30px]! px-[11px]!" onClick={remove}>
               {img.custom ? "Delete image" : "Remove from catalog"}
             </Button>

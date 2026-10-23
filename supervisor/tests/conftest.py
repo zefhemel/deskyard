@@ -4,7 +4,7 @@ DESKYARD_TEST_MODE=direct (default) runs the binary on this machine;
 DESKYARD_TEST_MODE=container runs the supervisor image (DESKYARD_TEST_SUPERVISOR_IMAGE,
 default deskyard:test, built from this checkout) with the socket and the
 data folder mounted at the same path. CC_TEST_IMAGE is the desktop image
-(default deskyard-debian-xfce:test, built from images/debian-xfce;
+(default deskyard-debian-xfce:test, built from the debian-xfce target in images/Dockerfile;
 these suites don't build it, so build it from this checkout first, as
 `make test-engine` does, or name one: an older build has the wrong contract).
 DESKYARD_TEST_SUBNET is the desktops' subnet pool (default 10.215.0.0/20);

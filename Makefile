@@ -16,7 +16,8 @@
 # Desktops get /28s from DESKYARD_TEST_SUBNET, split between the supervisor
 # suite's workers: give each checkout testing at once its own.
 
-TEST_IMAGE ?= deskyard-debian-xfce:test
+AC_DESKTOP ?= xfce
+TEST_IMAGE ?= deskyard-debian-$(AC_DESKTOP):test
 DESKYARD_TEST_SUBNET ?= 10.215.0.0/20
 WORKERS ?= 4
 BUILD_IMAGE ?= 1
@@ -24,11 +25,12 @@ DEFAULT_MARKS := not slow and not network and not build and not perf and not web
 MARKS ?= -m '$(DEFAULT_MARKS)'
 PYTEST_ARGS ?=
 
+export AC_DESKTOP
 export AC_IMAGE := $(TEST_IMAGE)
 export CC_TEST_IMAGE := $(TEST_IMAGE)
 export DESKYARD_TEST_SUBNET
 
-IMAGE_TESTS := images/debian-xfce/tests
+IMAGE_TESTS := images/tests
 SUPERVISOR_TESTS := supervisor/tests
 # A parallel pass, then the timing-sensitive tests (marked serial) alone.
 # (pytest exits 5 when a pass selects nothing.)
@@ -37,9 +39,9 @@ define two_passes
 	cd $(1) && uv run pytest --only-serial $(MARKS) $(PYTEST_ARGS) || [ $$? -eq 5 ]
 endef
 
-.PHONY: test test-all test-ci test-go test-web test-engine test-image test-supervisor test-container test-image-build
+.PHONY: test test-all test-ci test-go test-web test-engine test-image test-supervisor test-container test-image-build check-supervisor-desktop
 
-test: test-go test-web test-image-build test-engine test-image test-supervisor
+test: check-supervisor-desktop test-go test-web test-image-build test-engine test-image test-supervisor
 
 test-all:
 	$(MAKE) test MARKS="-m ''"
@@ -55,7 +57,7 @@ test-web:
 	cd supervisor/web && { [ -d node_modules ] || npm ci; } && npm run typecheck && npm test
 
 test-image-build:
-	[ "$(BUILD_IMAGE)" = 0 ] || docker build -q -t $(TEST_IMAGE) -f images/debian-xfce/Dockerfile .
+	[ "$(BUILD_IMAGE)" = 0 ] || docker build -q -t $(TEST_IMAGE) --target debian-$(AC_DESKTOP) -f images/Dockerfile .
 
 test-engine: test-image-build
 	cd supervisor && go test -tags engine ./internal/desktops/ ./internal/engine/...
@@ -64,8 +66,13 @@ test-image: test-image-build
 	$(call two_passes,$(IMAGE_TESTS),)
 
 # Each worker runs its own supervisor, so tests spread one by one.
-test-supervisor: test-image-build
+test-supervisor: check-supervisor-desktop test-image-build
 	$(call two_passes,$(SUPERVISOR_TESTS),)
 
 test-container: test-image-build
 	DESKYARD_TEST_MODE=container $(MAKE) test-supervisor
+
+# The supervisor suite still exercises XFCE-specific terminal/panel behavior.
+# Other variants run through test-image; don't run the wrong assertions on them.
+check-supervisor-desktop:
+	@test "$(AC_DESKTOP)" = xfce || { echo 'The supervisor suite requires AC_DESKTOP=xfce. Use make test-image AC_DESKTOP=$(AC_DESKTOP) for desktop image tests.' >&2; exit 1; }

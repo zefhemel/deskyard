@@ -5,6 +5,9 @@ status: done
 date: "2026-10-22"
 spec: "[[superpowers/specs/2026-10-22-agent-activity-design|Agent activity design]]"
 ---
+
+**Implemented amendment, 2026-10-23:** the [[superpowers/plans/2026-10-22-supervisor|Supervisor plan]] adds automatic idle reclamation. Its eligible desktops are followed even without UI viewers. Explicit command-status heartbeats replace blank keepalives for current binaries and include commands older than history; legacy readers remain compatible. Starts no longer expire after 15 minutes: ends, explicit idle status or epoch resets clear them, with existing count bounds. This supersedes the original expiry and UI-only subscription instructions/tests retained below.
+
 # Agent Activity Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

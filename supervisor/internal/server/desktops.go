@@ -33,6 +33,7 @@ type statsJSON struct {
 }
 
 type desktopJSON struct {
+	AutoReclaim     bool                `json:"autoReclaim"`
 	ID              string              `json:"id"`
 	Name            string              `json:"name"`
 	State           string              `json:"state"`
@@ -59,7 +60,8 @@ type desktopJSON struct {
 
 func (s *Server) desktopJSON(ctx context.Context, c desktops.Desktop, a accounts.Account) desktopJSON {
 	j := desktopJSON{
-		ID: c.ID, Name: c.Name, State: c.State, Folder: c.Folder, Image: c.Image,
+		AutoReclaim: s.memoryPolicy.enabled(c.ID),
+		ID:          c.ID, Name: c.Name, State: c.State, Folder: c.Folder, Image: c.Image,
 		ImageTitle: c.ImageLabels["org.opencontainers.image.title"], ImageVersion: c.ImageLabels["org.opencontainers.image.version"],
 		ImageSecrets: c.ImageLabels[labelSecrets] == "true",
 		Settings:     settingsJSON{c.Settings.MemoryBytes, c.Settings.NanoCPUs, c.Settings.Camera},
@@ -144,7 +146,8 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"cpus": info.CPUs, "memBytes": info.MemBytes, "running": running, "total": total, "memUsed": memUsed,
-		"cameras": s.hostCameras(list, a),
+		"cameras":       s.hostCameras(list, a),
+		"memoryReclaim": s.memoryReclaim,
 	})
 }
 
@@ -413,10 +416,11 @@ func (s *Server) handlePower(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, busy := s.Desktops.Busy()[c.Name]; busy {
-		writeError(w, http.StatusConflict, desktops.ErrBusy.Error())
+	if err := s.Desktops.Begin(c.Name, ""); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
+	defer s.Desktops.Done(c.Name)
 	ctx, cancel := timeout(r, 2*time.Minute)
 	defer cancel()
 	var err error

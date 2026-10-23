@@ -108,7 +108,7 @@ function finishBuild(rec: Recipe): void {
   const ref = `deskyard-custom/${rec.slug}:latest`;
   let img = images.find((i) => i.ref === ref);
   if (!img) {
-    img = { ref, title: rec.name, version: "", description: "", desktops: [], behind: [], checked: null, custom: true, secrets: !!rec.secrets, baseUpdated: false, recipe: rec.slug };
+    img = { installed: true, official: false, ref, title: rec.name, version: "", description: "", desktops: [], behind: [], checked: null, custom: true, secrets: !!rec.secrets, baseUpdated: false, recipe: rec.slug };
     images.push(img);
   }
   img.title = rec.name;
@@ -173,7 +173,7 @@ function host() {
     const owner = list.find((c) => c.settings.camera === device);
     return { device, taken: !!owner, ...(owner ? { desktop: owner.name } : {}) };
   });
-  return { cpus: 8, memBytes: 16 * GB, running: running.length, total: list.length, memUsed: running.reduce((s, c) => s + (c.stats?.memBytes ?? 0), 0), cameras };
+  return { cpus: 8, memBytes: 16 * GB, running: running.length, total: list.length, memUsed: running.reduce((s, c) => s + (c.stats?.memBytes ?? 0), 0), cameras, memoryReclaim: { enabled: true } };
 }
 
 // Stats every 5 s and a visitor now and then, so the pages move. Started by
@@ -346,7 +346,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const img = images.find((i) => i.ref === b.image) ?? images[0]!;
     const c: Desktop = {
       id: `${name}-id`, name, state: "creating", startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/${name}`, image: img.ref, imageTitle: img.title,
-      imageVersion: img.version, imageSecrets: img.secrets, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), camera: "" },
+      autoReclaim: true, imageVersion: img.version, imageSecrets: img.secrets, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), camera: "" },
       access: (b.access as string[]) ?? [], viewers: [], mics: [], cams: [], webcam: false, forwards: [], agents: [], tokens: 0, stats: null,
     };
     desktops.push(c);
@@ -385,7 +385,17 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const b = await readBody(req);
     if (!String(b.ref).includes(":")) return json(res, 400, { error: "Give a reference with a tag." });
     return json(res, 202, job(["Pulling " + String(b.ref), "Checking the image contract"], () => {
-      images.push({ ref: String(b.ref), title: "Added image", version: "1.0", description: "Added in the mock", desktops: [], behind: [], checked: new Date().toISOString(), custom: false, secrets: false, baseUpdated: false, recipe: null });
+      images.push({ installed: true, official: false, ref: String(b.ref), title: "Added image", version: "1.0", description: "Added in the mock", desktops: [], behind: [], checked: new Date().toISOString(), custom: false, secrets: false, baseUpdated: false, recipe: null });
+    }));
+  }
+  if (path === "/api/images/install" && method === "POST") {
+    const b = await readBody(req);
+    const img = images.find((i) => i.ref === b.ref);
+    if (!img || img.custom) return json(res, 400, { error: "Choose an available image." });
+    return json(res, 202, job(["Downloading " + img.ref, "Checking the image contract"], () => {
+      img.installed = true;
+      img.version = "2026.10.23";
+      img.checked = new Date().toISOString();
     }));
   }
   if (path === "/api/images" && method === "DELETE") {
@@ -414,7 +424,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
       return json(res, 202, buildJob(rec));
     }
   }
-  if (path === "/api/images/check") return json(res, 202, job(["Pulling ghcr.io/zefhemel/deskyard-debian-xfce:latest", "Pulling ghcr.io/zefhemel/deskyard-debian-xfce:beta"], () => images.forEach((i) => (i.checked = new Date().toISOString()))));
+  if (path === "/api/images/check") return json(res, 202, job(["Pulling ghcr.io/zefhemel/deskyard-debian-xfce:latest", "Pulling ghcr.io/zefhemel/deskyard-debian-xfce:beta"], () => images.filter((i) => i.installed).forEach((i) => (i.checked = new Date().toISOString()))));
   if (path === "/api/images/upgrade") {
     const b = await readBody(req);
     return json(res, 202, job(["Upgrading", "Starting"], () => {
@@ -451,6 +461,19 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     }, c.name));
   }
   if (sub === "start") return setState(c, "starting", "running"), json(res, 204);
+  if (sub === "memory-policy" && method === "PUT") {
+    c.autoReclaim = (await readBody(req)).autoReclaim === true;
+    changed(c);
+    return json(res, 204);
+  }
+  if (sub === "reclaim-memory") {
+    if (c.state !== "running") return json(res, 409, { error: "The desktop is stopped" });
+    const beforeBytes = c.stats?.memBytes ?? 512 * 1024 * 1024;
+    const afterBytes = Math.max(0, beforeBytes - 128 * 1024 * 1024);
+    if (c.stats) c.stats.memBytes = afterBytes;
+    return json(res, 200, { requestedBytes: 128 * 1024 * 1024, beforeBytes, afterBytes,
+      swapBeforeBytes: 0, swapAfterBytes: 96 * 1024 * 1024, partial: false });
+  }
   if (sub === "stop") return setState(c, "stopped"), json(res, 204);
   if (sub === "restart") return setState(c, "starting", "running"), json(res, 204);
   if (sub === "access") {

@@ -1,4 +1,4 @@
-tests/artifacts/
+**/tests/artifacts/
 .superpowers/
 __pycache__/
 .venv/

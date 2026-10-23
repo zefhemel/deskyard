@@ -1,8 +1,0 @@
-# The build context is the repository root (the image also builds the
-# desktop command from supervisor/); only send what the image needs.
-*
-!images/debian-xfce/rootfs
-!images/debian-xfce/patches
-!supervisor
-supervisor/web/node_modules
-supervisor/internal/web/dist

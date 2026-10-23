@@ -6,6 +6,7 @@ import { Avatars } from "../components/avatar.tsx";
 import { ChartsPanel } from "../components/charts-panel.tsx";
 import { DesktopMenu, power } from "../components/desktop-menu.tsx";
 import { Monitor } from "../components/screen.tsx";
+import { ReclaimMemoryButton } from "../components/reclaim-memory.tsx";
 import { ForwardLines } from "../components/viewers-popover.tsx";
 import { Page } from "../components/topbar.tsx";
 import { btnClass, Button, cx, LockBadge, Status, Tag } from "../components/ui.tsx";
@@ -87,7 +88,7 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
           {c.name}
         </h1>
         <Status kind={statusKind(c)}>{statusLine(c, now)}</Status>
-        <div class="ml-auto flex gap-2">
+        <div class="ml-auto flex flex-wrap gap-2">
           {c.state === "running" && (
             <>
               <a href={`/${c.name}/`} class={btnClass("primary")}>
@@ -95,6 +96,7 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
               </a>
               <Button onClick={() => power(c.name, "restart")}>Restart</Button>
               <Button onClick={() => power(c.name, "stop")}>Stop</Button>
+              {me.admin && <ReclaimMemoryButton name={c.name} disabled={!!c.job} />}
             </>
           )}
           {c.state === "stopped" && (

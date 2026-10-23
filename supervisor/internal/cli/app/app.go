@@ -53,7 +53,7 @@ func New(version string) *App {
 }
 
 // insideDesktop: desktop images create /etc/workspace (see
-// images/debian-xfce/Dockerfile) and run Linux.
+// images/Dockerfile) and run Linux.
 func insideDesktop() bool {
 	if runtime.GOOS != "linux" {
 		return false

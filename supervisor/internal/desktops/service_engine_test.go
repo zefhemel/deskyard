@@ -17,7 +17,7 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/engine/docker"
 )
 
-// The desktop image to test with (build it from images/debian-xfce first).
+// The desktop image to test with (build the debian-xfce target in images/Dockerfile first).
 func testImage() string {
 	if v := os.Getenv("CC_TEST_IMAGE"); v != "" {
 		return v

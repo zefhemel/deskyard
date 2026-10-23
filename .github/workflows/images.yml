@@ -1,4 +1,4 @@
-# Builds every desktop image under images/<name>/ for amd64 and arm64 on
+# Builds all final Bake targets together for amd64 and arm64 on
 # native runners and publishes one multi-arch image per name to GitHub
 # Container Registry:
 #   debian-xfce   -> ghcr.io/<owner>/deskyard-debian-xfce
@@ -16,11 +16,13 @@ on:
       - images/**
       - supervisor/**
       - .github/workflows/images.yml
+      - docker-bake.hcl
   pull_request:
     paths:
       - images/**
       - supervisor/**
       - .github/workflows/images.yml
+      - docker-bake.hcl
   schedule:
     - cron: "0 4 * * 1" # Mondays 04:00 UTC
   workflow_dispatch:
@@ -50,9 +52,7 @@ jobs:
       - id: list
         name: Image directories and today's version
         run: |
-          images=$(for d in images/*/; do
-            [ -f "${d}Dockerfile" ] && basename "$d"
-          done | jq -Rnc '[inputs]')
+          images=$(docker buildx bake --print | jq -c '.group.default.targets')
           echo "images=$images" >> "$GITHUB_OUTPUT"
           echo "version=$(date -u +%Y.%m.%d)" >> "$GITHUB_OUTPUT"
           echo "Images: $images"
@@ -62,7 +62,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: ${{ fromJSON(needs.list.outputs.images) }}
         platform: [linux/amd64, linux/arm64]
         include:
           - platform: linux/amd64
@@ -75,12 +74,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Image name (registry paths must be lowercase)
-        run: |
-          repo="${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/deskyard-${NAME}"
-          echo "IMAGE=$repo" >> "$GITHUB_ENV"
-        env:
-          NAME: ${{ matrix.image }}
+      - name: Image prefix (registry paths must be lowercase)
+        run: echo "IMAGE_PREFIX=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/deskyard-" >> "$GITHUB_ENV"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -93,38 +88,46 @@ jobs:
 
       # No docker/metadata-action labels here: they would replace the image's
       # own title and description, which the supervisor shows.
+      # One invocation per architecture shares the CLI/codecs/runtime graph.
       - id: build
-        uses: docker/build-push-action@v6
+        uses: docker/bake-action@v6
+        env:
+          VERSION: ${{ needs.list.outputs.version }}
         with:
-          context: .
-          file: images/${{ matrix.image }}/Dockerfile
-          platforms: ${{ matrix.platform }}
-          build-args: VERSION=${{ needs.list.outputs.version }}
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-          # The weekly run starts from fresh base images and packages.
+          files: ./docker-bake.hcl
           pull: true
           no-cache: ${{ github.event_name == 'schedule' }}
-          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
-          outputs: >-
-            ${{ env.PUSH == 'true'
-                && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', env.IMAGE)
-                || 'type=image,push=false' }}
+          set: |
+            *.platform=${{ matrix.platform }}
+            debian-xfce.tags=${{ env.IMAGE_PREFIX }}debian-xfce
+            debian-kde.tags=${{ env.IMAGE_PREFIX }}debian-kde
+            debian-mate.tags=${{ env.IMAGE_PREFIX }}debian-mate
+            *.labels.org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            *.labels.org.opencontainers.image.revision=${{ github.sha }}
+            debian-xfce.cache-from=type=gha,scope=debian-xfce-${{ matrix.arch }}
+            debian-xfce.cache-to=type=gha,mode=max,scope=debian-xfce-${{ matrix.arch }}
+            debian-kde.cache-from=type=gha,scope=debian-kde-${{ matrix.arch }}
+            debian-kde.cache-to=type=gha,mode=max,scope=debian-kde-${{ matrix.arch }}
+            debian-mate.cache-from=type=gha,scope=debian-mate-${{ matrix.arch }}
+            debian-mate.cache-to=type=gha,mode=max,scope=debian-mate-${{ matrix.arch }}
+            *.output=${{ env.PUSH == 'true' && 'type=image,push-by-digest=true,name-canonical=true,push=true' || 'type=cacheonly' }}
 
-      - name: Export digest
+      - name: Export digests
         if: env.PUSH == 'true'
         run: |
-          mkdir -p /tmp/digests
-          touch "/tmp/digests/${DIGEST#sha256:}"
+          while read -r image; do
+            digest=$(jq -er --arg image "$image" '.[$image]["containerimage.digest"]' <<< "$BUILD_METADATA")
+            mkdir -p "/tmp/digests/$image"
+            touch "/tmp/digests/$image/${digest#sha256:}"
+          done < <(jq -r '.[]' <<< "$IMAGES")
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
+          BUILD_METADATA: ${{ steps.build.outputs.metadata }}
+          IMAGES: ${{ needs.list.outputs.images }}
 
       - uses: actions/upload-artifact@v4
         if: env.PUSH == 'true'
         with:
-          name: digest-${{ matrix.image }}-${{ matrix.arch }}
+          name: digests-${{ matrix.arch }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
@@ -148,7 +151,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: /tmp/digests
-          pattern: digest-${{ matrix.image }}-*
+          pattern: digests-*
           merge-multiple: true
 
       - uses: docker/setup-buildx-action@v3
@@ -169,7 +172,7 @@ jobs:
             type=sha
 
       - name: Create multi-arch manifest
-        working-directory: /tmp/digests
+        working-directory: /tmp/digests/${{ matrix.image }}
         run: |
           tags=()
           while read -r tag; do tags+=(-t "$tag"); done < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")

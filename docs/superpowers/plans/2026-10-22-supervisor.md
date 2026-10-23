@@ -5,6 +5,8 @@ status: active
 date: "2026-10-22"
 spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 ---
+
+Image paths in this completed plan describe the original layout. The [[superpowers/specs/2026-10-23-desktop-variants-design|Desktop image variants design]] moves shared files to `images/common/`, the Dockerfile to `images/Dockerfile` and image tests to `images/tests/`.
 # Status (2026-10-22)
 
 Built and tested: every phase's code exists. The project is now called **Deskyard**; a "computer" is a **desktop**; the server binary is `deskyard-supervisor` (`supervisor/cmd/deskyard-supervisor`), the CLI is `deskyard` (`supervisor/cmd/deskyard`, also inside desktops). The step text below still uses the earlier names in places.
@@ -219,3 +221,18 @@ Built and tested: every phase's code exists. The project is now called **Deskyar
 - README rewritten around the supervisor; in-desktop skills mention `deskyard` remotes, not `docker exec`; architecture pages flip to `built`.
 - Release workflow: `supervisor` and `deskyard` binaries for linux/darwin (amd64, arm64) and `deskyard` for windows, attached to tags.
 - [x] Tests: full integration suite green directly and in a container.
+
+# Follow-up: manual memory reclamation (2026-10-23)
+
+- [x] Probe the complete memory-reclamation path on a disposable target at startup; log verified requirements or a disabling reason, expose the cached host status, and gate the API/UI without failing supervisor startup. Keep per-desktop runtime checks and re-probe only on restart.
+
+- [x] Add an optional Docker memory-reclaim capability using temporary, capability-free Alpine helpers and a validated per-desktop cgroup mount; keep applications running and return resident/swap measurements and partial success.
+- [x] Add an admin-only session endpoint and an explicit button on running-desktop details; prevent overlapping power/reclaim requests and report progress, unsupported hosts and helper failures.
+- [x] Add unit/race, real-engine and browser/API coverage; update the README, API contract and architecture. The [[superpowers/spikes/2026-10-23-idle-memory|Idle desktop memory reclamation spike]] retains the feasibility measurements. Automatic idle policies were outside this initial change; the follow-up below implements them.
+
+# Follow-up: automatic idle reclamation (2026-10-23)
+
+- [x] Add a serial 30-second scheduler: once after 15 continuous minutes without viewers; reset on viewer joins even between checks and container/supervisor restarts; retry eligibility after busy/unknown-activity skips, never retry an actual failed attempt during that absence.
+- [x] Persist a default-on per-desktop opt-out by stable ID; add the administrator API and Settings checkbox saving without container restart.
+- [x] Keep activity streams connected for eligible desktops, require fresh explicit idle status and retain long-running commands beyond history expiry. Include desktop-side command status after reconnect and reconcile lost ends; invalidate old idle status on new activity.
+- [x] Cover timer/guards/reset/failure/persistence with Go race tests and the saved switch with real UI/API tests; align README, API, architecture and activity design with the policy.
