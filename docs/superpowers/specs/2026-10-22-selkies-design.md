@@ -124,7 +124,7 @@ These would make it a failure even if it worked:
 
 ## Selkies' rough edges
 
-- **Background tabs.** A viewer's tab going to the background must never stop the stream for others, or for later viewers. The served client additions stop the client from sending `STOP_VIDEO`. If Selkies stops anyway, the supervisor restarts the stream when a viewer connects. A test covers it: the only viewer's tab goes hidden, a second viewer joins and sees the picture within 5 s.
+- **Background tabs.** A viewer's tab going to the background must never stop the stream for others, or for later viewers. The served client additions stop the client from sending `STOP_VIDEO`. After a client pipeline reset, the served additions promptly request a replacement keyframe if the first picture is missing, with a bounded retry that stops when the picture arrives or the connection ends. Serial tests cover the hidden-owner case and a deliberately lost join frame without relaxing the 0.5-second first-picture assertion.
 - **Idle CPU.** About 12% of a core per idle desktop with a viewer is accepted for now. A separate investigation (the selkies-cpu session) looks at reducing it, and especially at the cost with no viewer. Its findings may add settings or patches before shipping. (They did: three patches shipped; see the plan's "Idle-CPU patches" entry and [[Architecture/Selkies]]. The audio gate is off by default.)
 - **Upstream.** We report the `pointerrawupdate` and background-tab problems upstream, but don't wait for them.
 

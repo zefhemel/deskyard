@@ -681,7 +681,20 @@ func (s *Service) ensureHelper(ctx context.Context) error {
 // root, for when the supervisor can't read the files itself. The folder is
 // mounted read-only, and the helper has no network. Close removes the helper, and reports a failed or
 // incomplete read.
-func (s *Service) FolderTar(ctx context.Context, name string) (io.ReadCloser, error) {
+//
+// With paths (relative to the folder, as "./a/b" or "a/b"), only those go in
+// the archive, in that order. Names with a newline can't be asked for.
+//
+// A file with several names in the archive has its content once, at the
+// first; the others are hard links (tar.TypeLink) to it.
+func (s *Service) FolderTar(ctx context.Context, name string, paths ...string) (io.ReadCloser, error) {
+	var list strings.Builder
+	for _, p := range paths {
+		if strings.Contains(p, "\n") {
+			return nil, fmt.Errorf("can't read %q: a newline in its name", p)
+		}
+		list.WriteString("./" + strings.TrimPrefix(p, "./") + "\n")
+	}
 	folder := filepath.Join(s.Cfg.DataDir, name)
 	if st, err := os.Stat(folder); err != nil || !st.IsDir() {
 		return nil, fmt.Errorf("%s has no folder", name)
@@ -701,10 +714,20 @@ func (s *Service) FolderTar(ctx context.Context, name string) (io.ReadCloser, er
 		remove()
 		return nil, err
 	}
-	p, err := s.Eng.Exec(ctx, hname, engine.ExecSpec{Cmd: []string{"tar", "-C", "/home-src", "-cf", "-", "."}})
+	spec := engine.ExecSpec{Cmd: []string{"tar", "-C", "/home-src", "-cf", "-", "."}}
+	if len(paths) > 0 {
+		spec = engine.ExecSpec{Cmd: []string{"tar", "-C", "/home-src", "-cf", "-", "-T", "-"}, Stdin: true}
+	}
+	p, err := s.Eng.Exec(ctx, hname, spec)
 	if err != nil {
 		remove()
 		return nil, err
+	}
+	if len(paths) > 0 {
+		go func() {
+			_, _ = io.WriteString(p.Stdin, list.String())
+			_ = p.Stdin.Close()
+		}()
 	}
 	// Drain stderr while stdout is read (the streams share one connection).
 	var errOut bytes.Buffer

@@ -45,6 +45,10 @@ func TestReclaimMemory(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
+	// Container creation requires a local image; CI starts with an empty cache.
+	if err := d.Pull(ctx, "python:3.13-alpine", nil); err != nil {
+		t.Fatal(err)
+	}
 	id, err := d.Create(ctx, engine.ContainerSpec{
 		Name: "deskyard-reclaim-engine-test-" + strings.ToLower(rand.Text()[:10]), Image: "python:3.13-alpine", Network: "none",
 		Entrypoint: []string{"python", "-c"}, Cmd: []string{

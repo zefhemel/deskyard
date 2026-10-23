@@ -421,8 +421,30 @@
     display = { ...display, ...d };
     for (const fn of displayListeners) try { fn(display); } catch {}
   };
+  // The socket worker can deliver the join IDR to the decoder before the
+  // page processes PIPELINE_RESETTING. If that first picture is lost, ask
+  // again promptly instead of waiting for Selkies' three-second watchdog.
+  let firstPictureTimer = null;
+  const awaitFirstPicture = () => {
+    clearTimeout(firstPictureTimer);
+    const current = transport;
+    let attempts = 0;
+    const retry = () => {
+      firstPictureTimer = null;
+      if (transport !== current || !current || current.readyState !== PageWebSocket.OPEN) return;
+      // Selkies creates a visible placeholder canvas before decoding. Its
+      // status marker is hidden by the first decoded/presented frame on
+      // every rendering path, including video and offscreen canvas.
+      if (document.getElementById("status-display")?.classList.contains("hidden")) return;
+      sendOwn("REQUEST_KEYFRAME");
+      if (++attempts < 5) firstPictureTimer = setTimeout(retry, 250);
+    };
+    firstPictureTimer = setTimeout(retry, 100);
+  };
   const onText = (text) => {
-    if (text.startsWith("DISPLAY_OWNER ")) {
+    if (text === "MODE websockets" || text === "PIPELINE_RESETTING primary") {
+      awaitFirstPicture();
+    } else if (text.startsWith("DISPLAY_OWNER ")) {
       setDisplay({ owner: true });
     } else if (text.startsWith("clipboard_reply,")) {
       if (display.owner === null) setDisplay({ owner: true });
@@ -431,6 +453,7 @@
       try { m = JSON.parse(text); } catch { return; }
       if (m.type === "stream_resolution" && m.displayId === "primary" && m.width > 0 && m.height > 0) {
         setDisplay({ width: m.width, height: m.height });
+        awaitFirstPicture();
       } else if (m.type === "display_settings" && m.displayId === "primary") {
         setDisplay({ settings: m.settings || {}, owner: display.owner === null ? false : display.owner });
       }
@@ -442,6 +465,7 @@
     configurable: true,
     get: () => transport,
     set: (t) => {
+      clearTimeout(firstPictureTimer);
       transport = t;
       if (!t) {
         sendOwn = null;
@@ -469,6 +493,7 @@
       t.addEventListener("open", () => transport === t && setState("connected"));
       t.addEventListener("close", () => {
         if (transport !== t) return;
+        clearTimeout(firstPictureTimer);
         forbid();
         setState("disconnected");
       });

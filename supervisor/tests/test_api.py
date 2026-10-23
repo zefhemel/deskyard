@@ -7,7 +7,7 @@ import uuid
 import requests
 
 from conftest import ADMIN_PASSWORD, docker
-from helpers import make_account, wait_until, ws_handshake
+from helpers import in_desktop, make_account, put, wait_until, ws_handshake
 
 SELKIES_WEB = "/opt/selkies/lib/python3.13/site-packages/selkies/selkies_web"
 
@@ -158,7 +158,7 @@ def test_image_without_contract_refused(admin, name):
 
 
 def test_settings_change_recreates_and_keeps_folder(admin, desktop, name, supervisor):
-    (supervisor.data / name / "probe.txt").write_text("hi")
+    put(name, "probe.txt", b"hi")
     old = desktop["id"]
     assert desktop["created"] and desktop["job"] is None
     size = admin.get(f"/api/desktops/{name}/folder").json()
@@ -176,7 +176,7 @@ def test_settings_change_recreates_and_keeps_folder(admin, desktop, name, superv
     assert c["id"] == old and c["state"] == "running"
     assert c["created"] == desktop["created"] and c["job"] is None
     assert c["settings"] == {"memoryBytes": 2 << 30, "nanoCpus": 2_000_000_000, "camera": "", "mounts": []}
-    assert (supervisor.data / name / "probe.txt").read_text() == "hi"
+    assert in_desktop(name, "cat", "/workspace/probe.txt") == "hi"
 
 
 def test_restart_rediscovers_desktops(supervisor, admin, desktop, name):

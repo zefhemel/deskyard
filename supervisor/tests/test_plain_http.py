@@ -15,9 +15,9 @@ import pytest
 from PIL import Image, ImageStat
 from playwright.sync_api import expect, sync_playwright
 
+import netchange
 from conftest import ADMIN_PASSWORD
-from helpers import MEDIA, PICTURE, SCREEN, SHOWING, fits, in_desktop, screen_size, to_page, wait_until
-from test_download import put
+from helpers import MEDIA, PICTURE, SCREEN, SHOWING, fits, in_desktop, put, screen_size, to_page, wait_loaded, wait_until
 from test_ui_audio import play_tone, quiet
 from test_ui_pointer_and_drop import DRAG
 
@@ -45,9 +45,10 @@ def sign_in(browser, base, **ctx):
 
 
 def open_desktop(page, base, name):
+    seen = netchange.failures(page)
     page.goto(f"{base}/{name}/")
+    wait_loaded(page, SHOWING, seen)
     expect(page.get_by_text("Connected", exact=True)).to_be_visible(timeout=30000)
-    page.wait_for_function(SHOWING, timeout=30000)
 
 
 def has_picture(page) -> bool:
@@ -135,7 +136,7 @@ def test_plain_http_screen(supervisor, desktop, name, remote):
 
 def test_plain_http_upload_and_download(supervisor, desktop, name, tmp_path):
     base = insecure_base(supervisor)
-    put(desktop["folder"], "docs/hello.txt", b"hello over http\n")
+    put(name, "docs/hello.txt", b"hello over http\n")
     with sync_playwright() as p:
         browser = launch(p)
         page = sign_in(browser, base, accept_downloads=True)
@@ -170,8 +171,9 @@ def test_plain_http_sound_and_quality(supervisor, desktop, name):
         # A secure page owns the display, streaming H.264. An http page
         # beside it can't decode that, so it asks for JPEG, which both show.
         secure = sign_in(browser, supervisor.base)
+        seen = netchange.failures(secure)
         secure.goto(f"{supervisor.base}/{name}/")
-        secure.wait_for_function(f"{SHOWING} && {SCREEN}.display().owner === true", timeout=30000)
+        wait_loaded(secure, f"{SHOWING} && {SCREEN}.display().owner === true", seen)
         page = sign_in(browser, base)
         open_desktop(page, base, name)
         page.wait_for_function(f"{SCREEN}.display().owner === false && {SCREEN}.display().settings?.encoder === 'jpeg'", timeout=15000)
