@@ -302,6 +302,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
           ‹ <span class="max-sm:hidden">Desktops</span>
         </a>
         <span class="mx-1.5 h-[22px] w-px bg-[#2e3d52] max-sm:mx-0.5" />
+        <a href={`/${c.name}/terminal/`} class={barButton}>Terminal</a>
         <span class="mx-0.5 truncate text-[15px] font-bold text-white">{c.name}</span>
         {showing ? (
           <span class="inline-flex items-center gap-1.5 text-[13px] whitespace-nowrap text-bar-muted">

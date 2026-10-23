@@ -41,6 +41,8 @@ export interface Settings {
 }
 
 export interface Desktop {
+  /** Image supports named shared terminals. */
+  terminal: boolean;
   autoReclaim: boolean;
   id: string;
   name: string;
@@ -326,8 +328,8 @@ export function goToLogin(): void {
   location.href = `/login?next=${encodeURIComponent(next)}`;
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const init: RequestInit = { method, credentials: "same-origin", headers: {} };
+async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  const init: RequestInit = { method, credentials: "same-origin", headers: {}, signal };
   if (body !== undefined) {
     init.body = JSON.stringify(body);
     init.headers = { "Content-Type": "application/json" };
@@ -373,6 +375,8 @@ export const api = {
 
   desktops: () => request<Desktop[]>("GET", "/api/desktops"),
   desktop: (name: string) => request<Desktop>("GET", c(name)),
+  terminalSessions: (name: string, signal?: AbortSignal) =>
+    request<{ sessions: { name: string }[] }>("GET", `${c(name)}/terminal/sessions`, undefined, signal),
   createDesktop: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: string[] }) =>
     request<JobRef>("POST", "/api/desktops", body),
   power: (name: string, action: "start" | "stop" | "restart") => request<void>("POST", `${c(name)}/${action}`),

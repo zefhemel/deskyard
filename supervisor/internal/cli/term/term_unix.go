@@ -21,6 +21,15 @@ func IsTerminal(fd int) bool {
 	return err == nil
 }
 
+// Save captures terminal attributes without changing them.
+func Save(fd int) (*State, error) {
+	t, err := unix.IoctlGetTermios(fd, ioctlGetTermios)
+	if err != nil {
+		return nil, err
+	}
+	return &State{state{*t}}, nil
+}
+
 // MakeRaw puts fd into raw mode and returns the previous state.
 func MakeRaw(fd int) (*State, error) {
 	t, err := unix.IoctlGetTermios(fd, ioctlGetTermios)

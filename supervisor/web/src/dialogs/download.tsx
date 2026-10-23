@@ -71,7 +71,7 @@ export function DownloadDialog({ desktop, onClose }: { desktop: Desktop; onClose
           <Button variant="quiet" onClick={onClose}>
             Close
           </Button>
-          <a class={btnClass("primary")} href={api.downloadUrl(desktop.name, here)} download>
+          <a class={btnClass("primary")} href={api.downloadUrl(desktop.name, here)} download={`${here.split("/").filter(Boolean).at(-1) || "workspace"}.zip`}>
             Download this folder (.zip)
           </a>
         </>
@@ -118,7 +118,7 @@ export function DownloadDialog({ desktop, onClose }: { desktop: Desktop; onClose
             <a
               class={btnClass("quiet", "h-[30px]! px-2.5!")}
               href={api.downloadUrl(desktop.name, join(e.name))}
-              download
+              download={e.dir ? `${e.name}.zip` : e.name}
               aria-label={e.dir ? `Download ${e.name} as zip` : `Download ${e.name}`}
             >
               {e.dir ? "Zip" : "Download"}

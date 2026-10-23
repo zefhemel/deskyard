@@ -28,6 +28,8 @@ func (s *Server) routes() {
 	h("GET /api/desktops", s.handleListDesktops)
 	h("POST /api/desktops", s.handleCreateDesktop)
 	h("GET /api/validate-name", s.handleValidateName)
+	h("GET /api/desktops/{name}/terminal", s.handleTerminal)
+	h("GET /api/desktops/{name}/terminal/sessions", s.handleTerminalSessions)
 	h("GET /api/desktops/{name}", s.handleGetDesktop)
 	h("PATCH /api/desktops/{name}", s.handleUpdateDesktop)
 	h("DELETE /api/desktops/{name}", s.handleRemoveDesktop)
@@ -134,6 +136,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 var dummyHash = auth.HashPassword("dummy")
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if !s.terminalOrigin(r) {
+		writeError(w, 403, "cross-origin request refused")
+		return
+	}
+	if claims, ok := s.Sessions.Claims(r); ok {
+		s.terminals.logout(claims)
+	}
 	s.Sessions.Clear(w)
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -85,7 +85,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl procps supervisor dbus dbus-x11 \
         x11-utils xdg-utils fonts-dejavu-core \
-        chromium socat xdotool xclip maim flatpak git openssh-client \
+        chromium socat xdotool xclip maim flatpak git openssh-client tmux \
         pipewire pipewire-pulse wireplumber pulseaudio-utils \
     && rm -rf /var/lib/apt/lists/* \
     # rootfs/usr/bin/flatpak wraps the real binary.
@@ -186,6 +186,7 @@ EXPOSE 8080
 # The image contract the supervisor checks before using an image.
 ARG VERSION=dev
 LABEL deskyard.contract="3" \
+      deskyard.terminal="tmux-v1" \
       deskyard.kind="desktop" \
       org.opencontainers.image.version="${VERSION}"
 

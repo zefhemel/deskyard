@@ -169,6 +169,16 @@ put any reverse proxy with a certificate in front (Caddy:
 the `Host` header. With a public domain, `DESKYARD_DOMAIN` does it
 itself (above).
 
+## Shared terminal
+
+See the [create/join walkthrough and verification record](docs/Testing/Shared%20terminal%202026-10-23.md) for screenshots, native keyboard evidence and known limits.
+
+Choose **Terminal** beside **Desktop**, or open `http://host/alice/terminal/`, to join the shared shell from the browser using your current login. The **Sessions** picker lists running named shells, including detached shells with live jobs, and marks the current shell. Choose a name to join it, or enter a new name and choose **Create** for another shell. The list refreshes while open; `?session=build-2` opens a shell directly. The page reconnects after brief network interruptions without replaying disconnected input; a closed shell has an explicit **Reopen terminal** action. Restarting a desktop ends its shells and jobs.
+
+On phones, tap **Keyboard** to open the software keyboard. The scrollable key bar provides Ctrl+C/D/L, Esc, Tab, arrows, Home/End, PgUp/PgDn and Delete, plus one-shot Ctrl and Alt. Helper taps keep the keyboard open; paste and composition clear modifiers. Short keyboard viewports use a horizontally scrollable row for controls and session actions. If the browser leaves less than the minimum space for a readable terminal row and 44px controls, the page asks you to rotate to portrait or dismiss the keyboard; the shell stays connected. **History** opens tmux history: use PgUp/PgDn, then Esc to return. The font stays readable when clients have different sizes; a passive smaller client may show a cropped tmux view until it interacts.
+
+`deskyard -d alice terminal` joins the desktop's shared Bash login shell in `/workspace`; `deskyard terminal build-2` selects another named shell. Inside the desktop, ordinary terminal windows and tabs (including **Deskyard Terminal**, the default terminal shortcut and file-manager terminal actions) each open a new shared shell named `terminal-1`, `terminal-2`, and so on, preserving their starting directory. The window/tab title shows the session name. The browser picker joins that exact shell. Within a native shared terminal, press **Ctrl-B then s** and choose its name; outside tmux, `deskyard terminal NAME` joins it. Browser clients use **Sessions** to switch; remote CLI clients detach and reconnect with the chosen name. Saved emulator defaults migrate at desktop startup; explicit emulator command launches such as `xfce4-terminal -x PROGRAM` still run the requested program directly. Run `deskyard terminal` locally to join `main`. Session names contain 1–64 letters, digits, underscores or dashes and start with a letter or digit. Detach with Ctrl-B then D; reconnecting joins the same shell and running jobs. Sessions end when the desktop stops or restarts. Existing desktops need an updated image with tmux and the shared terminal helper.
+
 ## Desktops
 
 Admins create desktops with a name, an image from the catalog, and
@@ -523,6 +533,11 @@ make typecheck      # the UI's TypeScript and its tests
 make release VERSION=v1.2.3   # cross-compiled binaries in dist/
 make image          # the supervisor's container image
 ```
+
+### Terminal access prototype
+
+The historical [terminal access experiment](docs/superpowers/spikes/2026-10-23-terminal-access.md)
+used a separate local demo. Shared terminal access above supersedes that experiment in the normal desktop image.
 
 ### Tests
 

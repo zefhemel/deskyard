@@ -63,6 +63,12 @@ export function Tile({ desktop: c, job, now, admin }: { desktop: Desktop; job: J
             </div>
           )}
         </div>
+        {c.state === "running" && (
+          <div class="mt-2 flex gap-3 text-sm">
+            <a href={`/${c.name}/`}>Desktop</a>
+            <a href={`/${c.name}/terminal/`}>Terminal</a>
+          </div>
+        )}
         {c.state === "running" && <Meters desktop={c} />}
         {c.state === "stopped" && <div class={cx("mt-2.5 text-[13px] text-muted")}>{limits(c.settings)}</div>}
         {!busy && <ImageLine desktop={c} admin={admin} />}

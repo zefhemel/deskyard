@@ -32,8 +32,8 @@
     scrollbar-gutter: stable;
     background: var(--color-ground);
   }
-  /* The desktop page never scrolls; a gutter would narrow the remote screen. */
-  html:has([data-desktop-page]) {
+  /* Desktop and terminal pages own their viewports; no application scrollbar gutter. */
+  html:has([data-desktop-page], [data-terminal-page]) {
     scrollbar-gutter: auto;
   }
   body {

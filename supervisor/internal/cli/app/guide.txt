@@ -40,6 +40,7 @@ THREE WAYS TO WORK
     echo data | deskyard exec -- tee /workspace/in.txt   stdin is streamed
     deskyard cp ./src alice:/workspace/src     upload (file or directory)
     deskyard cp alice:/workspace/out.csv .     download
+    deskyard terminal                         shared shell; detach Ctrl-B D
     deskyard shell                             interactive terminal (for humans)
 
 2. Browser: for websites, especially ones that need the human's logins.

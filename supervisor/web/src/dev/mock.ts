@@ -347,7 +347,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const c: Desktop = {
       id: `${name}-id`, name, state: "creating", startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/${name}`, image: img.ref, imageTitle: img.title,
       autoReclaim: true, imageVersion: img.version, imageSecrets: img.secrets, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), camera: "" },
-      access: (b.access as string[]) ?? [], viewers: [], mics: [], cams: [], webcam: false, forwards: [], agents: [], tokens: 0, stats: null,
+      access: (b.access as string[]) ?? [], viewers: [], mics: [], cams: [], webcam: false, terminal: true, forwards: [], agents: [], tokens: 0, stats: null,
     };
     desktops.push(c);
     changed(c);
@@ -441,6 +441,10 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   if (!cm || !c) return json(res, 404, { error: "No such desktop" });
   const sub = cm[2] ?? "";
 
+  if (sub === "terminal/sessions" && method === "GET") {
+    if (c.state !== "running" || !c.terminal) return json(res, 409, { error: "Desktop terminal unavailable" });
+    return json(res, 200, { sessions: [{ name: "main" }, { name: "terminal-1" }, { name: "terminal-2" }] });
+  }
   if (sub === "" && method === "GET") return json(res, 200, visible().find((x) => x.name === c.name));
   if (sub === "" && method === "DELETE") {
     desktops.splice(desktops.indexOf(c), 1);

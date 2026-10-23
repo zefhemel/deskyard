@@ -24,7 +24,7 @@ def test_terminal_launched_from_panel_starts_in_home(sandbox):
     sandbox.exec(f"cd \"$(readlink /proc/{pid}/cwd)\" && setsid -f xfce4-terminal --title=cwd-probe >/dev/null 2>&1")
     deadline = time.time() + 15
     while time.time() < deadline:
-        out = sandbox.exec("pgrep -n bash -P $(pgrep -n xfce4-terminal) || true").stdout.strip()
+        out = sandbox.exec("tmux -S /run/workspace/deskyard-terminal/tmux.sock list-panes -a -F '#{pane_pid}' 2>/dev/null || true").stdout.strip()
         if out:
             assert sandbox.exec(f"readlink /proc/{out}/cwd").stdout.strip() == "/workspace"
             return

@@ -92,8 +92,9 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
           {c.state === "running" && (
             <>
               <a href={`/${c.name}/`} class={btnClass("primary")}>
-                Open
+                Desktop
               </a>
+              <a href={`/${c.name}/terminal/`} class={btnClass()}>Terminal</a>
               <Button onClick={() => power(c.name, "restart")}>Restart</Button>
               <Button onClick={() => power(c.name, "stop")}>Stop</Button>
               {me.admin && <ReclaimMemoryButton name={c.name} disabled={!!c.job} />}

@@ -33,6 +33,7 @@ type statsJSON struct {
 }
 
 type desktopJSON struct {
+	Terminal        bool                `json:"terminal"`
 	AutoReclaim     bool                `json:"autoReclaim"`
 	ID              string              `json:"id"`
 	Name            string              `json:"name"`
@@ -60,6 +61,7 @@ type desktopJSON struct {
 
 func (s *Server) desktopJSON(ctx context.Context, c desktops.Desktop, a accounts.Account) desktopJSON {
 	j := desktopJSON{
+		Terminal:    c.ImageLabels["deskyard.terminal"] == "tmux-v1",
 		AutoReclaim: s.memoryPolicy.enabled(c.ID),
 		ID:          c.ID, Name: c.Name, State: c.State, Folder: c.Folder, Image: c.Image,
 		ImageTitle: c.ImageLabels["org.opencontainers.image.title"], ImageVersion: c.ImageLabels["org.opencontainers.image.version"],

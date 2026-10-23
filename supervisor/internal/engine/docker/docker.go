@@ -281,23 +281,25 @@ func (d *Docker) Exec(ctx context.Context, id string, s engine.ExecSpec) (*engin
 		}()
 		p.Stdout, p.Stderr = outR, errR
 	}
-	p.Wait = func() (int, error) {
-		for {
-			res, err := d.c.ExecInspect(context.WithoutCancel(ctx), created.ID, client.ExecInspectOptions{})
-			if err != nil {
-				return -1, err
-			}
-			if !res.Running {
-				return res.ExitCode, nil
-			}
-			select {
-			case <-ctx.Done():
-				return -1, ctx.Err()
-			case <-time.After(50 * time.Millisecond):
-			}
+	p.Wait = func() (int, error) { return d.waitExec(ctx, created.ID) }
+	return p, nil
+}
+
+func (d *Docker) waitExec(ctx context.Context, id string) (int, error) {
+	for {
+		res, err := d.c.ExecInspect(ctx, id, client.ExecInspectOptions{})
+		if err != nil {
+			return -1, err
+		}
+		if !res.Running {
+			return res.ExitCode, nil
+		}
+		select {
+		case <-ctx.Done():
+			return -1, ctx.Err()
+		case <-time.After(50 * time.Millisecond):
 		}
 	}
-	return p, nil
 }
 
 // closeWriter closes only the write half of the hijacked connection, so the

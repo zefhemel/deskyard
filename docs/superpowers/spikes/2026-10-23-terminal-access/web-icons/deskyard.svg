@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <style>:root{--b:#a9c3f5;--m:#6b97ee;--f:#2f6fe4}@media (prefers-color-scheme:dark){:root{--b:#3a4a6a;--m:#4a6fc0;--f:#5b8cff}}</style>
+  <defs>
+    <mask id="m-mid"><rect width="48" height="48" fill="#fff"/><rect x="2.5" y="17.5" width="32" height="24" rx="5.5" fill="#000"/></mask>
+    <mask id="m-back"><rect width="48" height="48" fill="#fff"/><rect x="8.0" y="10.0" width="32" height="24" rx="5.5" fill="#000"/><rect x="2.5" y="17.5" width="32" height="24" rx="5.5" fill="#000"/></mask>
+  </defs>
+  <rect x="15" y="4" width="29" height="21" rx="4" fill="var(--b)" mask="url(#m-back)"/>
+  <rect x="9.5" y="11.5" width="29" height="21" rx="4" fill="var(--m)" mask="url(#m-mid)"/>
+  <rect x="4" y="19" width="29" height="21" rx="4" fill="var(--f)"/>
+  <circle cx="27" cy="34" r="3" fill="#3ccf8e"/>
+</svg>

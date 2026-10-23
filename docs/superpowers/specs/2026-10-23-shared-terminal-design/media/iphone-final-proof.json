@@ -1,0 +1,16 @@
+{
+  "nonce": "e3e2d732",
+  "proof": {
+    "interrupt": "interrupted",
+    "tab": "native-tab",
+    "native": "71",
+    "native-ready": "ready",
+    "native-done": "done",
+    "original-pid": "362",
+    "created-pid": "1817",
+    "joined-pid": "362"
+  },
+  "build": "terminal-Ct25O8co.js / terminal-nIqO3M60.css",
+  "native_flow": "Ctrl+C, Tab, software-keyboard q, create named session, join original, rotate with keyboard open, visible fallback, return portrait keeping keyboard, dismiss/reopen",
+  "landscape_capture": "Native fallback StaticText screenshot; full screen reviewed privately because unrelated Safari tab titles are visible. Cropped element alone does not show keyboard; native assertions and private full frame verify it."
+}
