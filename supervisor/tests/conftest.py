@@ -16,7 +16,9 @@ deskyard command are built (or, in container mode, the supervisor's image).
 
 The `desktop` fixture takes a desktop from a small pool that each
 supervisor creates ahead of the tests (DESKYARD_TEST_POOL, default 1; 0 is
-off): every test still gets a fresh desktop, without waiting for it.
+off): every test still gets a fresh desktop, without waiting for it. A
+supervisor never creates two desktops at once (its subnet pick isn't
+locked): the pool's creates and the tests' take turns.
 
 Tests marked `serial` are left out under xdist and run in a second pass
 with --only-serial. The desktop page's tests run per browser: Firefox is
@@ -158,15 +160,18 @@ def my_subnet() -> str:
 class Client(requests.Session):
     """A signed-in API client (same-origin headers like a browser's fetch)."""
 
-    def __init__(self, base: str):
+    def __init__(self, base: str, before_create=None):
         super().__init__()
         self.base = base
         self.headers["Origin"] = base
+        self.before_create = before_create
 
     def request(self, method, url, *a, **kw):
         kw.setdefault("timeout", 60)
         if url.startswith("/"):
             url = self.base + url
+        if self.before_create and method.upper() == "POST" and url.split("?")[0] == self.base + "/api/desktops":
+            self.before_create()
         return super().request(method, url, *a, **kw)
 
     def login(self, username: str, password: str) -> "Client":
@@ -254,7 +259,8 @@ class Supervisor:
             docker("rm", "-f", self.container, check=False)
 
     def client(self) -> Client:
-        return Client(self.base)
+        # One create at a time on a supervisor: a test's waits for the pool's.
+        return Client(self.base, before_create=lambda: self.pool and self.pool.settle())
 
     def admin(self) -> Client:
         return self.client().login("admin", ADMIN_PASSWORD)
@@ -262,7 +268,11 @@ class Supervisor:
 
 class DesktopPool:
     """Desktops created ahead: the supervisor creates the next while a test
-    uses the last. Each is handed out once, and removed after its test."""
+    uses the last. Each is handed out once, and removed after its test.
+
+    A supervisor creates one desktop at a time here: the pool starts a
+    create only when it hands one out (no test create is running then),
+    and a test's own create waits for the pool's (Client.before_create)."""
 
     def __init__(self, admin: Client, size: int):
         self.admin, self.size = admin, size
@@ -276,9 +286,11 @@ class DesktopPool:
         if not self.waiting:
             self._start()
         name, job = self.waiting.pop(0)
-        while len(self.waiting) < self.size:
-            self._start()
         st = self.admin.wait_job(job)
+        # Then the next, one at a time.
+        while len(self.waiting) < self.size:
+            self.settle()
+            self._start()
         # (None: the job is gone with a restarted supervisor; settle() let it finish first.)
         assert st is None or st["status"] == "done", st
         d = self.admin.desktop(name)
@@ -286,6 +298,7 @@ class DesktopPool:
         return d
 
     def settle(self):
+        """Waits until the pool's creates are done."""
         for _, job in self.waiting:
             self.admin.wait_job(job)
 
