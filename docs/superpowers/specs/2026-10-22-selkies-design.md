@@ -172,3 +172,9 @@ These would make it a failure even if it worked:
 
 # Mobile controls follow-up, 23 October 2026
 The implemented compact toolbar also applies to narrow tablets and phone landscape, below 1024 CSS pixels. More must keep its lower actions reachable by scrolling within the visual viewport and update when that viewport changes. Clipboard drafts survive browser/keyboard focus changes; returning to the screen dismisses the panel. The [[Testing/Mobile 2026-10-23|mobile assessment and fix follow-up]] records reproduced failures, regression checks and the remaining simulator/device limitations.
+
+# Remote resolution presets follow-up, 23 October 2026
+The mobile prototype extends Lock size with a resolution dropdown on large screens and the same choices in the compact More menu. Choosing a preset changes and implicitly locks the remote resolution; Auto fit clears the lock. Available landscape sizes are 800×600, 1024×768, 1280×720, 1280×800 and 1920×1080, with 600×900 and 900×1200 portrait options. The existing per-browser preference and first-viewer ownership rules apply. Resolution choices are unavailable during a focused-window crop.
+
+# Home Screen app follow-up, 23 October 2026
+The mobile prototype provides a standalone manifest and Apple Home Screen metadata/icons, with safe-area layout in portrait and landscape. An installed app starts at the desktop wall and keeps navigation on the supervisor origin. The desktop follows the visible keyboard viewport, correcting iOS standalone metrics against the large viewport. A solid status-bar backdrop plus a 16-pixel iOS standalone buffer keeps the observed native top-edge blur off controls. This is an online remote-desktop app; no offline cache or service worker is introduced. See [[Testing/PWA iOS 27|PWA testing — iOS 27]] for native simulator evidence and limitations.

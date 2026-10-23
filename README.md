@@ -23,7 +23,7 @@ What's in a desktop:
   (Ctrl+Alt+Del, Alt+Tab, ...), quality presets, sound and mic, and a
   Download button. Drop files on the screen to copy them onto the desktop.
   Badges show who has their mic or camera on. On phones and narrow tablets,
-  Lock size, Keys, Quality and Download are in the scrollable More menu.
+  Lock size, resolution presets, Keys, Quality and Download are in the scrollable More menu.
 - **One shared Chromium** with one profile: log in once on the desktop and
   the agent is logged in too. It starts when someone opens it or an agent
   connects to it.
@@ -43,6 +43,67 @@ What's in a desktop:
 The desktop image is Debian 13, `linux/arm64` and `linux/amd64`. About 0.4 GB
 of RAM per running desktop with Chromium open, so several fit on an 8 GB
 machine.
+
+## Install on an iPhone Home Screen
+
+In Safari, open Deskyard, sign in, then choose **Share → View More → Add to
+Home Screen** (the exact share-sheet layout depends on iOS). Leave **Open
+as Web App** enabled and tap **Add**. Launch the Deskyard icon to open the
+app without Safari's address bar; choose a desktop from the wall.
+
+The installed app supports portrait and landscape, keeps controls clear of
+the Dynamic Island and home indicator, and resizes around the software
+keyboard. On iOS, a solid strip below the status bar keeps the system's
+top-edge blur away from toolbar text. It needs the running supervisor and
+a network connection; remote desktop sessions are not cached for offline use.
+Installation and native keyboard input were verified in the iOS 27 iPhone
+simulator, including on the plain HTTP LAN demo. HTTPS is still required
+for mic, camera and automatic clipboard synchronization; see Running on a LAN.
+
+## Mobile application prototype
+
+The desktop bar's **Apps** button lists running windows and installed applications.
+Choose a window or launch an application to focus its region in the existing
+stream. **Actual size** allows scrolling at one remote pixel per CSS pixel;
+**Fit window** scales it to the available space. In Actual size, **Pan view**
+lets you drag the picture; **Use window** returns touch input to the app. **Full desktop** returns to
+the complete screen.
+
+**Resolution ▾** beside **Lock size** chooses a remote screen size and locks it.
+On phones, open **⋯ More** for **Resolution:** choices. Presets include
+800×600, 1024×768, 1280×720, 1280×800, 1920×1080, and portrait sizes
+600×900 and 900×1200. **Resolution: Auto fit** unlocks the size. The choice
+is remembered in your browser; the first viewer controls the shared screen.
+Return to **Full desktop** before changing resolution from a focused window.
+More explains when another viewer controls the shared resolution.
+
+Touch controls are available in both the full desktop and focused window,
+including landscape phones and tablets:
+
+- **Tap** clicks where your finger touches; **Trackpad** moves the pointer
+  relative to your finger. In a magnified or Actual size view, moving the
+  pointer to an edge pans your view to follow it. The choice is remembered
+  in your browser.
+- **Keyboard** shows or hides the phone's software keyboard. Esc, Tab,
+  Enter and Paste are alongside it (swipe the extra keys if space is short).
+- **Pinch** magnifies your own view, up to 4×. With the view magnified,
+  move two fingers together to pan; **Fit screen** resets magnification.
+  At fit, a two-finger swipe scrolls the remote application as usual.
+
+Magnification is local: it does not zoom the application or resize the shared
+remote screen. The controls remain outside the magnified picture. The page
+follows the visible viewport when the software keyboard opens. These touch
+controls are served by the supervisor and do not require rebuilding a
+Selkies desktop image; the application launcher below does.
+
+This experimental view requires a desktop image built from this branch
+(`python3-gi`, `gir1.2-wnck-3.0`, and the `deskyard-apps` helper).
+The crop is local to your browser; focus, pointer and keyboard remain shared.
+The full screen is still transmitted. Windows are followed about once a
+second, and known child dialogs are included; menus outside that region,
+windows beyond the screen edges, minimum application sizes, and phone
+keyboard behavior still need broader device testing. Use Full desktop when
+needed. Agent action marks are hidden while focused.
 
 ## Install
 
@@ -134,6 +195,40 @@ where). Run directly on Linux, let the binary bind low ports with
 `sudo setcap cap_net_bind_service=+ep ./deskyard-supervisor`. Without a domain, keep
 the default localhost binding and put your own HTTPS proxy or Tailscale in
 front.
+
+### On a LAN
+
+To reach Deskyard from other machines at home or in an office, either
+serve it over https or accept what plain http costs.
+
+**Plain http** (`DESKYARD_LISTEN=0.0.0.0:8080`, then
+`http://192.168.1.20:8080`): browsers treat any address but `localhost`
+over http as insecure and turn features off. The desktop page says so in
+its bar ("Not secure: some features off"). What still works: the picture,
+keyboard and mouse, sound, the Clipboard button's text box (both ways),
+Lock size, Quality, upload, download and the agent overlay. Gamepads
+should too in Chromium and Safari, which keep the Gamepad API over http. What doesn't:
+
+- **Mic and camera**: the browser has no `getUserMedia`. The Audio panel
+  shows them off, with "Needs https".
+- **Automatic clipboard sync**: copy and paste go through the Clipboard
+  button instead.
+- **H.264 in Chrome and Firefox**: without WebCodecs the picture is JPEG.
+  At 1920x1080 and the Medium preset that is about 40 Mbit/s while a
+  terminal scrolls (H.264: about 6), and next to nothing on a still
+  screen. Fine on wired gigabit, workable on good Wi-Fi with Low (about
+  18 Mbit/s); not for the internet. When one viewer is on JPEG the whole
+  desktop streams JPEG, also to viewers on https.
+- **Passwords travel in clear text.** Only on a network you trust.
+
+**https** keeps everything. Without a public domain, the simplest is
+Tailscale: run the supervisor on its default `127.0.0.1:8080`, then
+`tailscale serve --bg 8080` on the same machine, and open
+`https://<machine>.<tailnet>.ts.net` from any device on your tailnet. Or
+put any reverse proxy with a certificate in front (Caddy:
+`reverse_proxy 127.0.0.1:8080`); it must pass WebSockets through and keep
+the `Host` header. With a public domain, `DESKYARD_DOMAIN` does it
+itself (above).
 
 ## Desktops
 

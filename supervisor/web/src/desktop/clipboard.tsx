@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { copyText } from "../lib/clipboard.ts";
 import { Button } from "../components/ui.tsx";
+import { NeedsHttps } from "./needs-https.tsx";
+import { insecureContext } from "./selkies.ts";
 
 export function ClipboardPopover({
   name,
@@ -70,6 +72,12 @@ export function ClipboardPopover({
       ref={ref}
       class="absolute top-[50px] right-2.5 z-40 w-[340px] max-w-[calc(100vw-20px)] rounded-[10px] bg-surface p-3.5 text-ink shadow-[0_18px_40px_-12px_rgba(0,0,0,.6)]"
     >
+      {insecureContext && (
+        <div class="mb-3 text-[12.5px] text-muted">
+          Copy and paste with {name} here: automatic clipboard sync is off.
+          <NeedsHttps />
+        </div>
+      )}
       <h3 class="mb-1.5 text-[13px] font-semibold text-muted">On {name}'s clipboard</h3>
       <div class="mono max-h-[70px] overflow-auto rounded-[7px] border border-line bg-white px-2.5 py-2 text-[13px]! leading-[1.45] break-all whitespace-pre-wrap">
         {remote ?? <span class="font-sans text-muted">Nothing copied on {name} yet.</span>}

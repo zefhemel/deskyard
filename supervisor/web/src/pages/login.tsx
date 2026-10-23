@@ -54,7 +54,7 @@ export function LoginPage() {
   };
 
   return (
-    <div class="grid min-h-screen place-items-center p-6">
+    <div data-login-page class="grid min-h-screen place-items-center p-6">
       <form class="w-full max-w-[380px]" method="post" onSubmit={submit}>
         <div class="mb-[30px] flex gap-2.5" aria-hidden="true">
           <Mini />

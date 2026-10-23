@@ -66,6 +66,7 @@ export function Dialog({ title, intro, onClose, onSubmit, footer, children, wide
   }, [onClose]);
   return (
     <div
+      data-dialog-overlay
       class="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-[rgba(23,34,49,.42)] px-4 pt-[72px] pb-8 max-sm:pt-6"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();

@@ -274,3 +274,15 @@ The connection closes when the token is revoked or expires, or the desktop stops
 ### `/api/agent/v1/cdp/…` (HTTP and WebSocket)
 
 The shared Chromium's DevTools protocol: `GET /api/agent/v1/cdp/json/version`, `/json/list`, `PUT /json/new?url`, and WebSocket `/api/agent/v1/cdp/devtools/…`. In `/json*` responses (including `/json/version`), `webSocketDebuggerUrl` is absolute, `ws(s)://<host>/api/agent/v1/cdp/devtools/…`, and the `ws=` parameter in `devtoolsFrontendUrl` is `<host>/api/agent/v1/cdp/devtools/…` (Chromium's own `ws=`/`wss=` choice). The first request may take several seconds while Chromium starts.
+
+## Experimental application/window bridge
+
+Requires the prototype desktop image. All routes require a signed-in account
+with access to the desktop; POST requires the existing same-origin check.
+
+- `GET /api/desktops/{name}/applications`: `{apps: [{id, name}], windows: [{id, title, app, parent, active, minimized, x, y, width, height}]}`. IDs are strings; `parent` is a transient parent window ID or null. `?windows=1` skips application enumeration and returns an empty `apps` array.
+- `POST /api/desktops/{name}/applications`: `{action: "launch" | "activate", id: string}`. Launch accepts a registered `.desktop` ID; activate accepts a decimal X11 window ID. Returns `{id: string | null}`; a null launch result means no matching window was found within six seconds, not that launch failed.
+- A stopped desktop returns 409; malformed action/ID 400; absent helper or invalid/oversized response 502. Helper output is capped at 1 MiB with a 12-second deadline.
+
+These operations share the existing session and its input focus. Window pixels
+are still delivered through the full desktop Selkies stream.
