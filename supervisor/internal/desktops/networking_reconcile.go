@@ -93,7 +93,8 @@ func (n *Networking) Reconcile(ctx context.Context) error {
 }
 
 // Poll is the single central observation path. Viewer reads never probe. Work
-// is bounded and parallel so an unavailable gateway cannot stall the whole list.
+// shares eight bounded slots across observation and repair. Saturated passes skip
+// records; long repairs can delay unrelated health observations (no fleet fairness).
 func (n *Networking) Poll(ctx context.Context, changed func(string)) {
 	var wg sync.WaitGroup
 	slots := n.pollSlots
@@ -118,15 +119,22 @@ func (n *Networking) Poll(ctx context.Context, changed func(string)) {
 			}
 			defer unlock()
 			r, ok := n.record(name)
-			if !ok || r.Settings.VPNConnectionID == "" {
+			if !ok || (r.Settings.VPNConnectionID == "" && !r.Pending && !r.Removing) {
 				return
 			}
 			before, _ := n.service.Get(check, name)
-			// Engine dependency loss and revision changes use the same durable repair.
-			g, ge := n.service.Eng.Inspect(check, r.RuntimeID)
-			c, ce := n.service.Eng.Inspect(check, containerName(name))
-			conn, ve := n.Connections.Get(r.Settings.VPNConnectionID)
-			if r.Pending || ge != nil || !g.Running() || ce != nil || c.NetworkContainer != r.RuntimeID || ve != nil || conn.Revision != r.AppliedRevision {
+			// Pending transitions/removal include explicit direct selections.
+			// Otherwise reconcile durable power alongside dependency/revision loss.
+			needsRepair := r.Pending || r.Removing
+			var c engine.Container
+			if !needsRepair {
+				g, ge := n.service.Eng.Inspect(check, r.RuntimeID)
+				var ce error
+				c, ce = n.service.Eng.Inspect(check, containerName(name))
+				conn, ve := n.Connections.Get(r.Settings.VPNConnectionID)
+				needsRepair = ge != nil || !g.Running() || ce != nil || c.Running() != r.Running || c.NetworkContainer != r.RuntimeID || ve != nil || conn.Revision != r.AppliedRevision
+			}
+			if needsRepair {
 				repair, cancelRepair := context.WithTimeout(ctx, 3*time.Minute)
 				// recover persists a safe phase in the journal/status before returning.
 				_ = n.recover(repair, r)

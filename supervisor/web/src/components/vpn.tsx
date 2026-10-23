@@ -23,9 +23,7 @@ export function VPNStatus({ vpn, compact = false }: { vpn: VPNState | undefined;
           {view.currentIP && <p class="mt-1 text-muted">Current exit IP {view.currentIP}</p>}
           {view.history && <p class="mt-1 text-muted">{view.history}</p>}
           {view.detail && <p class="mt-1 text-muted">{view.detail}</p>}
-          {["blocked", "connecting", "reconnecting"].includes(vpn.state) && (
-            <p class="mt-1 text-muted">Internet access stays blocked until the VPN connects.</p>
-          )}
+          {view.notice && <p class="mt-1 text-muted">{view.notice}</p>}
         </>
       )}
     </div>

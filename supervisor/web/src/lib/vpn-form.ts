@@ -77,6 +77,7 @@ export function exceptionRows(rules: LANException[]): ExceptionRow[] {
 }
 
 export function vpnPresentation(vpn: VPNStatus) {
+  const directTransition = !vpn.connectionId && vpn.state === "blocked";
   const labels = {
     disabled: "No VPN",
     stopped: "VPN stopped",
@@ -88,7 +89,7 @@ export function vpnPresentation(vpn: VPNStatus) {
   const detail = [
     vpn.reason,
     vpn.idle ? "Idle: the gateway stays running and may use a provider connection." : undefined,
-    vpn.desiredRevision !== vpn.appliedRevision
+    !directTransition && vpn.desiredRevision !== vpn.appliedRevision
       ? `Selected revision ${vpn.desiredRevision}; applied revision ${vpn.appliedRevision}. Retry start or restart to apply the selected connection.`
       : undefined,
   ]
@@ -96,7 +97,12 @@ export function vpnPresentation(vpn: VPNStatus) {
     .join(" ");
   const observed = vpn.exitIpObservedAt && !vpn.exitIpObservedAt.startsWith("0001-") && !Number.isNaN(Date.parse(vpn.exitIpObservedAt));
   return {
-    label: vpn.state === "stopped" && vpn.idle ? "VPN idle" : labels[vpn.state],
+    label: directTransition ? "Network transition interrupted" : vpn.state === "stopped" && vpn.idle ? "VPN idle" : labels[vpn.state],
+    notice: directTransition
+      ? "The network transition has not finished. Recovery will retry your selected network settings."
+      : ["blocked", "connecting", "reconnecting"].includes(vpn.state)
+        ? "Internet access stays blocked until the VPN connects."
+        : undefined,
     detail,
     currentIP: vpn.state === "connected" ? vpn.currentExitIp : undefined,
     history:

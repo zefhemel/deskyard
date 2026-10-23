@@ -127,30 +127,30 @@ func (n *Networking) decorate(d Desktop) Desktop {
 	}
 	d.Settings = cloneSettings(r.Settings)
 	d.VPN = VPNStatus{ConnectionID: r.Settings.VPNConnectionID, DesiredRevision: r.Revision, AppliedRevision: r.AppliedRevision}
-	if r.Settings.VPNConnectionID == "" {
-		d.VPN.State = "disabled"
-		return d
-	}
-	if c, err := n.Connections.Get(r.Settings.VPNConnectionID); err == nil {
-		d.VPN.Name = c.Name
-		d.VPN.Provider = c.Provider
-		d.VPN.Country = c.Country
-		d.VPN.DesiredRevision = c.Revision
+	if r.Settings.VPNConnectionID != "" {
+		if c, err := n.Connections.Get(r.Settings.VPNConnectionID); err == nil {
+			d.VPN.Name = c.Name
+			d.VPN.Provider = c.Provider
+			d.VPN.Country = c.Country
+			d.VPN.DesiredRevision = c.Revision
+		}
 	}
 	n.mu.Lock()
 	d.VPN.Status = n.statuses[r.ID]
 	n.mu.Unlock()
-	if d.VPN.State == "" {
+	if r.Settings.VPNConnectionID == "" {
+		d.VPN.Status = vpn.Status{State: "disabled"}
+	} else if d.VPN.State == "" {
 		d.VPN.State = "connecting"
 	}
-	if r.Pending || r.Error != "" {
+	if r.Pending || r.Removing || r.Error != "" {
 		d.VPN.State = "blocked"
 		d.VPN.Reason = r.Error
 		if d.VPN.Reason == "" {
 			d.VPN.Reason = "Network transition interrupted; retry to recover"
 		}
 		d.VPN.CurrentExitIP = ""
-	} else if !d.Container.Running() {
+	} else if r.Settings.VPNConnectionID != "" && !d.Container.Running() {
 		d.VPN.State = "stopped"
 		d.VPN.Idle = true
 		d.VPN.CurrentExitIP = ""

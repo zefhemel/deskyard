@@ -82,7 +82,7 @@ func (n *Networking) saveRecord(r networkIntent) error {
 	r.Settings = cloneSettings(r.Settings)
 	next[r.ID] = r
 	if err := store.WriteJSON(n.path, next); err != nil {
-		return err
+		return errors.New("could not persist desktop network recovery state; retry to recover")
 	}
 	n.records = next
 	return nil
@@ -97,7 +97,7 @@ func (n *Networking) forget(id string) error {
 		}
 	}
 	if err := store.WriteJSON(n.path, next); err != nil {
-		return err
+		return errors.New("could not persist desktop network recovery state; retry to recover")
 	}
 	n.records = next
 	delete(n.statuses, id)

@@ -53,6 +53,7 @@ test("clearing exceptions sends empty rules but unrelated edits retain them", ()
   assert.deepEqual(desktopVPNPatch(original, "", original.lanExceptions), { vpnConnectionId: null });
 });
 const status = {
+  connectionId: "v1",
   state: "blocked" as const,
   changedAt: "2026-10-23T01:00:00Z",
   desiredRevision: 2,
@@ -183,4 +184,13 @@ test("No VPN ignores hidden LAN drafts without discarding them and omits saved r
   });
   assert.equal(requests, 1);
   assert.deepEqual(draft.lan, [{ destination: "unfinished", protocol: "tcp", ports: "" }]);
+});
+
+test("pending explicit No VPN describes the network transition without asking for a VPN connection", () => {
+  const view = vpnPresentation({ ...status, connectionId: "", desiredRevision: 0, reason: "Network transition failed at consumer-create; retry to recover" });
+  assert.match(view.label, /Network transition/);
+  assert.doesNotMatch(view.detail, /selected connection/);
+  assert.match(view.notice ?? "", /network transition/i);
+  assert.doesNotMatch(view.notice ?? "", /until the VPN connects/);
+  assert.match(vpnPresentation({ ...status, connectionId: "v1" }).notice ?? "", /until the VPN connects/);
 });
