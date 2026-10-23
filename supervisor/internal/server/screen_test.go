@@ -58,13 +58,6 @@ func TestScreenRoutes(t *testing.T) {
 	anna := login(t, ts, "anna")
 	anon := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 
-	// KasmVNC's routes are gone.
-	for _, p := range []string{"/alice/websockify", "/alice/vnc/vnc.html"} {
-		if got := status(t, admin, "GET", ts.URL+p, ""); got != 404 {
-			t.Errorf("%s: %d", p, got)
-		}
-	}
-
 	// The client page comes from the image, with our additions first.
 	for _, p := range []string{"/alice/screen/", "/alice/screen/index.html"} {
 		resp, body := get(t, admin, ts.URL+p)

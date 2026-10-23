@@ -22,7 +22,7 @@ def test_token_not_visible_to_the_user(sandbox):
 
 
 def test_only_8080_on_the_network(sandbox):
-    """Nothing but Caddy listens beyond localhost (no VNC 5901, no CDP 9222)."""
+    """Nothing but Caddy listens beyond localhost (not Selkies on 6080, not CDP on 9222)."""
     out = sandbox.exec("awk 'FNR>1 && $4==\"0A\" {print $2}' /proc/net/tcp /proc/net/tcp6").stdout.split()
     loopback = {"0100007F", "00000000000000000000000001000000"}
     ports = {int(a.split(":")[1], 16) for a in out if a.split(":")[0] not in loopback}

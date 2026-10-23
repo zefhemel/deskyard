@@ -48,6 +48,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 ARG PIXELFLUX_VERSION=2.2.1
 ARG PIXELFLUX_COMMIT=67b6d833fc8eba87f9b15fb4cb3382d923a2fe56
+# GitHub archive checksums: GitHub has changed archive bytes before, so a
+# sudden mismatch here more likely means that than a tampered tag. Check, then update.
 ARG PIXELFLUX_SOURCE_SHA256=6984b587bf1384445fe3ef82aa37fe07daab224dcf06599eb7454433b48a4ad3
 WORKDIR /src
 RUN curl -fsSL -o /tmp/pixelflux.tar.gz "https://github.com/linuxserver/pixelflux/archive/${PIXELFLUX_COMMIT}.tar.gz" \

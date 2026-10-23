@@ -217,6 +217,12 @@ def test_turbo_locked_off(sandbox):
     assert "SELKIES_VIDEO_STREAMING_MODE=false|locked" in env.splitlines()
 
 
+def test_audio_gate_off(sandbox):
+    # It clips the start of every sound after silence (patches/README.md).
+    env = sandbox.exec(f"tr '\\0' '\\n' < /proc/$({SELKIES_PID})/environ").stdout
+    assert "DESKYARD_AUDIO_IDLE_S=0" in env.splitlines()
+
+
 def test_contract(image):
     label = docker("image", "inspect", image, "--format", '{{index .Config.Labels "deskyard.contract"}}')
     assert label.stdout.strip() == "3"

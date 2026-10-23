@@ -88,7 +88,7 @@ These would make it a failure even if it worked:
 - **The web client.** The supervisor serves Selkies' web client from files extracted from the image, per image ID, as it does for KasmVNC's today, at `/<name>/screen/…`. Our small additions are served alongside:
   - the pointer fix, which hides `pointerrawupdate` from the client, so drags inside our frame land right;
   - the adapter hooks our bar uses.
-  - They are added by the supervisor when serving, not by changing the image. The client is served `no-store`.
+  - They are added by the supervisor when serving, not by changing the image. The page and the additions are served `no-store`; the client's other files `no-cache` (revalidated each time).
 - **Proxied routes,** with the same session, access and same-origin checks as `websockify` today:
   - `/<name>/screen/api/websockets`, the stream, which counts as viewing;
   - Selkies' file-transfer endpoints (upload and download).
@@ -125,7 +125,7 @@ These would make it a failure even if it worked:
 ## Selkies' rough edges
 
 - **Background tabs.** A viewer's tab going to the background must never stop the stream for others, or for later viewers. The served client additions stop the client from sending `STOP_VIDEO`. If Selkies stops anyway, the supervisor restarts the stream when a viewer connects. A test covers it: the only viewer's tab goes hidden, a second viewer joins and sees the picture within 5 s.
-- **Idle CPU.** About 12% of a core per idle desktop with a viewer is accepted for now. A separate investigation (the selkies-cpu session) looks at reducing it, and especially at the cost with no viewer. Its findings may add settings or patches before shipping.
+- **Idle CPU.** About 12% of a core per idle desktop with a viewer is accepted for now. A separate investigation (the selkies-cpu session) looks at reducing it, and especially at the cost with no viewer. Its findings may add settings or patches before shipping. (They did: three patches shipped; see the plan's "Idle-CPU patches" entry and [[Architecture/Selkies]]. The audio gate is off by default.)
 - **Upstream.** We report the `pointerrawupdate` and background-tab problems upstream, but don't wait for them.
 
 ## Tests
@@ -158,7 +158,7 @@ These would make it a failure even if it worked:
   - Selkies' own download is turned off in favour of ours.
   - If Selkies uploads inside the stream WebSocket rather than over HTTP, that's fine, since the viewer is already trusted with the desktop. The builder may replace it with our own upload endpoint if that's simpler to gate.
 - **Browsers.** Chrome, Firefox and Safari must all work: picture, sound, input, clipboard, upload and download. Selkies uses its canvas path where `MediaStreamTrackGenerator` is missing. Sync is measured in Chromium. Mic and webcam device pickers may be missing where a browser can't list devices. A browser without WebCodecs shows "This browser can't show Deskyard desktops; use a current Chrome, Firefox or Safari".
-- **CPU work.** The selkies-cpu findings are not a dependency. Settings it finds are folded in at the end; patches to Selkies or pixelflux are a follow-up.
+- **CPU work.** The selkies-cpu findings are not a dependency. Settings it finds are folded in at the end; patches to Selkies or pixelflux were planned as a follow-up, but shipped with this work (see Idle CPU above).
 - **Selkies version.** Pin the latest 2.1.x release at the time the plan starts, and write our client additions against that pinned source.
 
 # Left to the builder

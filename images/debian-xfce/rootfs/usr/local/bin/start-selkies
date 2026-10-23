@@ -58,6 +58,13 @@ pactl set-default-source output.SelkiesVirtualMic 2>/dev/null || pactl set-defau
 # matches it: the supervisor checks the Origin itself and then sends this one.
 export SELKIES_ALLOWED_ORIGINS=http://supervisor.deskyard.invalid
 
+# The audio gate (patches/selkies-audio-gate.diff) is off: it saves 0.6-1.4 %
+# of a core per watched desktop, but loses the first ~90 ms of every sound
+# after silence, which swallows short pings and bells. An image built on this
+# one switches it on with ENV DESKYARD_AUDIO_IDLE_S=3 (seconds of silence
+# before the capture stops).
+export DESKYARD_AUDIO_IDLE_S="${DESKYARD_AUDIO_IDLE_S:-0}"
+
 # What Deskyard doesn't offer is locked off: an unlocked setting is only the
 # page's default, which a page may change. Turbo (encoding every frame, about
 # a quarter of a core per idle viewer instead of 5-8 %) is locked off too.

@@ -29,7 +29,7 @@ export default defineConfig({
     ? {
         proxy: {
           "/api": proxied,
-          "^/[a-z][a-z0-9-]*/(vnc/|websockify)": proxied,
+          "^/[a-z][a-z0-9-]*/screen/": proxied, // the desktop's client and its stream
         },
       }
     : {},
