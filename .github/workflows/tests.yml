@@ -97,12 +97,31 @@ jobs:
           load: true
           cache-from: type=gha,scope=debian-xfce-amd64
 
+      # The browsers and the system packages they need, cached: fetching the
+      # packages from the runner's apt mirror has taken 35-50 minutes. Saved
+      # right after, so a failing test run still keeps them.
+      - name: Restore the browsers
+        if: env.SKIP != 'true'
+        id: browsers
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/.cache/playwright-debs
+          key: browsers-${{ env.ImageOS }}-${{ env.ImageVersion }}-${{ hashFiles('images/tests/uv.lock', 'supervisor/tests/uv.lock') }}
+
       - name: Browsers
         if: env.SKIP != 'true'
-        run: |
-          for d in images/tests supervisor/tests; do
-            (cd "$d" && uv run playwright install --with-deps chromium firefox webkit)
-          done
+        run: PLAYWRIGHT_DEBS="$HOME/.cache/playwright-debs" scripts/ci-browsers.sh
+
+      - name: Save the browsers
+        if: env.SKIP != 'true' && steps.browsers.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/.cache/playwright-debs
+          key: ${{ steps.browsers.outputs.cache-primary-key }}
 
       - name: make ${{ matrix.target }}
         if: env.SKIP != 'true'
