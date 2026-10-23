@@ -2,14 +2,15 @@
 signing in, and the desktop page's bar. The bar's tests run in Chromium,
 Firefox and WebKit (see conftest.py for when Firefox and WebKit run)."""
 
+import re
 import time
 
 import pytest
 from playwright.sync_api import expect, sync_playwright
 
 from conftest import docker
-from helpers import (BROWSERS, PICTURE, SHOWING, audio_switch, fits, frame_size, in_desktop, open_desktop,
-                     screen_size, signed_in, wait_until)
+from helpers import (BROWSERS, PICTURE, SCREEN, SHOWING, audio_switch, fits, frame_size, in_desktop, open_desktop,
+                     screen_size, signed_in, video_settings_lines, wait_until)
 
 
 def test_sign_in_and_see_the_wall(supervisor, desktop, name, tmp_path):
@@ -149,14 +150,22 @@ def test_stopped_desktop_page(supervisor, admin, desktop, name, browser_name):
         browser.close()
 
 
-def test_unsupported_browser_message(supervisor, desktop, name):
+def test_no_webcodecs_streams_jpeg(supervisor, desktop, name):
+    # A browser without WebCodecs (as over plain http) gets Selkies' JPEG
+    # stream instead of a refusal, and the Quality presets are JPEG's.
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base)
         page.add_init_script("delete window.VideoDecoder")
-        page.goto(f"{supervisor.base}/{name}/")
-        message = "This browser can't show Deskyard desktops; use a current Chrome, Firefox or Safari"
-        expect(page.get_by_text(message)).to_be_visible(timeout=15000)
-        expect(page.locator("iframe")).to_have_count(0)
+        open_desktop(page, supervisor.base, name)
+        page.wait_for_function(f"{SCREEN}.display().owner === true", timeout=15000)
+        # Secure here: none of the plain-http notes.
+        expect(page.get_by_text("Not secure: some features off")).to_have_count(0)
+        before = len(video_settings_lines(name))
+        page.get_by_role("button", name="Quality", exact=True).click()
+        page.get_by_role("menuitemcheckbox", name=re.compile("^Low")).click()
+        applied = lambda: any("Applying video settings" in line for line in video_settings_lines(name)[before:])  # noqa: E731
+        assert wait_until(applied), video_settings_lines(name)[before:]
+        assert any(" jpeg " in line for line in video_settings_lines(name)), video_settings_lines(name)[-3:]
         browser.close()
 
 
