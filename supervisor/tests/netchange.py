@@ -10,12 +10,14 @@ OrbStack keep the networks in their VM, so a Mac never sees this.)
 
 So, for every test (conftest imports this): Page.goto and Page.reload load
 the page again when it or something it loaded failed so, and every browser
-context logs such failures, which pytest shows with a failed test.
+context counts and logs such failures (pytest shows the log with a failed
+test). Waits for what a page loads after its goto use `failures`.
 """
 
 from __future__ import annotations
 
 import time
+import weakref
 
 from playwright.sync_api import Browser, Error, Page
 
@@ -71,11 +73,26 @@ def _settle(page: Page):
         pass
 
 
+_failures: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+
+
+def failures(page: Page) -> int:
+    """How many of the requests of page's browser context failed so so far:
+    for waits that a page loading after its goto (a frame it adds) can fail."""
+    return _failures.get(page.context, 0)
+
+
 def _logging(new):
     def run(browser: Browser, *args, **kwargs):
         made = new(browser, *args, **kwargs)
         ctx = made.context if isinstance(made, Page) else made
-        ctx.on("requestfailed", lambda r: _changed(r) and print(f"{CHANGED}: {r.method} {r.url}"))
+
+        def note(request):
+            if _changed(request):
+                _failures[ctx] = _failures.get(ctx, 0) + 1
+                print(f"{CHANGED}: {request.method} {request.url}")
+
+        ctx.on("requestfailed", note)
         return made
 
     return run

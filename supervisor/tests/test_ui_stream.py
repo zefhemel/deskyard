@@ -182,6 +182,9 @@ def test_background_tab_doesnt_stall(supervisor, desktop, name):
 
         b = sign_in(browser, supervisor.base)
         b.context.add_init_script(COUNT_FRAMES)
+        # Selkies' client asks for a key frame itself after 3 s without a frame.
+        asked = []
+        b.on("console", lambda m: "keyframe" in m.text and asked.append(m.text))
         b.goto(f"{supervisor.base}/{name}/")
         b.wait_for_function(f"{SCREEN}?.state() === 'connected'", timeout=30000)
         joined = time.time()
@@ -189,7 +192,7 @@ def test_background_tab_doesnt_stall(supervisor, desktop, name):
         first = time.time() - joined
         print(f"first frame {first:.2f} s after joining")
         # At once, not at the idle capture's next keepalive grab (1 s).
-        assert first < 0.5, first
+        assert first < 0.5, (first, asked)
         # And the picture keeps coming as the screen changes.
         shown = b.evaluate(FRAMES)
         in_desktop(name, "xdotool", "type", "--delay", "50", "still streaming")

@@ -15,7 +15,10 @@ import uuid
 import pytest
 import requests
 import websockets
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import expect
+
+import netchange
 
 from conftest import ADMIN_PASSWORD, docker
 
@@ -226,13 +229,23 @@ def signed_in(p, base, user="admin", password=ADMIN_PASSWORD, browser="chromium"
 
 
 def open_desktop(page, base, name, status=True):
-    """The desktop page, showing the picture (status: and saying so; a phone doesn't)."""
-    page.goto(f"{base}/{name}/")
-    if status:
-        expect(page.get_by_text("Connected", exact=True)).to_be_visible(timeout=30000)
-    page.wait_for_function(SHOWING, timeout=30000)
-    # And the remote screen's size is known (PICTURE scales by it).
-    page.wait_for_function(f"{SCREEN}.display()?.width > 0 && {SCREEN}.display()?.height > 0", timeout=30000)
+    """The desktop page, showing the picture (status: and saying so; a phone doesn't).
+    Opened again if Chromium failed one of its loads (netchange.py): the screen's
+    frame loads after the page."""
+    for attempt in range(1, 4):
+        seen = netchange.failures(page)
+        page.goto(f"{base}/{name}/")
+        try:
+            if status:
+                expect(page.get_by_text("Connected", exact=True)).to_be_visible(timeout=30000)
+            page.wait_for_function(SHOWING, timeout=30000)
+            # And the remote screen's size is known (PICTURE scales by it).
+            page.wait_for_function(f"{SCREEN}.display()?.width > 0 && {SCREEN}.display()?.height > 0", timeout=30000)
+            return
+        except (AssertionError, PlaywrightError):
+            if netchange.failures(page) == seen or attempt == 3:
+                raise
+            print(f"open_desktop: {netchange.CHANGED} on the way; opening it again")
 
 
 def audio_switch(page, label):
