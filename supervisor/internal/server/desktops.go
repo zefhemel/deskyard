@@ -18,12 +18,15 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 )
 
 type settingsJSON struct {
-	MemoryBytes int64  `json:"memoryBytes"`
-	NanoCPUs    int64  `json:"nanoCpus"`
-	Camera      string `json:"camera"` // the host device, "" for none
+	VPNConnectionID *string         `json:"vpnConnectionId"`
+	LANExceptions   []vpn.Exception `json:"lanExceptions"`
+	MemoryBytes     int64           `json:"memoryBytes"`
+	NanoCPUs        int64           `json:"nanoCpus"`
+	Camera          string          `json:"camera"` // the host device, "" for none
 }
 
 type statsJSON struct {
@@ -33,6 +36,7 @@ type statsJSON struct {
 }
 
 type desktopJSON struct {
+	VPN             desktops.VPNStatus  `json:"vpn"`
 	ID              string              `json:"id"`
 	Name            string              `json:"name"`
 	State           string              `json:"state"`
@@ -62,9 +66,17 @@ func (s *Server) desktopJSON(ctx context.Context, c desktops.Desktop, a accounts
 		ID: c.ID, Name: c.Name, State: c.State, Folder: c.Folder, Image: c.Image,
 		ImageTitle: c.ImageLabels["org.opencontainers.image.title"], ImageVersion: c.ImageLabels["org.opencontainers.image.version"],
 		ImageSecrets: c.ImageLabels[labelSecrets] == "true",
-		Settings:     settingsJSON{c.Settings.MemoryBytes, c.Settings.NanoCPUs, c.Settings.Camera},
+		VPN:          c.VPN,
+		Settings:     settingsJSON{MemoryBytes: c.Settings.MemoryBytes, NanoCPUs: c.Settings.NanoCPUs, Camera: c.Settings.Camera, LANExceptions: c.Settings.LANExceptions},
 		Access:       []string{}, Viewers: s.viewers.names(c.Name),
 		Mics: s.viewers.mics(c.Name), Cams: s.viewers.cams(c.Name), Webcam: c.Webcam(), Forwards: s.forwards.list(c.Name), Agents: s.activity.Present(c.Name),
+	}
+	if c.Settings.VPNConnectionID != "" {
+		id := c.Settings.VPNConnectionID
+		j.Settings.VPNConnectionID = &id
+	}
+	if j.Settings.LANExceptions == nil {
+		j.Settings.LANExceptions = []vpn.Exception{}
 	}
 	if !c.Created.IsZero() {
 		j.Created = &c.Created
@@ -202,11 +214,13 @@ func (s *Server) handleCreateDesktop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Name        string   `json:"name"`
-		Image       string   `json:"image"`
-		MemoryBytes int64    `json:"memoryBytes"`
-		NanoCPUs    int64    `json:"nanoCpus"`
-		Access      []string `json:"access"`
+		VPNConnectionID optionalVPN     `json:"vpnConnectionId"`
+		LANExceptions   []vpn.Exception `json:"lanExceptions"`
+		Name            string          `json:"name"`
+		Image           string          `json:"image"`
+		MemoryBytes     int64           `json:"memoryBytes"`
+		NanoCPUs        int64           `json:"nanoCpus"`
+		Access          []string        `json:"access"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad request")
@@ -233,6 +247,11 @@ func (s *Server) handleCreateDesktop(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	set, err := s.Desktops.ValidateNetworkSettings(desktops.Settings{Image: req.Image, MemoryBytes: req.MemoryBytes, NanoCPUs: req.NanoCPUs, VPNConnectionID: req.VPNConnectionID.ID, LANExceptions: req.LANExceptions})
+	if err != nil {
+		vpnError(w, err)
+		return
+	}
 	if err := s.Desktops.Begin(req.Name, "creating"); err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
@@ -242,7 +261,7 @@ func (s *Server) handleCreateDesktop(w http.ResponseWriter, r *http.Request) {
 			s.Desktops.Done(req.Name)
 			s.publishDesktop(ctx, req.Name)
 		}()
-		c, err := s.Desktops.Create(ctx, req.Name, desktops.Settings{Image: req.Image, MemoryBytes: req.MemoryBytes, NanoCPUs: req.NanoCPUs}, progress)
+		c, err := s.Desktops.Create(ctx, req.Name, set, progress)
 		if err != nil {
 			s.Log.Warn("create failed", "desktop", req.Name, "err", err)
 			return err
@@ -261,17 +280,31 @@ func (s *Server) handleUpdateDesktop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Image          *string `json:"image"`
-		MemoryBytes    *int64  `json:"memoryBytes"`
-		NanoCPUs       *int64  `json:"nanoCpus"`
-		Camera         *string `json:"camera"`
-		ConfirmSecrets bool    `json:"confirmSecrets"`
+		VPNConnectionID optionalVPN      `json:"vpnConnectionId"`
+		LANExceptions   *[]vpn.Exception `json:"lanExceptions"`
+		Image           *string          `json:"image"`
+		MemoryBytes     *int64           `json:"memoryBytes"`
+		NanoCPUs        *int64           `json:"nanoCpus"`
+		Camera          *string          `json:"camera"`
+		ConfirmSecrets  bool             `json:"confirmSecrets"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
 	set := c.Settings
+	if req.VPNConnectionID.Set {
+		set.VPNConnectionID = req.VPNConnectionID.ID
+	}
+	if req.LANExceptions != nil {
+		set.LANExceptions = *req.LANExceptions
+	}
+	var err error
+	set, err = s.Desktops.ValidateNetworkSettings(set)
+	if err != nil {
+		vpnError(w, err)
+		return
+	}
 	if req.Image != nil {
 		set.Image = *req.Image
 	}

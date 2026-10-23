@@ -95,6 +95,14 @@ host's). Names are lowercase letters, digits and dashes, start with a letter
 and can't be changed later. Each desktop is a container `deskyard-<name>` on its
 own network `deskyard-<name>`, so desktops can't reach each other.
 
+### Outbound VPN (administrator API)
+
+Administrators can save NordVPN service credentials and select a connection per desktop through the [VPN API](supervisor/API.md#vpn-connections-admin). Each selected desktop gets its own managed Gluetun gateway. Internet access stays blocked while the tunnel is unavailable; only an explicit selection of no VPN restores direct networking. Enabling, disabling or changing VPN settings recreates the desktop while preserving its identity and workspace. The guided web UI is still pending.
+
+VPN desktop containers do not restart independently after an engine reboot: run the supervisor to recover their namespace and firewall before starting them. Stopping a desktop keeps its gateway idle and may continue consuming a provider connection. LAN access is denied except for administrator-configured destination, transport and port rules. Existing agent port forwarding remains available; this feature does not prevent deliberate proxies or tunnels through permitted applications.
+
+The backend has been exercised with the current Selkies image on OrbStack, including local access while disposable invalid NordVPN credentials fail authentication. Successful NordVPN authentication/country selection, native Linux and the complete guided workflow remain release checks.
+
 ### What persists
 
 Only `/workspace`. It's the folder `<data folder>/<name>` on the host, a
@@ -283,9 +291,13 @@ Environment variables of the supervisor:
 
 `DESKYARD_DATA_DIR` holds each desktop's folder (`<name>/`, owned by UID
 1000) and `.deskyard/` with `accounts.json`, `tokens.json`, `images.json`,
-the session key and certificates (all mode 0600). The supervisor keeps no
-list of desktops of its own: desktops are containers with
-`deskyard.*` labels.
+the session key and certificates (all mode 0600). Desktops are discovered through `deskyard.*` container labels. Desktops with
+managed networking also have private intent and complete transition snapshots
+in `.deskyard/vpn/desktops.json`, so interrupted replacements remain visible and
+recoverable. Back up `.deskyard/vpn/` with the other supervisor state: it holds
+saved connections, versioned service credentials and private recovery tokens.
+Directories are owner-only and files use mode 0600; these files are not encrypted
+against the host administrator.
 
 In a container, the data folder must be mounted **at the same path** as on
 the host (`-v /srv/desktops:/srv/desktops`), because the supervisor hands

@@ -25,6 +25,11 @@ func (s *Server) routes() {
 	h("GET /api/jobs/{id}", s.handleJob)
 	h("POST /api/jobs/{id}/cancel", s.handleCancelJob)
 
+	h("GET /api/vpn/connections", s.handleListVPN)
+	h("POST /api/vpn/connections", s.handleCreateVPN)
+	h("PUT /api/vpn/connections/{id}", s.handleUpdateVPN)
+	h("DELETE /api/vpn/connections/{id}", s.handleDeleteVPN)
+	h("POST /api/vpn/test", s.handleTestVPN)
 	h("GET /api/desktops", s.handleListDesktops)
 	h("POST /api/desktops", s.handleCreateDesktop)
 	h("GET /api/validate-name", s.handleValidateName)

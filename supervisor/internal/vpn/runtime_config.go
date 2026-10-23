@@ -67,7 +67,7 @@ func buildRuntime(in runtimeInput) (runtimeConfig, error) {
 		return runtimeConfig{}, err
 	}
 	spec := engine.ContainerSpec{Name: "deskyard-vpn-" + in.DesktopID, Image: GluetunImage, Network: in.Network, Restart: "no", CapAdd: []string{"NET_ADMIN"}, Devices: []string{"/dev/net/tun"}, Env: map[string]string{
-		"VPN_SERVICE_PROVIDER": "nordvpn", "VPN_TYPE": "openvpn", "OPENVPN_PROTOCOL": "udp", "OPENVPN_PROCESS_USER": "root", "OPENVPN_ENDPOINT_PORT": "1194", "SERVER_COUNTRIES": in.Connection.Country,
+		"VPN_SERVICE_PROVIDER": "nordvpn", "VPN_TYPE": "openvpn", "OPENVPN_PROTOCOL": "udp", "OPENVPN_PROCESS_USER": "root", "SERVER_COUNTRIES": in.Connection.Country,
 		"OPENVPN_USER_SECRETFILE": "/run/secrets/openvpn_user", "OPENVPN_PASSWORD_SECRETFILE": "/run/secrets/openvpn_password",
 		"HTTP_CONTROL_SERVER_ADDRESS": "127.0.0.1:8000", "HTTP_CONTROL_SERVER_AUTH_CONFIG_FILEPATH": "/gluetun/auth/config.toml",
 		"FIREWALL_INPUT_PORTS": "8080", "DNS_SERVER": "on", "DNS_UPSTREAM_RESOLVER_TYPE": "plain", "DNS_UPSTREAM_PLAIN_ADDRESSES": "1.1.1.1:53", "DNS_UPSTREAM_IPV6": "off", "BLOCK_MALICIOUS": "off", "DNS_UPDATE_PERIOD": "0", "VERSION_INFORMATION": "off", "HEALTH_RESTART_VPN": "on",

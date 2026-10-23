@@ -152,8 +152,11 @@ func (s *Server) watchEngine(ctx context.Context) {
 			continue
 		}
 		for e := range evs {
+			if s.Desktops.Networking != nil {
+				s.Desktops.Networking.NotifyEngineEvent(e)
+			}
 			name := e.Labels[desktops.LabelName]
-			if name == "" || e.Labels[desktops.LabelManaged] != "true" {
+			if name == "" || !desktops.IsDesktop(e.Labels) {
 				continue
 			}
 			switch e.Action {

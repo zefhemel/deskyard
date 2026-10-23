@@ -112,3 +112,16 @@ func TestRuntimeRejectsUnsupportedResolverPolicy(t *testing.T) {
 		t.Fatal("unsupported resolver policy accepted")
 	}
 }
+
+func TestNordVPNUsesProviderDefaultPort(t *testing.T) {
+	cfg, err := buildRuntime(runtimeInput{DesktopID: strings.Repeat("a", 32), Network: "desktop", Connection: Connection{Provider: "nordvpn", Country: "Netherlands"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, set := cfg.Spec.Env["OPENVPN_ENDPOINT_PORT"]; set {
+		t.Fatal("pinned Gluetun NordVPN provider rejects a custom endpoint port before firewall/control startup")
+	}
+	if cfg.Spec.Env["OPENVPN_PROTOCOL"] != "udp" {
+		t.Fatal("NordVPN default UDP port must remain selected")
+	}
+}

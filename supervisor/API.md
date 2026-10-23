@@ -27,7 +27,8 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
   "image": "ghcr.io/zefhemel/deskyard-debian-xfce:latest",
   "imageTitle": "Debian XFCE", "imageVersion": "2026.10.15", "imageSecrets": false,
   "updateAvailable": "2026.10.22" | null,
-  "settings": {"memoryBytes": 0, "nanoCpus": 0, "camera": ""},
+  "settings": {"memoryBytes": 0, "nanoCpus": 0, "camera": "", "vpnConnectionId": null, "lanExceptions": []},
+  "vpn": {"state":"disabled","changedAt":"0001-01-01T00:00:00Z","exitIpObservedAt":"0001-01-01T00:00:00Z","desiredRevision":0,"appliedRevision":0,"idle":false},
   "access": ["anna"],
   "viewers": ["zef", "anna"],
   "mics": ["anna"],
@@ -99,11 +100,33 @@ Moving desktops onto an image that contains secrets (an upgrade, or `PATCH` with
 
 `GET /api/desktops/{name}/screen-events` is a server-sent event stream of the screen actions agents make, for drawing them over the screen: `event: screen` with data a `ScreenEvent`, `{"agent":{"id","name","color","inside"},"t":"…","action":"click","pos":[100,120]}`, plus `button`, `dir`, `n`, `keys` and `chars` where the action has them (`pos` is `[x1,y1,x2,y2]` for `drag`; `type` carries only `chars`, the number of characters). The actions sent are `click`, `double-click`, `triple-click`, `drag`, `scroll`, `key`, `hold-key` and `type`. A comment line keeps the stream alive every 25 s. Who may open it is as for `Activity`; the stream ends when the account loses access or the desktop is removed. Events are only produced while someone is subscribed, and a slow reader misses some.
 
+### VPN connections (admin)
+
+All five routes require an administrator session; mutations also require the usual same-origin header. Regular accounts may read the sanitized `vpn` object only on desktops they can access. Credential values, credential paths, runtime IDs/addresses and control tokens are never returned.
+
+`VPNInput` is `{name,provider:"nordvpn",country,username?,password?}`. Create requires both service credentials; each omitted credential on an edit/test retains its saved value. Country must be one of the returned `countries`. `VPNConnection` is `{id,name,provider,country,revision,credentialsConfigured}`. A reference is `{id,name}` using the stable desktop ID.
+
+| Method and path | Body | Response |
+| --- | --- | --- |
+| `GET /api/vpn/connections` | | 200 `{connections:[VPNConnection & {desktops:[Reference]}],countries:[string]}` |
+| `POST /api/vpn/connections` | `VPNInput` | 201 `VPNConnection`; 400 invalid input; 409 duplicate name |
+| `PUT /api/vpn/connections/{id}` | `VPNInput` plus `expectedRevision`, `affectedDesktopIds:[id]`, `confirmRestart:true` when referenced | 202 `{job,desktops:[Reference]}`; 409 if revision/reference preview changed or confirmation is missing |
+| `DELETE /api/vpn/connections/{id}` | | 204; 409 `{error,desktops:[Reference]}` if any desktop still selects it |
+| `POST /api/vpn/test` | `VPNInput`, optional `connectionId` to retain saved omitted credentials | 202 `{job}` |
+
+Missing selected IDs produce 400. A PUT tests its candidate in a disposable runtime before changing the saved revision or desktops. A failed test leaves the saved connection unchanged. The accepted reference set is rechecked atomically with assignments/deletions after validation. Successful validation commits the revision and applies it through durable per-desktop transitions; partial failures retain that selected VPN policy. Candidate tests have a two-minute execution deadline with separately bounded cleanup. Cancellation is honored before the shared revision commits; once committed, recovery completes the durable rollout.
+
+Jobs add optional `result`: a successful test returns the public status (`state`, `reason?`, `changedAt`, `currentExitIp?`, `lastExitIp?`, `exitIpObservedAt`); a completed rollout returns `{connection:VPNConnection,desktops:[{id,name,error?}]}`. The job can be `done` with per-desktop errors, so inspect every result and display a retry option. Retry a failed desktop with start or save/restart; its desired revision is retained. Test/validation failures use sanitized service-credential/country/connectivity guidance, never provider logs.
+
+Desktop create and PATCH accept `vpnConnectionId` (string or explicit `null` for no VPN) and `lanExceptions`. Omitted PATCH fields retain their values; disabling VPN also retains omitted exception rules for later reuse. Rules are `{destination,protocol:"tcp"|"udp",ports:[{start,end}]}`; `end:0` means a single input port, output is normalized. Destinations must be supported private IPv4 addresses/CIDRs and cannot overlap mandatory reserved/desktop networks. Exceptions intentionally permit only the selected direct LAN traffic.
+
+`Desktop.settings` adds `vpnConnectionId:string|null` and `lanExceptions:[]`. `Desktop.vpn` is `{connectionId?,name?,provider?,country?,desiredRevision,appliedRevision,state,reason?,changedAt,currentExitIp?,lastExitIp?,exitIpObservedAt,idle}`. States are `disabled`, `stopped`, `connecting`, `connected`, `reconnecting`, `blocked`; only connected reports a current exit IP. An unknown observation uses the zero RFC3339 timestamp (`0001-01-01T00:00:00Z`). `idle:true` with `stopped` means the gateway is kept running and may consume a provider connection. A failed/interrupted transition stays visible by stable ID even while its desktop container is absent. Health observations are centralized on a five-second interval and owned engine events; list/get/events only read cached observations. Tunnel health never changes desktop power by itself. Caddy targets the gateway endpoint, while exec/files/stats/activity still target the desktop.
+
 ### Jobs
 
-`GET /api/jobs/{id}` is a server-sent event stream; each `data:` line is `{"status":"running"|"done"|"failed","message":"Pulling image","progress":0.38|null,"error"?:string,"desktop"?:name}`. The stream sends every update in order, starting with the oldest the job keeps (the last 2,000), and ends after `done` or `failed`. The account that started a job, admins, and (for a desktop's job) anyone who can see that desktop may follow it; others get 404.
+`GET /api/jobs/{id}` is a server-sent event stream; each `data:` line is `{"status":"running"|"done"|"failed","message":"Pulling image","progress":0.38|null,"error"?:string,"desktop"?:name,"result"?:object}`. The stream sends every update in order, starting with the oldest the job keeps (the last 2,000), and ends after `done` or `failed`. The account that started a job, admins, and (for a desktop's job) anyone who can see that desktop may follow it; others get 404.
 
-`POST /api/jobs/{id}/cancel` stops a running image build (its owner or an admin): 204, and the job then fails with error `"cancelled"`. 409 for a job that has finished or can't be cancelled (only builds can); 404 as above.
+`POST /api/jobs/{id}/cancel` cancels a running image build or VPN candidate test/validation (its owner or an admin): 204, and the job then fails with error `"cancelled"`. 409 for a job that has finished or can't be cancelled (builds and VPN validation can; a committed VPN rollout completes its durable transition); 404 as above.
 
 ### Events
 

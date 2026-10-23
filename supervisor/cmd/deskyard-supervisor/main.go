@@ -23,6 +23,7 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/engine/docker"
 	"github.com/zefhemel/deskyard/supervisor/internal/server"
 	"github.com/zefhemel/deskyard/supervisor/internal/tlsserve"
+	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 	"github.com/zefhemel/deskyard/supervisor/internal/web"
 )
 
@@ -112,6 +113,14 @@ func run(log *slog.Logger) error {
 		DataDir: cfg.DataDir, Subnet: cfg.Subnet.String(), InContainer: cfg.InContainer, SelfID: selfID,
 		LocalEngine: desktops.LocalEngine(cfg.EngineHost),
 	}, log)
+	vpnStore, err := vpn.NewStore(cfg.StateDir)
+	if err != nil {
+		return err
+	}
+	vpnRuntime := vpn.NewManager(eng, vpnStore, cfg.StateDir)
+	if err := comps.ConfigureNetworking(vpnStore, vpnRuntime, cfg.StateDir); err != nil {
+		return err
+	}
 	if err := comps.Reconcile(ctx); err != nil {
 		log.Warn("reconciling desktops (networks, gone cameras)", "err", err)
 	}

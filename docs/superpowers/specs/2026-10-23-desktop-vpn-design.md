@@ -9,7 +9,7 @@ Administrators can route an individual desktop's internet traffic through a save
 
 # Implementation progress
 
-The connection/secret store, typed exception validation, Docker namespace/capability/health/restart primitives, managed runtime/firewall builder, bounded readiness/status observer and disposable candidate tests are implemented. The controlled WireGuard fixture passes actual traffic, DNS, local-access, loss/recovery, LAN port-limit, IPv6, authenticated control and namespace-isolation checks on OrbStack. Lifecycle recovery, administrator APIs/UI, complete desktop workflows, live NordVPN/OpenVPN authentication and native Linux release checks remain pending; the feature is not yet available to users. See [[Architecture/VPN connections]], [[Architecture/VPN runtime]] and [[Architecture/Engine adapter]] for implemented boundaries. Candidate timeout guidance asks administrators to check service credentials, country/server availability and host connectivity without inferring rejected credentials from health alone.
+The connection/secret store, typed exception validation, Docker namespace/capability/health/restart primitives, managed runtime/firewall builder, bounded readiness/status observer and disposable candidate tests are implemented. The controlled WireGuard fixture passes actual traffic, DNS, local-access, loss/recovery, LAN port-limit, IPv6, authenticated control and namespace-isolation checks on OrbStack. Paired lifecycle recovery, cached status/events and administrator APIs are now implemented. The scoped production-manager/Selkies fixture verifies local desktop access with deliberately rejected NordVPN credentials, idle/start/restart behavior, namespace replacement after a new service instance and explicit disable. The guided UI, complete desktop workflows, successful NordVPN/OpenVPN authentication and native Linux release checks remain pending; backend APIs are available for integration. See [[Architecture/VPN connections]], [[Architecture/VPN runtime]] and [[Architecture/Engine adapter]] for implemented boundaries. Candidate timeout guidance asks administrators to check service credentials, country/server availability and host connectivity without inferring rejected credentials from health alone.
 
 # Agreed scope
 
@@ -40,7 +40,7 @@ No shared tunnel containers across desktops: overlapping listeners, localhost ac
 - `supervisor/internal/server/` exposes administrator configuration and sanitized per-desktop status using the existing session authorization, same-origin protection, jobs and events.
 - `supervisor/web/` adds saved connections and desktop network settings using existing forms and job progress.
 
-Use distinct runtime labels, including a role such as `deskyard.role=vpn` and the owning stable desktop ID. Existing containers with no role remain desktops. Every list, event consumer, reconciliation and cleanup path must distinguish VPN runtimes from desktops so a gateway cannot appear as an extra desktop or receive desktop operations.
+Use distinct runtime labels, including the implemented role `deskyard.vpn.role=gateway` and the owning stable desktop ID. Existing containers with no role remain desktops. Every list, event consumer, reconciliation and cleanup path must distinguish VPN runtimes from desktops so a gateway cannot appear as an extra desktop or receive desktop operations.
 
 # Saved connections and secrets
 

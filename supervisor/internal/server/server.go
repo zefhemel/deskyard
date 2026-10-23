@@ -24,6 +24,7 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/recipes"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
+	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 )
 
 type Server struct {
@@ -36,6 +37,7 @@ type Server struct {
 	StateDir string
 	UI       fs.FS // the built web UI (index.html, assets/…)
 
+	vpnTests    vpnTester
 	jobs        *jobs
 	events      *hub
 	viewers     *viewers
@@ -74,6 +76,16 @@ type Options struct {
 }
 
 func New(o Options) (*Server, error) {
+	connections, err := vpn.NewStore(o.StateDir)
+	if err != nil {
+		return nil, err
+	}
+	manager := vpn.NewManager(o.Eng, connections, o.StateDir)
+	if o.Desktops.Networking == nil {
+		if err := o.Desktops.ConfigureNetworking(connections, manager, o.StateDir); err != nil {
+			return nil, err
+		}
+	}
 	key, err := sessionKey(o.StateDir)
 	if err != nil {
 		return nil, err
@@ -83,7 +95,8 @@ func New(o Options) (*Server, error) {
 		o.Log.Warn("removing old build contexts", "err", err)
 	}
 	s := &Server{
-		Log: o.Log, Eng: o.Eng, Desktops: o.Desktops, Accounts: o.Accounts,
+		vpnTests: manager,
+		Log:      o.Log, Eng: o.Eng, Desktops: o.Desktops, Accounts: o.Accounts,
 		Sessions: &auth.Sessions{Key: key, Secure: o.Secure}, Throttle: &auth.Throttle{},
 		StateDir: o.StateDir, UI: o.UI,
 		jobs: newJobs(), events: newHub(), viewers: newViewers(), forwards: newForwards(), viewersPub: newThrottle(viewersInterval), streamDials: newDialGates(),
@@ -111,6 +124,7 @@ func New(o Options) (*Server, error) {
 // Run starts the background work: engine events, stats, update checks.
 func (s *Server) Run(ctx context.Context) {
 	s.inside = newInsideReader(s)
+	go s.Desktops.Networking.Run(ctx, func(name string) { s.publishDesktop(ctx, name) })
 	go s.watchEngine(ctx)
 	go s.stats.run(ctx)
 	go s.inside.run(ctx)

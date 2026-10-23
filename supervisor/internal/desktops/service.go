@@ -1,6 +1,6 @@
 // Package desktops creates and runs desktops: containers labelled as the
-// supervisor's, each with its own network and workspace folder. The engine is
-// the only list of desktops; nothing about them is stored elsewhere.
+// supervisor's, each with its own network and workspace folder. Container labels
+// describe legacy desktops; networking intent also journals managed transitions.
 package desktops
 
 import (
@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 )
 
 const (
@@ -55,7 +56,9 @@ type Settings struct {
 	NanoCPUs    int64 // 0: no limit
 	// Camera is the host's virtual camera (a v4l2loopback /dev/videoN) the
 	// desktop has to itself, which viewers' webcams feed; "" for none.
-	Camera string
+	Camera          string
+	VPNConnectionID string
+	LANExceptions   []vpn.Exception
 }
 
 // Desktop is what the supervisor knows about one desktop, read from its container.
@@ -69,6 +72,7 @@ type Desktop struct {
 	Created     time.Time // zero for desktops made before the label existed
 	Folder      string
 	Settings    Settings
+	VPN         VPNStatus
 	Container   engine.Container
 }
 
@@ -86,9 +90,10 @@ type Config struct {
 }
 
 type Service struct {
-	Eng engine.Engine
-	Cfg Config
-	Log *slog.Logger
+	Networking *Networking
+	Eng        engine.Engine
+	Cfg        Config
+	Log        *slog.Logger
 	// ImageUsed, when set, hears which image ID a reference resolved to
 	// whenever a desktop is created or recreated from it.
 	ImageUsed func(ref, id string)
@@ -162,7 +167,7 @@ func (s *Service) fromContainer(ctx context.Context, c engine.Container) Desktop
 	comp := Desktop{
 		ID: c.Labels[LabelID], Name: name, Image: c.Image, ImageID: c.ImageID,
 		StartedAt: c.StartedAt, Folder: filepath.Join(s.Cfg.DataDir, name), Container: c,
-		Settings: Settings{Image: c.Image, MemoryBytes: c.MemoryBytes, NanoCPUs: c.NanoCPUs, Camera: cameraOf(c.Devices)},
+		Settings: Settings{Image: c.Image, MemoryBytes: c.MemoryBytes, NanoCPUs: c.NanoCPUs, Camera: cameraOf(c.Devices), VPNConnectionID: c.Labels[vpn.LabelConnection]},
 	}
 	comp.Created, _ = time.Parse(time.RFC3339, c.Labels[LabelCreated])
 	comp.ImageLabels = s.image(ctx, c.ImageID).Labels
@@ -175,6 +180,11 @@ func (s *Service) fromContainer(ctx context.Context, c engine.Container) Desktop
 	if b, ok := s.Busy()[name]; ok {
 		comp.State = b
 	}
+	if s.Networking != nil {
+		comp = s.Networking.decorate(comp)
+	} else {
+		comp.VPN.State = "disabled"
+	}
 	return comp
 }
 
@@ -186,9 +196,20 @@ func (s *Service) List(ctx context.Context) ([]Desktop, error) {
 	out := make([]Desktop, 0, len(cs))
 	seen := map[string]bool{}
 	for _, c := range cs {
+		if !IsDesktop(c.Labels) {
+			continue
+		}
 		comp := s.fromContainer(ctx, c)
 		seen[comp.Name] = true
 		out = append(out, comp)
+	}
+	if s.Networking != nil {
+		for _, r := range s.Networking.all() {
+			if !seen[r.Name] {
+				out = append(out, s.Networking.synthetic(r))
+				seen[r.Name] = true
+			}
+		}
 	}
 	// Desktops being created don't have a container yet.
 	for name, state := range s.Busy() {
@@ -205,7 +226,12 @@ func (s *Service) Get(ctx context.Context, name string) (Desktop, error) {
 		return Desktop{}, ErrNotFound
 	}
 	c, err := s.Eng.Inspect(ctx, containerName(name))
-	if errors.Is(err, engine.ErrNotFound) || (err == nil && c.Labels[LabelManaged] != "true") {
+	if errors.Is(err, engine.ErrNotFound) || (err == nil && !IsDesktop(c.Labels)) {
+		if s.Networking != nil {
+			if r, ok := s.Networking.record(name); ok {
+				return s.Networking.synthetic(r), nil
+			}
+		}
 		if st, ok := s.Busy()[name]; ok && st == "creating" {
 			return Desktop{Name: name, State: st, Folder: filepath.Join(s.Cfg.DataDir, name)}, nil
 		}
@@ -261,6 +287,19 @@ func (s *Service) EnsureImage(ctx context.Context, ref string, progress func(str
 // fraction or -1). On failure nothing is left behind but a folder that was
 // already there.
 func (s *Service) Create(ctx context.Context, name string, set Settings, progress func(string, float64)) (Desktop, error) {
+	if s.Networking != nil {
+		unlock, err := s.Networking.lock(ctx, name)
+		if err != nil {
+			return Desktop{}, err
+		}
+		defer unlock()
+	}
+	if set.VPNConnectionID != "" || len(set.LANExceptions) > 0 {
+		if s.Networking == nil {
+			return Desktop{}, errors.New("VPN networking unavailable")
+		}
+		return s.Networking.create(ctx, name, set, progress)
+	}
 	if err := ValidName(name); err != nil {
 		return Desktop{}, err
 	}
@@ -364,6 +403,12 @@ func (s *Service) createNetwork(ctx context.Context, name, id string) error {
 }
 
 func (s *Service) createContainer(ctx context.Context, name, id, token string, created time.Time, set Settings) error {
+	return s.createContainerIn(ctx, name, id, token, created, set, "")
+}
+func (s *Service) createContainerIn(ctx context.Context, name, id, token string, created time.Time, set Settings, runtimeID string) error {
+	if set.VPNConnectionID != "" && runtimeID == "" {
+		return errors.New("VPN selection requires a prepared network namespace")
+	}
 	labels := map[string]string{LabelManaged: "true", LabelName: name, LabelID: id}
 	if !created.IsZero() {
 		labels[LabelCreated] = created.UTC().Format(time.RFC3339)
@@ -390,7 +435,17 @@ func (s *Service) createContainer(ctx context.Context, name, id, token string, c
 		}
 		spec.Devices = []string{set.Camera}
 	}
-	if !s.Cfg.InContainer {
+	if runtimeID != "" {
+		spec.NetworkContainer = runtimeID
+		spec.Network = ""
+		spec.Aliases = nil
+		spec.Restart = "no"
+		spec.Labels[vpn.LabelConnection] = set.VPNConnectionID
+		if r, ok := s.Networking.record(name); ok {
+			spec.Labels[vpn.LabelRevision] = strconv.FormatUint(r.Revision, 10)
+		}
+	}
+	if !s.Cfg.InContainer && runtimeID == "" {
 		zero := 0
 		spec.PublishLocal = &zero
 	}
@@ -413,6 +468,22 @@ func (s *Service) createContainer(ctx context.Context, name, id, token string, c
 // Recreate replaces the container with one on new settings (image, limits),
 // keeping its ID, token, network and folder. A running desktop is started again.
 func (s *Service) Recreate(ctx context.Context, name string, set Settings, progress func(string, float64)) (Desktop, error) {
+	if s.Networking != nil {
+		unlock, err := s.Networking.lock(ctx, name)
+		if err != nil {
+			return Desktop{}, err
+		}
+		defer unlock()
+	}
+	if s.Networking != nil && (set.VPNConnectionID != "" || s.Networking.selected(name)) {
+		return s.Networking.recreate(ctx, name, set, progress)
+	}
+	if set.VPNConnectionID != "" {
+		return Desktop{}, errors.New("VPN networking unavailable")
+	}
+	return s.recreateDirect(ctx, name, set, progress)
+}
+func (s *Service) recreateDirect(ctx context.Context, name string, set Settings, progress func(string, float64)) (Desktop, error) {
 	c, err := s.Get(ctx, name)
 	if err != nil {
 		return Desktop{}, err
@@ -471,9 +542,22 @@ func (s *Service) Recreate(ctx context.Context, name string, set Settings, progr
 // (the module unloaded, a reboot without it) can't start with it, so it is
 // recreated without the camera, which is logged, and started.
 func (s *Service) Start(ctx context.Context, name string) error {
+	if s.Networking != nil {
+		unlock, err := s.Networking.lock(ctx, name)
+		if err != nil {
+			return err
+		}
+		defer unlock()
+	}
+	if s.Networking != nil && s.Networking.selected(name) {
+		return s.Networking.power(ctx, name, "start")
+	}
 	c, err := s.Get(ctx, name)
 	if err != nil {
 		return err
+	}
+	if c.Settings.VPNConnectionID != "" {
+		return errors.New("VPN recovery record is missing; administrator repair required")
 	}
 	err = s.Eng.Start(ctx, containerName(name))
 	if err == nil || c.Settings.Camera == "" || !s.cameraGone(c.Settings.Camera) {
@@ -501,7 +585,7 @@ func (s *Service) withoutCamera(ctx context.Context, c Desktop, start bool) erro
 	s.Log.Warn("camera gone from the host; recreating the desktop without it", "desktop", c.Name, "camera", c.Settings.Camera)
 	set := c.Settings
 	set.Camera = ""
-	if _, err := s.Recreate(ctx, c.Name, set, func(string, float64) {}); err != nil {
+	if _, err := s.recreateDirect(ctx, c.Name, set, func(string, float64) {}); err != nil {
 		return err
 	}
 	if !start {
@@ -514,6 +598,16 @@ func (s *Service) withoutCamera(ctx context.Context, c Desktop, start bool) erro
 }
 
 func (s *Service) Stop(ctx context.Context, name string) error {
+	if s.Networking != nil {
+		unlock, err := s.Networking.lock(ctx, name)
+		if err != nil {
+			return err
+		}
+		defer unlock()
+	}
+	if s.Networking != nil && s.Networking.selected(name) {
+		return s.Networking.power(ctx, name, "stop")
+	}
 	if _, err := s.Get(ctx, name); err != nil {
 		return err
 	}
@@ -521,9 +615,22 @@ func (s *Service) Stop(ctx context.Context, name string) error {
 }
 
 func (s *Service) Restart(ctx context.Context, name string) error {
+	if s.Networking != nil {
+		unlock, err := s.Networking.lock(ctx, name)
+		if err != nil {
+			return err
+		}
+		defer unlock()
+	}
+	if s.Networking != nil && s.Networking.selected(name) {
+		return s.Networking.power(ctx, name, "restart")
+	}
 	c, err := s.Get(ctx, name)
 	if err != nil {
 		return err
+	}
+	if c.Settings.VPNConnectionID != "" {
+		return errors.New("VPN recovery record is missing; administrator repair required")
 	}
 	err = s.Eng.Restart(ctx, containerName(name), stopTimeout)
 	if err == nil || c.Settings.Camera == "" || !s.cameraGone(c.Settings.Camera) {
@@ -535,6 +642,16 @@ func (s *Service) Restart(ctx context.Context, name string) error {
 // Remove stops and removes the container and its network; the workspace
 // folder is deleted only with deleteFiles.
 func (s *Service) Remove(ctx context.Context, name string, deleteFiles bool) error {
+	if s.Networking != nil {
+		unlock, err := s.Networking.lock(ctx, name)
+		if err != nil {
+			return err
+		}
+		defer unlock()
+	}
+	if s.Networking != nil && s.Networking.selected(name) {
+		return s.Networking.remove(ctx, name, deleteFiles)
+	}
 	if _, err := s.Get(ctx, name); err != nil {
 		return err
 	}
@@ -720,6 +837,13 @@ func (s *Service) Target(ctx context.Context, name string) (addr, token string, 
 		return "", "", ErrStopped
 	}
 	token = c.Container.Env[TokenEnv]
+	if c.Settings.VPNConnectionID != "" {
+		g, ok := s.Networking.target(name)
+		if !ok {
+			return "", "", errors.New("VPN gateway unavailable")
+		}
+		c.Container = g
+	}
 	if s.Cfg.InContainer {
 		if ip := c.Container.IP[containerName(name)]; ip != "" {
 			return net.JoinHostPort(ip, "8080"), token, nil
@@ -751,11 +875,25 @@ func (s *Service) Reconcile(ctx context.Context) error {
 			}
 		}
 	}
+	if s.Networking != nil {
+		if err := s.Networking.Reconcile(ctx); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	list, err := s.List(ctx)
 	if err != nil {
 		return errors.Join(append(errs, err)...)
 	}
 	for _, c := range list {
+		if c.Settings.VPNConnectionID != "" && (s.Networking == nil || !s.Networking.selected(c.Name)) {
+			_ = s.Eng.UpdateRestartPolicy(ctx, c.Container.ID, "no")
+			_ = s.Eng.Stop(ctx, c.Container.ID, stopTimeout)
+			errs = append(errs, errors.New("VPN recovery record missing; administrator repair required"))
+			continue
+		}
+		if s.Networking != nil && s.Networking.selected(c.Name) {
+			continue
+		}
 		if c.Settings.Camera == "" || !s.cameraGone(c.Settings.Camera) {
 			continue
 		}
@@ -770,4 +908,9 @@ func (s *Service) Reconcile(ctx context.Context) error {
 
 func isAlreadyConnected(err error) bool {
 	return err != nil && (containsFold(err.Error(), "already exists") || containsFold(err.Error(), "already attached"))
+}
+
+// IsDesktop rejects runtime roles even if a foreign container copied desktop labels.
+func IsDesktop(labels map[string]string) bool {
+	return labels[LabelManaged] == "true" && labels[vpn.LabelRole] == "" && labels["deskyard.role"] != "vpn"
 }

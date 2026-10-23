@@ -16,6 +16,7 @@ import (
 // A job is a long operation (create, upgrade, image pull, image build) whose
 // progress the UI follows over server-sent events at /api/jobs/{id}.
 type jobState struct {
+	Result   any      `json:"result,omitempty"`
 	Status   string   `json:"status"` // running, done, failed
 	Message  string   `json:"message"`
 	Progress *float64 `json:"progress"`
@@ -65,7 +66,13 @@ func (js *jobs) startCancellable(owner string, fn jobFunc) string {
 	return js.run(owner, "", true, fn)
 }
 
+func (js *jobs) startResult(owner string, cancellable bool, fn func(context.Context, func(string, float64)) (any, error)) string {
+	return js.runResult(owner, "", cancellable, fn)
+}
 func (js *jobs) run(owner, desktop string, cancellable bool, fn jobFunc) string {
+	return js.runResult(owner, desktop, cancellable, func(ctx context.Context, p func(string, float64)) (any, error) { return nil, fn(ctx, p) })
+}
+func (js *jobs) runResult(owner, desktop string, cancellable bool, fn func(context.Context, func(string, float64)) (any, error)) string {
 	id := randomID(8)
 	ctx, cancel := context.WithCancel(context.Background())
 	j := &job{owner: owner, desktop: desktop, cancellable: cancellable, cancel: cancel,
@@ -75,7 +82,7 @@ func (js *jobs) run(owner, desktop string, cancellable bool, fn jobFunc) string 
 	js.byID[id] = j
 	js.mu.Unlock()
 	go func() {
-		err := fn(ctx, func(msg string, frac float64) {
+		result, err := fn(ctx, func(msg string, frac float64) {
 			st := j.get()
 			st.Message = msg
 			st.Progress = nil
@@ -87,6 +94,7 @@ func (js *jobs) run(owner, desktop string, cancellable bool, fn jobFunc) string 
 		cancel()
 		st := j.get()
 		st.Progress = nil
+		st.Result = result
 		switch {
 		case err != nil && j.wasCancelled():
 			st.Status, st.Error, st.Message = "failed", "cancelled", "Cancelled"
