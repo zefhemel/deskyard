@@ -29,9 +29,89 @@
 // - Keeps Selkies from taking the focus out of the desktop page: it focuses
 //   its text-input host when a stream attaches, which blurred the page and
 //   closed its open menus. That focus waits until this frame has the focus.
+// - Lets Selkies' client run over plain http (an insecure context), on its
+//   JPEG and WASM fallbacks, with its sound played without an AudioWorklet.
 // - window.deskyardScreen, the hooks the desktop page drives Selkies with.
 (() => {
   "use strict";
+
+  // --- plain http ---------------------------------------------------------------
+  // Reached over plain http on a LAN address, the page isn't a secure context:
+  // the browser has no WebCodecs, AudioWorklet, mic, camera or async clipboard.
+  // Selkies' client then refuses to start ("requires a secure connection"),
+  // although it has a fallback for each of the first two: with no
+  // VideoDecoder it pins the stream to JPEG, and with no AudioDecoder it
+  // decodes Opus with libopus in WASM. So it's told the context is secure
+  // (its other checks of isSecureContext also need navigator.clipboard,
+  // which isn't there), and its sound playback's AudioWorklet runs on a
+  // ScriptProcessorNode (below). The page reads deskyardScreen.insecure.
+  const insecure = window.isSecureContext === false;
+  if (insecure) {
+    try { Object.defineProperty(window, "isSecureContext", { configurable: true, get: () => true }); } catch {}
+  }
+
+  // An AudioWorklet stand-in for a context that has none: addModule runs the
+  // module's code on the page, with the worklet scope's globals, and an
+  // AudioWorkletNode is a ScriptProcessorNode that calls its processor's
+  // process() for each 128-frame block, its port one end of a MessageChannel.
+  // Enough for Selkies' playback (one output, messages on the port) and our
+  // sound tap; it plays on the page's main thread, so a busy page can make
+  // it stutter.
+  const Base = window.BaseAudioContext || window.AudioContext;
+  if (Base && !("audioWorklet" in Base.prototype) && typeof Base.prototype.createScriptProcessor === "function") {
+    const registered = new WeakMap(); // context -> Map(name -> processor class)
+    let port = null; // the port of the processor being made
+    class AudioWorkletProcessor {
+      constructor() { this.port = port; }
+    }
+    Object.defineProperty(Base.prototype, "audioWorklet", {
+      configurable: true,
+      get() {
+        const ctx = this;
+        return {
+          async addModule(url) {
+            const code = await (await fetch(url)).text();
+            if (!registered.has(ctx)) registered.set(ctx, new Map());
+            const scope = {
+              AudioWorkletProcessor,
+              registerProcessor: (name, cls) => registered.get(ctx).set(name, cls),
+              sampleRate: ctx.sampleRate,
+              get currentTime() { return ctx.currentTime; },
+              get currentFrame() { return Math.round(ctx.currentTime * ctx.sampleRate); },
+            };
+            new Function("scope", `with (scope) {\n${code}\n}`)(scope);
+          },
+        };
+      },
+    });
+    window.AudioWorkletNode = function AudioWorkletNode(ctx, name, options = {}) {
+      const cls = registered.get(ctx)?.get(name);
+      if (!cls) throw new DOMException(`No AudioWorkletProcessor "${name}"`, "InvalidStateError");
+      const channels = (options.outputChannelCount && options.outputChannelCount[0]) || 2;
+      const node = ctx.createScriptProcessor(1024, 1, channels);
+      const ch = new MessageChannel();
+      port = ch.port2;
+      let proc;
+      try { proc = new cls(options); } finally { port = null; }
+      node.port = ch.port1;
+      const BLOCK = 128;
+      const ins = [new Float32Array(BLOCK)];
+      const outs = Array.from({ length: channels }, () => new Float32Array(BLOCK));
+      let running = true;
+      node.onaudioprocess = (e) => {
+        const input = e.inputBuffer.getChannelData(0);
+        for (let at = 0; at < e.outputBuffer.length; at += BLOCK) {
+          ins[0].set(input.subarray(at, at + BLOCK));
+          for (const o of outs) o.fill(0);
+          if (running) {
+            try { running = proc.process([ins], [outs], {}) !== false; } catch (err) { running = false; console.warn("Deskyard: worklet stand-in:", err); }
+          }
+          for (let c = 0; c < channels; c++) e.outputBuffer.getChannelData(c).set(outs[c], at);
+        }
+      };
+      return node;
+    };
+  }
 
   // --- Selkies' tab id ----------------------------------------------------------
   // Gone before Selkies' code reads it, so it makes a new one for this load.
@@ -403,6 +483,11 @@
   window.deskyardScreen = {
     /** This tab's id, as on the stream URL; the mic endpoint takes it. */
     tab,
+    /**
+     * Whether the page is an insecure context (plain http): the stream is
+     * JPEG, and there's no mic, camera, gamepads or clipboard access.
+     */
+    insecure,
     /** Sends a message to Selkies' client (e.g. {type: "pipelineControl", …}). */
     post(msg) {
       window.postMessage(msg, location.origin);
