@@ -8,7 +8,7 @@ const now = Date.now();
 const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
 
 export const FOLDER = "/Users/zef/deskyard";
-const PLAIN = { custom: false, secrets: false, baseUpdated: false, recipe: null } as const;
+const PLAIN = { installed: true, official: false, custom: false, secrets: false, baseUpdated: false, recipe: null } as const;
 const LATEST = "ghcr.io/zefhemel/deskyard-debian-xfce:latest";
 const BETA = "ghcr.io/zefhemel/deskyard-debian-xfce:beta";
 
@@ -145,6 +145,8 @@ function customImage(slug: string, title: string, description: string, over: Par
     desktops: [],
     behind: [],
     checked: null,
+    installed: true,
+    official: false,
     custom: true,
     secrets: false,
     baseUpdated: false,
@@ -163,6 +165,7 @@ export const images: CatalogImage[] = [
     behind: [],
     checked: iso(2 * HOUR),
     ...PLAIN,
+    official: true,
   },
   {
     ref: BETA,
@@ -174,6 +177,10 @@ export const images: CatalogImage[] = [
     checked: iso(2 * HOUR),
     ...PLAIN,
   },
+  ...([ ["kde", "Debian KDE Plasma", "KDE Plasma with Chromium and Discover for installing apps."], ["mate", "Debian MATE", "MATE with Arc styling, Chromium and Software for installing apps."] ] as const).map(([name, title, description]) => ({
+    ...PLAIN, ref: `ghcr.io/zefhemel/deskyard-debian-${name}:latest`, title, description,
+    version: "", desktops: [], behind: [], checked: null, installed: false, official: true,
+  })),
   customImage("python-lab", "Python lab", "Python 3.13, uv and JupyterLab", {}),
   customImage("work-signed-in", "Work, signed in", "Chromium and the work apps, signed in to everything", { secrets: true }),
   customImage("video-tools", "Video tools", "Kdenlive and ffmpeg", { baseUpdated: true }),

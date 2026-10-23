@@ -132,6 +132,8 @@ export interface CreatedToken extends Token {
 }
 
 export interface CatalogImage {
+  installed: boolean;
+  official: boolean;
   ref: string;
   title: string;
   version: string;
@@ -408,6 +410,7 @@ export const api = {
 
   images: () => request<CatalogImage[]>("GET", "/api/images"),
   addImage: (ref: string) => request<JobRef>("POST", "/api/images", { ref }),
+  installImage: (ref: string) => request<JobRef>("POST", "/api/images/install", { ref }),
   removeImage: (ref: string) => request<void>("DELETE", `/api/images?ref=${enc(ref)}`),
   checkImages: () => request<JobRef>("POST", "/api/images/check"),
   upgradeImage: (ref: string, confirmSecrets = false) => request<JobRef>("POST", "/api/images/upgrade", { ref, confirmSecrets }),

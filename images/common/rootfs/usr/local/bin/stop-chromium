@@ -1,0 +1,38 @@
+#!/bin/bash
+# CDP-launched Chromium is not owned by supervisord. Close it before the
+# native session and X server stop, so it can flush its tabs and settings.
+pid=
+for candidate in $(pgrep -u "$(id -u)" -x chromium); do
+    shared=0
+    main=1
+    [ -r "/proc/$candidate/cmdline" ] || continue
+    while IFS= read -r -d '' arg; do
+        case "$arg" in
+            --user-data-dir=/workspace/.config/chromium-shared) shared=1 ;;
+            --type=*) main=0 ;;
+        esac
+    done < "/proc/$candidate/cmdline"
+    if [ "$shared" = 1 ] && [ "$main" = 1 ]; then
+        pid=$candidate
+        break
+    fi
+done
+[ -n "$pid" ] || exit 0
+/opt/runtimes/node/bin/node --input-type=module - <<'JS'
+const deadline = setTimeout(() => process.exit(1), 3000);
+try {
+    const response = await fetch('http://127.0.0.1:9220/json/version', {signal: AbortSignal.timeout(1000)});
+    const {webSocketDebuggerUrl} = await response.json();
+    const socket = new WebSocket(webSocketDebuggerUrl);
+    socket.addEventListener('open', () => socket.send(JSON.stringify({id: 1, method: 'Browser.close'})));
+    socket.addEventListener('close', () => { clearTimeout(deadline); process.exit(0); });
+    socket.addEventListener('error', () => process.exit(1));
+} catch {
+    process.exit(1);
+}
+JS
+for _ in $(seq 30); do
+    kill -0 "$pid" 2>/dev/null || exit 0
+    sleep 0.1
+done
+kill -TERM "$pid" 2>/dev/null || true

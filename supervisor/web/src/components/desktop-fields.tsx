@@ -42,6 +42,7 @@ export function ImagePick({ images, value, onChange }: { images: CatalogImage[];
             <p class="mt-0.5 text-[13px] text-muted">
               {img.description} <span class="mono [overflow-wrap:anywhere]">{img.ref}</span>
             </p>
+            {!img.installed && !img.custom && <p class="mt-0.5 text-[13px] text-muted">Downloads on first use</p>}
             {img.secrets && <p class="mt-0.5 text-[13px] text-danger">Desktops made from this start signed in as whoever made it</p>}
           </span>
         </label>

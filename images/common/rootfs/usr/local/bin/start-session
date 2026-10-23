@@ -1,0 +1,31 @@
+#!/bin/bash
+# One shared lifecycle, with a fixed image-owned adapter for the desktop.
+. /etc/workspace/desktop-session.sh
+for _ in $(seq 100); do
+    [ -e "$XDG_RUNTIME_DIR/xvfb-ready" ] && break
+    sleep 0.1
+done
+[ -e "$XDG_RUNTIME_DIR/xvfb-ready" ] || exit 1
+
+rm -f "$XDG_RUNTIME_DIR/stopping"
+session_configure
+. /etc/workspace/gamepads.sh
+
+save_and_quit() {
+    touch "$XDG_RUNTIME_DIR/stopping"
+    /usr/local/bin/stop-chromium
+    if [ -n "${session:-}" ]; then
+        session_logout 2>/dev/null || kill "$session" 2>/dev/null
+        wait "$session"
+    fi
+    exit 0
+}
+trap save_and_quit TERM INT
+session_start &
+session=$!
+
+# Restore only a browser that was open when the desktop stopped.
+if [ -e /workspace/.config/chromium-shared/.open ]; then
+    ( sleep 3; /usr/bin/curl -fs -o /dev/null --max-time 90 http://127.0.0.1:9221/json/version ) &
+fi
+wait "$session"

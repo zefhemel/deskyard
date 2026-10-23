@@ -1,0 +1,4 @@
+#!/bin/bash
+# A session probe for tests and downstream image builders. Run as user.
+. /etc/workspace/desktop-session.sh
+xdpyinfo -display :1 >/dev/null 2>&1 && session_ready

@@ -58,6 +58,7 @@ func (s *Server) routes() {
 
 	h("GET /api/images", s.handleListImages)
 	h("POST /api/images", s.handleAddImage)
+	h("POST /api/images/install", s.handleInstallImage)
 	h("DELETE /api/images", s.handleRemoveImage)
 	h("POST /api/images/check", s.handleCheckImages)
 	h("POST /api/images/upgrade", s.handleUpgradeImage)

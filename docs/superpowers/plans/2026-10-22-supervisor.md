@@ -5,6 +5,8 @@ status: active
 date: "2026-10-22"
 spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 ---
+
+Image paths in this completed plan describe the original layout. The [[superpowers/specs/2026-10-23-desktop-variants-design|Desktop image variants design]] moves shared files to `images/common/`, the Dockerfile to `images/Dockerfile` and image tests to `images/tests/`.
 # Status (2026-10-22)
 
 Built and tested: every phase's code exists. The project is now called **Deskyard**; a "computer" is a **desktop**; the server binary is `deskyard-supervisor` (`supervisor/cmd/deskyard-supervisor`), the CLI is `deskyard` (`supervisor/cmd/deskyard`, also inside desktops). The step text below still uses the earlier names in places.

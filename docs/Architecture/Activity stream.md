@@ -13,4 +13,4 @@ In: any program in the desktop can send one JSON event per UDP datagram (at most
 
 Out: `GET /events?epoch=E&after=N` answers `200` with `X-Activity-Epoch` and `application/x-ndjson`: one event per line, first everything newer than `N` (everything when `E` isn't the ring's current random epoch, which changes when the process restarts), then live events as they arrive, with an empty line every 15 seconds. Any other path is 404. The desktop's [[Architecture/Caddy]] serves it as `/_activity/events` behind the `X-Deskyard-Token` check, unbuffered. The image contract is `3`; a supervisor reading an image without the route gets 404 and backs off.
 
-Files: `supervisor/internal/activity/ring.go`, `supervisor/internal/cli/app/cmd_activity.go`, `images/debian-xfce/rootfs/etc/supervisor/conf.d/workspace.conf`, `images/debian-xfce/rootfs/etc/caddy/Caddyfile`.
+Files: `supervisor/internal/activity/ring.go`, `supervisor/internal/cli/app/cmd_activity.go`, `images/common/rootfs/etc/supervisor/conf.d/workspace.conf`, `images/common/rootfs/etc/caddy/Caddyfile`.

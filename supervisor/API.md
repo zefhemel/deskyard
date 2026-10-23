@@ -138,19 +138,22 @@ Moving desktops onto an image that contains secrets (an upgrade, or `PATCH` with
 
 ### Images (admin)
 
-`CatalogImage` = `{"ref","title","version","description","desktops":[names],"behind":[names],"checked"|null,"custom":bool,"secrets":bool,"baseUpdated":bool,"recipe":slug|null}`
+`CatalogImage` = `{"ref","title","version","description","desktops":[names],"behind":[names],"checked"|null,"installed":bool,"official":bool,"custom":bool,"secrets":bool,"baseUpdated":bool,"recipe":slug|null}`
 
 `custom` images are built here from a recipe (`recipe` is its slug); their ref is `deskyard-custom/<slug>:latest`. `secrets` is true when the image's starting home contains secrets (label `deskyard.secrets=true`, passed down to images built on it). `baseUpdated` is true when the custom image's base has a newer image in the catalog than the one it was built on (so rebuilding a custom image marks those built on it).
 
 | Method and path | Body | Response |
 | --- | --- | --- |
 | `GET /api/images` | | `[CatalogImage]` (non-admins may read it, for the New desktop dialog) |
+| `POST /api/images/install` | `{"ref"}` | 202 `{"job"}` (downloads a known non-custom catalog image and checks the contract) |
 | `POST /api/images` | `{"ref"}` | 202 `{"job"}` (pulls and checks the contract) |
-| `DELETE /api/images?ref=…` | | 204; 409 while desktops use it |
-| `POST /api/images/check` | | 202 `{"job"}` (pull every ref, recompute updates) |
+| `DELETE /api/images?ref=…` | | 204; 400 for built-in official refs; 409 while desktops use it |
+| `POST /api/images/check` | | 202 `{"job"}` (pull installed non-custom refs, recompute updates) |
 | `POST /api/images/upgrade` | `{"ref","confirmSecrets"?}` | 202 `{"job"}` (upgrades every desktop behind on it); 409 without `confirmSecrets` (see below) |
 
-`DELETE /api/images?ref=…` on a custom image does what `DELETE /api/recipes/{slug}` does. The daily update check (and `POST /api/images/check`) never pulls custom images; `POST /api/images` refuses `deskyard-custom/…` refs.
+`GET /api/images` merges saved entries with built-in XFCE, KDE Plasma and MATE choices without pulling. `installed` means the reference exists locally; `official` identifies these built-in refs. Static titles/descriptions are supplied before download. Saved order and the configured default are preserved. Desktop creation and recipe builds can pull available images on first use; successful use records the resolved local version. An unavailable registry or failed pull is reported through the job, leaving the choice available for retry.
+
+`DELETE /api/images?ref=…` on a custom image does what `DELETE /api/recipes/{slug}` does. The daily update check (and `POST /api/images/check`) never pulls missing or custom images; `POST /api/images` refuses `deskyard-custom/…` refs.
 
 ### Recipes (admin)
 

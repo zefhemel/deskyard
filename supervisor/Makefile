@@ -51,7 +51,7 @@ test-engine:
 ifdef CC_TEST_IMAGE
 	$(GO) test -tags engine ./...
 else
-	docker build -t $(TEST_IMAGE) -f ../images/debian-xfce/Dockerfile ..
+	docker build -t $(TEST_IMAGE) -f ../images/Dockerfile ..
 	CC_TEST_IMAGE=$(TEST_IMAGE) $(GO) test -tags engine ./...
 endif
 
