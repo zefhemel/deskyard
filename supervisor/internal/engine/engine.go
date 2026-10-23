@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync"
 	"time"
 )
 
@@ -82,6 +83,8 @@ type ExecSpec struct {
 }
 
 // Process is a running exec. With Tty, everything comes on Stdout.
+// Close must unblock stream readers/writers and Wait. Exec implementations must
+// close attachments on context cancellation and use that context for Wait.
 type Process struct {
 	Stdin  io.WriteCloser
 	Stdout io.Reader
@@ -180,12 +183,20 @@ func Output(ctx context.Context, e Engine, id string, spec ExecSpec) (stdout, st
 	if err != nil {
 		return nil, nil, -1, err
 	}
-	defer p.Close()
+	closeProcess := sync.OnceFunc(p.Close)
+	stop := context.AfterFunc(ctx, closeProcess)
+	defer stop()
+	defer closeProcess()
 	type res struct {
 		b   []byte
 		err error
 	}
+	type exit struct {
+		code int
+		err  error
+	}
 	outc, errc := make(chan res, 1), make(chan res, 1)
+	waitc := make(chan exit, 1)
 	go func() { b, err := io.ReadAll(p.Stdout); outc <- res{b, err} }()
 	go func() {
 		if p.Stderr == nil {
@@ -195,10 +206,24 @@ func Output(ctx context.Context, e Engine, id string, spec ExecSpec) (stdout, st
 		b, err := io.ReadAll(p.Stderr)
 		errc <- res{b, err}
 	}()
-	o, e2 := <-outc, <-errc
-	code, err = p.Wait()
-	if err == nil {
-		err = errors.Join(o.err, e2.err)
+	go func() { code, err := p.Wait(); waitc <- exit{code, err} }()
+	var out, stderrResult res
+	var result exit
+	for remaining := 3; remaining > 0; remaining-- {
+		select {
+		case out = <-outc:
+			outc = nil
+		case stderrResult = <-errc:
+			errc = nil
+		case result = <-waitc:
+			waitc = nil
+		case <-ctx.Done():
+			closeProcess()
+			return out.b, stderrResult.b, -1, ctx.Err()
+		}
 	}
-	return o.b, e2.b, code, err
+	if ctx.Err() != nil {
+		return out.b, stderrResult.b, -1, ctx.Err()
+	}
+	return out.b, stderrResult.b, result.code, errors.Join(result.err, out.err, stderrResult.err)
 }

@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/containerd/errdefs"
@@ -264,6 +265,7 @@ func (d *Docker) List(ctx context.Context, labels map[string]string) ([]engine.C
 }
 
 func (d *Docker) Exec(ctx context.Context, id string, s engine.ExecSpec) (*engine.Process, error) {
+	ctx, cancel := context.WithCancel(ctx)
 	opts := client.ExecCreateOptions{
 		User: s.User, WorkingDir: s.WorkDir, Env: s.Env, Cmd: s.Cmd, TTY: s.Tty,
 		AttachStdin: s.Stdin, AttachStdout: true, AttachStderr: true,
@@ -273,10 +275,12 @@ func (d *Docker) Exec(ctx context.Context, id string, s engine.ExecSpec) (*engin
 	}
 	created, err := d.c.ExecCreate(ctx, id, opts)
 	if err != nil {
+		cancel()
 		return nil, wrap(err)
 	}
 	att, err := d.c.ExecAttach(ctx, created.ID, client.ExecAttachOptions{TTY: s.Tty, ConsoleSize: opts.ConsoleSize})
 	if err != nil {
+		cancel()
 		return nil, wrap(err)
 	}
 	var stdin io.WriteCloser = closeWriter{att.Conn}
@@ -287,17 +291,19 @@ func (d *Docker) Exec(ctx context.Context, id string, s engine.ExecSpec) (*engin
 	}
 	p := &engine.Process{
 		Stdin: stdin,
-		Close: att.Close,
 		Resize: func(cols, rows uint) error {
 			_, err := d.c.ExecResize(ctx, created.ID, client.ExecResizeOptions{Height: rows, Width: cols})
 			return err
 		},
 	}
+	var writers []*io.PipeWriter
+
 	if s.Tty {
 		p.Stdout = att.Reader
 	} else {
 		outR, outW := io.Pipe()
 		errR, errW := io.Pipe()
+		writers = []*io.PipeWriter{outW, errW}
 		go func() {
 			_, err := stdcopy.StdCopy(outW, errW, att.Reader)
 			outW.CloseWithError(err)
@@ -305,9 +311,19 @@ func (d *Docker) Exec(ctx context.Context, id string, s engine.ExecSpec) (*engin
 		}()
 		p.Stdout, p.Stderr = outR, errR
 	}
+	closeProcess := sync.OnceFunc(func() {
+		cancel()
+		att.Close()
+		for _, writer := range writers {
+			_ = writer.CloseWithError(context.Canceled)
+		}
+	})
+	stop := context.AfterFunc(ctx, closeProcess)
+	p.Close = func() { stop(); closeProcess() }
+
 	p.Wait = func() (int, error) {
 		for {
-			res, err := d.c.ExecInspect(context.WithoutCancel(ctx), created.ID, client.ExecInspectOptions{})
+			res, err := d.c.ExecInspect(ctx, created.ID, client.ExecInspectOptions{})
 			if err != nil {
 				return -1, err
 			}

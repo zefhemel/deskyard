@@ -14,6 +14,8 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 )
 
+const SetupTimeout = 2 * time.Minute
+
 // Manager owns gateway containers only. The lifecycle caller holds its desktop
 // operation lock, stops/recreates namespace consumers, and never replaces a
 // live dependency merely because Ensure reports a conflicting configuration.
@@ -25,10 +27,11 @@ type Manager struct {
 	observations map[string]*observation
 	locks        map[string]chan struct{}
 	reserved     []netip.Prefix
+	setupTimeout time.Duration
 }
 
 func NewManager(eng engine.Engine, store *Store, stateDir string) *Manager {
-	return &Manager{eng: eng, store: store, stateDir: stateDir}
+	return &Manager{eng: eng, store: store, stateDir: stateDir, setupTimeout: SetupTimeout}
 }
 
 // A slow gateway must not prevent five-second observations of other desktops.
@@ -100,7 +103,9 @@ func runtimeLabels(id string) map[string]string {
 	return map[string]string{LabelRole: runtimeRole, LabelDesktopID: id}
 }
 
-func (m *Manager) Ensure(ctx context.Context, desktopID, name, network, connectionID string, exceptions []Exception, publishLocal bool) (engine.Container, error) {
+func (m *Manager) Ensure(ctx context.Context, desktopID, name, network, connectionID string, exceptions []Exception, publishLocal bool) (result engine.Container, resultErr error) {
+	ctx, cancel := context.WithTimeout(ctx, m.setupTimeout)
+	defer cancel()
 	if !validID(desktopID) {
 		return engine.Container{}, invalid("desktopID", "invalid identity")
 	}
@@ -188,18 +193,28 @@ func (m *Manager) Ensure(ctx context.Context, desktopID, name, network, connecti
 	if err = prepareRuntime(config, m.directory(desktopID)); err != nil {
 		return engine.Container{}, errors.New("VPN private runtime configuration could not be prepared")
 	}
-	created, err := m.eng.Create(ctx, config.Spec)
+	attempt, err := newID()
 	if err != nil {
-		return engine.Container{}, errors.New("VPN runtime creation failed")
+		return engine.Container{}, errors.New("VPN runtime creation identity failed")
 	}
+	config.Spec.Labels[labelAttempt] = attempt
 	success := false
+	// Arm ownership reconciliation before issuing the mutation: Docker may
+	// commit creation and lose the response when its request context is canceled.
 	defer func() {
 		if !success {
 			cleanup, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			_ = m.eng.Remove(cleanup, created)
+			if cleanupErr := m.removeRuntimeAttempt(cleanup, desktopID, config.Spec.Name, attempt); cleanupErr != nil {
+				result = engine.Container{}
+				resultErr = errors.Join(resultErr, errors.New("VPN runtime cleanup failed; reconciliation is required"))
+			}
 		}
 	}()
+	created, err := m.eng.Create(ctx, config.Spec)
+	if err != nil {
+		return engine.Container{}, errors.New("VPN runtime creation failed")
+	}
 	if err = m.eng.Start(ctx, created); err != nil {
 		return engine.Container{}, errors.New("VPN runtime start failed")
 	}

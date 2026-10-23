@@ -57,7 +57,12 @@ func (m *Manager) test(ctx context.Context, connectionID string, in Input) (resu
 	if err != nil {
 		return Status{}, errors.New("VPN test private directory is unavailable")
 	}
-	defer os.RemoveAll(dir)
+	defer func() {
+		if cleanupErr := os.RemoveAll(dir); cleanupErr != nil {
+			result = Status{}
+			resultErr = errors.Join(resultErr, errors.New("VPN test private file cleanup failed; reconciliation is required"))
+		}
+	}()
 	candidateStore, err := NewStore(dir)
 	if err != nil {
 		return Status{}, errors.New("VPN test store could not be prepared")
@@ -73,19 +78,22 @@ func (m *Manager) test(ctx context.Context, connectionID string, in Input) (resu
 	id := hex.EncodeToString(bytes)
 	network := "deskyard-vpn-test-" + id
 	manager := NewManager(m.eng, candidateStore, dir)
-	if err = m.eng.CreateNetwork(ctx, network, "", map[string]string{LabelRole: "test", LabelDesktopID: id}); err != nil {
-		return Status{}, errors.New("VPN test network creation failed")
-	}
+	labels := map[string]string{LabelRole: "test", LabelDesktopID: id, labelAttempt: id}
+	// Reconcile by unique labels/name even if creation committed but its reply
+	// was canceled. Never blindly remove a colliding pre-existing network name.
 	defer func() {
 		cleanup, stop := context.WithTimeout(context.Background(), 20*time.Second)
 		defer stop()
 		runtimeErr := manager.Remove(cleanup, id)
-		networkErr := m.eng.RemoveNetwork(cleanup, network)
+		networkErr := manager.removeCandidateNetwork(cleanup, network, labels)
 		if runtimeErr != nil || networkErr != nil {
 			result = Status{}
-			resultErr = errors.New("VPN test resource cleanup failed")
+			resultErr = errors.Join(resultErr, errors.New("VPN test resource cleanup failed; reconciliation is required"))
 		}
 	}()
+	if err = m.eng.CreateNetwork(ctx, network, "", labels); err != nil {
+		return Status{}, errors.New("VPN test network creation failed")
+	}
 	if _, err = manager.Ensure(ctx, id, "candidate", network, connection.ID, nil, false); err != nil {
 		return Status{}, err
 	}

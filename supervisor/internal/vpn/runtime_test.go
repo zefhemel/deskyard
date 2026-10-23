@@ -55,7 +55,7 @@ func (e *runtimeEngine) List(_ context.Context, labels map[string]string) ([]eng
 }
 func (e *runtimeEngine) Create(_ context.Context, s engine.ContainerSpec) (string, error) {
 	e.specs = append(e.specs, s)
-	e.containers = append(e.containers, engine.Container{ID: s.Name, Labels: s.Labels, State: "created"})
+	e.containers = append(e.containers, engine.Container{ID: s.Name, Name: s.Name, Labels: s.Labels, State: "created"})
 	return s.Name, nil
 }
 func (e *runtimeEngine) Start(_ context.Context, id string) error {

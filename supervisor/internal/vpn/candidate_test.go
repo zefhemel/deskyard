@@ -13,20 +13,34 @@ type candidateEngine struct {
 	runtimeEngine
 	netCreated, netRemoved []string
 	cancelOnStart          context.CancelFunc
+	networks               map[string]engine.Network
 }
 
-func (e *candidateEngine) CreateNetwork(_ context.Context, name, subnet string, _ map[string]string) error {
+func (e *candidateEngine) CreateNetwork(_ context.Context, name, subnet string, labels map[string]string) error {
+	if e.networks == nil {
+		e.networks = map[string]engine.Network{}
+	}
+	e.networks[name] = engine.Network{ID: name, Name: name, Subnet: "10.212.0.0/28", Labels: labels}
 	e.netCreated = append(e.netCreated, name)
 	return nil
 }
 func (e *candidateEngine) RemoveNetwork(_ context.Context, name string) error {
 	e.netRemoved = append(e.netRemoved, name)
+	delete(e.networks, name)
 	return nil
 }
-func (e *candidateEngine) Networks(context.Context, map[string]string) ([]engine.Network, error) {
+func (e *candidateEngine) Networks(_ context.Context, labels map[string]string) ([]engine.Network, error) {
 	var ns []engine.Network
-	for _, name := range e.netCreated {
-		ns = append(ns, engine.Network{Name: name, Subnet: "10.212.0.0/28"})
+	for _, n := range e.networks {
+		match := true
+		for k, v := range labels {
+			if n.Labels[k] != v {
+				match = false
+			}
+		}
+		if match {
+			ns = append(ns, n)
+		}
 	}
 	return ns, nil
 }
