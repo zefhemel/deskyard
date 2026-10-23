@@ -4,8 +4,11 @@
 #     ghcr.io/<owner>/deskyard
 #   tags latest (main), sha-<commit>, and 1.2.3 / 1.2 for release tags v1.2.3;
 #   pull requests build it without pushing;
-# - release (tags v*): supervisor binaries for Linux and macOS and desktop
-#   binaries for Linux, macOS and Windows, attached to the GitHub release.
+# - binaries: deskyard-supervisor for Linux and macOS and deskyard for Linux,
+#   macOS and Windows (amd64 and arm64), plus SHA256SUMS, from make release;
+# - edge (main): those binaries in the pre-release "edge", whose tag follows
+#   main and whose files are replaced each time, version edge-<commit>;
+# - release (tags v*): those binaries attached to the GitHub release.
 name: Supervisor
 
 on:
@@ -172,11 +175,8 @@ jobs:
         env:
           VERSION: ${{ steps.meta.outputs.version }}
 
-  release:
+  binaries:
     needs: test
-    if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: write
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -192,9 +192,95 @@ jobs:
           cache: npm
           cache-dependency-path: supervisor/web/package-lock.json
 
+      - name: Version
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then version="$GITHUB_REF_NAME"; else version="edge-${GITHUB_SHA::7}"; fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      # The UI first (make release does it), as the supervisor embeds it.
       - name: Build the binaries
-        run: make -C supervisor release VERSION="$GITHUB_REF_NAME"
+        run: make -C supervisor release VERSION="$VERSION"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries
+          path: supervisor/dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  edge:
+    needs: binaries
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries
+          path: dist
+
+      - name: Move the edge tag to this commit
+        run: |
+          if gh api "repos/$GH_REPO/git/refs/tags/edge" > /dev/null 2>&1; then
+            gh api -X PATCH "repos/$GH_REPO/git/refs/tags/edge" -f sha="$GITHUB_SHA" -F force=true > /dev/null
+          else
+            gh api "repos/$GH_REPO/git/refs" -f ref=refs/tags/edge -f sha="$GITHUB_SHA" > /dev/null
+          fi
+
+      - name: Release notes
+        run: |
+          {
+            echo "Built from main at [\`${GITHUB_SHA::7}\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA) on $(date -u '+%Y-%m-%d %H:%M UTC'):"
+            echo
+            echo "> $(git log -1 --format=%s)"
+            echo
+            echo "Not a versioned release: these files are replaced on every change to main. Version: \`edge-${GITHUB_SHA::7}\`."
+            echo
+            echo "Install the \`deskyard\` command on Linux or macOS:"
+            echo
+            echo '```'
+            echo "curl -fsSL https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/install.sh | sh"
+            echo '```'
+          } > notes.md
+          cat notes.md
+
+      - name: Create or update the edge release
+        run: |
+          if gh release view edge > /dev/null 2>&1; then
+            gh release edit edge --title Edge --prerelease --latest=false --notes-file notes.md
+          else
+            gh release create edge --verify-tag --title Edge --prerelease --latest=false --notes-file notes.md
+          fi
+
+      # Replace files of the same name, then delete any this build didn't make.
+      - name: Replace the files
+        run: |
+          gh release upload edge dist/* --clobber
+          gh release view edge --json assets --jq '.assets[].name' | while read -r name; do
+            if [ ! -e "dist/$name" ]; then
+              echo "deleting $name"
+              gh release delete-asset edge "$name" --yes
+            fi
+          done
+
+  release:
+    needs: binaries
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries
+          path: dist
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: supervisor/dist/*
+          files: dist/*
