@@ -1,7 +1,7 @@
 ---
 displayName: Selkies screen design
 tags: spec
-status: approved
+status: implemented
 plan: "[[superpowers/plans/2026-10-22-selkies|Selkies plan]]"
 date: "2026-10-22"
 ---

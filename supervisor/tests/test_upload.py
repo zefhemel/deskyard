@@ -171,9 +171,12 @@ def test_drag_inside_the_frame_shows_overlay_and_drop_uploads(supervisor, deskto
         assert (desk(desktop) / "from-frame.txt").read_text() == "via the iframe\n"
 
         # The frame is reloaded (reconnect): listeners come back.
+        frame.evaluate("window.__beforeReload = true")
         page.get_by_role("button", name="Reconnect").click() if page.get_by_role("button", name="Reconnect").count() else frame.evaluate("location.reload()")
+        # Wait for the new document: until then the old one may still answer.
+        page.wait_for_function("(() => { const w = document.querySelector('iframe')?.contentWindow;"
+                               " return !!w && !w.__beforeReload && w.document.readyState === 'complete'; })()")
         frame = page.query_selector("iframe").content_frame()
-        frame.wait_for_load_state("load")
         frame.evaluate(DRAG_JS, ["dragenter", files])
         expect(overlay).to_be_visible()
         # A drop that lands in the frame itself (before the overlay) uploads too.

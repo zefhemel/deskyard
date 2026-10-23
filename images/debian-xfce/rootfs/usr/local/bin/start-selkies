@@ -59,12 +59,13 @@ pactl set-default-source output.SelkiesVirtualMic 2>/dev/null || pactl set-defau
 export SELKIES_ALLOWED_ORIGINS=http://supervisor.deskyard.invalid
 
 # What Deskyard doesn't offer is locked off: an unlocked setting is only the
-# page's default, which a page may change.
+# page's default, which a page may change. Turbo (encoding every frame, about
+# a quarter of a core per idle viewer instead of 5-8 %) is locked off too.
 export SELKIES_ENABLE_BASIC_AUTH=false \
     SELKIES_ENABLE_DUAL_MODE='false|locked' \
     SELKIES_WEB_ROOT=/opt/selkies/lib/python3.13/site-packages/selkies/selkies_web \
     SELKIES_AUDIO_DEVICE_NAME=deskyard-speaker.monitor \
-    SELKIES_VIDEO_STREAMING_MODE=false \
+    SELKIES_VIDEO_STREAMING_MODE='false|locked' \
     SELKIES_USE_CSS_SCALING='true|locked' \
     SELKIES_USE_BROWSER_CURSORS='false|locked' \
     SELKIES_KEYBOARD_SHORTCUTS='false|locked' \

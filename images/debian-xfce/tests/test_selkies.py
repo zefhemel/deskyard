@@ -211,6 +211,12 @@ def test_webcam_off_without_v4l2loopback(sandbox):
     assert "SELKIES_WEBCAM_ENABLED=false|locked" in env.splitlines()
 
 
+def test_turbo_locked_off(sandbox):
+    # Turbo encodes every frame: about a quarter of a core per idle viewer.
+    env = sandbox.exec(f"tr '\\0' '\\n' < /proc/$({SELKIES_PID})/environ").stdout
+    assert "SELKIES_VIDEO_STREAMING_MODE=false|locked" in env.splitlines()
+
+
 def test_contract(image):
     label = docker("image", "inspect", image, "--format", '{{index .Config.Labels "deskyard.contract"}}')
     assert label.stdout.strip() == "3"
