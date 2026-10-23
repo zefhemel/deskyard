@@ -64,11 +64,11 @@ if bytes.Contains(public, []byte("test-password-never-public")) { t.Fatal("crede
 
 **Interfaces:** `vpn.NewManager(eng engine.Engine, store *Store, stateDir string) *Manager`; `Manager.Ensure(ctx, desktopID, name, network, connectionID string, exceptions []Exception, publishLocal bool) (engine.Container,error)` returns the ready managed runtime. `Manager.Remove(ctx,desktopID)` removes only owned resources. `Manager.Status(ctx,desktopID)` returns sanitized `Status`; `Manager.Test(ctx,Input)` runs disposable candidate validation, and `Manager.TestSaved(ctx,connectionID,Input)` retains omitted credentials when testing an edit. Runtime names/labels use stable desktop ID and an explicit VPN role. Use a typed runtime configuration builder that can also be exercised with a controlled custom WireGuard fixture without exposing a test provider through user configuration.
 
-- [ ] Write failing tests for generated runtime configuration: pinned image, secret-file mounts, only VPN capabilities/device, authenticated control server, port-specific LAN exceptions, blocked Docker DNS and no extra desktop privilege. Tests must validate semantic policy or execute it, not grep script source.
-- [ ] Run `go test ./internal/vpn` and record red results.
-- [ ] Implement NordVPN/OpenVPN UDP runtime construction, bounded readiness and sanitized state. Use Gluetun's secret files, managed post-firewall rules and a private authenticated control API. Keep connection bootstrap, local reply traffic and local exceptions explicit; protect control routes despite shared localhost.
-- [ ] Implement a five-second health observation contract; distinguish connecting, connected, reconnecting and blocked. Do not call an unverified IP current. Bound disposable tests to two minutes and guarantee cancellation cleanup.
-- [ ] Run a controlled fixture on OrbStack: temporary WireGuard endpoint plus shared-network client, tunnel request, local HTTP access, tunnel loss, recovery, gateway stop, default-denied LAN and a port-specific exception. Generate ephemeral test keys and clean resources by unique labels on all exits.
+- [x] Write failing tests for generated runtime configuration: pinned image, secret-file mounts, only VPN capabilities/device, authenticated control server, port-specific LAN exceptions, blocked Docker DNS and no extra desktop privilege. Tests must validate semantic policy or execute it, not grep script source.
+- [x] Run `go test ./internal/vpn` and record red results.
+- [x] Implement NordVPN/OpenVPN UDP runtime construction, bounded readiness and sanitized state. Use Gluetun's secret files, managed post-firewall rules and a private authenticated control API. Keep connection bootstrap, local reply traffic and local exceptions explicit; protect control routes despite shared localhost.
+- [x] Implement a five-second health observation contract; distinguish connecting, connected, reconnecting and blocked. Do not call an unverified IP current. Bound disposable tests to two minutes and guarantee cancellation cleanup.
+- [x] Run a controlled fixture on OrbStack: temporary WireGuard endpoint plus shared-network client, tunnel request, local HTTP access, tunnel loss, recovery, gateway stop, default-denied LAN and a port-specific exception. Generate ephemeral test keys and clean resources by unique labels on all exits.
 
 ```python
 assert request_from_client(public_target).succeeded
@@ -79,8 +79,8 @@ endpoint.start_tunnel()
 assert eventually(lambda: request_from_client(public_target).succeeded)
 ```
 
-- [ ] Verify blocked IPv6 and direct Docker DNS paths and separate desktop namespaces. Record exact commands/results; do not claim a local WireGuard test verifies NordVPN/OpenVPN authentication.
-- [ ] Commit runtime and tests, with any environment limitations documented for the final checks.
+- [x] Verify blocked IPv6 and direct Docker DNS paths and separate desktop namespaces. Record exact commands/results; do not claim a local WireGuard test verifies NordVPN/OpenVPN authentication.
+- [x] Commit runtime and tests, with any environment limitations documented for the final checks.
 
 # Task 3: Desktop pair lifecycle, administrator API and durable recovery
 
@@ -88,12 +88,12 @@ assert eventually(lambda: request_from_client(public_target).succeeded)
 
 **Interfaces:** desktop settings gain `VPNConnectionID` and `LANExceptions`. Desktop JSON gains selected public settings plus sanitized `vpn` status. API `GET/POST /api/vpn/connections`, `PUT/DELETE /api/vpn/connections/{id}`, `POST /api/vpn/test`; candidate tests and shared rollouts use existing jobs. Omitted settings retain current values, explicit null disables VPN. Connection edits identify affected desktops; deletion of any referenced connection conflicts. The manager/runtime API from Task 2 remains the provider boundary.
 
-- [ ] Write failing lifecycle tests: enable VPN, disable explicitly, no direct fallback on failed enable/change, ordinary reconnect without desktop restart, VPN role excluded from desktop lists/events, correct runtime Caddy target in direct/container supervisor modes, ordered runtime replacement and a persisted interrupted transition surfaced by list/get.
-- [ ] Write failing API tests: admin-only mutation/list of saved connections, permitted desktop status for regular users, no secrets in job/errors/events, referenced-delete conflict, missing-ID validation, existing direct settings unaffected.
-- [ ] Run focused package tests and record failures.
-- [ ] Implement durable per-desktop intent/journal under `.deskyard/vpn/desktops.json`, including enough snapshot information to recover missing containers. Disable independent desktop restart before network transitions. Start the desktop only after policy/control readiness, and never recover an enabled selection using direct networking.
-- [ ] Integrate create/recreate/start/stop/restart/remove and startup/engine-event reconciliation. Keep runtime idle when desktop stopped; remove owned runtime on desktop removal; preserve files/identity. Maintain one per-desktop operation lock and avoid deadlocking existing server jobs.
-- [ ] Extend administrator routes, tests and jobs using existing authorization/same-origin checks. Poll runtime status centrally, publish changed desktop snapshots and keep host-only details private. Roll out shared revision edits with per-desktop results; never silently drop VPN on partial failure.
+- [x] Write failing lifecycle tests: enable VPN, disable explicitly, no direct fallback on failed enable/change, ordinary reconnect without desktop restart, VPN role excluded from desktop lists/events, correct runtime Caddy target in direct/container supervisor modes, ordered runtime replacement and a persisted interrupted transition surfaced by list/get.
+- [x] Write failing API tests: admin-only mutation/list of saved connections, permitted desktop status for regular users, no secrets in job/errors/events, referenced-delete conflict, missing-ID validation, existing direct settings unaffected.
+- [x] Run focused package tests and record failures.
+- [x] Implement durable per-desktop intent/journal under `.deskyard/vpn/desktops.json`, including enough snapshot information to recover missing containers. Disable independent desktop restart before network transitions. Start the desktop only after policy/control readiness, and never recover an enabled selection using direct networking.
+- [x] Integrate create/recreate/start/stop/restart/remove and startup/engine-event reconciliation. Initialize networking before VPN recovery (the current main calls desktop Reconcile before server.New). Keep runtime idle when desktop stopped; remove owned runtime on desktop removal; preserve files/identity. Maintain one per-desktop operation lock and avoid deadlocking existing server jobs.
+- [x] Extend administrator routes, tests and jobs using existing authorization/same-origin checks. Poll runtime status centrally, publish changed desktop snapshots and keep host-only details private. Roll out shared revision edits with per-desktop results; never silently drop VPN on partial failure.
 
 ```go
 // A failed VPN attachment must remain visible and never become direct.
@@ -103,14 +103,14 @@ if got.Settings.VPNConnectionID == "" { t.Fatal("lost selected VPN") }
 if got.VPN.State != "blocked" { t.Fatalf("state = %s", got.VPN.State) }
 ```
 
-- [ ] Run `go test ./...`, focused race tests for new store/operation/status concurrency, and relevant engine lifecycle tests against the current desktop image.
-- [ ] Commit the integrated backend and report the final public TypeScript/API shapes for Task 4.
+- [x] Run `go test ./...`, focused race tests for new store/operation/status concurrency, and relevant engine lifecycle tests against the current desktop image.
+- [x] Commit the integrated backend and report the final public TypeScript/API shapes for Task 4.
 
 # Task 4: Guided administration and desktop controls
 
 **Files:** create `supervisor/web/src/pages/vpn.tsx` and reusable VPN fields/status components; modify `api.ts`, routing, existing navigation, desktop create/settings and status rendering; add tests for data normalization and user-visible status decisions.
 
-**Interfaces:** consume the backend DTOs from Task 3. Add an admin-only VPN connections page and desktop settings fields: saved connection selector, LAN exception rows and clear connection state. Use the existing forms, jobs, error text and live events.
+**Interfaces:** consume the backend DTOs from Task 3. Add an admin-only VPN connections page at `/_vpn` (the underscore namespace is already reserved, so an existing desktop named `vpn` remains reachable) and desktop settings fields: saved connection selector, LAN exception rows and clear connection state. Use the existing forms, jobs, error text and live events.
 
 - [ ] Write failing behavioral tests for form payloads: blank edit credentials retain existing secrets, explicit no-VPN sends null, unchanged fields remain omitted, exception rows validate ports/addresses, and stale exit IP is not presented as a current connection. Use real pure helpers consumed by the UI rather than source-text assertions.
 - [ ] Run `npm test` under `supervisor/web` and observe red results.
@@ -124,7 +124,7 @@ if got.VPN.State != "blocked" { t.Fatalf("state = %s", got.VPN.State) }
 **Files:** extend integration fixture/lifecycle tests as needed; update `README.md`, `supervisor/API.md`, `docs/Architecture/{VPN connections,VPN runtime,Lifecycle,Desktop proxy,Engine adapter}.md`, the spec, use cases and this plan.
 
 - [ ] Run `make test`, `make typecheck`, `make build`, `make vet` and relevant controlled engine tests. Fix meaningful failures with regression tests; avoid repeatedly running unchanged suites without cause.
-- [ ] Exercise a real fresh Selkies desktop through the supervisor on macOS: token-authenticated proxy, screen connection, exec, file access and lifecycle, with two namespaces and the controlled VPN endpoint. Observe direct-egress attempts through startup/loss/replacement/recovery rather than merely checking a connected indicator.
+- [ ] Exercise a real fresh Selkies desktop through the supervisor on macOS: token-authenticated proxy, screen connection, exec, file access and lifecycle, with two namespaces and the controlled VPN endpoint. Use a scoped engine wrapper in a test supervisor: add a unique fixture ownership label on creates and filter list/network/event reads to that label. Do not run broad production startup reconciliation against the shared engine's existing desktops. Observe direct-egress attempts through startup/loss/replacement/recovery rather than merely checking a connected indicator.
 - [ ] Check optional local NordVPN secret-file availability without printing values. If absent, finish all credential-independent work and request local credential entry through the completed UI. Mark provider and native Linux validation unverified until actually run.
 - [ ] Obtain spec-compliance and maintainability review of the whole branch, address important findings, and run covering tests after fixes.
 - [ ] Document actual setup, resource/connection cost of idle runtimes, failure behavior, LAN exception semantics, forwarding scope and any unverified platforms/provider checks. Mark only built components as built and plan tasks done when verified; retain explicit release limitations.
