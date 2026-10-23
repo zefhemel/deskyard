@@ -16,9 +16,9 @@ GO       ?= go
 LDFLAGS  := -s -w -X main.version=$(VERSION)
 GOFLAGS_RELEASE := -trimpath -ldflags "$(LDFLAGS)"
 
-# supervisor: Linux and macOS. desktop: also Windows, for agents there.
-DESKYARD_PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
-DESKYARD_PLATFORMS   := $(DESKYARD_PLATFORMS) windows/amd64
+# supervisor: Linux and macOS. deskyard: also Windows, for agents there.
+SUPERVISOR_PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+DESKYARD_PLATFORMS   := $(SUPERVISOR_PLATFORMS) windows/amd64 windows/arm64
 
 .PHONY: all web scanner build test test-engine typecheck vet release image clean
 
@@ -66,7 +66,7 @@ typecheck:
 release: web scanner
 	rm -rf dist
 	mkdir -p dist
-	@set -e; for p in $(DESKYARD_PLATFORMS); do \
+	@set -e; for p in $(SUPERVISOR_PLATFORMS); do \
 		os=$${p%/*}; arch=$${p#*/}; \
 		echo "supervisor $$os/$$arch"; \
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build $(GOFLAGS_RELEASE) \
@@ -74,7 +74,7 @@ release: web scanner
 	done
 	@set -e; for p in $(DESKYARD_PLATFORMS); do \
 		os=$${p%/*}; arch=$${p#*/}; ext=; [ $$os = windows ] && ext=.exe; \
-		echo "desktop $$os/$$arch"; \
+		echo "deskyard $$os/$$arch"; \
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build $(GOFLAGS_RELEASE) \
 			-o dist/deskyard-$$os-$$arch$$ext ./cmd/deskyard; \
 	done
