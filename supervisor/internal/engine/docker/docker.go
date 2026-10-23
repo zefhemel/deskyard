@@ -64,6 +64,9 @@ func wrap(err error) error {
 var port8080 = network.MustParsePort("8080/tcp")
 
 func (d *Docker) Create(ctx context.Context, s engine.ContainerSpec) (string, error) {
+	if s.NetworkContainer != "" && (s.Network != "" || len(s.Aliases) != 0 || s.PublishLocal != nil) {
+		return "", errors.New("shared network namespace cannot attach networks, aliases or published ports")
+	}
 	env := make([]string, 0, len(s.Env))
 	for k, v := range s.Env {
 		env = append(env, k+"="+v)
@@ -77,11 +80,15 @@ func (d *Docker) Create(ctx context.Context, s engine.ContainerSpec) (string, er
 		Entrypoint:   s.Entrypoint,
 		ExposedPorts: network.PortSet{port8080: {}},
 	}
+	if s.NetworkContainer != "" {
+		cfg.ExposedPorts = nil
+	}
 	if s.NoHealthcheck {
 		cfg.Healthcheck = &container.HealthConfig{Test: []string{"NONE"}}
 	}
 	hc := &container.HostConfig{
 		ShmSize: s.ShmBytes,
+		CapAdd:  s.CapAdd,
 		Resources: container.Resources{
 			Memory:   s.MemoryBytes,
 			NanoCPUs: s.NanoCPUs,
@@ -113,6 +120,9 @@ func (d *Docker) Create(ctx context.Context, s engine.ContainerSpec) (string, er
 			hostPort = strconv.Itoa(*s.PublishLocal)
 		}
 		hc.PortBindings = network.PortMap{port8080: {{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: hostPort}}}
+	}
+	if s.NetworkContainer != "" {
+		hc.NetworkMode = container.NetworkMode("container:" + s.NetworkContainer)
 	}
 	var nc *network.NetworkingConfig
 	if s.Network != "" {
@@ -150,6 +160,13 @@ func (d *Docker) Restart(ctx context.Context, id string, timeout time.Duration) 
 	return wrap(err)
 }
 
+func (d *Docker) UpdateRestartPolicy(ctx context.Context, id, policy string) error {
+	_, err := d.c.ContainerUpdate(ctx, id, client.ContainerUpdateOptions{
+		RestartPolicy: &container.RestartPolicy{Name: container.RestartPolicyMode(policy)},
+	})
+	return wrap(err)
+}
+
 func (d *Docker) Remove(ctx context.Context, id string) error {
 	_, err := d.c.ContainerRemove(ctx, id, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 	return wrap(err)
@@ -177,6 +194,9 @@ func (d *Docker) Inspect(ctx context.Context, id string) (engine.Container, erro
 		}
 	}
 	if r.State != nil {
+		if r.State.Health != nil {
+			c.Health = string(r.State.Health.Status)
+		}
 		c.State = string(r.State.Status)
 		c.Error = r.State.Error
 		if t, err := time.Parse(time.RFC3339Nano, r.State.StartedAt); err == nil {
@@ -184,6 +204,10 @@ func (d *Docker) Inspect(ctx context.Context, id string) (engine.Container, erro
 		}
 	}
 	if r.HostConfig != nil {
+		if owner, ok := strings.CutPrefix(string(r.HostConfig.NetworkMode), "container:"); ok {
+			c.NetworkContainer = owner
+		}
+		c.Restart = string(r.HostConfig.RestartPolicy.Name)
 		c.MemoryBytes = r.HostConfig.Memory
 		c.NanoCPUs = r.HostConfig.NanoCPUs
 		for _, d := range r.HostConfig.Devices {

@@ -7,6 +7,10 @@ plan: "[[superpowers/plans/2026-10-23-desktop-vpn|Desktop VPN plan]]"
 ---
 Administrators can route an individual desktop's internet traffic through a saved NordVPN connection. Deskyard manages a separate VPN container for each enabled desktop, blocks direct internet fallback and keeps the desktop accessible when the tunnel fails. This implements the VPN portion of [[Use cases|the family and small-company use cases]], before a separate custom DNS feature.
 
+# Implementation progress
+
+The connection/secret store, typed exception validation and Docker namespace/capability/health/restart primitives are implemented. Runtime enforcement, lifecycle recovery, administrator APIs/UI and the release criteria below remain pending; the feature is not yet available to users. See [[Architecture/VPN connections]] and [[Architecture/Engine adapter]] for the implemented boundaries.
+
 # Agreed scope
 
 - This is an outbound VPN for applications inside a desktop. Connecting people or devices to Deskyard through a VPN is out of scope.

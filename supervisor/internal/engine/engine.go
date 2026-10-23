@@ -23,8 +23,13 @@ type ContainerSpec struct {
 	Labels      map[string]string
 	Env         map[string]string
 	Mounts      []Mount
-	Network     string
-	Aliases     []string
+	// NetworkContainer shares this existing container's network namespace.
+	// Mutually exclusive with Network, Aliases and PublishLocal.
+	NetworkContainer string
+	// CapAdd explicitly grants capabilities; desktop defaults remain unchanged.
+	CapAdd  []string
+	Network string
+	Aliases []string
 	// PublishLocal, when set, publishes the container's port 8080 on host
 	// 127.0.0.1 at this port (0 picks a free one).
 	PublishLocal *int
@@ -50,8 +55,12 @@ type Container struct {
 	Labels                   map[string]string
 	Env                      map[string]string
 	State                    string // created, running, paused, restarting, exited, dead
-	// Error is why the engine's last start failed (e.g. a restart policy's
-	// after a reboot); "" when it didn't, or the container was stopped.
+	// Health is empty without an image healthcheck, otherwise starting, healthy or unhealthy.
+	// Raw healthcheck logs are deliberately excluded.
+	Health           string
+	NetworkContainer string // namespace owner, empty for independent networking
+	Restart          string // configured engine restart policy
+	// Error is why the engine's last start failed; empty after a successful start.
 	Error                 string
 	StartedAt             time.Time
 	IP                    map[string]string // network name → address
@@ -132,6 +141,7 @@ type Engine interface {
 	Start(ctx context.Context, id string) error
 	Stop(ctx context.Context, id string, timeout time.Duration) error
 	Restart(ctx context.Context, id string, timeout time.Duration) error
+	UpdateRestartPolicy(ctx context.Context, id, policy string) error
 	Remove(ctx context.Context, id string) error
 	Inspect(ctx context.Context, id string) (Container, error)
 	List(ctx context.Context, labels map[string]string) ([]Container, error)

@@ -82,7 +82,7 @@ func (e *fakeEngine) Create(_ context.Context, s engine.ContainerSpec) (string, 
 		return "", errors.New("name in use")
 	}
 	e.cs[s.Name] = &engine.Container{ID: s.Name, Name: s.Name, Image: s.Image, ImageID: s.Image, Labels: s.Labels, Env: s.Env,
-		State: "created", Devices: s.Devices}
+		State: "created", Devices: s.Devices, NetworkContainer: s.NetworkContainer, Restart: s.Restart}
 	return s.Name, nil
 }
 
@@ -115,6 +115,17 @@ func (e *fakeEngine) Stop(_ context.Context, id string, _ time.Duration) error {
 	if c, ok := e.cs[id]; ok {
 		c.State = "exited"
 	}
+	return nil
+}
+
+func (e *fakeEngine) UpdateRestartPolicy(_ context.Context, id, policy string) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	c, ok := e.cs[id]
+	if !ok {
+		return engine.ErrNotFound
+	}
+	c.Restart = policy
 	return nil
 }
 
