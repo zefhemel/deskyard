@@ -91,3 +91,91 @@ func TestEpochChangeResetsInside(t *testing.T) {
 		t.Fatalf("cursor %+v", *cur)
 	}
 }
+
+func TestInsideStatusRequiresExplicitIdleReport(t *testing.T) {
+	for _, tc := range []struct {
+		body string
+		want int
+	}{
+		{"\n", 0},
+		{"{\"kind\":\"status\",\"commandsRunning\":true}\n", 0},
+		{"{\"kind\":\"status\"}\n", 0},
+		{"{\"kind\":\"status\",\"commandsRunning\":false}\n", 1},
+	} {
+		calls := 0
+		tr := activity.NewTracker()
+		cur := insideCursor{}
+		_ = readInside(context.Background(), strings.NewReader(tc.body), insideRef, tr, &cur, func(idle bool) {
+			if idle {
+				calls++
+			}
+		})
+		if calls != tc.want {
+			t.Fatalf("%q: got %d", tc.body, calls)
+		}
+	}
+}
+
+func TestInsideStatusReconcilesLostEndAndInvalidatesOnWork(t *testing.T) {
+	tr := activity.NewTracker()
+	cur := insideCursor{}
+	ready := false
+	consume := func(body string) {
+		_ = readInside(context.Background(), strings.NewReader(body), insideRef, tr, &cur, func(idle bool) { ready = idle })
+	}
+	consume(insideLine(1, `"agent":"terminal","kind":"cmd-start","id":"work","cmd":"sleep"`))
+	if len(tr.Summary("d")[0].Now) != 1 {
+		t.Fatal("start missing")
+	}
+	consume("{\"kind\":\"status\",\"commandsRunning\":false}\n")
+	for _, sum := range tr.Summary("d") {
+		if len(sum.Now) > 0 {
+			t.Fatal("lost end was not reconciled")
+		}
+	}
+	if !ready {
+		t.Fatal("idle not ready")
+	}
+	// Unknown/rejected activity cannot leave an earlier idle report valid.
+	consume("bad json\n")
+	if ready {
+		t.Fatal("activity did not invalidate idle status")
+	}
+}
+
+func TestInsideRejectedStartInvalidatesIdle(t *testing.T) {
+	tr := activity.NewTracker()
+	tr.InsideBurst = 0
+	tr.InsideRate = 0
+	cur := insideCursor{}
+	ready := false
+	body := `{"kind":"status","commandsRunning":false}` + "\n" + insideLine(1, `"agent":"terminal","kind":"cmd-start","id":"work","cmd":"sleep"`)
+	_ = readInside(context.Background(), strings.NewReader(body), insideRef, tr, &cur, func(idle bool) { ready = idle })
+	if ready || len(tr.Summary("d")) != 0 {
+		t.Fatal("rate-limited start left idle status valid")
+	}
+}
+
+func TestInsideMonitoringContinuesWithoutUIForAutoReclaim(t *testing.T) {
+	s, _ := newTestServerWith(t, runningReclaimEngine())
+	ir := newInsideReader(s)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ir.reconcile(ctx)
+	ir.mu.Lock()
+	_, following := ir.running["bob"]
+	ir.mu.Unlock()
+	if !following || s.events.count() != 0 {
+		t.Fatal("eligible desktop was not followed without UI")
+	}
+	if err := s.memoryPolicy.set("id-bob", false); err != nil {
+		t.Fatal(err)
+	}
+	ir.reconcile(ctx)
+	ir.mu.Lock()
+	_, following = ir.running["bob"]
+	ir.mu.Unlock()
+	if following {
+		t.Fatal("opt-out desktop followed without UI")
+	}
+}

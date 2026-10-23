@@ -105,7 +105,8 @@ func New(e engine.Engine, cfg Config, log *slog.Logger) *Service {
 
 func containerName(name string) string { return "deskyard-" + name }
 
-// Begin marks a desktop busy for a long operation; Done clears it.
+// Begin marks a desktop busy for an operation; Done clears it. An empty state
+// reserves the slot without overriding the engine's live state.
 func (s *Service) Begin(name, state string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -172,7 +173,7 @@ func (s *Service) fromContainer(ctx context.Context, c engine.Container) Desktop
 	default:
 		comp.State = "stopped"
 	}
-	if b, ok := s.Busy()[name]; ok {
+	if b := s.Busy()[name]; b != "" {
 		comp.State = b
 	}
 	return comp
@@ -470,6 +471,7 @@ func (s *Service) Recreate(ctx context.Context, name string, set Settings, progr
 // Start starts a stopped desktop. One whose camera has gone from the host
 // (the module unloaded, a reboot without it) can't start with it, so it is
 // recreated without the camera, which is logged, and started.
+// The caller reserves the desktop with Begin, as for Recreate.
 func (s *Service) Start(ctx context.Context, name string) error {
 	c, err := s.Get(ctx, name)
 	if err != nil {
@@ -479,7 +481,7 @@ func (s *Service) Start(ctx context.Context, name string) error {
 	if err == nil || c.Settings.Camera == "" || !s.cameraGone(c.Settings.Camera) {
 		return err
 	}
-	return s.withoutCamera(ctx, c, true)
+	return s.withoutCameraReserved(ctx, c, true)
 }
 
 // cameraGone reports whether a desktop's camera has gone from the host.
@@ -497,6 +499,12 @@ func (s *Service) withoutCamera(ctx context.Context, c Desktop, start bool) erro
 		return err
 	}
 	defer s.Done(c.Name)
+	return s.withoutCameraReserved(ctx, c, start)
+}
+
+// withoutCameraReserved is also used by power requests that already hold the
+// desktop reservation. Startup reconciliation uses the reserving wrapper above.
+func (s *Service) withoutCameraReserved(ctx context.Context, c Desktop, start bool) error {
 	ctx = context.WithoutCancel(ctx)
 	s.Log.Warn("camera gone from the host; recreating the desktop without it", "desktop", c.Name, "camera", c.Settings.Camera)
 	set := c.Settings
@@ -513,6 +521,7 @@ func (s *Service) withoutCamera(ctx context.Context, c Desktop, start bool) erro
 	return s.Eng.Start(ctx, containerName(c.Name))
 }
 
+// Stop and Restart, like Start, require the caller's Begin/Done reservation.
 func (s *Service) Stop(ctx context.Context, name string) error {
 	if _, err := s.Get(ctx, name); err != nil {
 		return err
@@ -529,7 +538,7 @@ func (s *Service) Restart(ctx context.Context, name string) error {
 	if err == nil || c.Settings.Camera == "" || !s.cameraGone(c.Settings.Camera) {
 		return err
 	}
-	return s.withoutCamera(ctx, c, true)
+	return s.withoutCameraReserved(ctx, c, true)
 }
 
 // Remove stops and removes the container and its network; the workspace

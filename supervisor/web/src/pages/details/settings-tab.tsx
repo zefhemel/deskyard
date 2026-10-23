@@ -1,10 +1,10 @@
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import { api, type Desktop, type Host } from "../../api.ts";
 import { cpuOptions, ImagePick, memoryOptions } from "../../components/desktop-fields.tsx";
 import { JobProgress, useJob } from "../../components/job.tsx";
 import { notify } from "../../components/toast.tsx";
 import { SecretImageNote } from "../../components/secret-access.tsx";
-import { Button, Dialog, ErrorText, Field, Note, Seg } from "../../components/ui.tsx";
+import { Button, Check, Dialog, ErrorText, Field, Note, Seg } from "../../components/ui.tsx";
 import { useLive } from "../../live.tsx";
 import { useFetch } from "../../lib/use-fetch.ts";
 import { UPGRADE_NOTE } from "../../dialogs/upgrade.tsx";
@@ -87,6 +87,7 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
           )}
         </div>
       </form>
+      <MemoryPolicy desktop={c} host={host} />
       {confirming && picked && (
         <Dialog
           title={`Move ${c.name} onto ${picked.title || picked.ref}?`}
@@ -137,5 +138,38 @@ function CameraPick({ desktop: c, host, value, onChange }: { desktop: Desktop; h
       })}
       {value && !list.some((cam) => cam.device === value) && <option value={value}>{value} (gone from this machine)</option>}
     </select>
+  );
+}
+
+/** This preference saves independently of container settings. */
+function MemoryPolicy({ desktop: c, host }: { desktop: Desktop; host: Host | null }) {
+  const [enabled, setEnabled] = useState(c.autoReclaim);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => setEnabled(c.autoReclaim), [c.name, c.autoReclaim]);
+  const save = async (value: boolean) => {
+    setSaving(true);
+    setEnabled(value);
+    setError(null);
+    try {
+      await api.setMemoryPolicy(c.name, value);
+      notify("Automatic memory reclamation preference saved");
+    } catch (err) {
+      setEnabled(!value);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <section class="max-w-[620px] px-5 pb-5">
+      <fieldset disabled={saving} class="m-0 min-w-0 border-0 p-0">
+        <Check id="auto-reclaim" checked={enabled} onChange={(v) => void save(v)} title="Automatically reclaim idle memory">
+          Reclaim once after 15 minutes with no viewers, when agents and desktop operations are idle. A returning viewer resets the timer. Apps keep running; their next interaction may be slower. This preference saves immediately without restarting the desktop.
+        </Check>
+      </fieldset>
+      {host && !host.memoryReclaim.enabled && <Note>Unavailable on this host: {host.memoryReclaim.reason}</Note>}
+      <ErrorText error={error} />
+    </section>
   );
 }

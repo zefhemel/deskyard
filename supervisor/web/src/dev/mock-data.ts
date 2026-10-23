@@ -39,6 +39,7 @@ function desktop(c: Partial<Desktop> & { name: string }): Desktop {
     imageTitle: "Debian XFCE",
     imageVersion: "2026.10.22",
     imageSecrets: false,
+    autoReclaim: true,
     updateAvailable: null,
     settings: { memoryBytes: 0, nanoCpus: 0, camera: "" },
     access: [],

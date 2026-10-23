@@ -170,8 +170,9 @@ func (t *Tracker) browserUsing(s *agentState, now time.Time) bool {
 	return s.browserOpen > 0 || (s.hasSession && now.Sub(s.browserLast) < t.BrowserLinger)
 }
 
-// settle ends browser sessions that have lapsed, drops inside commands that
-// never ended, and forgets agents that have left. It reports whether
+// settle ends browser sessions that have lapsed and forgets agents that have
+// left. Running commands remain until their end or an inside epoch reset; the
+// inside count cap bounds missing ends without hiding long-running work. It reports whether
 // anything changed.
 func (t *Tracker) settle(ds *desk, now time.Time) bool {
 	changed := false
@@ -179,12 +180,6 @@ func (t *Tracker) settle(ds *desk, now time.Time) bool {
 		if s.hasSession && !t.browserUsing(s, now) {
 			s.hasSession = false
 			ds.record(s.agent, RecentItem{Kind: "browser", T: s.browserLast, DurationMs: s.browserLast.Sub(s.browserStart).Milliseconds()}, t.MaxEvents)
-			changed = true
-		}
-	}
-	for k, r := range ds.running {
-		if r.inside && now.Sub(r.since) > t.Window {
-			delete(ds.running, k)
 			changed = true
 		}
 	}

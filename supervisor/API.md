@@ -14,6 +14,8 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 | `POST /api/me/password` | `{"current","new"}` | 204 (signs out everywhere else; the response re-issues this session) |
 | `GET /api/host` | | `{"cpus":n,"memBytes":n,"running":n,"total":n,"memUsed":n,"cameras":[{"device","taken","desktop"?}] or null}` (counts over desktops the account can see). `cameras` are the host's virtual cameras (v4l2loopback: `/dev/videoN` under `/sys/devices/virtual/video4linux`) and whether a desktop has each (named when the account can see it); null when the engine isn't on this machine (not a unix socket), whose cameras can't be seen |
 
+`GET /api/host` also includes `memoryReclaim: {"enabled":bool,"reason"?:string}`, the cached startup capability result. The probe checks the full helper path using a disposable container, without reclaiming any existing desktop. Failures disable the optional action and supply a reason; capability detection is retried on supervisor restart. A disabled action returns 501 immediately. Per-desktop checks still run on enabled hosts and do not change the cached host status.
+
 ### Desktops
 
 `Desktop`:
@@ -27,6 +29,7 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
   "image": "ghcr.io/zefhemel/deskyard-debian-xfce:latest",
   "imageTitle": "Debian XFCE", "imageVersion": "2026.10.15", "imageSecrets": false,
   "updateAvailable": "2026.10.22" | null,
+  "autoReclaim": true,
   "settings": {"memoryBytes": 0, "nanoCpus": 0, "camera": ""},
   "access": ["anna"],
   "viewers": ["zef", "anna"],
@@ -40,6 +43,8 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 }
 ```
 
+`autoReclaim` is the saved preference, keyed by stable desktop ID in `memory-policy.json`, independent of the host capability flag. On supported hosts the supervisor checks every 30 seconds for running desktops with no viewers for 15 continuous minutes, making one 128 MiB attempt per absence (including failed/partial attempts). Viewer joins, even between checks, reset the timer; supervisor/container restarts and re-enabling the preference start fresh. Active tracked agents (recent actions, running commands, browser use or forwards), lifecycle operations and unknown/stale inside status delay the attempt without consuming it. Automatic work uses the same lifecycle reservation as the manual action; it rechecks viewers, identity, policy and activity after reservation. Apps keep running and a viewer arriving during reclamation can reconnect normally. Idle status must come from a current desktop activity service (`commandsRunning:false` heartbeat less than 45 seconds old); missing/legacy/disconnected activity skips automatic work. Unreported shell/background work cannot be detected; opt out for such workloads.
+
 `memoryBytes`/`nanoCpus` 0 mean no limit; `memLimit` is then the host's memory. `cpuPercent` is relative to the desktop's CPU limit, or to all host CPUs without one (0–100). `access` lists regular accounts only (admins can use everything) and is only filled for admins. `viewers` are the accounts with a stream open (each once, sorted); `mics` and `cams` those of them with a mic or camera on, as their pages report it (see `POST /api/desktops/{name}/mic`). `settings.camera` is the host's virtual camera the desktop has to itself ("" for none; an admin gives one in the settings), and `webcam` is true while it runs with it, for viewers' webcams to feed. `forwards` are the port mappings agent tokens have open on the desktop (`deskyard forward`): `in` maps a port of the agent's machine into the desktop, `out` a desktop port out to the agent's machine; `port` is always the desktop's port (the agent's own port numbers aren't shown). Each entry is listed once, sorted by token, direction and port; an `in` port appears once the desktop is listening on it. `imageSecrets` is true when the desktop's image contains secrets (its starting home holds someone's sign-ins). `created` survives upgrades and settings changes (null for desktops made before it was recorded). `job` is the running create, upgrade or settings job, which anyone who can see the desktop may follow. `agents` are the agents present on the desktop (always a list, sorted by name then id): agent tokens (`id` is the token's id, `owner` the account that made it) and programs running inside the desktop (`inside: true`, `id` `inside:<program>`, `owner` empty). An agent is present while something it started is running, a browser connection or port mapping is open, or for 5 minutes after its last action; `active` means an action in the last 10 seconds; `color` is fixed per id. A desktop's own page is at `/<name>/`.
 
 | Method and path | Body | Response |
@@ -48,6 +53,8 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 | `GET /api/desktops/{name}` | | `Desktop`; 404 if missing or not visible |
 | `POST /api/desktops` (admin) | `{"name","image","memoryBytes","nanoCpus","access":[usernames]}` | 202 `{"job": id}` |
 | `POST /api/desktops/{name}/start` \| `stop` \| `restart` | | 204 |
+| `PUT /api/desktops/{name}/memory-policy` (admin) | `{"autoReclaim":bool}` | 204. Save the per-desktop automatic policy without recreating/restarting it; default true. Session and same-origin only. 400 missing/invalid boolean, 403 regular accounts with access, 404 without access, 500 persistence failure. |
+| `POST /api/desktops/{name}/reclaim-memory` (admin) | | 200 `{"requestedBytes","beforeBytes","afterBytes","swapBeforeBytes","swapAfterBytes","partial":bool}`. Requests 128 MiB of reclaim while apps run. The before/after values are resident cgroup bytes including file cache; swap values are logical swapped bytes, which can still use compressed RAM. `partial` means the kernel reclaimed less than requested; observed resident memory can grow again. 409 stopped or busy, 501 unsupported engine/kernel or unavailable/disabled swap, 502 helper failure. Session and same-origin only; 403 for regular accounts with access, 404 without access. |
 | `DELETE /api/desktops/{name}?files=1` (admin) | | 204; `files=1` also deletes the workspace folder |
 | `PATCH /api/desktops/{name}` (admin) | `{"image"?, "memoryBytes"?, "nanoCpus"?, "camera"?, "confirmSecrets"?}` | 202 `{"job": id}` (recreates the container); 409 without `confirmSecrets` (see below); 400 for a camera that isn't one of the host's, 409 for one another desktop has. `camera` is a device from `GET /api/host`'s `cameras`, or "" for none. A desktop whose camera has gone from the host is recreated without it, which is logged: when it's started, restarted or recreated, and when the supervisor starts (then started again if the engine had tried to start it and failed; one a user stopped stays stopped) |
 | `PUT /api/desktops/{name}/access` (admin) | `{"usernames":[…]}` | 204 |

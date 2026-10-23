@@ -6,6 +6,8 @@ export interface Me {
 }
 
 export interface Host {
+  /** Result of the supervisor's complete startup capability probe. */
+  memoryReclaim: { enabled: boolean; reason?: string };
   cpus: number;
   memBytes: number;
   running: number;
@@ -39,6 +41,7 @@ export interface Settings {
 }
 
 export interface Desktop {
+  autoReclaim: boolean;
   id: string;
   name: string;
   state: DesktopState;
@@ -352,6 +355,15 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 const enc = encodeURIComponent;
 const c = (name: string) => `/api/desktops/${enc(name)}`;
 
+export interface MemoryReclaim {
+  requestedBytes: number;
+  beforeBytes: number;
+  afterBytes: number;
+  swapBeforeBytes: number;
+  swapAfterBytes: number;
+  partial: boolean;
+}
+
 export const api = {
   login: (username: string, password: string) => request<Me>("POST", "/api/login", { username, password }),
   logout: () => request<void>("POST", "/api/logout"),
@@ -364,6 +376,8 @@ export const api = {
   createDesktop: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: string[] }) =>
     request<JobRef>("POST", "/api/desktops", body),
   power: (name: string, action: "start" | "stop" | "restart") => request<void>("POST", `${c(name)}/${action}`),
+  setMemoryPolicy: (name: string, autoReclaim: boolean) => request<void>("PUT", `${c(name)}/memory-policy`, { autoReclaim }),
+  reclaimMemory: (name: string) => request<MemoryReclaim>("POST", `${c(name)}/reclaim-memory`),
   removeDesktop: (name: string, files: boolean) => request<void>("DELETE", c(name) + (files ? "?files=1" : "")),
   updateSettings: (name: string, body: { image?: string; memoryBytes?: number; nanoCpus?: number; camera?: string; confirmSecrets?: boolean }) =>
     request<JobRef>("PATCH", c(name), body),

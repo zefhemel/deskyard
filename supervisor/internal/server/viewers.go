@@ -34,9 +34,12 @@ const (
 type viewers struct {
 	mu     sync.Mutex
 	byName map[string]map[*conn]bool
+	epochs map[string]uint64
 }
 
-func newViewers() *viewers { return &viewers{byName: map[string]map[*conn]bool{}} }
+func newViewers() *viewers {
+	return &viewers{byName: map[string]map[*conn]bool{}, epochs: map[string]uint64{}}
+}
 
 func (v *viewers) add(name string, c *conn) {
 	v.mu.Lock()
@@ -45,6 +48,7 @@ func (v *viewers) add(name string, c *conn) {
 		v.byName[name] = map[*conn]bool{}
 	}
 	v.byName[name][c] = true
+	v.epochs[name]++
 }
 
 func (v *viewers) remove(name string, c *conn) {
@@ -200,4 +204,11 @@ func (t *throttle) do(key string, fn func()) {
 		run()
 	})
 	t.mu.Unlock()
+}
+
+// snapshot retains joins even if a viewer leaves between scheduler ticks.
+func (v *viewers) snapshot(name string) (int, uint64) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return len(v.byName[name]), v.epochs[name]
 }

@@ -173,7 +173,7 @@ function host() {
     const owner = list.find((c) => c.settings.camera === device);
     return { device, taken: !!owner, ...(owner ? { desktop: owner.name } : {}) };
   });
-  return { cpus: 8, memBytes: 16 * GB, running: running.length, total: list.length, memUsed: running.reduce((s, c) => s + (c.stats?.memBytes ?? 0), 0), cameras };
+  return { cpus: 8, memBytes: 16 * GB, running: running.length, total: list.length, memUsed: running.reduce((s, c) => s + (c.stats?.memBytes ?? 0), 0), cameras, memoryReclaim: { enabled: true } };
 }
 
 // Stats every 5 s and a visitor now and then, so the pages move. Started by
@@ -346,7 +346,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const img = images.find((i) => i.ref === b.image) ?? images[0]!;
     const c: Desktop = {
       id: `${name}-id`, name, state: "creating", startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/${name}`, image: img.ref, imageTitle: img.title,
-      imageVersion: img.version, imageSecrets: img.secrets, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), camera: "" },
+      autoReclaim: true, imageVersion: img.version, imageSecrets: img.secrets, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), camera: "" },
       access: (b.access as string[]) ?? [], viewers: [], mics: [], cams: [], webcam: false, forwards: [], agents: [], tokens: 0, stats: null,
     };
     desktops.push(c);
@@ -461,6 +461,19 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     }, c.name));
   }
   if (sub === "start") return setState(c, "starting", "running"), json(res, 204);
+  if (sub === "memory-policy" && method === "PUT") {
+    c.autoReclaim = (await readBody(req)).autoReclaim === true;
+    changed(c);
+    return json(res, 204);
+  }
+  if (sub === "reclaim-memory") {
+    if (c.state !== "running") return json(res, 409, { error: "The desktop is stopped" });
+    const beforeBytes = c.stats?.memBytes ?? 512 * 1024 * 1024;
+    const afterBytes = Math.max(0, beforeBytes - 128 * 1024 * 1024);
+    if (c.stats) c.stats.memBytes = afterBytes;
+    return json(res, 200, { requestedBytes: 128 * 1024 * 1024, beforeBytes, afterBytes,
+      swapBeforeBytes: 0, swapAfterBytes: 96 * 1024 * 1024, partial: false });
+  }
   if (sub === "stop") return setState(c, "stopped"), json(res, 204);
   if (sub === "restart") return setState(c, "starting", "running"), json(res, 204);
   if (sub === "access") {

@@ -50,6 +50,9 @@ type Server struct {
 	images      *catalog
 	recipes     *recipes.Store
 	builds      builds
+
+	memoryReclaim engine.MemoryReclaimSupport
+	memoryPolicy  *memoryPolicy
 	// smokeTest starts a throwaway desktop of a freshly built image.
 	smokeTest func(ctx context.Context, imageID string) error
 
@@ -70,7 +73,8 @@ type Options struct {
 	Secure       bool // served over HTTPS
 	DefaultImage string
 
-	ActivityPresence time.Duration // how long an agent stays after its last action (0: 5 minutes)
+	ActivityPresence time.Duration   // how long an agent stays after its last action (0: 5 minutes)
+	StartupContext   context.Context // optional; bounds capability detection with the startup lifetime
 }
 
 func New(o Options) (*Server, error) {
@@ -104,6 +108,10 @@ func New(o Options) (*Server, error) {
 	s.recipes = recipes.NewStore(filepath.Join(o.StateDir, "recipes.json"))
 	s.smokeTest = s.smokeTestDesktop
 	o.Accounts.OnChange = s.accountsChanged
+	if s.memoryPolicy, err = loadMemoryPolicy(filepath.Join(o.StateDir, "memory-policy.json")); err != nil {
+		return nil, err
+	}
+	s.detectMemoryReclaim(o.StartupContext)
 	s.routes()
 	return s, nil
 }
@@ -117,6 +125,7 @@ func (s *Server) Run(ctx context.Context) {
 	go s.tokens.expireLoop(ctx, s)
 	go s.images.checkLoop(ctx, s)
 	go s.activityLoop(ctx)
+	go s.idleMemoryLoop(ctx)
 }
 
 func sessionKey(stateDir string) ([]byte, error) {

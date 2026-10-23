@@ -31,6 +31,8 @@ func (s *Server) routes() {
 	h("GET /api/desktops/{name}", s.handleGetDesktop)
 	h("PATCH /api/desktops/{name}", s.handleUpdateDesktop)
 	h("DELETE /api/desktops/{name}", s.handleRemoveDesktop)
+	h("POST /api/desktops/{name}/reclaim-memory", s.handleReclaimMemory)
+	h("PUT /api/desktops/{name}/memory-policy", s.handleMemoryPolicy)
 	h("POST /api/desktops/{name}/{action}", s.handlePower) // start, stop, restart, upgrade, keys
 	h("POST /api/desktops/{name}/mic", s.handleCapture(captureMic))
 	h("POST /api/desktops/{name}/cam", s.handleCapture(captureCam))

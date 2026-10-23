@@ -211,6 +211,44 @@ Switching desktop images keeps your files, installed Flatpak apps, tools
 and Chromium profile. Each desktop keeps its own settings; open windows
 are not migrated between different desktop environments.
 
+### Reclaiming memory
+
+Admins can click **Reclaim memory** on a running desktop's details page to
+ask the host to release idle memory while its apps keep running. The result
+shows resident memory before and after; this includes file cache, and swapped
+pages may still use compressed RAM. Savings vary and apps may briefly respond
+more slowly when accessed again.
+
+On supported hosts, each desktop also gets one automatic 128 MiB reclaim
+attempt after 15 minutes with no viewers. A returning viewer resets the timer,
+even if they leave again between checks. Active agents, desktop operations,
+and missing or stale activity reports delay reclamation without consuming the
+attempt. Failed attempts are not retried during that absence. Checks run every
+30 seconds and requests run one at a time. Supervisor/container restarts start
+a fresh timer. Admins can turn off **Automatically reclaim idle memory** in a
+desktop's Settings; this saves immediately without a restart and survives
+container recreation. The manual button remains available.
+
+Automatic reclamation requires the desktop's activity service to send current
+command-status heartbeats. Older desktop binaries with only blank heartbeats
+keep running normally but skip automatic reclamation; update the desktop image
+to use it. Activity detection covers operations recorded by Deskyard, not plain
+shell commands or other unreported background work; use the opt-out for those.
+
+This requires a rootful Linux Docker engine with cgroup v2 and swap available
+to the desktop. It works through the Docker socket, including with the
+supervisor running on macOS against OrbStack. The supervisor pulls a small
+Alpine helper image if needed and removes its temporary helper containers
+after each request. At boot it checks the engine's memory/swap controls and
+tests the full helper path, including `memory.reclaim` with swappiness, on a
+tiny disposable container. The log reports whether reclamation is enabled
+and why it is disabled if a check fails. A failed check leaves the rest of
+the supervisor running and disables the button with a reason. Restart the
+supervisor after fixing host support to run the check again. Each request
+still checks the selected desktop's swap settings; a failure there does not
+disable reclamation for other desktops. No memory limits or host swap
+configuration change.
+
 ### Images and upgrades
 
 The **Images** page holds the catalog of images desktops can be created
@@ -319,6 +357,7 @@ password.
 | --- | --- | --- |
 | See, open, start, stop, restart desktops | all | those it has access to |
 | Create, remove, change settings, upgrade | yes | no |
+| Reclaim memory | yes | no |
 | Create agent tokens | yes | for desktops it has access to |
 | Accounts, access, image catalog | yes | no |
 
@@ -409,7 +448,7 @@ Environment variables of the supervisor:
 ### Storage
 
 `DESKYARD_DATA_DIR` holds each desktop's folder (`<name>/`, owned by UID
-1000) and `.deskyard/` with `accounts.json`, `tokens.json`, `images.json`,
+1000) and `.deskyard/` with `accounts.json`, `tokens.json`, `images.json`, `memory-policy.json`,
 the session key and certificates (all mode 0600). The supervisor keeps no
 list of desktops of its own: desktops are containers with
 `deskyard.*` labels.
