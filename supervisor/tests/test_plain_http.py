@@ -18,7 +18,7 @@ from playwright.sync_api import expect, sync_playwright
 from conftest import ADMIN_PASSWORD
 from test_cli import cli, remote  # noqa: F401  (fixtures)
 from test_download import put
-from test_ui import DRAG, MEDIA, PICTURE, SCREEN, SHOWING, in_desktop, play_tone, quiet, to_page, wait_until
+from test_ui import DRAG, MEDIA, PICTURE, SCREEN, SHOWING, fits, in_desktop, play_tone, quiet, screen_size, to_page, wait_until
 
 HOST = "deskyard.test"
 NEEDS_HTTPS = "Needs https, see running on a LAN"
@@ -120,6 +120,15 @@ def test_plain_http_screen(supervisor, desktop, name, remote):  # noqa: F811
         box = mark.bounding_box()
         want = to_page(page.evaluate(PICTURE), 200, 150)
         assert abs(box["x"] + box["width"] / 2 - want[0]) <= 3 and abs(box["y"] + box["height"] / 2 - want[1]) <= 3, (box, want)
+
+        # Lock size: the remote screen keeps its size, scaled to fit.
+        size = screen_size(name)
+        page.get_by_role("button", name="Lock size", exact=True).click()
+        page.set_viewport_size({"width": 900, "height": 700})
+        page.wait_for_function(f"{SCREEN}.video().getBoundingClientRect().width <= document.querySelector('iframe').clientWidth + 1")
+        time.sleep(1)
+        assert screen_size(name) == size
+        assert fits(page.evaluate(PICTURE)), page.evaluate(PICTURE)
         browser.close()
 
 
