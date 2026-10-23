@@ -183,8 +183,9 @@ def test_client_additions_in_a_browser(supervisor, admin, desktop, name):
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base)
         page.goto(f"{supervisor.base}/{name}/")
-        frame = page.frame_locator("iframe")
-        frame.locator("body").wait_for(state="attached", timeout=30000)
+        # The frame's document, once it's the client's (not the blank one before).
+        page.wait_for_function("document.querySelector('iframe')?.contentWindow?.location.pathname.endsWith('/screen/')",
+                               timeout=30000)
         f = page.frames[1]
         assert f.url == f"{supervisor.base}/{name}/screen/"
         f.wait_for_function("window.deskyardScreen && window.deskyardScreen.state() === 'connected'", timeout=30000)
