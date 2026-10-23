@@ -42,6 +42,8 @@
  *   through `setOutput`, `setMic` and `setCamera`.
  * - `media()` (and "deskyard.media" on `on`) says what the client is doing,
  *   from its own status messages; "deskyard.alert" brings its capture errors.
+ * - `watchSound(fn)` reports each block of sound as it reaches the speakers,
+ *   for the ?avsync=1 readout (avsync.ts).
  * Several viewers' mics are mixed: each connection plays its mic into the
  * desktop's one virtual mic as its own stream.
  *
@@ -105,6 +107,7 @@ export interface DeskyardScreen {
   setCamera(deviceId: string): void;
   setMic(deviceId: string): void;
   setOutput(deviceId: string): void;
+  watchSound(fn: (at: number, rms: number) => void): () => void;
   micLevel(): number;
   video(): HTMLVideoElement | HTMLCanvasElement | null;
 }

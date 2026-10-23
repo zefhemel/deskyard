@@ -34,7 +34,9 @@ class Stream:
         self.opened = threading.Event()
         self.done = threading.Event()
         self.frames = 0
+        self.video = 0  # of the frames, the picture's (0x03 JPEG, 0x04 video stripes)
         self.error = None
+        self.send_queue: list[str] = []
         self.thread = threading.Thread(target=lambda: asyncio.run(self.run()))
 
     async def run(self):
@@ -45,10 +47,14 @@ class Stream:
                 await ws.send("SETTINGS," + json.dumps({"displayId": "primary", "tabId": self.tab}))
                 self.opened.set()
                 while not self.done.is_set():
+                    while self.send_queue:
+                        await ws.send(self.send_queue.pop(0))
                     try:
                         msg = await asyncio.wait_for(ws.recv(), 0.2)
                         if isinstance(msg, bytes):
                             self.frames += 1
+                            if msg[:1] in (b"\x03", b"\x04"):
+                                self.video += 1
                     except asyncio.TimeoutError:
                         pass
         except Exception as e:  # noqa: BLE001 — reported by the test
@@ -116,6 +122,23 @@ def test_viewers_opening_together_all_get_the_picture(admin, desktop, name):
     finally:
         for s in streams:
             s.__exit__()
+
+
+def test_stopped_stream_restarts_for_a_new_viewer(supervisor, admin, desktop, name):
+    # A page that stops the desktop's stream (as Selkies' client does when the
+    # only viewer's tab goes to the background, without our additions): the
+    # next viewer to connect still gets the picture within 5 s.
+    with Stream(admin, name, "hidden") as a:
+        assert wait_for(lambda: a.video > 0, 15)
+        a.send_queue.append("STOP_VIDEO")
+        logs = lambda: (lambda r: r.stdout + r.stderr)(docker("logs", f"deskyard-{name}"))  # noqa: E731
+        assert wait_for(lambda: "Received STOP_VIDEO for 'primary'. Stopping stream." in logs(), 10), logs()[-3000:]
+        time.sleep(1)
+        with Stream(admin, name, "joiner") as b:
+            joined = time.time()
+            assert wait_for(lambda: b.video > 0, 5), "the joining viewer got no picture"
+            print(f"first picture {time.time() - joined:.2f} s after joining")
+        assert "restarting it" in supervisor.logs()
 
 
 def test_reconnect_probe_and_other_selkies_api(admin, desktop, name):

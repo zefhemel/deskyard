@@ -375,6 +375,62 @@ def test_second_viewer(cli, remote, supervisor, name):  # noqa: F811
         browser.close()
 
 
+# Counts the frames Selkies' picture shows, from the start (an init script:
+# it runs in the frame before Selkies' client). Chromium shows the stream
+# in a <video>.
+COUNT_FRAMES = """(() => {
+    if (window === top) return;
+    window.__frames = 0;
+    const seen = new WeakSet();
+    setInterval(() => {
+        const v = window.deskyardScreen && window.deskyardScreen.video();
+        if (!(v instanceof HTMLVideoElement) || seen.has(v)) return;
+        seen.add(v);
+        const count = () => { window.__frames++; v.requestVideoFrameCallback(count); };
+        v.requestVideoFrameCallback(count);
+    }, 20);
+})()"""
+FRAMES = "document.querySelector('iframe')?.contentWindow?.__frames ?? 0"
+
+# Puts the page and its frame in the background as a browser does for a
+# hidden tab: document.hidden, then visibilitychange.
+HIDE = """() => {
+    for (const doc of [document, document.querySelector("iframe").contentDocument]) {
+        Object.defineProperty(doc, "hidden", {configurable: true, get: () => true});
+        Object.defineProperty(doc, "visibilityState", {configurable: true, get: () => "hidden"});
+        doc.dispatchEvent(new Event("visibilitychange"));
+    }
+}"""
+
+
+def test_background_tab_doesnt_stall(supervisor, desktop, name):
+    # The only viewer's tab goes to the background. Its client would stop the
+    # desktop's stream; a viewer joining after that must still get the picture.
+    in_desktop(name, "sh", "-c", "setsid xfce4-terminal >/dev/null 2>&1 &")
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        a = sign_in(browser, supervisor.base)
+        open_desktop(a, supervisor.base, name)
+        a.wait_for_function(f"{SCREEN}.display().owner === true", timeout=15000)
+        # Selkies' client takes it as hidden (and would send STOP_VIDEO).
+        with a.expect_console_message(lambda m: "Tab is hidden, stopping video" in m.text, timeout=5000):
+            a.evaluate(HIDE)
+        a.wait_for_timeout(3000)
+
+        b = sign_in(browser, supervisor.base)
+        b.context.add_init_script(COUNT_FRAMES)
+        b.goto(f"{supervisor.base}/{name}/")
+        b.wait_for_function(f"{SCREEN}?.state() === 'connected'", timeout=30000)
+        joined = time.time()
+        b.wait_for_function(f"{FRAMES} > 0", timeout=5000)
+        print(f"first frame {time.time() - joined:.2f} s after joining")
+        # And the picture keeps coming as the screen changes.
+        shown = b.evaluate(FRAMES)
+        in_desktop(name, "xdotool", "type", "--delay", "50", "still streaming")
+        assert wait_until(lambda: b.evaluate(FRAMES) > shown, 5), b.evaluate(FRAMES)
+        browser.close()
+
+
 def test_selkies_saved_settings_ignored(supervisor, desktop, name):
     # Selkies' own saved stream settings and manual size are this page's
     # business only through our bar: gone at load, so they never apply.

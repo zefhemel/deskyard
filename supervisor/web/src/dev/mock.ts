@@ -184,6 +184,7 @@ window.deskyardScreen = {
   setCamera() {},
   setMic() {},
   setOutput() {},
+  watchSound() { return () => {}; },
   micLevel: () => (media.mic ? 0.2 + Math.random() * 0.4 : 0),
   video: () => document.getElementById("videoStream"),
 };

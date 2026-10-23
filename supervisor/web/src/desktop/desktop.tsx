@@ -15,6 +15,7 @@ import { useDesktop, useLive } from "../live.tsx";
 import { agentTitle } from "../lib/activity-format.ts";
 import { names } from "../lib/format.ts";
 import { AudioControl } from "./audio-panel.tsx";
+import { avSyncWanted, startAvSync } from "./avsync.ts";
 import { ClipboardPopover } from "./clipboard.tsx";
 import { ActivityOverlay } from "./overlay.tsx";
 import { DropZone } from "./upload.tsx";
@@ -178,6 +179,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
       was = d;
     };
     unsubscribe.current = [screen.on("deskyard.state", onState), screen.on("deskyard.display", onDisplay), onClipboard(screen, setRemoteClip)];
+    if (avSyncWanted()) unsubscribe.current.push(startAvSync(screen));
     onState(screen.state());
     onDisplay(screen.display());
   }, []);

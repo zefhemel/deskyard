@@ -196,8 +196,15 @@ func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, c desktops.
 	}()
 	rp := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) { streamRequest(pr.Out, addr, token) },
-		ModifyResponse: func(*http.Response) error {
+		ModifyResponse: func(resp *http.Response) error {
 			release() // Selkies has answered: the next dial's wait starts now
+			if conn, ok := resp.Body.(io.ReadWriteCloser); ok && resp.StatusCode == http.StatusSwitchingProtocols {
+				// Selkies may have stopped the desktop's stream: restarted
+				// if this viewer gets no picture.
+				resp.Body = newStreamWatch(conn, streamPictureWait, func() {
+					s.Log.Info("desktop stream: no picture for a new viewer; restarting it", "desktop", c.Name, "account", a.Username)
+				})
+			}
 			return nil
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {

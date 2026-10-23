@@ -24,6 +24,8 @@
 //   desktop app's demand), and a mic must never go live unseen.
 // - Follows sound, mic and webcam (media()), and turns Selkies' alert()s
 //   about them into messages for the page.
+// - Lets the desktop page's ?avsync=1 readout hear the sound as it reaches
+//   the speakers (watchSound()).
 // - window.deskyardScreen, the hooks the desktop page drives Selkies with.
 (() => {
   "use strict";
@@ -167,6 +169,57 @@
       }
     };
   }
+
+  // The sound as it reaches the speakers, for the ?avsync=1 readout: Selkies
+  // plays through a GainNode into its playback context's destination. Once
+  // something watches, a worklet beside that node reports each block's level.
+  const soundWatchers = new Set();
+  const tapped = new WeakSet();
+  let playbackOut = null;
+  const tapCode = `registerProcessor("deskyard-sound-tap", class extends AudioWorkletProcessor {
+    process(inputs) {
+      const ch = inputs[0] && inputs[0][0];
+      if (ch) {
+        let s = 0;
+        for (let i = 0; i < ch.length; i++) s += ch[i] * ch[i];
+        this.port.postMessage([currentTime, Math.sqrt(s / ch.length)]);
+      }
+      return true;
+    }
+  });`;
+  const connectNode = AudioNode.prototype.connect;
+  const tapSound = (node) => {
+    if (!node || tapped.has(node) || soundWatchers.size === 0) return;
+    tapped.add(node);
+    const ctx = node.context;
+    const url = URL.createObjectURL(new Blob([tapCode], { type: "application/javascript" }));
+    ctx.audioWorklet.addModule(url).then(() => {
+      URL.revokeObjectURL(url);
+      const tap = new AudioWorkletNode(ctx, "deskyard-sound-tap");
+      tap.port.onmessage = (e) => {
+        const [t, rms] = e.data;
+        const ts = ctx.getOutputTimestamp();
+        if (!ts.performanceTime) return;
+        // When this block reaches the speakers, in ms since the epoch.
+        const at = performance.timeOrigin + ts.performanceTime + (t - ts.contextTime) * 1000;
+        for (const fn of soundWatchers) try { fn(at, rms); } catch {}
+      };
+      // The worklet runs only while its output goes somewhere: silently.
+      const silent = ctx.createGain();
+      silent.gain.value = 0;
+      connectNode.call(node, tap);
+      connectNode.call(tap, silent);
+      connectNode.call(silent, ctx.destination);
+    }, (err) => console.warn("Deskyard: no sound tap:", err));
+  };
+  AudioNode.prototype.connect = function (dest, ...rest) {
+    const r = connectNode.call(this, dest, ...rest);
+    if (this instanceof GainNode && dest instanceof AudioDestinationNode) {
+      playbackOut = this;
+      tapSound(this);
+    }
+    return r;
+  };
 
   // Captures: only what the page allowed, on this connection.
   const allowed = { microphone: false, webcam: false };
@@ -429,6 +482,16 @@
       window.postMessage({ type: "audioDeviceSelected", context: "output", deviceId: id || "default" }, location.origin);
       const c = playback();
       if (!id && c && typeof c.setSinkId === "function") c.setSinkId("").catch(() => {});
+    },
+    /**
+     * Calls fn(at, rms) for each block of sound this page plays: when it
+     * reaches the speakers (ms since the epoch) and its level. For the
+     * ?avsync=1 readout; returns a function that stops it.
+     */
+    watchSound(fn) {
+      soundWatchers.add(fn);
+      tapSound(playbackOut);
+      return () => soundWatchers.delete(fn);
     },
     /** How loud the mic is now, 0 to 1 (0 while it's off). */
     micLevel,
