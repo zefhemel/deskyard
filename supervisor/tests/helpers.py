@@ -48,6 +48,15 @@ def user_sh(name: str, script: str) -> str:
     return r.stdout
 
 
+def put(name: str, rel: str, data: bytes) -> None:
+    """Writes /workspace/rel in the desktop, as its user. (Not into the
+    desktop's folder from here: on Linux that belongs to the desktop's user.)"""
+    r = subprocess.run(["docker", "exec", "-i", "-u", "user", f"deskyard-{name}", "sh", "-c",
+                        'mkdir -p "$(dirname "$1")" && cat > "$1"', "sh", f"/workspace/{rel}"],
+                       input=data, capture_output=True)
+    assert r.returncode == 0, r.stderr.decode()
+
+
 def screen_size(name) -> tuple[int, int]:
     w, h = in_desktop(name, "xdotool", "getdisplaygeometry").split()
     return int(w), int(h)

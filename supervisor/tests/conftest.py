@@ -42,6 +42,8 @@ from pathlib import Path
 import pytest
 import requests
 
+import netchange  # noqa: F401  (Chromium's pages survive a desktop's network coming or going)
+
 ROOT = Path(__file__).resolve().parent.parent
 REPO = ROOT.parent
 IMAGE = os.environ.get("CC_TEST_IMAGE", "deskyard-debian-xfce:test")
