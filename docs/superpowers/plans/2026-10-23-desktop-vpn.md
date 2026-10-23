@@ -112,12 +112,12 @@ if got.VPN.State != "blocked" { t.Fatalf("state = %s", got.VPN.State) }
 
 **Interfaces:** consume the backend DTOs from Task 3. Add an admin-only VPN connections page at `/_vpn` (the underscore namespace is already reserved, so an existing desktop named `vpn` remains reachable) and desktop settings fields: saved connection selector, LAN exception rows and clear connection state. Use the existing forms, jobs, error text and live events.
 
-- [ ] Write failing behavioral tests for form payloads: blank edit credentials retain existing secrets, explicit no-VPN sends null, unchanged fields remain omitted, exception rows validate ports/addresses, and stale exit IP is not presented as a current connection. Use real pure helpers consumed by the UI rather than source-text assertions.
-- [ ] Run `npm test` under `supervisor/web` and observe red results.
-- [ ] Implement guided NordVPN add/edit/test, links to service-credential instructions, country selector, affected-desktop confirmation and reference-aware delete errors. Never fill credential inputs from API reads.
-- [ ] Add desktop create/settings VPN selection and exceptions, existing Save and restart warning, and visible separate VPN health. Regular users see status but no admin controls. Keep technical enforcement configuration out of ordinary desktop-opening flows.
-- [ ] Run `make typecheck` and `make build`. Exercise the UI against a disposable supervisor: create/edit/test connection, choose it for a desktop, read errors, change settings and confirm no-VPN. Use actual browser/UI inspection for the meaningful user paths.
-- [ ] Commit the UI deliverable.
+- [x] Write failing behavioral tests for form payloads: blank edit credentials retain existing secrets, explicit no-VPN sends null, unchanged fields remain omitted, exception rows validate ports/addresses, and stale exit IP is not presented as a current connection. Use real pure helpers consumed by the UI rather than source-text assertions.
+- [x] Run `npm test` under `supervisor/web` and observe red results.
+- [x] Implement guided NordVPN add/edit/test, links to service-credential instructions, country selector, affected-desktop confirmation and reference-aware delete errors. Never fill credential inputs from API reads.
+- [x] Add desktop create/settings VPN selection and exceptions, existing Save and restart warning, and visible separate VPN health. Regular users see status but no admin controls. Keep technical enforcement configuration out of ordinary desktop-opening flows.
+- [x] Run `make typecheck` and `make build`. Exercise the UI against a disposable supervisor: create/edit/test connection, choose it for a desktop, read errors, change settings and confirm no-VPN. Use actual browser/UI inspection for the meaningful user paths.
+- [x] Commit the UI deliverable.
 
 # Task 5: End-to-end verification, review and documentation
 
