@@ -1,3 +1,4 @@
 /bin/
 # The embedded image scanner: built by make scanner.
 internal/scanbin/bin/deskyard-image-scan-*
+/dist/
