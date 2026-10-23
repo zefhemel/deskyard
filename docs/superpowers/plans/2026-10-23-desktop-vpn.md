@@ -44,7 +44,7 @@ spec: "[[superpowers/specs/2026-10-23-desktop-vpn-design|Desktop VPN design]]"
 
 **Interfaces:** `vpn.NewStore(stateDir string) (*Store, error)`; public `Connection` (id, name, provider, country, revision, credentialsConfigured), write-only `Input` (name, provider, country, optional username/password), `Store.List`, `Get`, `Create`, `Update`, `Delete`; internal secret lookup never marshals credentials. `vpn.Exception` has destination, protocol and ports; `NormalizeExceptions` validates and canonicalizes. Engine `ContainerSpec.NetworkContainer` shares an existing namespace, `CapAdd` supplies explicit capabilities, container inspection reports health; `UpdateRestartPolicy(ctx,id,policy)` changes Docker restart policy. Update engine fakes to retain existing tests.
 
-- [ ] Write failing tests covering credential absence in serialized reads, secret file mode/atomic edits/reload, retention of omitted credentials and case-insensitive duplicate names. Include rejected empty credentials on creation and unsupported providers/countries.
+- [x] Write failing tests covering credential absence in serialized reads, secret file mode/atomic edits/reload, retention of omitted credentials and case-insensitive duplicate names. Include rejected empty credentials on creation and unsupported providers/countries.
 
 ```go
 public, err := json.Marshal(saved)
@@ -52,17 +52,17 @@ if err != nil { t.Fatal(err) }
 if bytes.Contains(public, []byte("test-password-never-public")) { t.Fatal("credentials leaked") }
 ```
 
-- [ ] Run `go test ./internal/vpn ./internal/engine/...` and record the expected missing-feature failures.
-- [ ] Implement immutable generated IDs, owner-only secret storage under `.deskyard/vpn/`, revision increments, secret-free public DTOs, typed errors and canonical exception validation. Reject catch-all/public/subnet exceptions that would undermine local policy and reserved metadata/control destinations.
-- [ ] Test Docker create requests against an HTTP test server: namespace sharing must omit exposed/published ports and network endpoints on the desktop, reject incompatible aliases/network/publication, and leave ordinary creates unchanged. Assert health and restart-policy requests through the real adapter.
-- [ ] Implement adapter primitives without weakening desktop defaults; run package tests and `go test ./...`.
-- [ ] Commit the deliverable and report tests and interface details for Task 2.
+- [x] Run `go test ./internal/vpn ./internal/engine/...` and record the expected missing-feature failures.
+- [x] Implement immutable generated IDs, owner-only secret storage under `.deskyard/vpn/`, revision increments, secret-free public DTOs, typed errors and canonical exception validation. Reject catch-all/public/subnet exceptions that would undermine local policy and reserved metadata/control destinations.
+- [x] Test Docker create requests against an HTTP test server: namespace sharing must omit exposed/published ports and network endpoints on the desktop, reject incompatible aliases/network/publication, and leave ordinary creates unchanged. Assert health and restart-policy requests through the real adapter.
+- [x] Implement adapter primitives without weakening desktop defaults; run package tests and `go test ./...`.
+- [x] Commit the deliverable and report tests and interface details for Task 2.
 
 # Task 2: Managed VPN runtime and controlled Docker fixture
 
 **Files:** create `supervisor/internal/vpn/runtime.go`, `firewall.go`, `status.go`, tests and fixture files under `supervisor/internal/vpn/testdata/` or a dedicated integration test helper directory.
 
-**Interfaces:** `vpn.NewManager(eng engine.Engine, store *Store, stateDir string) *Manager`; `Manager.Ensure(ctx, desktopID, name, network, connectionID string, exceptions []Exception, publishLocal bool) (engine.Container,error)` returns the ready managed runtime. `Manager.Remove(ctx,desktopID)` removes only owned resources. `Manager.Status(ctx,desktopID)` returns sanitized `Status`; `Manager.Test(ctx,Input)` runs disposable candidate validation. Runtime names/labels use stable desktop ID and an explicit VPN role. Use a typed runtime configuration builder that can also be exercised with a controlled custom WireGuard fixture without exposing a test provider through user configuration.
+**Interfaces:** `vpn.NewManager(eng engine.Engine, store *Store, stateDir string) *Manager`; `Manager.Ensure(ctx, desktopID, name, network, connectionID string, exceptions []Exception, publishLocal bool) (engine.Container,error)` returns the ready managed runtime. `Manager.Remove(ctx,desktopID)` removes only owned resources. `Manager.Status(ctx,desktopID)` returns sanitized `Status`; `Manager.Test(ctx,Input)` runs disposable candidate validation, and `Manager.TestSaved(ctx,connectionID,Input)` retains omitted credentials when testing an edit. Runtime names/labels use stable desktop ID and an explicit VPN role. Use a typed runtime configuration builder that can also be exercised with a controlled custom WireGuard fixture without exposing a test provider through user configuration.
 
 - [ ] Write failing tests for generated runtime configuration: pinned image, secret-file mounts, only VPN capabilities/device, authenticated control server, port-specific LAN exceptions, blocked Docker DNS and no extra desktop privilege. Tests must validate semantic policy or execute it, not grep script source.
 - [ ] Run `go test ./internal/vpn` and record red results.
