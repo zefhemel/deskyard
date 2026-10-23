@@ -73,8 +73,18 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
     hostTimer.current = window.setTimeout(loadHost, 500);
   }, [loadHost]);
 
+  // A failed load (the network blinking, say) is tried again, sooner and
+  // then later: nothing else would fill the list until the event stream
+  // reconnects, so the page would say "Loading…" for good.
+  const refreshTimer = useRef<number | undefined>(undefined);
   const refresh = useCallback(() => {
-    api.desktops().then(setDesktops, () => undefined);
+    window.clearTimeout(refreshTimer.current);
+    const load = (wait: number) => {
+      api.desktops().then(setDesktops, () => {
+        refreshTimer.current = window.setTimeout(() => load(Math.min(wait * 2, 30000)), wait);
+      });
+    };
+    load(1000);
     loadHost();
   }, [loadHost]);
 
@@ -125,6 +135,7 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
       es.close();
       window.clearInterval(hostInterval);
       window.clearTimeout(hostTimer.current);
+      window.clearTimeout(refreshTimer.current);
     };
   }, [refresh, loadHost, hostSoon]);
 
