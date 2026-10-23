@@ -40,7 +40,8 @@ function desktop(c: Partial<Desktop> & { name: string }): Desktop {
     imageVersion: "2026.10.22",
     imageSecrets: false,
     updateAvailable: null,
-    settings: { memoryBytes: 0, nanoCpus: 0, camera: "" },
+    vpn: {state:"disabled",changedAt:"0001-01-01T00:00:00Z",exitIpObservedAt:"0001-01-01T00:00:00Z",desiredRevision:0,appliedRevision:0,idle:false},
+    settings: { memoryBytes: 0, nanoCpus: 0, camera: "", vpnConnectionId: null, lanExceptions: [] },
     access: [],
     viewers: [],
     mics: [],
@@ -60,7 +61,7 @@ export const desktops: Desktop[] = [
     startedAt: iso(3 * DAY),
     imageVersion: "2026.10.15",
     updateAvailable: "2026.10.22",
-    settings: { memoryBytes: 2 * GB, nanoCpus: 2e9, camera: "" },
+    settings: { memoryBytes: 2 * GB, nanoCpus: 2e9, camera: "", vpnConnectionId: null, lanExceptions: [] },
     access: ["anna"],
     viewers: ["zef", "anna"],
     forwards: [
@@ -75,7 +76,7 @@ export const desktops: Desktop[] = [
   desktop({
     name: "build-bot",
     startedAt: iso(12 * 60 * 1000),
-    settings: { memoryBytes: 4 * GB, nanoCpus: 4e9, camera: "" },
+    settings: { memoryBytes: 4 * GB, nanoCpus: 4e9, camera: "", vpnConnectionId: null, lanExceptions: [] },
     agents: [agent("Claude Code", "", true, 1)],
     stats: { cpuPercent: 91, memBytes: 3.1 * GB, memLimit: 4 * GB },
   }),

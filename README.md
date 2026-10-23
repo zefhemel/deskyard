@@ -95,13 +95,15 @@ host's). Names are lowercase letters, digits and dashes, start with a letter
 and can't be changed later. Each desktop is a container `deskyard-<name>` on its
 own network `deskyard-<name>`, so desktops can't reach each other.
 
-### Outbound VPN (administrator API)
+### Outbound VPN
 
-Administrators can save NordVPN service credentials and select a connection per desktop through the [VPN API](supervisor/API.md#vpn-connections-admin). Each selected desktop gets its own managed Gluetun gateway. Internet access stays blocked while the tunnel is unavailable; only an explicit selection of no VPN restores direct networking. Enabling, disabling or changing VPN settings recreates the desktop while preserving its identity and workspace. The guided web UI is still pending.
+Administrators can add named connections on **VPN connections** (`/_vpn`), choose a country and enter [NordVPN service credentials](https://support.nordvpn.com/hc/en-us/articles/19685514639633-How-to-find-your-service-credentials-for-manual-NordVPN-setup), which differ from the account login. **Test connection** checks a candidate without changing desktops; blank credentials on an edit retain their saved values. Choose a saved connection or **No VPN** when creating a desktop or on its Settings tab. The same operations are available through the [VPN API](supervisor/API.md#vpn-connections-admin). Each selected desktop gets its own managed Gluetun gateway. Internet access stays blocked while the tunnel is unavailable; only an explicit selection of no VPN restores direct networking. Enabling, disabling or changing VPN settings recreates the desktop while preserving its identity and workspace. Saving settings warns about session disconnection and uses **Save and restart** for running desktops; files remain intact.
 
 VPN desktop containers do not restart independently after an engine reboot: run the supervisor to recover their namespace and firewall before starting them. Stopping a desktop keeps its gateway idle and may continue consuming a provider connection. LAN access is denied except for administrator-configured destination, transport and port rules. Existing agent port forwarding remains available; this feature does not prevent deliberate proxies or tunnels through permitted applications.
 
-The backend has been exercised with the current Selkies image on OrbStack, including local access while disposable invalid NordVPN credentials fail authentication. Successful NordVPN authentication/country selection, native Linux and the complete guided workflow remain release checks.
+Shared connection edits list the affected desktops and require confirmation before validating and applying a new revision. Validation can be cancelled before commit; a failed validation keeps the saved revision. Each desktop rollout reports its own result and retains its selected policy on failure. Connections still used by a desktop cannot be deleted. Users with desktop access see separate VPN health, current exit IP only while connected, historical observations and idle status; only administrators change the configuration.
+
+The backend has been exercised with the current Selkies image on OrbStack, including local access while disposable invalid NordVPN credentials fail authentication. Successful NordVPN authentication/country selection, native Linux and full desktop workflows remain release checks. The guided UI has been checked against the real HTTP API with disposable stores and a simulated engine/provider; those checks do not demonstrate provider connectivity.
 
 ### What persists
 

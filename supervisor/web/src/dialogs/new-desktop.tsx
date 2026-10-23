@@ -1,4 +1,6 @@
 import type { ComponentChildren } from "preact";
+import { VPNFields } from "../components/vpn.tsx";
+import { parseExceptions, type ExceptionRow } from "../lib/vpn-form.ts";
 import { useEffect, useState } from "preact/hooks";
 import { api, type NameCheck } from "../api.ts";
 import { AccessPicks, cpuOptions, ImagePick, memoryOptions } from "../components/desktop-fields.tsx";
@@ -21,6 +23,10 @@ function folderFor(name: string, check: NameCheck | null, folders: string[]): st
 export function NewDesktopDialog({ onClose }: { onClose: () => void }) {
   const { desktops } = useLive();
   const images = useFetch(() => api.images(), "images");
+  const vpn = useFetch(() => api.vpnConnections(), "vpn-connections");
+  const [vpnID, setVPNID] = useState("");
+  const [lan, setLAN] = useState<ExceptionRow[]>([]);
+  const [vpnError, setVPNError] = useState<string | null>(null);
   const accounts = useFetch(() => api.accounts(), "accounts");
 
   const [name, setName] = useState("");
@@ -86,7 +92,11 @@ export function NewDesktopDialog({ onClose }: { onClose: () => void }) {
   const picked = images.data?.find((i) => i.ref === image);
   const create = () => {
     setConfirming(false);
-    void run.start(() => api.createDesktop({ name, image, memoryBytes: memory, nanoCpus: cpus, access }));
+    try {
+      const lanExceptions = vpnID ? parseExceptions(lan) : [];
+      setVPNError(null);
+      void run.start(() => api.createDesktop({ name, image, memoryBytes: memory, nanoCpus: cpus, access, vpnConnectionId:vpnID || null, lanExceptions }));
+    } catch(e) {setVPNError(e instanceof Error ? e.message : String(e));}
   };
   const submit = () => {
     if (!ready) return;
@@ -132,12 +142,13 @@ export function NewDesktopDialog({ onClose }: { onClose: () => void }) {
           <Field label="CPUs">
             <Seg label="CPUs" options={cpuOptions(cpus)} value={cpus} onChange={setCpus} />
           </Field>
+          {vpn.data ? <VPNFields connections={vpn.data.connections} value={vpnID} onChange={setVPNID} rows={lan} onRows={setLAN} /> : <ErrorText error={vpn.error} />}
           <Field label="Who can use it">
             {accounts.data ? <AccessPicks accounts={accounts.data} value={access} onChange={setAccess} /> : <ErrorText error={accounts.error} />}
           </Field>
         </fieldset>
         <JobProgress job={run.job} />
-        <ErrorText error={run.error} />
+        <ErrorText error={vpnError || run.error} />
       </Dialog>
       {confirming && picked && (
         <SecretAccessDialog

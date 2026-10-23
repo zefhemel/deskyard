@@ -1,3 +1,4 @@
+import { VPNStatus } from "./vpn.tsx";
 import type { Desktop, Job } from "../api.ts";
 import { limits, memoryOf, statusKind, statusLine } from "../lib/format.ts";
 import { DesktopMenu } from "./desktop-menu.tsx";
@@ -65,6 +66,7 @@ export function Tile({ desktop: c, job, now, admin }: { desktop: Desktop; job: J
         </div>
         {c.state === "running" && <Meters desktop={c} />}
         {c.state === "stopped" && <div class={cx("mt-2.5 text-[13px] text-muted")}>{limits(c.settings)}</div>}
+        <div class="mt-2"><VPNStatus vpn={c.vpn} compact /></div>
         {!busy && <ImageLine desktop={c} admin={admin} />}
       </div>
     </article>

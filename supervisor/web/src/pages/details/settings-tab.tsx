@@ -1,5 +1,7 @@
+import { VPNFields, VPNStatus } from "../../components/vpn.tsx";
+import { desktopVPNPatch, exceptionRows, parseExceptions, type ExceptionRow } from "../../lib/vpn-form.ts";
 import { useState } from "preact/hooks";
-import { api, type Desktop, type Host } from "../../api.ts";
+import { api, type Desktop, type Host, type SettingsPatch } from "../../api.ts";
 import { cpuOptions, ImagePick, memoryOptions } from "../../components/desktop-fields.tsx";
 import { JobProgress, useJob } from "../../components/job.tsx";
 import { notify } from "../../components/toast.tsx";
@@ -10,6 +12,11 @@ import { useFetch } from "../../lib/use-fetch.ts";
 import { UPGRADE_NOTE } from "../../dialogs/upgrade.tsx";
 
 export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
+  const vpn = useFetch(() => api.vpnConnections(), "vpn-connections");
+  const [vpnID,setVPNID] = useState(c.settings.vpnConnectionId ?? "");
+  const [lan,setLAN] = useState<ExceptionRow[]>(exceptionRows(c.settings.lanExceptions ?? []));
+  const [vpnError,setVPNError] = useState<string | null>(null);
+  const networkChanged = vpnID !== (c.settings.vpnConnectionId ?? "") || (!!vpnID && JSON.stringify(lan) !== JSON.stringify(exceptionRows(c.settings.lanExceptions ?? [])));
   const images = useFetch(() => api.images(), "images");
   const [image, setImage] = useState(c.image);
   const [memory, setMemory] = useState(c.settings.memoryBytes);
@@ -19,13 +26,18 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
   const run = useJob(() => notify(`${c.name}'s settings are saved`));
 
   const [confirming, setConfirming] = useState(false);
-  const changed = image !== c.image || memory !== c.settings.memoryBytes || cpus !== c.settings.nanoCpus || camera !== c.settings.camera;
+  const changed = networkChanged || image !== c.image || memory !== c.settings.memoryBytes || cpus !== c.settings.nanoCpus || camera !== c.settings.camera;
   // Moving a desktop others use onto an image with secrets: ask first, as giving access does.
   const picked = (images.data ?? []).find((i) => i.ref === image);
   const askFirst = image !== c.image && !!picked?.secrets && c.access.length > 0;
   const save = () => {
     setConfirming(false);
-    const body: { image?: string; memoryBytes?: number; nanoCpus?: number; camera?: string; confirmSecrets?: boolean } = {};
+    let body: SettingsPatch;
+    try {
+      // Unedited rules stay omitted, including when explicitly disabling VPN.
+      body = networkChanged ? desktopVPNPatch(c.settings, vpnID, !vpnID || JSON.stringify(lan) === JSON.stringify(exceptionRows(c.settings.lanExceptions)) ? c.settings.lanExceptions : parseExceptions(lan)) : {};
+      setVPNError(null);
+    } catch(e) {setVPNError(e instanceof Error ? e.message : String(e)); return;}
     if (camera !== c.settings.camera) body.camera = camera;
     if (image !== c.image) body.image = image;
     if (askFirst) body.confirmSecrets = true;
@@ -57,17 +69,19 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
           <Field label="CPUs">
             <Seg label="CPUs" options={cpuOptions(cpus)} value={cpus} onChange={setCpus} />
           </Field>
+          <div class="mb-4"><VPNStatus vpn={c.vpn} /></div>
+          {vpn.data ? <VPNFields connections={vpn.data.connections} value={vpnID} onChange={setVPNID} rows={lan} onRows={setLAN} /> : <ErrorText error={vpn.error} />}
           <Field label="Camera">
             <CameraPick desktop={c} host={host} value={camera} onChange={setCamera} />
           </Field>
         </fieldset>
         {changed && (
           <Note>
-            Saving recreates {c.name}'s container{c.state === "running" ? ", which restarts it" : ""}. {image !== c.image && UPGRADE_NOTE}
+            Saving recreates {c.name}'s container{c.state === "running" ? ", which restarts it and briefly disconnects open sessions; files are kept" : ""}. {image !== c.image && UPGRADE_NOTE}
           </Note>
         )}
         <JobProgress job={run.job} />
-        <ErrorText error={run.error} />
+        <ErrorText error={vpnError || run.error} />
         <div class="flex gap-2.5">
           <Button type="submit" variant="primary" disabled={!changed || run.running}>
             {run.running ? "Saving…" : c.state === "running" ? "Save and restart" : "Save"}
@@ -80,6 +94,9 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
                 setMemory(c.settings.memoryBytes);
                 setCpus(c.settings.nanoCpus);
                 setCamera(c.settings.camera);
+                setVPNID(c.settings.vpnConnectionId ?? "");
+                setLAN(exceptionRows(c.settings.lanExceptions ?? []));
+                setVPNError(null);
               }}
             >
               Undo changes

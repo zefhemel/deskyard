@@ -13,6 +13,7 @@ import { Button, cx } from "../components/ui.tsx";
 import { DownloadDialog } from "../dialogs/download.tsx";
 import { useDesktop, useLive } from "../live.tsx";
 import { agentTitle } from "../lib/activity-format.ts";
+import { vpnPresentation } from "../lib/vpn-form.ts";
 import { names } from "../lib/format.ts";
 import { AudioControl } from "./audio-panel.tsx";
 import { avSyncWanted, startAvSync } from "./avsync.ts";
@@ -301,6 +302,11 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
             <span class="max-sm:hidden">{connLabels[conn]}</span>
           </span>
         ) : null}
+        {c.vpn && c.vpn.state !== "disabled" && (
+          <a href={`/desktops/${c.name}`} class={cx(barButton, c.vpn.state === "blocked" && "text-[#ffb7ad]!")} title={vpnPresentation(c.vpn).detail || "VPN status is separate from the desktop stream connection"}>
+            {vpnPresentation(c.vpn).label}
+          </a>
+        )}
         {showing && conn === "disconnected" && (
           <button type="button" class={barButton} onClick={reconnect}>
             Reconnect

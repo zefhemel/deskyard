@@ -2,6 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import { useLocation, useRoute } from "preact-iso";
 import { api, type AgentPresence, type Desktop, type Forward } from "../api.ts";
 import { agentLabel } from "../lib/activity-format.ts";
+import { VPNStatus } from "../components/vpn.tsx";
 import { Avatars } from "../components/avatar.tsx";
 import { ChartsPanel } from "../components/charts-panel.tsx";
 import { DesktopMenu, power } from "../components/desktop-menu.tsx";
@@ -138,6 +139,7 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
           <Monitor desktop={c} job={jobs[c.name]} now={now} big />
           <div class="flex flex-col gap-4">
             <ViewersPanel viewers={c.viewers} mics={c.mics} cams={c.cams} forwards={c.forwards} agents={c.agents} />
+            <div class="rounded-[10px] border border-line bg-surface px-5 py-[18px]"><VPNStatus vpn={c.vpn} /></div>
             <ChartsPanel desktop={c} />
             <Facts desktop={c} admin={me.admin} onTab={setTab} />
           </div>

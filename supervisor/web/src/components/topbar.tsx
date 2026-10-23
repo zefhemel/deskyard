@@ -13,6 +13,7 @@ import { cx, Meter } from "./ui.tsx";
 const nav = [
   { href: "/", label: "Desktops", match: (p: string) => p === "/" || p.startsWith("/desktops/") },
   { href: "/images", label: "Images", match: (p: string) => p === "/images" },
+  { href: "/_vpn", label: "VPN connections", match: (p: string) => p === "/_vpn" },
   { href: "/accounts", label: "Accounts", match: (p: string) => p === "/accounts" },
 ];
 

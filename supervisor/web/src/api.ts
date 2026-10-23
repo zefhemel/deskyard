@@ -31,7 +31,28 @@ export interface Stats {
   memLimit: number;
 }
 
-export interface Settings {
+export interface VPNReference { id: string; name: string }
+export interface VPNConnection {
+  id: string; name: string; provider: "nordvpn"; country: string;
+  revision: number; credentialsConfigured: boolean;
+}
+export interface SavedVPNConnection extends VPNConnection { desktops: VPNReference[] }
+export interface VPNInput { name: string; provider: "nordvpn"; country: string; username?: string; password?: string }
+export interface VPNUpdate extends VPNInput { expectedRevision: number; affectedDesktopIds: string[]; confirmRestart: boolean }
+export interface LANException { destination: string; protocol: "tcp" | "udp"; ports: {start: number; end: number}[] }
+export interface VPNStatus {
+  state: "disabled" | "stopped" | "connecting" | "connected" | "reconnecting" | "blocked";
+  reason?: string; changedAt: string; currentExitIp?: string; lastExitIp?: string; exitIpObservedAt: string;
+  connectionId?: string; name?: string; provider?: "nordvpn"; country?: string;
+  desiredRevision: number; appliedRevision: number; idle: boolean;
+}
+export interface VPNRollout { connection: VPNConnection; desktops: (VPNReference & {error?: string})[] }
+export interface DesktopVPNSettings { vpnConnectionId: string | null; lanExceptions: LANException[] }
+export interface SettingsPatch extends Partial<DesktopVPNSettings> {
+  image?: string; memoryBytes?: number; nanoCpus?: number; camera?: string; confirmSecrets?: boolean;
+}
+
+export interface Settings extends DesktopVPNSettings {
   memoryBytes: number;
   nanoCpus: number;
   /** The host's virtual camera this desktop has to itself; "" for none. */
@@ -54,6 +75,7 @@ export interface Desktop {
   imageSecrets: boolean;
   updateAvailable: string | null;
   settings: Settings;
+  vpn: VPNStatus;
   access: string[];
   viewers: string[];
   /** Viewers with a mic on (per stream; gone when the stream closes). */
@@ -106,6 +128,7 @@ export interface Job {
   progress: number | null;
   error?: string;
   desktop?: string;
+  result?: VPNStatus | VPNRollout;
 }
 
 export interface Account {
@@ -309,6 +332,7 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly desktops: VPNReference[] = [],
   ) {
     super(message);
   }
@@ -334,13 +358,17 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   }
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
+    let desktops: VPNReference[] = [];
     try {
       const data: unknown = await res.json();
-      if (data && typeof data === "object" && "error" in data && typeof data.error === "string") message = data.error;
+      if (data && typeof data === "object") {
+        if ("error" in data && typeof data.error === "string") message = data.error;
+        if ("desktops" in data && Array.isArray(data.desktops)) desktops = data.desktops as VPNReference[];
+      }
     } catch {
       // not JSON
     }
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, desktops);
   }
   if (res.status === 204) return undefined as T;
   const text = await res.text();
@@ -359,11 +387,11 @@ export const api = {
 
   desktops: () => request<Desktop[]>("GET", "/api/desktops"),
   desktop: (name: string) => request<Desktop>("GET", c(name)),
-  createDesktop: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: string[] }) =>
+  createDesktop: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: string[] } & DesktopVPNSettings) =>
     request<JobRef>("POST", "/api/desktops", body),
   power: (name: string, action: "start" | "stop" | "restart") => request<void>("POST", `${c(name)}/${action}`),
   removeDesktop: (name: string, files: boolean) => request<void>("DELETE", c(name) + (files ? "?files=1" : "")),
-  updateSettings: (name: string, body: { image?: string; memoryBytes?: number; nanoCpus?: number; camera?: string; confirmSecrets?: boolean }) =>
+  updateSettings: (name: string, body: SettingsPatch) =>
     request<JobRef>("PATCH", c(name), body),
   setAccess: (name: string, usernames: string[]) => request<void>("PUT", `${c(name)}/access`, { usernames }),
   processes: (name: string) => request<Processes>("GET", `${c(name)}/processes`),
@@ -393,6 +421,12 @@ export const api = {
     const qs = q.toString();
     return `${c(name)}/screen.png${qs ? `?${qs}` : ""}`;
   },
+
+  vpnConnections: () => request<{connections: SavedVPNConnection[]; countries: string[]}>("GET", "/api/vpn/connections"),
+  createVPN: (body: VPNInput) => request<VPNConnection>("POST", "/api/vpn/connections", body),
+  updateVPN: (id: string, body: VPNUpdate) => request<JobRef>("PUT", `/api/vpn/connections/${enc(id)}`, body),
+  deleteVPN: (id: string) => request<void>("DELETE", `/api/vpn/connections/${enc(id)}`),
+  testVPN: (body: VPNInput & {connectionId?: string}) => request<JobRef>("POST", "/api/vpn/test", body),
 
   accounts: () => request<Account[]>("GET", "/api/accounts"),
   createAccount: (body: { username: string; password: string; admin: boolean; desktops: string[] }) =>
