@@ -1,7 +1,7 @@
 ---
 displayName: Desktop VPN plan
 tags: plan
-status: active
+status: done
 date: "2026-10-23"
 spec: "[[superpowers/specs/2026-10-23-desktop-vpn-design|Desktop VPN design]]"
 ---
@@ -67,7 +67,7 @@ if bytes.Contains(public, []byte("test-password-never-public")) { t.Fatal("crede
 - [x] Write failing tests for generated runtime configuration: pinned image, secret-file mounts, only VPN capabilities/device, authenticated control server, port-specific LAN exceptions, blocked Docker DNS and no extra desktop privilege. Tests must validate semantic policy or execute it, not grep script source.
 - [x] Run `go test ./internal/vpn` and record red results.
 - [x] Implement NordVPN/OpenVPN UDP runtime construction, bounded readiness and sanitized state. Use Gluetun's secret files, managed post-firewall rules and a private authenticated control API. Keep connection bootstrap, local reply traffic and local exceptions explicit; protect control routes despite shared localhost.
-- [x] Implement a five-second health observation contract; distinguish connecting, connected, reconnecting and blocked. Do not call an unverified IP current. Bound disposable tests to two minutes and guarantee cancellation cleanup.
+- [x] Implement central health observation on a nominal five-second schedule; distinguish connecting, connected, reconnecting and blocked. Do not call an unverified IP current. Bound disposable tests to two minutes and guarantee cancellation cleanup. Final review found that eight shared slots and repairs lasting up to three minutes prevent a fleet-wide freshness guarantee; fair scheduling or stale-observation expiry remains follow-up work, as documented in the runtime architecture.
 - [x] Run a controlled fixture on OrbStack: temporary WireGuard endpoint plus shared-network client, tunnel request, local HTTP access, tunnel loss, recovery, gateway stop, default-denied LAN and a port-specific exception. Generate ephemeral test keys and clean resources by unique labels on all exits.
 
 ```python
@@ -123,15 +123,25 @@ if got.VPN.State != "blocked" { t.Fatalf("state = %s", got.VPN.State) }
 
 **Files:** extend integration fixture/lifecycle tests as needed; update `README.md`, `supervisor/API.md`, `docs/Architecture/{VPN connections,VPN runtime,Lifecycle,Desktop proxy,Engine adapter}.md`, the spec, use cases and this plan.
 
-- [ ] Run `make test`, `make typecheck`, `make build`, `make vet` and relevant controlled engine tests. Fix meaningful failures with regression tests; avoid repeatedly running unchanged suites without cause.
-- [ ] Exercise a real fresh Selkies desktop through the supervisor on macOS: token-authenticated proxy, screen connection, exec, file access and lifecycle, with two namespaces and the controlled VPN endpoint. Use a scoped engine wrapper in a test supervisor: add a unique fixture ownership label on creates and filter list/network/event reads to that label. Do not run broad production startup reconciliation against the shared engine's existing desktops. Observe direct-egress attempts through startup/loss/replacement/recovery rather than merely checking a connected indicator.
-- [ ] Check optional local NordVPN secret-file availability without printing values. If absent, finish all credential-independent work and request local credential entry through the completed UI. Mark provider and native Linux validation unverified until actually run.
-- [ ] Obtain spec-compliance and maintainability review of the whole branch, address important findings, and run covering tests after fixes.
-- [ ] Document actual setup, resource/connection cost of idle runtimes, failure behavior, LAN exception semantics, forwarding scope and any unverified platforms/provider checks. Mark only built components as built and plan tasks done when verified; retain explicit release limitations.
-- [ ] Validate changed docs using local links/metadata checks and SilverBullet against this worktree (do not overwrite or validate the other agent's docs as if they were these changes). Commit completed work and leave the branch ready for review; do not merge into the other agent's checkout.
+- [x] Run `make test`, `make typecheck`, `make build`, `make vet` and relevant controlled engine tests. Fix meaningful failures with regression tests; avoid repeatedly running unchanged suites without cause.
+- [x] Exercise a real fresh Selkies desktop through the supervisor on macOS: token-authenticated proxy, screen connection, exec, file access and lifecycle, with two namespaces and the controlled VPN endpoint. Use a scoped engine wrapper in a test supervisor: add a unique fixture ownership label on creates and filter list/network/event reads to that label. Do not run broad production startup reconciliation against the shared engine's existing desktops. Observe direct-egress attempts through startup/loss/replacement/recovery rather than merely checking a connected indicator.
+- [x] Check optional local NordVPN secret-file availability without printing values. If absent, finish all credential-independent work and request local credential entry through the completed UI. Mark provider and native Linux validation unverified until actually run.
+- [x] Obtain spec-compliance and maintainability review of the whole branch, address important findings, and run covering tests after fixes.
+- [x] Document actual setup, resource/connection cost of idle runtimes, failure behavior, LAN exception semantics, forwarding scope and any unverified platforms/provider checks. Mark only built components as built and plan tasks done when verified; retain explicit release limitations.
+- [x] Validate changed docs using local links/metadata checks and SilverBullet against this worktree (do not overwrite or validate the other agent's docs as if they were these changes). Commit completed work and leave the branch ready for review; do not merge into the other agent's checkout.
 
 # Execution notes
 
 The existing local spike uses `/tmp/deskyard-vpn-probe/probe.py` and a real `deskyard-debian-xfce:local` desktop. It is throwaway context, not production code to copy blindly. The current repository has since merged Selkies; use a current `CC_TEST_IMAGE` for full lifecycle tests.
 
 The user approved the VPN design and requested implementation in a worktree. DNS follows this feature's networking foundation and is not part of this plan's implementation scope.
+
+# Verification outcome and remaining release checks
+
+Controlled macOS/OrbStack verification passed with two independent WireGuard peers and real Selkies desktops, using both native and containerized supervisors. It covered authenticated proxy and screen frames, exec/files/activity/browser access, blocked startup and tunnel-loss traffic, recovery, gateway replacement, retained identity/workspace and pair removal. Final direct and container lifecycle tests passed in 396.57 and 556.12 seconds. Standard test/typecheck/build/vet checks passed; final recovery fixes passed focused Go race checks, all 28 UI tests/typecheck and a fresh build. The existing optional npm fsevents install-script warning remains disclosed. No script approval was changed.
+
+Final review found and corrected desired-power mismatch recovery, unfinished explicit No VPN/removal recovery and diagnostics, public journal error sanitization, and test-harness cleanup ordering. The poll scheduling limitation above is deferred rather than represented as a guaranteed observation interval.
+
+Successful live NordVPN authentication, country and credential changes, provider concurrency limits, native Linux, and an actual engine/host reboot remain unverified. The separate production NordVPN preview awaits local credential entry; controlled WireGuard does not satisfy these provider checks. Container foreground streamed-screen inspection and foreground SilverBullet rendering also remain outstanding; actual proxied picture frames and worktree-specific lint/query/generated architecture checks passed.
+
+The initial four uncaptured forwarding packets and historical intermittent recovery failures remain individually unclassified. A later fully captured 64-packet case was separately classified as late HTTPS responses at the controlled endpoint. Neither successful retries nor later captures retroactively classify the earlier observations.
