@@ -256,7 +256,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
     checked: q.id === live,
     onSelect: () => chooseQuality(q.id),
   }));
-  const phoneOnly = "sm:hidden";
+  const compactOnly = "lg:hidden";
   const showing = running && supported;
   const moreItems: MenuItem[] = [
     ...(running
@@ -267,21 +267,21 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
       : []),
     { label: "Details", onSelect: () => route(`/desktops/${c.name}`), separated: running },
     ...(me.admin ? [{ label: "Settings", onSelect: () => route(`/desktops/${c.name}?tab=settings`) }] : []),
-    // On a phone the bar has no room for these.
+    // Phones and narrow tablets need these actions in More.
     ...(showing
       ? [
-          ...(owner ? [{ label: "Lock size", checked: locked !== null, onSelect: toggleLock, separated: true, class: phoneOnly }] : []),
-          ...keyItems.map((k, i) => ({ ...k, label: <>Send {k.label}</>, separated: i === 0 && !owner, class: phoneOnly })),
+          ...(owner ? [{ label: "Lock size", checked: locked !== null, onSelect: toggleLock, separated: true, class: compactOnly }] : []),
+          ...keyItems.map((k, i) => ({ ...k, label: <>Send {k.label}</>, separated: i === 0 && !owner, class: compactOnly })),
           ...qualities.map((q, i) => ({
             label: `Quality: ${q.label}`,
             checked: q.id === live,
             onSelect: () => chooseQuality(q.id),
             separated: i === 0,
-            class: phoneOnly,
+            class: compactOnly,
           })),
         ]
       : []),
-    ...(running ? [{ label: "Download…", onSelect: () => setDownloadOpen(true), separated: true, class: phoneOnly }] : []),
+    ...(running ? [{ label: "Download…", onSelect: () => setDownloadOpen(true), separated: true, class: compactOnly }] : []),
   ];
 
   const dot = conn === "connected" ? "bg-[#3ac08a]" : conn === "disconnected" ? "bg-[#e0685b]" : "bg-busy animate-pulse";
@@ -327,7 +327,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
             </button>
           </>
         )}
-        <div class="ml-auto flex items-center gap-0.5">
+        <div class="ml-auto flex shrink-0 items-center gap-0.5">
           {showing && (
             <>
               <AudioControl name={c.name} screen={screen} connected={conn === "connected"} webcam={c.webcam} host={host} admin={me.admin} />
@@ -340,7 +340,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
                     ? "The first viewer sets the screen size; yours is scaled to fit"
                     : "Keep the desktop's screen size and scale it to fit"
                 }
-                class={cx(barButton, "max-sm:hidden disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent", owner && locked && pressed)}
+                class={cx(barButton, "max-lg:hidden disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent", owner && locked && pressed)}
                 onClick={toggleLock}
               >
                 <span aria-hidden="true" class="text-[12px]">
@@ -358,7 +358,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
                 Clipboard
               </button>
               <Menu
-                class="max-sm:hidden"
+                class="max-lg:hidden"
                 items={keyItems}
                 onClose={refocus}
                 trigger={({ toggle, open }) => (
@@ -368,7 +368,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
                 )}
               />
               <Menu
-                class="max-sm:hidden"
+                class="max-lg:hidden"
                 items={qualityItems}
                 onClose={refocus}
                 trigger={({ toggle, open }) => (
@@ -380,7 +380,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
             </>
           )}
           {running && (
-            <button type="button" aria-haspopup="dialog" class={cx(barButton, "max-sm:hidden", downloadOpen && pressed)} onClick={() => setDownloadOpen(true)}>
+            <button type="button" aria-haspopup="dialog" class={cx(barButton, "max-lg:hidden", downloadOpen && pressed)} onClick={() => setDownloadOpen(true)}>
               Download
             </button>
           )}
@@ -400,6 +400,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
         {clipOpen && showing && (
           <ClipboardPopover
             name={c.name}
+            frame={frame.current}
             remote={remoteClip}
             onClose={closeClip}
             onSend={(text) => {

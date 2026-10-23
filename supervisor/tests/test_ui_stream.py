@@ -83,9 +83,18 @@ def test_second_viewer(cli, remote, supervisor, name):
         assert screen_size(name) == size
         assert video_settings_lines(name)[before:] == []
         for page in (a, b):
-            page.get_by_role("button", name="Quality", exact=True).click()
-            expect(page.get_by_role("menuitemcheckbox", name=re.compile("^High"))).to_have_attribute("aria-checked", "true")
+            # The 900px second viewer uses the compact toolbar.
+            if page is b:
+                page.get_by_role("button", name="More", exact=True).click()
+                quality = page.get_by_role("menuitemcheckbox", name="Quality: High", exact=True)
+                expect(page.get_by_role("menuitemcheckbox", name="Lock size", exact=True)).to_have_count(0)
+            else:
+                page.get_by_role("button", name="Quality", exact=True).click()
+                quality = page.get_by_role("menuitemcheckbox", name=re.compile("^High"))
+            expect(quality).to_have_attribute("aria-checked", "true")
             page.keyboard.press("Escape")
+        # A wider second viewer shows the disabled direct control too.
+        b.set_viewport_size({"width": 1280, "height": 700})
         lock = b.get_by_role("button", name="Lock size", exact=True)
         expect(lock).to_be_disabled()
         expect(lock).to_have_attribute("title", re.compile("first viewer sets the screen size"))
@@ -112,8 +121,10 @@ def test_second_viewer(cli, remote, supervisor, name):
         # browser's Lock size (640x480) applies; unlocked, the screen follows its window.
         a.close()
         b.wait_for_function(f"{SCREEN}.display().owner === true", timeout=15000)
+        b.get_by_role("button", name="More", exact=True).click()
+        lock = b.get_by_role("menuitemcheckbox", name="Lock size", exact=True)
         expect(lock).to_be_enabled()
-        expect(lock).to_have_attribute("aria-pressed", "true")
+        expect(lock).to_have_attribute("aria-checked", "true")
         assert wait_until(lambda: screen_size(name) == (640, 480)), screen_size(name)
         lock.click()
         frame = frame_size(b)

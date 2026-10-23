@@ -16,7 +16,8 @@ def desk(desktop) -> Path:
     return Path(desktop["folder"]) / "Desktop"
 
 
-def test_drag_lands_right(supervisor, desktop, name):
+@pytest.mark.parametrize("touch", [False, True], ids=["mouse", "touch"])
+def test_drag_lands_right(supervisor, desktop, name, touch):
     # Inside our frame Chromium's pointerrawupdate reports positions relative
     # to the top-level page, so drags landed off by the bar's height until
     # the served client additions hid it.
@@ -34,8 +35,9 @@ def test_drag_lands_right(supervisor, desktop, name):
         return int(x), int(y)
 
     with sync_playwright() as p:
-        browser, page = signed_in(p, supervisor.base)
-        open_desktop(page, supervisor.base, name)
+        browser, page = signed_in(p, supervisor.base, has_touch=touch,
+                                       viewport={"width": 744, "height": 900} if touch else {"width": 1280, "height": 860})
+        open_desktop(page, supervisor.base, name, status=not touch)
         # The screen has taken the frame's size (which may move the window).
         frame = frame_size(page)
         assert wait_until(lambda: all(abs(v - w) <= 8 for v, w in zip(screen_size(name), frame)), 10), (screen_size(name), frame)
@@ -45,16 +47,35 @@ def test_drag_lands_right(supervisor, desktop, name):
         b = (a[0] + 180, a[1] + 120)
         pic = page.evaluate(PICTURE)
         pa, pb = to_page(pic, *a), to_page(pic, *b)
-        page.mouse.move(*pa)
-        page.mouse.down()
+        cdp = page.context.new_cdp_session(page) if touch else None
+
+        def finger(kind, point=None):
+            cdp.send("Input.dispatchTouchEvent", {"type": kind, "touchPoints":
+                     [] if point is None else [{"x": point[0], "y": point[1], "id": 1}]})
+
+        if touch:
+            finger("touchStart", pa)
+        else:
+            page.mouse.move(*pa)
+            page.mouse.down()
         for i in range(1, 21):
-            page.mouse.move(pa[0] + (pb[0] - pa[0]) * i / 20, pa[1] + (pb[1] - pa[1]) * i / 20)
+            point = (pa[0] + (pb[0] - pa[0]) * i / 20, pa[1] + (pb[1] - pa[1]) * i / 20)
+            if touch:
+                finger("touchMove", point)
+            else:
+                page.mouse.move(*point)
             time.sleep(0.02)
-        page.mouse.up()
-        near = lambda p, q: abs(p[0] - q[0]) <= 4 and abs(p[1] - q[1]) <= 4  # noqa: E731
+        if touch:
+            finger("touchEnd")
+        else:
+            page.mouse.up()
+        # Touch starts a drag after Selkies' movement threshold; that first
+        # small movement is consumed while distinguishing a drag from a tap.
+        tolerance = 15 if touch else 4
+        near = lambda p, q, limit=4: abs(p[0] - q[0]) <= limit and abs(p[1] - q[1]) <= limit  # noqa: E731
         assert wait_until(lambda: near(mouse_location(name), b), 5), (mouse_location(name), b)
         moved = (x0 + b[0] - a[0], y0 + b[1] - a[1])
-        assert wait_until(lambda: near(position(), moved), 5), ((x0, y0), position(), a, b)
+        assert wait_until(lambda: near(position(), moved, tolerance), 5), ((x0, y0), position(), a, b)
         browser.close()
 
 
