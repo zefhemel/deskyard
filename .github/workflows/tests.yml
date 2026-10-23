@@ -1,0 +1,112 @@
+# The integration suites against a real Docker engine (the Go unit tests,
+# vet and the web UI's checks run in supervisor.yml):
+# - pull requests: the default selection plus WebKit and Firefox (the suites of
+#   make test-ci), the image suite and the supervisor suite run directly;
+# - main, nightly and by hand: everything (the suites of make test-all),
+#   including the supervisor suite with the supervisor in a container.
+# Each job builds the desktop image once, from the images workflow's cache.
+name: Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - images/**
+      - supervisor/**
+      - Makefile
+      - .github/workflows/tests.yml
+  pull_request:
+    paths:
+      - images/**
+      - supervisor/**
+      - Makefile
+      - .github/workflows/tests.yml
+  schedule:
+    - cron: "0 3 * * *" # nightly, 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TEST_IMAGE: deskyard-debian-xfce:test
+
+jobs:
+  suite:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: engine and image
+            target: test-engine test-image
+          - name: supervisor
+            target: test-supervisor
+          - name: supervisor in a container
+            target: test-container
+            everything_only: true
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      SKIP: ${{ matrix.everything_only && github.event_name == 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v5
+        if: env.SKIP != 'true'
+
+      - uses: actions/setup-go@v7
+        if: env.SKIP != 'true'
+        with:
+          go-version-file: supervisor/go.mod
+          cache-dependency-path: supervisor/go.sum
+
+      - uses: actions/setup-node@v7
+        if: env.SKIP != 'true'
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: supervisor/web/package-lock.json
+
+      - uses: astral-sh/setup-uv@v7
+        if: env.SKIP != 'true'
+
+      # Flatpak's bubblewrap in the desktops needs unprivileged user namespaces.
+      - name: Allow unprivileged user namespaces
+        if: env.SKIP != 'true'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - uses: docker/setup-buildx-action@v3
+        if: env.SKIP != 'true'
+
+      - name: Build the desktop image
+        if: env.SKIP != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: images/Dockerfile
+          target: debian-xfce
+          tags: ${{ env.TEST_IMAGE }}
+          load: true
+          cache-from: type=gha,scope=debian-xfce-amd64
+
+      - name: Browsers
+        if: env.SKIP != 'true'
+        run: |
+          for d in images/tests supervisor/tests; do
+            (cd "$d" && uv run playwright install --with-deps chromium firefox webkit)
+          done
+
+      - name: make ${{ matrix.target }}
+        if: env.SKIP != 'true'
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            marks="-m 'not slow and not network and not build and not perf'"
+          else
+            marks="-m ''"
+          fi
+          make ${{ matrix.target }} MARKS="$marks" BUILD_IMAGE=0 WORKERS=3

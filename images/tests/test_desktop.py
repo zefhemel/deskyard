@@ -56,9 +56,12 @@ def test_exec_starts_in_home(sandbox):
 
 def test_nothing_opens_at_start(sandbox):
     """The desktop starts empty: Chromium and terminals only open when someone opens them."""
-    time.sleep(5)
+    time.sleep(5)  # past the session's autostart
     for cls in ("xfce4-terminal", "chromium"):
         assert sandbox.exec(f"xdotool search --onlyvisible --class {cls}", check=False).returncode != 0, cls
+    # Not even in the background.
+    assert sandbox.exec("pgrep -f '[c]hromium-shared'", check=False).returncode != 0, "Chromium runs"
+    assert sandbox.exec("pgrep -x xfce4-terminal", check=False).returncode != 0, "a terminal runs"
 
 
 CHROMIUM_FRAME_TOP = r"""
@@ -74,17 +77,16 @@ def test_chromium_title_bar_below_panel_at_boot(sandbox):
     """At boot Chromium (open when the desktop stopped, so it comes back) must not
     maximize before the top panel reserves its space."""
     sandbox.exec("curl -fs --max-time 60 -o /dev/null http://127.0.0.1:9221/json/version")
-    sandbox.restart()
     for boot in range(3):
+        sandbox.restart()
         deadline = time.time() + 20
         while sandbox.exec("xdotool search --onlyvisible --class chromium", check=False).returncode != 0:
             assert time.time() < deadline, "no Chromium window"
             time.sleep(1)
-        time.sleep(2)
+        time.sleep(2)  # where the window manager leaves it
         frame_top, workarea_top = map(int, sandbox.exec(CHROMIUM_FRAME_TOP).stdout.split())
         assert workarea_top > 0, "panel reserved no space"
         assert frame_top >= workarea_top, f"boot {boot}: title bar at y={frame_top}, panel ends at {workarea_top}"
-        sandbox.restart()
 
 
 def test_dock_web_browser_opens_shared_chromium_without_asking(sandbox):

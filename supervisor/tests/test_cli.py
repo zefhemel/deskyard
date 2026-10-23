@@ -1,44 +1,15 @@
 """The deskyard command against a real supervisor, as an agent elsewhere uses it."""
 
-import http.server
-import os
-import queue
-import signal
 import socket
 import subprocess
-import threading
 import time
 
 import pytest
 import requests
 from playwright.sync_api import sync_playwright
 
-from conftest import ROOT, free_port
-
-
-@pytest.fixture(scope="session")
-def cli(tmp_path_factory) -> str:
-    out = tmp_path_factory.mktemp("bin") / "deskyard"
-    subprocess.run(["go", "build", "-o", str(out), "./cmd/deskyard"], cwd=ROOT, check=True)
-    return str(out)
-
-
-@pytest.fixture
-def remote(cli, admin, desktop, name, tmp_path):
-    t = admin.post(f"/api/desktops/{name}/tokens", json={"name": "cli test", "expires": None}).json()
-    env = {**os.environ, "XDG_CONFIG_HOME": str(tmp_path / "config"), "HOME": str(tmp_path)}
-    env.pop("DESKYARD_REMOTE", None)
-
-    def run(*args, input=None, check=True):
-        r = subprocess.run([cli, *args], capture_output=True, env=env, input=input, timeout=120)
-        if check and r.returncode != 0:
-            raise AssertionError(f"deskyard {args} failed ({r.returncode}): {r.stderr.decode()}")
-        return r
-
-    run("remote", "add", name, f"{admin.base}/{name}", "--token", t["token"])
-    run.name = name
-    run.env = env
-    return run
+from conftest import free_port
+from helpers import wait_until
 
 
 def test_status_and_exec(remote):
@@ -72,8 +43,13 @@ def test_browser_connect(cli, remote):
         port = s.getsockname()[1]
     p = subprocess.Popen([cli, "-d", remote.name, "browser", "connect", "--port", str(port)], env=remote.env,
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    def listening():
+        with socket.socket() as s:
+            return s.connect_ex(("127.0.0.1", port)) == 0
+
     try:
-        time.sleep(1.5)
+        assert wait_until(listening, 10, 0.1), "browser connect isn't listening"
         with sync_playwright() as pw:
             b = pw.chromium.connect_over_cdp(f"http://127.0.0.1:{port}", timeout=90_000)
             page = b.contexts[0].new_page()
@@ -87,84 +63,11 @@ def test_browser_connect(cli, remote):
 
 def test_self_description(cli):
     r = subprocess.run([cli, "describe", "--json"], capture_output=True, check=True)
-    assert b'"exec"' in r.stdout and b'"browser connect"' in r.stdout or b'"browser"' in r.stdout
+    assert b'"exec"' in r.stdout and (b'"browser connect"' in r.stdout or b'"browser"' in r.stdout), r.stdout[:500]
     assert b"/workspace" in subprocess.run([cli, "guide"], capture_output=True, check=True).stdout
 
 
 # ---- forward
-
-
-class Forward:
-    """A running `deskyard forward`, with its output collected as it comes."""
-
-    def __init__(self, cli, remote, *specs, name=None):
-        self.p = subprocess.Popen([cli, "-d", name or remote.name, "forward", *specs], env=remote.env,
-                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        self.out, self.err = [], []
-        self.lines = queue.Queue()
-        for stream, sink in ((self.p.stdout, self.out), (self.p.stderr, self.err)):
-            threading.Thread(target=self._read, args=(stream, sink), daemon=True).start()
-
-    def _read(self, stream, sink):
-        for line in stream:
-            sink.append(line)
-            self.lines.put(line)
-
-    def wait_for(self, text, timeout=60):
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            if any(text in line for line in self.out + self.err):
-                return
-            if self.p.poll() is not None:
-                break
-            time.sleep(0.1)
-        raise AssertionError(f"no {text!r} from forward (exit {self.p.poll()}):\n{''.join(self.out)}{''.join(self.err)}")
-
-    def stop(self):
-        if self.p.poll() is None:
-            self.p.send_signal(signal.SIGINT)
-            try:
-                self.p.wait(10)
-            except subprocess.TimeoutExpired:
-                self.p.kill()
-        return self.p.returncode
-
-
-@pytest.fixture
-def forwards():
-    started = []
-
-    def start(*a, **kw):
-        f = Forward(*a, **kw)
-        started.append(f)
-        return f
-
-    yield start
-    for f in started:
-        f.stop()
-
-
-@pytest.fixture
-def local_http():
-    """A local HTTP server on a free port answering with a known body."""
-    body = b"hello from the agent's machine"
-
-    class Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def log_message(self, *a):
-            pass
-
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
-    srv.body = body
-    srv.port = srv.server_address[1]
-    yield srv
-    srv.shutdown()
 
 
 def desktop_curl(remote, port, name=None):

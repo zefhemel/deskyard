@@ -77,9 +77,7 @@ def test_plain_flatpak_commands_default_to_user(sandbox):
     res = sandbox.exec("flatpak remote-add --if-not-exists probe /etc/workspace/flathub.flatpakrepo", check=False)
     assert res.returncode == 0, res.stderr
     assert "probe" in sandbox.exec("flatpak remotes --user").stdout
+    # No warning that the system installation's exports aren't on the data dirs.
+    assert "is not in the search path" not in res.stderr + res.stdout
     # Explicit --system is left alone (and fails without root, as expected).
     assert sandbox.exec("flatpak remote-add --system probe2 /etc/workspace/flathub.flatpakrepo", check=False).returncode != 0
-
-def test_no_system_exports_warning(sandbox):
-    res = sandbox.exec("flatpak remote-add --if-not-exists probe /etc/workspace/flathub.flatpakrepo", check=False)
-    assert "is not in the search path" not in res.stderr + res.stdout

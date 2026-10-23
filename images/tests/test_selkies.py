@@ -2,7 +2,6 @@
 WebSocket behind Caddy's token, with only the features Deskyard offers."""
 
 import asyncio
-import io
 import json
 import time
 from sandbox import DESKTOP, PANELS
@@ -10,7 +9,6 @@ from sandbox import DESKTOP, PANELS
 import pytest
 import requests
 import websockets
-from PIL import Image
 
 from sandbox import TOKEN_HEADER, docker
 
@@ -35,9 +33,14 @@ async def first_binary_frame(url: str, timeout: float) -> bytes:
                 return msg
 
 
-def test_stream_behind_token(sandbox):
+def test_everything_behind_token(sandbox):
+    """Caddy lets nothing through without the supervisor's token: the page, Selkies'
+    API and stream, CDP."""
     assert requests.get(sandbox.web_url + "/", timeout=5).status_code == 401
+    assert requests.get(sandbox.web_url, headers={"X-Deskyard-Token": "nope"}, timeout=5).status_code == 401
     assert requests.get(sandbox.web_url + "/api/health", timeout=5).status_code == 401
+    assert requests.get(sandbox.web_url + "/_cdp/json/version", timeout=5).status_code == 401
+    assert sandbox.get("/").status_code == 200
     assert sandbox.get("/api/health").status_code == 200
     ws_url = sandbox.web_url.replace("http://", "ws://") + "/api/websockets"
     with pytest.raises(websockets.InvalidStatus) as refused:
@@ -61,18 +64,13 @@ def test_stream_origin(sandbox):
     assert refused.value.response.status_code == 403
 
 
-def test_agent_tools_on_x11(sandbox):
-    w, h = map(int, sandbox.exec("deskyard size").stdout.split())
-    assert (w, h) == (1280, 800)
-    png = sandbox.exec_bytes("deskyard screenshot")
-    assert Image.open(io.BytesIO(png)).size == (w, h)
-    assert Image.open(io.BytesIO(sandbox.exec_bytes("deskyard zoom 0 0 200 100"))).size == (200, 100)
-    sandbox.exec("deskyard click 640 400 && deskyard type 'hi' && deskyard key Escape")
+def test_clipboard_on_x11(sandbox):
+    # (The agent tools on Xvfb: test_cli.)
     sandbox.exec("printf deskyard-clip | xclip -selection clipboard")
     assert sandbox.exec("xclip -o -selection clipboard").stdout == "deskyard-clip"
 
 
-@pytest.mark.parametrize("method,path", [
+DISABLED = [
     ("GET", "/api/screenshot"),
     ("GET", "/api/print/doc.pdf"),
     ("POST", "/api/tokens"),
@@ -82,10 +80,15 @@ def test_agent_tools_on_x11(sandbox):
     ("GET", "/api/sessions"),
     ("POST", "/api/switch"),
     ("GET", "/api/metrics"),
-])
-def test_disabled_features(sandbox, method, path):
-    r = requests.request(method, sandbox.web_url + path, headers=TOKEN_HEADER, json={}, timeout=5)
-    assert r.status_code in (403, 404), (path, r.status_code, r.text[:200])
+]
+
+
+def test_disabled_features(sandbox):
+    answers = {}
+    for method, path in DISABLED:
+        r = requests.request(method, sandbox.web_url + path, headers=TOKEN_HEADER, json={}, timeout=5)
+        answers[(method, path)] = (r.status_code, r.text[:200])
+    assert all(code in (403, 404) for code, _ in answers.values()), answers
 
 
 def test_selkies_upload_refused(sandbox):
@@ -163,18 +166,8 @@ def test_session_apps_preload_gamepads(sandbox):
     sandbox.exec("test -d /dev/input")
 
 
-def test_speaker_default(sandbox):
-    deadline = time.time() + 20
-    while True:
-        out = sandbox.exec("pactl info", check=False).stdout
-        if "Default Sink: deskyard-speaker" in out or time.time() > deadline:
-            break
-        time.sleep(1)
-    assert "Default Sink: deskyard-speaker" in out, out
-
-
 def test_virtual_mic_at_start(sandbox):
-    # Selkies' virtual mic is there before any viewer's mic, so no viewer's
+    # The desktop's speaker is the default output. Selkies' virtual mic is there before any viewer's mic, so no viewer's
     # connection owns it (and takes it away from the others when it ends);
     # it's the default mic, and the speaker stays the default output.
     deadline = time.time() + 20
@@ -207,21 +200,14 @@ def test_screen_runs_as_user(sandbox):
     assert users == ["user"], users
 
 
-def test_webcam_off_without_v4l2loopback(sandbox):
-    env = sandbox.exec(f"tr '\\0' '\\n' < /proc/$({SELKIES_PID})/environ").stdout
-    assert "SELKIES_WEBCAM_ENABLED=false|locked" in env.splitlines()
-
-
-def test_turbo_locked_off(sandbox):
+def test_selkies_settings(sandbox):
+    env = sandbox.exec(f"tr '\\0' '\\n' < /proc/$({SELKIES_PID})/environ").stdout.splitlines()
+    # No webcam without v4l2loopback.
+    assert "SELKIES_WEBCAM_ENABLED=false|locked" in env
     # Turbo encodes every frame: about a quarter of a core per idle viewer.
-    env = sandbox.exec(f"tr '\\0' '\\n' < /proc/$({SELKIES_PID})/environ").stdout
-    assert "SELKIES_VIDEO_STREAMING_MODE=false|locked" in env.splitlines()
-
-
-def test_audio_gate_off(sandbox):
-    # It clips the start of every sound after silence (patches/README.md).
-    env = sandbox.exec(f"tr '\\0' '\\n' < /proc/$({SELKIES_PID})/environ").stdout
-    assert "DESKYARD_AUDIO_IDLE_S=0" in env.splitlines()
+    assert "SELKIES_VIDEO_STREAMING_MODE=false|locked" in env
+    # The audio gate clips the start of every sound after silence (patches/README.md).
+    assert "DESKYARD_AUDIO_IDLE_S=0" in env
 
 
 def test_contract(image):

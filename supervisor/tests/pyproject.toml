@@ -9,6 +9,7 @@ dependencies = [
     "requests>=2.32",
     "pyyaml>=6",
     "websockets>=13",
+    "pytest-xdist>=3.6",
 ]
 
 [tool.uv]
@@ -18,5 +19,11 @@ package = false
 markers = [
     "network: downloads from the internet",
     "slow: long-running (minutes)",
+    "build: builds images through the supervisor (custom images, image from desktop)",
+    "perf: measures time against a threshold",
+    "serial: timing-sensitive; left out under xdist, run with --only-serial",
+    "webkit: the desktop page's tests in WebKit",
 ]
-addopts = "-ra"
+# The default run leaves out what needs the internet, takes minutes, builds
+# images, measures, or is WebKit; -m "" runs everything (make test-all, CI).
+addopts = "-ra -m 'not slow and not network and not build and not perf and not webkit'"

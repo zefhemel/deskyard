@@ -8,11 +8,11 @@ import threading
 import time
 import uuid
 
+import pytest
 import websockets
 
 from conftest import docker
-from test_api import ws_handshake
-from test_monitoring import read_events
+from helpers import FAKE_MEDIA, make_account, read_events, sign_in, signed_in, wait_until, ws_handshake
 
 
 def ws_url(client, name, tab=None):
@@ -77,20 +77,10 @@ class Stream:
         self.thread.join(10)
 
 
-def wait_for(fn, timeout=10):
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if v := fn():
-            return v
-        time.sleep(0.25)
-    return fn()
-
-
 def test_stream_needs_session_access_and_same_origin(admin, desktop, name, supervisor):
     path = f"/{name}/screen/api/websockets"
     assert ws_handshake(admin.base, path, origin=admin.base) == 401
-    user = "u" + uuid.uuid4().hex[:5]
-    assert admin.post("/api/accounts", json={"username": user, "password": "pw", "admin": False, "desktops": []}).status_code == 201
+    user = make_account(admin, [])
     try:
         anna = supervisor.client().login(user, "pw")
         assert ws_handshake(anna.base, path, anna.cookies, origin=anna.base) == 404
@@ -103,9 +93,12 @@ def test_stream_needs_session_access_and_same_origin(admin, desktop, name, super
 
 def test_stream_shows_the_desktop_and_counts_as_viewing(admin, desktop, name):
     with Stream(admin, name) as s:
-        assert wait_for(lambda: admin.desktop(name)["viewers"] == ["admin"])
-        assert wait_for(lambda: s.frames > 0, 15), "no picture from Selkies through the supervisor"
-    assert wait_for(lambda: admin.desktop(name)["viewers"] == [])
+        assert wait_until(lambda: admin.desktop(name)["viewers"] == ["admin"])
+        # Everyone watching the desktops hears of it.
+        assert read_events(admin, lambda es: any(k in ("viewers", "desktop") and d["name"] == name and d["viewers"] == ["admin"]
+                                                 for k, d in es))
+        assert wait_until(lambda: s.frames > 0, 15), "no picture from Selkies through the supervisor"
+    assert wait_until(lambda: admin.desktop(name)["viewers"] == [])
 
 
 def test_viewers_opening_together_all_get_the_picture(admin, desktop, name):
@@ -117,33 +110,34 @@ def test_viewers_opening_together_all_get_the_picture(admin, desktop, name):
     try:
         for s in streams:
             s.wait_open()
-        assert wait_for(lambda: all(s.frames > 0 for s in streams), 20), [(s.frames, s.error) for s in streams]
+        assert wait_until(lambda: all(s.frames > 0 for s in streams), 20), [(s.frames, s.error) for s in streams]
         assert all(s.error is None for s in streams), [s.error for s in streams]
     finally:
         for s in streams:
             s.__exit__()
 
 
+@pytest.mark.serial  # a picture within 5 s
 def test_stopped_stream_restarts_for_a_new_viewer(supervisor, admin, desktop, name):
     # A page that stops the desktop's stream (as Selkies' client does when the
     # only viewer's tab goes to the background, without our additions): the
     # next viewer to connect still gets the picture within 5 s.
     with Stream(admin, name, "hidden") as a:
-        assert wait_for(lambda: a.video > 0, 15)
+        assert wait_until(lambda: a.video > 0, 15)
         a.send_queue.append("STOP_VIDEO")
         logs = lambda: (lambda r: r.stdout + r.stderr)(docker("logs", f"deskyard-{name}"))  # noqa: E731
-        assert wait_for(lambda: "Received STOP_VIDEO for 'primary'. Stopping stream." in logs(), 10), logs()[-3000:]
+        assert wait_until(lambda: "Received STOP_VIDEO for 'primary'. Stopping stream." in logs(), 10), logs()[-3000:]
         time.sleep(1)
         with Stream(admin, name, "joiner") as b:
             joined = time.time()
-            assert wait_for(lambda: b.video > 0, 5), "the joining viewer got no picture"
+            assert wait_until(lambda: b.video > 0, 5), "the joining viewer got no picture"
             print(f"first picture {time.time() - joined:.2f} s after joining")
         assert "restarting it" in supervisor.logs()
 
 
 def test_reconnect_probe_and_other_selkies_api(admin, desktop, name):
     # The client probes with a plain GET before reconnecting.
-    assert wait_for(lambda: admin.get(f"/{name}/screen/api/websockets").status_code == 204, 30)
+    assert wait_until(lambda: admin.get(f"/{name}/screen/api/websockets").status_code == 204, 30)
     for method, path in [("GET", "api/status"), ("POST", "api/upload"), ("GET", "api/files/"), ("GET", "api/screenshot"),
                          ("GET", "api/recording"), ("GET", "api/health"), ("POST", "api/switch"), ("GET", "api/sessions")]:
         assert admin.request(method, f"/{name}/screen/{path}").status_code == 404, path
@@ -154,7 +148,7 @@ def test_client_comes_from_the_image_not_the_desktop(admin, desktop, name):
     # never proxied.
     docker("exec", f"deskyard-{name}", "supervisorctl", "stop", "selkies")
     try:
-        assert wait_for(lambda: admin.get(f"/{name}/screen/api/websockets").status_code == 503)
+        assert wait_until(lambda: admin.get(f"/{name}/screen/api/websockets").status_code == 503)
         page = admin.get(f"/{name}/screen/")
         assert page.status_code == 200 and page.headers["Cache-Control"] == "no-store"
         assert page.text.index('<script src="deskyard.js"></script>') < page.text.index('<script type="module"')
@@ -172,13 +166,13 @@ def test_mic_badge_follows_the_stream(admin, desktop, name):
     for bad in ["", "a b", "x" * 65]:
         assert admin.post(f"/api/desktops/{name}/mic", json={"on": True, "tab": bad}).status_code == 400, bad
     with Stream(admin, name, tab):
-        assert wait_for(lambda: admin.desktop(name)["viewers"] == ["admin"])
+        assert wait_until(lambda: admin.desktop(name)["viewers"] == ["admin"])
         assert admin.post(f"/api/desktops/{name}/mic", json={"on": True, "tab": "not-this-one"}).status_code == 409
         assert admin.post(f"/api/desktops/{name}/mic", json={"on": True, "tab": tab}).status_code == 204
         assert admin.desktop(name)["mics"] == ["admin"]
         assert read_events(admin, lambda es: any(k in ("viewers", "desktop") and d["name"] == name and d["mics"] == ["admin"]
                                                  for k, d in es))
-    assert wait_for(lambda: admin.desktop(name)["mics"] == [] and admin.desktop(name)["viewers"] == [])
+    assert wait_until(lambda: admin.desktop(name)["mics"] == [] and admin.desktop(name)["viewers"] == [])
     assert admin.post(f"/api/desktops/{name}/mic", json={"on": True, "tab": tab}).status_code == 409
 
 
@@ -186,13 +180,12 @@ def test_mic_badge_follows_the_stream(admin, desktop, name):
 def test_client_additions_in_a_browser(supervisor, admin, desktop, name):
     from playwright.sync_api import sync_playwright
 
-    from test_ui import signed_in
-
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base)
         page.goto(f"{supervisor.base}/{name}/")
-        frame = page.frame_locator("iframe")
-        frame.locator("body").wait_for(state="attached", timeout=30000)
+        # The frame's document, once it's the client's (not the blank one before).
+        page.wait_for_function("document.querySelector('iframe')?.contentWindow?.location.pathname.endsWith('/screen/')",
+                               timeout=30000)
         f = page.frames[1]
         assert f.url == f"{supervisor.base}/{name}/screen/"
         f.wait_for_function("window.deskyardScreen && window.deskyardScreen.state() === 'connected'", timeout=30000)
@@ -231,7 +224,7 @@ def test_client_additions_in_a_browser(supervisor, admin, desktop, name):
         screen = "document.querySelector('iframe')?.contentWindow?.deskyardScreen"
         page.wait_for_function(f"{screen}?.state() === 'connected'", timeout=30000)
         assert page.evaluate(f"{screen}.tab") != tab
-        assert wait_for(lambda: admin.desktop(name)["mics"] == [])
+        assert wait_until(lambda: admin.desktop(name)["mics"] == [])
         browser.close()
 
 
@@ -239,11 +232,12 @@ def test_two_pages_stay_side_by_side(admin, desktop, name):
     # Two pages with their own Selkies tab ids join beside each other; neither
     # supersedes the other.
     docker("exec", "-d", "-u", "user", "-e", "DISPLAY=:1", f"deskyard-{name}", "xfce4-terminal")
-    time.sleep(3)
+    assert wait_until(lambda: docker("exec", "-u", "user", "-e", "DISPLAY=:1", f"deskyard-{name}",
+                                   "xdotool", "search", "--onlyvisible", "--class", "xfce4-terminal", check=False).returncode == 0)
     with Stream(admin, name, "pageA") as a:
-        assert wait_for(lambda: a.frames > 0, 15)
+        assert wait_until(lambda: a.frames > 0, 15)
         with Stream(admin, name, "pageB") as b:
-            assert wait_for(lambda: b.frames > 0, 15)
+            assert wait_until(lambda: b.frames > 0, 15)
             before = (a.frames, b.frames)
             time.sleep(3)
             # Something changes on screen: both pages get the new picture.
@@ -256,8 +250,6 @@ def test_two_pages_stay_side_by_side(admin, desktop, name):
 
 def test_duplicated_tab_and_reload_keep_the_picture(supervisor, admin, desktop, name):
     from playwright.sync_api import sync_playwright
-
-    from test_ui import signed_in
 
     screen = "document.querySelector('iframe')?.contentWindow?.deskyardScreen"
     showing = f"{screen}?.state() === 'connected' && {screen}.video() !== null"
@@ -276,7 +268,7 @@ def test_duplicated_tab_and_reload_keep_the_picture(supervisor, admin, desktop, 
         for pg in (page, dup):
             assert pg.evaluate(f"{screen}.state()") == "connected"
             assert pg.evaluate(f"{screen}.video() !== null")
-        assert wait_for(lambda: admin.desktop(name)["viewers"] == ["admin"])
+        assert wait_until(lambda: admin.desktop(name)["viewers"] == ["admin"])
         dup.close()
 
         # A reload gets the picture back promptly.
@@ -294,19 +286,12 @@ def test_mic_turns_on_only_for_the_page(supervisor, admin, desktop, name):
     # own here, without the desktop page around it.)
     from playwright.sync_api import sync_playwright
 
-    from test_ui import FAKE_MEDIA
-
     screen = "window.deskyardScreen"
     with sync_playwright() as p:
         browser = p.chromium.launch(args=FAKE_MEDIA)
-        page = browser.new_context().new_page()
+        page = sign_in(browser, supervisor.base)
         dialogs = []
         page.on("dialog", lambda d: (dialogs.append(d.message), d.dismiss()))
-        page.goto(supervisor.base + "/login")
-        page.fill("#u", "admin")
-        page.fill("#p", "admin-password")
-        page.get_by_role("button", name="Sign in").click()
-        page.wait_for_url(lambda u: "/login" not in u)
         page.goto(f"{supervisor.base}/{name}/screen/")
         page.wait_for_function(f"{screen}?.state() === 'connected'", timeout=30000)
 
