@@ -43,38 +43,85 @@ The desktop image is Debian 13, `linux/arm64` and `linux/amd64`. About 0.4 GB
 of RAM per running desktop with Chromium open, so several fit on an 8 GB
 machine.
 
-## Quick start
+## Install
+
+There are no versioned releases yet. Everything below is **edge**: built
+from `main` on every change, in the
+[edge pre-release](https://github.com/zefhemel/deskyard/releases/tag/edge)
+and the images' `latest` tags.
+
+### The `deskyard` command
+
+For agents and people outside a desktop (inside one, it's already there).
+On Linux or macOS:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zefhemel/deskyard/main/install.sh | sh
+```
+
+It downloads `deskyard-<os>-<arch>` from the edge release, checks it
+against `SHA256SUMS` and installs it to `~/.local/bin` (or, if that isn't
+writable, to `/usr/local/bin` with sudo, saying so first). Set
+`DESKYARD_VERSION` to install another release tag, and
+`DESKYARD_INSTALL_DIR` to install elsewhere:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zefhemel/deskyard/main/install.sh | DESKYARD_INSTALL_DIR=~/bin sh
+```
+
+On Windows, download `deskyard-windows-amd64.exe` (or `-arm64.exe`) from
+the edge release.
+
+### The supervisor
 
 You need Docker (or OrbStack, or Docker Desktop) on Linux or macOS.
 
-**The binary.** Download the supervisor for your machine from the
-[releases](https://github.com/zefhemel/deskyard/releases)
-(`deskyard-supervisor-linux-amd64`, `-linux-arm64`, `-darwin-amd64`, `-darwin-arm64`)
-and run it:
+**The binary.** Download `deskyard-supervisor-<os>-<arch>` (`linux-amd64`,
+`linux-arm64`, `darwin-amd64`, `darwin-arm64`) from the edge release and run
+it:
 
 ```bash
-curl -fsSLo deskyard-supervisor https://github.com/zefhemel/deskyard/releases/latest/download/deskyard-supervisor-linux-amd64
-chmod +x supervisor
-./supervisor
+curl -fsSLo deskyard-supervisor https://github.com/zefhemel/deskyard/releases/download/edge/deskyard-supervisor-linux-amd64
+chmod +x deskyard-supervisor
+./deskyard-supervisor
 ```
 
 It finds the engine at `DESKYARD_ENGINE_HOST`, else `DOCKER_HOST`, else
-the platform's default socket, and keeps everything in `~/deskyard`.
+the platform's default socket, keeps everything in `~/deskyard` (set
+`DESKYARD_DATA_DIR` for another folder) and listens on `127.0.0.1:8080`. Its
+user must be able to use the Docker socket. More settings: Configuration.
 
-**In a container.** `supervisor/compose.yaml` runs the image
-`ghcr.io/zefhemel/deskyard`:
+**In a container.** The image `ghcr.io/zefhemel/deskyard` (amd64 and arm64)
+needs the Docker socket and the data folder, mounted **at the same path** as
+on the host (see Storage):
+
+```bash
+docker run -d --name deskyard --restart unless-stopped \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /srv/deskyard:/srv/deskyard -e DESKYARD_DATA_DIR=/srv/deskyard \
+  -p 127.0.0.1:8080:8080 \
+  ghcr.io/zefhemel/deskyard:latest
+```
+
+Or, from a checkout, `supervisor/compose.yaml` does the same:
 
 ```bash
 cd supervisor
-DESKYARD_DATA_DIR=/srv/desktops docker compose up -d
+DESKYARD_DATA_DIR=/srv/deskyard docker compose up -d
 ```
 
-The data folder must be an absolute path; it's mounted at the same path
-inside (see Storage).
+### Desktop images
 
-**Then.** On first start the supervisor creates the account `admin` and
-prints its generated password once in its log (`docker compose logs
-supervisor` in a container), unless you set `DESKYARD_ADMIN_PASSWORD`.
+Nothing to install: the supervisor pulls
+`ghcr.io/zefhemel/deskyard-debian-xfce:latest` when you create the first
+desktop (see Images and upgrades).
+
+## First start
+
+On first start the supervisor creates the account `admin` and
+prints its generated password once in its log (`docker logs deskyard`, or
+`docker compose logs supervisor`, in a container), unless you set
+`DESKYARD_ADMIN_PASSWORD`.
 Open <http://localhost:8080>, sign in, and create a desktop: give it a name
 like `alice` and its desktop opens at <http://localhost:8080/alice/>.
 
@@ -83,7 +130,7 @@ point its DNS at the host and let ports 80 and 443 through: the supervisor
 gets a certificate itself and serves HTTPS. In a container, publish `80:80`
 and `443:443` instead of `127.0.0.1:8080:8080` (the compose file shows
 where). Run directly on Linux, let the binary bind low ports with
-`sudo setcap cap_net_bind_service=+ep ./supervisor`. Without a domain, keep
+`sudo setcap cap_net_bind_service=+ep ./deskyard-supervisor`. Without a domain, keep
 the default localhost binding and put your own HTTPS proxy or Tailscale in
 front.
 
@@ -260,8 +307,8 @@ directory; it won't be touched again.
 **From elsewhere** (a laptop, CI, another sandbox), the only way in is the
 `deskyard` command with an **agent token**. Anyone with access to a desktop
 creates one on its Agents tab, with a name and an optional expiry; it's
-shown once, with the line to paste on the agent's machine. Download
-`deskyard` for that machine from the releases (Linux, macOS, Windows), then:
+shown once, with the line to paste on the agent's machine. Install
+`deskyard` there (see Install), then:
 
 ```bash
 deskyard remote add alice https://desktops.example.com/alice --token dyt_...
@@ -351,7 +398,7 @@ startup and refuses to run, with an explanation, if they don't match.
 
 ```
 supervisor/
-  cmd/deskyard-supervisor/     the supervisor (the deskyard binary)
+  cmd/deskyard-supervisor/     the supervisor
   cmd/deskyard/     the deskyard command (inside desktops and for agents elsewhere)
   internal/         engine interface and Docker implementation, accounts, auth,
                     desktops, the HTTP server and proxy, the embedded UI
@@ -366,9 +413,11 @@ docs/               design notes (a SilverBullet space)
 
 CI: `.github/workflows/images.yml` builds every image under `images/` for
 amd64 and arm64 on native runners, weekly and on change;
-`.github/workflows/supervisor.yml` tests the supervisor, publishes its image
-and, for tags `v*`, attaches the `supervisor` and `deskyard` binaries to the
-GitHub release.
+`.github/workflows/supervisor.yml` tests the supervisor, publishes its image,
+builds the `deskyard-supervisor` and `deskyard` binaries and puts them in the
+`edge` pre-release (main) or the GitHub release (tags `v*`);
+`.github/workflows/tests.yml` runs the integration suites (see Tests).
+`install.sh` installs `deskyard` from a release.
 
 ## Development
 
@@ -377,23 +426,41 @@ The supervisor needs Go and Node 24:
 ```bash
 cd supervisor
 make build          # the UI, then bin/deskyard-supervisor and bin/deskyard
-make test           # Go unit tests
-make test-engine    # also the tests that drive a real Docker engine (builds the
+make test           # Go unit tests, with the race detector
+make test-engine    # the tests that drive a real Docker engine (builds the
                     # desktop image first, unless CC_TEST_IMAGE names one)
-make typecheck      # the UI's TypeScript
+make typecheck      # the UI's TypeScript and its tests
 make release VERSION=v1.2.3   # cross-compiled binaries in dist/
 make image          # the supervisor's container image
 ```
 
-The desktop image's tests build it and drive real containers (needs Docker
-and internet):
+### Tests
 
-```bash
-cd images/debian-xfce/tests
-uv run playwright install chromium   # once
-uv run pytest -m "not slow"
-uv run pytest                        # also: memory budget, Flatpak app, agent CLIs
-```
+From the top folder; the pytest suites need Docker, [uv](https://docs.astral.sh/uv/)
+and, once, `uv run playwright install chromium` in each of
+`images/debian-xfce/tests` and `supervisor/tests`:
 
-Screenshots and stats land in `tests/artifacts/`. `AC_IMAGE=<tag>` skips the
-build.
+| Command | Runs | When |
+|---|---|---|
+| `make test` | Go (vet, race) and engine tests, the UI's, and both pytest suites without what's slow, needs the internet, builds images, measures timing, or runs WebKit. About 7 minutes on a quiet Mac, 10 under load. | Before every commit. |
+| `make test-ci` | `make test` plus WebKit and Firefox: what CI runs on a pull request. | To check a browser difference. |
+| `make test-all` | Everything, the supervisor suite also with the supervisor in a container. About 25 minutes; needs the internet. | Before a release, or after touching recipes, image builds (`recipes/`, `imagescan/`, image from a desktop), audio timing, or how the supervisor runs in a container. CI runs it on main and nightly. |
+| `make test-image`, `test-supervisor`, `test-container`, `test-go`, `test-web`, `test-engine` | One part. | While working on it. |
+
+While working on one area, narrow a suite: `make test-supervisor PYTEST_ARGS="-k drop"`,
+or run pytest in the suite's folder (`uv run pytest test_ui_audio.py`).
+`MARKS="-m ''"` lifts the default selection; markers: `slow`, `network`,
+`build`, `perf`, `webkit` (left out by default) and `serial`.
+
+Both suites run under pytest-xdist (`WORKERS`, default 4), then run the
+timing-sensitive tests, marked `serial`, on their own (`pytest --only-serial`).
+Each test gets a new desktop, taken from a few started ahead of it. The
+supervisor suite runs a supervisor per worker, each on its own slice of
+`DESKYARD_TEST_SUBNET` (default 10.215.0.0/20): give checkouts that test at the
+same time different ones. The supervisor suite rebuilds the web UI first when
+its sources are newer than the build. `TEST_IMAGE` names the desktop image the
+suites build and test (default `deskyard-debian-xfce:test`); outside make,
+`AC_IMAGE` (image suite) and `CC_TEST_IMAGE` (supervisor suite) name it.
+Firefox is skipped where Playwright's Firefox can't start (on some Macs).
+
+Screenshots and stats from the image suite land in `images/debian-xfce/tests/artifacts/`.

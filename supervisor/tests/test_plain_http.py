@@ -11,14 +11,15 @@ import re
 import time
 from io import BytesIO
 
+import pytest
 from PIL import Image, ImageStat
-
 from playwright.sync_api import expect, sync_playwright
 
 from conftest import ADMIN_PASSWORD
-from test_cli import cli, remote  # noqa: F401  (fixtures)
+from helpers import MEDIA, PICTURE, SCREEN, SHOWING, fits, in_desktop, screen_size, to_page, wait_until
 from test_download import put
-from test_ui import DRAG, MEDIA, PICTURE, SCREEN, SHOWING, fits, in_desktop, play_tone, quiet, screen_size, to_page, wait_until
+from test_ui_audio import play_tone, quiet
+from test_ui_pointer_and_drop import DRAG
 
 HOST = "deskyard.test"
 NEEDS_HTTPS = "Needs https, see running on a LAN"
@@ -57,7 +58,7 @@ def has_picture(page) -> bool:
     return ImageStat.Stat(Image.open(BytesIO(shot)).convert("L")).mean[0] > 150
 
 
-def test_plain_http_screen(supervisor, desktop, name, remote):  # noqa: F811
+def test_plain_http_screen(supervisor, desktop, name, remote):
     base = insecure_base(supervisor)
     in_desktop(name, "sh", "-c", "setsid xev -name keytest > /tmp/xev.log 2>&1 &")
     win = wait_until(lambda: in_desktop(name, "xdotool", "search", "--name", "^keytest$", check=False).split(), 20)
@@ -160,6 +161,7 @@ def test_plain_http_upload_and_download(supervisor, desktop, name, tmp_path):
     assert in_desktop(name, "cat", "/workspace/Desktop/dropped-http.txt") == "dropped over http\n"
 
 
+@pytest.mark.serial  # seconds of quiet, timed
 def test_plain_http_sound_and_quality(supervisor, desktop, name):
     base = insecure_base(supervisor)
     play_tone(name)

@@ -14,10 +14,13 @@ each way. Lag assumes the desktop's clock is the browser's (the same machine).
 import statistics
 import time
 
+import pytest
 from playwright.sync_api import sync_playwright
 
 from delayproxy import DelayProxy
-from test_ui import MEDIA, SCREEN, audio_switch, in_desktop, screen_size, sign_in, wait_until
+from helpers import MEDIA, SCREEN, audio_switch, in_desktop, screen_size, sign_in, wait_until
+
+pytestmark = [pytest.mark.perf, pytest.mark.serial]
 
 # Sound plays without a click and comes out of no speaker: Chromium's fake
 # output, so the numbers don't depend on this machine's audio device.

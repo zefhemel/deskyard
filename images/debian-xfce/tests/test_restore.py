@@ -1,23 +1,33 @@
-"""The desktop comes back after a container restart: browser tabs, terminals, windows."""
+"""The desktop comes back after a container restart: browser tabs, terminals, windows.
+(That a new desktop opens nothing: test_desktop.test_nothing_opens_at_start.)"""
 
 import time
 
+import pytest
+
+from sandbox import docker, wait_until
 
 
 def restart_gracefully(sandbox):
-    from sandbox import docker
+    """A restart that lets the session save itself (docker stop's grace period)."""
     docker("restart", "-t", "30", sandbox.name)
     sandbox.wait_ready()
-    time.sleep(8)  # session restore and autostart settle
 
 
+@pytest.mark.serial  # flaky under load: Chromium sometimes starts without its session
 def test_chromium_tabs_restored(sandbox):
     sandbox.exec("echo '<title>restore-probe</title><h1>still here</h1>' > ~/probe.html")
     sandbox.exec("curl -fs --max-time 60 -X PUT 'http://127.0.0.1:9221/json/new?file:///workspace/probe.html'")
-    time.sleep(3)
+    # Chromium writes its session a few seconds after a change: wait for the tab in it.
+    saved = "grep -qs probe.html ~/.config/chromium-shared/Default/Sessions/*"
+    assert wait_until(lambda: sandbox.exec(saved, check=False).returncode == 0, 30, 0.5), "the tab never reached the session"
     restart_gracefully(sandbox)
-    titles = [t["title"] for t in sandbox.cdp_json("/json/list", timeout=60)]
-    assert "restore-probe" in titles, titles
+    # The session brings it back by itself (before any CDP call here would start it).
+    assert wait_until(lambda: sandbox.exec("pgrep -f '[c]hromium-shared'", check=False).returncode == 0, 30, 0.5), \
+        "Chromium didn't come back"
+    titles = lambda: [t["title"] for t in sandbox.cdp_json("/json/list", timeout=60)]  # noqa: E731
+    assert wait_until(lambda: "restore-probe" in titles(), 30, 1), titles()
+    time.sleep(2)  # a second window would be up by now
     windows = sandbox.exec("xdotool search --onlyvisible --class chromium | wc -l").stdout.strip()
     assert windows == "1", f"{windows} Chromium windows after restore"
 
@@ -33,14 +43,10 @@ def test_terminals_restored_with_their_folders(sandbox, artifacts_dir):
     # session manager knows it (SESSION_MANAGER from the panel's environment).
     sandbox.exec("mkdir -p ~/project && export $(tr '\\0' '\\n' < /proc/$(pgrep -o -x xfce4-panel)/environ | grep ^SESSION_MANAGER=)"
                  " && setsid -f xfce4-terminal --working-directory=/workspace/project >/dev/null 2>&1")
-    time.sleep(3)
-    before = terminal_cwds(sandbox)
-    assert "/workspace/project" in before, before
+    before = wait_until(lambda: terminal_cwds(sandbox) if "/workspace/project" in terminal_cwds(sandbox) else None, 15)
+    assert before, terminal_cwds(sandbox)
+    time.sleep(2)  # the session manager knows the terminal
     restart_gracefully(sandbox)
-    after = terminal_cwds(sandbox)
-    assert after == before, (before, after)
+    assert wait_until(lambda: terminal_cwds(sandbox) == before, 30, 1), (before, terminal_cwds(sandbox))
     (artifacts_dir / "after-restart.png").write_bytes(sandbox.exec_bytes("deskyard screenshot"))
 
-
-def test_fresh_desktop_opens_nothing(sandbox):
-    assert terminal_cwds(sandbox) == []

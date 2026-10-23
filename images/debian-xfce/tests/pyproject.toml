@@ -9,6 +9,7 @@ dependencies = [
     "requests>=2.32",
     "pyyaml>=6",
     "websockets>=13",
+    "pytest-xdist>=3.6",
 ]
 
 [tool.uv]
@@ -18,5 +19,9 @@ package = false
 markers = [
     "network: downloads from the internet",
     "slow: long-running (minutes)",
+    "perf: measures time or resources against a threshold",
+    "serial: timing-sensitive; left out under xdist, run with --only-serial",
 ]
-addopts = "-ra"
+# The default run leaves out what needs the internet or takes minutes; -m ""
+# runs everything (make test-all, CI).
+addopts = "-ra -m 'not slow and not network and not perf'"

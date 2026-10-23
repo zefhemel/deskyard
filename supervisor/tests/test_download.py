@@ -2,14 +2,14 @@
 
 import io
 import os
-import time
 import uuid
 import zipfile
 from pathlib import Path
 
 import requests
 
-from test_agent import make_token
+from conftest import docker
+from helpers import make_token, wait_until
 
 
 def put(folder: str, rel: str, data: bytes) -> None:
@@ -90,7 +90,7 @@ def test_access_and_tokens(admin, desktop, name, supervisor):
 def test_download_dialog(supervisor, desktop, name, tmp_path):
     from playwright.sync_api import expect, sync_playwright
 
-    from test_ui import signed_in
+    from helpers import signed_in
 
     put(desktop["folder"], "docs/hello.txt", b"hello from the desktop\n")
     with sync_playwright() as p:
@@ -130,8 +130,6 @@ def test_folder_zip_with_hard_links_and_unreadable_files(admin, desktop, name):
 
 
 def test_client_abort_leaves_no_tar_or_cat_running(admin, desktop, name):
-    from conftest import docker
-
     folder = desktop["folder"]
     for i in range(4):
         put(folder, f"huge/f{i}.bin", os.urandom(64 * 1024 * 1024))
@@ -147,11 +145,7 @@ def test_client_abort_leaves_no_tar_or_cat_running(admin, desktop, name):
         next(r.iter_content(65536))
         assert running()  # still streaming
         r.close()
-        for _ in range(20):
-            if not running():
-                break
-            time.sleep(0.5)
-        assert running() == [], f"{path}: left running after the client left"
+        assert wait_until(lambda: not running(), 10, 0.5), f"{path}: {running()} left running after the client left"
 
 
 LUMINANCE_JS = """(rgb) => {
@@ -163,7 +157,7 @@ LUMINANCE_JS = """(rgb) => {
 def test_download_dialog_names_are_readable_and_hidden_files_toggle(supervisor, desktop, name):
     from playwright.sync_api import expect, sync_playwright
 
-    from test_ui import signed_in
+    from helpers import signed_in
 
     for rel in ["Documents/a.txt", "visible.txt", ".secret/x", ".hidden.txt"]:
         put(desktop["folder"], rel, b"x")
