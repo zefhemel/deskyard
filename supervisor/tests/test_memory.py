@@ -121,7 +121,9 @@ def test_automatic_memory_opt_out_saves_without_restart(admin, supervisor, deskt
         assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
         toggle.scroll_into_view_if_needed()
         page.screenshot(path=str(tmp_path / "memory-policy-mobile.png"))
-        toggle.check()
+        with page.expect_response(lambda r: r.url.endswith("/memory-policy") and r.request.method == "PUT") as response:
+            toggle.check()
+        assert response.value.status == 204
         expect(toggle).to_be_checked()
         assert admin.desktop(name)["autoReclaim"] is True
         browser.close()
