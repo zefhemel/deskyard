@@ -113,7 +113,9 @@ jobs:
           path: |
             ~/.cache/ms-playwright
             ~/.cache/playwright-debs
-          key: browsers-${{ steps.image.outputs.version }}-${{ hashFiles('images/tests/uv.lock', 'supervisor/tests/uv.lock') }}
+          key: browsers-${{ hashFiles('images/tests/uv.lock', 'supervisor/tests/uv.lock') }}-${{ steps.image.outputs.version }}
+          # Another image's packages: the script takes what this one lacks.
+          restore-keys: browsers-${{ hashFiles('images/tests/uv.lock', 'supervisor/tests/uv.lock') }}-
 
       - name: Browsers
         if: env.SKIP != 'true'
