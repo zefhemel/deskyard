@@ -3,7 +3,7 @@
 import type { ComponentChildren } from "preact";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-import { api, type Desktop } from "../api.ts";
+import { api, type AppWindow, type Desktop } from "../api.ts";
 import { Avatar, Avatars } from "../components/avatar.tsx";
 import { power } from "../components/desktop-menu.tsx";
 import { Menu, type MenuItem } from "../components/menu.tsx";
@@ -14,6 +14,9 @@ import { DownloadDialog } from "../dialogs/download.tsx";
 import { useDesktop, useLive } from "../live.tsx";
 import { agentTitle } from "../lib/activity-format.ts";
 import { names } from "../lib/format.ts";
+import { Applications } from "./applications.tsx";
+import { TouchControls, useVisibleViewport } from "./touch-controls.tsx";
+import { WindowViewport } from "./window-viewport.tsx";
 import { AudioControl } from "./audio-panel.tsx";
 import { avSyncWanted, startAvSync } from "./avsync.ts";
 import { ClipboardPopover } from "./clipboard.tsx";
@@ -48,6 +51,15 @@ import {
 // Remembered per browser.
 const QUALITY_KEY = "deskyard.quality";
 const LOCK_SIZE_KEY = "deskyard.lockSize";
+const resolutions: Size[] = [
+  { width: 800, height: 600 },
+  { width: 1024, height: 768 },
+  { width: 1280, height: 720 },
+  { width: 1280, height: 800 },
+  { width: 1920, height: 1080 },
+  { width: 600, height: 900 },
+  { width: 900, height: 1200 },
+];
 
 function stored<T>(key: string, parse: (v: string) => T | null, fallback: T): T {
   try {
@@ -89,12 +101,13 @@ const barButton =
 
 export function DesktopPage({ name }: { name: string }) {
   const c = useDesktop(name);
+  const viewport = useVisibleViewport();
   useEffect(() => {
     document.title = name;
   }, [name]);
   return (
     // data-desktop-page: no scrollbar gutter on this page (index.css).
-    <div data-desktop-page class="fixed inset-0 flex flex-col bg-glass">
+    <div data-desktop-page data-software-keyboard={String(viewport?.keyboard ?? false)} class="fixed inset-0 flex flex-col bg-glass" style={viewport ? { top: `${viewport.top}px`, bottom: "auto", height: `${viewport.height}px` } : undefined}>
       {c === undefined ? null : c === null ? (
         <Centered>
           <p>There's no desktop named {name}, or you can't use it.</p>
@@ -117,6 +130,22 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
   const { me, host } = useLive();
   const { route } = useLocation();
   const frame = useRef<HTMLIFrameElement>(null);
+  const [focus, setFocus] = useState<{ id: string; width: number; height: number } | null>(null);
+  const focusRef = useRef(focus);
+  focusRef.current = focus;
+  const [windows, setWindows] = useState<AppWindow[]>([]);
+  const [readable, setReadable] = useState(false);
+  const [trackpad, setTrackpad] = useState(() => stored("deskyard.trackpad", (v) => v === "true", false));
+  const trackpadRef = useRef(trackpad);
+  trackpadRef.current = trackpad;
+  const [keyboard, setKeyboard] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [touchControls, setTouchControls] = useState(() => navigator.maxTouchPoints > 0 || matchMedia("(pointer: coarse)").matches);
+  useEffect(() => {
+    const touched = () => setTouchControls(true);
+    window.addEventListener("touchstart", touched, { passive: true });
+    return () => window.removeEventListener("touchstart", touched);
+  }, []);
   const [conn, setConn] = useState<ConnectionState>("connecting");
   // The frame's client, for the Audio panel; null until it loads.
   const [screen, setScreen] = useState<DeskyardScreen | null>(null);
@@ -149,12 +178,15 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
     unsubscribe.current = [];
     const screen = screenOf(frame.current);
     setScreen(screen);
+    setKeyboard(false);
+    screen?.setTouchMode?.(trackpadRef.current);
     if (!screen) {
       setConn("disconnected"); // not the client: an error page
       return;
     }
     const onState = (s: ConnectionState) => {
       setConn(s);
+      if (s === "connected") screen.setTouchMode?.(trackpadRef.current);
       // Not while a panel or menu of the bar is open: focusing the frame blurs
       // this window, which closes it under the user's pointer.
       if (s === "connected" && !document.querySelector('[aria-expanded="true"]')) focusFrame(frame.current);
@@ -173,6 +205,16 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
         sendQuality(frame.current, quality);
         setLive(quality);
       }
+      if (focusRef.current) {
+        if (d.width > 0 && d.height > 0) {
+          if (was.owner === null || was.width !== d.width || was.height !== d.height) {
+            lockSize(frame.current, { width: d.width, height: d.height });
+          }
+          setFocus((old) => old && (old.width !== d.width || old.height !== d.height) ? { ...old, width: d.width, height: d.height } : old);
+        }
+        was = d;
+        return;
+      }
       if (d.owner && !was.owner) {
         // The first page on the display: this browser's choices apply. (A
         // page handed the display later keeps the quality it streams with.)
@@ -188,7 +230,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
       }
       was = d;
     };
-    unsubscribe.current = [screen.on("deskyard.state", onState), screen.on("deskyard.display", onDisplay), onClipboard(screen, setRemoteClip)];
+    unsubscribe.current = [screen.on("deskyard.state", onState), screen.on("deskyard.display", onDisplay), onClipboard(screen, setRemoteClip), screen.on("deskyard.keyboard", setKeyboard)];
     if (avSyncWanted()) unsubscribe.current.push(startAvSync(screen));
     onState(screen.state());
     onDisplay(screen.display());
@@ -210,10 +252,35 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
   useJoinToasts(c.viewers, me.username);
 
   function reconnect() {
+    setFocus(null);
+    setZoom(1);
     setConn("connecting");
     setScreen(null);
     setFrameKey((k) => k + 1);
   }
+  const selectWindow = useCallback((id: string) => {
+    const size = remoteSize(frame.current);
+    if (!size) { notify("Wait for the desktop picture before focusing a window"); return; }
+    lockSize(frame.current, size);
+    setFocus({ id, ...size });
+    setZoom(1);
+    setReadable(false);
+    window.setTimeout(() => focusFrame(frame.current), 0);
+  }, []);
+  const fullDesktop = () => {
+    setFocus(null);
+    setZoom(1);
+    if (owner && !locked) unlockSize(frame.current);
+    else {
+      const size = owner ? locked : remoteSize(frame.current);
+      if (size) lockSize(frame.current, size);
+    }
+    refocus();
+  };
+  useEffect(() => {
+    if (focus && !windows.some((w) => w.id === focus.id)) fullDesktop();
+  }, [windows]);
+  useEffect(() => { if (!running) setFocus(null); }, [running]);
   const sendKeys = (keys: string) => {
     api.keys(c.name, keys).catch(notifyError);
     refocus();
@@ -224,21 +291,21 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
     store(QUALITY_KEY, id);
     sendQuality(frame.current, id);
   };
-  const toggleLock = () => {
-    if (!owner) return; // the display's owner sets its size
-    if (locked) {
-      setLocked(null);
-      store(LOCK_SIZE_KEY, null);
-      unlockSize(frame.current);
-    } else {
-      const size = remoteSize(frame.current);
-      if (size) {
-        setLocked(size);
-        store(LOCK_SIZE_KEY, JSON.stringify(size));
-        lockSize(frame.current, size);
-      }
-    }
+  const chooseResolution = (size: Size | null) => {
+    if (!owner || focus) return; // the display's owner sets its size
+    setLocked(size);
+    store(LOCK_SIZE_KEY, size ? JSON.stringify(size) : null);
+    setZoom(1);
+    if (size) lockSize(frame.current, size);
+    else unlockSize(frame.current);
     refocus();
+  };
+  const toggleLock = () => {
+    if (locked) chooseResolution(null);
+    else {
+      const size = remoteSize(frame.current);
+      if (size) chooseResolution(size);
+    }
   };
   const closeViewers = useCallback(() => {
     setViewersOpen(false);
@@ -253,6 +320,13 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
     refocus();
   }, [refocus]);
 
+  const toggleKeyboard = () => screen?.keyboard?.(!keyboard);
+  const chooseTouchMode = (next: boolean) => {
+    setTrackpad(next);
+    store("deskyard.trackpad", String(next));
+    screen?.setTouchMode?.(next);
+    refocus();
+  };
   const keyItems: MenuItem[] = keyCombos.map((k) => ({ label: k.label, onSelect: () => sendKeys(k.keys) }));
   const qualityItems: MenuItem[] = qualities.map((q) => ({
     label: (
@@ -264,6 +338,14 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
     checked: q.id === live,
     onSelect: () => chooseQuality(q.id),
   }));
+  const resolutionItems: MenuItem[] = [
+    { label: "Resolution: Auto fit", checked: locked === null, onSelect: () => chooseResolution(null) },
+    ...resolutions.map((size) => ({
+      label: `Resolution: ${size.width} × ${size.height}${size.height > size.width ? " (portrait)" : ""}`,
+      checked: locked?.width === size.width && locked?.height === size.height,
+      onSelect: () => chooseResolution(size),
+    })),
+  ];
   const compactOnly = "lg:hidden";
   const showing = running;
   const moreItems: MenuItem[] = [
@@ -274,11 +356,18 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
         ]
       : []),
     { label: "Details", onSelect: () => route(`/desktops/${c.name}`), separated: running },
+    { label: "Terminal", onSelect: () => route(`/${c.name}/terminal/`), class: "sm:hidden" },
     ...(me.admin ? [{ label: "Settings", onSelect: () => route(`/desktops/${c.name}?tab=settings`) }] : []),
     // Phones and narrow tablets need these actions in More.
     ...(showing
       ? [
-          ...(owner ? [{ label: "Lock size", checked: locked !== null, onSelect: toggleLock, separated: true, class: compactOnly }] : []),
+          ...(!focus && owner ? [
+            { label: "Lock size", checked: locked !== null, onSelect: toggleLock, separated: true, class: compactOnly },
+            ...resolutionItems.map((item) => ({ ...item, class: compactOnly })),
+          ] : [{
+            label: focus ? "Resolution: use Full desktop" : owner === false ? "Resolution: controlled by another viewer" : "Resolution: connecting…",
+            disabled: true, onSelect: () => {}, separated: true, class: compactOnly,
+          }]),
           ...keyItems.map((k, i) => ({ ...k, label: <>Send {k.label}</>, separated: i === 0 && !owner, class: compactOnly })),
           ...qualities.map((q, i) => ({
             label: `Quality: ${q.label}`,
@@ -302,8 +391,8 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
           ‹ <span class="max-sm:hidden">Desktops</span>
         </a>
         <span class="mx-1.5 h-[22px] w-px bg-[#2e3d52] max-sm:mx-0.5" />
-        <a href={`/${c.name}/terminal/`} class={barButton}>Terminal</a>
-        <span class="mx-0.5 truncate text-[15px] font-bold text-white">{c.name}</span>
+        <a href={`/${c.name}/terminal/`} class={cx(barButton, "max-sm:hidden")}>Terminal</a>
+        <span class="mx-0.5 min-w-0 truncate text-[15px] font-bold text-white max-sm:hidden">{c.name}</span>
         {showing ? (
           <span class="inline-flex items-center gap-1.5 text-[13px] whitespace-nowrap text-bar-muted">
             <span class={cx("h-2 w-2 rounded-full", dot)} />
@@ -331,20 +420,21 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
               title={[...(c.viewers.length ? [names(c.viewers)] : []), ...c.agents.map(agentTitle)].join(", ")}
               onClick={() => (viewersOpen ? closeViewers() : setViewersOpen(true))}
             >
-              {(c.viewers.length > 0 || c.agents.length > 0) && <Avatars names={c.viewers} mics={c.mics} cams={c.cams} agents={c.agents} ring="var(--color-bar)" />}
+              {(c.viewers.length > 0 || c.agents.length > 0) && <><span class="max-sm:hidden"><Avatars names={c.viewers} mics={c.mics} cams={c.cams} agents={c.agents} ring="var(--color-bar)" /></span><span class="sm:hidden">{c.viewers.length + c.agents.length}</span></>}
               {c.viewers.length > 0 && <span class="truncate max-md:hidden">{names(c.viewers)}</span>}
-              {c.forwards.length > 0 && <span class="whitespace-nowrap">⇄ {c.forwards.length}</span>}
+              {c.forwards.length > 0 && <span class="whitespace-nowrap max-sm:hidden">⇄ {c.forwards.length}</span>}
             </button>
           </>
         )}
         <div class="ml-auto flex shrink-0 items-center gap-0.5">
           {showing && (
             <>
+              <Applications name={c.name} selected={focus?.id ?? null} onSelect={selectWindow} onWindows={setWindows} />
               <AudioControl name={c.name} screen={screen} connected={conn === "connected"} webcam={c.webcam} host={host} admin={me.admin} />
               <button
                 type="button"
                 aria-pressed={owner === true && locked !== null}
-                disabled={owner !== true}
+                disabled={owner !== true || !!focus}
                 title={
                   owner === false
                     ? "The first viewer sets the screen size; yours is scaled to fit"
@@ -358,6 +448,19 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
                 </span>
                 Lock size
               </button>
+              <Menu
+                items={resolutionItems}
+                class="max-lg:hidden"
+                onClose={refocus}
+                trigger={({ toggle, open }) => (
+                  <button type="button" aria-label="Resolution" aria-haspopup="menu" aria-expanded={open}
+                    disabled={owner !== true || !!focus}
+                    title={owner === false ? "The first viewer sets the screen size" : focus ? "Return to Full desktop to change resolution" : "Choose and lock the remote screen resolution"}
+                    class={cx(barButton, "disabled:cursor-default disabled:opacity-50", open && pressed)} onClick={toggle}>
+                    {locked ? `${locked.width} × ${locked.height}` : "Resolution"} ▾
+                  </button>
+                )}
+              />
               <button
                 type="button"
                 data-clipboard-toggle
@@ -421,21 +524,30 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
           />
         )}
       </div>
+      {focus && showing && <div class="flex min-h-11 flex-none items-center gap-2 bg-[#1b293c] px-3 text-sm text-white">
+        <button type="button" class="min-h-11 shrink-0 cursor-pointer font-semibold" onClick={fullDesktop}>Full desktop</button>
+        <span class="min-w-0 flex-1 truncate">{windows.find((w) => w.id === focus.id)?.title}</span>
+        <button type="button" aria-pressed={readable} class="min-h-11 shrink-0 cursor-pointer" onClick={() => setReadable(!readable)}>{readable ? "Fit window" : "Actual size"}</button>
+      </div>}
+      {showing && touchControls && <TouchControls keyboard={keyboard} trackpad={trackpad} zoom={zoom}
+        onKeyboard={toggleKeyboard} onMode={chooseTouchMode} onFit={() => setZoom(1)} onKey={sendKeys} />}
       {!running ? (
         <Stopped desktop={c} />
       ) : (
+        <WindowViewport focus={focus} windows={windows} readable={readable} screen={screen} frame={frame} zoom={zoom} onZoom={setZoom}>
         <iframe
           key={frameKey}
           ref={frame}
           src={frameSrc(c.name)}
           title={`${c.name}'s desktop`}
           allow="clipboard-read; clipboard-write; autoplay; microphone; camera; speaker-selection"
-          class="block w-full flex-1 border-0"
+          class="block h-full w-full border-0"
           onLoad={onFrameLoad}
         />
+        </WindowViewport>
       )}
       {running && <DropZone desktop={c.name} frame={frame} frameKey={frameKey} />}
-      {showing && <ActivityOverlay name={c.name} geometry={() => selkiesScreenGeometry(frame.current)} />}
+      {showing && !focus && zoom === 1 && <ActivityOverlay name={c.name} geometry={() => selkiesScreenGeometry(frame.current)} />}
       {downloadOpen && running && <DownloadDialog desktop={c} onClose={closeDownload} />}
     </>
   );

@@ -8,6 +8,8 @@ The implemented [[superpowers/specs/2026-10-23-shared-terminal-design|Shared ter
 
 Open a desktop and choose **Terminal** beside **Desktop**. The terminal uses your existing login and desktop access.
 
+Within the streamed desktop, phones use **More → Terminal**; toolbars at least 640px wide retain the direct Terminal shortcut. The landing regression verifies that the toolbar fits at 320px and 375px and that More opens a connected terminal.
+
 ![Open the terminal from the desktop](../superpowers/specs/2026-10-23-shared-terminal-design/media/flow-1-open-terminal.png)
 
 Open **Sessions**. To create a separate shell, enter a new name and choose **Create**; the running-session list has separate join actions.
@@ -71,3 +73,7 @@ The final root `make test` completed with exit 0 against `deskyard-terminal-prod
 Whole-feature review approved the implementation with one minor documentation finding: the historical spike needed an explicit supersession note. That note is now present. Markdown links, referenced paths and frontmatter passed static checks; SilverBullet Desktop rendered this walkthrough and its relative screenshot, and the generated Shared terminal architecture diagram. The retained 20-second Android video fully decoded; it documents the earlier keyboard proof, not the final picker UI. Native iPhone and desktop videos also fully decoded as recorded above.
 
 Simulator cleanup restored the hardware-keyboard preference and original browser groups/tabs. Only the task’s own failed DeskyardQA Safari groups remain because native context-menu cleanup stalled; no unrelated tabs were affected. Diagnostic proxy, test runners and the task’s Android emulator were cleaned up.
+
+# Landing integration
+
+The feature was integrated with main’s mobile Apps/PWA and host-folder changes. The combined build and post-fix strict TypeScript/40 UI checks passed. The merged default gate passed Go vet/race and engine checks, 99 parallel plus one serial image check, and 149 parallel plus seven serial supervisor checks. Three MATE appearance checks were skipped in XFCE and nine Firefox checks were skipped because Firefox could not start locally. The real 320px/375px phone navigation regression passed separately in 28 seconds and is included in the merged suite. An independent review approved the merge resolutions and phone fix.

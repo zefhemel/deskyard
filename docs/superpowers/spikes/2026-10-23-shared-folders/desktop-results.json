@@ -1,0 +1,50 @@
+[
+  {
+    "check": "desktop-ready with UID 21001",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "check": "identity and migrated home ownership",
+    "exit": 0,
+    "stdout": "uid=21001(user) gid=21001(user) groups=21001(user)\n21001:21001 755 /workspace\n21001:21001 644 /workspace/kept\n21001:21001 700 /run/workspace\nexisting",
+    "stderr": ""
+  },
+  {
+    "check": "desktop service UIDs",
+    "exit": 0,
+    "stdout": "UID   GID COMMAND\n    0     0 supervisord\n  100   101 dbus-daemon\n21001 21001 dbus-daemon\n21001 21001 start-xvfb\n21001 21001 pipewire\n21001 21001 pipewire-pulse\n21001 21001 Xvfb\n21001 21001 start-session\n  999   999 caddy\n21001 21001 deskyard\n21001 21001 socat\n21001 21001 xfconfd\n21001 21001 start-session\n21001 21001 xfce4-session\n21001 21001 ssh-agent\n21001 21001 gpg-agent\n21001 21001 xfwm4\n21001 21001 xfsettingsd\n21001 21001 dconf-service\n21001 21001 xfce4-panel\n21001 21001 Thunar\n21001 21001 xfdesktop\n21001 21001 wrapper-2.0\n21001 21001 bash\n21001 21001 ps\n21001 21001 head",
+    "stderr": ""
+  },
+  {
+    "check": "home writes and runtime tools",
+    "exit": 0,
+    "stdout": "2026.10.17 linux-arm64 (2026-10-20)\n21001:21001",
+    "stderr": ""
+  },
+  {
+    "check": "Chromium CDP responds",
+    "exit": 0,
+    "stdout": "{\n   \"Browser\": \"Chrome/156.0.8078.47\",\n   \"File-Path-Style\": \"posix\",\n   \"Protocol-Version\": \"1.3\",\n   \"User-Agent\": \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36\",\n   \"V8-Version\": \"15.6.75.19\",\n   \"WebKit-Version\": \"537.36 (@1d17a2e2ee147bb7d6ae2ab6abdb3a2510c17775)\",\n   \"webSocketDebuggerUrl\": \"ws://127.0.0.1:9221/devtools/browser/562d0f15-9ef4-489b-810e-c66cbc226d6b\"\n}",
+    "stderr": ""
+  },
+  {
+    "check": "desktop-ready after restart",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "check": "UID and files retained after restart",
+    "exit": 0,
+    "stdout": "21001\nexisting\nnew",
+    "stderr": ""
+  },
+  {
+    "check": "desktop logs",
+    "exit": 0,
+    "stdout": "{\"level\":\"info\",\"ts\":1792776716.5453978,\"msg\":\"adapted config to JSON\",\"adapter\":\"caddyfile\"}\n{\"level\":\"warn\",\"ts\":1792776716.545405,\"logger\":\"admin\",\"msg\":\"admin endpoint disabled\"}\n{\"level\":\"info\",\"ts\":1792776716.5455058,\"logger\":\"http.auto_https\",\"msg\":\"automatic HTTPS is completely disabled for server\",\"server_name\":\"srv0\"}\n2026-10-23 17:31:56,546 WARN exited: wireplumber (exit status 69; not expected)\n{\"level\":\"info\",\"ts\":1792776716.5462687,\"logger\":\"tls.cache.maintenance\",\"msg\":\"started background certificate maintenance\",\"cache\":\"0x57bd9984e80\"}\n[W][17:31:56.548121] mod.rt       | [     module-rt.c:  330 translate_error()] RTKit error: org.freedesktop.DBus.Error.ServiceUnknown\n[W][17:31:56.548149] mod.rt       | [     module-rt.c:  995 do_rtkit_setup()] RTKit does not give us MaxRealtimePriority, using 1\n[W][17:31:56.548675] mod.rt       | [     module-rt.c:  330 translate_error()] RTKit error: org.freedesktop.DBus.Error.ServiceUnknown\n[W][17:31:56.548678] mod.rt       | [     module-rt.c: 1000 do_rtkit_setup()] RTKit does not give us MinNiceLevel, using 0\n[W][17:31:56.549078] mod.rt       | [     module-rt.c:  330 translate_error()] RTKit error: org.freedesktop.DBus.Error.ServiceUnknown\n[W][17:31:56.549080] mod.rt       | [     module-rt.c: 1005 do_rtkit_setup()] RTKit does not give us RTTimeUSecMax, using -1\n{\"level\":\"warn\",\"ts\":1792776716.5490954,\"logger\":\"http\",\"msg\":\"HTTP/2 skipped because it requires TLS\",\"network\":\"tcp\",\"addr\":\":8080\"}\n{\"level\":\"warn\",\"ts\":1792776716.5491033,\"logger\":\"http\",\"msg\":\"HTTP/3 skipped because it requires TLS\",\"network\":\"tcp\",\"addr\":\":8080\"}\n{\"level\":\"info\",\"ts\":1792776716.5491061,\"logger\":\"http.log\",\"msg\":\"server running\",\"name\":\"srv0\",\"protocols\":[\"h1\",\"h2\",\"h3\"]}\n{\"level\":\"info\",\"ts\":1792776716.5496585,\"msg\":\"autosaved config (load with --resume flag)\",\"file\":\"/var/lib/caddy/config/caddy/autosave.json\"}\n{\"level\":\"info\",\"ts\":1792776716.5496628,\"msg\":\"serving initial configuration\"}\n{\"level\":\"info\",\"ts\":1792776716.5535178,\"logger\":\"tls\",\"msg\":\"storage cleaning happened too recently; skipping for now\",\"storage\":\"FileStorage:/var/lib/caddy/data/caddy\",\"instance\":\"ea12d439-76ff-4510-a0b3-582f860ef770\",\"try_again\":1792863116.5535169,\"try_again_in\":86399.999999708}\n{\"level\":\"info\",\"ts\":1792776716.5535903,\"logger\":\"tls\",\"msg\":\"finished cleaning storage units\"}\ndbus-daemon[112]: [session uid=21001 pid=112 pidfd=4] Activating service name='org.xfce.Xfconf' requested by ':1.6' (uid=21001 pid=210 comm=\"xfconf-query -c xfce4-session -p /general/SaveOnEx\")\ndbus-daemon[112]: [session uid=21001 pid=112 pidfd=4] Successfully activated service 'org.xfce.Xfconf'\n/usr/bin/startxfce4: X server already running on display :1\nFailure: No such entity\n** Message: 17:31:56.662: Failed to fetch _NET_NUMBER_OF_DESKTOPS; assuming 1\n2026-10-23 17:31:56,662 WARN exited: selkies (exit status 1; not expected)\n** Message: 17:31:56.662: Failed to get _NET_WORKAREA; using full screen dimensions\n** Message: 17:31:56.662: Failed to fetch _NET_CURRENT_DESKTOP; assuming 0\n** Message: 17:31:56.662: Failed to fetch _NET_CURRENT_DESKTOP; assuming 0\n/usr/bin/iceauth:  creating new authority file /run/workspace/ICEauthority\n** Message: 17:31:56.735: Failed to fetch _NET_CURRENT_DESKTOP; assuming 0\n\n(xfwm4:257): xfwm4-WARNING **: 17:31:56.779: Unsupported GL renderer (llvmpipe (LLVM 19.1.7, 128 bits)).\ndbus-daemon[112]: [session uid=21001 pid=112 pidfd=4] Activating service name='ca.desrt.dconf' requested by ':1.12' (uid=21001 pid=283 comm=\"xfsettingsd --display :1.0 --sm-client-id 2bd2d8dd\")\ndbus-daemon[112]: [session uid=21001 pid=112 pidfd=4] Successfully activated service 'ca.desrt.dconf'\n\n** (xfdesktop:303): WARNING **: 17:31:57.023: Thumbnailer failed calling GetFlavors",
+    "stderr": ""
+  }
+]

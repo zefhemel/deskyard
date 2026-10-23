@@ -4,27 +4,19 @@ import io
 import os
 import uuid
 import zipfile
-from pathlib import Path
 
 import requests
 
 from conftest import docker
-from helpers import make_token, wait_until
-
-
-def put(folder: str, rel: str, data: bytes) -> None:
-    p = Path(folder) / rel
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_bytes(data)
+from helpers import make_token, put, user_sh, wait_until
 
 
 def test_browse_and_download(admin, desktop, name):
-    folder = desktop["folder"]
     blob = os.urandom(3 * 1024 * 1024 + 17)
-    put(folder, "docs/report.txt", b"quarterly numbers\n")
-    put(folder, "docs/deep/notes.md", b"# notes\n")
-    put(folder, "big.bin", blob)
-    os.symlink("/etc", Path(folder) / "etc-link")
+    put(name, "docs/report.txt", b"quarterly numbers\n")
+    put(name, "docs/deep/notes.md", b"# notes\n")
+    put(name, "big.bin", blob)
+    user_sh(name, "ln -s /etc /workspace/etc-link")
 
     r = admin.get(f"/api/desktops/{name}/files")
     assert r.status_code == 200, r.text
@@ -58,7 +50,7 @@ def test_browse_and_download(admin, desktop, name):
 
 
 def test_paths_outside_workspace_refused(admin, desktop, name):
-    os.symlink("/etc", Path(desktop["folder"]) / "etc-link")
+    user_sh(name, "ln -s /etc /workspace/etc-link")
     for p in ["..", "/", "/etc/passwd", "/workspace/../etc/passwd", "../etc/passwd", "etc-link", "etc-link/passwd"]:
         for route in ["files", "download"]:
             r = admin.get(f"/api/desktops/{name}/{route}", params={"path": p})
@@ -67,7 +59,7 @@ def test_paths_outside_workspace_refused(admin, desktop, name):
 
 
 def test_access_and_tokens(admin, desktop, name, supervisor):
-    put(desktop["folder"], "f.txt", b"hi")
+    put(name, "f.txt", b"hi")
     user = "u" + uuid.uuid4().hex[:6]
     for who, desktops_ in [(user, []), (user + "v", [name])]:
         r = admin.post("/api/accounts", json={"username": who, "password": "pw-" + who, "admin": False, "desktops": desktops_})
@@ -92,7 +84,7 @@ def test_download_dialog(supervisor, desktop, name, tmp_path):
 
     from helpers import signed_in
 
-    put(desktop["folder"], "docs/hello.txt", b"hello from the desktop\n")
+    put(name, "docs/hello.txt", b"hello from the desktop\n")
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base, accept_downloads=True)
         page.goto(f"{supervisor.base}/{name}/")
@@ -130,11 +122,9 @@ def test_download_dialog(supervisor, desktop, name, tmp_path):
 
 
 def test_folder_zip_with_hard_links_and_unreadable_files(admin, desktop, name):
-    folder = Path(desktop["folder"])
-    put(desktop["folder"], "mix/one.txt", b"one")
-    os.link(folder / "mix/one.txt", folder / "mix/one-link.txt")
-    put(desktop["folder"], "mix/locked.txt", b"secret")
-    os.chmod(folder / "mix/locked.txt", 0o000)
+    put(name, "mix/one.txt", b"one")
+    put(name, "mix/locked.txt", b"secret")
+    user_sh(name, "cd /workspace/mix && ln one.txt one-link.txt && chmod 000 locked.txt")
     r = admin.get(f"/api/desktops/{name}/download", params={"path": "mix"})
     assert r.status_code == 200
     z = zipfile.ZipFile(io.BytesIO(r.content))
@@ -143,9 +133,7 @@ def test_folder_zip_with_hard_links_and_unreadable_files(admin, desktop, name):
 
 
 def test_client_abort_leaves_no_tar_or_cat_running(admin, desktop, name):
-    folder = desktop["folder"]
-    for i in range(4):
-        put(folder, f"huge/f{i}.bin", os.urandom(64 * 1024 * 1024))
+    user_sh(name, "mkdir -p /workspace/huge && for i in 0 1 2 3; do head -c 64M /dev/urandom > /workspace/huge/f$i.bin; done")
     container = docker("ps", "-q", "--filter", f"label=deskyard.name={name}").stdout.split()[0]
 
     def running():
@@ -173,7 +161,7 @@ def test_download_dialog_names_are_readable_and_hidden_files_toggle(supervisor, 
     from helpers import signed_in
 
     for rel in ["Documents/a.txt", "visible.txt", ".secret/x", ".hidden.txt"]:
-        put(desktop["folder"], rel, b"x")
+        put(name, rel, b"x")
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base)
         page.evaluate("localStorage.removeItem('deskyard.showHidden')")

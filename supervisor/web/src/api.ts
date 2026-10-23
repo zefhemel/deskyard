@@ -33,7 +33,14 @@ export interface Stats {
   memLimit: number;
 }
 
+export interface HostMount {
+  source: string;
+  target: string;
+  readOnly: boolean;
+}
+
 export interface Settings {
+  mounts: HostMount[];
   memoryBytes: number;
   nanoCpus: number;
   /** The host's virtual camera this desktop has to itself; "" for none. */
@@ -377,15 +384,17 @@ export const api = {
   desktop: (name: string) => request<Desktop>("GET", c(name)),
   terminalSessions: (name: string, signal?: AbortSignal) =>
     request<{ sessions: { name: string }[] }>("GET", `${c(name)}/terminal/sessions`, undefined, signal),
-  createDesktop: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: string[] }) =>
+  createDesktop: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: string[]; mounts?: HostMount[] }) =>
     request<JobRef>("POST", "/api/desktops", body),
   power: (name: string, action: "start" | "stop" | "restart") => request<void>("POST", `${c(name)}/${action}`),
   setMemoryPolicy: (name: string, autoReclaim: boolean) => request<void>("PUT", `${c(name)}/memory-policy`, { autoReclaim }),
   reclaimMemory: (name: string) => request<MemoryReclaim>("POST", `${c(name)}/reclaim-memory`),
   removeDesktop: (name: string, files: boolean) => request<void>("DELETE", c(name) + (files ? "?files=1" : "")),
-  updateSettings: (name: string, body: { image?: string; memoryBytes?: number; nanoCpus?: number; camera?: string; confirmSecrets?: boolean }) =>
+  updateSettings: (name: string, body: { image?: string; memoryBytes?: number; nanoCpus?: number; camera?: string; mounts?: HostMount[]; confirmSecrets?: boolean }) =>
     request<JobRef>("PATCH", c(name), body),
   setAccess: (name: string, usernames: string[]) => request<void>("PUT", `${c(name)}/access`, { usernames }),
+  applications: (name: string, windowsOnly = false) => request<ApplicationInventory>("GET", `${c(name)}/applications${windowsOnly ? "?windows=1" : ""}`),
+  applicationAction: (name: string, action: "launch" | "activate", id: string) => request<{ id: string | null }>("POST", `${c(name)}/applications`, { action, id }),
   processes: (name: string) => request<Processes>("GET", `${c(name)}/processes`),
   tools: (name: string) => request<Tool[]>("GET", `${c(name)}/tools`),
   activity: (name: string) => request<ActivityEvent>("GET", `${c(name)}/activity`),
@@ -498,4 +507,21 @@ export function watchJob(id: string, onUpdate: (job: Job) => void): () => void {
     finished = true;
     es.close();
   };
+}
+
+export interface AppWindow {
+  id: string;
+  title: string;
+  app: string;
+  parent: string | null;
+  active: boolean;
+  minimized: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+export interface ApplicationInventory {
+  apps: { id: string; name: string }[];
+  windows: AppWindow[];
 }

@@ -241,3 +241,34 @@ def test_touch_clipboard_survives_window_blur(supervisor, desktop, name, browser
         page.locator("iframe").tap(position={"x": 100, "y": 400})
         expect(text).to_be_hidden()
         browser.close()
+
+
+def test_phone_toolbar_keeps_terminal_and_controls_reachable(supervisor, desktop, name):
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base)
+        try:
+            # Preserve the document's native loopback address space for the
+            # subsequent SPA-to-WebSocket navigation. Bootstrap API routing
+            # stays enabled; fulfilling the document makes Chromium block WS.
+            page.route(f"{supervisor.base}/{name}/", lambda route: route.continue_())
+            open_desktop(page, supervisor.base, name)
+            terminal = page.locator(f'a[href="/{name}/terminal/"]')
+            for width in (320, 375):
+                page.set_viewport_size({"width": width, "height": 750})
+                geometry = terminal.evaluate("el => ({width: el.parentElement.clientWidth, scroll: el.parentElement.scrollWidth})")
+                assert geometry["scroll"] <= geometry["width"], geometry
+                expect(terminal).not_to_be_visible()
+                more = page.get_by_role("button", name="More", exact=True)
+                expect(more).to_be_visible()
+                assert more.bounding_box()["x"] + more.bounding_box()["width"] <= width
+                more.click()
+                action = page.get_by_role("menuitem", name="Terminal", exact=True)
+                expect(action).to_be_visible()
+                if width == 320:
+                    page.keyboard.press("Escape")
+                else:
+                    action.click()
+                    expect(page.locator('[data-terminal-state="connected"]')).to_be_attached(timeout=20000)
+                    assert page.url.endswith(f"/{name}/terminal/")
+        finally:
+            browser.close()

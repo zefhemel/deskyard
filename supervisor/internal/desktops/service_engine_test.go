@@ -5,11 +5,13 @@ package desktops
 import (
 	"archive/tar"
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -187,5 +189,33 @@ func TestFolderTar(t *testing.T) {
 	}
 	if _, err := s.FolderTar(ctx, "cct-missing"); err == nil {
 		t.Error("a missing folder read without error")
+	}
+
+	// Some paths only, in that order; a second name is a hard link.
+	if err := os.Link(filepath.Join(folder, "private"), filepath.Join(folder, "again")); err != nil {
+		t.Fatal(err)
+	}
+	rc, err = s.FolderTar(ctx, name, "private", "./.config/app/settings.json", "again")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	tr = tar.NewReader(rc)
+	for {
+		h, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(tr)
+		names = append(names, fmt.Sprintf("%s %c %s%s", h.Name, h.Typeflag, b, h.Linkname))
+	}
+	if err := rc.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"./private 0 secret", "./.config/app/settings.json 0 hi", "./again 1 ./private"}; !slices.Equal(names, want) {
+		t.Errorf("paths: %q, want %q", names, want)
 	}
 }

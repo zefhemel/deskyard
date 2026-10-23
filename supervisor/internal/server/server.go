@@ -241,6 +241,12 @@ func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.URL.Path, "/assets/") {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	}
+	// .webmanifest is missing from some hosts' MIME databases; nosniff
+	// requires an explicit manifest type for installation to work there.
+	if r.URL.Path == "/manifest.webmanifest" {
+		w.Header().Set("Content-Type", "application/manifest+json")
+		w.Header().Set("Cache-Control", "no-cache")
+	}
 	http.FileServerFS(s.UI).ServeHTTP(w, r)
 }
 

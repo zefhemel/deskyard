@@ -346,7 +346,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const img = images.find((i) => i.ref === b.image) ?? images[0]!;
     const c: Desktop = {
       id: `${name}-id`, name, state: "creating", startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/${name}`, image: img.ref, imageTitle: img.title,
-      autoReclaim: true, imageVersion: img.version, imageSecrets: img.secrets, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), camera: "" },
+      autoReclaim: true, imageVersion: img.version, imageSecrets: img.secrets, updateAvailable: null, settings: { memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), camera: "", mounts: [] },
       access: (b.access as string[]) ?? [], viewers: [], mics: [], cams: [], webcam: false, terminal: true, forwards: [], agents: [], tokens: 0, stats: null,
     };
     desktops.push(c);
@@ -456,6 +456,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     return json(res, 202, job(["Recreating the container", "Starting"], () => {
       if (typeof b.memoryBytes === "number") c.settings.memoryBytes = b.memoryBytes;
       if (typeof b.nanoCpus === "number") c.settings.nanoCpus = b.nanoCpus;
+      if (Array.isArray(b.mounts)) c.settings.mounts = b.mounts as Desktop["settings"]["mounts"];
       if (typeof b.image === "string") c.image = b.image;
       if (typeof b.camera === "string") {
         c.settings.camera = b.camera;
@@ -492,6 +493,13 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
       c.updateAvailable = null;
       setState(c, "running");
     }, c.name));
+  }
+  if (sub === "applications") {
+    if (method === "POST") return json(res, 200, { id: "42" });
+    return json(res, 200, {
+      apps: url.searchParams.get("windows") === "1" ? [] : [{ id: "xfce4-terminal.desktop", name: "Xfce Terminal" }, { id: "chromium.desktop", name: "Chromium" }],
+      windows: [{ id: "42", title: "Terminal — workspace", app: "Xfce4-terminal", parent: null, active: true, minimized: false, x: 0, y: 24, width: 640, height: 480 }],
+    });
   }
   if (sub === "keys") return json(res, 204);
   if ((sub === "mic" || sub === "cam") && method === "POST") {

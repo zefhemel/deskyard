@@ -23,7 +23,7 @@ What's in a desktop:
   (Ctrl+Alt+Del, Alt+Tab, ...), quality presets, sound and mic, and a
   Download button. Drop files on the screen to copy them onto the desktop.
   Badges show who has their mic or camera on. On phones and narrow tablets,
-  Lock size, Keys, Quality and Download are in the scrollable More menu.
+  Lock size, resolution presets, Keys, Quality and Download are in the scrollable More menu.
 - **One shared Chromium** with one profile: log in once on the desktop and
   the agent is logged in too. It starts when someone opens it or an agent
   connects to it.
@@ -43,6 +43,67 @@ What's in a desktop:
 The desktop image is Debian 13, `linux/arm64` and `linux/amd64`. About 0.4 GB
 of RAM per running desktop with Chromium open, so several fit on an 8 GB
 machine.
+
+## Install on an iPhone Home Screen
+
+In Safari, open Deskyard, sign in, then choose **Share → View More → Add to
+Home Screen** (the exact share-sheet layout depends on iOS). Leave **Open
+as Web App** enabled and tap **Add**. Launch the Deskyard icon to open the
+app without Safari's address bar; choose a desktop from the wall.
+
+The installed app supports portrait and landscape, keeps controls clear of
+the Dynamic Island and home indicator, and resizes around the software
+keyboard. On iOS, a solid strip below the status bar keeps the system's
+top-edge blur away from toolbar text. It needs the running supervisor and
+a network connection; remote desktop sessions are not cached for offline use.
+Installation and native keyboard input were verified in the iOS 27 iPhone
+simulator, including on the plain HTTP LAN demo. HTTPS is still required
+for mic, camera and automatic clipboard synchronization; see Running on a LAN.
+
+## Mobile application prototype
+
+The desktop bar's **Apps** button lists running windows and installed applications.
+Choose a window or launch an application to focus its region in the existing
+stream. **Actual size** allows scrolling at one remote pixel per CSS pixel;
+**Fit window** scales it to the available space. In Actual size, **Pan view**
+lets you drag the picture; **Use window** returns touch input to the app. **Full desktop** returns to
+the complete screen.
+
+**Resolution ▾** beside **Lock size** chooses a remote screen size and locks it.
+On phones, open **⋯ More** for **Resolution:** choices. Presets include
+800×600, 1024×768, 1280×720, 1280×800, 1920×1080, and portrait sizes
+600×900 and 900×1200. **Resolution: Auto fit** unlocks the size. The choice
+is remembered in your browser; the first viewer controls the shared screen.
+Return to **Full desktop** before changing resolution from a focused window.
+More explains when another viewer controls the shared resolution.
+
+Touch controls are available in both the full desktop and focused window,
+including landscape phones and tablets:
+
+- **Tap** clicks where your finger touches; **Trackpad** moves the pointer
+  relative to your finger. In a magnified or Actual size view, moving the
+  pointer to an edge pans your view to follow it. The choice is remembered
+  in your browser.
+- **Keyboard** shows or hides the phone's software keyboard. Esc, Tab,
+  Enter and Paste are alongside it (swipe the extra keys if space is short).
+- **Pinch** magnifies your own view, up to 4×. With the view magnified,
+  move two fingers together to pan; **Fit screen** resets magnification.
+  At fit, a two-finger swipe scrolls the remote application as usual.
+
+Magnification is local: it does not zoom the application or resize the shared
+remote screen. The controls remain outside the magnified picture. The page
+follows the visible viewport when the software keyboard opens. These touch
+controls are served by the supervisor and do not require rebuilding a
+Selkies desktop image; the application launcher below does.
+
+This experimental view requires a desktop image built from this branch
+(`python3-gi`, `gir1.2-wnck-3.0`, and the `deskyard-apps` helper).
+The crop is local to your browser; focus, pointer and keyboard remain shared.
+The full screen is still transmitted. Windows are followed about once a
+second, and known child dialogs are included; menus outside that region,
+windows beyond the screen edges, minimum application sizes, and phone
+keyboard behavior still need broader device testing. Use Full desktop when
+needed. Agent action marks are hidden while focused.
 
 ## Install
 
@@ -171,6 +232,8 @@ itself (above).
 
 ## Shared terminal
 
+On a phone, the streamed desktop’s **More → Terminal** action opens the terminal page; the desktop wall also has a direct **Terminal** link. Wider desktop toolbars keep the direct Terminal shortcut.
+
 See the [create/join walkthrough and verification record](docs/Testing/Shared%20terminal%202026-10-23.md) for screenshots, native keyboard evidence and known limits.
 
 Choose **Terminal** beside **Desktop**, or open `http://host/alice/terminal/`, to join the shared shell from the browser using your current login. The **Sessions** picker lists running named shells, including detached shells with live jobs, and marks the current shell. Choose a name to join it, or enter a new name and choose **Create** for another shell. The list refreshes while open; `?session=build-2` opens a shell directly. The page reconnects after brief network interruptions without replaying disconnected input; a closed shell has an explicit **Reopen terminal** action. Restarting a desktop ends its shells and jobs.
@@ -189,8 +252,8 @@ own network `deskyard-<name>`, so desktops can't reach each other.
 
 ### What persists
 
-Only `/workspace`. It's the folder `<data folder>/<name>` on the host, a
-plain folder you can browse and back up with host tools. Creating a desktop
+A desktop's private persistent folder is `/workspace`: the folder
+`<data folder>/<name>` on the host, which you can browse and back up with host tools. Creating a desktop
 with the name of a folder that already exists reuses that folder, so to copy
 a desktop, copy its folder and create a desktop with the new name.
 Removing a desktop keeps its folder unless you tick "also delete files".
@@ -220,6 +283,40 @@ Flatpak apps do not restore their windows through this protocol.
 Switching desktop images keeps your files, installed Flatpak apps, tools
 and Chromium profile. Each desktop keeps its own settings; open windows
 are not migrated between different desktop environments.
+
+### Host folders
+
+Admins can mount existing host folders into an individual desktop under
+**Settings → Host folders**. Choose **Add host folder**, enter the absolute
+host path and a desktop path such as `/mnt/photos`, and choose read-only
+or read-write access. New entries default to read-only. **Save and restart**
+recreates a running desktop's container; a stopped desktop stays stopped.
+
+Source paths refer to the machine running the container engine. They work
+with the supervisor running directly or in a container; the supervisor
+container does not need those folders mounted into itself. On macOS, the
+container runtime must permit sharing the source folder. Existing host
+permissions must allow the desktop's UID 1000 to access its files; Deskyard
+does not change ownership or permissions of mounted host folders.
+
+A desktop can mount up to 16 folders at non-overlapping paths below `/mnt/`.
+Home and system paths are reserved so desktop initialization cannot change
+mounted host data or replace its runtime. Missing sources and files are
+rejected before the desktop stops; missing folders are never created.
+Source validation requires Docker API 1.44 or newer and recursively read-only
+bind mounts (Linux kernel 5.12 or newer, including the kernel inside a Mac
+container runtime). An
+engine that cannot enforce this fails the check before the desktop stops.
+Desktops with host folders also disable privilege gains through setuid
+executables and file capabilities; user-namespace sandboxes remain available.
+Everyone with access to the desktop, including agents, gets its mounted
+folders. Settings and mounts survive restarts and image upgrades.
+
+Removing a mount never deletes its source. Removing a desktop only deletes
+its private workspace when requested; independently mounted folders elsewhere
+are left alone. Mounted host folders are not included when making an image
+from a desktop. The supervisor's Files and Download views still browse only
+`/workspace`; use desktop apps or the agent CLI for mounted folders.
 
 ### Reclaiming memory
 
@@ -567,6 +664,17 @@ its sources are newer than the build. `TEST_IMAGE` names the desktop image the
 suites build and test (default `deskyard-debian-xfce:test`); outside make,
 `AC_IMAGE` (image suite) and `CC_TEST_IMAGE` (supervisor suite) name it.
 Firefox is skipped where Playwright's Firefox can't start (on some Macs).
+On Linux, tests write workspace fixtures through the desktop as UID 1000,
+since the runner may not own the workspace. In Chromium, loopback UI bootstrap GETs and login use
+Playwright's request transport to avoid Chromium's `ERR_NETWORK_CHANGED` when
+Docker changes network interfaces. Each request is sent once, including login
+POSTs; other mutations, downloads, live streams and Selkies' client use the browser. Navigation
+on the browser transport retries that specific error; other browser errors still
+fail. Engine tests pull their own auxiliary images,
+including `python:3.13-alpine` for memory reclamation.
+The plain-HTTP test hostnames forward only bootstrap API calls, preserving their
+insecure document origin and native screen connections. Other browsers use their
+native transport throughout.
 
 ```bash
 docker buildx bake --load     # all desktop targets, shared stages built once

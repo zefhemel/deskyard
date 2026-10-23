@@ -191,15 +191,18 @@ def test_cancel_build(admin, slug):
     st, log = follow(admin, job, timeout=300, until=lambda m: "+ sleep 600" in m)
     assert st["status"] == "running", (st, log[-20:])
     time.sleep(1)
+    # This build's: other workers' builds come and go meanwhile.
+    mine = {c for c in set(build_containers()) - others if "sleep 600" in docker("top", c, check=False).stdout}
+    assert mine, "no build container runs the sleep"
     assert admin.post(f"/api/jobs/{job}/cancel").status_code == 204
     t0 = time.time()
     st, _ = follow(admin, job, timeout=15)
     assert st["status"] == "failed" and st["error"] == "cancelled", st
     assert time.time() - t0 < 15
     deadline = time.time() + 15
-    while set(build_containers()) - others and time.time() < deadline:
+    while mine & set(build_containers()) and time.time() < deadline:
         time.sleep(1)
-    assert set(build_containers()) - others == set()
+    assert mine & set(build_containers()) == set()
     assert tags(slug) == []
 
 

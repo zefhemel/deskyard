@@ -306,6 +306,10 @@ The repository builds desktop images under `images/`; it starts with one, `image
   - `.deskyard/`: `accounts.json`, `tokens.json`, `images.json`, `session.key`, `certmagic/`.
 - In a container, the data folder must be mounted **at the same path** (`-v /srv/desktops:/srv/desktops`), so a path means the same thing to the supervisor and the engine. On startup the supervisor checks this with a marker file and a short-lived helper container, and refuses to start with an explanation if it doesn't match. Run directly, this check is skipped.
 
+## Implemented addition: host folders (23 October 2026)
+
+Admins may also configure per-desktop mounts of existing engine-host folders at non-overlapping paths below `/mnt/`, with read-only/read-write access. This extends the original home-only storage model: these host folders persist independently, are not seeded or chowned by desktop initialization, and are excluded from image-from-desktop templates and workspace file browsing. Settings live in the `deskyard.setting.mounts` container label and survive upgrades and other recreation. Applying edits recreates the container; running desktops restart and stopped ones stay stopped. A read-only strict-bind helper validates source existence/type before stop, without requiring sources to be visible in the supervisor container; sources are never auto-created. Read-only enforcement includes nested mounts and requires Docker API 1.44+ and recursive read-only kernel support. Desktops with host folders disable setuid/file-capability privilege gains. Detaching a mount never deletes its source; desktop removal only deletes its private workspace when requested. See [[Architecture/Workspace folder]] and [[Architecture/Lifecycle]]. Named dynamic sharing between desktops remains separate investigation work, not implemented by this addition.
+
 # Settings per desktop
 
 Chosen at creation by an admin, editable later. Applying a change recreates the container right away (a restart; the UI says so):

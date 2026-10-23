@@ -41,6 +41,8 @@ func (s *Server) routes() {
 	h("PUT /api/desktops/{name}/access", s.handleSetAccess)
 	h("GET /api/desktops/{name}/screen.png", s.handleScreen)
 	h("GET /api/desktops/{name}/processes", s.handleProcesses)
+	h("GET /api/desktops/{name}/applications", s.handleApplications)
+	h("POST /api/desktops/{name}/applications", s.handleApplications)
 	h("GET /api/desktops/{name}/stats", s.handleStats)
 	h("GET /api/desktops/{name}/folder", s.handleFolder)
 	h("GET /api/desktops/{name}/tools", s.handleTools)

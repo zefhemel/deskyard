@@ -84,7 +84,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl procps supervisor dbus dbus-x11 \
-        x11-utils xdg-utils fonts-dejavu-core \
+        x11-utils xdg-utils fonts-dejavu-core python3-gi gir1.2-wnck-3.0 \
         chromium socat xdotool xclip maim flatpak git openssh-client tmux \
         pipewire pipewire-pulse wireplumber pulseaudio-utils \
     && rm -rf /var/lib/apt/lists/* \

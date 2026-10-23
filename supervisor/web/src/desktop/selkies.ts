@@ -92,6 +92,11 @@ export type Capture = "microphone" | "webcam";
 /** What our additions put on the frame's window. */
 export interface DeskyardScreen {
   tab: string;
+  keyboard?(show: boolean): void;
+  setTouchMode?(trackpad: boolean): void;
+  setViewZoom?(zoom: number): void;
+  on(type: "deskyard.keyboard", fn: (visible: boolean) => void): () => void;
+  on(type: "deskyard.gesture", fn: (gesture: { kind: "zoom"; factor: number; x: number; y: number } | { kind: "pan"; dx: number; dy: number } | { kind: "cursor"; x: number; y: number }) => void): () => void;
   /** The frame is an insecure context (plain http). */
   insecure: boolean;
   post(msg: object): void;

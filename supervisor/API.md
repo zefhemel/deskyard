@@ -30,7 +30,7 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
   "imageTitle": "Debian XFCE", "imageVersion": "2026.10.15", "imageSecrets": false,
   "updateAvailable": "2026.10.22" | null,
   "autoReclaim": true, "terminal": true,
-  "settings": {"memoryBytes": 0, "nanoCpus": 0, "camera": ""},
+  "settings": {"memoryBytes": 0, "nanoCpus": 0, "camera": "", "mounts": []},
   "access": ["anna"],
   "viewers": ["zef", "anna"],
   "mics": ["anna"],
@@ -53,12 +53,12 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 | --- | --- | --- |
 | `GET /api/desktops` | | `[Desktop]` the account can see, sorted by name |
 | `GET /api/desktops/{name}` | | `Desktop`; 404 if missing or not visible |
-| `POST /api/desktops` (admin) | `{"name","image","memoryBytes","nanoCpus","access":[usernames]}` | 202 `{"job": id}` |
+| `POST /api/desktops` (admin) | `{"name","image","memoryBytes","nanoCpus","access":[usernames],"mounts"?:[HostMount]}` | 202 `{"job": id}` |
 | `POST /api/desktops/{name}/start` \| `stop` \| `restart` | | 204 |
 | `PUT /api/desktops/{name}/memory-policy` (admin) | `{"autoReclaim":bool}` | 204. Save the per-desktop automatic policy without recreating/restarting it; default true. Session and same-origin only. 400 missing/invalid boolean, 403 regular accounts with access, 404 without access, 500 persistence failure. |
 | `POST /api/desktops/{name}/reclaim-memory` (admin) | | 200 `{"requestedBytes","beforeBytes","afterBytes","swapBeforeBytes","swapAfterBytes","partial":bool}`. Requests 128 MiB of reclaim while apps run. The before/after values are resident cgroup bytes including file cache; swap values are logical swapped bytes, which can still use compressed RAM. `partial` means the kernel reclaimed less than requested; observed resident memory can grow again. 409 stopped or busy, 501 unsupported engine/kernel or unavailable/disabled swap, 502 helper failure. Session and same-origin only; 403 for regular accounts with access, 404 without access. |
 | `DELETE /api/desktops/{name}?files=1` (admin) | | 204; `files=1` also deletes the workspace folder |
-| `PATCH /api/desktops/{name}` (admin) | `{"image"?, "memoryBytes"?, "nanoCpus"?, "camera"?, "confirmSecrets"?}` | 202 `{"job": id}` (recreates the container); 409 without `confirmSecrets` (see below); 400 for a camera that isn't one of the host's, 409 for one another desktop has. `camera` is a device from `GET /api/host`'s `cameras`, or "" for none. A desktop whose camera has gone from the host is recreated without it, which is logged: when it's started, restarted or recreated, and when the supervisor starts (then started again if the engine had tried to start it and failed; one a user stopped stays stopped) |
+| `PATCH /api/desktops/{name}` (admin) | `{"image"?, "memoryBytes"?, "nanoCpus"?, "camera"?, "mounts"?:[HostMount], "confirmSecrets"?}` | 202 `{"job": id}` (recreates the container); 409 without `confirmSecrets` (see below); 400 for a camera that isn't one of the host's, 409 for one another desktop has. `camera` is a device from `GET /api/host`'s `cameras`, or "" for none. A desktop whose camera has gone from the host is recreated without it, which is logged: when it's started, restarted or recreated, and when the supervisor starts (then started again if the engine had tried to start it and failed; one a user stopped stays stopped) |
 | `PUT /api/desktops/{name}/access` (admin) | `{"usernames":[…]}` | 204 |
 | `GET /api/desktops/{name}/screen.png` | `?full=1` for full size | PNG, 480 px wide by default; 409 when stopped |
 | `GET /api/desktops/{name}/processes` | | `{"titles":[…],"rows":[[…]]}` (columns PID, USER, %CPU, RSS (KiB), ELAPSED, COMMAND) |
@@ -96,6 +96,14 @@ The non-TTY lease creates a private `_deskyard_<ID>` grouped tmux session sharin
 The remote CLI still sends the owned `deskyard terminal-helper SESSION` request over the existing agent exec API. Only this exact three-argument TTY request is recognized and executed through the same lease/attach pair; arbitrary agent commands retain existing exec behavior. A remote terminal’s stdin EOF detaches cleanly instead of injecting Ctrl-D into the shared shell. Actual Ctrl-D input bytes still go to the shell. Local/native terminal helpers keep direct tmux attachments.
 
 Browser terminals count as viewers, preventing automatic idle memory reclamation. Logout cancels the exact browser login, identified by a random signed session ID preserved across cookie refresh; legacy signed cookies migrate with a stable identity. Open sockets expire at their original cookie expiry even if another request refreshes that cookie. Account deletion, View revocation, epoch/password changes, stop/delete/restart, external engine stop events and server shutdown cancel attachments. The shell survives attachment loss until it exits or the container stops. Terminal input/output is never recorded in activity or logs.
+
+#### Host folder mounts
+
+`HostMount` is `{"source":"/absolute/engine-host/folder","target":"/mnt/photos","readOnly":true}`. `settings.mounts` is always an array (empty for existing desktops without mounts). `POST /api/desktops` accepts optional `mounts`; `PATCH /api/desktops/{name}` replaces the complete list when an array is supplied. Omission or null preserves the current list on PATCH; `[]` detaches all. The API's omitted `readOnly` defaults to false; the UI defaults new entries to true.
+
+Only admins can configure mounts. Everyone able to use a desktop can access the mounted files with that desktop's permissions. Up to 16 existing source directories are allowed. Source paths must be clean absolute engine-host paths; target paths must be clean paths below `/mnt/`, with no duplicate or nested mount targets. Paths are at most 4096 bytes and may not contain NUL. Invalid configuration is 400; mount-source existence/type failures are reported by the accepted job. The helper verifies sources on the engine host before stopping/replacing a desktop, with read-only strict bind mounts that never create missing directories. The source need not be visible in the supervisor container. Existing host permissions still apply; no source chown/chmod is performed. Strict read-only binds require recursive read-only enforcement, including nested mounts; unsupported engines/kernels fail preflight rather than silently allowing writes. Docker API 1.44 or newer is required so this option cannot be silently ignored. This capability is required even for a requested writable mount because source preflight is read-only. Desktops with host mounts set `no-new-privileges` to prevent setuid/file-capability executables from granting new privileges.
+
+Mount changes use container recreation: running desktops restart and stopped desktops stay stopped. Settings persist in the `deskyard.setting.mounts` container label and survive upgrades and unrelated settings changes. Corrupt saved mount configuration prevents recreation rather than silently dropping mounts. On a failed replacement, rollback restores the old mount configuration and attempts to restart it if it was previously running. Removing a mount does not delete its source; desktop file deletion remains limited to the private workspace. Host folders elsewhere are not deleted or copied into images made from a desktop. Files/download HTTP routes remain scoped to `/workspace`.
 
 #### Activity
 
@@ -310,3 +318,15 @@ The shared Chromium's DevTools protocol: `GET /api/agent/v1/cdp/json/version`, `
 `GET /api/desktops/{name}/terminal/sessions` requires a signed-in account with View permission. Returns `{"sessions":[{"name":"main"},{"name":"terminal-1"}]}` sorted by name, or `{"sessions":[]}` when there are no live shells. Each row is one base session, including detached shells/jobs; private attachment groups are omitted. Names use the terminal session validation rule above. The response contains no terminal content, process arguments, input or environment and has `Cache-Control: no-store`.
 
 The supervisor executes only `deskyard terminal-list` as `user` in `/workspace`, without a TTY or stdin. The request has a five-second deadline and 64 KiB output limit; the helper has its own four-second deadline. Anonymous requests return 401, missing/inaccessible desktops 404, stopped desktops and images without `tmux-v1` 409, and helper failures or invalid/oversized data 502, using the usual `{"error":"message"}` response. Existing terminal WebSocket and agent exec contracts are unchanged.
+
+## Experimental application/window bridge
+
+Requires the prototype desktop image. All routes require a signed-in account
+with access to the desktop; POST requires the existing same-origin check.
+
+- `GET /api/desktops/{name}/applications`: `{apps: [{id, name}], windows: [{id, title, app, parent, active, minimized, x, y, width, height}]}`. IDs are strings; `parent` is a transient parent window ID or null. `?windows=1` skips application enumeration and returns an empty `apps` array.
+- `POST /api/desktops/{name}/applications`: `{action: "launch" | "activate", id: string}`. Launch accepts a registered `.desktop` ID; activate accepts a decimal X11 window ID. Returns `{id: string | null}`; a null launch result means no matching window was found within six seconds, not that launch failed.
+- A stopped desktop returns 409; malformed action/ID 400; absent helper or invalid/oversized response 502. Helper output is capped at 1 MiB with a 12-second deadline.
+
+These operations share the existing session and its input focus. Window pixels
+are still delivered through the full desktop Selkies stream.

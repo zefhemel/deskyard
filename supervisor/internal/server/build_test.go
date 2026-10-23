@@ -43,6 +43,8 @@ type buildEngine struct {
 	context    map[string]string // the last build context: name → content ("<dir>", "-> target")
 	modes      map[string]int64  // the last build context: name → mode
 	folderTar  []byte            // what a folder-reading helper container streams
+	folderTarT []byte            // what it streams when asked for some paths (tar -T -)
+	asked      bytes.Buffer      // the paths it was asked for
 	n          int
 
 	// buildFn replaces the default build (an image with the base's labels
@@ -231,12 +233,16 @@ func (e *buildEngine) CopyToContainer(_ context.Context, id, dir string, _ io.Re
 	return nil
 }
 
-func (e *buildEngine) Exec(_ context.Context, id string, _ engine.ExecSpec) (*engine.Process, error) {
+func (e *buildEngine) Exec(_ context.Context, id string, spec engine.ExecSpec) (*engine.Process, error) {
 	if strings.HasPrefix(id, "deskyard-read-") {
-		return &engine.Process{
+		p := &engine.Process{
 			Stdout: bytes.NewReader(e.folderTar), Stderr: strings.NewReader(""),
 			Wait: func() (int, error) { return 0, nil }, Close: func() {},
-		}, nil
+		}
+		if spec.Stdin {
+			p.Stdout, p.Stdin = bytes.NewReader(e.folderTarT), lockedWriter{&e.mu, &e.asked}
+		}
+		return p, nil
 	}
 	e.mu.Lock()
 	out, ok := e.scans[e.containers[id]]
@@ -874,3 +880,17 @@ func TestLocalRebuildBecomesNewest(t *testing.T) {
 		t.Error("a desktop on the old image isn't offered the rebuild")
 	}
 }
+
+// lockedWriter writes to w under mu; closing it does nothing.
+type lockedWriter struct {
+	mu *sync.Mutex
+	w  io.Writer
+}
+
+func (l lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
+}
+
+func (l lockedWriter) Close() error { return nil }
