@@ -70,6 +70,11 @@ jobs:
           cache: npm
           cache-dependency-path: supervisor/web/package-lock.json
 
+      # The UI tests run some pages on the web dev server (npm run dev).
+      - name: Web packages
+        if: env.SKIP != 'true'
+        run: npm ci --prefix supervisor/web
+
       - uses: astral-sh/setup-uv@v7
         if: env.SKIP != 'true'
 

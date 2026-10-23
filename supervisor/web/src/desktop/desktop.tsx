@@ -20,14 +20,16 @@ import { ClipboardPopover } from "./clipboard.tsx";
 import { ActivityOverlay } from "./overlay.tsx";
 import { DropZone } from "./upload.tsx";
 import {
-  browserSupported,
   type ConnectionState,
   defaultQuality,
   type DeskyardScreen,
   type Display,
   focusFrame,
   frameSrc,
+  httpsHelp,
+  insecureContext,
   isQualityId,
+  jpegOnly,
   keyCombos,
   lockSize,
   onClipboard,
@@ -130,7 +132,6 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
   const [owner, setOwner] = useState<boolean | null>(null);
   const [live, setLive] = useState<QualityId | null>(null);
   const running = c.state === "running";
-  const supported = browserSupported();
 
   // What this browser wants: applied when this page owns the display.
   const prefs = useRef({ quality, locked });
@@ -165,6 +166,13 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
       setOwner(d.owner);
       if (d.settings) setLive(qualityOf(d.settings));
       const { quality, locked } = prefs.current;
+      if (jpegOnly && d.settings && d.settings.encoder !== "jpeg") {
+        // A display streaming a codec this browser can't decode (another
+        // page chose H.264): JPEG, at this browser's quality, so this page
+        // sees it too. Everyone's browser decodes JPEG.
+        sendQuality(frame.current, quality);
+        setLive(quality);
+      }
       if (d.owner && !was.owner) {
         // The first page on the display: this browser's choices apply. (A
         // page handed the display later keeps the quality it streams with.)
@@ -257,7 +265,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
     onSelect: () => chooseQuality(q.id),
   }));
   const compactOnly = "lg:hidden";
-  const showing = running && supported;
+  const showing = running;
   const moreItems: MenuItem[] = [
     ...(running
       ? [
@@ -301,6 +309,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
             <span class="max-sm:hidden">{connLabels[conn]}</span>
           </span>
         ) : null}
+        {showing && insecureContext && <NotSecure />}
         {showing && conn === "disconnected" && (
           <button type="button" class={barButton} onClick={reconnect}>
             Reconnect
@@ -413,10 +422,6 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
       </div>
       {!running ? (
         <Stopped desktop={c} />
-      ) : !supported ? (
-        <Centered>
-          <p>This browser can't show Deskyard desktops; use a current Chrome, Firefox or Safari</p>
-        </Centered>
       ) : (
         <iframe
           key={frameKey}
@@ -432,6 +437,30 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
       {showing && <ActivityOverlay name={c.name} geometry={() => selkiesScreenGeometry(frame.current)} />}
       {downloadOpen && running && <DownloadDialog desktop={c} onClose={closeDownload} />}
     </>
+  );
+}
+
+/**
+ * The bar's note over plain http: the page isn't a secure context, so the
+ * mic, camera and clipboard sync are off, and the picture may be JPEG.
+ */
+function NotSecure() {
+  return (
+    <a
+      href={httpsHelp}
+      target="_blank"
+      rel="noreferrer"
+      data-not-secure
+      aria-label="Not secure: some features off"
+      class="ml-1 inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[12.5px] whitespace-nowrap text-bar-muted no-underline hover:bg-bar-hover hover:text-white"
+      title="Plain http: this connection isn't secure, so the browser turns features off. Mic, camera and automatic clipboard sync need https, and a browser without WebCodecs over http (Chrome, Firefox) gets a JPEG picture, which takes more bandwidth."
+    >
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+        <rect x="3" y="7" width="10" height="7" rx="1.5" />
+        <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0" stroke-dasharray="2 1.6" />
+      </svg>
+      <span class="max-md:hidden">Not secure: some features off</span>
+    </a>
   );
 }
 

@@ -135,6 +135,40 @@ where). Run directly on Linux, let the binary bind low ports with
 the default localhost binding and put your own HTTPS proxy or Tailscale in
 front.
 
+### On a LAN
+
+To reach Deskyard from other machines at home or in an office, either
+serve it over https or accept what plain http costs.
+
+**Plain http** (`DESKYARD_LISTEN=0.0.0.0:8080`, then
+`http://192.168.1.20:8080`): browsers treat any address but `localhost`
+over http as insecure and turn features off. The desktop page says so in
+its bar ("Not secure: some features off"). What still works: the picture,
+keyboard and mouse, sound, the Clipboard button's text box (both ways),
+Lock size, Quality, upload, download and the agent overlay. Gamepads
+should too in Chromium and Safari, which keep the Gamepad API over http. What doesn't:
+
+- **Mic and camera**: the browser has no `getUserMedia`. The Audio panel
+  shows them off, with "Needs https".
+- **Automatic clipboard sync**: copy and paste go through the Clipboard
+  button instead.
+- **H.264 in Chrome and Firefox**: without WebCodecs the picture is JPEG.
+  At 1920x1080 and the Medium preset that is about 40 Mbit/s while a
+  terminal scrolls (H.264: about 6), and next to nothing on a still
+  screen. Fine on wired gigabit, workable on good Wi-Fi with Low (about
+  18 Mbit/s); not for the internet. When one viewer is on JPEG the whole
+  desktop streams JPEG, also to viewers on https.
+- **Passwords travel in clear text.** Only on a network you trust.
+
+**https** keeps everything. Without a public domain, the simplest is
+Tailscale: run the supervisor on its default `127.0.0.1:8080`, then
+`tailscale serve --bg 8080` on the same machine, and open
+`https://<machine>.<tailnet>.ts.net` from any device on your tailnet. Or
+put any reverse proxy with a certificate in front (Caddy:
+`reverse_proxy 127.0.0.1:8080`); it must pass WebSockets through and keep
+the `Host` header. With a public domain, `DESKYARD_DOMAIN` does it
+itself (above).
+
 ## Desktops
 
 Admins create desktops with a name, an image from the catalog, and
