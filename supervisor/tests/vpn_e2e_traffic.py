@@ -41,6 +41,29 @@ def eventually(fn, label, seconds=90):
     raise RuntimeError("deadline: " + label)
 
 
+def assert_forward_accounting(d, endpoint, filename):
+    lines = docker("exec", endpoint, "iptables", "-nvxL", "DYE2EOBS").splitlines()
+    counts = {
+        kind: sum(int(line.split()[0]) for line in lines if kind in line)
+        for kind in ["desktop-direct", "late-tunnel-return", "all-direct-forwards"]
+    }
+    write(d / filename, counts)
+    assert sum("desktop-direct" in line for line in lines) == 2, (
+        "missing bridge observers"
+    )
+    assert sum("late-tunnel-return" in line for line in lines) == 1, (
+        "missing return observer"
+    )
+    assert sum("all-direct-forwards" in line for line in lines) == 1, (
+        "missing broad observer"
+    )
+    assert counts["desktop-direct"] == 0, "desktop bridge traffic bypassed tunnel"
+    assert counts["all-direct-forwards"] == counts["late-tunnel-return"], (
+        "unclassified direct forwarded packets"
+    )
+    return counts
+
+
 def traffic(d):
     cfg = json.loads((d / "fixture.json").read_text())
     r = wait_file(d / "ready.json")
@@ -113,13 +136,6 @@ def traffic(d):
         "all-direct-forwards",
     )
 
-    def counters():
-        lines = docker("exec", endpoint, "iptables", "-nvxL", chain).splitlines()
-        return {
-            kind: sum(int(line.split()[0]) for line in lines if kind in line)
-            for kind in ["desktop-direct", "late-tunnel-return", "all-direct-forwards"]
-        }
-
     evidence = {"initialBlocked": True}
     # Container mode starts with its endpoint down to prove pre-tunnel access.
     if cfg["mode"] == "container":
@@ -158,12 +174,7 @@ def traffic(d):
         eventually(
             lambda c=c: request(c, "https://1.1.1.1/cdn-cgi/trace"), "tunnel recovery"
         )
-    counts = counters()
-    write(d / "forward-counts.json", counts)
-    assert counts["desktop-direct"] == 0, "desktop bridge traffic bypassed tunnel"
-    assert counts["all-direct-forwards"] == counts["late-tunnel-return"], (
-        "unclassified direct forwarded packets"
-    )
+    counts = assert_forward_accounting(d, endpoint, "forward-counts.json")
 
     evidence.update(
         twoIndependentPeers=True,
@@ -198,6 +209,10 @@ def lifecycle(d):
         == b"vpn-e2e-workspace"
     )
     assert req("/" + r["names"][0] + "/screen/api/websockets") == b""
+    cfg = json.loads((d / "fixture.json").read_text())
+    counts = assert_forward_accounting(
+        d, cfg["Endpoint"], "post-lifecycle-forward-counts.json"
+    )
     write(
         d / "lifecycle-evidence.json",
         {
@@ -205,6 +220,8 @@ def lifecycle(d):
             "recoveryEgress": True,
             "workspaceRetained": True,
             "proxyRecovered": True,
+            "directForwardedPackets": counts["desktop-direct"],
+            "accountedLateReplies": counts["late-tunnel-return"],
         },
     )
     (d / "finish").touch()

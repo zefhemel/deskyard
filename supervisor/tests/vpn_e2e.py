@@ -9,6 +9,7 @@ import json
 import os
 import pathlib
 import secrets
+import signal
 import subprocess
 import tempfile
 import time
@@ -261,6 +262,10 @@ def start(d):
                 start_new_session=True,
             )
         (d / "pid").write_text(str(p.pid))
+        identity = native_process(p.pid)
+        if identity is None:
+            raise RuntimeError("fixture supervisor exited during startup")
+        write(d / "native-process.json", identity)
     ready = wait_file(d / "ready.json")
     if cfg["mode"] == "container":
         port = docker(
@@ -378,11 +383,117 @@ def check(d):
     print("PASS real exec/files/screenshot/activity/proxy/browser for two desktops")
 
 
+def native_process(pid):
+    # Never inspect environment variables: the command/start identity contains
+    # only this private fixture binary path and Go test flags.
+    result = subprocess.run(
+        [
+            "ps",
+            "-ww",
+            "-p",
+            str(pid),
+            "-o",
+            "uid=",
+            "-o",
+            "stat=",
+            "-o",
+            "lstart=",
+            "-o",
+            "command=",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
+    )
+    if (
+        result.returncode == 1
+        and not result.stdout.strip()
+        and not result.stderr.strip()
+    ):
+        return None
+    if result.returncode:
+        raise RuntimeError("cannot verify fixture process ownership")
+    fields = result.stdout.strip().split(None, 7)
+    if len(fields) != 8:
+        raise RuntimeError("cannot parse fixture process ownership")
+    if fields[1].startswith("Z"):
+        return None
+    return {
+        "uid": int(fields[0]),
+        "started": " ".join(fields[2:7]),
+        "command": fields[7],
+    }
+
+
+def stop_native(d):
+    if not (d / "pid").exists():
+        return  # Preparation or compilation failed before a process was started.
+    pid = int((d / "pid").read_text())
+    if pid <= 1:
+        raise RuntimeError("invalid fixture process ownership")
+    current = native_process(pid)
+    if current is None:
+        return
+    identity_path = d / "native-process.json"
+    if not identity_path.exists():
+        raise RuntimeError(
+            "missing fixture process ownership record; stop the original process first"
+        )
+    expected = json.loads(identity_path.read_text())
+    command = f"{d}/supervisor.test -test.run ^TestVPNEndToEnd$ -test.v"
+    if expected.get("uid") != os.getuid() or expected.get("command") != command:
+        raise RuntimeError("fixture process ownership mismatch")
+    for sig, seconds in ((signal.SIGTERM, 10), (signal.SIGKILL, 5)):
+        # Revalidate before each signal and throughout the wait. A reused PID
+        # aborts cleanup rather than receiving a signal or permitting deletion.
+        current = native_process(pid)
+        if current is None:
+            return
+        if current != expected:
+            raise RuntimeError("fixture process ownership changed")
+        try:
+            os.kill(pid, sig)
+        except ProcessLookupError:
+            return
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            current = native_process(pid)
+            if current is None:
+                return
+            if current != expected:
+                raise RuntimeError("fixture process ownership changed while waiting")
+            time.sleep(0.1)
+    raise RuntimeError("fixture supervisor shutdown deadline; resources preserved")
+
+
+def stop_container_supervisor(cfg):
+    scope = cfg["Scope"]
+    for rid in docker(
+        "container", "ls", "--no-trunc", "-aq", "--filter", f"label={LABEL}={scope}"
+    ).split():
+        observed = json.loads(docker("container", "inspect", rid))[0]
+        if observed["Id"] != rid or observed["Config"]["Labels"].get(LABEL) != scope:
+            raise RuntimeError("supervisor container ownership changed")
+        if observed["Name"].lstrip("/") != cfg.get("SelfID") and rid != cfg.get(
+            "SelfID"
+        ):
+            continue
+        docker("container", "stop", "--time", "10", rid)
+        stopped = json.loads(docker("container", "inspect", rid))[0]
+        if stopped["Id"] != rid or stopped["State"]["Running"]:
+            raise RuntimeError("fixture supervisor did not stop; resources preserved")
+
+
 def cleanup(d):
     cfg = json.loads((d / "fixture.json").read_text())
     scope = cfg["Scope"]
+    if cfg["mode"] == "container":
+        stop_container_supervisor(cfg)
+    else:
+        stop_native(d)
     for kind in ("container", "network"):
-        args = [kind, "ls", "-q", "--filter", f"label={LABEL}={scope}"]
+        args = [kind, "ls", "--no-trunc", "-q", "--filter", f"label={LABEL}={scope}"]
         if kind == "container":
             args.append("-a")
         for rid in docker(*args).split():
