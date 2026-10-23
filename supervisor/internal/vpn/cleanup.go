@@ -46,7 +46,7 @@ func (m *Manager) removeCandidateNetwork(ctx context.Context, name string, label
 	}
 	for _, n := range networks {
 		if n.Name == name && ownsLabels(n.Labels, labels) {
-			if err = m.eng.RemoveNetwork(ctx, n.Name); err != nil {
+			if err = m.eng.RemoveNetwork(ctx, n.ID); err != nil {
 				return errors.New("VPN test network cleanup removal failed")
 			}
 		}

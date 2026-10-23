@@ -94,7 +94,10 @@ func (m *Manager) Ensure(ctx context.Context, desktopID, name, network, connecti
 	}
 	connection, err := m.store.Get(connectionID)
 	if err != nil {
-		return engine.Container{}, err
+		if errors.Is(err, ErrNotFound) {
+			return engine.Container{}, ErrNotFound
+		}
+		return engine.Container{}, errors.New("VPN connection configuration is unavailable")
 	}
 	credentials, err := m.store.SecretFiles(connectionID)
 	if err != nil {
@@ -132,7 +135,7 @@ func (m *Manager) Ensure(ctx context.Context, desktopID, name, network, connecti
 	if err != nil {
 		return engine.Container{}, err
 	}
-	config, err := buildRuntime(runtimeInput{DesktopID: desktopID, Name: name, Network: network, Connection: connection, Credentials: credentials, Directory: m.directory(desktopID), Exceptions: exceptions, Reserved: reserved, PublishLocal: publishLocal})
+	config, err := m.buildRuntime(runtimeInput{DesktopID: desktopID, Name: name, Network: network, Connection: connection, Credentials: credentials, Directory: m.directory(desktopID), Exceptions: exceptions, Reserved: reserved, PublishLocal: publishLocal})
 	if err != nil {
 		return engine.Container{}, err
 	}

@@ -9,6 +9,8 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -152,5 +154,41 @@ func TestVPNRegularUserCanReadSelectedStatus(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != 200 || !strings.Contains(string(body), "selected-vpn") || !strings.Contains(string(body), "blocked") || strings.Contains(string(body), "proxy-secret") {
 		t.Fatalf("public status %d %s", resp.StatusCode, body)
+	}
+}
+
+func TestVPNFilesystemFailuresDoNotExposePrivateCauses(t *testing.T) {
+	s, ts := newTestServer(t)
+	admin := login(t, ts, "admin")
+	u, p := "private-user", "private-password"
+	c, err := s.Desktops.Networking.Connections.Create(vpn.Input{Name: "Europe", Provider: "nordvpn", Country: "Netherlands", Username: &u, Password: &p})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(s.StateDir, "vpn", "connections.json")
+	if err = os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Mkdir(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ method, path, body string }{
+		{"GET", "/api/vpn/connections", ""},
+		{"POST", "/api/vpn/connections", `{"name":"New","provider":"nordvpn","country":"Netherlands","username":"x","password":"y"}`},
+		{"PUT", "/api/vpn/connections/" + c.ID, `{"expectedRevision":1}`},
+		{"DELETE", "/api/vpn/connections/" + c.ID, ""},
+		{"POST", "/api/vpn/test", `{"connectionId":"` + c.ID + `"}`},
+	} {
+		req, _ := http.NewRequest(tc.method, ts.URL+tc.path, strings.NewReader(tc.body))
+		req.Header.Set("Origin", ts.URL)
+		response, err := admin.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(response.Body)
+		response.Body.Close()
+		if response.StatusCode != 500 || strings.Contains(string(body), s.StateDir) || strings.Contains(string(body), "directory") || strings.Contains(string(body), "connections.json") {
+			t.Errorf("%s %s exposed private filesystem cause: %d %s", tc.method, tc.path, response.StatusCode, body)
+		}
 	}
 }

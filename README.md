@@ -103,7 +103,9 @@ VPN desktop containers do not restart independently after an engine reboot: run 
 
 Shared connection edits list the affected desktops and require confirmation before validating and applying a new revision. Validation can be cancelled before commit; a failed validation keeps the saved revision. Each desktop rollout reports its own result and retains its selected policy on failure. Connections still used by a desktop cannot be deleted. Users with desktop access see separate VPN health, current exit IP only while connected, historical observations and idle status; only administrators change the configuration.
 
-The backend has been exercised with the current Selkies image on OrbStack, including local access while disposable invalid NordVPN credentials fail authentication. Successful NordVPN authentication/country selection, native Linux and full desktop workflows remain release checks. The guided UI has been checked against the real HTTP API with disposable stores and a simulated engine/provider; those checks do not demonstrate provider connectivity.
+The OrbStack verification uses real Selkies desktops, the supervisor proxy, agent exec/files/activity and shared Chromium with two independent controlled WireGuard tunnels. It covers direct and containerized supervisors, blocked requests during tunnel loss, local access and recovery. Controlled WireGuard does not validate NordVPN service authentication. Successful NordVPN authentication, country/credential changes, native Linux and a full engine/host reboot remain release checks; see the [verification guide](supervisor/tests/VPN.md) for the exact scope and outstanding observations.
+
+Each enabled desktop adds one long-lived gateway container with its own CPU/memory use and provider connection; stopping the desktop does not release that cost. Desktop resource limits apply to the desktop, not its gateway. Version one uses public DNS through the tunnel, blocks external IPv6 and Docker's embedded resolver, and has no custom DNS selector. LAN exceptions intentionally send only their configured private IPv4 destination, TCP/UDP and ports outside the tunnel; other desktop/control networks and link-local destinations cannot be excepted.
 
 ### What persists
 
@@ -360,7 +362,8 @@ make build          # the UI, then bin/deskyard-supervisor and bin/deskyard
 make test           # Go unit tests
 make test-engine    # also the tests that drive a real Docker engine (builds the
                     # desktop image first, unless CC_TEST_IMAGE names one)
-make typecheck      # the UI's TypeScript
+make typecheck      # the UI's TypeScript and tests
+make vet            # Go static checks
 make release VERSION=v1.2.3   # cross-compiled binaries in dist/
 make image          # the supervisor's container image
 ```
@@ -377,3 +380,5 @@ uv run pytest                        # also: memory budget, Flatpak app, agent C
 
 Screenshots and stats land in `tests/artifacts/`. `AC_IMAGE=<tag>` skips the
 build.
+
+For shared-engine VPN verification, use the [scoped VPN test guide](supervisor/tests/VPN.md). Its `vpnintegration` test binary protects existing resources with a unique ownership label. Do not start an ordinary production supervisor or the full-main Python fixture against a Docker engine holding unrelated desktops.

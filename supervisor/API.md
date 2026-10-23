@@ -104,7 +104,7 @@ Moving desktops onto an image that contains secrets (an upgrade, or `PATCH` with
 
 The web UI uses `/_vpn` for saved connections and the desktop create/Settings forms for assignment and LAN rules. The underscore route leaves `/vpn/` available for a desktop named `vpn`. Credential inputs start blank; omitted edit values retain saved secrets. Shared edits preview exact affected names and submit stable IDs plus the expected revision; conflicts refresh the preview and require confirmation again. UI job results report each affected desktop separately, including partial failures, with a link to retry its start/restart.
 
-All five routes require an administrator session; mutations also require the usual same-origin header. Regular accounts may read the sanitized `vpn` object only on desktops they can access. Credential values, credential paths, runtime IDs/addresses and control tokens are never returned.
+All five routes require an administrator session; mutations also require the usual same-origin header. Regular accounts may read the sanitized `vpn` object only on desktops they can access. Credential values, credential paths, runtime IDs/addresses and control tokens are never returned. Filesystem and engine failures at VPN CRUD/test/rollout boundaries use fixed public messages; private state paths and raw causes are not job output.
 
 `VPNInput` is `{name,provider:"nordvpn",country,username?,password?}`. Create requires both service credentials; each omitted credential on an edit/test retains its saved value. Country must be one of the returned `countries`. `VPNConnection` is `{id,name,provider,country,revision,credentialsConfigured}`. A reference is `{id,name}` using the stable desktop ID.
 
