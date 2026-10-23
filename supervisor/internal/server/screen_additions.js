@@ -37,7 +37,8 @@
 
   // --- plain http ---------------------------------------------------------------
   // Reached over plain http on a LAN address, the page isn't a secure context:
-  // the browser has no WebCodecs, AudioWorklet, mic, camera or async clipboard.
+  // the browser has no AudioWorklet, mic, camera or async clipboard, and no
+  // WebCodecs either in Chromium and Firefox (WebKit keeps them).
   // Selkies' client then refuses to start ("requires a secure connection"),
   // although it has a fallback for each of the first two: with no
   // VideoDecoder it pins the stream to JPEG, and with no AudioDecoder it
@@ -484,8 +485,8 @@
     /** This tab's id, as on the stream URL; the mic endpoint takes it. */
     tab,
     /**
-     * Whether the page is an insecure context (plain http): the stream is
-     * JPEG, and there's no mic, camera, gamepads or clipboard access.
+     * Whether the page is an insecure context (plain http): no mic, camera
+     * or clipboard access, and a JPEG stream where there's no WebCodecs.
      */
     insecure,
     /** Sends a message to Selkies' client (e.g. {type: "pipelineControl", …}). */

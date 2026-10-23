@@ -123,9 +123,9 @@ export function frameSrc(name: string): string {
 
 /**
  * Whether this page is an insecure context: reached over plain http on an
- * address other than localhost. The browser then has no WebCodecs,
- * AudioWorklet, mic, camera or async clipboard; Selkies' client streams JPEG
- * and decodes sound in WASM (screen_additions.js lets it).
+ * address other than localhost. The browser then has no AudioWorklet, mic,
+ * camera or async clipboard, and Chromium and Firefox no WebCodecs: Selkies'
+ * client streams JPEG and decodes sound in WASM (screen_additions.js lets it).
  */
 export const insecureContext = typeof window !== "undefined" && window.isSecureContext === false;
 

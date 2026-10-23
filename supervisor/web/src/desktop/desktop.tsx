@@ -441,7 +441,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
 
 /**
  * The bar's note over plain http: the page isn't a secure context, so the
- * picture is JPEG and the mic, camera, gamepads and clipboard sync are off.
+ * mic, camera and clipboard sync are off, and the picture may be JPEG.
  */
 function NotSecure() {
   return (
@@ -452,7 +452,7 @@ function NotSecure() {
       data-not-secure
       aria-label="Not secure: some features off"
       class="ml-1 inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[12.5px] whitespace-nowrap text-bar-muted no-underline hover:bg-bar-hover hover:text-white"
-      title="Plain http: this connection isn't secure, so the browser turns features off. The picture is JPEG; mic, camera, gamepads and automatic clipboard sync need https."
+      title="Plain http: this connection isn't secure, so the browser turns features off. Mic, camera and automatic clipboard sync need https, and a browser without WebCodecs over http (Chrome, Firefox) gets a JPEG picture, which takes more bandwidth."
     >
       <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
         <rect x="3" y="7" width="10" height="7" rx="1.5" />
