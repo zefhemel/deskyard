@@ -15,6 +15,8 @@ context logs such failures, which pytest shows with a failed test.
 
 from __future__ import annotations
 
+import time
+
 from playwright.sync_api import Browser, Error, Page
 
 CHANGED = "net::ERR_NETWORK_CHANGED"
@@ -42,17 +44,31 @@ def _retrying(load):
                 else:
                     response = load(page, *args, **kwargs)
             except Error as e:
-                if CHANGED not in str(e) or attempt == TRIES:
+                # The next try can be cut short by Chromium's own error page
+                # for the last one still coming.
+                again = CHANGED in str(e) or (attempt > 1 and "chrome-error://" in str(e))
+                if not again or attempt == TRIES:
                     raise
-                print(f"{load.__name__}: {CHANGED}; loading the page again")
+                print(f"{load.__name__}: {str(e).splitlines()[0]}; loading the page again")
+                _settle(page)
                 continue
             finally:
                 page.remove_listener("requestfailed", note)
             if not failed or attempt == TRIES:
                 return response
             print(f"{load.__name__}: {CHANGED} for {failed}; loading the page again")
+            _settle(page)
 
     return run
+
+
+def _settle(page: Page):
+    """Lets a failed load end (in Chromium's error page) before the next."""
+    time.sleep(0.5)
+    try:
+        page.wait_for_load_state("load", timeout=5000)
+    except Error:
+        pass
 
 
 def _logging(new):
