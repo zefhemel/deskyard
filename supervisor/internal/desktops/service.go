@@ -97,6 +97,7 @@ type Service struct {
 	busy    map[string]string // name → transient state
 	imgInfo map[string]engine.Image
 	camMu   sync.Mutex // held while a camera is checked and given
+	netMu   sync.Mutex // held while a subnet is picked and its network created
 }
 
 func New(e engine.Engine, cfg Config, log *slog.Logger) *Service {
@@ -339,7 +340,18 @@ func (s *Service) WaitReady(ctx context.Context, name string, limit time.Duratio
 	}
 }
 
+// createNetwork gives the desktop its own bridge network on the first free
+// /28 of the pool. Picking and creating happen under netMu, so two desktops
+// created at once get different subnets. A subnet the engine refuses as
+// overlapping (a network made outside this supervisor since it listed them,
+// say by a second supervisor on the same pool) is skipped for the next one.
 func (s *Service) createNetwork(ctx context.Context, name, id string) error {
+	pool, err := netipParse(s.Cfg.Subnet)
+	if err != nil {
+		return err
+	}
+	s.netMu.Lock()
+	defer s.netMu.Unlock()
 	nets, err := s.Eng.Networks(ctx, nil)
 	if err != nil {
 		return err
@@ -350,17 +362,25 @@ func (s *Service) createNetwork(ctx context.Context, name, id string) error {
 			used = append(used, n.Subnet)
 		}
 	}
-	pool, err := netipParse(s.Cfg.Subnet)
-	if err != nil {
-		return err
+	labels := map[string]string{LabelManaged: "true", LabelName: name, LabelID: id}
+	for {
+		subnet, err := freeSubnet(pool, used)
+		if err != nil {
+			return err
+		}
+		err = s.Eng.CreateNetwork(ctx, containerName(name), subnet.String(), labels)
+		if err == nil || !overlapError(err) {
+			return err
+		}
+		s.Log.Info("subnet taken, trying the next", "desktop", name, "subnet", subnet.String())
+		used = append(used, subnet.String())
 	}
-	subnet, err := freeSubnet(pool, used)
-	if err != nil {
-		return err
-	}
-	return s.Eng.CreateNetwork(ctx, containerName(name), subnet.String(), map[string]string{
-		LabelManaged: "true", LabelName: name, LabelID: id,
-	})
+}
+
+// overlapError: the engine refused a subnet because a network already has it
+// (Docker: "Pool overlaps with other one on this address space").
+func overlapError(err error) bool {
+	return containsFold(err.Error(), "overlaps")
 }
 
 func (s *Service) createContainer(ctx context.Context, name, id, token string, created time.Time, set Settings) error {

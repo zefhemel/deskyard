@@ -69,10 +69,14 @@ type fakeEngine struct {
 	sys string
 	mu  sync.Mutex
 	cs  map[string]*engine.Container
+	// Networks: see network_test.go.
+	nets    map[string]engine.Network
+	port    int // LocalPort of containers published on the host
+	refused int // networks refused for an overlapping subnet
 }
 
 func newFakeEngine(sys string) *fakeEngine {
-	return &fakeEngine{sys: sys, cs: map[string]*engine.Container{}}
+	return &fakeEngine{sys: sys, cs: map[string]*engine.Container{}, nets: map[string]engine.Network{}}
 }
 
 func (e *fakeEngine) Create(_ context.Context, s engine.ContainerSpec) (string, error) {
@@ -83,6 +87,9 @@ func (e *fakeEngine) Create(_ context.Context, s engine.ContainerSpec) (string, 
 	}
 	e.cs[s.Name] = &engine.Container{ID: s.Name, Name: s.Name, Image: s.Image, ImageID: s.Image, Labels: s.Labels, Env: s.Env,
 		State: "created", Devices: s.Devices}
+	if s.PublishLocal != nil {
+		e.cs[s.Name].LocalPort = e.port
+	}
 	return s.Name, nil
 }
 
