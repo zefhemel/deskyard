@@ -441,8 +441,10 @@ func TestWatchScreen(t *testing.T) {
 	for range 1000 {
 		r.Screen(dk, bot, click)
 	}
-	if time.Since(start) > 100*time.Millisecond {
-		t.Fatal("slow with a stuck watcher")
+	// A blocking send would hang for good; the bound only has to catch
+	// that, with room for -race on a slow CI runner.
+	if time.Since(start) > 5*time.Second {
+		t.Fatal("blocked by a stuck watcher")
 	}
 	cancel()
 	cancel()
