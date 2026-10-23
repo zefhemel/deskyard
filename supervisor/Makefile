@@ -2,9 +2,10 @@
 #
 #   make build         web UI, image scanner + both binaries into bin/
 #   make scanner       the image scanner, embedded by the supervisor
-#   make test          Go unit tests
-#   make test-engine   also the tests that need a running Docker engine
+#   make test          Go unit tests, with the race detector
+#   make test-engine   the tests that need a running Docker engine
 #                      (builds the desktop image unless CC_TEST_IMAGE names one)
+# (All of Deskyard's tests: the Makefile one folder up.)
 #   make release VERSION=v1.2.3   cross-compiled binaries into dist/
 #   make image         the supervisor's container image
 
@@ -41,18 +42,19 @@ build: web scanner
 	$(GO) build -ldflags "-X main.version=$(VERSION)" -o bin/deskyard ./cmd/deskyard
 
 test:
-	$(GO) test ./...
+	$(GO) test -race ./...
 
 # The engine tests run desktops of CC_TEST_IMAGE. Without it, the desktop
 # image is built from this checkout first (as TEST_IMAGE), so it has the
 # contract this supervisor checks.
 TEST_IMAGE ?= deskyard-debian-xfce:test
+ENGINE_PACKAGES := ./internal/desktops/ ./internal/engine/...
 test-engine:
 ifdef CC_TEST_IMAGE
-	$(GO) test -tags engine ./...
+	$(GO) test -tags engine $(ENGINE_PACKAGES)
 else
 	docker build -t $(TEST_IMAGE) -f ../images/debian-xfce/Dockerfile ..
-	CC_TEST_IMAGE=$(TEST_IMAGE) $(GO) test -tags engine ./...
+	CC_TEST_IMAGE=$(TEST_IMAGE) $(GO) test -tags engine $(ENGINE_PACKAGES)
 endif
 
 vet:

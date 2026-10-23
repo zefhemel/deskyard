@@ -334,7 +334,8 @@ CI: `.github/workflows/images.yml` builds every image under `images/` for
 amd64 and arm64 on native runners, weekly and on change;
 `.github/workflows/supervisor.yml` tests the supervisor, publishes its image
 and, for tags `v*`, attaches the `supervisor` and `deskyard` binaries to the
-GitHub release.
+GitHub release; `.github/workflows/tests.yml` runs the integration suites
+(see Tests).
 
 ## Development
 
@@ -343,23 +344,41 @@ The supervisor needs Go and Node 24:
 ```bash
 cd supervisor
 make build          # the UI, then bin/deskyard-supervisor and bin/deskyard
-make test           # Go unit tests
-make test-engine    # also the tests that drive a real Docker engine (builds the
+make test           # Go unit tests, with the race detector
+make test-engine    # the tests that drive a real Docker engine (builds the
                     # desktop image first, unless CC_TEST_IMAGE names one)
-make typecheck      # the UI's TypeScript
+make typecheck      # the UI's TypeScript and its tests
 make release VERSION=v1.2.3   # cross-compiled binaries in dist/
 make image          # the supervisor's container image
 ```
 
-The desktop image's tests build it and drive real containers (needs Docker
-and internet):
+### Tests
 
-```bash
-cd images/debian-xfce/tests
-uv run playwright install chromium   # once
-uv run pytest -m "not slow"
-uv run pytest                        # also: memory budget, Flatpak app, agent CLIs
-```
+From the top folder; the pytest suites need Docker, [uv](https://docs.astral.sh/uv/)
+and, once, `uv run playwright install chromium` in each of
+`images/debian-xfce/tests` and `supervisor/tests`:
 
-Screenshots and stats land in `tests/artifacts/`. `AC_IMAGE=<tag>` skips the
-build.
+| Command | Runs | When |
+|---|---|---|
+| `make test` | Go (vet, race) and engine tests, the UI's, and both pytest suites without what's slow, needs the internet, builds images, measures timing, or runs WebKit. About 6 minutes. | Before every commit. |
+| `make test-ci` | `make test` plus WebKit and Firefox: what CI runs on a pull request. | To check a browser difference. |
+| `make test-all` | Everything, the supervisor suite also with the supervisor in a container. About 25 minutes; needs the internet. | Before a release, or after touching recipes, image builds (`recipes/`, `imagescan/`, image from a desktop), audio timing, or how the supervisor runs in a container. CI runs it on main and nightly. |
+| `make test-image`, `test-supervisor`, `test-container`, `test-go`, `test-web`, `test-engine` | One part. | While working on it. |
+
+While working on one area, narrow a suite: `make test-supervisor PYTEST_ARGS="-k drop"`,
+or run pytest in the suite's folder (`uv run pytest test_ui_audio.py`).
+`MARKS="-m ''"` lifts the default selection; markers: `slow`, `network`,
+`build`, `perf`, `webkit` (left out by default) and `serial`.
+
+Both suites run under pytest-xdist (`WORKERS`, default 4), then run the
+timing-sensitive tests, marked `serial`, on their own (`pytest --only-serial`).
+Each test gets a new desktop, taken from a few started ahead of it. The
+supervisor suite runs a supervisor per worker, each on its own slice of
+`DESKYARD_TEST_SUBNET` (default 10.215.0.0/20): give checkouts that test at the
+same time different ones. The supervisor suite rebuilds the web UI first when
+its sources are newer than the build. `TEST_IMAGE` names the desktop image the
+suites build and test (default `deskyard-debian-xfce:test`); outside make,
+`AC_IMAGE` (image suite) and `CC_TEST_IMAGE` (supervisor suite) name it.
+Firefox is skipped where Playwright's Firefox can't start (on some Macs).
+
+Screenshots and stats from the image suite land in `images/debian-xfce/tests/artifacts/`.
