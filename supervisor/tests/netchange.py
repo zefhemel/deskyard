@@ -11,13 +11,18 @@ OrbStack keep the networks in their VM, so a Mac never sees this.)
 So, for every test (conftest imports this): Page.goto and Page.reload load
 the page again when it or something it loaded failed so, and every browser
 context counts and logs such failures (pytest shows the log with a failed
-test). Waits for what a page loads after its goto use `failures`.
+test). Loopback UI bootstrap GETs and login use Playwright's request transport,
+which is independent of Chromium's network-change detector. Each request
+is sent once; other mutations, downloads, live streams and Selkies' client
+stay on the browser's transport. Waits for late frame loads use `failures`.
 """
 
 from __future__ import annotations
 
+import re
 import time
 import weakref
+from urllib.parse import urlsplit
 
 from playwright.sync_api import Browser, Error, Page
 
@@ -74,6 +79,28 @@ def _settle(page: Page):
 
 
 _failures: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+# Match bootstrap requests at the routing layer: even route.fallback() needs
+# Python callbacks, so matching media updates would pause them during sleeps.
+LOOPBACK = re.compile(
+    r"^https?://(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?/"
+    r"(?:api/(?:me|host|desktops|images|recipes|login)"
+    r"|(?:assets|src|@vite|node_modules)/[^?]*"
+    r"|desktops/[^/?]+|[^/?]*)/?(?:\?[^#]*)?$"
+)
+
+
+def _request_transport(route):
+    request = route.request
+    if request.resource_type not in {"document", "script", "stylesheet", "xhr", "fetch"} or (
+            request.method != "GET" and urlsplit(request.url).path != "/api/login"):
+        route.fallback()
+        return
+    # No retries here: replaying a mutation after an uncertain response
+    # could run it twice. Pass redirects back to the browser as redirects.
+    try:
+        route.fulfill(response=route.fetch(max_redirects=0))
+    except Error:
+        route.abort("failed")
 
 
 def failures(page: Page) -> int:
@@ -93,6 +120,7 @@ def _logging(new):
                 print(f"{CHANGED}: {request.method} {request.url}")
 
         ctx.on("requestfailed", note)
+        ctx.route(LOOPBACK, _request_transport)
         return made
 
     return run

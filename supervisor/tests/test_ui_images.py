@@ -153,6 +153,22 @@ def test_desktop_list_recovers_after_failed_first_load(mock_ui):
         browser.close()
 
 
+def test_loopback_ui_survives_browser_network_loss(mock_ui):
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_context(offline=True).new_page()
+        logins = []
+        page.on("request", lambda request: logins.append(request) if
+                request.method == "POST" and request.url.endswith("/api/login") else None)
+        page.goto(mock_ui + "/login")
+        page.fill("#u", "zef")
+        page.fill("#p", "x")
+        page.get_by_role("button", name="Sign in").click()
+        expect(page.get_by_text("alice", exact=True).first).to_be_visible(timeout=10000)
+        assert len(logins) == 1
+        browser.close()
+
+
 def test_desktop_list_ignores_failures_from_replaced_refreshes(mock_ui):
     with sync_playwright() as p:
         browser = p.chromium.launch()

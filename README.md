@@ -648,9 +648,12 @@ suites build and test (default `deskyard-debian-xfce:test`); outside make,
 `AC_IMAGE` (image suite) and `CC_TEST_IMAGE` (supervisor suite) name it.
 Firefox is skipped where Playwright's Firefox can't start (on some Macs).
 On Linux, tests write workspace fixtures through the desktop as UID 1000,
-since the runner may not own the workspace. Chromium navigation retries
-`ERR_NETWORK_CHANGED` caused by Docker creating or removing network interfaces;
-other browser errors still fail. Engine tests pull their own auxiliary images,
+since the runner may not own the workspace. Loopback UI bootstrap GETs and login use
+Playwright's request transport to avoid Chromium's `ERR_NETWORK_CHANGED` when
+Docker changes network interfaces. Each request is sent once, including login
+POSTs; other mutations, downloads, live streams and Selkies' client use the browser. Navigation
+on the browser transport retries that specific error; other browser errors still
+fail. Engine tests pull their own auxiliary images,
 including `python:3.13-alpine` for memory reclamation.
 
 ```bash

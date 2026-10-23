@@ -47,7 +47,7 @@ def sign_in(browser, base, **ctx):
 def open_desktop(page, base, name):
     seen = netchange.failures(page)
     page.goto(f"{base}/{name}/")
-    wait_loaded(page, SHOWING, seen)
+    wait_loaded(page, f"{SHOWING} && {SCREEN}.display()?.width > 0 && {SCREEN}.display()?.height > 0", seen)
     expect(page.get_by_text("Connected", exact=True)).to_be_visible(timeout=30000)
 
 
