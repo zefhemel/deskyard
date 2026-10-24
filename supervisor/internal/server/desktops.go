@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"path"
 	"path/filepath"
@@ -247,13 +246,14 @@ func (s *Server) handleCreateDesktop(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := s.Desktops.Begin(req.Name, "creating"); err != nil {
+	release, err := s.Desktops.Reserve(req.Name, "creating")
+	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
 	id := s.jobs.start(a.Username, req.Name, func(ctx context.Context, progress func(string, float64)) error {
 		defer func() {
-			s.Desktops.Done(req.Name)
+			release()
 			s.publishDesktop(ctx, req.Name)
 		}()
 		c, err := s.Desktops.Create(ctx, req.Name, desktops.Settings{Image: req.Image, MemoryBytes: req.MemoryBytes, NanoCPUs: req.NanoCPUs, Mounts: req.Mounts}, progress)
@@ -354,13 +354,14 @@ func (s *Server) secretsConfirmed(w http.ResponseWriter, r *http.Request, ref st
 
 // startRecreate runs Recreate as a job (settings changes and upgrades).
 func (s *Server) startRecreate(w http.ResponseWriter, a accounts.Account, name string, set desktops.Settings, state string) {
-	if err := s.Desktops.Begin(name, state); err != nil {
+	release, err := s.Desktops.Reserve(name, state)
+	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
 	id := s.jobs.start(a.Username, name, func(ctx context.Context, progress func(string, float64)) error {
 		defer func() {
-			s.Desktops.Done(name)
+			release()
 			s.publishDesktop(ctx, name)
 		}()
 		s.viewers.closeAll(name)
@@ -379,11 +380,12 @@ func (s *Server) handleRemoveDesktop(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.Desktops.Begin(c.Name, "removing"); err != nil {
+	release, err := s.Desktops.Reserve(c.Name, "removing")
+	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	defer s.Desktops.Done(c.Name)
+	defer release()
 	s.viewers.closeAll(c.Name)
 	ctx, cancel := timeout(r, 5*time.Minute)
 	defer cancel()
@@ -391,11 +393,20 @@ func (s *Server) handleRemoveDesktop(w http.ResponseWriter, r *http.Request) {
 		writeError(w, errorStatus(err), err.Error())
 		return
 	}
-	_ = s.Accounts.Forget(func(id string) bool { return id == c.ID })
-	s.tokens.forgetDesktop(c.ID)
+	cleanupErr := errors.Join(
+		s.Accounts.Forget(func(id string) bool { return id == c.ID }),
+		s.tokens.forgetDesktop(c.ID),
+	)
+	if cleanupErr != nil {
+		s.Log.Error("persisting removed desktop access cleanup", "desktop", c.Name, "err", cleanupErr)
+	}
 	s.activity.ForgetDesktop(c.Name)
 	s.Log.Info("removed", "desktop", c.Name, "files", r.URL.Query().Get("files") == "1", "by", a.Username)
 	s.events.publish(event{kind: "removed", desktopID: c.ID, data: map[string]string{"name": c.Name}})
+	if cleanupErr != nil {
+		writeError(w, http.StatusInternalServerError, cleanupErr.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -435,14 +446,14 @@ func (s *Server) handlePower(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.Desktops.Begin(c.Name, ""); err != nil {
+	release, err := s.Desktops.Reserve(c.Name, "")
+	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	defer s.Desktops.Done(c.Name)
+	defer release()
 	ctx, cancel := timeout(r, 2*time.Minute)
 	defer cancel()
-	var err error
 	switch action {
 	case "start":
 		err = s.Desktops.Start(ctx, c.Name)
@@ -490,14 +501,19 @@ func (s *Server) handleSetAccess(w http.ResponseWriter, r *http.Request) {
 
 // execOutput runs a command as the desktop's user and returns its stdout.
 func (s *Server) execOutput(ctx context.Context, c desktops.Desktop, cmd ...string) ([]byte, error) {
-	out, errOut, code, err := engine.Output(ctx, s.Eng, c.Container.ID, engine.ExecSpec{Cmd: cmd, User: "user", WorkDir: "/workspace", Env: execEnv})
+	// Queries are small; allow image-sized binary output only for screenshots.
+	limit := int64(1 << 20)
+	if len(cmd) == 3 && cmd[0] == "deskyard" && cmd[1] == "screenshot" && cmd[2] == "-" {
+		limit = 32 << 20
+	}
+	result, err := engine.Run(ctx, s.Eng, c.Container.ID, engine.ExecSpec{Cmd: cmd, User: "user", WorkDir: "/workspace", Env: execEnv}, engine.RunOptions{StdoutLimit: limit, StderrLimit: 4096})
 	if err != nil {
 		return nil, err
 	}
-	if code != 0 {
-		return nil, &execError{code, strings.TrimSpace(string(errOut))}
+	if result.Code != 0 {
+		return nil, &execError{result.Code, strings.TrimSpace(string(result.Stderr))}
 	}
-	return out, nil
+	return result.Stdout, nil
 }
 
 type execError struct {
@@ -603,32 +619,20 @@ func (s *Server) miseTools(ctx context.Context, c desktops.Desktop) ([]Tool, err
 	// The image's tools live in /opt/mise, apart from the desktop's own
 	// MISE_DATA_DIR; mise lists them as well when told to look there.
 	env := append(append([]string{}, execEnv...), "MISE_SHARED_INSTALL_DIRS="+imageMiseDir+"/installs")
-	p, err := s.Eng.Exec(ctx, c.Container.ID, engine.ExecSpec{
+	result, err := engine.Run(ctx, s.Eng, c.Container.ID, engine.ExecSpec{
 		Cmd:  []string{"timeout", "-k", "1", "8", "mise", "ls", "--json"},
 		User: "user", WorkDir: "/workspace", Env: env,
-	})
-	if err != nil {
-		return nil, err
-	}
-	defer p.Close()
-	go func() { // a hung exec must not outlive the request
-		<-ctx.Done()
-		p.Close()
-	}()
-	if p.Stderr != nil {
-		go io.Copy(io.Discard, io.LimitReader(p.Stderr, maxToolsOutput)) //nolint:errcheck
-	}
-	out, err := io.ReadAll(io.LimitReader(p.Stdout, maxToolsOutput+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(out) > maxToolsOutput {
+	}, engine.RunOptions{StdoutLimit: maxToolsOutput, StderrLimit: 4096})
+	if errors.Is(err, engine.ErrOutputLimit) {
 		return nil, errors.New("mise output too large")
 	}
-	if code, err := p.Wait(); err != nil || code != 0 {
+	if err != nil {
+		return nil, err
+	}
+	if result.Code != 0 {
 		return nil, errors.New("mise failed")
 	}
-	return parseMiseTools(out)
+	return parseMiseTools(result.Stdout)
 }
 
 // parseMiseTools reads `mise ls --json`: an object of tool name to the list of

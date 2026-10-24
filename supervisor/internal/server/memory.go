@@ -56,11 +56,12 @@ func (s *Server) handleReclaimMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Keep the desktop running, while excluding concurrent lifecycle/reclaim requests.
-	if err := s.Desktops.Begin(c.Name, ""); err != nil {
+	release, err := s.Desktops.Reserve(c.Name, "")
+	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	defer s.Desktops.Done(c.Name)
+	defer release()
 	ctx, cancel := timeout(r, 45*time.Second)
 	defer cancel()
 	result, err := reclaimer.ReclaimMemory(ctx, c.Container.ID)

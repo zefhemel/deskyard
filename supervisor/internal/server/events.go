@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ type subscriber struct {
 	username string
 	c        chan event
 	refresh  chan struct{}
+	overflow chan struct{}
 }
 
 type hub struct {
@@ -38,7 +40,12 @@ func (h *hub) publish(e event) {
 	for s := range h.subs {
 		select {
 		case s.c <- e:
-		default: // a slow client misses an update; the next one corrects it
+		default:
+			// Losing an authoritative event requires reconciliation.
+			select {
+			case s.overflow <- struct{}{}:
+			default:
+			}
 		}
 	}
 }
@@ -67,7 +74,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	if sse == nil {
 		return
 	}
-	sub := &subscriber{username: a.Username, c: make(chan event, 64), refresh: make(chan struct{}, 1)}
+	sub := &subscriber{username: a.Username, c: make(chan event, 64), refresh: make(chan struct{}, 1), overflow: make(chan struct{}, 1)}
 	s.events.mu.Lock()
 	s.events.subs[sub] = true
 	s.events.mu.Unlock()
@@ -83,14 +90,14 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		sse.send(kind, string(b))
 	}
 	visible := map[string]bool{} // desktop IDs this stream has shown
-	sendAll := func() {
+	sendAll := func() bool {
 		acct, ok := s.Accounts.Get(a.Username)
 		if !ok {
-			return
+			return false
 		}
 		list, err := s.Desktops.List(r.Context())
 		if err != nil {
-			return
+			return false
 		}
 		now := map[string]bool{}
 		for _, c := range list {
@@ -105,8 +112,11 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		visible = now
+		return true
 	}
-	sendAll()
+	if !sendAll() {
+		return
+	}
 	for {
 		select {
 		case e := <-sub.c:
@@ -117,14 +127,42 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			if e.desktopID != "" && !acct.HasAccess(e.desktopID) {
 				continue
 			}
+			// Lifecycle payloads can have queued before the snapshot. Resolve
+			// current state rather than allowing an old payload to undo it.
+			name := ""
 			if c, ok := e.data.(desktops.Desktop); ok {
-				visible[c.Name] = true
-				send(e.kind, s.desktopJSON(r.Context(), c, acct))
+				name = c.Name
+			}
+			if e.kind == "removed" {
+				if removed, ok := e.data.(map[string]string); ok {
+					name = removed["name"]
+				}
+			}
+			if name != "" {
+				c, err := s.Desktops.Get(r.Context(), name)
+				if err != nil && !errors.Is(err, desktops.ErrNotFound) {
+					return
+				}
+				if err == nil && (acct.HasAccess(c.ID) || (acct.Admin && c.ID == "")) {
+					visible[name] = true
+					send("desktop", s.desktopJSON(r.Context(), c, acct))
+				} else {
+					delete(visible, name)
+					send("removed", map[string]string{"name": name})
+				}
 				continue
 			}
 			send(e.kind, e.data)
 		case <-sub.refresh:
-			sendAll()
+			for len(sub.c) > 0 {
+				<-sub.c
+			}
+			if !sendAll() {
+				return
+			}
+		case <-sub.overflow:
+			// EventSource reconnects and requests a new authoritative snapshot.
+			return
 		case <-r.Context().Done():
 			return
 		case <-time.After(25 * time.Second):

@@ -20,6 +20,7 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
+	"github.com/zefhemel/deskyard/supervisor/internal/web"
 )
 
 // serveDesktop handles /<name>/…: the desktop page (the UI), and under
@@ -87,6 +88,15 @@ func (s *Server) serveScreen(w http.ResponseWriter, r *http.Request, c desktops.
 		return
 	}
 	switch file {
+	case "deskyard-v1.js":
+		data, err := web.Dist.ReadFile("dist/deskyard-screen.js")
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "desktop adapter is missing; rebuild the supervisor web UI")
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		_, _ = w.Write(data)
 	case "deskyard.js":
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
@@ -104,6 +114,20 @@ var screenAdditions []byte
 // additionsTag loads our additions before any of Selkies' own scripts.
 const additionsTag = `<script src="deskyard.js"></script>`
 
+const modernAdditionsTag = `<script type="module" src="deskyard-v1.js"></script>`
+
+// Images predating the hook contract keep the original bridge while they are
+// upgraded. An unknown explicit contract must never silently lose controls.
+func screenAdapterTag(page []byte) (string, error) {
+	if !bytes.Contains(page, []byte(`name="deskyard-client-contract"`)) {
+		return additionsTag, nil
+	}
+	if bytes.Contains(page, []byte(`<meta name="deskyard-client-contract" content="1">`)) {
+		return modernAdditionsTag, nil
+	}
+	return "", errors.New("this desktop client needs a newer supervisor; upgrade the supervisor or select a compatible desktop image")
+}
+
 // serveScreenPage serves the client's index.html with our additions.
 func (s *Server) serveScreenPage(w http.ResponseWriter, r *http.Request, c desktops.Desktop) {
 	dir, ok := s.clientDir(w, r, c)
@@ -115,11 +139,16 @@ func (s *Server) serveScreenPage(w http.ResponseWriter, r *http.Request, c deskt
 		writeError(w, http.StatusBadGateway, "the desktop client isn't available")
 		return
 	}
+	tag, err := screenAdapterTag(page)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
 	if i := bytes.Index(page, []byte("<head>")); i >= 0 {
 		i += len("<head>")
-		page = slices.Concat(page[:i:i], []byte(additionsTag), page[i:])
+		page = slices.Concat(page[:i:i], []byte(tag), page[i:])
 	} else {
-		page = slices.Concat([]byte(additionsTag), page)
+		page = slices.Concat([]byte(tag), page)
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

@@ -72,42 +72,49 @@ func (c *catalog) defaultRef() string {
 	return c.list[0].Ref
 }
 
-func (c *catalog) setNewest(ref, id string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	now := time.Now().UTC()
-	for i := range c.list {
-		if sameRef(c.list[i].Ref, ref) {
-			c.list[i].Newest, c.list[i].Checked = id, &now
-			_ = c.save()
-			return
-		}
+func (c *catalog) publish(next []catalogEntry) error {
+	if err := store.WriteJSON(c.path, map[string]any{"images": next}); err != nil {
+		return err
 	}
-	if image, ok := officialImageFor(ref); ok {
-		c.list = append(c.list, catalogEntry{Ref: image.Ref, Newest: id, Checked: &now})
-		_ = c.save()
-	}
+	c.list = next
+	return nil
 }
 
-// noteLocal records the image a reference resolves to here, without
-// counting as a check. Locally built images (`:local`) never pull, so this is
-// how a rebuild becomes their newest version.
-func (c *catalog) noteLocal(ref, id string) {
+func (c *catalog) setNewest(ref, id string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for i := range c.list {
-		if sameRef(c.list[i].Ref, ref) {
-			if c.list[i].Newest != id {
-				c.list[i].Newest = id
-				_ = c.save()
-			}
-			return
+	next := slices.Clone(c.list)
+	now := time.Now().UTC()
+	for i := range next {
+		if sameRef(next[i].Ref, ref) {
+			next[i].Newest, next[i].Checked = id, &now
+			return c.publish(next)
 		}
 	}
 	if image, ok := officialImageFor(ref); ok {
-		c.list = append(c.list, catalogEntry{Ref: image.Ref, Newest: id})
-		_ = c.save()
+		return c.publish(append(next, catalogEntry{Ref: image.Ref, Newest: id, Checked: &now}))
 	}
+	return nil
+}
+
+// noteLocal records a local resolution without counting it as a registry check.
+func (c *catalog) noteLocal(ref, id string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	next := slices.Clone(c.list)
+	for i := range next {
+		if sameRef(next[i].Ref, ref) {
+			if next[i].Newest == id {
+				return nil
+			}
+			next[i].Newest = id
+			return c.publish(next)
+		}
+	}
+	if image, ok := officialImageFor(ref); ok {
+		return c.publish(append(next, catalogEntry{Ref: image.Ref, Newest: id}))
+	}
+	return nil
 }
 
 func (c *catalog) newest(ref string) string {
@@ -133,14 +140,14 @@ func (c *catalog) entry(ref string) (catalogEntry, bool) {
 func (c *catalog) put(e catalogEntry) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for i := range c.list {
-		if sameRef(c.list[i].Ref, e.Ref) {
-			c.list[i] = e
-			return c.save()
+	next := slices.Clone(c.list)
+	for i := range next {
+		if sameRef(next[i].Ref, e.Ref) {
+			next[i] = e
+			return c.publish(next)
 		}
 	}
-	c.list = append(c.list, e)
-	return c.save()
+	return c.publish(append(next, e))
 }
 
 // remove drops ref; the catalog keeps at least one image.
@@ -150,8 +157,7 @@ func (c *catalog) remove(ref string) error {
 	if len(c.list) == 1 && sameRef(c.list[0].Ref, ref) {
 		return errLastImage
 	}
-	c.list = slices.DeleteFunc(c.list, func(e catalogEntry) bool { return sameRef(e.Ref, ref) })
-	return c.save()
+	return c.publish(slices.DeleteFunc(slices.Clone(c.list), func(e catalogEntry) bool { return sameRef(e.Ref, ref) }))
 }
 
 var errLastImage = errors.New("the catalog needs at least one image")
@@ -210,7 +216,9 @@ func (s *Server) checkImages(ctx context.Context, progress func(string, float64)
 		if err := s.Eng.Pull(ctx, e.Ref, nil); err != nil {
 			errs = append(errs, err)
 			if img, ierr := s.Eng.ImageInspect(ctx, e.Ref); ierr == nil {
-				s.images.noteLocal(e.Ref, img.ID) // a local build
+				if err := s.images.noteLocal(e.Ref, img.ID); err != nil {
+					errs = append(errs, err)
+				} // a local build
 			}
 			continue
 		}
@@ -220,7 +228,9 @@ func (s *Server) checkImages(ctx context.Context, progress func(string, float64)
 			errs = append(errs, err)
 			continue
 		}
-		s.images.setNewest(e.Ref, img.ID)
+		if err := s.images.setNewest(e.Ref, img.ID); err != nil {
+			errs = append(errs, err)
+		}
 	}
 	s.events.refresh()
 	return errors.Join(errs...)
@@ -235,7 +245,9 @@ func (c *catalog) checkLoop(ctx context.Context, s *Server) {
 	// at once and a rebuilt local image counts as the newest.
 	for _, e := range c.entries() {
 		if img, err := s.Eng.ImageInspect(ctx, e.Ref); err == nil {
-			c.noteLocal(e.Ref, img.ID)
+			if err := c.noteLocal(e.Ref, img.ID); err != nil {
+				s.Log.Warn("recording local image", "ref", e.Ref, "err", err)
+			}
 		}
 	}
 	var lastRun time.Time
@@ -477,16 +489,17 @@ func (s *Server) handleUpgradeImage(w http.ResponseWriter, r *http.Request) {
 		}
 		var errs []error
 		for i, c := range behind {
-			if err := s.Desktops.Begin(c.Name, "upgrading"); err != nil {
+			release, err := s.Desktops.Reserve(c.Name, "upgrading")
+			if err != nil {
 				errs = append(errs, err)
 				continue
 			}
 			s.publishDesktop(ctx, c.Name)
 			s.viewers.closeAll(c.Name)
-			_, err := s.Desktops.Recreate(ctx, c.Name, c.Settings, func(msg string, _ float64) {
+			_, err = s.Desktops.Recreate(ctx, c.Name, c.Settings, func(msg string, _ float64) {
 				progress(c.Name+": "+msg, float64(i)/float64(len(behind)))
 			})
-			s.Desktops.Done(c.Name)
+			release()
 			s.publishDesktop(ctx, c.Name)
 			if err != nil {
 				errs = append(errs, err)

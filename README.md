@@ -562,9 +562,15 @@ Environment variables of the supervisor:
 
 `DESKYARD_DATA_DIR` holds each desktop's folder (`<name>/`, owned by UID
 1000) and `.deskyard/` with `accounts.json`, `tokens.json`, `images.json`, `memory-policy.json`,
-the session key and certificates (all mode 0600). The supervisor keeps no
-list of desktops of its own: desktops are containers with
-`deskyard.*` labels.
+the session key and certificates (all mode 0600). Active desktops are containers
+with `deskyard.*` labels. During settings changes and upgrades, private records
+in `.deskyard/recovery/` preserve the previous image, settings and identity until
+the replacement is ready. A failed or interrupted replacement restores that
+previous desktop; startup retries retained recovery records after reconnecting
+container networks. If recovery still fails, its record remains and operations
+on that desktop are blocked with an explanation. Fix the reported engine/image
+or host-folder issue and restart the supervisor to retry; keep this directory
+with the rest of the supervisor state when backing it up.
 
 In a container, the data folder must be mounted **at the same path** as on
 the host (`-v /srv/desktops:/srv/desktops`), because the supervisor hands
@@ -659,6 +665,12 @@ While working on one area, narrow a suite: `make test-supervisor PYTEST_ARGS="-k
 or run pytest in the suite's folder (`uv run pytest test_ui_audio.py`).
 `MARKS="-m ''"` lifts the default selection; markers: `slow`, `network`,
 `build`, `perf`, `webkit` (left out by default) and `serial`.
+
+The Tests workflow also runs a five-test runtime smoke selection on each of
+XFCE, KDE and MATE. Each job builds its desktop target from the image cache and
+checks readiness, desktop identity, the default browser, native shared-terminal
+defaults and home persistence across restart/recreation. The full supervisor
+and browser suites continue to use XFCE.
 
 Both suites run under pytest-xdist (`WORKERS`, default 4), then run the
 timing-sensitive tests, marked `serial`, on their own (`pytest --only-serial`).

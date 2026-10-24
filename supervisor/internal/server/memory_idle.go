@@ -66,11 +66,12 @@ func (s *Server) reclaimIdle(ctx context.Context, now time.Time, states map[stri
 		if st.attempted || now.Sub(st.since) < idleMemoryDelay {
 			continue
 		}
-		if err := s.Desktops.Begin(c.Name, ""); err != nil {
+		release, err := s.Desktops.Reserve(c.Name, "")
+		if err != nil {
 			continue
 		}
 		s.reclaimIdleDesktop(ctx, now, c, st)
-		s.Desktops.Done(c.Name)
+		release()
 	}
 	for id := range states {
 		if !live[id] {

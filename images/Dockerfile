@@ -129,6 +129,7 @@ RUN --mount=type=bind,from=pixelflux,source=/out/wheels,target=/tmp/pixelflux-wh
         "pcmflux==${PCMFLUX_VERSION}" \
     && cd /opt/selkies/lib/python3.13/site-packages \
     && for p in /tmp/patches/selkies-*.diff; do git apply --verbose "$p" || exit 1; done \
+    && /opt/selkies/bin/python /tmp/patches/client_hooks.py selkies/selkies_web \
     && /opt/selkies/bin/python -m compileall -q selkies \
     && test ! -e pixelflux.libs \
     && grep -q PIXELFLUX_IDLE_KEEPALIVE_MS pixelflux.cpython-*.so \

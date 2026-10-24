@@ -32,7 +32,7 @@ func (s *Server) serveAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t, ok := s.tokens.check(strings.TrimSpace(bearer))
-	if !ok {
+	if !ok || !s.tokenCreatorAllowed(t) {
 		writeError(w, http.StatusUnauthorized, "the token is unknown, revoked or expired")
 		return
 	}
@@ -41,6 +41,14 @@ func (s *Server) serveAgent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "the token's desktop no longer exists")
 		return
 	}
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	defer s.tokens.track(t.ID, cancel)()
+	if _, valid := s.tokens.check(strings.TrimSpace(bearer)); !valid || !s.tokenCreatorAllowed(t) || ctx.Err() != nil {
+		writeError(w, http.StatusUnauthorized, "the token is unknown, revoked or expired")
+		return
+	}
+	r = r.WithContext(ctx)
 	rest, ok := strings.CutPrefix(r.URL.Path, agentPrefix)
 	if !ok {
 		writeError(w, http.StatusNotFound, "no such agent API route")
@@ -54,10 +62,6 @@ func (s *Server) serveAgent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, c.Name+" is stopped; someone with access can start it")
 		return
 	}
-	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
-	defer s.tokens.track(t.ID, cancel)()
-	r = r.WithContext(ctx)
 	switch {
 	case rest == "/exec":
 		s.agentExec(w, r, c, t)

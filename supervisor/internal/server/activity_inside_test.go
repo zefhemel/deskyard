@@ -173,7 +173,8 @@ func TestInsideMonitoringContinuesWithoutUIForAutoReclaim(t *testing.T) {
 	}
 	ir.reconcile(ctx)
 	ir.mu.Lock()
-	_, following = ir.running["bob"]
+	worker, present := ir.running["bob"]
+	following = present && worker.ctx.Err() == nil
 	ir.mu.Unlock()
 	if following {
 		t.Fatal("opt-out desktop followed without UI")

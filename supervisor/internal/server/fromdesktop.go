@@ -512,8 +512,7 @@ func (zeros) Read(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// desktopFlatpaks are a desktop's per-user Flatpak apps and remotes, and how
-// to read a remote's GPG key.
+// desktopFlatpaks holds per-user Flatpak apps, remotes and loaded GPG keys.
 type desktopFlatpaks struct {
 	apps    []recipes.InstalledFlatpak
 	remotes []recipes.UserRemote
@@ -540,13 +539,20 @@ func (s *Server) desktopFlatpaks(ctx context.Context, c desktops.Desktop) deskto
 			return out
 		}
 		out.apps, out.remotes = recipes.ParseFlatpakList(string(list)), recipes.ParseFlatpakRemotes(string(rms))
-		out.key = func(remote string) []byte {
-			if !plain(remote) {
-				return nil
+		// Resolve keys while discovery owns ctx; consumers may run after it closes.
+		keys := map[string][]byte{}
+		for _, rm := range out.remotes {
+			if !plain(rm.Name) {
+				continue
 			}
-			b, _ := s.execOutput(ctx, c, "cat", "/workspace/"+recipes.FlatpakKeyPath(remote))
-			return b
+			b, err := s.execOutput(ctx, c, "cat", "/workspace/"+recipes.FlatpakKeyPath(rm.Name))
+			if err != nil {
+				out.notes = append(out.notes, "Couldn't read the Flatpak key for "+rm.Name+": "+err.Error())
+				continue
+			}
+			keys[rm.Name] = b
 		}
+		out.key = func(remote string) []byte { return keys[remote] }
 		return out
 	}
 	root, err := os.OpenRoot(filepath.Join(s.Desktops.Cfg.DataDir, c.Name))

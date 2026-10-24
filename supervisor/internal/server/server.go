@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -101,11 +102,18 @@ func New(o Options) (*Server, error) {
 	if s.tokens, err = loadTokens(o.StateDir); err != nil {
 		return nil, err
 	}
+	if err := s.tokens.bindAccounts(s.Accounts); err != nil {
+		return nil, fmt.Errorf("reconciling agent token creators: %w", err)
+	}
 	s.tokens.onGone = func(t token) { s.activity.Forget(t.ID) }
 	if s.images, err = loadCatalog(o.StateDir, o.DefaultImage); err != nil {
 		return nil, err
 	}
-	s.Desktops.ImageUsed = s.images.noteLocal
+	s.Desktops.ImageUsed = func(ref, id string) {
+		if err := s.images.noteLocal(ref, id); err != nil {
+			s.Log.Warn("recording local image", "ref", ref, "err", err)
+		}
+	}
 	s.recipes = recipes.NewStore(filepath.Join(o.StateDir, "recipes.json"))
 	s.smokeTest = s.smokeTestDesktop
 	o.Accounts.OnChange = s.accountsChanged
@@ -286,7 +294,9 @@ func (s *Server) accountsChanged(usernames ...string) {
 		s.terminals.revalidate(s, u)
 		s.viewers.revoke(u, stillAllowed)
 		s.screenWatchers.revoke(u, stillAllowed)
-		s.tokens.creatorChanged(s, u, a, ok)
+		if err := s.tokens.creatorChanged(s, u); err != nil {
+			s.Log.Error("revoking account agent tokens", "account", u, "err", err)
+		}
 	}
 	s.events.refresh()
 }

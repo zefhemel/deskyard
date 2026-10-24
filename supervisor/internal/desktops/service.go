@@ -1,6 +1,6 @@
 // Package desktops creates and runs desktops: containers labelled as the
-// supervisor's, each with its own network and workspace folder. The engine is
-// the only list of desktops; nothing about them is stored elsewhere.
+// supervisor's, each with its own network and workspace folder. Containers are
+// the active records; private recovery intent protects container replacements.
 package desktops
 
 import (
@@ -35,6 +35,7 @@ const (
 	LabelMemory   = "deskyard.setting.memory"
 	LabelCPUs     = "deskyard.setting.cpus"
 	LabelCreated  = "deskyard.created"
+	LabelImage    = "deskyard.setting.image"
 	LabelContract = "deskyard.contract"
 	TokenEnv      = "WORKSPACE_PROXY_TOKEN"
 	Contract      = "3" // 3: a Selkies desktop (Xvfb, Selkies behind Caddy)
@@ -162,10 +163,14 @@ func (s *Service) ForgetImage(ref string) {
 
 func (s *Service) fromContainer(ctx context.Context, c engine.Container) Desktop {
 	name := c.Labels[LabelName]
+	image := c.Labels[LabelImage]
+	if image == "" {
+		image = c.Image
+	}
 	comp := Desktop{
-		ID: c.Labels[LabelID], Name: name, Image: c.Image, ImageID: c.ImageID,
+		ID: c.Labels[LabelID], Name: name, Image: image, ImageID: c.ImageID,
 		StartedAt: c.StartedAt, Folder: filepath.Join(s.Cfg.DataDir, name), Container: c,
-		Settings: Settings{Image: c.Image, MemoryBytes: c.MemoryBytes, NanoCPUs: c.NanoCPUs, Camera: cameraOf(c.Devices)},
+		Settings: Settings{Image: image, MemoryBytes: c.MemoryBytes, NanoCPUs: c.NanoCPUs, Camera: cameraOf(c.Devices)},
 	}
 	comp.Settings.Mounts, _ = hostMountsFromLabels(c.Labels)
 	comp.Created, _ = time.Parse(time.RFC3339, c.Labels[LabelCreated])
@@ -374,10 +379,15 @@ func (s *Service) createNetwork(ctx context.Context, name, id string) error {
 }
 
 func (s *Service) createContainer(ctx context.Context, name, id, token string, created time.Time, set Settings) error {
+	return s.createPinnedContainer(ctx, name, id, token, created, set, set.Image)
+}
+
+// createPinnedContainer keeps the logical image reference while creating from an immutable image.
+func (s *Service) createPinnedContainer(ctx context.Context, name, id, token string, created time.Time, set Settings, imageID string) error {
 	if err := ValidateHostMounts(set.Mounts); err != nil {
 		return err
 	}
-	labels := map[string]string{LabelManaged: "true", LabelName: name, LabelID: id}
+	labels := map[string]string{LabelManaged: "true", LabelName: name, LabelID: id, LabelImage: set.Image}
 	if len(set.Mounts) > 0 {
 		raw, err := json.Marshal(set.Mounts)
 		if err != nil {
@@ -395,7 +405,7 @@ func (s *Service) createContainer(ctx context.Context, name, id, token string, c
 		labels[LabelCPUs] = strconv.FormatInt(set.NanoCPUs, 10)
 	}
 	spec := engine.ContainerSpec{
-		Name: containerName(name), Image: set.Image, Labels: labels,
+		Name: containerName(name), Image: imageID, Labels: labels,
 		Env:     map[string]string{TokenEnv: token},
 		Mounts:  []engine.Mount{{Source: filepath.Join(s.Cfg.DataDir, name), Target: "/workspace"}},
 		Network: containerName(name), Aliases: []string{containerName(name)},
@@ -426,82 +436,13 @@ func (s *Service) createContainer(ctx context.Context, name, id, token string, c
 			return nil
 		}
 		if err := s.Eng.ConnectNetwork(ctx, containerName(name), s.Cfg.SelfID, nil); err != nil {
-			_ = s.Eng.Remove(context.WithoutCancel(ctx), containerName(name))
+			cleanup, done := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			defer done()
+			_ = s.Eng.Remove(cleanup, containerName(name))
 			return fmt.Errorf("connecting the supervisor to %s: %w", containerName(name), err)
 		}
 	}
 	return nil
-}
-
-// Recreate replaces the container with one on new settings (image, limits),
-// keeping its ID, token, network and folder. A running desktop is started again.
-func (s *Service) Recreate(ctx context.Context, name string, set Settings, progress func(string, float64)) (Desktop, error) {
-	c, err := s.Get(ctx, name)
-	if err != nil {
-		return Desktop{}, err
-	}
-	if _, err := hostMountsFromLabels(c.Container.Labels); err != nil {
-		return Desktop{}, err
-	}
-	if len(set.Mounts) > 0 {
-		progress("Checking host folders", -1)
-	}
-	if err := s.checkHostMountSources(ctx, set.Mounts); err != nil {
-		return Desktop{}, err
-	}
-	if _, err := s.EnsureImage(ctx, set.Image, progress); err != nil {
-		return Desktop{}, err
-	}
-	// Its camera gone from the host (a reboot without the module): the new
-	// container can't have it.
-	if set.Camera != "" && set.Camera == c.Settings.Camera && s.cameraGone(set.Camera) {
-		s.Log.Warn("camera gone from the host; recreating the desktop without it", "desktop", name, "camera", set.Camera)
-		set.Camera = ""
-	}
-	wasRunning := c.Container.Running()
-	token := c.Container.Env[TokenEnv]
-	progress("Stopping", -1)
-	if wasRunning {
-		if err := s.Eng.Stop(ctx, c.Container.ID, stopTimeout); err != nil {
-			return Desktop{}, err
-		}
-	}
-	progress("Recreating", -1)
-	if err := s.Eng.Remove(ctx, c.Container.ID); err != nil {
-		return Desktop{}, err
-	}
-	if err := s.createContainer(ctx, name, c.ID, token, c.Created, set); err != nil {
-		// Bring the old one back so the desktop isn't lost (the engine is its
-		// only record): as it was, or without its camera when that is what
-		// fails (gone, or another desktop's since).
-		back := context.WithoutCancel(ctx)
-		old := c.Settings
-		err2 := s.createContainer(back, name, c.ID, token, c.Created, old)
-		if err2 != nil && old.Camera != "" {
-			s.Log.Warn("bringing the desktop back without its camera", "desktop", name, "camera", old.Camera, "err", err2)
-			old.Camera = ""
-			err2 = s.createContainer(back, name, c.ID, token, c.Created, old)
-		}
-		if err2 != nil {
-			return Desktop{}, errors.Join(err, err2)
-		}
-		if wasRunning {
-			if startErr := s.Eng.Start(back, containerName(name)); startErr != nil {
-				return Desktop{}, errors.Join(err, fmt.Errorf("restarting the previous desktop: %w", startErr))
-			}
-		}
-		return Desktop{}, err
-	}
-	if wasRunning {
-		progress("Starting", -1)
-		if err := s.Eng.Start(ctx, containerName(name)); err != nil {
-			return Desktop{}, err
-		}
-		if err := s.WaitReady(ctx, name, 2*time.Minute); err != nil {
-			return Desktop{}, err
-		}
-	}
-	return s.Get(ctx, name)
 }
 
 // Start starts a stopped desktop. One whose camera has gone from the host
@@ -531,10 +472,11 @@ func (s *Service) cameraGone(camera string) bool {
 // cut short by the caller's deadline: a recreate stopped halfway loses the
 // container.
 func (s *Service) withoutCamera(ctx context.Context, c Desktop, start bool) error {
-	if err := s.Begin(c.Name, "starting"); err != nil {
+	release, err := s.Reserve(c.Name, "starting")
+	if err != nil {
 		return err
 	}
-	defer s.Done(c.Name)
+	defer release()
 	return s.withoutCameraReserved(ctx, c, start)
 }
 
@@ -818,6 +760,9 @@ func (s *Service) Reconcile(ctx context.Context) error {
 				s.Log.Warn("reconnecting to network", "network", n.Name, "err", err)
 			}
 		}
+	}
+	if err := s.recoverReplacements(ctx); err != nil {
+		errs = append(errs, err)
 	}
 	list, err := s.List(ctx)
 	if err != nil {

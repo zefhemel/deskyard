@@ -1,0 +1,37 @@
+---
+displayName: Code quality and recovery plan
+tags: plan
+status: done
+date: "2026-10-24"
+spec: "[[superpowers/specs/2026-10-24-code-quality-recovery-design|Code quality and recovery design]]"
+---
+Implement the approved audit repairs in independently testable units. Requirements are in [[superpowers/specs/2026-10-24-code-quality-recovery-design|Code quality and recovery design]].
+
+# Constraints
+Preserve unrelated working-tree changes. Tests exercise observable behavior and fault injection at the engine/filesystem boundary. Do not add production-only test hooks, blanket coverage thresholds, or generic storage frameworks. Keep arbitrary exec disposal separate from terminal process termination. Durable recovery data is mode 0600. Documentation follows [[AGENTS]].
+
+# Tasks
+- [x] Persistence and discovery: add failing tests for account/catalog write failure, token revocation surviving reload, and running Flatpak discovery with canceled consumer context; implement prepare/persist/publish and eager keys in accounts.go, tokens.go, images.go and fromdesktop.go. Verify affected package tests and document stores/discovery.
+- [x] Exec ownership: add engine runner tests for blocked streams, cancellation, capture limits, consumer failures and exit codes; implement the runner and migrate engine.Output, server execStream/execOutput and bounded query helpers. Verify engine/server tests and document the lifetime contract.
+- [x] Collectors and SSE: add deterministic old-worker/replacement and overflow tests; use runtime-owned worker handles, synchronized state and snapshot refresh on overflow. Verify server race tests and update Monitoring/Activity architecture.
+- [x] Lifecycle recovery: add tests for immutable rollback, create/start/readiness failure and interrupted replacement startup; implement a private durable recovery journal and bounded restore in focused desktops modules. Consolidate reservation ownership where callers benefit. Verify desktop/server tests and engine integration; update Lifecycle architecture.
+- [x] Selkies boundary: inspect the exact pinned client, add versioned explicit hooks with build compatibility checks, compile a typed adapter and preserve upgrade behavior. Verify adapter unit contracts and browser/media/touch integration. Update Desktop proxy/Selkies architecture and image upgrade documentation.
+- [x] Variant smoke CI: run a small image runtime suite for XFCE, KDE and MATE covering readiness, browser, shared terminal and persistence. Verify collection/CI syntax and run available local variant checks. Update development/test documentation.
+- [x] Final verification: review integrated diff, run Go race tests/vet, UI typecheck/tests/build, relevant Docker/browser tests and documentation metadata/link/SilverBullet checks. Mark spec implemented and plan done only after requirements and verification are resolved.
+
+# Progress
+The user approved execution of every stage on 24 October 2026. Baseline Go race tests, vet and 40 UI unit tests passed during the audit; seven temporary probes reproduced defects. Existing unrelated edits include README, documentation-space guidance, lifecycle/tooling pages, historical spikes and screenshot artifacts.
+
+
+# Verification record
+- Persistence: prepared-state write-failure tests, eager Flatpak key export, and full affected Go race suites passed. Final review added durable creator/grant binding so account-triggered token revocation remains fail closed when token-file cleanup cannot persist; authorization, live-stream, restart and delayed-notification regressions passed along with fresh full account/server race suites. Retained per-desktop grant revisions preserve unrelated tokens; role revisions and creator identity prevent old-token resurrection.
+- Exec: bounded engine runner and migrated query/stream helpers passed engine/Docker/server race tests. Stdout consumption stays on the caller goroutine to preserve HTTP panic recovery; stderr drains concurrently. Cancellation disposes attachments and does not promise arbitrary command termination.
+- Collectors: canceled workers complete cursor handoff before replacement, ownership guards sample publication, canceled epoch responses cannot reset activity, and same-runtime resume retains the cursor. SSE overflow disconnects for a fresh snapshot; this replaces the initially proposed in-stream refresh because stale queued lifecycle deltas and snapshot failures otherwise require more ordering state. Queued lifecycle events resolve current engine state. Deterministic regression/race tests passed.
+- Lifecycle: recovery intent file and directory entries are synchronized; rollback pins the previous image while labels preserve the logical image reference. Startup reconnects networks before restoration; restoration requires readiness and keeps failed intent. Unit fault-injection/race tests and the real Docker interrupted-replacement regression passed. Normal operation callers now use an idempotent reservation release. The slot is acquired before inspecting recovery intent, preventing a paused request from bypassing a newly retained journal; deterministic ordering and stat-error/retry regressions passed.
+- Selkies: explicit pinned-source hooks, versioned marker, typed adapter, legacy-image compatibility, 42 UI unit tests, Go screen route tests and real Chromium media/touch/ownership checks passed. Final patched validation image is `deskyard-selkies-hooks:validation`. Legacy prototype interception remains only for pre-contract images by design.
+- Variants: CI YAML/actionlint and five-test collection passed for each desktop. Fresh native ARM64 XFCE/KDE/MATE images each passed five runtime smoke tests. Their smoke build preceded the final cursor/clipboard adapter refinement; final-image Chromium regressions cover that refinement separately. AMD64 CI and native iOS were not executed locally.
+- Documentation: changed literal wiki links and component metadata passed filesystem checks; SilverBullet indexed the design and modified component metadata. SilverBullet lint returned no errors for all 13 affected pages and the architecture overview; the generated architecture diagram rendered successfully in Desktop.
+- Full build, whole-repository Go race/coverage, vet, 42 UI tests/typecheck and the complete tagged Docker engine suite passed. The selected real-supervisor API/agent/monitoring/files/mount suite passed 39 tests. The final API/agent recheck passed all 22 tests after the delayed-notification fix. Independent review findings (authorization cleanup, delayed callbacks, startup network ordering and reservation/journal ordering) were repaired and re-reviewed. Fresh affected race suites, vet and the real interrupted-recovery test passed after the last change. No remaining actionable findings were reported in the final reviewed repairs.
+
+# Delivery
+Implementation and documentation are delivered on `fix/code-quality-recovery`; the repair commit excludes unrelated working-tree edits. The user authorized pushing the branch and observing GitHub builds, with follow-up fixes as needed. README, API documentation, the affected architecture components and the desktop-variant test record describe the implemented contracts. Local verification used ARM64 Docker images and Chromium; AMD64 CI, Firefox/WebKit and native iOS were not rerun locally. The existing legacy-image adapter remains intentionally available until those images are upgraded.

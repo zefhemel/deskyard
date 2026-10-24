@@ -171,31 +171,8 @@ type Engine interface {
 	Info(ctx context.Context) (HostInfo, error)
 }
 
-// Output runs cmd and returns its stdout, stderr and exit code.
+// Output runs cmd with bounded capture and returns its stdout, stderr and exit code.
 func Output(ctx context.Context, e Engine, id string, spec ExecSpec) (stdout, stderr []byte, code int, err error) {
-	p, err := e.Exec(ctx, id, spec)
-	if err != nil {
-		return nil, nil, -1, err
-	}
-	defer p.Close()
-	type res struct {
-		b   []byte
-		err error
-	}
-	outc, errc := make(chan res, 1), make(chan res, 1)
-	go func() { b, err := io.ReadAll(p.Stdout); outc <- res{b, err} }()
-	go func() {
-		if p.Stderr == nil {
-			errc <- res{}
-			return
-		}
-		b, err := io.ReadAll(p.Stderr)
-		errc <- res{b, err}
-	}()
-	o, e2 := <-outc, <-errc
-	code, err = p.Wait()
-	if err == nil {
-		err = errors.Join(o.err, e2.err)
-	}
-	return o.b, e2.b, code, err
+	result, err := Run(ctx, e, id, spec, RunOptions{})
+	return result.Stdout, result.Stderr, result.Code, err
 }

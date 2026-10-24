@@ -243,38 +243,17 @@ func (s *Server) abortDownload(w http.ResponseWriter, c desktops.Desktop, real s
 // execStream runs cmd as the desktop's user and hands its stdout to fn. An exit
 // code above okUpTo is an error, as is fn's.
 func (s *Server) execStream(ctx context.Context, c desktops.Desktop, okUpTo int, cmd []string, fn func(stdout io.Reader) error) error {
-	p, err := s.Eng.Exec(ctx, c.Container.ID, engine.ExecSpec{Cmd: cmd, User: "user", WorkDir: filesRoot, Env: append([]string{"LC_ALL=C"}, execEnv...)})
+	result, err := engine.Run(ctx, s.Eng, c.Container.ID, engine.ExecSpec{Cmd: cmd, User: "user", WorkDir: filesRoot, Env: append([]string{"LC_ALL=C"}, execEnv...)}, engine.RunOptions{Consume: fn, StderrLimit: 4096})
 	if err != nil {
 		return err
 	}
-	defer p.Close()
-	var stderr bytes.Buffer
-	errDone := make(chan struct{})
-	go func() {
-		defer close(errDone)
-		if p.Stderr != nil {
-			_, _ = io.Copy(&limitedWriter{w: &stderr, n: 4096}, p.Stderr)
-		}
-	}()
-	ferr := fn(p.Stdout)
-	if ferr != nil {
-		p.Close() // unblock the command
-	} else {
-		_, _ = io.Copy(io.Discard, p.Stdout)
-	}
-	<-errDone
-	code, werr := p.Wait()
-	switch {
-	case ferr != nil:
-		return ferr
-	case werr != nil:
-		return werr
-	case code > okUpTo:
-		return &execError{code, strings.TrimSpace(stderr.String())}
+	if result.Code > okUpTo {
+		return &execError{result.Code, strings.TrimSpace(string(result.Stderr))}
 	}
 	return nil
 }
 
+// limitedWriter retains a prefix while draining uploads' diagnostic output.
 type limitedWriter struct {
 	w io.Writer
 	n int
@@ -283,7 +262,7 @@ type limitedWriter struct {
 func (l *limitedWriter) Write(p []byte) (int, error) {
 	if l.n > 0 {
 		k := min(len(p), l.n)
-		l.w.Write(p[:k])
+		_, _ = l.w.Write(p[:k])
 		l.n -= k
 	}
 	return len(p), nil

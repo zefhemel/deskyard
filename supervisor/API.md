@@ -144,6 +144,9 @@ Mount changes use container recreation: running desktops restart and stopped des
 
 `GET /api/events` is a server-sent event stream for the desktops the account can see:
 
+A queue overflow or failed authoritative snapshot closes the stream so EventSource reconnects and obtains current state. Queued lifecycle/removal notifications resolve current desktop state when sent; they do not replay stale container snapshots.
+
+
 - `event: desktop` — a `Desktop` that appeared or changed
 - `event: removed` — `{"name"}`
 - `event: stats` — `{"name","cpuPercent","memBytes","memLimit","t"}` every 5 s per running desktop
@@ -251,8 +254,8 @@ A desktop's home folder becomes the starting home (`/opt/deskyard/home-template`
 
 ## Desktop
 
-- `/<name>/` serves the UI's desktop page (the SPA's `index.html`); the page frames `/<name>/screen/`, Selkies' web client, and drives it through `window.deskyardScreen` (see `internal/server/screen_additions.js`).
-- `/<name>/screen/…` are Selkies' web client files, extracted from the desktop's image (once per image ID, never from the running container). `index.html` and `deskyard.js` are served `no-store`; the other files `no-cache`. Any other spelling of the page (`/<name>/screen/index.html/`, `/<name>/screen/./index.html`, …) redirects to `/<name>/screen/`. `index.html` gets `<script src="deskyard.js"></script>` first in its `<head>`: our additions, which
+- `/<name>/` serves the UI's desktop page (the SPA's `index.html`); the page frames `/<name>/screen/`, Selkies' web client, and drives it through `window.deskyardScreen` (new images use `web/src/selkies/adapter.ts`; pre-contract images use the legacy `internal/server/screen_additions.js`).
+- `/<name>/screen/…` are Selkies' web client files, extracted from the desktop's image (once per image ID, never from the running container). `index.html` and the selected adapter are served `no-store`; the other files `no-cache`. Any other spelling of the page (`/<name>/screen/index.html/`, `/<name>/screen/./index.html`, …) redirects to `/<name>/screen/`. The image hook marker selects the typed v1 adapter (`deskyard-screen.js`, inserted as a module before the client modules) or the legacy `deskyard.js` bridge. The v1 client exposes explicit transport/input/media/focus hooks and disables raw pointer updates directly; the legacy bridge intercepts the equivalent APIs. Unknown advertised hook versions return an actionable upgrade error. Both adapters
   - hide `pointerrawupdate` from the client (Chrome reports its coordinates relative to the top-level page inside an iframe, so drags landed off by our bar);
   - never send `STOP_VIDEO` (a background tab mustn't stop the desktop's stream for everyone);
   - remove Selkies' own tab id (`sessionStorage` `selkies_tab_id`) before Selkies reads it, so every load is its own Selkies client (a duplicated browser tab copies `sessionStorage`, and Selkies lets a page with the owner's tab id take the display over);
@@ -330,3 +333,8 @@ with access to the desktop; POST requires the existing same-origin check.
 
 These operations share the existing session and its input focus. Window pixels
 are still delivered through the full desktop Selkies stream.
+
+
+## Replacement recovery
+
+Settings changes and upgrades persist private recovery intent before stopping/removing the old container. Failure during create/start/readiness/final inspection restores the previous immutable image, logical update reference, identity, settings and workspace; a previously running desktop must become ready again before recovery completes. Interrupted replacements are rolled back at supervisor startup, after network reconnection. Records are mode 0600 under `.deskyard/recovery/`; failed recovery retains its record and operation reservations return conflict until startup can restore it. The filesystem and engine may still prevent restoration; the supervisor logs that failure rather than discarding recovery intent. These records contain the proxy token and belong in private supervisor-state backups.

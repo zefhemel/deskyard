@@ -33,14 +33,14 @@ type statsCollector struct {
 	mu      sync.Mutex
 	history map[string][]sample
 	last    map[string]statsJSON
-	running map[string]context.CancelFunc
+	running map[string]*desktopWorker
 	wakeC   chan struct{}
 	lastUse time.Time
 }
 
 func newStatsCollector(s *Server) *statsCollector {
 	return &statsCollector{s: s, history: map[string][]sample{}, last: map[string]statsJSON{},
-		running: map[string]context.CancelFunc{}, wakeC: make(chan struct{}, 1)}
+		running: map[string]*desktopWorker{}, wakeC: make(chan struct{}, 1)}
 }
 
 func (sc *statsCollector) wake() {
@@ -79,11 +79,14 @@ func (sc *statsCollector) run(ctx context.Context) {
 
 // reconcile starts streams for running desktops and stops the others.
 func (sc *statsCollector) reconcile(ctx context.Context) {
+	sc.mu.Lock()
 	if sc.s.events.count() > 0 {
 		sc.lastUse = time.Now()
 	}
+	look := time.Since(sc.lastUse) < statsLinger
+	sc.mu.Unlock()
 	wanted := map[string]desktops.Desktop{}
-	if time.Since(sc.lastUse) < statsLinger {
+	if look {
 		list, err := sc.s.Desktops.List(ctx)
 		if err != nil {
 			return
@@ -97,10 +100,9 @@ func (sc *statsCollector) reconcile(ctx context.Context) {
 	host, _ := sc.s.Eng.Info(ctx)
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
-	for name, cancel := range sc.running {
-		if _, ok := wanted[name]; !ok {
-			cancel()
-			delete(sc.running, name)
+	for name, worker := range sc.running {
+		if c, ok := wanted[name]; !ok || worker.generation != desktopGeneration(c) {
+			worker.cancel()
 			delete(sc.last, name)
 		}
 	}
@@ -108,17 +110,20 @@ func (sc *statsCollector) reconcile(ctx context.Context) {
 		if _, ok := sc.running[name]; ok {
 			continue
 		}
-		cctx, cancel := context.WithCancel(ctx)
-		sc.running[name] = cancel
-		go sc.follow(cctx, c, host.CPUs, uint64(host.MemBytes))
+		worker := startDesktopWorker(ctx, c)
+		sc.running[name] = worker
+		go sc.follow(worker, c, host.CPUs, uint64(host.MemBytes))
 	}
 }
 
-func (sc *statsCollector) follow(ctx context.Context, c desktops.Desktop, hostCPUs int, hostMem uint64) {
+func (sc *statsCollector) follow(worker *desktopWorker, c desktops.Desktop, hostCPUs int, hostMem uint64) {
+	ctx := worker.ctx
+	defer close(worker.done)
+	defer worker.cancel()
+	defer sc.wake()
 	defer func() {
 		sc.mu.Lock()
-		if cancel, ok := sc.running[c.Name]; ok {
-			cancel()
+		if sc.running[c.Name] == worker {
 			delete(sc.running, c.Name)
 		}
 		sc.mu.Unlock()
@@ -150,16 +155,20 @@ func (sc *statsCollector) follow(ctx context.Context, c desktops.Desktop, hostCP
 		}
 		js := statsJSON{CPUPercent: round1(cpu), MemBytes: st.MemBytes, MemLimit: limit}
 		sc.mu.Lock()
+		if sc.running[c.Name] != worker || ctx.Err() != nil {
+			sc.mu.Unlock()
+			return
+		}
 		sc.last[c.Name] = js
 		h := append(sc.history[c.Name], sample{T: st.Time.UTC(), CPUPercent: js.CPUPercent, MemBytes: js.MemBytes})
 		for len(h) > 0 && st.Time.Sub(h[0].T) > statsWindow {
 			h = h[1:]
 		}
 		sc.history[c.Name] = h
-		sc.mu.Unlock()
 		sc.s.events.publish(event{kind: "stats", desktopID: c.ID, data: map[string]any{
 			"name": c.Name, "cpuPercent": js.CPUPercent, "memBytes": js.MemBytes, "memLimit": js.MemLimit, "t": st.Time.UTC(),
 		}})
+		sc.mu.Unlock()
 	}
 }
 
@@ -170,7 +179,9 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	s.stats.mu.Lock()
 	s.stats.lastUse = time.Now()
+	s.stats.mu.Unlock()
 	s.stats.wake()
 	limit := uint64(0)
 	if st, ok := s.stats.latest(c.Name); ok {

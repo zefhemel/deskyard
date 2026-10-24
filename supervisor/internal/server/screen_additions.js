@@ -1,3 +1,6 @@
+// Legacy compatibility bridge for desktop images without the v1 hook contract.
+// New images use supervisor/web/src/selkies/adapter.ts. Keep this bridge only
+// until support for pre-contract Selkies 2.1.0 images is explicitly retired.
 // Deskyard's additions to Selkies' web client. The supervisor serves this as
 // /<name>/screen/deskyard.js and loads it before any of Selkies' scripts.
 //

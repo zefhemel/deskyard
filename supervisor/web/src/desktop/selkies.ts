@@ -2,7 +2,7 @@
  * Driving Selkies' web client in the desktop page's frame.
  *
  * The supervisor serves the client at /<name>/screen/ with our additions
- * (supervisor/internal/server/screen_additions.js), which give the frame
+ * (the typed selkies/adapter.ts, or screen_additions.js for old images), which give the frame
  * `window.deskyardScreen`: `tab`, `post(msg)`, `on(type, fn)`, `state()` and
  * `video()`. Both pages are on the supervisor's origin, so we reach it
  * through `frame.contentWindow`.
@@ -38,7 +38,7 @@
  *   camera unless `allowCapture` allowed it on this connection, so the
  *   client can never turn either on by itself (it would after a reconnect).
  * - Sound on and off go through `setSound` (START_AUDIO / STOP_AUDIO on the
- *   stream; see screen_additions.js for why not pipelineControl), devices
+ *   stream; see selkies/adapter.ts for why not pipelineControl), devices
  *   through `setOutput`, `setMic` and `setCamera`.
  * - `media()` (and "deskyard.media" on `on`) says what the client is doing,
  *   from its own status messages; "deskyard.alert" brings its capture errors.
@@ -130,7 +130,7 @@ export function frameSrc(name: string): string {
  * Whether this page is an insecure context: reached over plain http on an
  * address other than localhost. The browser then has no AudioWorklet, mic,
  * camera or async clipboard, and Chromium and Firefox no WebCodecs: Selkies'
- * client streams JPEG and decodes sound in WASM (screen_additions.js lets it).
+ * client streams JPEG and decodes sound in WASM (the adapter permits playback fallback).
  */
 export const insecureContext = typeof window !== "undefined" && window.isSecureContext === false;
 

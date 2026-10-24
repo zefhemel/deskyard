@@ -5,9 +5,7 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/terminal"
-	"io"
 	"net/http"
-	"sync"
 	"time"
 )
 
@@ -26,30 +24,12 @@ func (s *Server) handleTerminalSessions(w http.ResponseWriter, r *http.Request) 
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
-	p, err := s.Eng.Exec(ctx, c.Container.ID, engine.ExecSpec{Cmd: []string{"deskyard", "terminal-list"}, User: "user", WorkDir: "/workspace", Env: execEnv})
-	if err != nil {
+	result, err := engine.Run(ctx, s.Eng, c.Container.ID, engine.ExecSpec{Cmd: []string{"deskyard", "terminal-list"}, User: "user", WorkDir: "/workspace", Env: execEnv}, engine.RunOptions{StdoutLimit: terminal.MaxListOutput, StderrLimit: 4096})
+	if err != nil || result.Code != 0 {
 		writeError(w, 502, "could not list shared terminals; upgrade the desktop image if its helper is unavailable")
 		return
 	}
-	closeProcess := sync.OnceFunc(p.Close)
-	defer closeProcess()
-	stop := context.AfterFunc(ctx, closeProcess)
-	defer stop()
-	if p.Stderr != nil {
-		// Discard continuously with bounded memory until EOF or deadline cleanup.
-		go io.Copy(io.Discard, p.Stderr)
-	}
-	b, err := io.ReadAll(io.LimitReader(p.Stdout, terminal.MaxListOutput+1))
-	if err != nil || len(b) > terminal.MaxListOutput {
-		writeError(w, 502, "could not read shared terminal sessions")
-		return
-	}
-	code, err := p.Wait()
-	if err != nil || code != 0 || ctx.Err() != nil {
-		writeError(w, 502, "could not list shared terminals; upgrade the desktop image if its helper is unavailable")
-		return
-	}
-	sessions, err := terminal.ParseSessions(b)
+	sessions, err := terminal.ParseSessions(result.Stdout)
 	if err != nil {
 		writeError(w, 502, "invalid shared terminal session list")
 		return

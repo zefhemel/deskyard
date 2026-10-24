@@ -24,26 +24,30 @@ import (
 // Agent tokens: one desktop each, an optional expiry, revocable; stored as
 // a SHA-256 of the secret (the secret is random, so a slow hash adds nothing).
 type token struct {
-	ID        string     `json:"id"`
-	Name      string     `json:"name"`
-	DesktopID string     `json:"desktopId"`
-	Hash      string     `json:"hash"`
-	CreatedBy string     `json:"createdBy"`
-	Created   time.Time  `json:"created"`
-	Expires   *time.Time `json:"expires"`
-	LastUsed  *time.Time `json:"lastUsed"`
+	ID             string     `json:"id"`
+	Name           string     `json:"name"`
+	DesktopID      string     `json:"desktopId"`
+	Hash           string     `json:"hash"`
+	CreatedBy      string     `json:"createdBy"`
+	CreatorCreated time.Time  `json:"creatorCreated,omitzero"`
+	CreatorEpoch   uint64     `json:"creatorEpoch,omitempty"`
+	GrantEpoch     uint64     `json:"grantEpoch,omitempty"`
+	Created        time.Time  `json:"created"`
+	Expires        *time.Time `json:"expires"`
+	LastUsed       *time.Time `json:"lastUsed"`
 }
 
 func (t token) expired(now time.Time) bool { return t.Expires != nil && now.After(*t.Expires) }
 
 type tokenStore struct {
-	mu     sync.Mutex
-	path   string
-	list   []token
-	open   map[string]map[int]context.CancelFunc // token ID → open agent connections
-	nextID int
-	dirty  bool
-	closed map[string]bool // tokens whose connections were closed on expiry
+	mu       sync.Mutex
+	accounts *accounts.Store
+	path     string
+	list     []token
+	open     map[string]map[int]context.CancelFunc // token ID → open agent connections
+	nextID   int
+	dirty    bool
+	closed   map[string]bool // tokens whose connections were closed on expiry
 
 	// onGone is called, with no lock held, for every token that stops
 	// working: revoked, its creator lost access, its desktop removed, or
@@ -63,8 +67,44 @@ func loadTokens(stateDir string) (*tokenStore, error) {
 	return ts, nil
 }
 
-func (ts *tokenStore) save() error {
-	return store.WriteJSON(ts.path, map[string]any{"tokens": ts.list})
+func tokenCreatorAllowed(t token, a accounts.Account, exists bool) bool {
+	return exists && a.HasAccess(t.DesktopID) && !t.CreatorCreated.IsZero() &&
+		t.CreatorCreated.Equal(a.Created) && t.CreatorEpoch == a.TokenEpoch && t.GrantEpoch == a.DesktopTokenEpochs[t.DesktopID]
+}
+
+// bindAccounts upgrades safe legacy records once and purges records whose
+// creator identity or retained authorization revisions no longer match.
+// Migration must persist before the server accepts requests.
+func (ts *tokenStore) bindAccounts(accts *accounts.Store) error {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	var next []token
+	changed := false
+	for _, t := range ts.list {
+		a, exists := accts.Get(t.CreatedBy)
+		if t.CreatorCreated.IsZero() && exists && a.HasAccess(t.DesktopID) && !a.Created.After(t.Created) && a.TokenEpoch == 0 && a.DesktopTokenEpochs[t.DesktopID] == 0 {
+			t.CreatorCreated = a.Created
+			changed = true
+		}
+		if !tokenCreatorAllowed(t, a, exists) {
+			changed = true
+			continue
+		}
+		next = append(next, t)
+	}
+	if changed {
+		if err := store.WriteJSON(ts.path, map[string]any{"tokens": next}); err != nil {
+			return err
+		}
+		ts.list = next
+	}
+	ts.accounts = accts
+	return nil
+}
+
+func (s *Server) tokenCreatorAllowed(t token) bool {
+	a, exists := s.Accounts.Get(t.CreatedBy)
+	return tokenCreatorAllowed(t, a, exists)
 }
 
 func randomID(n int) string {
@@ -86,8 +126,19 @@ func (ts *tokenStore) create(name, desktopID, createdBy string, expires *time.Ti
 		CreatedBy: createdBy, Created: time.Now().UTC(), Expires: expires}
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
-	ts.list = append(ts.list, t)
-	return t, "dyt_" + t.ID + "_" + secret, ts.save()
+	if ts.accounts != nil {
+		a, exists := ts.accounts.Get(createdBy)
+		if !exists || !a.HasAccess(desktopID) {
+			return token{}, "", errors.New("token creator no longer has desktop access")
+		}
+		t.CreatorCreated, t.CreatorEpoch, t.GrantEpoch = a.Created, a.TokenEpoch, a.DesktopTokenEpochs[desktopID]
+	}
+	next := append(slices.Clone(ts.list), t)
+	if err := store.WriteJSON(ts.path, map[string]any{"tokens": next}); err != nil {
+		return token{}, "", err
+	}
+	ts.list = next
+	return t, "dyt_" + t.ID + "_" + secret, nil
 }
 
 // check resolves a bearer token; it returns the token when valid.
@@ -111,8 +162,11 @@ func (ts *tokenStore) check(bearer string) (token, bool) {
 		}
 		now := time.Now().UTC()
 		if t.LastUsed == nil || now.Sub(*t.LastUsed) > time.Minute {
-			ts.list[i].LastUsed = &now
-			_ = ts.save()
+			next := slices.Clone(ts.list)
+			next[i].LastUsed = &now
+			if err := store.WriteJSON(ts.path, map[string]any{"tokens": next}); err == nil {
+				ts.list = next
+			}
 		}
 		return ts.list[i], true
 	}
@@ -142,27 +196,34 @@ func (ts *tokenStore) activeCount(desktopID string) int {
 }
 
 // remove deletes tokens matching fn and closes their connections.
-func (ts *tokenStore) remove(fn func(token) bool) {
-	var gone []token
+func (ts *tokenStore) remove(fn func(token) bool) error {
+	var gone, keep []token
 	ts.mu.Lock()
-	var keep []token
 	for _, t := range ts.list {
 		if fn(t) {
 			gone = append(gone, t)
-			for _, cancel := range ts.open[t.ID] {
-				cancel()
-			}
-			delete(ts.open, t.ID)
-			continue
+		} else {
+			keep = append(keep, t)
 		}
-		keep = append(keep, t)
 	}
-	if len(keep) != len(ts.list) {
-		ts.list = keep
-		_ = ts.save()
+	if len(gone) == 0 {
+		ts.mu.Unlock()
+		return nil
+	}
+	if err := store.WriteJSON(ts.path, map[string]any{"tokens": keep}); err != nil {
+		ts.mu.Unlock()
+		return err
+	}
+	ts.list = keep
+	for _, t := range gone {
+		for _, cancel := range ts.open[t.ID] {
+			cancel()
+		}
+		delete(ts.open, t.ID)
 	}
 	ts.mu.Unlock()
 	ts.notifyGone(gone)
+	return nil
 }
 
 func (ts *tokenStore) notifyGone(gone []token) {
@@ -174,16 +235,40 @@ func (ts *tokenStore) notifyGone(gone []token) {
 	}
 }
 
-func (ts *tokenStore) forgetDesktop(desktopID string) {
-	ts.remove(func(t token) bool { return t.DesktopID == desktopID })
+func (ts *tokenStore) forgetDesktop(desktopID string) error {
+	return ts.remove(func(t token) bool { return t.DesktopID == desktopID })
 }
 
 // creatorChanged revokes the tokens of an account that was deleted or lost
 // access to the token's desktop.
-func (ts *tokenStore) creatorChanged(s *Server, username string, a accounts.Account, exists bool) {
-	ts.remove(func(t token) bool {
-		return t.CreatedBy == username && (!exists || !a.HasAccess(t.DesktopID))
-	})
+func (ts *tokenStore) creatorChanged(s *Server, username string) error {
+	// Serialize the current account lookup with token creation and cleanup. A
+	// delayed callback must not apply an older grant to tokens issued afterward.
+	var gone, keep []token
+	ts.mu.Lock()
+	a, exists := s.Accounts.Get(username)
+	for _, t := range ts.list {
+		if t.CreatedBy != username || tokenCreatorAllowed(t, a, exists) {
+			keep = append(keep, t)
+			continue
+		}
+		gone = append(gone, t)
+		// Permission loss closes live access even when file cleanup fails.
+		for _, cancel := range ts.open[t.ID] {
+			cancel()
+		}
+		delete(ts.open, t.ID)
+	}
+	var err error
+	if len(gone) > 0 {
+		err = store.WriteJSON(ts.path, map[string]any{"tokens": keep})
+		if err == nil {
+			ts.list = keep
+		}
+	}
+	ts.mu.Unlock()
+	ts.notifyGone(gone)
+	return err
 }
 
 // track registers an open agent connection so revocation and expiry close it.
@@ -327,7 +412,10 @@ func (s *Server) handleDeleteToken(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "only its creator or an admin can revoke this token")
 		return
 	}
-	s.tokens.remove(func(t token) bool { return t.ID == id })
+	if err := s.tokens.remove(func(t token) bool { return t.ID == id }); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	s.Log.Info("agent token revoked", "desktop", c.Name, "token", found.Name, "by", a.Username)
 	s.publishDesktop(r.Context(), c.Name)
 	w.WriteHeader(http.StatusNoContent)

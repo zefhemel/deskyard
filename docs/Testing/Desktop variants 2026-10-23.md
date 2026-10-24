@@ -45,3 +45,17 @@ The default-browser test opens a local HTML file with `xdg-open` and checks the 
 One initial KDE streamed-render assertion captured a black frame during concurrent integration runs. A fresh rerun passed rendering, resize and persistence; the first failure's cause was not established. Keep this observation visible rather than claiming that all initial runs passed.
 
 BuildKit's checks for all three targets with both configured platforms reported no warnings; these checks do not execute amd64 runtime behavior. Actionlint, shell syntax, Python compilation, Bake target/tag checks and `git diff --check` passed. Documentation links resolved, SilverBullet indexed the spec/component metadata, and the validation page rendered with its screenshot. Code review reported no remaining substantive findings after the scoped shutdown fix. Go/UI suites were not rerun for path/comment-only supervisor changes. Optional agent/Flatpak download suites, the three-instance capacity test and registry publishing were not run as a complete release matrix.
+
+# CI smoke selection — 24 October 2026
+
+`.github/workflows/tests.yml` adds an independent `variant-smoke` matrix for XFCE, KDE and MATE on native amd64 Ubuntu runners. Each job builds its final image target using the corresponding images-workflow cache, allows unprivileged user namespaces, and runs five existing image runtime tests with `AC_DESKTOP`, `AC_IMAGE` and `AC_POOL=0`. The selection covers desktop identity/readiness and panel ownership, absence of other desktop sessions, default-browser MIME configuration plus an actual `xdg-open` target in shared Chromium, native terminal profile migration/tabs/working directories/explicit commands, and home skeleton preservation across restart and container recreation. It does not duplicate the full supervisor or browser matrix, which remains on XFCE.
+
+Reproduce the selection from `images/tests/` with a built image:
+
+```sh
+AC_DESKTOP=kde AC_IMAGE=deskyard-debian-kde:test AC_POOL=0 uv run pytest -q test_variants.py test_terminal.py::test_emulator_shared_defaults_tabs_cwd_and_explicit_commands test_persistence.py::test_skeleton_seeded_once_and_not_overwritten
+```
+
+The default-browser test uses Chromium inside the desktop through `xdg-open` and CDP; these jobs need no host Playwright browser download. Workflow syntax and per-variant pytest collection can be checked without claiming runtime execution. The historical ARM64 results above remain separate from this new CI coverage; adding the matrix alone does not establish an amd64 runtime pass.
+
+The exact selection passed locally on 24 October against fresh native ARM64 images built together with `VERSION=quality-recovery docker buildx bake --load` and tag overrides `deskyard-recovery-smoke:{xfce,kde,mate}`: XFCE 5 passed in 34.73s, KDE 5 passed in 37.97s, and MATE 5 passed in 31.08s. These images include the explicit Selkies hooks and final sound timing tap; their build context predates the subsequent clipboard-focus guard, which has separate browser regression evidence. Actionlint, YAML parsing and collection of five tests per variant passed. Native amd64 execution remains for the configured CI jobs.
