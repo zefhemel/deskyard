@@ -1,2 +1,0 @@
-FROM sha256:0123456789abcdef
-USER root

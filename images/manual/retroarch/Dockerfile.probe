@@ -1,0 +1,7 @@
+FROM debian:trixie-slim AS build
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev \
+    && rm -rf /var/lib/apt/lists/*
+COPY verify-cores.c /tmp/verify-cores.c
+RUN cc -Wall -Wextra -Werror -O2 /tmp/verify-cores.c -ldl -o /verify-cores
+FROM scratch
+COPY --from=build /verify-cores /verify-cores

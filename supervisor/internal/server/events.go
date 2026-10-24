@@ -70,10 +70,12 @@ func (h *hub) count() int {
 
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(r)
-	sse := startSSE(w)
+	ctx, sse, closeStream := s.startUIEvents(w, r)
 	if sse == nil {
 		return
 	}
+	defer closeStream()
+	r = r.WithContext(ctx)
 	sub := &subscriber{username: a.Username, c: make(chan event, 64), refresh: make(chan struct{}, 1), overflow: make(chan struct{}, 1)}
 	s.events.mu.Lock()
 	s.events.subs[sub] = true
@@ -161,7 +163,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case <-sub.overflow:
-			// EventSource reconnects and requests a new authoritative snapshot.
+			// The client reconnects and requests a new authoritative snapshot.
 			return
 		case <-r.Context().Done():
 			return

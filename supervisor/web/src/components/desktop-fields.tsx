@@ -42,7 +42,7 @@ export function ImagePick({ images, value, onChange }: { images: CatalogImage[];
             <p class="mt-0.5 text-[13px] text-muted">
               {img.description} <span class="mono [overflow-wrap:anywhere]">{img.ref}</span>
             </p>
-            {!img.installed && !img.custom && <p class="mt-0.5 text-[13px] text-muted">Downloads on first use</p>}
+            {!img.installed && <p class="mt-0.5 text-[13px] text-muted">Downloads on first use</p>}
             {img.secrets && <p class="mt-0.5 text-[13px] text-danger">Desktops made from this start signed in as whoever made it</p>}
           </span>
         </label>
@@ -81,5 +81,21 @@ export function AccessPicks({
       ))}
       {!regular.length && <div class="px-3 py-2 text-sm text-muted">There are no other accounts yet.</div>}
     </Picks>
+  );
+}
+
+/** Explicit host-daemon permission shared by desktop creation and settings. */
+export function DockerAccessField({ value, onChange }: { value: boolean; onChange: (value: boolean) => void }) {
+  return (
+    <div class="mb-[18px] flex items-start gap-2.5">
+      <input id="docker-access" type="checkbox" class="mt-[3px]" checked={value}
+        aria-describedby="docker-access-hint" onChange={(e) => onChange(e.currentTarget.checked)} />
+      <div>
+        <label for="docker-access" class="font-semibold">Docker daemon access</label>
+        <p id="docker-access-hint" class="mt-0.5 text-[13px] text-muted">
+          Allows everyone using this desktop to control the host Docker daemon and its containers, with root-equivalent access to the host.
+        </p>
+      </div>
+    </div>
   );
 }

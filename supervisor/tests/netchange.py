@@ -11,10 +11,11 @@ OrbStack keep the networks in their VM, so a Mac never sees this.)
 So, for every test (conftest imports this): Page.goto and Page.reload load
 the page again when it or something it loaded failed so, and every browser
 context counts and logs such failures (pytest shows the log with a failed
-test). In Chromium, loopback UI bootstrap GETs and login use Playwright's request transport,
+test). In Chromium, loopback bootstrap API GETs, UI assets and login use Playwright's request transport,
 which is independent of Chromium's network-change detector. Each request
 is sent once; other mutations, downloads, live streams and Selkies' client
-stay on the browser's transport. Mapped insecure test hosts forward only
+stay on the browser's transport. Documents remain native to preserve their network
+address space for WebSockets. Mapped insecure test hosts forward only
 bootstrap API calls, keeping their documents' network address space intact.
 Other browsers stay native. Waits for late frame loads use `failures`.
 """
@@ -83,16 +84,16 @@ def _settle(page: Page):
 _failures: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 # Match bootstrap requests at the routing layer: even route.fallback() needs
 # Python callbacks, so matching media updates would pause them during sleeps.
-BOOTSTRAP_API = r"api/(?:me|host|desktops|images|recipes|login)"
+BOOTSTRAP_API = r"api/(?:me|host|desktops|images|login)"
 LOOPBACK = re.compile(
     r"^https?://(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?/"
     rf"(?:{BOOTSTRAP_API}"
     r"|(?:assets|src|@vite|node_modules)/[^?]*"
-    r"|desktops/[^/?]+|[^/?]*)/?(?:\?[^#]*)?$"
+    r")/?(?:\?[^#]*)?$"
 )
-# A fulfilled document loses its network address-space classification. On an
-# insecure mapped host Chromium would then block native loopback subresources.
-# Keep its documents/assets native; only bootstrap API calls need forwarding.
+# A fulfilled document loses its network address-space classification, causing
+# Chromium to block native loopback WebSockets with local-network access checks.
+# Documents stay native on every host. Mapped hosts also keep assets native.
 MAPPED_API = re.compile(
     rf"^http://deskyard\.(?:invalid|test)(?::\d+)?/{BOOTSTRAP_API}(?:\?[^#]*)?$"
 )

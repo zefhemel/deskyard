@@ -95,8 +95,6 @@ def build_once():
                 subprocess.run(["make", "web"], cwd=ROOT, check=True)
             else:
                 subprocess.run(["npm", "run", "build"], cwd=ROOT / "web", check=True, stdout=subprocess.DEVNULL)
-        # The image scanner the supervisor embeds (static Linux binaries).
-        subprocess.run(["make", "scanner"], cwd=ROOT, check=True)
         subprocess.run(["go", "build", "-o", str(SUPERVISOR_BIN), "./cmd/deskyard-supervisor"], cwd=ROOT, check=True)
     subprocess.run(["go", "build", "-o", str(CLI_BIN), "./cmd/deskyard"], cwd=ROOT, check=True)
 
@@ -429,15 +427,3 @@ def local_http():
     srv.port = srv.server_address[1]
     yield srv
     srv.shutdown()
-
-
-@pytest.fixture
-def slug(admin):
-    """A recipe slug; its recipe and image tags are removed afterwards."""
-    from helpers import custom_tags
-
-    s = "t" + uuid.uuid4().hex[:6]
-    yield s
-    admin.delete(f"/api/recipes/{s}")
-    for t in custom_tags(s):
-        docker("rmi", "-f", t, check=False)

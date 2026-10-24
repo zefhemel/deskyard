@@ -119,7 +119,7 @@ The current implementation provides building blocks for these scenarios:
 
 - [[Architecture/Accounts]] provides administrator and regular accounts with per-desktop access. Administrators can access all desktops; two regular users sharing a desktop share its environment rather than receiving separate operating-system users (`supervisor/internal/accounts/accounts.go`).
 - [[Architecture/Desktop]] and [[Architecture/Workspace folder]] provide a container desktop and a persistent home folder. Persistence is limited to `/workspace`; backups require a separate procedure (`supervisor/internal/desktops/service.go`, `images/common/`).
-- [[Architecture/Image catalog]] and [[Architecture/Recipes]] provide reusable images and custom environments. Home templates initialize files without overwriting existing files; they do not continuously enforce every user's settings (`supervisor/internal/recipes/`, `images/common/rootfs/`).
+- [[Architecture/Image catalog]] provides reusable images, including custom Dockerfiles built outside the supervisor and added by reference. Image home templates initialize files without overwriting existing files; they do not continuously enforce every user's settings (`images/common/rootfs/`).
 - [[Architecture/Lifecycle]] provides central creation, start, stop, upgrade and removal, with CPU and memory settings (`supervisor/internal/desktops/service.go`).
 - [[Architecture/Web UI]] and [[Architecture/Desktop proxy]] provide browser access to the shared desktop. People with access open the same session; there is no independent desktop session for each viewer.
 

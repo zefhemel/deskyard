@@ -11,10 +11,7 @@ import { ReclaimMemoryButton } from "../components/reclaim-memory.tsx";
 import { ForwardLines } from "../components/viewers-popover.tsx";
 import { Page } from "../components/topbar.tsx";
 import { btnClass, Button, cx, LockBadge, Status, Tag } from "../components/ui.tsx";
-import { BuildLogDialog } from "../dialogs/build-log.tsx";
-import { ImageFromDesktopDialog } from "../dialogs/image-from-desktop.tsx";
 import { UpgradeDialog } from "../dialogs/upgrade.tsx";
-import { notify } from "../components/toast.tsx";
 import { useDesktop, useLive, useNow } from "../live.tsx";
 import { day, limits, names, statusKind, statusLine, toolsLine } from "../lib/format.ts";
 import { useFetch } from "../lib/use-fetch.ts";
@@ -64,8 +61,6 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
   const { me, jobs } = useLive();
   const { query, route } = useLocation();
   const now = useNow(10000);
-  const [imaging, setImaging] = useState(false);
-  const [building, setBuilding] = useState<{ job: string; title: string } | null>(null);
   const tabs: { id: Tab; label: string }[] = [
     { id: "overview", label: "Overview" },
     { id: "processes", label: "Processes" },
@@ -109,7 +104,6 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
           <DesktopMenu
             desktop={c}
             power={false}
-            adminItems={[{ label: "New image from this desktop…", onSelect: () => setImaging(true) }]}
             onRemoved={() => route("/")}
           />
         </div>
@@ -154,28 +148,6 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
           {tab === "settings" && <SettingsTab desktop={c} />}
           {tab === "access" && <AccessTab desktop={c} />}
         </div>
-      )}
-      {imaging && (
-        <ImageFromDesktopDialog
-          desktop={c}
-          onClose={() => setImaging(false)}
-          onStarted={(job, title) => {
-            setImaging(false);
-            setBuilding({ job, title });
-          }}
-        />
-      )}
-      {building && (
-        <BuildLogDialog
-          title={building.title}
-          job={building.job}
-          onClose={(running) => {
-            if (running) notify(`${building.title} keeps building: the Images page shows when it's ready`);
-            setBuilding(null);
-          }}
-          onDone={() => undefined}
-          onLost={() => undefined}
-        />
       )}
     </Page>
   );

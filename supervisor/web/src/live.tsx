@@ -3,6 +3,7 @@
 // jobs running on them, whoever started them.
 import { createContext, type ComponentChildren } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { watchUIEvents } from "./lib/event-feed.ts";
 import {
   api,
   watchJob,
@@ -100,7 +101,7 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
   useEffect(() => {
     refresh();
     const hostInterval = window.setInterval(loadHost, 15000);
-    const es = new EventSource("/api/events");
+    const es = watchUIEvents("/api/events");
     es.addEventListener("desktop", (e: MessageEvent<string>) => {
       const c = JSON.parse(e.data) as Desktop;
       setDesktops((list) => (list ? upsert(list, c) : list));
@@ -137,7 +138,7 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
       reconnected = true;
     };
     es.onerror = () => {
-      // EventSource retries by itself; this only notices a lost session.
+      // The feed retries by itself; this only notices a lost session.
       api.me().catch(() => undefined);
     };
     return () => {

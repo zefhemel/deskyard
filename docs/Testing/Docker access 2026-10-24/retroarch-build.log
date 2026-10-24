@@ -1,0 +1,40 @@
+#1 DONE 0.1s
+#2 DONE 0.1s
+#3 DONE 0.1s
+#4 DONE 0.1s
+#5 DONE 0.0s
+#6 DONE 0.0s
+#7 CACHED
+#8 DONE 0.0s
+#6 CACHED
+#10 DONE 0.2s
+#9 DONE 0.2s
+#11 1.272 /out/sources/snes9x_libretro-fae2fea08f74180759ef540ee94259213f503480.tar.gz: OK
+#12 2.009 Installing runtime/org.freedesktop.Platform.GL.default/aarch64/25.08
+#11 29.68 /out/sources/fceumm_libretro-ac0d00a7fc01166f84c7bac01d1084ebfd2b865e.tar.gz: OK
+#11 58.40 /out/sources/genesis_plus_gx_libretro-60bee4c724859710ce05672239e5b601ad01382e.tar.gz: OK
+#11 67.77 /out/sources/gambatte_libretro-7809bb68ee96c3e6c74e9d9c4c8bb09aa7c6801d.tar.gz: OK
+#11 71.55 /out/sources/mednafen_pce_fast_libretro-4eee99c451f85ebe66d1591de88b892015b23059.tar.gz: OK
+#11 DONE 75.8s
+#12 174.1 Installing runtime/org.freedesktop.Platform.GL.default/aarch64/25.08-extra
+#12 188.4 Installing runtime/org.freedesktop.Platform.codecs-extra/aarch64/25.08-extra
+#12 200.9 Installing runtime/org.kde.KStyle.Adwaita/aarch64/6.11
+#12 209.1 Installing runtime/org.kde.Platform.Locale/aarch64/6.11
+#12 209.9 Installing runtime/org.kde.Platform/aarch64/6.11
+#12 686.7 Installing app/org.libretro.RetroArch/aarch64/stable
+#12 DONE 1225.4s
+#13 DONE 0.6s
+#14 DONE 0.1s
+#15 DONE 0.1s
+#16 DONE 0.1s
+#17 DONE 0.1s
+#18 DONE 0.2s
+#19 exporting to image
+#19 exporting layers
+#19 exporting layers 42.4s done
+#19 exporting manifest sha256:e406f93b6a9251b81719e21d5c9eacafa3f25a98ccbdb7721a8fbc3c81921494 0.0s done
+#19 exporting config sha256:f75ad9eec2e1b75827399a93b6df924ba3f7c3ddb9d27a73007ea04ca16d67bc done
+#19 exporting attestation manifest sha256:95e2068d03f084e324839377ec8e22f2c2d7c6e141adebadd636a4ba795b4b0b 0.0s done
+#19 exporting manifest list sha256:655e0d2be6652c0da83d1b78b70373df43660e1145bf455d3d26bdfce0711094 0.0s done
+#19 naming to docker.io/library/deskyard-retroarch:from-desktop done
+#19 DONE 58.2s

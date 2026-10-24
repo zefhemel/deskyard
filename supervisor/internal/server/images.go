@@ -23,8 +23,8 @@ type catalogEntry struct {
 	Ref     string     `json:"ref"`
 	Newest  string     `json:"newest"` // image ID of the latest pull or build
 	Checked *time.Time `json:"checked"`
-	// Custom images are built here from a recipe (deskyard-custom/<slug>:latest);
-	// the update check never pulls them.
+	// Legacy locally built images retain their update policy; the update
+	// check never pulls them.
 	Custom bool `json:"custom,omitempty"`
 }
 
@@ -33,6 +33,8 @@ type catalog struct {
 	path string
 	list []catalogEntry
 }
+
+const labelSecrets = "deskyard.secrets"
 
 const checkInterval = 24 * time.Hour
 
@@ -201,7 +203,7 @@ func (c *catalog) labelsOf(id string) (map[string]string, bool) {
 }
 
 // check refreshes downloaded images. Available choices stay undownloaded;
-// custom images are rebuilt locally rather than pulled.
+// legacy locally built images are excluded from registry checks.
 func (s *Server) checkImages(ctx context.Context, progress func(string, float64)) error {
 	var errs []error
 	entries := slices.DeleteFunc(s.images.entries(), func(e catalogEntry) bool { return e.Custom })
@@ -286,17 +288,14 @@ type catalogImageJSON struct {
 	Desktops    []string   `json:"desktops"`
 	Behind      []string   `json:"behind"`
 	Checked     *time.Time `json:"checked"`
-	Custom      bool       `json:"custom"`
 	Secrets     bool       `json:"secrets"`
-	BaseUpdated bool       `json:"baseUpdated"`
-	Recipe      *string    `json:"recipe"`
 }
 
 func (s *Server) handleListImages(w http.ResponseWriter, r *http.Request) {
 	list, _ := s.Desktops.List(r.Context())
 	out := []catalogImageJSON{}
 	for _, e := range s.images.entries() {
-		j := catalogImageJSON{Ref: e.Ref, Checked: e.Checked, Desktops: []string{}, Behind: []string{}, Custom: e.Custom}
+		j := catalogImageJSON{Ref: e.Ref, Checked: e.Checked, Desktops: []string{}, Behind: []string{}}
 		if image, ok := officialImageFor(e.Ref); ok {
 			j.Official, j.Title, j.Description = true, image.Title, image.Description
 		}
@@ -310,12 +309,6 @@ func (s *Server) handleListImages(w http.ResponseWriter, r *http.Request) {
 				j.Description = desc
 			}
 			j.Secrets = img.Labels[labelSecrets] == "true"
-			if e.Custom {
-				j.BaseUpdated = s.baseUpdated(r.Context(), img)
-			}
-		}
-		if slug, ok := customSlug(e.Ref); ok && e.Custom {
-			j.Recipe = &slug
 		}
 		for _, c := range list {
 			if sameRef(c.Image, e.Ref) {
@@ -343,10 +336,6 @@ func (s *Server) handleAddImage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "an image reference is required")
 		return
 	}
-	if _, ok := customSlug(req.Ref); ok {
-		writeError(w, http.StatusBadRequest, "custom images are made from a recipe")
-		return
-	}
 	if _, ok := s.images.entry(req.Ref); ok {
 		writeError(w, http.StatusConflict, "already in the catalog")
 		return
@@ -368,7 +357,7 @@ func (s *Server) handleInstallImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entry, ok := s.images.entry(req.Ref)
-	if !ok || entry.Custom || strings.HasPrefix(req.Ref, customRepo) {
+	if !ok {
 		writeError(w, http.StatusBadRequest, "choose a catalog image to install")
 		return
 	}
@@ -378,21 +367,15 @@ func (s *Server) handleInstallImage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) pullCatalogImage(username, ref string) string {
 	return s.jobs.start(username, "", func(ctx context.Context, progress func(string, float64)) error {
-		progress("Downloading "+ref, 0)
-		if err := s.Eng.Pull(ctx, ref, func(p engine.PullProgress) {
-			if p.Total > 0 {
-				progress("Downloading "+ref, float64(p.Current)/float64(p.Total))
-			}
-		}); err != nil {
-			return err
-		}
 		s.Desktops.ForgetImage(ref)
 		img, err := s.Desktops.EnsureImage(ctx, ref, progress)
 		if err != nil {
 			return err
 		}
 		now := time.Now().UTC()
-		return s.images.put(catalogEntry{Ref: ref, Newest: img.ID, Checked: &now})
+		old, _ := s.images.entry(ref)
+		local := old.Custom || img.Labels["deskyard.kind"] == "custom"
+		return s.images.put(catalogEntry{Ref: ref, Newest: img.ID, Checked: &now, Custom: local})
 	})
 }
 
@@ -405,11 +388,6 @@ func (s *Server) handleRemoveImage(w http.ResponseWriter, r *http.Request) {
 	ref := r.URL.Query().Get("ref")
 	if _, official := officialImageFor(ref); official {
 		writeError(w, http.StatusBadRequest, "official images remain available in the catalog")
-		return
-	}
-	if e, ok := s.images.entry(ref); ok && e.Custom {
-		slug, _ := customSlug(e.Ref)
-		s.removeCustom(w, r, slug)
 		return
 	}
 	if user := s.imageUser(r.Context(), ref); user != "" {

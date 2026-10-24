@@ -57,10 +57,11 @@ export interface VPNStatus {
 export interface VPNRollout { connection: VPNConnection; desktops: (VPNReference & {error?: string})[] }
 export interface DesktopVPNSettings { vpnConnectionId: string | null; lanExceptions: LANException[] }
 export interface SettingsPatch extends Partial<DesktopVPNSettings> {
-  image?: string; memoryBytes?: number; nanoCpus?: number; camera?: string; confirmSecrets?: boolean; mounts?: HostMount[];
+  image?: string; memoryBytes?: number; nanoCpus?: number; camera?: string; dockerAccess?: boolean; confirmSecrets?: boolean; mounts?: HostMount[];
 }
 
 export interface Settings extends DesktopVPNSettings {
+  dockerAccess: boolean;
   mounts: HostMount[];
   memoryBytes: number;
   nanoCpus: number;
@@ -176,28 +177,8 @@ export interface CatalogImage {
   desktops: string[];
   behind: string[];
   checked: string | null;
-  /** Built here from a recipe (see `recipe`). */
-  custom: boolean;
   /** Its starting home holds secrets: desktops made from it are signed in as whoever made it. */
   secrets: boolean;
-  /** Its base has a newer image in the catalog than the one it was built on. */
-  baseUpdated: boolean;
-  recipe: string | null;
-}
-
-export type Remote = { name: string; repoFile: string } | { name: string; url: string; gpgKey: string };
-export type Flatpak = { id: string; remote?: string } | { ref: string };
-
-export interface Recipe {
-  slug: string;
-  name: string;
-  base: string;
-  mise?: string[];
-  remotes?: Remote[];
-  flatpaks?: Flatpak[];
-  commands?: string;
-  homeFrom?: "image";
-  secrets?: boolean;
 }
 
 export interface FolderSize {
@@ -225,39 +206,6 @@ export interface FileListing {
 export interface Uploaded {
   path: string;
   bytes: number;
-}
-
-export type HomeGroupName = "tools" | "flatpak" | "settings" | "dotfiles" | "browser" | "other";
-
-/** One group of a desktop's home folder, for an image made from it. */
-export interface HomeGroup {
-  name: HomeGroupName;
-  /** What the group copies: its files without its secrets. */
-  bytes: number;
-  paths: string[];
-  /** Left out unless ticked one by one. */
-  secrets: string[];
-}
-
-export interface ImageScan {
-  groups: HomeGroup[];
-  /** The desktop's own Flatpak apps, installed again system-wide in the image. */
-  flatpaks: { id: string; remote: string }[];
-  remotes: { name: string; url: string }[];
-  /** Everything that could be copied, secrets included. */
-  totalBytes: number;
-  /** What the image would leave out, and why. */
-  notes: string[];
-}
-
-export interface ImageFromDesktop {
-  name: string;
-  slug: string;
-  groups: HomeGroupName[];
-  /** Secrets to include, as the scan lists them. */
-  include: string[];
-  /** Also save this recipe on the new image once it's built, to add tools on top later. */
-  recipe?: { slug: string; name: string };
 }
 
 export interface JobRef {
@@ -412,7 +360,7 @@ export const api = {
   desktop: (name: string) => request<Desktop>("GET", c(name)),
   terminalSessions: (name: string, signal?: AbortSignal) =>
     request<{ sessions: { name: string }[] }>("GET", `${c(name)}/terminal/sessions`, undefined, signal),
-  createDesktop: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: string[]; mounts?: HostMount[] } & DesktopVPNSettings) =>
+  createDesktop: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: string[]; dockerAccess: boolean; mounts?: HostMount[] } & DesktopVPNSettings) =>
     request<JobRef>("POST", "/api/desktops", body),
   power: (name: string, action: "start" | "stop" | "restart") => request<void>("POST", `${c(name)}/${action}`),
   setMemoryPolicy: (name: string, autoReclaim: boolean) => request<void>("PUT", `${c(name)}/memory-policy`, { autoReclaim }),
@@ -428,8 +376,6 @@ export const api = {
   activity: (name: string) => request<ActivityEvent>("GET", `${c(name)}/activity`),
   stats: (name: string) => request<StatsHistory>("GET", `${c(name)}/stats`),
   folder: (name: string) => request<FolderSize>("GET", `${c(name)}/folder`),
-  imageScan: (name: string) => request<ImageScan>("GET", `${c(name)}/image-scan`),
-  imageFromDesktop: (name: string, body: ImageFromDesktop) => request<JobRef>("POST", `${c(name)}/image`, body),
   files: (name: string, path: string) => request<FileListing>("GET", `${c(name)}/files?path=${enc(path)}`),
   /** A file, or a folder as a zip; the browser downloads it. */
   downloadUrl: (name: string, path: string) => `${c(name)}/download?path=${enc(path)}`,
@@ -476,11 +422,6 @@ export const api = {
   checkImages: () => request<JobRef>("POST", "/api/images/check"),
   upgradeImage: (ref: string, confirmSecrets = false) => request<JobRef>("POST", "/api/images/upgrade", { ref, confirmSecrets }),
 
-  recipes: () => request<Recipe[]>("GET", "/api/recipes"),
-  createRecipe: (recipe: Recipe) => request<JobRef>("POST", "/api/recipes", recipe),
-  updateRecipe: (recipe: Recipe) => request<JobRef>("PUT", `/api/recipes/${enc(recipe.slug)}`, recipe),
-  removeRecipe: (slug: string) => request<void>("DELETE", `/api/recipes/${enc(slug)}`),
-  rebuildRecipe: (slug: string) => request<JobRef>("POST", `/api/recipes/${enc(slug)}/rebuild`),
   cancelJob: (id: string) => request<void>("POST", `/api/jobs/${enc(id)}/cancel`),
 };
 

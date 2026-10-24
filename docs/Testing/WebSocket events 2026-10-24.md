@@ -1,0 +1,29 @@
+---
+displayName: WebSocket event testing — 24 October 2026
+date: "2026-10-24"
+---
+The browser's permanent desktop-list and screen-action feeds now use session-authenticated WebSockets on `/api/events` and `/api/desktops/{name}/screen-events`. Ordinary HTTP clients retain SSE, and finite job-progress streams remain SSE. This change avoids exhausting Chromium's six HTTP/1 fetch connections when several desktop tabs share one origin. See [[Architecture/Web UI]], [[Architecture/Monitoring]] and [[superpowers/specs/2026-10-22-agent-activity-design|Agent activity design]].
+
+# Transport checks
+
+`supervisor/internal/server/ui_events_test.go` verifies an authoritative desktop snapshot followed by an update, rejection of a foreign Origin, anonymous-session rejection, per-desktop access checks, idle screen-stream closure on access revocation, and rejection of client application input with subscriber cleanup. The last check exposed a delay in `coder/websocket` v1.8.15's `CloseRead`: its policy close waits for its own reader goroutine. The server now owns the reader goroutine; the failing three-second cleanup regression passes with that change. The full server package passes `go test -race ./internal/server`.
+
+`supervisor/web/src/lib/event-feed.test.ts` passes four tests covering reconnect delivery, stale socket callbacks, unmount cleanup, malformed envelopes, bounded exponential backoff and resetting the delay after an open. TypeScript checking passes.
+
+The real Chromium regression `test_four_viewers_do_not_exhaust_http_connections` checks four desktop tabs in one browser context, each displaying a connected picture, receiving desktop snapshots and drawing a CLI click from the screen-event feed. A native browser `fetch('/api/me')` must also complete within five seconds while those tabs remain open. Playwright's separate request transport is deliberately not used for that assertion because it has an independent connection pool.
+
+Existing `test_activity_api_access` and `test_screen_events_stop_after_revoke` pass against the retained SSE transport. The final selected `test_ui_stream.py` run passes all four tests, including quality/reload, second-viewer overlay geometry and the strengthened four-viewer regression, with one skipped and three deselected. Firefox could not start its Playwright profile on this host and was skipped; these checks do not establish Firefox or WebKit coverage.
+
+# Transient overlay assertion
+
+The second-viewer test initially sometimes missed its click mark. Instrumentation confirmed both viewers received identical WebSocket click envelopes. The test waited for synchronous CLI completion before looking for the mark, although the mark expires 1.8 seconds after exec starts. A controlled test-only delay reproduced the failure: both viewers received the click, but the CLI returned about 2.3 seconds later, after the mark had expired. The test now runs the CLI subprocess in a worker while Playwright checks the visible mark and its coordinates, then waits for the CLI result. With the same delayed completion, the revised test passes. This changes assertion ordering without extending the timeout or changing product mark lifetimes.
+
+The normal test harness exposed another condition: `netchange.py` fulfilled loopback documents through Playwright's request transport, stripping their network address-space classification. Chromium then blocked both event WebSockets before a handshake reached the server (`ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`). Documents now use the native browser transport on all hosts; existing navigation retries handle network changes. Bootstrap API calls and loopback UI assets retain their request-transport workaround. The four-viewer regression checks both event feeds as well as the picture and fetch capacity, so a blocked handshake cannot produce a false pass. Restoring the old document-routing expression through a temporary test plugin makes that strengthened regression fail; the corrected harness passes both multi-viewer tests without instrumentation.
+
+The existing offline-browser bootstrap test loads its native login document before disconnecting Chromium, then uses the application's real API client to require login, account and desktop-list bootstrap to succeed with exactly one login POST. It restores connectivity for the native document load and checks that the desktop wall renders. Offline document loading is outside this workaround's contract. The stale-refresh regression controls only the `/api/events` WebSocket while preserving Vite's own socket; it still verifies that a replaced or unmounted refresh cannot schedule another retry after its pending request fails. Both updated regressions pass; the complete mock image/UI module finishes with 16 passed and one build test deselected.
+
+# Environment and limits
+
+Checks used the existing `deskyard-debian-xfce:local` image, separate test subnet pools, and test supervisors built from the checkout. The rebuilt live supervisor was restarted on port 8080 with its existing `/Users/zef/deskyard` data directory; its login page returned HTTP 200 afterward. No desktop restart or image replacement was part of deployment.
+
+The root `make test BUILD_IMAGE=0 TEST_IMAGE=deskyard-debian-xfce:local` run passed Go/race, UI and engine phases, then stopped in desktop-image tests with 90 passed, 12 failed and three skipped. Failures include missing `tmux`/new terminal CLI commands in the supplied older image, incompatible native-terminal defaults, Chromium's lingering-renderer marker, `uv` Python-preference conflicts, session restoration and the pinned Selkies client contract. This run does not establish a clean full suite for a freshly built image. The focused four-viewer and SSE compatibility tests were run separately after that failure.

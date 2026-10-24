@@ -6,6 +6,8 @@ date: "2026-10-22"
 plan: "[[superpowers/plans/2026-10-22-agent-activity|Agent activity plan]]"
 ---
 
+**Implemented transport amendment, 2026-10-24:** the browser now uses WebSockets for `/api/events` and `/api/desktops/{name}/screen-events`, avoiding HTTP/1 connection exhaustion when several desktop tabs are open. Both routes retain SSE for ordinary HTTP consumers; job streams remain SSE. Same-origin session authentication, per-desktop visibility, snapshot recovery and closing idle screen streams on access revocation remain in place. This supersedes the browser EventSource instructions below; see [[Architecture/Web UI]] and [[Architecture/CLI activity]].
+
 **Implemented positioning update, 2026-10-24:** Deskyard is framed around human remote access and control through the browser and CLI. The Agents tab is now Remote access, agent tokens are access tokens, and presence is CLI activity. Skills remain shipped as optional integrations. Existing `/api/agent/v1/` routes, JSON fields and internal identifiers remain compatible. Agent-focused wording below records the original design; current terminology is documented in [[Architecture/Remote access API]], [[Architecture/Access tokens]] and [[Architecture/CLI activity]].
 People watching a desktop can see which agents are working on it and what they're doing:
 - **Presence.** Agents appear next to the people viewing it, as "zef's agent", presence inferred from recent activity.

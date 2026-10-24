@@ -28,6 +28,9 @@ func (n *Networking) create(ctx context.Context, name string, set Settings, prog
 	if err = n.service.checkHostMountSources(ctx, set.Mounts); err != nil {
 		return Desktop{}, err
 	}
+	if err = n.service.checkDockerAccess(ctx, set.DockerAccess); err != nil {
+		return Desktop{}, err
+	}
 	if _, err = n.service.EnsureImage(ctx, set.Image, progress); err != nil {
 		return Desktop{}, err
 	}
@@ -64,6 +67,9 @@ func (n *Networking) recreate(ctx context.Context, name string, set Settings, pr
 		return Desktop{}, err
 	}
 	if err = n.service.checkHostMountSources(ctx, set.Mounts); err != nil {
+		return Desktop{}, err
+	}
+	if err = n.service.checkDockerAccess(ctx, set.DockerAccess); err != nil {
 		return Desktop{}, err
 	}
 	if _, err = n.service.EnsureImage(ctx, set.Image, progress); err != nil {

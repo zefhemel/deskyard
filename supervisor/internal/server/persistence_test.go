@@ -123,7 +123,7 @@ func TestTokenFailedCreateDoesNotPublish(t *testing.T) {
 }
 
 func TestDeleteTokenReportsPersistenceFailure(t *testing.T) {
-	bt := newBuildTest(t)
+	bt := newCatalogTest(t)
 	withDesktop(t, bt, aliceHome)
 	tok, bearer, err := bt.s.tokens.create("agent", "id-alice", "admin", nil)
 	if err != nil {

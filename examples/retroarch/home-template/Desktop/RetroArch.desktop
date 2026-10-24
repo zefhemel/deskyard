@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=RetroArch
+Comment=Play retro consoles with the included cores
+Exec=/workspace/.local/bin/retroarch-deskyard
+Icon=org.libretro.RetroArch
+Terminal=false
+Categories=Game;Emulator;

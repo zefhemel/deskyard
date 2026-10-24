@@ -13,7 +13,7 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 )
 
-// A job is a long operation (create, upgrade, image pull, image build) whose
+// A job is a long operation (create, upgrade, image pull) whose
 // progress the UI follows over server-sent events at /api/jobs/{id}.
 type jobState struct {
 	Result   any      `json:"result,omitempty"`
@@ -24,7 +24,7 @@ type jobState struct {
 	Desktop  string   `json:"desktop,omitempty"`
 }
 
-// maxJobHistory is how many updates a job keeps for its followers. A build
+// maxJobHistory is how many updates a job keeps for its followers. A verbose job
 // sends every log line as an update; a follower that connects late or falls
 // behind sees the last maxJobHistory of them.
 const maxJobHistory = 2000
@@ -60,7 +60,7 @@ func (js *jobs) start(owner, desktop string, fn jobFunc) string {
 	return js.run(owner, desktop, false, fn)
 }
 
-// startCancellable is start for jobs that may be stopped half-way (builds):
+// startCancellable is start for jobs that may be stopped half-way:
 // POST /api/jobs/{id}/cancel cancels fn's ctx.
 func (js *jobs) startCancellable(owner string, fn jobFunc) string {
 	return js.run(owner, "", true, fn)
@@ -246,7 +246,7 @@ func (s *Server) handleJob(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleCancelJob stops a cancellable job (a build), for its owner or an admin.
+// handleCancelJob stops a cancellable job for its owner or an admin.
 func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(r)
 	j := s.jobs.get(r.PathValue("id"))

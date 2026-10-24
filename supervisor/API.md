@@ -32,7 +32,7 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
   "imageTitle": "Debian XFCE", "imageVersion": "2026.10.15", "imageSecrets": false,
   "updateAvailable": "2026.10.22" | null,
   "autoReclaim": true, "terminal": true,
-  "settings": {"memoryBytes": 0, "nanoCpus": 0, "camera": "", "vpnConnectionId": null, "lanExceptions": [], "mounts": []},
+  "settings": {"memoryBytes": 0, "nanoCpus": 0, "camera": "", "dockerAccess": false, "vpnConnectionId": null, "lanExceptions": [], "mounts": []},
   "vpn": {"state":"disabled","changedAt":"0001-01-01T00:00:00Z","exitIpObservedAt":"0001-01-01T00:00:00Z","desiredRevision":0,"appliedRevision":0,"idle":false},
   "access": ["anna"],
   "viewers": ["zef", "anna"],
@@ -56,12 +56,12 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 | --- | --- | --- |
 | `GET /api/desktops` | | `[Desktop]` the account can see, sorted by name |
 | `GET /api/desktops/{name}` | | `Desktop`; 404 if missing or not visible |
-| `POST /api/desktops` (admin) | `{"name","image","memoryBytes","nanoCpus","access":[usernames],"mounts"?:[HostMount]}` | 202 `{"job": id}` |
+| `POST /api/desktops` (admin) | `{"name","image","memoryBytes","nanoCpus","access":[usernames],"mounts"?:[HostMount],"dockerAccess"?:bool}` | 202 `{"job": id}` |
 | `POST /api/desktops/{name}/start` \| `stop` \| `restart` | | 204 |
 | `PUT /api/desktops/{name}/memory-policy` (admin) | `{"autoReclaim":bool}` | 204. Save the per-desktop automatic policy without recreating/restarting it; default true. Session and same-origin only. 400 missing/invalid boolean, 403 regular accounts with access, 404 without access, 500 persistence failure. |
 | `POST /api/desktops/{name}/reclaim-memory` (admin) | | 200 `{"requestedBytes","beforeBytes","afterBytes","swapBeforeBytes","swapAfterBytes","partial":bool}`. Requests 128 MiB of reclaim while apps run. The before/after values are resident cgroup bytes including file cache; swap values are logical swapped bytes, which can still use compressed RAM. `partial` means the kernel reclaimed less than requested; observed resident memory can grow again. 409 stopped or busy, 501 unsupported engine/kernel or unavailable/disabled swap, 502 helper failure. Session and same-origin only; 403 for regular accounts with access, 404 without access. |
 | `DELETE /api/desktops/{name}?files=1` (admin) | | 204; `files=1` also deletes the workspace folder |
-| `PATCH /api/desktops/{name}` (admin) | `{"image"?, "memoryBytes"?, "nanoCpus"?, "camera"?, "mounts"?:[HostMount], "confirmSecrets"?}` | 202 `{"job": id}` (recreates the container); 409 without `confirmSecrets` (see below); 400 for a camera that isn't one of the host's, 409 for one another desktop has. `camera` is a device from `GET /api/host`'s `cameras`, or "" for none. A desktop whose camera has gone from the host is recreated without it, which is logged: when it's started, restarted or recreated, and when the supervisor starts (then started again if the engine had tried to start it and failed; one a user stopped stays stopped) |
+| `PATCH /api/desktops/{name}` (admin) | `{"image"?, "memoryBytes"?, "nanoCpus"?, "camera"?, "dockerAccess"?:bool, "mounts"?:[HostMount], "confirmSecrets"?}` | 202 `{"job": id}` (recreates the container); 409 without `confirmSecrets` (see Desktops); 400 for a camera that isn't one of the host's, 409 for one another desktop has. `camera` is a device from `GET /api/host`'s `cameras`, or "" for none. A desktop whose camera has gone from the host is recreated without it, which is logged: when it's started, restarted or recreated, and when the supervisor starts (then started again if the engine had tried to start it and failed; one a user stopped stays stopped) |
 | `PUT /api/desktops/{name}/access` (admin) | `{"usernames":[…]}` | 204 |
 | `GET /api/desktops/{name}/screen.png` | `?full=1` for full size | PNG, 480 px wide by default; 409 when stopped |
 | `GET /api/desktops/{name}/processes` | | `{"titles":[…],"rows":[[…]]}` (columns PID, USER, %CPU, RSS (KiB), ELAPSED, COMMAND) |
@@ -75,9 +75,7 @@ The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Stri
 | `POST /api/desktops/{name}/upload` | `?name=<file name>`, the raw file as the body (one request per file; `Content-Length` or chunked) | `{"path":"/workspace/Desktop/<final name>","bytes":n}`. Written as `user` into `~/Desktop` through a hidden `.part` file, renamed when complete; a taken name becomes `name (2).ext`, `name (3).ext`… Names with `/` or NUL, empty, `.`/`..` or over 200 bytes: 400. Over 2 GB (declared or counted while streaming): 413. An error or a client that leaves removes the `.part`. Anyone who can see the desktop; session and same-origin only (an access token gets 401: CLI clients use `deskyard cp`); 404 without access, 409 stopped |
 | `POST /api/desktops/{name}/keys` | `{"keys":"ctrl+alt+Delete"}` (xdotool syntax) | 204 |
 | `POST /api/desktops/{name}/mic`, `…/cam` | `{"on":bool,"tab":id,"seq"?:n}` | 204; 400 without a valid `tab` or with a negative `seq`; 409 when the account has no stream open from that tab. Sets the mic or camera badge of the stream opened with `?tab=<id>` (see Desktop below); the badge goes when that stream closes. `seq` numbers a page's reports: one numbered no higher than the last applied for that badge is ignored (still 204), so a late report never undoes a newer one |
-| `POST /api/desktops/{name}/upgrade` (admin) | `{"confirmSecrets"?}` (or no body) | 202 `{"job": id}`; 409 without `confirmSecrets` (see below) |
-| `GET /api/desktops/{name}/image-scan` (admin) | | `ImageScan` (see [Images from a desktop](#images-from-a-desktop-admin)) |
-| `POST /api/desktops/{name}/image` (admin) | `{"name","slug","groups":[…],"include":[…],"recipe"?:{"slug","name"}}` | 202 `{"job"}` |
+| `POST /api/desktops/{name}/upgrade` (admin) | `{"confirmSecrets"?}` (or no body) | 202 `{"job": id}`; 409 without `confirmSecrets` (see Desktops) |
 | `GET /api/validate-name?name=x` (admin) | | `{"ok":bool,"error"?:string,"folder":path,"folderExists":bool}` |
 
 Moving desktops onto an image that contains secrets (an upgrade, or `PATCH` with another `image`) while accounts other than admins can use them is refused with 409 unless the body has `"confirmSecrets": true`: those accounts could then use the image's sign-ins. The UI asks first, naming the image and the accounts, as it does when giving access to such a desktop.
@@ -100,13 +98,19 @@ The remote CLI still sends the owned `deskyard terminal-helper SESSION` request 
 
 Browser terminals count as viewers, preventing automatic idle memory reclamation. Logout cancels the exact browser login, identified by a random signed session ID preserved across cookie refresh; legacy signed cookies migrate with a stable identity. Open sockets expire at their original cookie expiry even if another request refreshes that cookie. Account deletion, View revocation, epoch/password changes, stop/delete/restart, external engine stop events and server shutdown cancel attachments. The shell survives attachment loss until it exits or the container stops. Terminal input/output is never recorded in activity or logs.
 
+#### Docker daemon access
+
+`settings.dockerAccess` is always a boolean, defaulting to false. Admin create accepts optional `dockerAccess`; PATCH accepts an optional boolean, with omission or null preserving the previous value. Enabling preflights the daemon-host `/var/run/docker.sock` as a Unix socket before the current desktop stops, then mounts it writable at the same path. Unsupported or missing sockets fail the accepted job. The base image must include the socket-group startup support; the CLI can be added using `examples/docker/`. Socket mode and ownership remain unchanged. Custom/rootless socket paths are not configurable.
+
+Changing the permission recreates the desktop; turning it off removes the mount. Container labels and private recovery/networking records retain the boolean across upgrades and rollback. Everyone who can use an enabled desktop can control the shared daemon, including other containers and host mounts, with host administrator capability. This permission is separate from folder mounts below.
+
 #### Host folder mounts
 
 `HostMount` is `{"source":"/absolute/engine-host/folder","target":"/mnt/photos","readOnly":true}`. `settings.mounts` is always an array (empty for existing desktops without mounts). `POST /api/desktops` accepts optional `mounts`; `PATCH /api/desktops/{name}` replaces the complete list when an array is supplied. Omission or null preserves the current list on PATCH; `[]` detaches all. The API's omitted `readOnly` defaults to false; the UI defaults new entries to true.
 
 Only admins can configure mounts. Everyone able to use a desktop can access the mounted files with that desktop's permissions. Up to 16 existing source directories are allowed. Source paths must be clean absolute engine-host paths; target paths must be clean paths below `/mnt/`, with no duplicate or nested mount targets. Paths are at most 4096 bytes and may not contain NUL. Invalid configuration is 400; mount-source existence/type failures are reported by the accepted job. The helper verifies sources on the engine host before stopping/replacing a desktop, with read-only strict bind mounts that never create missing directories. The source need not be visible in the supervisor container. Existing host permissions still apply; no source chown/chmod is performed. Strict read-only binds require recursive read-only enforcement, including nested mounts; unsupported engines/kernels fail preflight rather than silently allowing writes. Docker API 1.44 or newer is required so this option cannot be silently ignored. This capability is required even for a requested writable mount because source preflight is read-only. Desktops with host mounts set `no-new-privileges` to prevent setuid/file-capability executables from granting new privileges.
 
-Mount changes use container recreation: running desktops restart and stopped desktops stay stopped. Settings persist in the `deskyard.setting.mounts` container label and survive upgrades and unrelated settings changes. Corrupt saved mount configuration prevents recreation rather than silently dropping mounts. On a failed replacement, rollback restores the old mount configuration and attempts to restart it if it was previously running. Removing a mount does not delete its source; desktop file deletion remains limited to the private workspace. Host folders elsewhere are not deleted or copied into images made from a desktop. Files/download HTTP routes remain scoped to `/workspace`.
+Mount changes use container recreation: running desktops restart and stopped desktops stay stopped. Settings persist in the `deskyard.setting.mounts` container label and survive upgrades and unrelated settings changes. Corrupt saved mount configuration prevents recreation rather than silently dropping mounts. On a failed replacement, rollback restores the old mount configuration and attempts to restart it if it was previously running. Removing a mount does not delete its source; desktop file deletion remains limited to the private workspace. Host folders elsewhere are not deleted. Files/download HTTP routes remain scoped to `/workspace`.
 
 #### Activity
 
@@ -135,7 +139,7 @@ Mount changes use container recreation: running desktops restart and stopped des
 
 `agents` has the same entries, in the same order, as `Desktop.agents`, each with `now` (what it is doing: running commands, browser use, its port mappings, `in` and `out` as in `Desktop.forwards`) and `recent` (at most 20 lines, newest first; adjacent screen actions of one kind are merged into one line with a `count`). Summaries cover the last 15 minutes; they are kept in memory only, nothing is stored, and a supervisor restart forgets them. Command texts are masked (secrets show as `•••`) and typed text is never recorded. Signed-in accounts that can see the desktop may read it; access tokens can't (401), others get 404.
 
-`GET /api/desktops/{name}/screen-events` is a server-sent event stream of the screen actions CLI clients make, for drawing them over the screen: `event: screen` with data a `ScreenEvent`, `{"agent":{"id","name","color","inside"},"t":"…","action":"click","pos":[100,120]}`, plus `button`, `dir`, `n`, `keys` and `chars` where the action has them (`pos` is `[x1,y1,x2,y2]` for `drag`; `type` carries only `chars`, the number of characters). The actions sent are `click`, `double-click`, `triple-click`, `drag`, `scroll`, `key`, `hold-key` and `type`. A comment line keeps the stream alive every 25 s. Who may open it is as for `Activity`; the stream ends when the account loses access or the desktop is removed. Events are only produced while someone is subscribed, and a slow reader misses some.
+`GET /api/desktops/{name}/screen-events` supports a WebSocket event feed (see Events below), with SSE retained for clients making ordinary HTTP requests. It streams the screen actions CLI clients make, for drawing them over the screen: `event: screen` with data a `ScreenEvent`, `{"agent":{"id","name","color","inside"},"t":"…","action":"click","pos":[100,120]}`, plus `button`, `dir`, `n`, `keys` and `chars` where the action has them (`pos` is `[x1,y1,x2,y2]` for `drag`; `type` carries only `chars`, the number of characters). The actions sent are `click`, `double-click`, `triple-click`, `drag`, `scroll`, `key`, `hold-key` and `type`. A comment line keeps the stream alive every 25 s. Who may open it is as for `Activity`; the stream ends when the account loses access or the desktop is removed. Events are only produced while someone is subscribed, and a slow reader misses some.
 
 ### VPN connections (admin)
 
@@ -165,13 +169,15 @@ Desktop create and PATCH accept `vpnConnectionId` (string or explicit `null` for
 
 `GET /api/jobs/{id}` is a server-sent event stream; each `data:` line is `{"status":"running"|"done"|"failed","message":"Pulling image","progress":0.38|null,"error"?:string,"desktop"?:name,"result"?:object}`. The stream sends every update in order, starting with the oldest the job keeps (the last 2,000), and ends after `done` or `failed`. The account that started a job, admins, and (for a desktop's job) anyone who can see that desktop may follow it; others get 404.
 
-`POST /api/jobs/{id}/cancel` cancels a running image build or VPN candidate test/validation (its owner or an admin): 204, and the job then fails with error `"cancelled"`. 409 for a job that has finished or can't be cancelled (builds and VPN validation can; a committed VPN rollout completes its durable transition); 404 as above.
+`POST /api/jobs/{id}/cancel` cancels a running VPN candidate test/validation (its owner or an admin): 204, and the job then fails with error `"cancelled"`. 409 for a job that has finished or can't be cancelled (VPN validation can; a committed VPN rollout completes its durable transition); 404 as above.
 
 ### Events
 
-`GET /api/events` is a server-sent event stream for the desktops the account can see:
+`GET /api/events` supports a same-origin, session-authenticated WebSocket upgrade for the desktops the account can see. Each text message is `{"type":"desktop","data":{…}}`, using the event names and payloads below. `/api/desktops/{name}/screen-events` uses the same envelope with type `screen`. The server sends WebSocket pings every 25 seconds of inactivity; application messages from clients are refused. The UI reconnects with exponential backoff up to ten seconds and refreshes its list after reconnection. These permanent feeds use WebSockets so multiple viewer tabs do not exhaust the browser’s HTTP/1 fetch connections.
 
-A queue overflow or failed authoritative snapshot closes the stream so EventSource reconnects and obtains current state. Queued lifecycle/removal notifications resolve current desktop state when sent; they do not replay stale container snapshots.
+Ordinary HTTP requests retain the SSE format below for existing clients; job feeds remain SSE because they end when the job finishes.
+
+A queue overflow or failed authoritative snapshot closes the stream so the client reconnects and obtains current state. Queued lifecycle/removal notifications resolve current desktop state when sent; they do not replay stale container snapshots.
 
 
 - `event: desktop` — a `Desktop` that appeared or changed
@@ -203,80 +209,26 @@ A queue overflow or failed authoritative snapshot closes the stream so EventSour
 
 ### Images (admin)
 
-`CatalogImage` = `{"ref","title","version","description","desktops":[names],"behind":[names],"checked"|null,"installed":bool,"official":bool,"custom":bool,"secrets":bool,"baseUpdated":bool,"recipe":slug|null}`
+`CatalogImage` = `{"ref","title","version","description","desktops":[names],"behind":[names],"checked"|null,"installed":bool,"official":bool,"secrets":bool}`
 
-`custom` images are built here from a recipe (`recipe` is its slug); their ref is `deskyard-custom/<slug>:latest`. `secrets` is true when the image's starting home contains secrets (label `deskyard.secrets=true`, passed down to images built on it). `baseUpdated` is true when the custom image's base has a newer image in the catalog than the one it was built on (so rebuilding a custom image marks those built on it).
+`secrets` reports the image label `deskyard.secrets=true`. Existing images carrying this label retain the confirmation required when sharing or changing a desktop to that image.
 
 | Method and path | Body | Response |
 | --- | --- | --- |
 | `GET /api/images` | | `[CatalogImage]` (non-admins may read it, for the New desktop dialog) |
-| `POST /api/images/install` | `{"ref"}` | 202 `{"job"}` (downloads a known non-custom catalog image and checks the contract) |
-| `POST /api/images` | `{"ref"}` | 202 `{"job"}` (pulls and checks the contract) |
+| `POST /api/images/install` | `{"ref"}` | 202 `{"job"}` (uses a known catalog image locally, pulling only when missing, and checks the contract) |
+| `POST /api/images` | `{"ref"}` | 202 `{"job"}` (uses a local image or pulls a missing reference, then checks the contract) |
 | `DELETE /api/images?ref=…` | | 204; 400 for built-in official refs; 409 while desktops use it |
 | `POST /api/images/check` | | 202 `{"job"}` (pull installed non-custom refs, recompute updates) |
-| `POST /api/images/upgrade` | `{"ref","confirmSecrets"?}` | 202 `{"job"}` (upgrades every desktop behind on it); 409 without `confirmSecrets` (see below) |
+| `POST /api/images/upgrade` | `{"ref","confirmSecrets"?}` | 202 `{"job"}` (upgrades every desktop behind on it); 409 without `confirmSecrets` (see Desktops) |
 
-`GET /api/images` merges saved entries with built-in XFCE, KDE Plasma and MATE choices without pulling. `installed` means the reference exists locally; `official` identifies these built-in refs. Static titles/descriptions are supplied before download. Saved order and the configured default are preserved. Desktop creation and recipe builds can pull available images on first use; successful use records the resolved local version. An unavailable registry or failed pull is reported through the job, leaving the choice available for retry.
+`GET /api/images` merges saved entries with built-in XFCE, KDE Plasma and MATE choices without pulling. `installed` means the reference exists locally; `official` identifies these built-in refs. Static titles/descriptions are supplied before download. Saved order and the configured default are preserved. Desktop creation can pull available images on first use; successful use records the resolved local version. An unavailable registry or failed pull is reported through the job, leaving the choice available for retry.
 
-`DELETE /api/images?ref=…` on a custom image does what `DELETE /api/recipes/{slug}` does. The daily update check (and `POST /api/images/check`) never pulls missing or custom images; `POST /api/images` refuses `deskyard-custom/…` refs.
+Adding or installing an image validates the Deskyard contract even when the reference is already present locally. Local references, including `deskyard-custom/…`, can be added without contacting a registry. Missing references are pulled through the normal job flow. An incompatible local image fails validation instead of being replaced by a pull.
 
-### Recipes (admin)
+`DELETE /api/images?ref=…` removes only the catalog entry. It does not delete Docker tags, images, legacy recipe JSON or source folders. Existing legacy locally built images remain usable and keep their exclusion from registry update checks. The daily update check (and `POST /api/images/check`) also skips missing images.
 
-`Recipe` = `{"slug","name","base","mise"?:[specs],"remotes"?:[Remote],"flatpaks"?:[Flatpak],"commands"?:string,"homeFrom"?:"image","secrets"?:bool}`, with `Remote` = `{"name","repoFile"}` or `{"name","url","gpgKey"}` (base64) and `Flatpak` = `{"id","remote"?}` (Flathub when `remote` is empty) or `{"ref"}` (a `.flatpakref` URL). `slug` follows the desktop-name rule; `base` must be a catalog ref, and not one built on this recipe. `homeFrom` and `secrets` are the server's: ignored on `POST` (a recipe's `secrets` comes from its base) and kept from the saved recipe on `PUT` (where a base with secrets adds it).
-
-| Method and path | Body | Response |
-| --- | --- | --- |
-| `GET /api/recipes` | | `[Recipe]`, sorted by slug |
-| `POST /api/recipes` | `Recipe` | 202 `{"job"}`: validates, saves and builds; 400 for an invalid recipe, 409 if the slug exists |
-| `PUT /api/recipes/{slug}` | `Recipe` | 202 `{"job"}`: saves the edit and rebuilds; 404 for an unknown slug |
-| `POST /api/recipes/{slug}/rebuild` | | 202 `{"job"}` |
-| `DELETE /api/recipes/{slug}` | | 204: removes the recipe, its catalog entry and every `deskyard-custom/<slug>` tag; 409 while a desktop uses any of them |
-
-Each recipe builds one at a time: a second build, edit or delete while one runs gets 409 `already building`.
-
-A build is a cancellable job (30-minute limit). Each line of the build log comes as one update, with `message` the line and `progress` null. The build:
-
-1. Takes the base's image ID, pulling the base first on a rebuild or edit unless it is a custom image (a base that can't be pulled but is on this machine is used as it is). The base must carry the Deskyard contract.
-2. Builds `FROM <base image ID>` with the recipe's mise tools, Flatpak remotes and apps, home template and build commands (no build cache on a rebuild or edit), with network access but no Docker socket, host mounts or supervisor network. The image keeps its base's `USER`.
-3. Checks the result. It must still carry the contract. Then the supervisor's own static scanner (`deskyard-image-scan`, embedded in the supervisor and copied into a throwaway container with no network and the image's healthcheck off, so nothing from the image runs) scans the base and the new image as root, walking everything but `/proc`, `/sys`, `/dev` and `/workspace`. Compared with the base, the new image must not add or change:
-   - a `sudo`, `sudoedit` or `doas` executable, anywhere;
-   - a setuid or setgid file that is new, or whose content (sha256) differs from the base's at that path;
-   - a file with file capabilities (`security.capability`) that is new or changed;
-   - a file or folder UID 1000 owns, or that its group or everyone may write, under `/usr` (so `/usr/local/bin`), `/etc` (so supervisord's `/etc/supervisor`), `/opt/workspace` or `/opt/deskyard` (except `/opt/deskyard/home-template`), and the folders above those (`/`, `/opt`);
-   - a symlink there whose target resolves under `/workspace`, `/tmp`, `/var/tmp`, `/home`, `/dev/shm` or `/run/workspace`, or to a place UID 1000 can write;
-   - in `/etc/passwd`, `/etc/shadow` and `/etc/group`: a new UID 0 or GID 0 account, a new GID 0 group, `user` not UID 1000 (or missing), `user` added to a group, or a UID 0 account with no password or a password changed from the base.
-
-   Every finding is named in the error. A scan that fails, exits non-zero, or whose output is cut short or unreadable fails the build. `/opt/mise` and `/var/lib/flatpak` are not checked for writability by design: root doesn't run anything from them (only the setuid, capability and sudo checks cover them). Last, a throwaway desktop of the image (`build-check-…`, a prefix no one else's desktop may use; removed afterwards) must become ready within 2 minutes.
-4. Tags it `deskyard-custom/<slug>:<YYYYMMDD-HHMMSS>` and `:latest`, puts `deskyard-custom/<slug>:latest` in the catalog, and removes older timestamp tags no container uses. Desktops on the image then show `updateAvailable`.
-
-Known limits: Flatpak apps that download extra data while installing (`apply_extra`, e.g. Spotify) may fail to build, since that step needs Flatpak's sandbox, which a plain build doesn't allow. A build's network is the engine's default bridge, so its commands reach the internet and whatever else such a container can: on Docker Desktop and OrbStack that includes services on the host's loopback (`host.docker.internal`), the supervisor's own port among them, which still requires signing in.
-
-A failed or cancelled build leaves no tag, no catalog entry and no image; the recipe stays saved. Labels on a custom image: `deskyard.kind=custom`, `org.opencontainers.image.title` (the recipe name), `org.opencontainers.image.version` (build time, `YYYY-MM-DD HH:MM`), `deskyard.base` (the base's image ID), `deskyard.recipe` (the recipe JSON, so anyone who can inspect the image can read its build commands and remote URLs), and `deskyard.secrets=true` when it has secrets.
-
-### Images from a desktop (admin)
-
-A desktop's home folder becomes the starting home (`/opt/deskyard/home-template`) of a new image built on the desktop's own image, as a recipe with `homeFrom: "image"`.
-
-`GET /api/desktops/{name}/image-scan` reads the folder and gives:
-
-```json
-{
-  "groups": [{"name": "tools", "bytes": 1395864371, "paths": [".local/share/mise", ".npm-global"], "secrets": []},
-             {"name": "dotfiles", "bytes": 41984, "paths": [".bashrc", ".codex"], "secrets": [".codex/auth.json", ".ssh"]}, …],
-  "flatpaks": [{"id": "org.gimp.GIMP", "remote": "flathub"}],
-  "remotes": [{"name": "flathub", "url": "https://dl.flathub.org/repo/"}],
-  "totalBytes": 8804682956,
-  "notes": ["Leaving out the Flatpak remote nightly: it has no GPG key, so the image couldn't verify it."]
-}
-```
-
-- `groups` are always `tools` (`~/.local/share/mise`, `~/.local/bin`, `~/.npm-global`, `~/.local/share/uv`, `~/.config/mise`), `flatpak` (the app data in `~/.var`), `settings` (`~/.config`), `dotfiles` (other top-level entries starting with a dot), `browser` (browser profiles, from an allow-list in `internal/recipes/browsers.go`: the shared Chromium's `~/.config/chromium-shared`, and `~/.config/chromium`, `~/.config/google-chrome`, `~/.config/BraveSoftware/Brave-Browser` and `~/.mozilla/firefox`. In each profile folder, bookmarks, preferences and the extensions' code are kept; each sign-in store is a secret; history, caches and the browser's own state are left out) and `other`, in that order. `bytes` is what the group copies, without its secrets; `paths` are its folders and files that hold more than secrets. All paths are relative to the home folder.
-- Always left out: caches (`~/.cache`, `~/.npm`, Chromium's caches, `~/.var/app/*/cache`, package caches such as `~/.cargo/registry` or `go/pkg/mod`), the Flatpak installation itself (`~/.local/share/flatpak`), and Deskyard's own state (`.workspace-seeded`, X files). `~/.config/workspace`, where the panel's one-time migrations mark that they ran, is part of `settings`, so it goes with the panel settings and a desktop made from the image doesn't redo them over the user's panel.
-- `secrets` are found by path and name only (`internal/recipes/secrets.go`): `~/.ssh`, `~/.gnupg`, keyrings, git credentials, shell history, tool logins (Codex, Claude, Gemini, `gh`, `glab`, Docker, cloud CLIs' folders, Deskyard's own `~/.config/deskyard` with its remotes' tokens), `.npmrc`/`.netrc`/`.pypirc`/`.pgpass`, `.env` files, browser sign-ins (in a Chromium-style profile folder each of `Cookies`, `Network`, `Login Data`, `Web Data`, `Local Storage`, `Session Storage`, `IndexedDB`, `Service Worker`, `Sessions`, `Extension Cookies`, `Local Extension Settings`, `Extension State` and similar; in a Firefox profile `cookies.sqlite`, `logins.json`, `key4.db`, `cert9.db`, `storage`, `sessionstore*`, `webappsstore.sqlite`, `formhistory.sqlite`, `signedInUser.json` and extension storage), and those file names anywhere else, SSH private keys, key and certificate files, and names with a word like token, secret, credential, password or auth. Names inside installed software (`~/.local/share/mise`, `~/.npm-global`, `node_modules`, …) don't count. A secret folder is listed once and covers what's in it.
-- `totalBytes` is everything that could be copied, secrets included. The UI warns above 5 GB; there is no limit.
-- The Flatpak apps and remotes come from `flatpak list --user --app --columns=application,origin` and `flatpak remotes --user --columns=name,url` in a running desktop, and from the installation's repository in its folder when it is stopped.
-
-`POST /api/desktops/{name}/image` with `{"name","slug","groups":[group names],"include":[secrets, as the scan lists them],"recipe"?:{"slug","name"}}` saves and builds the recipe `{"slug","name","base": <the desktop's image>,"homeFrom":"image","flatpaks","remotes","secrets"}` (202 `{"job"}`, a build as above). If that first build fails the recipe is removed again (it couldn't be rebuilt without its first image), so the same name can be tried again. With `flatpak` ticked, the desktop's apps are installed again system-wide from their remotes; a remote other than Flathub goes in with the GPG key from the desktop's installation (for a stopped desktop, its config and keys are read through the same `os.Root`, regular files only), and one without a key is left out with its apps. The build context's `home-template/` (always there, empty if nothing is ticked) gets the files of the ticked groups without their secrets, plus each included secret whatever its group; files keep their permission bits (no setuid, setgid or sticky), and the image gives them to UID 1000. The image is marked `secrets` when any secret is included or its base has secrets, which passes down to images built on it. 400 for an unknown group or an `include` that isn't a secret; 409 if the slug (or the `recipe` slug) exists. With `recipe`, once the image is built a recipe `{"slug","name","base": "deskyard-custom/<slug>:latest"}` is saved on it (not built: it builds when first edited with `PUT`), to add tools on top later. The folder is read as the build runs: directly where the supervisor can read every file (walked through an `os.Root`, so a symlink a running desktop swaps in never leads outside the folder; links that lead outside are refused and links that stay inside are followed, which reaches nothing the desktop couldn't copy itself; files are opened without blocking, and only regular files are read; symlinks are copied as links, FIFOs, sockets and devices are left out), otherwise through a helper container of `alpine:3.22` with no network that mounts it read-only and streams it as root. The image's build copies the template with `COPY --chown=1000:1000`, so no root step runs over it. A running desktop's files can change while they're copied; stopping it first gives a consistent copy. Rebuilding such a recipe takes the template from its current image.
+Image authoring is removed: `/api/recipes`, its template/edit/rebuild/delete subroutes, `/api/desktops/{name}/image-scan` and `/api/desktops/{name}/image` return 404. Build images separately with Docker and add their resulting references to the catalog. Existing image labels and home-template runtime support remain compatible; the supervisor does not migrate old authoring state.
 
 
 ## Desktop

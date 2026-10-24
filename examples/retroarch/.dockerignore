@@ -1,0 +1,10 @@
+# Allow-list the distributable build inputs. No desktop state or test outputs.
+*
+!Dockerfile
+!cores.tsv
+!build-cores.sh
+!install-retroarch.sh
+!README.md
+!NOTICES.md
+!home-template/
+!home-template/**

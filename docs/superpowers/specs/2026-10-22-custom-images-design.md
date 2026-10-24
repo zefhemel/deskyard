@@ -1,10 +1,15 @@
 ---
 displayName: Custom images design
 tags: spec
-status: implemented
+status: superseded
 plan: "[[superpowers/plans/2026-10-22-custom-images|Custom images plan]]"
 date: "2026-10-22"
 ---
+
+# Superseded — 24 October 2026
+
+The user cancelled the Dockerfile editor and requested removal of all supervisor image authoring. Recipe/build/image-from-desktop APIs, UI and scanner code are removed. Existing images, desktops and saved authoring files remain intact. Build Dockerfiles separately and add their local or registry references through [[Architecture/Image catalog]]. This design was implemented historically; the following sections describe that removed implementation.
+
 Admins can make their own desktop images in the supervisor's UI, in two ways:
 - **Recipe:** a base image plus mise tools, Flatpak apps (from Flathub or any other remote) and optional build commands.
 - **From a desktop:** a copy of what someone installed and configured in an existing desktop's home folder, baked in as the starting home for new desktops.

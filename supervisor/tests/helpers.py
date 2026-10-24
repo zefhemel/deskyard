@@ -79,12 +79,6 @@ def video_settings_lines(name) -> list[str]:
             or "settings applied for 'primary'" in line]
 
 
-def custom_tags(slug: str) -> list[str]:
-    """The tags of a custom image (recipe) slug."""
-    out = docker("image", "ls", "--format", "{{.Repository}}:{{.Tag}}", f"deskyard-custom/{slug}").stdout
-    return out.split()
-
-
 # --- accounts, agent tokens, exec ------------------------------------------------------------
 
 def make_account(admin, desktops, password="pw") -> str:

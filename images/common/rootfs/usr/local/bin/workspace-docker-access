@@ -1,0 +1,20 @@
+#!/bin/bash
+# Only an explicit supervisor permission enables access to the mounted daemon.
+# Run before user services: runuser/supervisord initialize groups from /etc/group.
+set -euo pipefail
+if [ "${DESKYARD_DOCKER_ACCESS:-}" != 1 ]; then
+    exit 0
+fi
+socket=/var/run/docker.sock
+if [ ! -S "$socket" ]; then
+    echo "[workspace-init] Docker daemon access requires a Unix socket at $socket" >&2
+    exit 1
+fi
+gid=$(stat -c %g "$socket")
+group=$(getent group "$gid" | cut -d: -f1 || true)
+if [ -z "$group" ]; then
+    group="deskyard-docker-$gid"
+    groupadd --gid "$gid" "$group"
+fi
+# Append membership; never replace other groups or change the host socket.
+usermod --append --groups "$group" user

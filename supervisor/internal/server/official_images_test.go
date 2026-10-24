@@ -14,7 +14,7 @@ import (
 
 const testKDE = "ghcr.io/zefhemel/deskyard-debian-kde:latest"
 
-func discoveryRows(t *testing.T, bt *buildTest) []map[string]any {
+func discoveryRows(t *testing.T, bt *catalogTest) []map[string]any {
 	t.Helper()
 	code, b := bt.do(bt.admin, "GET", "/api/images", nil)
 	if code != 200 {
@@ -26,7 +26,7 @@ func discoveryRows(t *testing.T, bt *buildTest) []map[string]any {
 	}
 	return rows
 }
-func discoveryRow(t *testing.T, bt *buildTest, ref string) map[string]any {
+func discoveryRow(t *testing.T, bt *catalogTest, ref string) map[string]any {
 	t.Helper()
 	for _, r := range discoveryRows(t, bt) {
 		if r["ref"] == ref {
@@ -37,7 +37,7 @@ func discoveryRow(t *testing.T, bt *buildTest, ref string) map[string]any {
 	return nil
 }
 func TestOfficialDiscoveryWithoutPullingOrChangingSavedCatalog(t *testing.T) {
-	bt := newBuildTest(t)
+	bt := newCatalogTest(t)
 	path := filepath.Join(bt.s.StateDir, "images.json")
 	before, _ := os.ReadFile(path)
 	if rows := discoveryRows(t, bt); rows[0]["ref"] != "img" {
@@ -58,7 +58,7 @@ func TestOfficialDiscoveryWithoutPullingOrChangingSavedCatalog(t *testing.T) {
 	}
 }
 func TestOfficialCatalogDeduplicatesNormalizedReferences(t *testing.T) {
-	bt := newBuildTest(t)
+	bt := newCatalogTest(t)
 	_ = bt.s.images.put(catalogEntry{Ref: "ghcr.io/zefhemel/deskyard-debian-kde"})
 	n := 0
 	for _, r := range discoveryRows(t, bt) {
@@ -71,7 +71,7 @@ func TestOfficialCatalogDeduplicatesNormalizedReferences(t *testing.T) {
 	}
 }
 func TestUpdateChecksDoNotInstallAvailableImages(t *testing.T) {
-	bt := newBuildTest(t)
+	bt := newCatalogTest(t)
 	_ = bt.s.images.put(catalogEntry{Ref: "example.invalid/optional:latest"})
 	if err := bt.s.checkImages(context.Background(), func(string, float64) {}); err != nil {
 		t.Fatal(err)
@@ -81,17 +81,17 @@ func TestUpdateChecksDoNotInstallAvailableImages(t *testing.T) {
 	}
 }
 
-type discoveryEngine struct{ *buildEngine }
+type discoveryEngine struct{ *catalogEngine }
 
 func (e discoveryEngine) Pull(ctx context.Context, ref string, p func(engine.PullProgress)) error {
-	if err := e.buildEngine.Pull(ctx, ref, p); err != nil {
+	if err := e.catalogEngine.Pull(ctx, ref, p); err != nil {
 		return err
 	}
 	e.addImage(ref, "sha256:downloaded", "user")
 	return nil
 }
 func TestInstallOfficialImageOnDemand(t *testing.T) {
-	bt := newBuildTest(t)
+	bt := newCatalogTest(t)
 	bt.s.Eng = discoveryEngine{bt.e}
 	bt.s.Desktops.Eng = bt.s.Eng
 	j := bt.wait(bt.start("POST", "/api/images/install", map[string]string{"ref": testKDE}))
@@ -107,7 +107,7 @@ func TestInstallOfficialImageOnDemand(t *testing.T) {
 	}
 }
 func TestFailedOfficialInstallRemainsAvailable(t *testing.T) {
-	bt := newBuildTest(t)
+	bt := newCatalogTest(t)
 	bt.e.pullErr = errors.New("offline")
 	j := bt.wait(bt.start("POST", "/api/images/install", map[string]string{"ref": testKDE}))
 	if j.Status == "done" {
@@ -117,14 +117,14 @@ func TestFailedOfficialInstallRemainsAvailable(t *testing.T) {
 		t.Fatalf("failed installed: %v", r)
 	}
 }
-func TestInstallRequiresAdminAndKnownNonCustomImage(t *testing.T) {
-	bt := newBuildTest(t)
+func TestInstallRequiresAdminAndKnownImage(t *testing.T) {
+	bt := newCatalogTest(t)
 	_ = bt.s.images.put(catalogEntry{Ref: "deskyard-custom/tools:latest", Custom: true})
 	anna := login(t, bt.ts, "anna")
 	if code, _ := bt.do(anna, "POST", "/api/images/install", map[string]string{"ref": testKDE}); code != http.StatusForbidden {
 		t.Fatalf("nonadmin: %d", code)
 	}
-	for _, ref := range []string{"example.invalid/unknown", "deskyard-custom/tools:latest"} {
+	for _, ref := range []string{"example.invalid/unknown"} {
 		if code, _ := bt.do(bt.admin, "POST", "/api/images/install", map[string]string{"ref": ref}); code != http.StatusBadRequest {
 			t.Fatalf("%s: %d", ref, code)
 		}
@@ -135,7 +135,7 @@ func TestInstallRequiresAdminAndKnownNonCustomImage(t *testing.T) {
 }
 
 func TestOfficialImageUsedOnDemandRecordsLocalVersion(t *testing.T) {
-	bt := newBuildTest(t)
+	bt := newCatalogTest(t)
 	bt.s.images.noteLocal(testKDE, "sha256:used")
 	e, ok := bt.s.images.entry(testKDE)
 	if !ok || e.Newest != "sha256:used" || e.Checked != nil {

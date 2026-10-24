@@ -1,0 +1,65 @@
+uid=1000(user) gid=1000(user) groups=1000(user),0(root)
+Client:
+ Version:           26.1.5+dfsg1
+ API version:       1.45
+ Go version:        go1.24.4
+ Git commit:        a72d7cd
+ Built:             Thu Aug 13 05:35:47 2026
+ OS/Arch:           linux/arm64
+ Context:           default
+
+Server: Docker Engine - Community
+ Engine:
+  Version:          29.8.2
+  API version:      1.56 (minimum version 1.40)
+  Go version:       go1.26.8
+  Git commit:       8af9fe3
+  Built:            Wed Sep 30 19:32:49 2026
+  OS/Arch:          linux/arm64
+  Experimental:     true
+ containerd:
+  Version:          v2.3.6
+  GitCommit:        ee2735368117d2eb259779949d5e75cdafec9761
+ runc:
+  Version:          1.5.2
+  GitCommit:        29dd3dc2b13b4123162e5fe132504bb4b15569f1
+ docker-init:
+  Version:          0.19.0
+  GitCommit:        de40ad0
+Docker client 26.1.5+dfsg1 / server 29.8.2
+Hello from an image built inside a Deskyard desktop!
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 149B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/alpine:3.22
+#2 DONE 0.0s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [1/2] FROM docker.io/library/alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f
+#4 resolve docker.io/library/alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f
+#4 resolve docker.io/library/alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f 0.0s done
+#4 CACHED
+
+#5 [internal] load build context
+#5 transferring context: 128B done
+#5 DONE 0.0s
+
+#6 [2/2] COPY message.txt /message.txt
+#6 DONE 0.0s
+
+#7 exporting to image
+#7 exporting layers 0.1s done
+#7 exporting manifest sha256:106c426761b9b72060e34b963d53525ea20b762bb749c5e04045f93bd0722fca
+#7 exporting manifest sha256:106c426761b9b72060e34b963d53525ea20b762bb749c5e04045f93bd0722fca 0.0s done
+#7 exporting config sha256:1f2365913a64737f2e552c48c3981d2db818d682386f54b667c02034d2b531c5 0.0s done
+#7 exporting attestation manifest sha256:04ffeb714d3f5c77c41abbc39e42c300a560ca13632b16afc086c6fba1af34b0 0.0s done
+#7 exporting manifest list sha256:bff176ad6cf49b645ea1c9f30bc11cd868b7bd814b43b366c927a35c965ca309 0.0s done
+#7 naming to docker.io/library/deskyard-docker-demo:e80b9a5e-9a67-4a0e-9c99-755c62163d17 done
+#7 unpacking to docker.io/library/deskyard-docker-demo:e80b9a5e-9a67-4a0e-9c99-755c62163d17 0.0s done
+#7 DONE 0.2s

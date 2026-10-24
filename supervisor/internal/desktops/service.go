@@ -62,6 +62,7 @@ type Settings struct {
 	VPNConnectionID string
 	LANExceptions   []vpn.Exception
 	Mounts          []HostMount
+	DockerAccess    bool
 }
 
 // Desktop is what the supervisor knows about one desktop, read from its container.
@@ -178,6 +179,7 @@ func (s *Service) fromContainer(ctx context.Context, c engine.Container) Desktop
 		Settings: Settings{Image: image, MemoryBytes: c.MemoryBytes, NanoCPUs: c.NanoCPUs, Camera: cameraOf(c.Devices), VPNConnectionID: c.Labels[vpn.LabelConnection]},
 	}
 	comp.Settings.Mounts, _ = hostMountsFromLabels(c.Labels)
+	comp.Settings.DockerAccess = c.Labels[LabelDockerAccess] == "true"
 	comp.Created, _ = time.Parse(time.RFC3339, c.Labels[LabelCreated])
 	comp.ImageLabels = s.image(ctx, c.ImageID).Labels
 	switch {
@@ -321,6 +323,9 @@ func (s *Service) Create(ctx context.Context, name string, set Settings, progres
 	if err := s.checkHostMountSources(ctx, set.Mounts); err != nil {
 		return Desktop{}, err
 	}
+	if err := s.checkDockerAccess(ctx, set.DockerAccess); err != nil {
+		return Desktop{}, err
+	}
 	if _, err := s.EnsureImage(ctx, set.Image, progress); err != nil {
 		return Desktop{}, err
 	}
@@ -434,6 +439,9 @@ func (s *Service) createPinnedContainerIn(ctx context.Context, name, id, token s
 		return err
 	}
 	labels := map[string]string{LabelManaged: "true", LabelName: name, LabelID: id, LabelImage: set.Image}
+	if set.DockerAccess {
+		labels[LabelDockerAccess] = "true"
+	}
 	if len(set.Mounts) > 0 {
 		raw, err := json.Marshal(set.Mounts)
 		if err != nil {
@@ -457,6 +465,10 @@ func (s *Service) createPinnedContainerIn(ctx context.Context, name, id, token s
 		Network: containerName(name), Aliases: []string{containerName(name)},
 		MemoryBytes: set.MemoryBytes, NanoCPUs: set.NanoCPUs, ShmBytes: shmBytes,
 		Flatpak: true, Restart: "unless-stopped", NoNewPrivileges: len(set.Mounts) > 0,
+	}
+	if set.DockerAccess {
+		spec.Mounts = append(spec.Mounts, engine.Mount{Source: dockerSocket, Target: dockerSocket, MustExist: true})
+		spec.Env["DESKYARD_DOCKER_ACCESS"] = "1"
 	}
 	for _, m := range set.Mounts {
 		spec.Mounts = append(spec.Mounts, engine.Mount{Source: m.Source, Target: m.Target, ReadOnly: m.ReadOnly, MustExist: true})

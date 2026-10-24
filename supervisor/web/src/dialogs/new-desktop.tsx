@@ -3,7 +3,7 @@ import { VPNFields } from "../components/vpn.tsx";
 import { parseExceptions, type ExceptionRow } from "../lib/vpn-form.ts";
 import { useEffect, useState } from "preact/hooks";
 import { api, type NameCheck } from "../api.ts";
-import { AccessPicks, cpuOptions, ImagePick, memoryOptions } from "../components/desktop-fields.tsx";
+import { AccessPicks, DockerAccessField, cpuOptions, ImagePick, memoryOptions } from "../components/desktop-fields.tsx";
 import { JobProgress, useJob } from "../components/job.tsx";
 import { SecretAccessDialog } from "../components/secret-access.tsx";
 import { Button, Dialog, ErrorText, Field, Seg } from "../components/ui.tsx";
@@ -34,6 +34,7 @@ export function NewDesktopDialog({ onClose }: { onClose: () => void }) {
   const [image, setImage] = useState("");
   const [memory, setMemory] = useState(0);
   const [cpus, setCpus] = useState(0);
+  const [dockerAccess, setDockerAccess] = useState(false);
   const [access, setAccess] = useState<string[]>([]);
   const [confirming, setConfirming] = useState(false);
   const run = useJob(() => onClose());
@@ -95,7 +96,7 @@ export function NewDesktopDialog({ onClose }: { onClose: () => void }) {
     try {
       const lanExceptions = vpnID ? parseExceptions(lan) : [];
       setVPNError(null);
-      void run.start(() => api.createDesktop({ name, image, memoryBytes: memory, nanoCpus: cpus, access, vpnConnectionId:vpnID || null, lanExceptions }));
+      void run.start(() => api.createDesktop({ name, image, memoryBytes: memory, nanoCpus: cpus, access, dockerAccess, vpnConnectionId:vpnID || null, lanExceptions }));
     } catch(e) {setVPNError(e instanceof Error ? e.message : String(e));}
   };
   const submit = () => {
@@ -143,6 +144,7 @@ export function NewDesktopDialog({ onClose }: { onClose: () => void }) {
             <Seg label="CPUs" options={cpuOptions(cpus)} value={cpus} onChange={setCpus} />
           </Field>
           {vpn.data ? <VPNFields connections={vpn.data.connections} value={vpnID} onChange={setVPNID} rows={lan} onRows={setLAN} /> : <ErrorText error={vpn.error} />}
+          <DockerAccessField value={dockerAccess} onChange={setDockerAccess} />
           <Field label="Who can use it">
             {accounts.data ? <AccessPicks accounts={accounts.data} value={access} onChange={setAccess} /> : <ErrorText error={accounts.error} />}
           </Field>

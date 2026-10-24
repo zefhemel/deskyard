@@ -6,6 +6,11 @@ date: "2026-10-22"
 spec: "[[superpowers/specs/2026-10-22-custom-images-design|Custom images design]]"
 ---
 
+# Closed — 24 October 2026
+
+The user cancelled the Dockerfile editor and requested removal of supervisor image authoring. Existing images, desktops, JSON and source files are preserved; standalone Dockerfiles remain supported through manual builds and [[Architecture/Image catalog|Add image]]. This completed historical implementation plan is retained below; its authoring code has now been removed.
+
+
 # CI follow-up — 23 October 2026
 
 - [x] Preserve hard-linked package files when a Linux permission helper reads the workspace; cover excluded-cache targets and multiple selected aliases in a regression test.

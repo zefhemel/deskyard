@@ -27,6 +27,7 @@ type settingsJSON struct {
 	NanoCPUs        int64                `json:"nanoCpus"`
 	Camera          string               `json:"camera"` // the host device, "" for none
 	Mounts          []desktops.HostMount `json:"mounts"`
+	DockerAccess    bool                 `json:"dockerAccess"`
 }
 
 type statsJSON struct {
@@ -71,7 +72,7 @@ func (s *Server) desktopJSON(ctx context.Context, c desktops.Desktop, a accounts
 		ImageTitle: c.ImageLabels["org.opencontainers.image.title"], ImageVersion: c.ImageLabels["org.opencontainers.image.version"],
 		ImageSecrets: c.ImageLabels[labelSecrets] == "true",
 		VPN:          c.VPN,
-		Settings:     settingsJSON{MemoryBytes: c.Settings.MemoryBytes, NanoCPUs: c.Settings.NanoCPUs, Camera: c.Settings.Camera, LANExceptions: c.Settings.LANExceptions, Mounts: c.Settings.Mounts},
+		Settings:     settingsJSON{MemoryBytes: c.Settings.MemoryBytes, NanoCPUs: c.Settings.NanoCPUs, Camera: c.Settings.Camera, LANExceptions: c.Settings.LANExceptions, Mounts: c.Settings.Mounts, DockerAccess: c.Settings.DockerAccess},
 		Access:       []string{}, Viewers: s.viewers.names(c.Name),
 		Mics: s.viewers.mics(c.Name), Cams: s.viewers.cams(c.Name), Webcam: c.Webcam(), Forwards: s.forwards.list(c.Name), Agents: s.activity.Present(c.Name),
 	}
@@ -230,6 +231,7 @@ func (s *Server) handleCreateDesktop(w http.ResponseWriter, r *http.Request) {
 		NanoCPUs        int64                `json:"nanoCpus"`
 		Access          []string             `json:"access"`
 		Mounts          []desktops.HostMount `json:"mounts"`
+		DockerAccess    bool                 `json:"dockerAccess"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad request")
@@ -260,7 +262,7 @@ func (s *Server) handleCreateDesktop(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	set, err := s.Desktops.ValidateNetworkSettings(desktops.Settings{Image: req.Image, MemoryBytes: req.MemoryBytes, NanoCPUs: req.NanoCPUs, VPNConnectionID: req.VPNConnectionID.ID, LANExceptions: req.LANExceptions, Mounts: req.Mounts})
+	set, err := s.Desktops.ValidateNetworkSettings(desktops.Settings{Image: req.Image, MemoryBytes: req.MemoryBytes, NanoCPUs: req.NanoCPUs, VPNConnectionID: req.VPNConnectionID.ID, LANExceptions: req.LANExceptions, Mounts: req.Mounts, DockerAccess: req.DockerAccess})
 	if err != nil {
 		vpnError(w, err)
 		return
@@ -302,12 +304,16 @@ func (s *Server) handleUpdateDesktop(w http.ResponseWriter, r *http.Request) {
 		Camera          *string               `json:"camera"`
 		ConfirmSecrets  bool                  `json:"confirmSecrets"`
 		Mounts          *[]desktops.HostMount `json:"mounts"`
+		DockerAccess    *bool                 `json:"dockerAccess"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
 	set := c.Settings
+	if req.DockerAccess != nil {
+		set.DockerAccess = *req.DockerAccess
+	}
 	if req.Mounts != nil {
 		set.Mounts = *req.Mounts
 	}

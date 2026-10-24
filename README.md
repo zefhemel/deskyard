@@ -11,7 +11,7 @@ The supervisor is one Go binary with its web UI built in. You sign in with
 your own account and create, open, start, stop, restart, upgrade and remove
 **desktops**, and see what each one is doing. Every desktop's desktop is
 in the browser at `http://host/<name>/`, and everyone with access to it
-opens the same desktop, at the same time if they like.
+opens the same desktop, at the same time if they like. Live UI updates and screen action marks use WebSockets, so multiple viewer tabs also work over plain HTTP without occupying the browser’s limited HTTP fetch connections.
 
 What's in a desktop:
 
@@ -247,6 +247,20 @@ host's). Names are lowercase letters, digits and dashes, start with a letter
 and can't be changed later. Each desktop is a container `deskyard-<name>` on its
 own network `deskyard-<name>`, so desktops can't reach each other.
 
+### Docker daemon access
+
+**Docker daemon access** is an administrator checkbox when creating a desktop
+or editing its Settings. It defaults off. Enable it on a desktop image with
+the Docker CLI, such as the standalone [Docker example](examples/docker/README.md).
+The supervisor checks and mounts the engine host's `/var/run/docker.sock`;
+an updated desktop image gives `user` its socket group. Saving a changed
+setting recreates the desktop, preserving its workspace.
+
+Everyone using that desktop can then control the shared Docker daemon and
+its containers, with host administrator privileges. Only enable this for
+trusted users. This is separate from directory-only host folder mounts;
+custom/rootless daemon socket locations are not currently supported.
+
 ### Outbound VPN
 
 Administrators can add named connections on **VPN connections** (`/_vpn`), choose a country and enter [NordVPN service credentials](https://support.nordvpn.com/hc/en-us/articles/19685514639633-How-to-find-your-service-credentials-for-manual-NordVPN-setup), which differ from the account login. **Test connection** checks a candidate without changing desktops; blank credentials on an edit retain their saved values. Choose a saved connection or **No VPN** when creating a desktop or on its Settings tab. The same operations are available through the [VPN API](supervisor/API.md#vpn-connections-admin). Each selected desktop gets its own managed Gluetun gateway. Internet access stays blocked while the tunnel is unavailable; only an explicit selection of no VPN restores direct networking. Enabling, disabling or changing VPN settings recreates the desktop while preserving its identity and workspace. Saving settings warns about session disconnection and uses **Save and restart** for running desktops; files remain intact.
@@ -401,7 +415,7 @@ and install Flatpak apps such as LibreOffice. Flathub is configured for the
 desktop user; apps install in `/workspace` without an administrator password
 and survive image upgrades. The first catalog refresh needs internet access.
 LibreOffice is optional and is not bundled in the base images. Admins can
-also preinstall apps through custom image recipes.
+also preinstall apps in a separately built Dockerfile image.
 
 LibreOffice installation, launch and saving into the workspace have been
 verified. Apps requiring document-portal file grants have a current limitation:
@@ -425,6 +439,9 @@ Upgrading a desktop recreates its container on the new image with the same
 settings and folder; the Images page can upgrade all desktops on an image
 at once. Switching a desktop to another image works the same way. Upgrades
 go forward only: Chromium won't open a profile written by a newer version.
+During a settings save, progress appears above the image picker and scrolls
+into view. Image downloads show transferred MB and a percentage when available;
+the progress returns after reloading or leaving and reopening Settings.
 Tools installed with mise, uv and npm bring their own runtimes and should
 keep working across Debian versions; if one breaks, reinstall it.
 
@@ -438,16 +455,22 @@ the desktop image and `supervisor` for the supervisor. List them with
 
 ### Custom images
 
-Admins can make their own images on the Images page with **New image**:
-a base image plus mise tools, Flatpak apps (from Flathub, another remote or
-a `.flatpakref`) and optional build commands. Or use **New image from this
-desktop** on a desktop's details page to bake in tools, apps, settings and
-dotfiles from its home folder; new desktops start with those files, and
-nothing is overwritten. Logins and other secrets are left out unless you
-tick them, and the image then shows a lock badge. Builds run in Docker on the
-supervisor's machine and are checked so `user` gains no way to root. Rebuild
-a custom image to pick up newer tools or a newer base. Desktops can still
-install and override tools in their own home folder.
+Build custom images with Docker outside the supervisor, then use **Add image**
+with the resulting image tag. The supervisor uses a local image when available,
+checks its Deskyard contract, and pulls the reference only when it is missing.
+Existing locally built tags, including `deskyard-custom/…`, remain usable.
+Removing a catalog entry leaves its Docker image and any old source files intact.
+
+The supervisor has no image editor, recipe builder or image-from-desktop export.
+Its account and catalog JSON storage is unchanged; old recipe/source files remain
+on disk but are no longer read or migrated. Images can still install tools in
+`/opt/mise` with executables linked into `/opt/deskyard/bin`, install system
+Flatpak apps, and seed empty workspaces through `/opt/deskyard/home-template`.
+
+For a standalone Dockerfile you can copy and build separately, see the
+[RetroArch example](examples/retroarch/README.md). It installs RetroArch and
+five source-built cores for a new empty workspace, with no games or BIOS files.
+Snes9x and Genesis Plus GX carry non-commercial restrictions; see the example's notices.
 
 ### Flatpak
 
@@ -703,7 +726,7 @@ and, once, `uv run playwright install chromium` in each of
 |---|---|---|
 | `make test` | Go (vet, race) and engine tests, the UI's, and both pytest suites without what's slow, needs the internet, builds images, measures timing, or runs WebKit. About 7 minutes on a quiet Mac, 10 under load. | Before every commit. |
 | `make test-ci` | `make test` plus WebKit and Firefox: what CI runs on a pull request. | To check a browser difference. |
-| `make test-all` | Everything, the supervisor suite also with the supervisor in a container. About 25 minutes; needs the internet. | Before a release, or after touching recipes, image builds (`recipes/`, `imagescan/`, image from a desktop), audio timing, or how the supervisor runs in a container. CI runs it on main and nightly. |
+| `make test-all` | Everything, the supervisor suite also with the supervisor in a container. About 25 minutes; needs the internet. | Before a release, or after changing desktop Dockerfiles, image runtime behavior, audio timing, or how the supervisor runs in a container. CI runs it on main and nightly. |
 | `make test-image`, `test-supervisor`, `test-container`, `test-go`, `test-web`, `test-engine` | One part. | While working on it. |
 
 While working on one area, narrow a suite: `make test-supervisor PYTEST_ARGS="-k drop"`,
@@ -728,10 +751,10 @@ suites build and test (default `deskyard-debian-xfce:test`); outside make,
 `AC_IMAGE` (image suite) and `CC_TEST_IMAGE` (supervisor suite) name it.
 Firefox is skipped where Playwright's Firefox can't start (on some Macs).
 On Linux, tests write workspace fixtures through the desktop as UID 1000,
-since the runner may not own the workspace. In Chromium, loopback UI bootstrap GETs and login use
+since the runner may not own the workspace. In Chromium, loopback bootstrap API GETs, UI assets and login use
 Playwright's request transport to avoid Chromium's `ERR_NETWORK_CHANGED` when
 Docker changes network interfaces. Each request is sent once, including login
-POSTs; other mutations, downloads, live streams and Selkies' client use the browser. Navigation
+POSTs; other mutations, downloads, live streams and Selkies' client use the browser. Documents stay on the native browser transport to preserve their network address space for event WebSockets. Navigation
 on the browser transport retries that specific error; other browser errors still
 fail. Engine tests pull their own auxiliary images,
 including `python:3.13-alpine` for memory reclamation.

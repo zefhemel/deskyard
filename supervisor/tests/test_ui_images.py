@@ -1,5 +1,4 @@
-"""The Images page and the image dialogs: one build against the real
-supervisor, the rest on Vite's dev server with its fake API."""
+"""Image catalog and desktop settings on Vite's Docker-free mock API."""
 
 import json
 import os
@@ -10,37 +9,7 @@ import pytest
 import requests
 from playwright.sync_api import expect, sync_playwright
 
-from conftest import IMAGE, ROOT, free_port
-from helpers import signed_in
-
-
-@pytest.mark.build
-def test_recipe_dialog_builds(supervisor, admin, slug):
-    """New image: fill the dialog, watch the build log, then Rebuild opens the log again (and Cancel stops it)."""
-    with sync_playwright() as p:
-        browser, page = signed_in(p, supervisor.base)
-        page.goto(supervisor.base + "/images")
-        page.get_by_role("button", name="New image").click()
-        page.fill("#rc-name", slug)
-        page.select_option("#rc-base", IMAGE)
-        expect(page.get_by_text("Don't put tokens here", exact=False)).to_be_visible()
-        page.fill("#rc-commands", "true")
-        page.get_by_role("button", name="Build", exact=True).click()
-
-        log = page.get_by_role("dialog")
-        expect(log.get_by_text("Step 1/", exact=False).first).to_be_visible(timeout=60000)
-        expect(log.get_by_role("button", name="Cancel build")).to_be_visible()
-        expect(log.get_by_text("is ready to use").first).to_be_visible(timeout=300000)
-        log.get_by_role("button", name="Close").click()
-
-        row = page.locator("tr", has_text=slug)
-        expect(row.get_by_role("button", name="Rebuild")).to_be_visible(timeout=15000)
-        row.get_by_role("button", name="Rebuild").click()
-        log = page.get_by_role("dialog")
-        expect(log.get_by_text("Step 1/", exact=False).first).to_be_visible(timeout=60000)
-        log.get_by_role("button", name="Cancel build").click()
-        expect(log.get_by_text("Build cancelled").first).to_be_visible(timeout=60000)
-        browser.close()
+from conftest import ROOT, free_port
 
 
 @pytest.fixture(scope="module")
@@ -66,58 +35,6 @@ def mock_ui():
         proc.wait(timeout=20)
 
 
-def mock_new_image(p, base, name, commands=""):
-    browser = p.chromium.launch()
-    page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
-    page.goto(base + "/login")
-    page.fill("#u", "zef")
-    page.fill("#p", "x")
-    page.get_by_role("button", name="Sign in").click()
-    page.wait_for_url(lambda u: "/login" not in u)
-    page.goto(base + "/images")
-    page.get_by_role("button", name="New image").click()
-    page.fill("#rc-name", name)
-    if commands:
-        page.fill("#rc-commands", commands)
-    return browser, page
-
-
-def test_recipe_dialog_sends_the_mise_tools(mock_ui):
-    with sync_playwright() as p:
-        browser, page = mock_new_image(p, mock_ui, "Cow tools")
-        page.fill("#rc-mise", "npm:cowsay\nnode@24\n")
-        with page.expect_request(lambda r: r.method == "POST" and r.url.endswith("/api/recipes")) as sent:
-            page.get_by_role("button", name="Build", exact=True).click()
-        body = json.loads(sent.value.post_data)
-        assert body["slug"] == "cow-tools"
-        assert body["mise"] == ["npm:cowsay", "node@24"]
-        browser.close()
-
-
-def test_invalid_name_says_why(mock_ui):
-    with sync_playwright() as p:
-        browser, page = mock_new_image(p, mock_ui, "x")
-        expect(page.get_by_text("at least 2 letters or digits")).to_be_visible()
-        expect(page.get_by_text("deskyard-custom/x:latest")).to_have_count(0)
-        expect(page.get_by_role("button", name="Build", exact=True)).to_be_disabled()
-        browser.close()
-
-
-def test_build_log_survives_a_dropped_connection(mock_ui):
-    with sync_playwright() as p:
-        browser, page = mock_new_image(p, mock_ui, "Drop test", commands="drop")
-        page.get_by_role("button", name="Build", exact=True).click()
-        log = page.get_by_role("dialog")
-        expect(log.get_by_text("Step 1/3", exact=False).first).to_be_visible(timeout=10000)
-        # The stream is cut mid-build: the build still shows as running, with Cancel.
-        expect(log.get_by_text("Lost the connection", exact=False)).to_be_visible(timeout=10000)
-        expect(log.get_by_role("button", name="Cancel build")).to_be_visible()
-        assert log.get_by_text("Failed in").count() == 0
-        # After the replay it finishes; the replayed log isn't doubled.
-        expect(log.get_by_text("is ready to use")).to_be_visible(timeout=30000)
-        assert log.get_by_text("Step 1/3 : FROM").count() == 1
-
-
 def mock_page(p, base, path):
     browser = p.chromium.launch()
     page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
@@ -128,6 +45,73 @@ def mock_page(p, base, path):
     page.wait_for_url(lambda u: "/login" not in u)
     page.goto(base + path)
     return browser, page
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_settings_reattaches_visible_image_pull_progress(mock_ui, width):
+    """A settings download stays visible after reload and switching tabs."""
+    with sync_playwright() as p:
+        browser, page = mock_page(p, mock_ui, "/desktops/alice?tab=settings")
+        page.set_viewport_size({"width": width, "height": 900})
+        desktops = page.request.get(mock_ui + "/api/desktops").json()
+        alice = next(c for c in desktops if c["name"] == "alice")
+        alice.update(state="upgrading", job="settings-download")
+        page.route("**/api/desktops", lambda route: route.fulfill(json=desktops))
+        # Control only the job transport, keeping its connection open until
+        # completion. The real LiveProvider owns/replays the received state.
+        page.add_init_script("""(() => {
+            const NativeEventSource = window.EventSource;
+            window.testJobs = [];
+            window.EventSource = class extends NativeEventSource {
+                constructor(url) {
+                    if (!url.includes('/api/jobs/')) return new NativeEventSource(url);
+                    return window.testJobs[window.testJobs.push({close() {}}) - 1];
+                }
+            };
+        })();""")
+        page.reload()
+        page.wait_for_function("window.testJobs.length === 1")
+
+        def update(status, message, progress):
+            page.evaluate("j => window.testJobs[0].onmessage({data: JSON.stringify(j)})",
+                          {"status": status, "message": message, "progress": progress, "desktop": "alice"})
+
+        update("running", "Pulling image, 120 of 820 MB", 0.146)
+        panel = page.get_by_role("region", name="Desktop operation", exact=True)
+        expect(panel).to_be_visible()
+        expect(panel).to_contain_text("120 of 820 MB")
+        expect(panel).to_contain_text("15%")
+        assert panel.bounding_box()["y"] < page.get_by_role("radiogroup").first.bounding_box()["y"]
+        assert panel.bounding_box()["y"] + panel.bounding_box()["height"] <= 900
+        expect(page.get_by_role("radio").first).to_be_disabled()
+        page.get_by_role("tab", name="Overview", exact=True).click()
+        page.get_by_role("tab", name="Settings", exact=True).click()
+        expect(panel).to_contain_text("120 of 820 MB")
+        expect(page.get_by_role("button", name="Saving…")).to_be_disabled()
+        update("running", "Preparing image", None)
+        expect(panel).to_contain_text("Preparing image")
+        expect(panel).not_to_contain_text("%")
+        update("done", "Done", None)
+        expect(panel).to_have_count(0)
+        expect(page.get_by_role("radio").first).to_be_enabled()
+        browser.close()
+
+
+def test_settings_save_brings_pending_progress_into_view(mock_ui):
+    with sync_playwright() as p:
+        browser, page = mock_page(p, mock_ui, "/desktops/alice?tab=settings")
+        page.set_viewport_size({"width": 390, "height": 900})
+        pending = []
+        page.route("**/api/desktops/alice", lambda route: pending.append(route)
+                   if route.request.method == "PATCH" else route.continue_())
+        page.get_by_role("radio", name="Debian KDE Plasma", exact=False).check()
+        page.locator('form button[type="submit"]').click()
+        panel = page.get_by_role("region", name="Desktop operation", exact=True)
+        expect(panel).to_contain_text("Starting")
+        expect(panel).to_be_in_viewport()
+        assert len(pending) == 1
+        pending[0].abort()
+        browser.close()
 
 
 def test_desktop_list_recovers_after_failed_first_load(mock_ui):
@@ -156,16 +140,27 @@ def test_desktop_list_recovers_after_failed_first_load(mock_ui):
 def test_loopback_ui_survives_browser_network_loss(mock_ui):
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        page = browser.new_context(offline=True).new_page()
+        context = browser.new_context()
+        page = context.new_page()
         logins = []
         page.on("request", lambda request: logins.append(request) if
                 request.method == "POST" and request.url.endswith("/api/login") else None)
         page.goto(mock_ui + "/login")
-        page.fill("#u", "zef")
-        page.fill("#p", "x")
-        page.get_by_role("button", name="Sign in").click()
-        expect(page.get_by_text("alice", exact=True).first).to_be_visible(timeout=10000)
+        # Documents must stay native to preserve the WebSocket network address
+        # space. Exercise the application's API client while offline, then
+        # restore the network for the full document load after authentication.
+        context.set_offline(True)
+        bootstrapped = page.evaluate("""async () => {
+            const {api} = await import('/src/api.ts');
+            await api.login('zef', 'x');
+            return {me: await api.me(), desktops: await api.desktops()};
+        }""")
+        assert bootstrapped["me"]["username"] == "zef"
+        assert any(desktop["name"] == "alice" for desktop in bootstrapped["desktops"])
         assert len(logins) == 1
+        context.set_offline(False)
+        page.goto(mock_ui + "/")
+        expect(page.get_by_text("alice", exact=True).first).to_be_visible(timeout=10000)
         browser.close()
 
 
@@ -176,8 +171,15 @@ def test_desktop_list_ignores_failures_from_replaced_refreshes(mock_ui):
         # Drive reconnection without letting the fake API's event stream
         # create extra refreshes while requests are deliberately held open.
         page.add_init_script("""window.testStreams = [];
-            window.EventSource = class extends EventTarget {
-                constructor() { super(); window.testStreams.push(this); }
+            const NativeWebSocket = window.WebSocket;
+            window.WebSocket = class extends EventTarget {
+                constructor(url, protocols) {
+                    super();
+                    if (new URL(url, location.href).pathname !== '/api/events') {
+                        return new NativeWebSocket(url, protocols);
+                    }
+                    window.testStreams.push(this);
+                }
                 close() {}
             };""")
         attempts, pending = [], []
@@ -214,45 +216,6 @@ def test_desktop_list_ignores_failures_from_replaced_refreshes(mock_ui):
         pending[1].abort("failed")
         page.wait_for_timeout(1500)
         assert len(attempts) == 3
-        browser.close()
-
-
-def test_image_from_desktop_dialog(mock_ui):
-    with sync_playwright() as p:
-        browser, page = mock_page(p, mock_ui, "/desktops/alice")
-        page.get_by_role("button", name="More actions").click()
-        page.get_by_role("menuitem", name="New image from this desktop…").click()
-        dialog = page.get_by_role("dialog")
-        expect(dialog.get_by_text("New image from alice")).to_be_visible()
-        settings = dialog.get_by_role("checkbox", name="App settings")
-        expect(settings).to_be_checked(timeout=10000)
-        # Ticked, with its secret carved out: partly ticked.
-        assert settings.evaluate("e => e.indeterminate")
-        assert not dialog.get_by_role("checkbox", name="Installed tools").evaluate("e => e.indeterminate")
-        secret = dialog.get_by_role("checkbox", name="~/.config/gh/hosts.yml")
-        expect(secret).not_to_be_checked()
-        expect(dialog.get_by_role("checkbox", name="Other files")).not_to_be_checked()
-        expect(dialog.get_by_text("org.gnome.Builder", exact=False)).to_be_visible()
-        # Running: offers to stop it first.
-        expect(dialog.get_by_role("button", name="Stop it first")).to_be_visible()
-
-        # Over 5 GB: a warning (no limit).
-        expect(dialog.get_by_text("more than 5 GB", exact=False)).to_have_count(0)
-        dialog.get_by_role("checkbox", name="Other files").check()
-        expect(dialog.get_by_text("more than 5 GB", exact=False)).to_be_visible()
-        dialog.get_by_role("checkbox", name="Other files").uncheck()
-
-        # Ticking a secret marks the image.
-        expect(dialog.get_by_text("This image will contain secrets")).to_have_count(0)
-        dialog.get_by_role("checkbox", name="~/.codex/auth.json").check()
-        expect(dialog.get_by_text("This image will contain secrets")).to_be_visible()
-
-        with page.expect_request(lambda r: r.method == "POST" and r.url.endswith("/api/desktops/alice/image")) as sent:
-            dialog.get_by_role("button", name="Build", exact=True).click()
-        body = json.loads(sent.value.post_data)
-        assert body == {"name": "alice image", "slug": "alice-image", "groups": ["tools", "flatpak", "settings", "dotfiles", "browser"],
-                        "include": [".codex/auth.json"]}, body
-        expect(page.get_by_role("dialog").get_by_text("Building alice image")).to_be_visible()
         browser.close()
 
 
@@ -365,21 +328,4 @@ def test_image_change_onto_secret_image_asks_first(mock_ui):
             page.get_by_role("dialog").get_by_role("button", name="Move alice").click()
         body = json.loads(sent.value.post_data)
         assert body["confirmSecrets"] is True and body["image"] == "deskyard-custom/work-signed-in:latest", body
-        browser.close()
-
-
-def test_image_from_desktop_saves_a_recipe_on_top(mock_ui):
-    with sync_playwright() as p:
-        browser, page = mock_page(p, mock_ui, "/desktops/research")
-        page.get_by_role("button", name="More actions").click()
-        page.get_by_role("menuitem", name="New image from this desktop…").click()
-        dialog = page.get_by_role("dialog")
-        expect(dialog.get_by_role("checkbox", name="App settings")).to_be_checked(timeout=10000)
-        dialog.get_by_role("checkbox", name="Also save a recipe on the new image").check()
-        expect(dialog.get_by_text("deskyard-custom/research-image-tools:latest")).to_be_visible()
-        with page.expect_request(lambda r: r.method == "POST" and r.url.endswith("/api/desktops/research/image")) as sent:
-            dialog.get_by_role("button", name="Build", exact=True).click()
-        assert json.loads(sent.value.post_data)["recipe"] == {"slug": "research-image-tools", "name": "research image tools"}
-        page.goto(mock_ui + "/images")
-        expect(page.get_by_role("row").filter(has_text="research image tools").get_by_role("button", name="Edit and build")).to_be_visible()
         browser.close()

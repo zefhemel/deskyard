@@ -17,6 +17,9 @@ if [ -z "${WORKSPACE_PROXY_TOKEN:-}" ]; then
     exit 1
 fi
 
+# Configure the opt-in socket group before any services become user.
+/usr/local/bin/workspace-docker-access
+
 # --- home folder owned by the user (a new host folder may be root's) -------
 if [ "$(stat -c %u /workspace)" != 1000 ] || [ "$(stat -c %g /workspace)" != 1000 ]; then
     log "fixing ownership of /workspace"

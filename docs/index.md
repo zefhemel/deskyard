@@ -9,6 +9,9 @@ It holds use cases, the architecture, and specs and plans written with the super
 - [[superpowers/spikes/2026-10-23-shared-folders|Dynamic shared folders on Mac and Linux investigation]]: filesystem permission limits, live mount feasibility, platform evidence and the recommended implementation approach.
 
 - [[Testing/Shared terminal 2026-10-23|Shared terminal testing — 23 October 2026]]: the implemented create/join flow, desktop and native mobile evidence, and verification limits.
+- [[Testing/Docker access 2026-10-24|Docker desktop access testing — 24 October 2026]]: explicit socket permission, standalone client-tools image, ordinary-user build/run and revocation evidence.
+- [[Testing/RetroArch fresh desktop 2026-10-24|RetroArch fresh desktop testing — 24 October 2026]]: clean-image installation, the ARM64 Core Downloader configuration workaround, GUI Snes9x installation and gameplay evidence.
+- [[Testing/RetroArch Dockerfile example 2026-10-24|RetroArch Dockerfile example testing — 24 October 2026]]: standalone image build, pinned core sources and offline empty-volume acceptance, tracked separately from the interactive installation trial.
 - [[superpowers/spikes/2026-10-23-terminal-access|Shared terminal access prototype]]: historical experimental evidence, superseded by the implemented shared terminal.
 
 Agents working here: read [[AGENTS]] first.

@@ -23,7 +23,6 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/recipes"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 )
@@ -52,13 +51,9 @@ type Server struct {
 	thumbs      *thumbnails
 	tokens      *tokenStore
 	images      *catalog
-	recipes     *recipes.Store
-	builds      builds
 
 	memoryReclaim engine.MemoryReclaimSupport
 	memoryPolicy  *memoryPolicy
-	// smokeTest starts a throwaway desktop of a freshly built image.
-	smokeTest func(ctx context.Context, imageID string) error
 
 	activity       *activity.Tracker
 	activityPub    *throttle
@@ -96,10 +91,6 @@ func New(o Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Build contexts a crash left behind hold copies of home folders.
-	if err := os.RemoveAll(filepath.Join(o.StateDir, buildsDir)); err != nil {
-		o.Log.Warn("removing old build contexts", "err", err)
-	}
 	s := &Server{
 		vpnTests: manager,
 		Log:      o.Log, Eng: o.Eng, Desktops: o.Desktops, Accounts: o.Accounts,
@@ -127,8 +118,6 @@ func New(o Options) (*Server, error) {
 			s.Log.Warn("recording local image", "ref", ref, "err", err)
 		}
 	}
-	s.recipes = recipes.NewStore(filepath.Join(o.StateDir, "recipes.json"))
-	s.smokeTest = s.smokeTestDesktop
 	o.Accounts.OnChange = s.accountsChanged
 	if s.memoryPolicy, err = loadMemoryPolicy(filepath.Join(o.StateDir, "memory-policy.json")); err != nil {
 		return nil, err

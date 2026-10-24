@@ -112,6 +112,9 @@ func (s *Service) recreateDirect(ctx context.Context, name string, set Settings,
 	if err := s.checkHostMountSources(ctx, set.Mounts); err != nil {
 		return Desktop{}, err
 	}
+	if err := s.checkDockerAccess(ctx, set.DockerAccess); err != nil {
+		return Desktop{}, err
+	}
 	img, err := s.EnsureImage(ctx, set.Image, progress)
 	if err != nil {
 		return Desktop{}, err

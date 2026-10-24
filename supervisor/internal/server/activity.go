@@ -141,10 +141,11 @@ func (s *Server) handleScreenEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	events, stop := s.activity.WatchScreen(c.Name)
 	defer stop()
-	sse := startSSE(w)
+	ctx, sse, closeStream := s.startUIEvents(w, r.WithContext(ctx))
 	if sse == nil {
 		return
 	}
+	defer closeStream()
 	keepAlive := time.NewTicker(25 * time.Second)
 	defer keepAlive.Stop()
 	for {

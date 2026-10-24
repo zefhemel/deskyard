@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ScreenEvent } from "../api.ts";
 import { agentLabel } from "../lib/activity-format.ts";
+import { watchUIEvents } from "../lib/event-feed.ts";
 import { keyCap } from "./keycap.ts";
 import { type ScreenGeometry, type ScreenGeometrySource, toViewport } from "./screen-geometry.ts";
 
@@ -119,7 +120,7 @@ export function ActivityOverlay({ name, geometry }: { name: string; geometry: Sc
       }
     };
 
-    const es = new EventSource(`/api/desktops/${encodeURIComponent(name)}/screen-events`);
+    const es = watchUIEvents(`/api/desktops/${encodeURIComponent(name)}/screen-events`);
     es.addEventListener("screen", (m) => {
       try {
         draw(JSON.parse((m as MessageEvent<string>).data) as ScreenEvent);

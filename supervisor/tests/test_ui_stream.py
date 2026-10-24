@@ -1,8 +1,10 @@
 """The desktop page's picture: quality, a second viewer beside the first, a
 tab in the background, and Selkies' own saved settings."""
 
+import json
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from playwright.sync_api import expect, sync_playwright
@@ -111,12 +113,16 @@ def test_second_viewer(cli, remote, supervisor, name):
         b.mouse.move(*to_page(pic, 600, 400))
         assert wait_until(lambda: all(abs(v - w) <= 4 for v, w in zip(mouse_location(name), (600, 400))), 5), mouse_location(name)
         # So do the agents' marks.
-        remote("-d", name, "click", "300", "200")
-        mark = b.locator('[data-mark="click"]')
-        expect(mark).to_be_visible(timeout=5000)
-        box = mark.bounding_box()
-        want = to_page(b.evaluate(PICTURE), 300, 200)
-        assert abs(box["x"] + box["width"] / 2 - want[0]) <= 3 and abs(box["y"] + box["height"] / 2 - want[1]) <= 3, (box, want)
+        # Marks last 1.8 seconds from exec start. Observe while the CLI runs:
+        # waiting for its completion first can miss an already expired mark.
+        with ThreadPoolExecutor(max_workers=1) as commands:
+            clicked = commands.submit(remote, "-d", name, "click", "300", "200")
+            mark = b.locator('[data-mark="click"]')
+            expect(mark).to_be_visible(timeout=5000)
+            box = mark.bounding_box()
+            want = to_page(b.evaluate(PICTURE), 300, 200)
+            assert abs(box["x"] + box["width"] / 2 - want[0]) <= 3 and abs(box["y"] + box["height"] / 2 - want[1]) <= 3, (box, want)
+            clicked.result()
 
         # The first viewer leaves: the second owns the screen now, and its
         # browser's Lock size (640x480) applies; unlocked, the screen follows its window.
@@ -132,6 +138,48 @@ def test_second_viewer(cli, remote, supervisor, name):
         follows = lambda: all(abs(v - w) <= 8 for v, w in zip(screen_size(name), frame))  # noqa: E731
         assert wait_until(follows), (screen_size(name), frame)
         browser.close()
+
+
+def test_four_viewers_do_not_exhaust_http_connections(supervisor, remote, name):
+    # All tabs share Chromium's HTTP/1 connection pool. Two permanent SSE
+    # feeds per viewer previously blocked the third iframe and normal fetches.
+    with sync_playwright() as p:
+        browser, first = signed_in(p, supervisor.base)
+        pages = [first]
+        snapshots = {}
+        try:
+            for index in range(4):
+                page = first if index == 0 else first.context.new_page()
+                if index:
+                    pages.append(page)
+                snapshots[page] = []
+
+                def watch(socket, page=page):
+                    if socket.url.endswith("/api/events"):
+                        socket.on("framereceived", lambda payload: snapshots[page].append(json.loads(payload)))
+
+                page.on("websocket", watch)
+                open_desktop(page, supervisor.base, name)
+            for page in pages:
+                expect(page.get_by_text("Connected", exact=True)).to_be_visible(timeout=30000)
+                page.wait_for_function(SHOWING, timeout=30000)
+            # A picture alone can hide failed event-feed handshakes. Require
+            # desktop snapshots and a real screen event in every viewer too.
+            with ThreadPoolExecutor(max_workers=1) as commands:
+                clicked = commands.submit(remote, "-d", name, "click", "300", "200")
+                for page in pages:
+                    expect(page.locator('[data-mark="click"]')).to_be_visible(timeout=5000)
+                    assert any(event["type"] == "desktop" for event in snapshots[page])
+                clicked.result()
+            # Use browser fetch, which competes with EventSource for sockets;
+            # Playwright's request client has an independent pool and hides this bug.
+            status = pages[-1].evaluate("""async () => {
+                const r = await fetch('/api/me', {signal: AbortSignal.timeout(5000)});
+                return r.status;
+            }""")
+            assert status == 200
+        finally:
+            browser.close()
 
 
 # Counts the frames Selkies' picture shows, from the start (an init script:

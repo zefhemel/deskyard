@@ -5,7 +5,6 @@ package integration
 
 import (
 	"context"
-	"errors"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"io"
 	"time"
@@ -195,17 +194,4 @@ func (e *ScopedEngine) CopyToContainer(ctx context.Context, id, dir string, r io
 		return err
 	}
 	return e.Engine.CopyToContainer(ctx, c.ID, dir, r)
-}
-
-// Image mutation is outside this fixture's ownership domain. Pull and the
-// production temporary image extraction remain available; existing tags cannot
-// be replaced or deleted through the verification UI.
-func (e *ScopedEngine) Build(context.Context, engine.BuildSpec, func(string)) (string, error) {
-	return "", errors.New("fixture does not build shared images")
-}
-func (e *ScopedEngine) RemoveImage(context.Context, string) error {
-	return errors.New("fixture does not remove shared images")
-}
-func (e *ScopedEngine) Tag(context.Context, string, string) error {
-	return errors.New("fixture does not retag shared images")
 }

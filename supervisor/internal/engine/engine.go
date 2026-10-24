@@ -120,14 +120,6 @@ type Image struct {
 	Arch   string // e.g. amd64, arm64
 }
 
-// BuildSpec describes an image build from a tar build context.
-type BuildSpec struct {
-	Context    io.Reader // tar archive
-	Dockerfile string    // path of the Dockerfile inside Context
-	Labels     map[string]string
-	NoCache    bool
-}
-
 type PullProgress struct {
 	Status         string
 	Current, Total int64
@@ -170,15 +162,7 @@ type Engine interface {
 	// CopyToContainer extracts a tar archive into dir inside a container
 	// (created or running).
 	CopyToContainer(ctx context.Context, id, dir string, archive io.Reader) error
-	// Build builds an image, passing each line of build output to log.
-	// Cancelling ctx stops the build.
-	Build(ctx context.Context, spec BuildSpec, log func(line string)) (imageID string, err error)
-	// RemoveImage returns ErrNotFound if ref doesn't exist, and an error
-	// mentioning "in use" if a container uses it.
-	RemoveImage(ctx context.Context, ref string) error
-	Tag(ctx context.Context, imageID, ref string) error
-	// ImageTags lists the tags of a repository ("name:tag" → image ID).
-	ImageTags(ctx context.Context, repo string) (map[string]string, error)
+
 	Events(ctx context.Context) (<-chan Event, error)
 	Info(ctx context.Context) (HostInfo, error)
 }

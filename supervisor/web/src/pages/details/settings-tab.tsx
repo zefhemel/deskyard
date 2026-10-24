@@ -1,8 +1,8 @@
 import { VPNFields, VPNStatus } from "../../components/vpn.tsx";
 import { desktopSettingsChanged, saveDesktopSettings, exceptionRows, type ExceptionRow } from "../../lib/vpn-form.ts";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { api, type Desktop, type Host } from "../../api.ts";
-import { cpuOptions, ImagePick, memoryOptions } from "../../components/desktop-fields.tsx";
+import { DockerAccessField, cpuOptions, ImagePick, memoryOptions } from "../../components/desktop-fields.tsx";
 import { JobProgress, useJob } from "../../components/job.tsx";
 import { notify } from "../../components/toast.tsx";
 import { SecretImageNote } from "../../components/secret-access.tsx";
@@ -23,13 +23,25 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
   const [memory, setMemory] = useState(c.settings.memoryBytes);
   const [cpus, setCpus] = useState(c.settings.nanoCpus);
   const [camera, setCamera] = useState(c.settings.camera);
+  const [dockerAccess, setDockerAccess] = useState(c.settings.dockerAccess ?? false);
   const savedMounts = c.settings.mounts ?? [];
   const [mounts, setMounts] = useState(savedMounts);
-  const { host } = useLive();
-  const run = useJob(() => notify(`${c.name}'s settings are saved`));
+  const { host, jobs, refresh } = useLive();
+  const run = useJob(() => {
+    refresh();
+    notify(`${c.name}'s settings are saved`);
+  });
+  // Live state survives this tab unmounting and follows jobs after a reload.
+  // Keep the local Starting state while the save request is still pending.
+  const job = run.running ? run.job : jobs[c.name] ?? null;
+  const saving = job?.status === "running";
+  const progressPanel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (saving) progressPanel.current?.scrollIntoView({ block: "nearest" });
+  }, [saving]);
 
   const [confirming, setConfirming] = useState(false);
-  const draft = { image, memoryBytes: memory, nanoCpus: cpus, camera, vpnConnectionId: vpnID, lan, mounts };
+  const draft = { image, dockerAccess, memoryBytes: memory, nanoCpus: cpus, camera, vpnConnectionId: vpnID, lan, mounts };
   const changed = desktopSettingsChanged(c, draft);
   // Moving a desktop others use onto an image with secrets: ask first, as giving access does.
   const picked = (images.data ?? []).find((i) => i.ref === image);
@@ -50,7 +62,7 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
   const catalog = images.data ?? [];
   const list = catalog.some((i) => i.ref === c.image)
     ? catalog
-    : [{ ref: c.image, title: c.imageTitle, version: c.imageVersion, description: "Not in the catalog any more.", installed: true, official: false, desktops: [], behind: [], checked: null, custom: false, secrets: false, baseUpdated: false, recipe: null }, ...catalog];
+    : [{ ref: c.image, title: c.imageTitle, version: c.imageVersion, description: "Not in the catalog any more.", installed: true, official: false, desktops: [], behind: [], checked: null, secrets: false }, ...catalog];
 
   return (
     <>
@@ -62,7 +74,13 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
           else save();
         }}
       >
-        <fieldset disabled={run.running} class="m-0 min-w-0 border-0 p-0">
+        {saving && (
+          <section ref={progressPanel} aria-label="Desktop operation" aria-live="polite">
+            <h2 class="mb-2 text-sm font-semibold">Desktop operation</h2>
+            <JobProgress job={job} />
+          </section>
+        )}
+        <fieldset disabled={saving} class="m-0 min-w-0 border-0 p-0">
           <Field label="Image">{images.data ? <ImagePick images={list} value={image} onChange={setImage} /> : <ErrorText error={images.error} />}</Field>
           <Field label="Memory">
             <Seg label="Memory" options={memoryOptions(memory)} value={memory} onChange={setMemory} />
@@ -81,6 +99,7 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
           <Field label="Camera">
             <CameraPick desktop={c} host={host} value={camera} onChange={setCamera} />
           </Field>
+          <DockerAccessField value={dockerAccess} onChange={setDockerAccess} />
           <HostMountFields mounts={mounts} onChange={setMounts} />
         </fieldset>
         {changed && (
@@ -89,13 +108,12 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
             {image !== c.image && UPGRADE_NOTE}
           </Note>
         )}
-        <JobProgress job={run.job} />
         <ErrorText error={vpnError || run.error} />
         <div class="flex gap-2.5">
-          <Button type="submit" variant="primary" disabled={!changed || run.running}>
-            {run.running ? "Saving…" : c.state === "running" ? "Save and restart" : "Save"}
+          <Button type="submit" variant="primary" disabled={!changed || saving}>
+            {saving ? "Saving…" : c.state === "running" ? "Save and restart" : "Save"}
           </Button>
-          {changed && !run.running && (
+          {changed && !saving && (
             <Button
               variant="quiet"
               onClick={() => {
@@ -103,6 +121,7 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
                 setMemory(c.settings.memoryBytes);
                 setCpus(c.settings.nanoCpus);
                 setCamera(c.settings.camera);
+                setDockerAccess(c.settings.dockerAccess ?? false);
                 setVPNID(c.settings.vpnConnectionId ?? "");
                 setLAN(exceptionRows(c.settings.lanExceptions ?? []));
                 setVPNError(null);
