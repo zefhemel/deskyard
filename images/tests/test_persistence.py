@@ -52,6 +52,16 @@ def test_preinstalled_runtimes(sandbox):
     # (Where node comes from: test_custom_base.test_base_node_resolves_to_runtimes_not_mise.)
 
 
+@pytest.mark.parametrize("login", [True, False])
+def test_uv_installers_can_select_python(sandbox, login):
+    """Image defaults must not conflict with an installer's explicit Python flags."""
+    sandbox.exec("uv python list --only-installed --managed-python", login=login)
+    system = sandbox.exec("uv python find --no-managed-python", login=login).stdout.strip()
+    assert system.startswith("/opt/runtimes/python/"), system
+    # Installers such as Hermes deliberately ignore ambient uv configuration.
+    sandbox.exec("env UV_NO_CONFIG=1 uv python list --only-installed --managed-python", login=login)
+
+
 @pytest.mark.network
 def test_uv_tools_do_not_depend_on_image_python(sandbox):
     """uv tools must run on a Python in /workspace, not the image's (which changes on upgrade)."""

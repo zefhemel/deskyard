@@ -8,4 +8,8 @@ uses:
   - "[[Architecture/Workspace folder]]"
 spec: "[[superpowers/specs/2026-10-21-workspace-sandbox-design|Workspace Sandbox design]]"
 ---
-What an AI agent inside the desktop works with: mise, uv and npm installing into the home folder, Flatpak apps (`--user`), and the skills in `rootfs/opt/workspace/skills/` that explain the desktop, the browser and computer use to agents.
+What an AI agent inside the desktop works with: mise, uv and npm installing into the home folder, Flatpak apps (`--user`), and the skills in `images/common/rootfs/opt/workspace/skills/` that explain the desktop, the browser and computer use to agents.
+
+uv's default `python-preference = "only-managed"` comes from `images/common/rootfs/etc/uv/uv.toml`, installed as `/etc/uv/uv.toml` in every desktop variant. Normal `uv tool install` commands use a Python stored in `/workspace`, keeping tools independent of the image's Python on upgrade. User configuration, explicit command options and installers that disable uv config can override this default. It is not enforced through an inherited environment variable: the former `UV_PYTHON_PREFERENCE` setting conflicted with explicit `--managed-python` flags. `images/tests/test_persistence.py` covers installer flags, default tool interpreter ownership and tool survival across container recreation.
+
+Hermes Agent can be installed separately into `/workspace` as the ordinary user. The [[superpowers/spikes/2026-10-24-hermes|Hermes Agent desktop trial]] verifies CLI/dashboard startup, restart persistence and discovery of these skills through Hermes' `skills.external_dirs` setting. The image does not bundle Hermes or configure its skills automatically; provider authentication and a real model conversation remain unverified. The trial preserves the installer workaround needed on older images with the `UV_PYTHON_PREFERENCE` environment variable.

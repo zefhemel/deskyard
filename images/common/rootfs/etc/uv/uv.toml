@@ -1,0 +1,3 @@
+# Keep installed tools independent of the image's Python across upgrades.
+# A config default lets installers override Python selection or ignore config.
+python-preference = "only-managed"

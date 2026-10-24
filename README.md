@@ -271,6 +271,12 @@ preinstalled with the image (outside `/workspace`, so they update with it);
 `mise use` wins over them. There's no `sudo`, and anything installed with
 `apt` or changed outside `/workspace` is lost when the image is updated.
 
+uv defaults to its own Python installations in `/workspace` so installed
+tools do not depend on the image's Python. This default comes from
+`/etc/uv/uv.toml`; explicit uv flags and user configuration can override it.
+Choosing the image's Python explicitly makes that environment dependent on
+the image version.
+
 ### Desktop state across restarts
 
 When a desktop stops (stop, restart, upgrades), its native session manager
@@ -489,6 +495,29 @@ terminal and run it there:
 curl -fsSL https://claude.ai/install.sh | bash          # Claude Code
 npm i -g @openai/codex                                   # Codex
 ```
+
+Hermes Agent also runs inside a desktop:
+
+```bash
+curl -fsSL https://hermes-agent.nousresearch.com/install.sh -o /tmp/hermes-install.sh
+bash /tmp/hermes-install.sh --non-interactive --skip-browser --skip-computer-use
+hermes config set skills.external_dirs '["/opt/workspace/skills"]'
+LANG=C.UTF-8 hermes model   # choose a provider and sign in
+LANG=C.UTF-8 hermes
+```
+
+This installs Hermes into `/workspace`, uses its local terminal backend,
+and makes the desktop's three skills available to it. The optional Hermes
+browser and computer-use downloads are skipped; the desktop's shared
+browser and `deskyard` command remain available through those skills.
+See the [Hermes trial](docs/superpowers/spikes/2026-10-24-hermes.md) for
+verified versions, startup checks and limitations. A model conversation
+still needs provider credentials.
+
+Older desktop images export `UV_PYTHON_PREFERENCE`, which conflicts with
+the installer's explicit Python flags. On those images, prefix the
+`bash /tmp/hermes-install.sh ...` command with
+`env -u UV_PYTHON_PREFERENCE`, or upgrade the desktop image.
 
 The image links its skills into `~/.claude/skills`, `~/.codex/skills`,
 `~/.agents/skills` and `~/.gemini/skills` on every start:
