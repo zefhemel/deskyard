@@ -1,0 +1,23 @@
+[
+  {
+    "case": "normal",
+    "readySeconds": 4.12,
+    "root": "Screen 0: minimum 1 x 1, current 1472 x 728, maximum 3840 x 2160",
+    "browserMouseKeyboard": "passed",
+    "restart": "not requested"
+  },
+  {
+    "case": "normal-repeat",
+    "readySeconds": 2.55,
+    "root": "Screen 0: minimum 1 x 1, current 1472 x 728, maximum 3840 x 2160",
+    "browserMouseKeyboard": "passed",
+    "restart": "passed"
+  },
+  {
+    "case": "delayed",
+    "readySeconds": 18.08,
+    "root": "Screen 0: minimum 1 x 1, current 1472 x 728, maximum 3840 x 2160",
+    "browserMouseKeyboard": "passed",
+    "restart": "not requested"
+  }
+]

@@ -1,28 +1,63 @@
 #!/bin/bash
-# The X server for the shared display :1: Xvfb with a 3840x2160 framebuffer,
-# so RandR can resize the screen up to that (Selkies follows the viewer's
-# window). Starts at WORKSPACE_RESOLUTION, and says when it's there, so the session
-# and Selkies start at that size. -noreset: without it, the server resets
-# whenever its last client leaves, dropping the modes made here.
-set -e
+# Initialize the shared X display before the session or streamer can use it.
+# -noreset preserves the RandR modes when the last client disconnects.
+set -euo pipefail
+export DISPLAY=:1
 ready=$XDG_RUNTIME_DIR/xvfb-ready
 rm -f "$ready"
+xvfb=
+cleanup() {
+    rm -f "$ready"
+    if [ -n "$xvfb" ]; then
+        kill "$xvfb" 2>/dev/null || true
+        # Never leave a stuck X server holding :1 when supervisord retries.
+        for _ in $(seq 20); do
+            kill -0 "$xvfb" 2>/dev/null || break
+            sleep 0.1
+        done
+        kill -KILL "$xvfb" 2>/dev/null || true
+        wait "$xvfb" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+fail() { echo "$0: X initialization failed: $*" >&2; exit 1; }
+
+res=${WORKSPACE_RESOLUTION:-1280x800}
+[[ "$res" =~ ^[1-9][0-9]*x[1-9][0-9]*$ ]] || fail "invalid resolution $res"
+w=${res%x*} h=${res#*x}
 Xvfb :1 -screen 0 3840x2160x24 -dpi 96 -nolisten tcp -noreset -ac -shmem \
     +extension COMPOSITE +extension DAMAGE +extension RANDR +extension RENDER \
     +extension MIT-SHM +extension XFIXES +extension XTEST &
 xvfb=$!
-trap 'kill $xvfb' TERM INT
+# A single X client can hang even while other clients remain responsive.
+# Bound each handshake and the complete retry period, then let supervisord
+# restart this owned server rather than applying an old mode much later.
+connected=false
+deadline=$((SECONDS + 10))
 for _ in $(seq 100); do
-    xdpyinfo -display :1 >/dev/null 2>&1 && break
+    kill -0 "$xvfb" 2>/dev/null || fail "Xvfb exited before handshake"
+    if timeout --kill-after=1s 1s xdpyinfo -display :1 >/dev/null 2>&1; then
+        connected=true
+        break
+    fi
+    [ "$SECONDS" -lt "$deadline" ] || break
     sleep 0.1
 done
-res=${WORKSPACE_RESOLUTION:-1280x800}
-w=${res%x*} h=${res#*x}
-# cvt quotes the mode's name; xrandr would keep the quotes as part of it.
-mode=$(cvt "$w" "$h" | sed -n 's/^Modeline //p' | tr -d '"')
+$connected || fail "display handshake did not complete within 10 seconds"
+
+# cvt quotes the mode's name; strip those quotes before passing to xrandr.
+mode=$(timeout --kill-after=1s 2s cvt "$w" "$h" | sed -n 's/^Modeline //p' | tr -d '"') \
+    || fail "generating mode $res"
+[ -n "$mode" ] || fail "cvt returned no mode for $res"
 name=${mode%% *}
-xrandr --newmode $mode 2>/dev/null || true
-xrandr --addmode screen "$name" 2>/dev/null || true
-xrandr --output screen --mode "$name" || true
+timeout --kill-after=1s 5s xrandr --newmode $mode || fail "creating mode $name"
+timeout --kill-after=1s 5s xrandr --addmode screen "$name" || fail "adding mode $name"
+timeout --kill-after=1s 5s xrandr --output screen --mode "$name" || fail "selecting mode $name"
+current=$(timeout --kill-after=1s 2s xrandr --current) || fail "verifying mode $name"
+[[ "$current" =~ current[[:space:]]${w}[[:space:]]x[[:space:]]${h}, ]] \
+    || fail "requested $res was not applied"
 touch "$ready"
-wait $xvfb
+echo "$0: display ready at $res" >&2
+wait "$xvfb"

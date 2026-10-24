@@ -6,12 +6,22 @@
 # endpoint, so Selkies' file transfers are off.
 set -euo pipefail
 
-# The X server, at its starting size (start-xvfb).
+# Wait for the initial X mode and the native desktop before accepting viewers.
+# A responsive X socket alone can still be an empty black root window.
+desktop_ready() {
+    [ -e "$XDG_RUNTIME_DIR/xvfb-ready" ] &&
+        timeout --kill-after=1s 1s desktop-ready >/dev/null 2>&1
+}
+deadline=$((SECONDS + 10))
 for _ in $(seq 100); do
-    [ -e "$XDG_RUNTIME_DIR/xvfb-ready" ] && break
+    desktop_ready && break
+    [ "$SECONDS" -lt "$deadline" ] || break
     sleep 0.1
 done
-[ -e "$XDG_RUNTIME_DIR/xvfb-ready" ] || echo "$0: no X server after 10 s; starting anyway" >&2
+if ! desktop_ready; then
+    echo "$0: X display or native desktop is unfinished; waiting for supervisor retry" >&2
+    exit 1
+fi
 
 # The webcam needs a v4l2loopback device the user can write to; without one
 # it stays off (and Selkies' page offers none).

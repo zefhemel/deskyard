@@ -6,7 +6,6 @@ import math
 import re
 import struct
 import subprocess
-import time
 import uuid
 import wave
 
@@ -15,6 +14,12 @@ from playwright.sync_api import expect, sync_playwright
 
 from conftest import docker
 from helpers import FAKE_MEDIA, MEDIA, SCREEN, audio_switch, in_desktop, open_desktop, sign_in, signed_in, wait_until
+
+
+def settle_audio(page, seconds):
+    """Let browser capture and badge reports progress during a timed observation."""
+    # Playwright routes run on its sync dispatcher, which time.sleep blocks.
+    page.wait_for_timeout(seconds * 1000)
 
 
 def tone_file(path, freq, seconds=60, rate=48000):
@@ -83,7 +88,7 @@ def test_sound_toggle(supervisor, desktop, name):
         open_desktop(page, supervisor.base, name)
         sound = audio_switch(page, "Desktop sound")
         expect(sound).to_have_attribute("aria-checked", "false")
-        time.sleep(3)
+        settle_audio(page, 3)
         assert quiet(page) > 2.5  # nothing comes while it's off
 
         sound.click()
@@ -104,7 +109,7 @@ def test_sound_toggle(supervisor, desktop, name):
         # Off: the desktop stops sending this page its sound.
         sound.click()
         page.wait_for_function(f"!{MEDIA}.sound", timeout=10000)
-        time.sleep(4)
+        settle_audio(page, 4)
         assert quiet(page) > 2.5, quiet(page)
         browser.close()
     in_desktop(name, "pkill", "paplay", check=False)
@@ -159,14 +164,14 @@ def test_sound_per_viewer(supervisor, desktop, name):
 
         audio_switch(a, "Desktop sound").click()
         assert wait_until(lambda: quiet(a) < 1.5, 10), quiet(a)
-        time.sleep(3)
+        settle_audio(a, 3)
         assert quiet(b) > 2.5, quiet(b)
 
         audio_switch(b, "Desktop sound").click()
         assert wait_until(lambda: quiet(b) < 1.5, 10), quiet(b)
         audio_switch(a, "Desktop sound").click()
         a.wait_for_function(f"!{MEDIA}.sound", timeout=10000)
-        time.sleep(4)
+        settle_audio(a, 4)
         assert quiet(a) > 2.5, quiet(a)
         assert quiet(b) < 1.5, quiet(b)
         browser.close()
@@ -188,11 +193,11 @@ def test_joiner_keeps_owner_sound(supervisor, desktop, name):
         for _ in range(2):
             b = sign_in(browser, supervisor.base)
             open_desktop(b, supervisor.base, name)
-            time.sleep(4)
+            settle_audio(a, 4)
             assert quiet(a) < 1.5 and a.evaluate(f"{MEDIA}.sound"), quiet(a)
             assert quiet(b) > 2.5, quiet(b)
             b.context.close()
-            time.sleep(2)
+            settle_audio(a, 2)
         browser.close()
     in_desktop(name, "pkill", "paplay", check=False)
 
@@ -229,7 +234,7 @@ def test_mic_badge_and_reload(supervisor, admin, desktop, name, tmp_path):
         expect(mic_badge(wall, "admin")).to_have_count(0, timeout=10000)
         assert admin.desktop(name)["mics"] == []
         expect(audio_switch(page, "My mic")).to_have_attribute("aria-checked", "false")
-        time.sleep(2)
+        settle_audio(page, 2)
         assert page.evaluate(f"{MEDIA}.mic") is False
         assert admin.desktop(name)["mics"] == []
         browser.close()
@@ -252,7 +257,7 @@ def test_mic_quick_off_on_keeps_badge(supervisor, admin, desktop, name, tmp_path
             mic.click()
             page.wait_for_timeout(delay)
             mic.click()
-            time.sleep(4)
+            settle_audio(page, 4)
             outcomes.append((delay, page.evaluate(f"{MEDIA}.mic"), admin.desktop(name)["mics"], mic.get_attribute("aria-checked")))
         assert all(live and mics == ["admin"] and on == "true" for _, live, mics, on in outcomes), outcomes
         # And on and straight back off: off, with no badge.
@@ -261,7 +266,7 @@ def test_mic_quick_off_on_keeps_badge(supervisor, admin, desktop, name, tmp_path
         expect(mic_badge(page, "admin")).to_have_count(0, timeout=10000)
         mic.click()
         mic.click()
-        time.sleep(4)
+        settle_audio(page, 4)
         assert page.evaluate(f"{MEDIA}.mic") is False
         assert admin.desktop(name)["mics"] == []
         browser.close()
@@ -292,7 +297,7 @@ def test_mic_badge_on_a_slow_network(supervisor, admin, desktop, name, tmp_path)
         mic = audio_switch(page, "My mic")
         mic.click()
         page.wait_for_function(f"{MEDIA}.mic", timeout=15000)
-        time.sleep(1)
+        settle_audio(page, 1)
         page.evaluate("""() => { const f = window.fetch; window.fetch = async (u, o) => {
             if (/\\/(mic|cam)$/.test(String(u))) await new Promise((r) => setTimeout(r, 400)); return f(u, o); }; }""")
         page.evaluate(BADGE_WATCH, name)
@@ -302,7 +307,7 @@ def test_mic_badge_on_a_slow_network(supervisor, admin, desktop, name, tmp_path)
         mic.click()
         mic.click()
         mic.click()
-        time.sleep(3)
+        settle_audio(page, 3)
         violations, checks = page.evaluate("[window.__viol, window.__n]")
         assert checks > 30 and violations == [], (violations, checks)
         assert page.evaluate(f"{MEDIA}.mic") is True and admin.desktop(name)["mics"] == ["admin"]
@@ -366,7 +371,7 @@ def test_two_mics(supervisor, admin, desktop, name, tmp_path):
             # The first viewer leaves: the other's mic still reaches the desktop.
             ba.close()
             assert wait_until(lambda: admin.desktop(name)["viewers"] == [user])
-            time.sleep(2)
+            settle_audio(b, 2)
             assert admin.desktop(name)["mics"] == [user]
             assert b.evaluate(f"{MEDIA}.mic") is True
             if not wait_until(lambda: hears(name, 1300), 20, 1):

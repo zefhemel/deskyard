@@ -41,3 +41,5 @@ ${query[[
 - [[Testing/Code quality review 2026-10-24|Code quality review — 24 October 2026]]: structural findings, coverage, committed/local file inventory and KDE removal verification.
 
 - [[Testing/CI transport regressions 2026-10-24|CI transport regressions — 24 October 2026]]: failing Settings assertion, Chromium microphone report transport and focused event WebSocket coverage.
+
+- [[Testing/Desktop startup readiness 2026-10-24|Desktop startup readiness — 24 October 2026]]: delayed X initialization, withheld streaming, bounded setup and real cold-boot/restart/input verification.

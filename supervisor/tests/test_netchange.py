@@ -13,6 +13,7 @@ from unittest.mock import Mock
 from playwright.sync_api import Error, sync_playwright
 
 import netchange
+from test_ui_audio import settle_audio
 
 
 def loopback_route(path, method="POST"):
@@ -119,6 +120,18 @@ class CaptureRequestTests(unittest.TestCase):
                     self.assertEqual(result, {"status": 409, "body": {"error": "no stream"}})
                     self.assertEqual(received, [("/api/desktops/desktop-1/mic", "session=viewer", "application/json",
                                                  {"on": True, "tab": "viewer-tab", "seq": 7})])
+                    # A rapid capture toggle schedules its badge report after
+                    # the click returns. Python must dispatch its route while
+                    # the test waits for the browser's media state to settle.
+                    page.evaluate("""() => {
+                        setTimeout(() => fetch('/api/desktops/desktop-1/mic', {
+                            method: 'POST', headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({on: false, tab: 'viewer-tab', seq: 8})
+                        }), 50);
+                    }""")
+                    settle_audio(page, 0.25)
+                    self.assertEqual(len(received), 2, "settling blocked the pending badge report")
+                    self.assertEqual(received[1][3], {"on": False, "tab": "viewer-tab", "seq": 8})
                 finally:
                     browser.close()
         finally:
