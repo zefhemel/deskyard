@@ -20,7 +20,7 @@ export function AgentsTab({ desktop: c }: { desktop: Desktop }) {
     <>
       <div class="flex items-center gap-4 border-b border-line px-4 py-3.5 max-sm:flex-col max-sm:items-start">
         <p class="m-0 flex-1 text-sm text-muted">
-          Agents elsewhere use {c.name} through the <span class="mono">deskyard</span> command with one of these tokens: a shell, files,
+          Access {c.name} from your terminal through the <span class="mono">deskyard</span> command with one of these tokens: a shell, files,
           the browser and the desktop, as <span class="mono">user</span>. Nothing else.
         </p>
         <Button variant="primary" onClick={() => setCreating(true)}>
@@ -28,7 +28,7 @@ export function AgentsTab({ desktop: c }: { desktop: Desktop }) {
         </Button>
       </div>
       {tokens.error && <p class="m-0 px-4 py-3.5 text-sm text-danger">{tokens.error}</p>}
-      {tokens.data && tokens.data.length === 0 && <p class="m-0 px-4 py-3.5 text-sm text-muted">No agent tokens yet.</p>}
+      {tokens.data && tokens.data.length === 0 && <p class="m-0 px-4 py-3.5 text-sm text-muted">No access tokens yet.</p>}
       {tokens.data && tokens.data.length > 0 && (
         <div class="overflow-x-auto">
           <table class="w-full border-collapse text-sm">

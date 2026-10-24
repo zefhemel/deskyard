@@ -244,6 +244,106 @@ func TestImageFromDesktopThroughHelper(t *testing.T) {
 	}
 }
 
+// A file with several names comes once from the helper, at the first name
+// tar met, here one always left out (a package store in ~/.cache); the
+// names that are kept are files of their own in the image, read again.
+func TestImageFromDesktopThroughHelperKeepsHardLinks(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads everything")
+	}
+	bt := newBuildTest(t)
+	bt.e.addImage("alpine:3.22", "sha256:alpine", "")
+	folder := withDesktop(t, bt, map[string]string{"locked": "x"})
+	if err := os.Chmod(filepath.Join(folder, "locked"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	const mise = "./.local/share/mise/installs/npm-cowsay/1.6.0/node_modules/"
+	archive := func(entries ...tar.Header) []byte {
+		var buf bytes.Buffer
+		tw := tar.NewWriter(&buf)
+		for _, h := range entries {
+			data := ""
+			if h.Typeflag == tar.TypeReg {
+				data = "moo:" + h.Name
+				h.Size = int64(len(data))
+			}
+			_ = tw.WriteHeader(&h)
+			_, _ = tw.Write([]byte(data))
+		}
+		_ = tw.Close()
+		return buf.Bytes()
+	}
+	reg := func(name string) tar.Header { return tar.Header{Name: name, Mode: 0o755, Typeflag: tar.TypeReg} }
+	link := func(name, to string) tar.Header {
+		return tar.Header{Name: name, Mode: 0o755, Typeflag: tar.TypeLink, Linkname: to}
+	}
+	bt.e.folderTar = archive(
+		reg("./.cache/store/cli"), reg("./.cache/store/index"),
+		link(mise+"cowsay/cli.js", "./.cache/store/cli"),
+		link(mise+"cowsay/index.js", "./.cache/store/index"), link(mise+"cowthink/index.js", "./.cache/store/index"),
+		reg(mise+"own.js"), link(mise+"own-again.js", mise+"own.js"),
+	)
+	// A requested source may become a directory before the second read;
+	// its recursively archived children must not become unrelated exports.
+	bt.e.folderTarT = archive(reg("./.cache/store/cli"), reg("./.cache/store/index"), reg(mise+"own.js"), reg("./unrequested/child"))
+
+	body := map[string]any{"name": "Links", "slug": "links", "groups": []string{"tools"}}
+	if st := bt.wait(bt.start("POST", "/api/desktops/alice/image", body)); st.Status != "done" {
+		t.Fatalf("build: %+v", st)
+	}
+	ctx := bt.e.context
+	home := "home-template/" + strings.TrimPrefix(mise, "./")
+	for name, want := range map[string]string{
+		"cowsay/cli.js": "moo:./.cache/store/cli", "cowsay/index.js": "moo:./.cache/store/index",
+		"cowthink/index.js": "moo:./.cache/store/index", "own.js": "moo:" + mise + "own.js", "own-again.js": "moo:" + mise + "own.js",
+	} {
+		if ctx[home+name] != want {
+			t.Errorf("%s: %q, want %q", name, ctx[home+name], want)
+		}
+	}
+	for name := range ctx {
+		if strings.Contains(name, ".cache") {
+			t.Errorf("%s is in the context", name)
+		}
+	}
+	bt.e.mu.Lock()
+	asked := bt.e.asked.String()
+	bt.e.mu.Unlock()
+	if want := "./.cache/store/cli\n./.cache/store/index\n" + mise + "own.js\n"; asked != want {
+		t.Errorf("asked the helper for %q, want %q", asked, want)
+	}
+}
+
+func TestHelperHardLinkWithNewlineFailsClearly(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads everything")
+	}
+	bt := newBuildTest(t)
+	bt.e.addImage("alpine:3.22", "sha256:alpine", "")
+	folder := withDesktop(t, bt, map[string]string{"locked": "x"})
+	if err := os.Chmod(filepath.Join(folder, "locked"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	for _, h := range []tar.Header{
+		{Name: "./ordinary", Typeflag: tar.TypeReg},
+		{Name: "./alias", Typeflag: tar.TypeLink, Linkname: "./cache\nentry"},
+	} {
+		if err := tw.WriteHeader(&h); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	bt.e.folderTar = buf.Bytes()
+	err := bt.s.walkHome(context.Background(), "alice", func(string, *tar.Header, contentFunc) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "newline") {
+		t.Fatalf("expected a clear unsupported-name error, got %v", err)
+	}
+}
+
 // The supervisor's own state, next to the desktops' folders (as in a real
 // install, where StateDir is DataDir/.deskyard).
 func supervisorSecret(t *testing.T, bt *buildTest) {

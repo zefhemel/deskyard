@@ -166,8 +166,9 @@ class CleanupTests(unittest.TestCase):
 
     def test_real_process_identity_parser_and_exit(self):
         # Exercise platform ps output without an engine, credentials or a server.
-        p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        p = subprocess.Popen([sys.executable, "-c", "import time; print(\"ready\", flush=True); time.sleep(30)"], stdout=subprocess.PIPE)
         try:
+            self.assertEqual(p.stdout.readline(), b"ready\n")
             identity = fixture.native_process(p.pid)
             self.assertEqual(identity["uid"], os.getuid())
             self.assertIn("time.sleep(30)", identity["command"])
@@ -175,6 +176,7 @@ class CleanupTests(unittest.TestCase):
         finally:
             p.terminate()
             p.wait(timeout=5)
+            p.stdout.close()
         self.assertIsNone(fixture.native_process(p.pid))
 
     def test_failed_container_phase_stops_supervisor_before_gateway_deletion(self):
@@ -244,6 +246,21 @@ class LifecycleCountersTests(unittest.TestCase):
                         traffic.lifecycle(d)
                         self.assertTrue((d / "finish").exists())
                     self.assertTrue((d / "post-lifecycle-forward-counts.json").exists())
+
+
+class ImageSelectionTests(unittest.TestCase):
+    def test_current_image_reaches_native_and_container_environments(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d=pathlib.Path(tmp)
+            fixture.write(d / "fixture.json", {"mode":"container","Scope":"scope","SelfID":"owned-supervisor"})
+            commands=[]
+            def docker(*args, **kwargs):
+                commands.append(args)
+                return "54000"
+            with patch.dict(os.environ,{"CC_TEST_IMAGE":"current-image:validation"}), patch.object(fixture,"run") as build, patch.object(fixture,"docker",side_effect=docker), patch.object(fixture,"wait_file",return_value={}):
+                fixture.start(d)
+            self.assertEqual(build.call_args.kwargs["env"]["CC_TEST_IMAGE"],"current-image:validation")
+            self.assertIn("CC_TEST_IMAGE=current-image:validation",commands[0])
 
 
 if __name__ == "__main__":

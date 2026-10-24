@@ -125,7 +125,7 @@ function DeleteAccountDialog({ account: a, self, onClose, onDeleted }: { account
       title={`Delete ${a.username}?`}
       intro={
         <>
-          {a.username} is signed out everywhere, and their agent tokens are revoked. Their desktops stay.
+          {a.username} is signed out everywhere, and their access tokens are revoked. Their desktops stay.
           {self && " This is your own account: you'll be signed out."}
         </>
       }

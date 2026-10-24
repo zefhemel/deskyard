@@ -1,7 +1,7 @@
 {
   "name": "deskyard",
   "version": "test",
-  "description": "Use a Deskyard desktop (a Linux desktop with a shared Chromium) from inside it or remotely through its agent API. Run commands as `deskyard [-d NAME] <name> <arguments...>`; arguments are positional in the listed order, flags go after the command name.",
+  "description": "Use a Deskyard desktop (a Linux desktop with a shared Chromium) from inside it or remotely through its remote access API. Run commands as `deskyard [-d NAME] <name> <arguments...>`; arguments are positional in the listed order, flags go after the command name.",
   "usage": "deskyard [-d NAME] COMMAND [ARGS...]",
   "globalFlags": [
     {
@@ -29,7 +29,7 @@
     },
     {
       "name": "DESKYARD_TOKEN",
-      "description": "agent token for DESKYARD_URL, and the default for `remote add --token`"
+      "description": "access token for DESKYARD_URL, and the default for `remote add --token`"
     },
     {
       "name": "DESKYARD_SETTLE",
@@ -633,6 +633,33 @@
       "exitCodes": "the command's own exit code; 1 when it couldn't run (connection, token, stopped desktop), 2 usage error"
     },
     {
+      "name": "terminal",
+      "group": "shell",
+      "summary": "join a shared terminal session",
+      "usage": "terminal [SESSION]",
+      "description": "Joins a shared Bash login shell in /workspace, default main. Browser, CLI and desktop clients share the same session. Inside an existing native shared terminal, press Ctrl-B then s and choose the session instead of nesting this command. Detach with Ctrl-B then D; jobs survive disconnect but end when the desktop restarts. Session names use 1–64 letters, digits, underscores or dashes and start with a letter or digit.",
+      "arguments": [
+        {
+          "name": "session",
+          "type": "string",
+          "required": false,
+          "default": "main",
+          "description": "shared session name"
+        }
+      ],
+      "flags": [],
+      "output": {
+        "type": "stream",
+        "description": "shared terminal input and output"
+      },
+      "examples": [
+        "deskyard -d alice terminal",
+        "deskyard terminal build-2"
+      ],
+      "where": "on the chosen remote (-d NAME); inside a desktop without a remote it acts locally",
+      "exitCodes": "the command's own exit code; 1 when it couldn't run (connection, token, stopped desktop), 2 usage error"
+    },
+    {
       "name": "shell",
       "group": "shell",
       "summary": "interactive login shell",
@@ -688,7 +715,7 @@
       "group": "shell",
       "summary": "map TCP ports between this machine and the desktop",
       "usage": "forward [-R] PORT[:PORT]...",
-      "description": "Maps TCP ports both ways until Ctrl-C, over the agent API (no port is opened anywhere else). Each argument is one mapping. PORT or LOCAL:DESKTOP: this machine's 127.0.0.1:LOCAL becomes localhost:DESKTOP in the desktop (a dev server here, reachable by the desktop's browser). -R PORT or -R DESKTOP:LOCAL (reverse; one -R before each such mapping): the desktop's localhost:DESKTOP becomes 127.0.0.1:LOCAL here. Both ends listen on loopback only; the desktop won't listen below 1024 (plain forward only; -R just dials, so -R 80:8080 works). A port in use on either side fails that mapping, which is retried, and the others carry on. When the connection drops (the desktop stops or restarts, the network blips) it keeps its local listeners, closes open connections and reconnects with backoff (1 s up to 30 s). It exits only on Ctrl-C, or when the token is refused. Run it in the background. Inside a desktop it needs -d too.",
+      "description": "Maps TCP ports both ways until Ctrl-C, over the remote access API (no port is opened anywhere else). Each argument is one mapping. PORT or LOCAL:DESKTOP: this machine's 127.0.0.1:LOCAL becomes localhost:DESKTOP in the desktop (a dev server here, reachable by the desktop's browser). -R PORT or -R DESKTOP:LOCAL (reverse; one -R before each such mapping): the desktop's localhost:DESKTOP becomes 127.0.0.1:LOCAL here. Both ends listen on loopback only; the desktop won't listen below 1024 (plain forward only; -R just dials, so -R 80:8080 works). A port in use on either side fails that mapping, which is retried, and the others carry on. When the connection drops (the desktop stops or restarts, the network blips) it keeps its local listeners, closes open connections and reconnects with backoff (1 s up to 30 s). It exits only on Ctrl-C, or when the token is refused. Run it in the background. Inside a desktop it needs -d too.",
       "arguments": [
         {
           "name": "port",
@@ -727,7 +754,7 @@
       "group": "browser",
       "summary": "forward the desktop's browser to a local CDP port",
       "usage": "browser connect [--port N]",
-      "description": "Listens on 127.0.0.1:PORT and forwards the Chrome DevTools Protocol to the desktop's shared Chromium (the one on its desktop, with the human's logins), so Playwright, Puppeteer or DevTools tools connect as if the browser were local. Prints the URL, then keeps running until Ctrl-C. Run it in the background. Inside a desktop it isn't needed: CDP is at http://127.0.0.1:9221.",
+      "description": "Listens on 127.0.0.1:PORT and forwards the Chrome DevTools Protocol to the desktop's shared Chromium (the one on its desktop, with your signed-in sessions), so Playwright, Puppeteer or DevTools tools connect as if the browser were local. Prints the URL, then keeps running until Ctrl-C. Run it in the background. Inside a desktop it isn't needed: CDP is at http://127.0.0.1:9221.",
       "arguments": [],
       "flags": [
         {
@@ -754,7 +781,7 @@
       "group": "remote",
       "summary": "save a desktop as a remote",
       "usage": "remote add NAME URL --token dyt_…",
-      "description": "Checks the token against the desktop's agent API and saves the remote in remotes.json ($XDG_CONFIG_HOME/deskyard, default ~/.config/deskyard; mode 0600). URL is the desktop's address, like https://host/alice. Tokens come from the desktop's Agents tab. The first remote becomes the default.",
+      "description": "Checks the token against the desktop's remote access API and saves the remote in remotes.json ($XDG_CONFIG_HOME/deskyard, default ~/.config/deskyard; mode 0600). URL is the desktop's address, like https://host/alice. Tokens come from the desktop's Remote access tab. The first remote becomes the default.",
       "arguments": [
         {
           "name": "name",
@@ -774,7 +801,7 @@
           "name": "--token",
           "type": "string",
           "value": "TOKEN",
-          "description": "agent token (dyt_…); defaults to $DESKYARD_TOKEN"
+          "description": "access token (dyt_…); defaults to $DESKYARD_TOKEN"
         }
       ],
       "output": {
@@ -822,7 +849,7 @@
       "group": "remote",
       "summary": "forget a remote",
       "usage": "remote remove NAME",
-      "description": "Removes a saved remote (the token itself stays valid until someone revokes it on the Agents tab).",
+      "description": "Removes a saved remote (the token itself stays valid until someone revokes it on the Remote access tab).",
       "arguments": [
         {
           "name": "name",
@@ -905,7 +932,7 @@
     {
       "name": "guide",
       "group": "info",
-      "summary": "short manual for AI agents",
+      "summary": "short manual for desktop access and control",
       "usage": "guide",
       "description": "Prints a short manual: how a desktop is laid out, the three ways to work (shell, browser, desktop) and when to use which.",
       "arguments": [],

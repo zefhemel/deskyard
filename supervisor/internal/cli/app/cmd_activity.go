@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -21,7 +20,7 @@ import (
 // ---- activity-serve
 
 // Activity stream limits: what the ring keeps, and how often an idle stream
-// sends an empty line so proxies and readers see it is alive.
+// sends command-status heartbeats so readers see it is alive and idle.
 const (
 	activityWindow    = 15 * time.Minute
 	activityMax       = 5000
@@ -86,7 +85,7 @@ func readDatagrams(pc net.PacketConn, ring *activity.Ring) {
 }
 
 // serveEvents streams everything newer than ?after (everything, when ?epoch
-// isn't the ring's), then live events, with an empty line every 15 s.
+// isn't the ring's), then live events, with a status heartbeat every 15 s of inactivity.
 func serveEvents(w http.ResponseWriter, r *http.Request, ring *activity.Ring) {
 	q := r.URL.Query()
 	after, _ := strconv.ParseUint(q.Get("after"), 10, 64)
@@ -110,7 +109,12 @@ func serveEvents(w http.ResponseWriter, r *http.Request, ring *activity.Ring) {
 			return
 		}
 		if events == nil {
-			fmt.Fprintln(bw) // heartbeat
+			line, _ := json.Marshal(struct {
+				Kind            string `json:"kind"`
+				CommandsRunning bool   `json:"commandsRunning"`
+			}{"status", ring.CommandsRunning()})
+			bw.Write(line)
+			bw.WriteByte('\n') // heartbeat with work status, including commands older than history
 		}
 		for _, e := range events {
 			line, _ := json.Marshal(e)

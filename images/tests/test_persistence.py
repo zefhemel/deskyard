@@ -1,0 +1,72 @@
+import pytest
+
+
+@pytest.mark.network
+def test_installs_survive_image_upgrade(make_sandbox, next_image):
+    a = make_sandbox()
+    a.exec("mise use -g node@22 jq", timeout=600)
+    a.exec("npm i -g cowsay", timeout=600)
+    a.exec("uv tool install pycowsay", timeout=600)
+    a.exec("echo hi > ~/note")
+    a.remove()
+
+    b = make_sandbox(image=next_image)
+    assert b.exec("cat /etc/workspace/build-id").stdout.strip() == "next"
+    assert b.exec("node --version").stdout.startswith("v22")
+    b.exec("cowsay hi")
+    b.exec("pycowsay hi")
+    b.exec("jq --version")
+    assert b.exec("cat ~/note").stdout.strip() == "hi"
+
+
+@pytest.mark.network
+def test_user_runtime_overrides_preinstalled(sandbox):
+    """A node the user installs wins over the image's, in non-login shells too."""
+    sandbox.exec("mise use -g node@22", timeout=600)
+    assert sandbox.exec("node --version", login=False).stdout.startswith("v22")
+    assert sandbox.exec("node --version").stdout.startswith("v22")
+
+
+def test_skeleton_seeded_once_and_not_overwritten(make_sandbox):
+    a = make_sandbox()
+    a.exec("test -f ~/.bashrc && test -f ~/.workspace-seeded")
+    a.exec("echo '# mine' >> ~/.bashrc")
+    a.restart()
+    a.remove()
+    b = make_sandbox()
+    assert "# mine" in b.exec("cat ~/.bashrc").stdout
+
+
+def test_user_bin_dirs_on_path(sandbox):
+    for login in (True, False):
+        path = sandbox.exec("printenv PATH", login=login).stdout
+        for d in ("/workspace/.local/bin", "/workspace/.npm-global/bin", "/workspace/.local/share/mise/shims"):
+            assert d in path, (login, path)
+
+
+def test_preinstalled_runtimes(sandbox):
+    for login in (True, False):
+        assert sandbox.exec("node --version", login=login).stdout.startswith("v24."), login
+        assert sandbox.exec("python --version", login=login).stdout.startswith("Python 3.13"), login
+        assert sandbox.exec("python3 --version", login=login).stdout.startswith("Python 3.13"), login
+    # (Where node comes from: test_custom_base.test_base_node_resolves_to_runtimes_not_mise.)
+
+
+@pytest.mark.parametrize("login", [True, False])
+def test_uv_installers_can_select_python(sandbox, login):
+    """Image defaults must not conflict with an installer's explicit Python flags."""
+    sandbox.exec("uv python list --only-installed --managed-python", login=login)
+    system = sandbox.exec("uv python find --no-managed-python", login=login).stdout.strip()
+    assert system.startswith("/opt/runtimes/python/"), system
+    # Installers such as Hermes deliberately ignore ambient uv configuration.
+    sandbox.exec("env UV_NO_CONFIG=1 uv python list --only-installed --managed-python", login=login)
+
+
+@pytest.mark.network
+def test_uv_tools_do_not_depend_on_image_python(sandbox):
+    """uv tools must run on a Python in /workspace, not the image's (which changes on upgrade)."""
+    sandbox.exec("uv tool install pycowsay", timeout=600)
+    real = sandbox.exec("readlink -f ~/.local/share/uv/tools/pycowsay/bin/python").stdout.strip()
+    assert real.startswith("/workspace/"), real
+    cfg = sandbox.exec("cat ~/.local/share/uv/tools/pycowsay/pyvenv.cfg").stdout
+    assert "/opt/" not in cfg, cfg

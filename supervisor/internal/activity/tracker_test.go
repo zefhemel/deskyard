@@ -296,13 +296,13 @@ func TestInsideAgents(t *testing.T) {
 	r.Inside(dk, Event{Agent: "a terminal", Kind: "cmd-start", ID: "x", Cmd: "make", T: t0})
 	r.adv(16 * time.Minute)
 	r.Tick()
-	for _, s := range r.Summary("alice") {
-		if s.Inside && len(s.Now) != 0 {
-			t.Fatalf("stale inside command kept: %+v", s.Now)
-		}
+	if len(r.Summary("alice")) != 2 {
+		t.Fatal("long-running commands must remain visible")
 	}
-	if len(r.Summary("alice")) != 1 || r.Summary("alice")[0].ID != "tok1" || len(r.Summary("alice")[0].Now) != 1 {
-		t.Fatalf("outside command should be untouched: %+v", r.Summary("alice"))
+	for _, s := range r.Summary("alice") {
+		if len(s.Now) != 1 {
+			t.Fatal("lost long-running command", s)
+		}
 	}
 	// time clamping
 	r.Inside(dk, Event{Agent: "p", Kind: "screen", T: r.now.Add(time.Hour), Screen: &ck})
@@ -441,8 +441,10 @@ func TestWatchScreen(t *testing.T) {
 	for range 1000 {
 		r.Screen(dk, bot, click)
 	}
-	if time.Since(start) > 100*time.Millisecond {
-		t.Fatal("slow with a stuck watcher")
+	// A blocking send would hang for good; the bound only has to catch
+	// that, with room for -race on a slow CI runner.
+	if time.Since(start) > 5*time.Second {
+		t.Fatal("blocked by a stuck watcher")
 	}
 	cancel()
 	cancel()

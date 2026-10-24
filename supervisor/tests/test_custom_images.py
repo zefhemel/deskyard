@@ -11,6 +11,8 @@ import uuid
 import pytest
 
 from conftest import IMAGE, docker
+from helpers import custom_tags as tags
+from helpers import user_sh
 
 # A small Flathub app on org.freedesktop.Platform (whose runtime is smaller
 # than GNOME's): about 0.5 GB to download with its runtime and extensions.
@@ -43,26 +45,6 @@ def follow(admin, job: str, timeout=2400, until=None) -> tuple[dict, list[str]]:
     return last, messages
 
 
-def tags(slug: str) -> list[str]:
-    out = docker("image", "ls", "--format", "{{.Repository}}:{{.Tag}}", f"deskyard-custom/{slug}").stdout
-    return out.split()
-
-
-def user_sh(name: str, script: str) -> str:
-    r = docker("exec", "-u", "user", f"deskyard-{name}", "bash", "-lc", script, check=False)
-    assert r.returncode == 0, r.stdout + r.stderr
-    return r.stdout
-
-
-@pytest.fixture
-def slug(admin):
-    s = "t" + uuid.uuid4().hex[:6]
-    yield s
-    admin.delete(f"/api/recipes/{s}")
-    for t in tags(s):
-        docker("rmi", "-f", t, check=False)
-
-
 def build(admin, recipe: dict, timeout=2400) -> tuple[dict, list[str]]:
     r = admin.post("/api/recipes", json={"name": "Test " + recipe["slug"], "base": IMAGE, **recipe})
     assert r.status_code == 202, r.text
@@ -75,6 +57,7 @@ def catalog(admin) -> dict:
     return {i["ref"]: i for i in r.json()}
 
 
+@pytest.mark.build
 @pytest.mark.network
 @pytest.mark.slow
 def test_recipe_builds_and_works(admin, slug, name):
@@ -106,6 +89,7 @@ def test_recipe_builds_and_works(admin, slug, name):
         admin.delete(f"/api/desktops/{name}?files=1")
 
 
+@pytest.mark.build
 @pytest.mark.network
 def test_build_with_sudo_rejected(admin, slug):
     if not online("deb.debian.org"):
@@ -117,6 +101,7 @@ def test_build_with_sudo_rejected(admin, slug):
     assert f"deskyard-custom/{slug}:latest" not in catalog(admin)
 
 
+@pytest.mark.build
 @pytest.mark.network
 @pytest.mark.parametrize("commands,finding", [
     ("apt-get update\napt-get install -y libcap2-bin\nsetcap cap_setuid+ep \"$(readlink -f /usr/bin/python3)\"",
@@ -132,6 +117,7 @@ def test_build_with_root_path_rejected(admin, slug, commands, finding):
     assert tags(slug) == []
 
 
+@pytest.mark.build
 def test_rebuild_and_upgrade_keeps_home(admin, slug, name):
     st, log = build(admin, {"slug": slug, "commands": "echo built > /opt/marker"})
     assert st["status"] == "done", st
@@ -167,6 +153,7 @@ def test_rebuild_and_upgrade_keeps_home(admin, slug, name):
         admin.delete(f"/api/desktops/{name}?files=1")
 
 
+@pytest.mark.build
 def test_delete_recipe_in_use_refused(admin, slug, name):
     st, _ = build(admin, {"slug": slug})
     assert st["status"] == "done", st
@@ -195,6 +182,7 @@ def build_containers() -> list[str]:
     return out
 
 
+@pytest.mark.build
 def test_cancel_build(admin, slug):
     others = set(build_containers())  # other builds on this machine
     r = admin.post("/api/recipes", json={"slug": slug, "name": "Sleeper", "base": IMAGE, "commands": "sleep 600"})
@@ -203,15 +191,18 @@ def test_cancel_build(admin, slug):
     st, log = follow(admin, job, timeout=300, until=lambda m: "+ sleep 600" in m)
     assert st["status"] == "running", (st, log[-20:])
     time.sleep(1)
+    # This build's: other workers' builds come and go meanwhile.
+    mine = {c for c in set(build_containers()) - others if "sleep 600" in docker("top", c, check=False).stdout}
+    assert mine, "no build container runs the sleep"
     assert admin.post(f"/api/jobs/{job}/cancel").status_code == 204
     t0 = time.time()
     st, _ = follow(admin, job, timeout=15)
     assert st["status"] == "failed" and st["error"] == "cancelled", st
     assert time.time() - t0 < 15
     deadline = time.time() + 15
-    while set(build_containers()) - others and time.time() < deadline:
+    while mine & set(build_containers()) and time.time() < deadline:
         time.sleep(1)
-    assert set(build_containers()) - others == set()
+    assert mine & set(build_containers()) == set()
     assert tags(slug) == []
 
 
@@ -254,6 +245,7 @@ def exists(name: str, path: str) -> bool:
     return docker("exec", "-u", "user", f"deskyard-{name}", "test", "-e", path, check=False).returncode == 0
 
 
+@pytest.mark.build
 @pytest.mark.network
 @pytest.mark.slow
 def test_image_from_desktop(admin, desktop, name, slugs):
@@ -313,6 +305,7 @@ PANEL_TYPES = ("p() { xfconf-query -c xfce4-panel \"$@\"; }"
                " && for id in $(p -p /panels/panel-1/plugin-ids | grep -E '^[0-9]+$'); do p -p /plugins/plugin-$id; done")
 
 
+@pytest.mark.build
 def test_panel_changes_stay_in_image_from_desktop(admin, desktop, name, slugs):
     """The panel migrations' run-once markers travel with the settings: a
     pager the user removed doesn't come back in desktops made from the image."""
@@ -339,6 +332,7 @@ def test_panel_changes_stay_in_image_from_desktop(admin, desktop, name, slugs):
         admin.delete(f"/api/desktops/{other}?files=1")
 
 
+@pytest.mark.build
 def test_secret_flag_passes_down(admin, desktop, name, slugs):
     user_sh(name, "mkdir -p ~/.codex && echo token > ~/.codex/auth.json")
     secret = slugs()
@@ -378,16 +372,10 @@ def test_tools_show_overrides(supervisor, admin, desktop, name):
     assert nodes["desktop"].startswith("22.") and nodes["image"] == image_node[0], tools
 
     from playwright.sync_api import expect, sync_playwright
-    from conftest import ADMIN_PASSWORD
+
+    from helpers import signed_in
     with sync_playwright() as p:
-        browser = p.chromium.launch()
-        page = browser.new_page()
-        page.goto(supervisor.base + "/")
-        page.wait_for_url("**/login**")
-        page.fill("#u", "admin")
-        page.fill("#p", ADMIN_PASSWORD)
-        page.get_by_role("button", name="Sign in").click()
-        page.wait_for_url(lambda u: "/login" not in u)
+        browser, page = signed_in(p, supervisor.base)
         page.goto(f"{supervisor.base}/desktops/{name}")
         line = page.get_by_text(f"{nodes['desktop']} (this desktop) · {nodes['image']} in the image")
         expect(line.first).to_be_visible(timeout=15000)

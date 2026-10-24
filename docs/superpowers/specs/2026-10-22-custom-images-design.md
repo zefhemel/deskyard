@@ -11,6 +11,10 @@ Admins can make their own desktop images in the supervisor's UI, in two ways:
 
 Both build a new layer on a base image with Docker on the supervisor's machine. The result joins the image catalog like any other image. Builds on the [[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]] (image catalog, contract, upgrades).
 
+# Linux export correction — 23 October 2026
+
+The permission-helper export preserves every selected name of a hard-linked regular file, including npm package files whose first archive name is in an excluded cache. Each selected name is copied as an independent regular file; caches and unticked secrets remain excluded. This matches direct filesystem export.
+
 # Intent
 
 People keep setting up the same things by hand in every new desktop: Codex, SilverBullet, a pinned Node, their dotfiles, their app settings, sometimes their logins. The desktop image is fixed, and today the only way to change it is to edit its Dockerfile.

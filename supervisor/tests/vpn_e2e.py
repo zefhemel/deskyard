@@ -204,9 +204,8 @@ def prepare(mode):
 def start(d):
     cfg = json.loads((d / "fixture.json").read_text())
     env = os.environ.copy()
-    env.update(
-        DESKYARD_VPN_E2E_DIR=str(d), CC_TEST_IMAGE="deskyard-debian-xfce:selkies"
-    )
+    image = os.environ.get("CC_TEST_IMAGE", "deskyard-debian-xfce:selkies")
+    env.update(DESKYARD_VPN_E2E_DIR=str(d), CC_TEST_IMAGE=image)
     buildenv = env.copy()
     if cfg["mode"] == "container":
         buildenv.update(GOOS="linux", GOARCH="arm64", CGO_ENABLED="0")
@@ -238,7 +237,7 @@ def start(d):
             "-e",
             "DOCKER_HOST=unix:///var/run/docker.sock",
             "-e",
-            "CC_TEST_IMAGE=deskyard-debian-xfce:selkies",
+            f"CC_TEST_IMAGE={image}",
             "-p",
             "127.0.0.1::8080",
             "alpine:3.22",

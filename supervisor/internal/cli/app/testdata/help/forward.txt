@@ -2,9 +2,9 @@ deskyard forward: map TCP ports between this machine and the desktop
 
 Usage: deskyard [-d NAME] forward [-R] PORT[:PORT]...
 
-Maps TCP ports both ways until Ctrl-C, over the agent API (no port is opened
-anywhere else). Each argument is one mapping. PORT or LOCAL:DESKTOP: this
-machine's 127.0.0.1:LOCAL becomes localhost:DESKTOP in the desktop (a dev
+Maps TCP ports both ways until Ctrl-C, over the remote access API (no port is
+opened anywhere else). Each argument is one mapping. PORT or LOCAL:DESKTOP:
+this machine's 127.0.0.1:LOCAL becomes localhost:DESKTOP in the desktop (a dev
 server here, reachable by the desktop's browser). -R PORT or -R DESKTOP:LOCAL
 (reverse; one -R before each such mapping): the desktop's localhost:DESKTOP
 becomes 127.0.0.1:LOCAL here. Both ends listen on loopback only; the desktop

@@ -8,7 +8,7 @@ const bot: AgentPresence = { ...base, name: "deploy-bot", owner: "zef", inside: 
 const claude: AgentPresence = { ...base, name: "Claude Code", owner: "", inside: true };
 
 test("agent titles and labels", () => {
-  assert.equal(agentTitle(bot), "deploy-bot · zef's agent");
+  assert.equal(agentTitle(bot), "deploy-bot · zef's CLI");
   assert.equal(agentTitle(claude), "Claude Code · in this desktop");
   assert.equal(agentLabel(claude), "Claude Code (in this desktop)");
   assert.equal(agentLabel(bot), "deploy-bot");
@@ -65,6 +65,6 @@ test("wall badge text", () => {
   assert.equal(badgeLabel([], [claude]), "Claude Code (in this desktop)");
   assert.equal(badgeLabel([], [claude], true), "Claude Code (in this desktop) is here");
   assert.equal(badgeLabel([], [bot]), "deploy-bot");
-  assert.equal(badgeLabel(["zef", "anna"], [bot, claude]), "2 viewing · 2 agents");
+  assert.equal(badgeLabel(["zef", "anna"], [bot, claude]), "2 viewing · 2 CLI clients");
   assert.equal(badgeLabel(["zef"], [claude], true), "zef is viewing · Claude Code (in this desktop) is here");
 });

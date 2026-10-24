@@ -2,29 +2,21 @@
 
 import io
 import os
-import time
 import uuid
 import zipfile
-from pathlib import Path
 
 import requests
 
-from test_agent import make_token
-
-
-def put(folder: str, rel: str, data: bytes) -> None:
-    p = Path(folder) / rel
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_bytes(data)
+from conftest import docker
+from helpers import make_token, put, user_sh, wait_until
 
 
 def test_browse_and_download(admin, desktop, name):
-    folder = desktop["folder"]
     blob = os.urandom(3 * 1024 * 1024 + 17)
-    put(folder, "docs/report.txt", b"quarterly numbers\n")
-    put(folder, "docs/deep/notes.md", b"# notes\n")
-    put(folder, "big.bin", blob)
-    os.symlink("/etc", Path(folder) / "etc-link")
+    put(name, "docs/report.txt", b"quarterly numbers\n")
+    put(name, "docs/deep/notes.md", b"# notes\n")
+    put(name, "big.bin", blob)
+    user_sh(name, "ln -s /etc /workspace/etc-link")
 
     r = admin.get(f"/api/desktops/{name}/files")
     assert r.status_code == 200, r.text
@@ -58,7 +50,7 @@ def test_browse_and_download(admin, desktop, name):
 
 
 def test_paths_outside_workspace_refused(admin, desktop, name):
-    os.symlink("/etc", Path(desktop["folder"]) / "etc-link")
+    user_sh(name, "ln -s /etc /workspace/etc-link")
     for p in ["..", "/", "/etc/passwd", "/workspace/../etc/passwd", "../etc/passwd", "etc-link", "etc-link/passwd"]:
         for route in ["files", "download"]:
             r = admin.get(f"/api/desktops/{name}/{route}", params={"path": p})
@@ -67,7 +59,7 @@ def test_paths_outside_workspace_refused(admin, desktop, name):
 
 
 def test_access_and_tokens(admin, desktop, name, supervisor):
-    put(desktop["folder"], "f.txt", b"hi")
+    put(name, "f.txt", b"hi")
     user = "u" + uuid.uuid4().hex[:6]
     for who, desktops_ in [(user, []), (user + "v", [name])]:
         r = admin.post("/api/accounts", json={"username": who, "password": "pw-" + who, "admin": False, "desktops": desktops_})
@@ -90,9 +82,9 @@ def test_access_and_tokens(admin, desktop, name, supervisor):
 def test_download_dialog(supervisor, desktop, name, tmp_path):
     from playwright.sync_api import expect, sync_playwright
 
-    from test_ui import signed_in
+    from helpers import signed_in
 
-    put(desktop["folder"], "docs/hello.txt", b"hello from the desktop\n")
+    put(name, "docs/hello.txt", b"hello from the desktop\n")
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base, accept_downloads=True)
         page.goto(f"{supervisor.base}/{name}/")
@@ -108,6 +100,19 @@ def test_download_dialog(supervisor, desktop, name, tmp_path):
         d.value.save_as(path)
         assert d.value.suggested_filename == "hello.txt"
         assert path.read_bytes() == b"hello from the desktop\n"
+        with page.expect_download() as folder_download:
+            dialog.get_by_role("link", name="Download this folder (.zip)").click()
+        folder_path = tmp_path / "docs.zip"
+        folder_download.value.save_as(folder_path)
+        with zipfile.ZipFile(folder_path) as archive:
+            assert archive.read("hello.txt") == b"hello from the desktop\n"
+        dialog.get_by_role("button", name="Up one folder").click()
+        with page.expect_download() as entry_download:
+            dialog.get_by_role("link", name="Download docs as zip").click()
+        entry_path = tmp_path / "entry.zip"
+        entry_download.value.save_as(entry_path)
+        with zipfile.ZipFile(entry_path) as archive:
+            assert archive.read("hello.txt") == b"hello from the desktop\n"
         # A path outside /workspace shows the refusal.
         dialog.get_by_label("Folder path").fill("/etc")
         dialog.get_by_role("button", name="Go").click()
@@ -117,11 +122,9 @@ def test_download_dialog(supervisor, desktop, name, tmp_path):
 
 
 def test_folder_zip_with_hard_links_and_unreadable_files(admin, desktop, name):
-    folder = Path(desktop["folder"])
-    put(desktop["folder"], "mix/one.txt", b"one")
-    os.link(folder / "mix/one.txt", folder / "mix/one-link.txt")
-    put(desktop["folder"], "mix/locked.txt", b"secret")
-    os.chmod(folder / "mix/locked.txt", 0o000)
+    put(name, "mix/one.txt", b"one")
+    put(name, "mix/locked.txt", b"secret")
+    user_sh(name, "cd /workspace/mix && ln one.txt one-link.txt && chmod 000 locked.txt")
     r = admin.get(f"/api/desktops/{name}/download", params={"path": "mix"})
     assert r.status_code == 200
     z = zipfile.ZipFile(io.BytesIO(r.content))
@@ -130,11 +133,7 @@ def test_folder_zip_with_hard_links_and_unreadable_files(admin, desktop, name):
 
 
 def test_client_abort_leaves_no_tar_or_cat_running(admin, desktop, name):
-    from conftest import docker
-
-    folder = desktop["folder"]
-    for i in range(4):
-        put(folder, f"huge/f{i}.bin", os.urandom(64 * 1024 * 1024))
+    user_sh(name, "mkdir -p /workspace/huge && for i in 0 1 2 3; do head -c 64M /dev/urandom > /workspace/huge/f$i.bin; done")
     container = docker("ps", "-q", "--filter", f"label=deskyard.name={name}").stdout.split()[0]
 
     def running():
@@ -147,11 +146,7 @@ def test_client_abort_leaves_no_tar_or_cat_running(admin, desktop, name):
         next(r.iter_content(65536))
         assert running()  # still streaming
         r.close()
-        for _ in range(20):
-            if not running():
-                break
-            time.sleep(0.5)
-        assert running() == [], f"{path}: left running after the client left"
+        assert wait_until(lambda: not running(), 10, 0.5), f"{path}: {running()} left running after the client left"
 
 
 LUMINANCE_JS = """(rgb) => {
@@ -163,10 +158,10 @@ LUMINANCE_JS = """(rgb) => {
 def test_download_dialog_names_are_readable_and_hidden_files_toggle(supervisor, desktop, name):
     from playwright.sync_api import expect, sync_playwright
 
-    from test_ui import signed_in
+    from helpers import signed_in
 
     for rel in ["Documents/a.txt", "visible.txt", ".secret/x", ".hidden.txt"]:
-        put(desktop["folder"], rel, b"x")
+        put(name, rel, b"x")
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base)
         page.evaluate("localStorage.removeItem('deskyard.showHidden')")

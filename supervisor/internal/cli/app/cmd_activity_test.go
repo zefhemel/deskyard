@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -126,5 +127,32 @@ func TestActivityServe(t *testing.T) {
 
 	if r, err := http.Get("http://" + addr + "/nope"); err != nil || r.StatusCode != 404 {
 		t.Fatalf("/nope: %v %v", r, err)
+	}
+}
+
+func TestActivityStatusIncludesOldRunningCommands(t *testing.T) {
+	now := time.Now()
+	ring := activity.NewRing(time.Minute, 10, func() time.Time { return now })
+	ring.Add(activity.Event{Agent: "shell", Kind: "cmd-start", ID: "work", Cmd: "sleep"})
+	now = now.Add(time.Hour)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { serveEvents(w, r, ring) }))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", server.URL, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var status struct {
+		Kind            string
+		CommandsRunning *bool
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status.Kind != "status" || status.CommandsRunning == nil || !*status.CommandsRunning {
+		t.Fatalf("%+v", status)
 	}
 }

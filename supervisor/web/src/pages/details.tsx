@@ -7,6 +7,7 @@ import { Avatars } from "../components/avatar.tsx";
 import { ChartsPanel } from "../components/charts-panel.tsx";
 import { DesktopMenu, power } from "../components/desktop-menu.tsx";
 import { Monitor } from "../components/screen.tsx";
+import { ReclaimMemoryButton } from "../components/reclaim-memory.tsx";
 import { ForwardLines } from "../components/viewers-popover.tsx";
 import { Page } from "../components/topbar.tsx";
 import { btnClass, Button, cx, LockBadge, Status, Tag } from "../components/ui.tsx";
@@ -68,7 +69,7 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
   const tabs: { id: Tab; label: string }[] = [
     { id: "overview", label: "Overview" },
     { id: "processes", label: "Processes" },
-    { id: "agents", label: "Agents" },
+    { id: "agents", label: "Remote access" },
     ...(me.admin
       ? [
           { id: "settings" as const, label: "Settings" },
@@ -88,14 +89,16 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
           {c.name}
         </h1>
         <Status kind={statusKind(c)}>{statusLine(c, now)}</Status>
-        <div class="ml-auto flex gap-2">
+        <div class="ml-auto flex flex-wrap gap-2">
           {c.state === "running" && (
             <>
               <a href={`/${c.name}/`} class={btnClass("primary")}>
-                Open
+                Desktop
               </a>
+              <a href={`/${c.name}/terminal/`} class={btnClass()}>Terminal</a>
               <Button onClick={() => power(c.name, "restart")}>Restart</Button>
               <Button onClick={() => power(c.name, "stop")}>Stop</Button>
+              {me.admin && <ReclaimMemoryButton name={c.name} disabled={!!c.job} />}
             </>
           )}
           {c.state === "stopped" && (
@@ -205,7 +208,7 @@ function ViewersPanel({
           resized last.
         </p>
         {agents.length > 0 && (
-          <p class="mt-1.5 mb-0 text-[13px]" aria-label="Agents">
+          <p class="mt-1.5 mb-0 text-[13px]" aria-label="CLI activity">
             {names(agents.map(agentLabel))} {agents.length === 1 ? "is" : "are"} working here.
           </p>
         )}
@@ -303,7 +306,7 @@ function Facts({
         )}
         <dt class="text-muted">Limits</dt>
         <dd class="m-0">{limits(c.settings)}</dd>
-        <dt class="text-muted">Agent tokens</dt>
+        <dt class="text-muted">Access tokens</dt>
         <dd class="m-0">
           {c.tokens ? `${c.tokens} active` : "None"}{" "}
           <button type="button" class={link} onClick={() => onTab("agents")}>

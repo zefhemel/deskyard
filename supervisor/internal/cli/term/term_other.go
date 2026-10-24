@@ -17,6 +17,9 @@ var errUnsupported = errors.New("interactive terminals aren't supported on this 
 // IsTerminal reports whether fd is a terminal (never, here).
 func IsTerminal(fd int) bool { return false }
 
+// Save is unsupported here.
+func Save(fd int) (*State, error) { return nil, errUnsupported }
+
 // MakeRaw is unsupported here.
 func MakeRaw(fd int) (*State, error) { return nil, errUnsupported }
 

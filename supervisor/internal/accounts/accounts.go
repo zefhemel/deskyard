@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -19,13 +20,15 @@ import (
 )
 
 type Account struct {
-	Username     string    `json:"username"`
-	PasswordHash string    `json:"passwordHash"`
-	Admin        bool      `json:"admin"`
-	SessionEpoch int       `json:"sessionEpoch"`
-	Desktops     []string  `json:"desktops"` // desktop IDs (the deskyard.id label)
-	Created      time.Time `json:"created"`
-	LastLogin    time.Time `json:"lastLogin,omitzero"`
+	Username           string            `json:"username"`
+	PasswordHash       string            `json:"passwordHash"`
+	Admin              bool              `json:"admin"`
+	SessionEpoch       int               `json:"sessionEpoch"`
+	TokenEpoch         uint64            `json:"tokenEpoch,omitempty"`
+	DesktopTokenEpochs map[string]uint64 `json:"desktopTokenEpochs,omitempty"`
+	Desktops           []string          `json:"desktops"` // desktop IDs (the deskyard.id label)
+	Created            time.Time         `json:"created"`
+	LastLogin          time.Time         `json:"lastLogin,omitzero"`
 }
 
 // HasAccess reports whether the account may use the desktop.
@@ -71,8 +74,20 @@ func Load(stateDir string) (*Store, error) {
 	return s, nil
 }
 
-func (s *Store) save() error {
-	return store.WriteJSON(s.path, file{Accounts: s.list})
+func (s *Store) publish(next []Account) error {
+	if err := store.WriteJSON(s.path, file{Accounts: next}); err != nil {
+		return err
+	}
+	s.list = next
+	return nil
+}
+
+func (s *Store) next() []Account {
+	out := make([]Account, len(s.list))
+	for i, a := range s.list {
+		out[i] = clone(a)
+	}
+	return out
 }
 
 func (s *Store) notify(names ...string) {
@@ -96,8 +111,11 @@ func (s *Store) EnsureAdmin(username, password string) (generated string, err er
 		password = auth.RandomPassword()
 		generated = password
 	}
-	s.list = []Account{{Username: username, PasswordHash: auth.HashPassword(password), Admin: true, Created: time.Now().UTC()}}
-	return generated, s.save()
+	next := []Account{{Username: username, PasswordHash: auth.HashPassword(password), Admin: true, Created: time.Now().UTC()}}
+	if err := s.publish(next); err != nil {
+		return "", err
+	}
+	return generated, nil
 }
 
 func (s *Store) index(username string) int {
@@ -122,7 +140,27 @@ func (s *Store) Get(username string) (Account, bool) {
 
 func clone(a Account) Account {
 	a.Desktops = slices.Clone(a.Desktops)
+	a.DesktopTokenEpochs = maps.Clone(a.DesktopTokenEpochs)
 	return a
+}
+
+// retainTokenRevocations makes authorization loss survive later grants and
+// username reuse. A role change invalidates tokens account-wide; access changes
+// only advance the affected desktop's revision.
+func retainTokenRevocations(before Account, after *Account) {
+	after.TokenEpoch = before.TokenEpoch
+	after.DesktopTokenEpochs = maps.Clone(before.DesktopTokenEpochs)
+	if before.Admin != after.Admin {
+		after.TokenEpoch++
+	}
+	for _, id := range before.Desktops {
+		if !after.HasAccess(id) {
+			if after.DesktopTokenEpochs == nil {
+				after.DesktopTokenEpochs = map[string]uint64{}
+			}
+			after.DesktopTokenEpochs[id] = before.DesktopTokenEpochs[id] + 1
+		}
+	}
 }
 
 func (s *Store) List() []Account {
@@ -164,8 +202,10 @@ func (s *Store) Create(username, password string, admin bool, desktops []string)
 	if a.Desktops == nil {
 		a.Desktops = []string{}
 	}
-	s.list = append(s.list, a)
-	return clone(a), s.save()
+	if err := s.publish(append(s.next(), a)); err != nil {
+		return Account{}, err
+	}
+	return clone(a), nil
 }
 
 // Update applies fn to the account; it bumps the session epoch when the
@@ -188,11 +228,16 @@ func (s *Store) Update(username string, fn func(a *Account)) (Account, error) {
 	if a.PasswordHash != before.PasswordHash || a.Admin != before.Admin {
 		a.SessionEpoch = before.SessionEpoch + 1
 	}
-	s.list[i] = a
-	err := s.save()
+	retainTokenRevocations(before, &a)
+	next := s.next()
+	next[i] = a
+	err := s.publish(next)
 	s.mu.Unlock()
+	if err != nil {
+		return Account{}, err
+	}
 	s.notify(a.Username)
-	return clone(a), err
+	return clone(a), nil
 }
 
 func (s *Store) SetPassword(username, password string) error {
@@ -215,28 +260,32 @@ func (s *Store) Delete(username string) error {
 		return ErrLastAdmin
 	}
 	name := s.list[i].Username
-	s.list = slices.Delete(s.list, i, i+1)
-	err := s.save()
+	err := s.publish(slices.Delete(s.next(), i, i+1))
 	s.mu.Unlock()
-	s.notify(name)
+	if err == nil {
+		s.notify(name)
+	}
 	return err
 }
 
-func (s *Store) TouchLogin(username string) {
+func (s *Store) TouchLogin(username string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if i := s.index(username); i >= 0 {
-		s.list[i].LastLogin = time.Now().UTC()
-		_ = s.save()
+		next := s.next()
+		next[i].LastLogin = time.Now().UTC()
+		return s.publish(next)
 	}
+	return nil
 }
 
 // SetAccess makes exactly the given accounts (besides admins) able to use the desktop.
 func (s *Store) SetAccess(desktopID string, usernames []string) error {
 	s.mu.Lock()
 	var changed []string
-	for i := range s.list {
-		a := &s.list[i]
+	next := s.next()
+	for i := range next {
+		a := &next[i]
 		want := slices.Contains(usernames, a.Username)
 		has := slices.Contains(a.Desktops, desktopID)
 		switch {
@@ -247,10 +296,13 @@ func (s *Store) SetAccess(desktopID string, usernames []string) error {
 			a.Desktops = slices.DeleteFunc(a.Desktops, func(id string) bool { return id == desktopID })
 			changed = append(changed, a.Username)
 		}
+		retainTokenRevocations(s.list[i], a)
 	}
-	err := s.save()
+	err := s.publish(next)
 	s.mu.Unlock()
-	s.notify(changed...)
+	if err == nil && len(changed) > 0 {
+		s.notify(changed...)
+	}
 	return err
 }
 
@@ -269,10 +321,12 @@ func (s *Store) WithAccess(desktopID string) []string {
 func (s *Store) Forget(isGone func(desktopID string) bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for i := range s.list {
-		s.list[i].Desktops = slices.DeleteFunc(s.list[i].Desktops, isGone)
+	next := s.next()
+	for i := range next {
+		next[i].Desktops = slices.DeleteFunc(next[i].Desktops, isGone)
+		retainTokenRevocations(s.list[i], &next[i])
 	}
-	return s.save()
+	return s.publish(next)
 }
 
 func (a Account) IsAdmin() bool { return a.Admin }

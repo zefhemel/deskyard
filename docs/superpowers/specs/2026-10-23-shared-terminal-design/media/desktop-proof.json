@@ -1,0 +1,12 @@
+{
+  "first_native_session": "terminal-1",
+  "second_native_tab": "terminal-2",
+  "native_shell_pid": "623",
+  "second_tab_shell_pid": "865",
+  "browser_created_shell_pid": "1464",
+  "new_tabs_independent": true,
+  "browser_cli_native_same_pid": true,
+  "cli_detach_preserves_shell": true,
+  "browser_reload_preserves_shell": true,
+  "native_switch_to_browser_created_shell": true
+}

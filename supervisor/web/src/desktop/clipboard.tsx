@@ -3,14 +3,18 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { copyText } from "../lib/clipboard.ts";
 import { Button } from "../components/ui.tsx";
+import { NeedsHttps } from "./needs-https.tsx";
+import { insecureContext } from "./selkies.ts";
 
 export function ClipboardPopover({
   name,
+  frame,
   remote,
   onSend,
   onClose,
 }: {
   name: string;
+  frame: HTMLIFrameElement | null;
   /** The desktop's clipboard text, or null before it has sent any. */
   remote: string | null;
   onSend: (text: string) => void;
@@ -31,23 +35,49 @@ export function ClipboardPopover({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
-    // A click into the desktop's frame blurs this window.
-    const onBlur = () => onClose();
+    // Mobile keyboard/browser focus changes can blur the window too. Close
+    // only after focus actually enters the desktop frame, keeping the draft.
+    let blurTimer: number | undefined;
+    const onBlur = () => {
+      window.clearTimeout(blurTimer);
+      blurTimer = window.setTimeout(() => {
+        if (document.activeElement instanceof HTMLIFrameElement) onClose();
+      }, 0);
+    };
+    // Selkies prevents default touch focus, so a tap can leave the parent's
+    // textarea active. Observe the actual screen interaction as well as blur.
+    let screenWindow: Window | null | undefined;
+    const attach = () => {
+      screenWindow?.removeEventListener("pointerdown", onClose, true);
+      screenWindow = frame?.contentWindow;
+      screenWindow?.addEventListener("pointerdown", onClose, true);
+    };
+    attach();
+    frame?.addEventListener("load", attach);
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
     window.addEventListener("blur", onBlur);
     return () => {
+      frame?.removeEventListener("load", attach);
+      screenWindow?.removeEventListener("pointerdown", onClose, true);
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
       window.removeEventListener("blur", onBlur);
+      window.clearTimeout(blurTimer);
     };
-  }, [onClose]);
+  }, [frame, onClose]);
 
   return (
     <div
       ref={ref}
       class="absolute top-[50px] right-2.5 z-40 w-[340px] max-w-[calc(100vw-20px)] rounded-[10px] bg-surface p-3.5 text-ink shadow-[0_18px_40px_-12px_rgba(0,0,0,.6)]"
     >
+      {insecureContext && (
+        <div class="mb-3 text-[12.5px] text-muted">
+          Copy and paste with {name} here: automatic clipboard sync is off.
+          <NeedsHttps />
+        </div>
+      )}
       <h3 class="mb-1.5 text-[13px] font-semibold text-muted">On {name}'s clipboard</h3>
       <div class="mono max-h-[70px] overflow-auto rounded-[7px] border border-line bg-white px-2.5 py-2 text-[13px]! leading-[1.45] break-all whitespace-pre-wrap">
         {remote ?? <span class="font-sans text-muted">Nothing copied on {name} yet.</span>}

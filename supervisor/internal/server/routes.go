@@ -33,15 +33,21 @@ func (s *Server) routes() {
 	h("GET /api/desktops", s.handleListDesktops)
 	h("POST /api/desktops", s.handleCreateDesktop)
 	h("GET /api/validate-name", s.handleValidateName)
+	h("GET /api/desktops/{name}/terminal", s.handleTerminal)
+	h("GET /api/desktops/{name}/terminal/sessions", s.handleTerminalSessions)
 	h("GET /api/desktops/{name}", s.handleGetDesktop)
 	h("PATCH /api/desktops/{name}", s.handleUpdateDesktop)
 	h("DELETE /api/desktops/{name}", s.handleRemoveDesktop)
+	h("POST /api/desktops/{name}/reclaim-memory", s.handleReclaimMemory)
+	h("PUT /api/desktops/{name}/memory-policy", s.handleMemoryPolicy)
 	h("POST /api/desktops/{name}/{action}", s.handlePower) // start, stop, restart, upgrade, keys
 	h("POST /api/desktops/{name}/mic", s.handleCapture(captureMic))
 	h("POST /api/desktops/{name}/cam", s.handleCapture(captureCam))
 	h("PUT /api/desktops/{name}/access", s.handleSetAccess)
 	h("GET /api/desktops/{name}/screen.png", s.handleScreen)
 	h("GET /api/desktops/{name}/processes", s.handleProcesses)
+	h("GET /api/desktops/{name}/applications", s.handleApplications)
+	h("POST /api/desktops/{name}/applications", s.handleApplications)
 	h("GET /api/desktops/{name}/stats", s.handleStats)
 	h("GET /api/desktops/{name}/folder", s.handleFolder)
 	h("GET /api/desktops/{name}/tools", s.handleTools)
@@ -63,6 +69,7 @@ func (s *Server) routes() {
 
 	h("GET /api/images", s.handleListImages)
 	h("POST /api/images", s.handleAddImage)
+	h("POST /api/images/install", s.handleInstallImage)
 	h("DELETE /api/images", s.handleRemoveImage)
 	h("POST /api/images/check", s.handleCheckImages)
 	h("POST /api/images/upgrade", s.handleUpgradeImage)
@@ -127,7 +134,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Throttle.Succeed(keys...)
-	s.Accounts.TouchLogin(a.Username)
+	if err := s.Accounts.TouchLogin(a.Username); err != nil {
+		s.Log.Warn("recording account login", "account", a.Username, "err", err)
+	}
 	s.Sessions.Issue(w, a.Username, a.SessionEpoch)
 	s.Log.Info("signed in", "account", a.Username, "ip", clientIP(r))
 	writeJSON(w, http.StatusOK, meJSON{a.Username, a.Admin})
@@ -136,6 +145,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 var dummyHash = auth.HashPassword("dummy")
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if !s.terminalOrigin(r) {
+		writeError(w, 403, "cross-origin request refused")
+		return
+	}
+	if claims, ok := s.Sessions.Claims(r); ok {
+		s.terminals.logout(claims)
+	}
 	s.Sessions.Clear(w)
 	w.WriteHeader(http.StatusNoContent)
 }

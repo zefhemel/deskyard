@@ -63,12 +63,12 @@ export function Toaster() {
   }, []);
   if (!list.length) return null;
   return (
-    <div aria-live="polite" class="pointer-events-none fixed bottom-6 left-1/2 z-[60] flex -translate-x-1/2 flex-col items-center gap-2">
+    <div aria-live="polite" class="pointer-events-none fixed bottom-6 left-1/2 z-[60] flex w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col items-center gap-2">
       {list.map((t) => (
         <div
           key={t.id}
           class={
-            "flex items-center gap-2 rounded-full px-3.5 py-[7px] text-[13px] font-semibold text-white shadow-lg " +
+            "flex max-w-full items-center gap-2 rounded-[17px] px-3.5 py-[7px] text-[13px] font-semibold text-white shadow-lg " +
             (t.error ? "bg-danger" : "bg-[rgba(15,21,29,.88)]")
           }
         >

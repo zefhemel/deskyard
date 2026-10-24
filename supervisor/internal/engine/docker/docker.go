@@ -22,8 +22,10 @@ import (
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/jsonstream"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
+	"github.com/moby/moby/client/pkg/versions"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 )
@@ -68,6 +70,19 @@ func (d *Docker) Create(ctx context.Context, s engine.ContainerSpec) (string, er
 	if s.NetworkContainer != "" && (s.Network != "" || len(s.Aliases) != 0 || s.PublishLocal != nil) {
 		return "", errors.New("shared network namespace cannot attach networks, aliases or published ports")
 	}
+	for _, m := range s.Mounts {
+		if !m.MustExist || !m.ReadOnly {
+			continue
+		}
+		ping, err := d.c.Ping(ctx, client.PingOptions{NegotiateAPIVersion: true})
+		if err != nil {
+			return "", wrap(err)
+		}
+		if ping.APIVersion == "" || versions.LessThan(ping.APIVersion, "1.44") || versions.LessThan(d.c.ClientVersion(), "1.44") {
+			return "", fmt.Errorf("host folders require Docker API 1.44 or newer for recursive read-only mounts")
+		}
+		break
+	}
 	env := make([]string, 0, len(s.Env))
 	for k, v := range s.Env {
 		env = append(env, k+"="+v)
@@ -102,6 +117,10 @@ func (d *Docker) Create(ctx context.Context, s engine.ContainerSpec) (string, er
 		hc.RestartPolicy = container.RestartPolicy{Name: container.RestartPolicyMode(s.Restart)}
 	}
 	for _, m := range s.Mounts {
+		if m.MustExist {
+			hc.Mounts = append(hc.Mounts, mount.Mount{Type: mount.TypeBind, Source: m.Source, Target: m.Target, ReadOnly: m.ReadOnly, BindOptions: &mount.BindOptions{ReadOnlyForceRecursive: m.ReadOnly}})
+			continue
+		}
 		bind := m.Source + ":" + m.Target
 		if m.ReadOnly {
 			bind += ":ro"
@@ -114,6 +133,9 @@ func (d *Docker) Create(ctx context.Context, s engine.ContainerSpec) (string, er
 		// read-only /proc and /sys paths (empty lists, not nil, override the defaults).
 		hc.MaskedPaths = []string{}
 		hc.ReadonlyPaths = []string{}
+	}
+	if s.NoNewPrivileges {
+		hc.SecurityOpt = append(hc.SecurityOpt, "no-new-privileges=true")
 	}
 	if s.PublishLocal != nil {
 		hostPort := ""
@@ -296,48 +318,51 @@ func (d *Docker) Exec(ctx context.Context, id string, s engine.ExecSpec) (*engin
 			return err
 		},
 	}
-	var writers []*io.PipeWriter
+	var readers []*io.PipeReader
 
 	if s.Tty {
 		p.Stdout = att.Reader
 	} else {
 		outR, outW := io.Pipe()
 		errR, errW := io.Pipe()
-		writers = []*io.PipeWriter{outW, errW}
+		readers = []*io.PipeReader{outR, errR}
 		go func() {
 			_, err := stdcopy.StdCopy(outW, errW, att.Reader)
 			outW.CloseWithError(err)
 			errW.CloseWithError(err)
 		}()
 		p.Stdout, p.Stderr = outR, errR
+
 	}
 	closeProcess := sync.OnceFunc(func() {
 		cancel()
 		att.Close()
-		for _, writer := range writers {
-			_ = writer.CloseWithError(context.Canceled)
+		for _, reader := range readers {
+			_ = reader.Close()
 		}
 	})
 	stop := context.AfterFunc(ctx, closeProcess)
 	p.Close = func() { stop(); closeProcess() }
 
-	p.Wait = func() (int, error) {
-		for {
-			res, err := d.c.ExecInspect(ctx, created.ID, client.ExecInspectOptions{})
-			if err != nil {
-				return -1, err
-			}
-			if !res.Running {
-				return res.ExitCode, nil
-			}
-			select {
-			case <-ctx.Done():
-				return -1, ctx.Err()
-			case <-time.After(50 * time.Millisecond):
-			}
+	p.Wait = func() (int, error) { return d.waitExec(ctx, created.ID) }
+	return p, nil
+}
+
+func (d *Docker) waitExec(ctx context.Context, id string) (int, error) {
+	for {
+		res, err := d.c.ExecInspect(ctx, id, client.ExecInspectOptions{})
+		if err != nil {
+			return -1, err
+		}
+		if !res.Running {
+			return res.ExitCode, nil
+		}
+		select {
+		case <-ctx.Done():
+			return -1, ctx.Err()
+		case <-time.After(50 * time.Millisecond):
 		}
 	}
-	return p, nil
 }
 
 // closeWriter closes only the write half of the hijacked connection, so the

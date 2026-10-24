@@ -100,3 +100,24 @@ func TestRingAddAtCapDoesNotAllocateBuffer(t *testing.T) {
 		t.Fatalf("Since after wrap: %v", seqs(got))
 	}
 }
+
+func TestRingRunningOutlivesHistory(t *testing.T) {
+	now := time.Now()
+	r := NewRing(time.Minute, 10, func() time.Time { return now })
+	r.Add(Event{Agent: "shell", Kind: "cmd-start", ID: "long", Cmd: "sleep"})
+	now = now.Add(time.Hour)
+	if len(r.Since(0)) != 0 {
+		t.Fatal("history did not expire")
+	}
+	if !r.CommandsRunning() {
+		t.Fatal("lost long-running command")
+	}
+	r.Add(Event{Agent: "other", Kind: "cmd-end", ID: "long"})
+	if !r.CommandsRunning() {
+		t.Fatal("another agent ended command")
+	}
+	r.Add(Event{Agent: "shell", Kind: "cmd-end", ID: "long"})
+	if r.CommandsRunning() {
+		t.Fatal("command still running")
+	}
+}

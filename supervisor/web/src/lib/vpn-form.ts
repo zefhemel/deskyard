@@ -1,4 +1,4 @@
-import type { DesktopVPNSettings, LANException, VPNInput, VPNStatus, VPNUpdate, VPNReference, Job, Settings, SettingsPatch } from "../api.ts";
+import type { DesktopVPNSettings, LANException, VPNInput, VPNStatus, VPNUpdate, VPNReference, Job, Settings, SettingsPatch, HostMount } from "../api.ts";
 
 export interface ConnectionForm {
   name: string;
@@ -132,6 +132,7 @@ export interface DesktopSettingsDraft {
   camera: string;
   vpnConnectionId: string;
   lan: ExceptionRow[];
+  mounts?: HostMount[];
 }
 type SavedDesktopSettings = { image: string; settings: Settings };
 function desktopSettingsPatch(saved: SavedDesktopSettings, draft: DesktopSettingsDraft): SettingsPatch {
@@ -144,6 +145,7 @@ function desktopSettingsPatch(saved: SavedDesktopSettings, draft: DesktopSetting
   if (draft.memoryBytes !== saved.settings.memoryBytes) patch.memoryBytes = draft.memoryBytes;
   if (draft.nanoCpus !== saved.settings.nanoCpus) patch.nanoCpus = draft.nanoCpus;
   if (draft.camera !== saved.settings.camera) patch.camera = draft.camera;
+  if (draft.mounts !== undefined && JSON.stringify(draft.mounts) !== JSON.stringify(saved.settings.mounts ?? [])) patch.mounts = draft.mounts;
   return patch;
 }
 export function desktopSettingsChanged(saved: SavedDesktopSettings, draft: DesktopSettingsDraft): boolean {

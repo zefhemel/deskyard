@@ -1,9 +1,9 @@
 deskyard guide: how to work on a Deskyard desktop
 
 WHAT A DESKTOP IS
-A desktop is a Debian Linux container with an XFCE desktop and one shared
-Chromium. A human uses the same desktop from their browser and may be
-watching, or using the mouse and keyboard, while you work.
+A desktop is a persistent Debian Linux desktop in a container, with a shared
+Chromium browser. Open it in your web browser or use this CLI from your
+terminal. Everyone with access shares the same screen and browser profile.
 
 - One Linux user, `user`, home /workspace. Commands run as user, in
   /workspace by default. There is no sudo and no apt-get install.
@@ -15,24 +15,24 @@ watching, or using the mouse and keyboard, while you work.
     flatpak install --user -y --noninteractive flathub APP_ID   desktop apps
   Node and Python come preinstalled.
 - Leave the desktop's services alone (Caddy, Selkies, Chromium, D-Bus,
-  supervisord): killing them cuts the human off.
+  supervisord): killing them disconnects viewers.
 
 WHERE YOU ARE
 - Inside a desktop: every command acts on it directly. No setup.
 - Anywhere else: talk to it through a remote. A token comes from the
-  desktop's Agents tab; then:
+  desktop's Remote access tab; then:
     deskyard remote add alice https://host/alice --token dyt_...
     deskyard -d alice status
   The first remote is the default; -d NAME or DESKYARD_REMOTE picks
   another. DESKYARD_URL + DESKYARD_TOKEN work without saving anything.
   A token reaches one desktop's shell, files, browser and desktop, nothing
-  else. A stopped desktop answers "alice is stopped"; you can't start it,
-  ask the human.
+  else. A stopped desktop answers "alice is stopped"; start it in the
+  web UI with your account before connecting.
 
 THREE WAYS TO WORK
 
 1. Shell: for files, code, builds, tests, anything scriptable. Fastest and
-   most reliable; prefer it.
+   most reliable for these tasks.
     deskyard exec -- ls -la                    run a command, exit code passes through
     deskyard exec -- bash -lc 'cd app && npm test'   pipes, &&, globs need bash -lc
     deskyard exec --json -- cat notes.txt      {"stdout","stderr","exit"} in one object
@@ -40,24 +40,24 @@ THREE WAYS TO WORK
     echo data | deskyard exec -- tee /workspace/in.txt   stdin is streamed
     deskyard cp ./src alice:/workspace/src     upload (file or directory)
     deskyard cp alice:/workspace/out.csv .     download
-    deskyard shell                             interactive terminal (for humans)
+    deskyard terminal                         shared shell; detach Ctrl-B D
+    deskyard shell                             interactive shell
 
-2. Browser: for websites, especially ones that need the human's logins.
-   The desktop's Chromium is shared: it is on the desktop, the human can
-   see it, and it is signed in to whatever the human signed in to.
+2. Browser: connect browser tools to your existing Chromium session.
+   The desktop's Chromium shares the same profile and signed-in sessions
+   whether you open it on screen or connect through CDP.
    Inside the desktop CDP is at http://127.0.0.1:9221. From elsewhere:
     deskyard -d alice browser connect &        forwards http://127.0.0.1:9222
-   then attach (never launch your own browser):
+   then attach to the shared browser:
     browser = p.chromium.connect_over_cdp("http://127.0.0.1:9222")
     page = browser.contexts[0].new_page()      your own tab, in the shared profile
-   Open your own tab rather than taking over the human's; close it when
-   done. browser.close() only disconnects. If a site needs a login, 2FA or
-   a CAPTCHA, bring the tab to the front, tell the human exactly what is
-   needed, and wait (poll the page) until they've done it.
+   Open a separate tab when other people are using the browser.
+   browser.close() only disconnects. For a login, 2FA or CAPTCHA, open
+   the desktop in your web browser and complete it there.
 
 3. Desktop: for anything without an API: desktop apps, browser UI outside
-   the page (permission prompts, file pickers), or checking what the human
-   sees. Slowest; use it when the other two can't.
+   the page (permission prompts, file pickers), or checking what is on
+   screen.
     deskyard screenshot shot.png      look first (PNG; - or nothing = stdout)
     deskyard zoom 0 0 400 300 z.png   read small text in a region
     deskyard click 640 400            act by screen coordinates (pixels)
@@ -69,7 +69,7 @@ THREE WAYS TO WORK
    The loop: screenshot, find the target's coordinates in the image, act,
    screenshot again to verify. Coordinates are screen pixels (see
    `deskyard size`). Screenshots wait DESKYARD_SETTLE seconds (0.3) first.
-   The human may move the mouse too: re-check before acting if things moved.
+   Other viewers may move the mouse too: re-check before acting if things moved.
 
 WHICH ONE
 - Files, code, installs, data: shell.
@@ -92,11 +92,11 @@ PORTS
   LOCAL DESKTOP" / "out DESKTOP 127.0.0.1:LOCAL" and "Linked to ..." when the
   link is accepted, a moment before the desktop side is known to run.
   Limits: 4 links per token, 64 plain and 256 mappings per command. The
-  humans see which ports your token maps.
+  viewers see which ports your token maps.
 
-WORKING ALONGSIDE A HUMAN
-- They see every window you open. Don't close their tabs or windows.
-- When you need them (a login, a decision), say exactly what and wait.
+SHARING A DESKTOP
+- Other viewers see every window you open. Coordinate mouse and keyboard use.
+- CLI activity and screen actions are visible alongside browser viewers.
 - Keep long-running programs in the background (setsid -f CMD) so they
   outlive your command.
 

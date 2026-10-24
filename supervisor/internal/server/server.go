@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -41,6 +42,7 @@ type Server struct {
 	jobs        *jobs
 	events      *hub
 	viewers     *viewers
+	terminals   *terminalConnections
 	forwards    *forwards
 	viewersPub  *throttle
 	streamDials *dialGates
@@ -52,6 +54,9 @@ type Server struct {
 	images      *catalog
 	recipes     *recipes.Store
 	builds      builds
+
+	memoryReclaim engine.MemoryReclaimSupport
+	memoryPolicy  *memoryPolicy
 	// smokeTest starts a throwaway desktop of a freshly built image.
 	smokeTest func(ctx context.Context, imageID string) error
 
@@ -72,7 +77,8 @@ type Options struct {
 	Secure       bool // served over HTTPS
 	DefaultImage string
 
-	ActivityPresence time.Duration // how long an agent stays after its last action (0: 5 minutes)
+	ActivityPresence time.Duration   // how long an agent stays after its last action (0: 5 minutes)
+	StartupContext   context.Context // optional; bounds capability detection with the startup lifetime
 }
 
 func New(o Options) (*Server, error) {
@@ -99,7 +105,7 @@ func New(o Options) (*Server, error) {
 		Log:      o.Log, Eng: o.Eng, Desktops: o.Desktops, Accounts: o.Accounts,
 		Sessions: &auth.Sessions{Key: key, Secure: o.Secure}, Throttle: &auth.Throttle{},
 		StateDir: o.StateDir, UI: o.UI,
-		jobs: newJobs(), events: newHub(), viewers: newViewers(), forwards: newForwards(), viewersPub: newThrottle(viewersInterval), streamDials: newDialGates(),
+		jobs: newJobs(), events: newHub(), viewers: newViewers(), terminals: newTerminalConnections(), forwards: newForwards(), viewersPub: newThrottle(viewersInterval), streamDials: newDialGates(),
 		clients:     &clientFiles{eng: o.Eng, dir: filepath.Join(o.StateDir, "clients")},
 		activityPub: newThrottle(activityInterval), screenWatchers: newViewers(),
 	}
@@ -109,20 +115,32 @@ func New(o Options) (*Server, error) {
 	if s.tokens, err = loadTokens(o.StateDir); err != nil {
 		return nil, err
 	}
+	if err := s.tokens.bindAccounts(s.Accounts); err != nil {
+		return nil, fmt.Errorf("reconciling agent token creators: %w", err)
+	}
 	s.tokens.onGone = func(t token) { s.activity.Forget(t.ID) }
 	if s.images, err = loadCatalog(o.StateDir, o.DefaultImage); err != nil {
 		return nil, err
 	}
-	s.Desktops.ImageUsed = s.images.noteLocal
+	s.Desktops.ImageUsed = func(ref, id string) {
+		if err := s.images.noteLocal(ref, id); err != nil {
+			s.Log.Warn("recording local image", "ref", ref, "err", err)
+		}
+	}
 	s.recipes = recipes.NewStore(filepath.Join(o.StateDir, "recipes.json"))
 	s.smokeTest = s.smokeTestDesktop
 	o.Accounts.OnChange = s.accountsChanged
+	if s.memoryPolicy, err = loadMemoryPolicy(filepath.Join(o.StateDir, "memory-policy.json")); err != nil {
+		return nil, err
+	}
+	s.detectMemoryReclaim(o.StartupContext)
 	s.routes()
 	return s, nil
 }
 
 // Run starts the background work: engine events, stats, update checks.
 func (s *Server) Run(ctx context.Context) {
+	context.AfterFunc(ctx, s.terminals.shutdown)
 	s.inside = newInsideReader(s)
 	go s.Desktops.Networking.Run(ctx, func(name string) { s.publishDesktop(ctx, name) })
 	go s.watchEngine(ctx)
@@ -131,6 +149,7 @@ func (s *Server) Run(ctx context.Context) {
 	go s.tokens.expireLoop(ctx, s)
 	go s.images.checkLoop(ctx, s)
 	go s.activityLoop(ctx)
+	go s.idleMemoryLoop(ctx)
 }
 
 func sessionKey(stateDir string) ([]byte, error) {
@@ -184,16 +203,16 @@ func (s *Server) account(r *http.Request) (accounts.Account, bool) {
 // withSession resolves the session cookie into the request context; it
 // refreshes cookies that are more than a day old.
 func (s *Server) withSession(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
-	username, epoch, refresh, ok := s.Sessions.Read(r)
+	claims, ok := s.Sessions.Claims(r)
 	if !ok {
 		return r, false
 	}
-	a, found := s.Accounts.Get(username)
-	if !found || a.SessionEpoch != epoch {
+	a, found := s.Accounts.Get(claims.Username)
+	if !found || a.SessionEpoch != claims.Epoch {
 		return r, false
 	}
-	if refresh {
-		s.Sessions.Issue(w, a.Username, a.SessionEpoch)
+	if claims.Refresh {
+		s.Sessions.Refresh(w, claims)
 	}
 	return r.WithContext(context.WithValue(r.Context(), ctxKey{}, a)), true
 }
@@ -244,6 +263,12 @@ func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.URL.Path, "/assets/") {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	}
+	// .webmanifest is missing from some hosts' MIME databases; nosniff
+	// requires an explicit manifest type for installation to work there.
+	if r.URL.Path == "/manifest.webmanifest" {
+		w.Header().Set("Content-Type", "application/manifest+json")
+		w.Header().Set("Cache-Control", "no-cache")
+	}
 	http.FileServerFS(s.UI).ServeHTTP(w, r)
 }
 
@@ -280,9 +305,12 @@ func (s *Server) accountsChanged(usernames ...string) {
 	for _, u := range usernames {
 		a, ok := s.Accounts.Get(u)
 		stillAllowed := func(desktopID string) bool { return ok && a.HasAccess(desktopID) }
+		s.terminals.revalidate(s, u)
 		s.viewers.revoke(u, stillAllowed)
 		s.screenWatchers.revoke(u, stillAllowed)
-		s.tokens.creatorChanged(s, u, a, ok)
+		if err := s.tokens.creatorChanged(s, u); err != nil {
+			s.Log.Error("revoking account agent tokens", "account", u, "err", err)
+		}
 	}
 	s.events.refresh()
 }

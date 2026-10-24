@@ -28,11 +28,11 @@ const agentPrefix = "/api/agent/v1"
 func (s *Server) serveAgent(w http.ResponseWriter, r *http.Request) {
 	bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "an agent token is required (Authorization: Bearer dyt_…)")
+		writeError(w, http.StatusUnauthorized, "an access token is required (Authorization: Bearer dyt_…)")
 		return
 	}
 	t, ok := s.tokens.check(strings.TrimSpace(bearer))
-	if !ok {
+	if !ok || !s.tokenCreatorAllowed(t) {
 		writeError(w, http.StatusUnauthorized, "the token is unknown, revoked or expired")
 		return
 	}
@@ -41,6 +41,14 @@ func (s *Server) serveAgent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "the token's desktop no longer exists")
 		return
 	}
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	defer s.tokens.track(t.ID, cancel)()
+	if _, valid := s.tokens.check(strings.TrimSpace(bearer)); !valid || !s.tokenCreatorAllowed(t) || ctx.Err() != nil {
+		writeError(w, http.StatusUnauthorized, "the token is unknown, revoked or expired")
+		return
+	}
+	r = r.WithContext(ctx)
 	rest, ok := strings.CutPrefix(r.URL.Path, agentPrefix)
 	if !ok {
 		writeError(w, http.StatusNotFound, "no such agent API route")
@@ -54,10 +62,6 @@ func (s *Server) serveAgent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, c.Name+" is stopped; someone with access can start it")
 		return
 	}
-	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
-	defer s.tokens.track(t.ID, cancel)()
-	r = r.WithContext(ctx)
 	switch {
 	case rest == "/exec":
 		s.agentExec(w, r, c, t)
@@ -166,10 +170,15 @@ func (s *Server) agentExec(w http.ResponseWriter, r *http.Request, c desktops.De
 		start.Cwd = "/workspace"
 	}
 	s.Log.Info("agent exec", "desktop", c.Name, "token", t.Name, "argv", activity.DisplayCommand(start.Argv), "tty", start.Tty)
-	p, err := s.Eng.Exec(ctx, c.Container.ID, engine.ExecSpec{
-		Cmd: start.Argv, User: "user", WorkDir: start.Cwd, Env: execEnvFor(start.Env),
-		Tty: start.Tty, Stdin: true, Cols: start.Cols, Rows: start.Rows,
-	})
+	var p *engine.Process
+	if session, shared := terminalSession(start.Argv, start.Tty); shared {
+		p, err = s.terminalProcess(ctx, c.Container.ID, session, start.Cols, start.Rows)
+	} else {
+		p, err = s.Eng.Exec(ctx, c.Container.ID, engine.ExecSpec{
+			Cmd: start.Argv, User: "user", WorkDir: start.Cwd, Env: execEnvFor(start.Env),
+			Tty: start.Tty, Stdin: true, Cols: start.Cols, Rows: start.Rows,
+		})
+	}
 	if err != nil {
 		fail(err.Error())
 		return

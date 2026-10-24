@@ -2,7 +2,7 @@
  * Driving Selkies' web client in the desktop page's frame.
  *
  * The supervisor serves the client at /<name>/screen/ with our additions
- * (supervisor/internal/server/screen_additions.js), which give the frame
+ * (the typed selkies/adapter.ts, or screen_additions.js for old images), which give the frame
  * `window.deskyardScreen`: `tab`, `post(msg)`, `on(type, fn)`, `state()` and
  * `video()`. Both pages are on the supervisor's origin, so we reach it
  * through `frame.contentWindow`.
@@ -38,7 +38,7 @@
  *   camera unless `allowCapture` allowed it on this connection, so the
  *   client can never turn either on by itself (it would after a reconnect).
  * - Sound on and off go through `setSound` (START_AUDIO / STOP_AUDIO on the
- *   stream; see screen_additions.js for why not pipelineControl), devices
+ *   stream; see selkies/adapter.ts for why not pipelineControl), devices
  *   through `setOutput`, `setMic` and `setCamera`.
  * - `media()` (and "deskyard.media" on `on`) says what the client is doing,
  *   from its own status messages; "deskyard.alert" brings its capture errors.
@@ -92,6 +92,13 @@ export type Capture = "microphone" | "webcam";
 /** What our additions put on the frame's window. */
 export interface DeskyardScreen {
   tab: string;
+  keyboard?(show: boolean): void;
+  setTouchMode?(trackpad: boolean): void;
+  setViewZoom?(zoom: number): void;
+  on(type: "deskyard.keyboard", fn: (visible: boolean) => void): () => void;
+  on(type: "deskyard.gesture", fn: (gesture: { kind: "zoom"; factor: number; x: number; y: number } | { kind: "pan"; dx: number; dy: number } | { kind: "cursor"; x: number; y: number }) => void): () => void;
+  /** The frame is an insecure context (plain http). */
+  insecure: boolean;
   post(msg: object): void;
   on(type: "deskyard.state", fn: (state: ConnectionState) => void): () => void;
   on(type: "deskyard.display", fn: (display: Display) => void): () => void;
@@ -119,10 +126,19 @@ export function frameSrc(name: string): string {
   return `/${name}/screen/`;
 }
 
-/** Whether this browser can show the stream: Selkies decodes with WebCodecs. */
-export function browserSupported(): boolean {
-  return typeof VideoDecoder !== "undefined";
-}
+/**
+ * Whether this page is an insecure context: reached over plain http on an
+ * address other than localhost. The browser then has no AudioWorklet, mic,
+ * camera or async clipboard, and Chromium and Firefox no WebCodecs: Selkies'
+ * client streams JPEG and decodes sound in WASM (the adapter permits playback fallback).
+ */
+export const insecureContext = typeof window !== "undefined" && window.isSecureContext === false;
+
+/** Selkies' client pins the stream to JPEG where there is no WebCodecs VideoDecoder. */
+export const jpegOnly = typeof VideoDecoder === "undefined";
+
+/** Where "Needs https" points: running Deskyard on a LAN. */
+export const httpsHelp = "https://github.com/zefhemel/deskyard#on-a-lan";
 
 function frameWindow(frame: HTMLIFrameElement | null): ScreenWindow | null {
   try {
@@ -176,13 +192,26 @@ export type QualityId = "low" | "medium" | "high" | "extreme" | "lossless";
  * (8 Mbit/s at 60 fps). A still screen is cleaned up to the paint-over
  * quality whatever the bitrate. Lossless is the closest H.264 gets: full 4:4:4
  * colour at a high bitrate (a browser without a 4:4:4 decoder gets 4:2:0).
+ *
+ * A browser that streams JPEG (no WebCodecs, as over plain http) gets each
+ * preset's `jpeg`: a JPEG quality and frame rate, with a still screen
+ * re-sent at the paint-over quality (Selkies' default 90; 100 for Lossless).
  */
-export const qualities: { id: QualityId; label: string; hint: string; bitrate: number; framerate: number; encoder: string; fullcolor: boolean }[] = [
-  { id: "low", label: "Low", hint: "for slow connections", bitrate: 2000, framerate: 30, encoder: "h264enc", fullcolor: false },
-  { id: "medium", label: "Medium", hint: "", bitrate: 8000, framerate: 60, encoder: "h264enc", fullcolor: false },
-  { id: "high", label: "High", hint: "", bitrate: 16000, framerate: 60, encoder: "h264enc", fullcolor: false },
-  { id: "extreme", label: "Extreme", hint: "", bitrate: 32000, framerate: 60, encoder: "h264enc", fullcolor: false },
-  { id: "lossless", label: "Lossless", hint: "for fast networks", bitrate: 64000, framerate: 60, encoder: "h264enc", fullcolor: true },
+export const qualities: {
+  id: QualityId;
+  label: string;
+  hint: string;
+  bitrate: number;
+  framerate: number;
+  encoder: string;
+  fullcolor: boolean;
+  jpeg: { quality: number; framerate: number; paintOver: number };
+}[] = [
+  { id: "low", label: "Low", hint: "for slow connections", bitrate: 2000, framerate: 30, encoder: "h264enc", fullcolor: false, jpeg: { quality: 30, framerate: 15, paintOver: 90 } },
+  { id: "medium", label: "Medium", hint: "", bitrate: 8000, framerate: 60, encoder: "h264enc", fullcolor: false, jpeg: { quality: 50, framerate: 30, paintOver: 90 } },
+  { id: "high", label: "High", hint: "", bitrate: 16000, framerate: 60, encoder: "h264enc", fullcolor: false, jpeg: { quality: 70, framerate: 30, paintOver: 90 } },
+  { id: "extreme", label: "Extreme", hint: "", bitrate: 32000, framerate: 60, encoder: "h264enc", fullcolor: false, jpeg: { quality: 80, framerate: 60, paintOver: 90 } },
+  { id: "lossless", label: "Lossless", hint: "for fast networks", bitrate: 64000, framerate: 60, encoder: "h264enc", fullcolor: true, jpeg: { quality: 90, framerate: 60, paintOver: 100 } },
 ];
 
 export const defaultQuality: QualityId = "medium";
@@ -191,26 +220,34 @@ export function isQualityId(v: unknown): v is QualityId {
   return qualities.some((q) => q.id === v);
 }
 
-/** The preset a display's stream settings match, if any. */
+/** The preset a display's stream settings match, if any (H.264 or JPEG). */
 export function qualityOf(settings: Record<string, unknown>): QualityId | null {
-  const q = qualities.find(
-    (q) =>
-      Number(settings.video_bitrate) === q.bitrate &&
-      Number(settings.framerate) === q.framerate &&
-      String(settings.encoder) === q.encoder &&
-      Boolean(settings.video_fullcolor) === q.fullcolor &&
-      (settings.rate_control_mode === undefined || settings.rate_control_mode === "cbr"),
+  const encoder = String(settings.encoder);
+  const q = qualities.find((q) =>
+    encoder === "jpeg"
+      ? Number(settings.jpeg_quality) === q.jpeg.quality && Number(settings.framerate) === q.jpeg.framerate
+      : Number(settings.video_bitrate) === q.bitrate &&
+        Number(settings.framerate) === q.framerate &&
+        encoder === q.encoder &&
+        Boolean(settings.video_fullcolor) === q.fullcolor &&
+        (settings.rate_control_mode === undefined || settings.rate_control_mode === "cbr"),
   );
   return q?.id ?? null;
 }
 
-export function sendQuality(frame: HTMLIFrameElement | null, id: QualityId): void {
+/** A preset as the stream settings this browser sends: JPEG where it has no WebCodecs. */
+export function qualitySettings(id: QualityId, jpeg = jpegOnly): Record<string, unknown> | null {
   const q = qualities.find((x) => x.id === id);
-  if (!q) return;
-  screenOf(frame)?.post({
-    type: "settings",
-    settings: { encoder: q.encoder, rate_control_mode: "cbr", video_bitrate: q.bitrate, framerate: q.framerate, video_fullcolor: q.fullcolor },
-  });
+  if (!q) return null;
+  if (jpeg) {
+    return { encoder: "jpeg", jpeg_quality: q.jpeg.quality, framerate: q.jpeg.framerate, paint_over_jpeg_quality: q.jpeg.paintOver, use_paint_over_quality: true };
+  }
+  return { encoder: q.encoder, rate_control_mode: "cbr", video_bitrate: q.bitrate, framerate: q.framerate, video_fullcolor: q.fullcolor };
+}
+
+export function sendQuality(frame: HTMLIFrameElement | null, id: QualityId): void {
+  const settings = qualitySettings(id);
+  if (settings) screenOf(frame)?.post({ type: "settings", settings });
 }
 
 export interface Size {

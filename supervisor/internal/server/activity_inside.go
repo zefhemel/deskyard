@@ -37,12 +37,18 @@ type insideCursor struct {
 // cur. The stream is hostile input: lines over 8 KiB and lines that aren't
 // JSON are skipped, as are events at or before the cursor (duplicates after a
 // reconnect); the tracker drops events that fail Sanitize.
-func readInside(ctx context.Context, body io.Reader, ref activity.Ref, tr *activity.Tracker, cur *insideCursor) error {
+func readInside(ctx context.Context, body io.Reader, ref activity.Ref, tr *activity.Tracker, cur *insideCursor, heartbeat ...func(bool)) error {
 	br := bufio.NewReaderSize(body, insideMaxLine)
 	discarding := false
+	report := func(idle bool) {
+		for _, beat := range heartbeat {
+			beat(idle)
+		}
+	}
 	for ctx.Err() == nil {
 		line, err := br.ReadSlice('\n')
 		if errors.Is(err, bufio.ErrBufferFull) {
+			report(false)
 			discarding = true // the rest of this line is thrown away too
 			continue
 		}
@@ -53,10 +59,27 @@ func readInside(ctx context.Context, body io.Reader, ref activity.Ref, tr *activ
 			discarding = false
 			continue
 		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		line = bytes.TrimSpace(line)
 		if len(line) == 0 {
-			continue // keep-alive
+			continue // legacy keep-alive; insufficient for automatic reclamation
 		}
+		var status struct {
+			Kind            string `json:"kind"`
+			CommandsRunning *bool  `json:"commandsRunning"`
+		}
+		if json.Unmarshal(line, &status) == nil && status.Kind == "status" {
+			idle := status.CommandsRunning != nil && !*status.CommandsRunning
+			if idle {
+				// Reconcile an end lost during disconnection.
+				tr.ResetInside(ref)
+			}
+			report(idle)
+			continue
+		}
+		report(false) // even a rejected event invalidates the previous idle report
 		var e activity.Event
 		if json.Unmarshal(line, &e) != nil || e.Seq <= cur.Seq {
 			continue
@@ -70,7 +93,10 @@ func readInside(ctx context.Context, body io.Reader, ref activity.Ref, tr *activ
 // consumeInside handles a 200 response: a new epoch means the stream
 // restarted, so the commands we think are running there are over, then it
 // reads the lines.
-func consumeInside(ctx context.Context, resp *http.Response, ref activity.Ref, tr *activity.Tracker, cur *insideCursor) error {
+func consumeInside(ctx context.Context, resp *http.Response, ref activity.Ref, tr *activity.Tracker, cur *insideCursor, heartbeat ...func(bool)) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	epoch := resp.Header.Get("X-Activity-Epoch")
 	if len(epoch) > insideMaxEpoch {
 		epoch = epoch[:insideMaxEpoch]
@@ -79,17 +105,23 @@ func consumeInside(ctx context.Context, resp *http.Response, ref activity.Ref, t
 		tr.ResetInside(ref)
 		*cur = insideCursor{Epoch: epoch}
 	}
-	return readInside(ctx, resp.Body, ref, tr, cur)
+	return readInside(ctx, resp.Body, ref, tr, cur, heartbeat...)
+}
+
+type insidePosition struct {
+	generation string
+	cursor     insideCursor
 }
 
 // insideReader follows the activity stream of every running desktop while
-// someone looks (and a while after), like the stats collector.
+// someone looks (and a while after), or automatic reclamation needs activity.
 type insideReader struct {
 	s       *Server
 	client  *http.Client
 	mu      sync.Mutex
-	running map[string]context.CancelFunc
-	cursors map[string]insideCursor
+	running map[string]*desktopWorker
+	cursors map[string]insidePosition
+	healthy map[string]time.Time
 	wakeC   chan struct{}
 	lastUse time.Time
 }
@@ -105,8 +137,9 @@ func newInsideReader(s *Server) *insideReader {
 				DisableCompression:    true,
 			},
 		},
-		running: map[string]context.CancelFunc{},
-		cursors: map[string]insideCursor{},
+		running: map[string]*desktopWorker{},
+		cursors: map[string]insidePosition{},
+		healthy: map[string]time.Time{},
 		wakeC:   make(chan struct{}, 1),
 	}
 }
@@ -129,8 +162,8 @@ func (ir *insideReader) run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			ir.mu.Lock()
-			for _, cancel := range ir.running {
-				cancel()
+			for _, worker := range ir.running {
+				worker.cancel()
 			}
 			ir.mu.Unlock()
 			return
@@ -159,20 +192,22 @@ func (ir *insideReader) reconcile(ctx context.Context) {
 			continue
 		}
 		live[c.Name] = true
-		if look {
+		if look || (ir.s.memoryReclaim.Enabled && ir.s.memoryPolicy.enabled(c.ID)) {
 			wanted[c.Name] = c
 		}
 	}
 	// A desktop that stopped takes its stream with it: what we thought was
 	// running there is over. (Letting go because nobody looks is not that.)
 	var stopped []activity.Ref
+	var starts []func()
 	ir.mu.Lock()
-	for name, cancel := range ir.running {
-		if _, ok := wanted[name]; !ok {
-			cancel()
-			delete(ir.running, name)
-			if !live[name] {
+	for name, worker := range ir.running {
+		if c, ok := wanted[name]; !ok || worker.generation != desktopGeneration(c) {
+			worker.cancel()
+			delete(ir.healthy, name)
+			if !live[name] || (ok && worker.generation != desktopGeneration(c)) {
 				stopped = append(stopped, refs[name])
+				delete(ir.cursors, name)
 			}
 		}
 	}
@@ -186,9 +221,17 @@ func (ir *insideReader) reconcile(ctx context.Context) {
 		if _, ok := ir.running[name]; ok {
 			continue
 		}
-		cctx, cancel := context.WithCancel(ctx)
-		ir.running[name] = cancel
-		go ir.follow(cctx, c, ir.cursors[name])
+		worker := startDesktopWorker(ctx, c)
+		ir.running[name] = worker
+		position := ir.cursors[name]
+		if position.generation != worker.generation {
+			if position.generation != "" {
+				stopped = append(stopped, refOf(c))
+			}
+			position = insidePosition{generation: worker.generation}
+		}
+		ir.cursors[name] = position
+		starts = append(starts, func() { go ir.follow(worker, c, position.cursor) })
 	}
 	ir.mu.Unlock()
 	// The tracker takes its own locks and calls back: never hold ours.
@@ -197,25 +240,33 @@ func (ir *insideReader) reconcile(ctx context.Context) {
 			ir.s.activity.ResetInside(r)
 		}
 	}
+	for _, start := range starts {
+		start()
+	}
 }
 
 // follow keeps one desktop's stream connected until ctx ends, resuming from
 // the cursor after errors and restarts.
-func (ir *insideReader) follow(ctx context.Context, c desktops.Desktop, cur insideCursor) {
+func (ir *insideReader) follow(worker *desktopWorker, c desktops.Desktop, cur insideCursor) {
+	ctx := worker.ctx
+	defer close(worker.done)
+	defer worker.cancel()
+	defer ir.wake()
 	ref := refOf(c)
 	defer func() {
 		ir.mu.Lock()
-		if ctx.Err() == nil {
-			delete(ir.running, c.Name) // ended by itself; reconcile may restart it
+		if ir.running[c.Name] == worker {
+			delete(ir.running, c.Name)
 		}
-		ir.cursors[c.Name] = cur
+		if ir.running[c.Name] == nil && ir.cursors[c.Name].generation == worker.generation {
+			ir.cursors[c.Name] = insidePosition{generation: worker.generation, cursor: cur}
+		}
 		ir.mu.Unlock()
 	}()
 	backoff := insideBackoffMin
 	for ctx.Err() == nil {
-		wait, err := ir.connect(ctx, c.Name, ref, &cur)
+		wait, err := ir.connect(worker, c, ref, &cur)
 		if errors.Is(err, desktops.ErrStopped) {
-			ir.s.activity.ResetInside(ref)
 			return
 		}
 		if wait == 0 {
@@ -233,7 +284,22 @@ func (ir *insideReader) follow(ctx context.Context, c desktops.Desktop, cur insi
 
 // connect makes one connection and reads it until it ends. It returns how
 // long to wait before the next try (0: use the back-off).
-func (ir *insideReader) connect(ctx context.Context, name string, ref activity.Ref, cur *insideCursor) (time.Duration, error) {
+func (ir *insideReader) connect(worker *desktopWorker, c desktops.Desktop, ref activity.Ref, cur *insideCursor) (time.Duration, error) {
+	ctx, name := worker.ctx, c.Name
+	defer func() {
+		ir.mu.Lock()
+		if ir.running[name] == worker {
+			delete(ir.healthy, name)
+		}
+		ir.mu.Unlock()
+	}()
+	fresh, err := ir.s.Desktops.Get(ctx, name)
+	if err != nil {
+		return 0, err
+	}
+	if desktopGeneration(fresh) != worker.generation {
+		return 0, desktops.ErrStopped
+	}
 	addr, token, err := ir.s.Desktops.Target(ctx, name)
 	if err != nil {
 		return 0, err
@@ -261,7 +327,19 @@ func (ir *insideReader) connect(ctx context.Context, name string, ref activity.R
 	idle := time.AfterFunc(insideIdle, cancel)
 	defer idle.Stop()
 	resp.Body = &idleBody{ReadCloser: resp.Body, idle: idle}
-	err = consumeInside(rctx, resp, ref, ir.s.activity, cur)
+	err = consumeInside(rctx, resp, ref, ir.s.activity, cur, func(idle bool) {
+		ir.mu.Lock()
+		if ir.running[name] != worker || ctx.Err() != nil {
+			ir.mu.Unlock()
+			return
+		}
+		if idle {
+			ir.healthy[name] = time.Now()
+		} else {
+			delete(ir.healthy, name)
+		}
+		ir.mu.Unlock()
+	})
 	// It was connected: the next try is soon, not after a long back-off.
 	return insideBackoffMin, err
 }
@@ -278,4 +356,16 @@ func (b *idleBody) Read(p []byte) (int, error) {
 		b.idle.Reset(insideIdle)
 	}
 	return n, err
+}
+
+// A status heartbeat follows replay of the backlog. No idle report, a lost connection,
+// or an old image without activity support makes automatic reclaim wait.
+func (ir *insideReader) ready(name string, now time.Time) bool {
+	if ir == nil {
+		return false
+	}
+	ir.mu.Lock()
+	defer ir.mu.Unlock()
+	at, ok := ir.healthy[name]
+	return ok && now.Sub(at) >= 0 && now.Sub(at) < insideIdle
 }

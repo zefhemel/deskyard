@@ -11,7 +11,8 @@ import { CamIcon, MicIcon } from "../components/avatar.tsx";
 import { notifyError } from "../components/toast.tsx";
 import { cx } from "../components/ui.tsx";
 import { type Badge, Badges } from "./badges.ts";
-import { canChooseOutput, type Capture, type DeskyardScreen, type Media, setCapture, setVolume } from "./selkies.ts";
+import { NeedsHttps } from "./needs-https.tsx";
+import { canChooseOutput, type Capture, type DeskyardScreen, insecureContext, type Media, setCapture, setVolume } from "./selkies.ts";
 
 // Remembered per browser. Sound is off on the first visit (sound may only
 // start with a click); the mic and the webcam are never remembered: they're
@@ -381,23 +382,31 @@ export function AudioControl({
             title={`My mic into ${name}`}
             label="My mic"
             checked={mic.on}
-            disabled={!connected}
+            disabled={!connected || insecureContext}
             onChange={(on) => (on ? void mic.start() : mic.stop())}
           >
-            <DevicePicker kind="audioinput" label="Microphone" value={input} onChange={changeInput} />
-            {mic.on && <MicMeter screen={screen} live={media.mic} />}
-            {mic.on && !media.mic && <Hint>Starting your mic…</Hint>}
-            <Hint>Everyone on {name} sees when your mic is on</Hint>
+            {insecureContext ? (
+              <NeedsHttps />
+            ) : (
+              <>
+                <DevicePicker kind="audioinput" label="Microphone" value={input} onChange={changeInput} />
+                {mic.on && <MicMeter screen={screen} live={media.mic} />}
+                {mic.on && !media.mic && <Hint>Starting your mic…</Hint>}
+                <Hint>Everyone on {name} sees when your mic is on</Hint>
+              </>
+            )}
           </Section>
           <hr class="my-3 border-0 border-t border-hairline" />
           <Section
             title={`My camera into ${name}`}
             label="My camera"
             checked={cam.on}
-            disabled={!connected || camNote !== null}
+            disabled={!connected || camNote !== null || insecureContext}
             onChange={(on) => (on ? void cam.start() : cam.stop())}
           >
-            {camNote === null ? (
+            {insecureContext ? (
+              <NeedsHttps />
+            ) : camNote === null ? (
               <>
                 <DevicePicker kind="videoinput" label="Camera" value={camera} onChange={changeCamera} />
                 {cam.on && !media.webcam && <Hint>Starting your camera…</Hint>}

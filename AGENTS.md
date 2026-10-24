@@ -1,6 +1,6 @@
 # Project guidance
 
-Deskyard runs persistent Linux desktops in containers, shared by people and AI agents, through a Go supervisor with a Preact web UI.
+Deskyard runs persistent Linux desktops in containers, accessed and shared by people through a browser or CLI, through a Go supervisor with a Preact web UI.
 
 ## Before making changes
 
@@ -21,7 +21,7 @@ Documentation maintenance is part of every task, not a follow-up. Review the doc
 
 ## Implementation and verification
 
-- `supervisor/` contains the Go supervisor and CLI; `supervisor/web/` contains the Preact/TypeScript UI. Desktop image files and tests live under `images/debian-xfce/`.
+- `supervisor/` contains the Go supervisor and CLI; `supervisor/web/` contains the Preact/TypeScript UI. Desktop images share `images/Dockerfile`, `images/common/` and `images/tests/`; desktop-specific overlays live under `images/debian-{xfce,kde,mate}/rootfs/`.
 - Use the existing patterns in the affected component and keep changes focused on the task.
 - Run checks appropriate to the change. From `supervisor/`, use `make test` for Go tests, `make typecheck` for UI type checking and tests, and `make build` to build the UI, scanner and binaries. Engine integration tests (`make test-engine`) and desktop image tests require Docker; see `README.md` for their setup.
 - Check documentation links, referenced paths and metadata after documentation edits. Follow the SilverBullet checks in `docs/AGENTS.md` when available; report any checks that could not be run.

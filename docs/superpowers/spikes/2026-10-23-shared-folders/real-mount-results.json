@@ -1,0 +1,86 @@
+[
+  {
+    "check": "xfce: desktop-ready before attach",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "check": "xfce: live attach",
+    "exit": 0,
+    "stdout": "ok:rw",
+    "stderr": ""
+  },
+  {
+    "check": "mate: desktop-ready before attach",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "check": "mate: live attach",
+    "exit": 0,
+    "stdout": "ok:ro",
+    "stderr": ""
+  },
+  {
+    "check": "XFCE writes through live mount",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "check": "MATE reads XFCE update",
+    "exit": 0,
+    "stdout": "shared\nxfce",
+    "stderr": ""
+  },
+  {
+    "check": "MATE read-only denies write",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "bash: line 1: /shared/project/file: Read-only file system"
+  },
+  {
+    "check": "MATE read-only denies chmod",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "chmod: changing permissions of '/shared/project/file': Read-only file system"
+  },
+  {
+    "check": "MATE cannot bypass RO in user namespace",
+    "exit": 2,
+    "stdout": "",
+    "stderr": "mount: /shared/project: permission denied.\n       dmesg(1) may have more information after failed mount system call.\nsh: 1: cannot create /shared/project/file: Read-only file system"
+  },
+  {
+    "check": "live detach MATE",
+    "exit": 0,
+    "stdout": "ok:unmount",
+    "stderr": ""
+  },
+  {
+    "check": "MATE loses path after detach",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "cat: /shared/project/file: No such file or directory"
+  },
+  {
+    "check": "XFCE retains data after MATE detach",
+    "exit": 0,
+    "stdout": "shared\nxfce",
+    "stderr": ""
+  },
+  {
+    "check": "XFCE desktop-ready after sharing operations",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "check": "MATE desktop-ready after sharing operations",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+]

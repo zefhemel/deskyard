@@ -130,7 +130,8 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	srv, err := server.New(server.Options{
-		Log: log, Eng: eng, Desktops: comps, Accounts: accts, StateDir: cfg.StateDir,
+		StartupContext: ctx,
+		Log:            log, Eng: eng, Desktops: comps, Accounts: accts, StateDir: cfg.StateDir,
 		UI: ui, Secure: cfg.Domain != "", DefaultImage: cfg.DefaultImage,
 		ActivityPresence: cfg.ActivityPresence,
 	})

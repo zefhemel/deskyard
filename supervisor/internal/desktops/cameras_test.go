@@ -6,9 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -66,9 +70,10 @@ func addCamera(t *testing.T, sys, name string) {
 // does.
 type fakeEngine struct {
 	engine.Engine
-	sys string
-	mu  sync.Mutex
-	cs  map[string]*engine.Container
+	sys  string
+	port int
+	mu   sync.Mutex
+	cs   map[string]*engine.Container
 }
 
 func newFakeEngine(sys string) *fakeEngine {
@@ -82,7 +87,7 @@ func (e *fakeEngine) Create(_ context.Context, s engine.ContainerSpec) (string, 
 		return "", errors.New("name in use")
 	}
 	e.cs[s.Name] = &engine.Container{ID: s.Name, Name: s.Name, Image: s.Image, ImageID: s.Image, Labels: s.Labels, Env: s.Env,
-		State: "created", Devices: s.Devices, NetworkContainer: s.NetworkContainer, Restart: s.Restart}
+		State: "created", Devices: s.Devices, NetworkContainer: s.NetworkContainer, Restart: s.Restart, LocalPort: e.port}
 	return s.Name, nil
 }
 
@@ -162,6 +167,10 @@ func (e *fakeEngine) ImageInspect(_ context.Context, ref string) (engine.Image, 
 func newCameraService(t *testing.T, local bool) (*Service, *fakeEngine, string, *bytes.Buffer) {
 	sys := t.TempDir()
 	eng := newFakeEngine(sys)
+	health := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
+	t.Cleanup(health.Close)
+	_, port, _ := net.SplitHostPort(health.Listener.Addr().String())
+	eng.port, _ = strconv.Atoi(port)
 	var log bytes.Buffer
 	s := New(eng, Config{DataDir: t.TempDir(), SysDir: sys, LocalEngine: local}, slog.New(slog.NewTextHandler(&log, nil)))
 	return s, eng, sys, &log

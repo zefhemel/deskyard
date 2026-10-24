@@ -6,6 +6,8 @@ export interface Me {
 }
 
 export interface Host {
+  /** Result of the supervisor's complete startup capability probe. */
+  memoryReclaim: { enabled: boolean; reason?: string };
   cpus: number;
   memBytes: number;
   running: number;
@@ -31,6 +33,12 @@ export interface Stats {
   memLimit: number;
 }
 
+export interface HostMount {
+  source: string;
+  target: string;
+  readOnly: boolean;
+}
+
 export interface VPNReference { id: string; name: string }
 export interface VPNConnection {
   id: string; name: string; provider: "nordvpn"; country: string;
@@ -49,10 +57,11 @@ export interface VPNStatus {
 export interface VPNRollout { connection: VPNConnection; desktops: (VPNReference & {error?: string})[] }
 export interface DesktopVPNSettings { vpnConnectionId: string | null; lanExceptions: LANException[] }
 export interface SettingsPatch extends Partial<DesktopVPNSettings> {
-  image?: string; memoryBytes?: number; nanoCpus?: number; camera?: string; confirmSecrets?: boolean;
+  image?: string; memoryBytes?: number; nanoCpus?: number; camera?: string; confirmSecrets?: boolean; mounts?: HostMount[];
 }
 
 export interface Settings extends DesktopVPNSettings {
+  mounts: HostMount[];
   memoryBytes: number;
   nanoCpus: number;
   /** The host's virtual camera this desktop has to itself; "" for none. */
@@ -60,6 +69,9 @@ export interface Settings extends DesktopVPNSettings {
 }
 
 export interface Desktop {
+  /** Image supports named shared terminals. */
+  terminal: boolean;
+  autoReclaim: boolean;
   id: string;
   name: string;
   state: DesktopState;
@@ -155,6 +167,8 @@ export interface CreatedToken extends Token {
 }
 
 export interface CatalogImage {
+  installed: boolean;
+  official: boolean;
   ref: string;
   title: string;
   version: string;
@@ -345,8 +359,8 @@ export function goToLogin(): void {
   location.href = `/login?next=${encodeURIComponent(next)}`;
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const init: RequestInit = { method, credentials: "same-origin", headers: {} };
+async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  const init: RequestInit = { method, credentials: "same-origin", headers: {}, signal };
   if (body !== undefined) {
     init.body = JSON.stringify(body);
     init.headers = { "Content-Type": "application/json" };
@@ -378,6 +392,15 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 const enc = encodeURIComponent;
 const c = (name: string) => `/api/desktops/${enc(name)}`;
 
+export interface MemoryReclaim {
+  requestedBytes: number;
+  beforeBytes: number;
+  afterBytes: number;
+  swapBeforeBytes: number;
+  swapAfterBytes: number;
+  partial: boolean;
+}
+
 export const api = {
   login: (username: string, password: string) => request<Me>("POST", "/api/login", { username, password }),
   logout: () => request<void>("POST", "/api/logout"),
@@ -387,13 +410,19 @@ export const api = {
 
   desktops: () => request<Desktop[]>("GET", "/api/desktops"),
   desktop: (name: string) => request<Desktop>("GET", c(name)),
-  createDesktop: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: string[] } & DesktopVPNSettings) =>
+  terminalSessions: (name: string, signal?: AbortSignal) =>
+    request<{ sessions: { name: string }[] }>("GET", `${c(name)}/terminal/sessions`, undefined, signal),
+  createDesktop: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: string[]; mounts?: HostMount[] } & DesktopVPNSettings) =>
     request<JobRef>("POST", "/api/desktops", body),
   power: (name: string, action: "start" | "stop" | "restart") => request<void>("POST", `${c(name)}/${action}`),
+  setMemoryPolicy: (name: string, autoReclaim: boolean) => request<void>("PUT", `${c(name)}/memory-policy`, { autoReclaim }),
+  reclaimMemory: (name: string) => request<MemoryReclaim>("POST", `${c(name)}/reclaim-memory`),
   removeDesktop: (name: string, files: boolean) => request<void>("DELETE", c(name) + (files ? "?files=1" : "")),
   updateSettings: (name: string, body: SettingsPatch) =>
     request<JobRef>("PATCH", c(name), body),
   setAccess: (name: string, usernames: string[]) => request<void>("PUT", `${c(name)}/access`, { usernames }),
+  applications: (name: string, windowsOnly = false) => request<ApplicationInventory>("GET", `${c(name)}/applications${windowsOnly ? "?windows=1" : ""}`),
+  applicationAction: (name: string, action: "launch" | "activate", id: string) => request<{ id: string | null }>("POST", `${c(name)}/applications`, { action, id }),
   processes: (name: string) => request<Processes>("GET", `${c(name)}/processes`),
   tools: (name: string) => request<Tool[]>("GET", `${c(name)}/tools`),
   activity: (name: string) => request<ActivityEvent>("GET", `${c(name)}/activity`),
@@ -442,6 +471,7 @@ export const api = {
 
   images: () => request<CatalogImage[]>("GET", "/api/images"),
   addImage: (ref: string) => request<JobRef>("POST", "/api/images", { ref }),
+  installImage: (ref: string) => request<JobRef>("POST", "/api/images/install", { ref }),
   removeImage: (ref: string) => request<void>("DELETE", `/api/images?ref=${enc(ref)}`),
   checkImages: () => request<JobRef>("POST", "/api/images/check"),
   upgradeImage: (ref: string, confirmSecrets = false) => request<JobRef>("POST", "/api/images/upgrade", { ref, confirmSecrets }),
@@ -511,4 +541,21 @@ export function watchJob(id: string, onUpdate: (job: Job) => void): () => void {
     finished = true;
     es.close();
   };
+}
+
+export interface AppWindow {
+  id: string;
+  title: string;
+  app: string;
+  parent: string | null;
+  active: boolean;
+  minimized: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+export interface ApplicationInventory {
+  apps: { id: string; name: string }[];
+  windows: AppWindow[];
 }

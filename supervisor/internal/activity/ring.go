@@ -17,19 +17,21 @@ type Ring struct {
 	now    func() time.Time
 	epoch  string
 
-	mu   sync.Mutex
-	buf  []Event // circular: n events from head
-	head int
-	n    int
-	seq  uint64
-	wake chan struct{} // closed and replaced on each Add
+	mu              sync.Mutex
+	buf             []Event // circular: n events from head
+	head            int
+	n               int
+	seq             uint64
+	wake            chan struct{} // closed and replaced on each Add
+	running         map[string]bool
+	runningOverflow bool // unknown activity stays conservative until stream restart
 }
 
 // NewRing makes a ring; the stream uses 15 minutes and 5,000 events.
 func NewRing(window time.Duration, max int, now func() time.Time) *Ring {
 	b := make([]byte, 8)
 	rand.Read(b)
-	return &Ring{window: window, max: max, now: now, epoch: hex.EncodeToString(b), wake: make(chan struct{}), buf: make([]Event, max)}
+	return &Ring{window: window, max: max, now: now, epoch: hex.EncodeToString(b), wake: make(chan struct{}), buf: make([]Event, max), running: map[string]bool{}}
 }
 
 // Epoch is random and fixed for the ring's life: a reader that sees it change
@@ -41,6 +43,16 @@ func (r *Ring) Epoch() string { return r.epoch }
 func (r *Ring) Add(e Event) Event {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	switch e.Kind {
+	case "cmd-start":
+		if !r.running[runKey(e.Agent, e.ID)] && len(r.running) >= maxInsideRunning {
+			r.runningOverflow = true
+		} else {
+			r.running[runKey(e.Agent, e.ID)] = true
+		}
+	case "cmd-end":
+		delete(r.running, runKey(e.Agent, e.ID))
+	}
 	r.seq++
 	e.Seq, e.T = r.seq, r.now()
 	r.trim()
@@ -107,4 +119,12 @@ func (r *Ring) Wait(ctx context.Context, after uint64) []Event {
 			return nil
 		}
 	}
+}
+
+// CommandsRunning survives history expiry and reconnects. Overflow is unknown
+// rather than idle, so bounded tracking cannot authorize automatic reclaim.
+func (r *Ring) CommandsRunning() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.runningOverflow || len(r.running) > 0
 }

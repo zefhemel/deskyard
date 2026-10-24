@@ -8,11 +8,11 @@ const now = Date.now();
 const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
 
 export const FOLDER = "/Users/zef/deskyard";
-const PLAIN = { custom: false, secrets: false, baseUpdated: false, recipe: null } as const;
+const PLAIN = { installed: true, official: false, custom: false, secrets: false, baseUpdated: false, recipe: null } as const;
 const LATEST = "ghcr.io/zefhemel/deskyard-debian-xfce:latest";
 const BETA = "ghcr.io/zefhemel/deskyard-debian-xfce:beta";
 
-const AGENT_COLORS: Record<string, string> = { "deploy-bot": "#e0457b", "Claude Code": "#d97706", "nightly CI": "#2f9e8f" };
+const AGENT_COLORS: Record<string, string> = { "My laptop": "#e0457b", "a terminal": "#d97706", "Work laptop": "#2f9e8f" };
 
 /** A mock agent last active `secsAgo` seconds ago (active means in the last 10). */
 function agent(name: string, owner: string, inside: boolean, secsAgo: number): AgentPresence {
@@ -39,13 +39,15 @@ function desktop(c: Partial<Desktop> & { name: string }): Desktop {
     imageTitle: "Debian XFCE",
     imageVersion: "2026.10.22",
     imageSecrets: false,
+    autoReclaim: true,
     updateAvailable: null,
     vpn: {state:"disabled",changedAt:"0001-01-01T00:00:00Z",exitIpObservedAt:"0001-01-01T00:00:00Z",desiredRevision:0,appliedRevision:0,idle:false},
-    settings: { memoryBytes: 0, nanoCpus: 0, camera: "", vpnConnectionId: null, lanExceptions: [] },
+    settings: { memoryBytes: 0, nanoCpus: 0, camera: "", vpnConnectionId: null, lanExceptions: [], mounts: [] },
     access: [],
     viewers: [],
     mics: [],
     cams: [],
+    terminal: true,
     webcam: false,
     forwards: [],
     agents: [],
@@ -61,14 +63,14 @@ export const desktops: Desktop[] = [
     startedAt: iso(3 * DAY),
     imageVersion: "2026.10.15",
     updateAvailable: "2026.10.22",
-    settings: { memoryBytes: 2 * GB, nanoCpus: 2e9, camera: "", vpnConnectionId: null, lanExceptions: [] },
+    settings: { memoryBytes: 2 * GB, nanoCpus: 2e9, camera: "", vpnConnectionId: null, lanExceptions: [], mounts: [] },
     access: ["anna"],
     viewers: ["zef", "anna"],
     forwards: [
-      { token: "deploy-bot", direction: "in", port: 3000 },
-      { token: "deploy-bot", direction: "out", port: 5173 },
+      { token: "My laptop", direction: "in", port: 3000 },
+      { token: "My laptop", direction: "out", port: 5173 },
     ],
-    agents: [agent("deploy-bot", "zef", false, 2), agent("Claude Code", "", true, 4), agent("nightly CI", "anna", false, 270)],
+    agents: [agent("My laptop", "zef", false, 2), agent("a terminal", "", true, 4), agent("Work laptop", "anna", false, 270)],
     tokens: 2,
     stats: { cpuPercent: 34, memBytes: 1.4 * GB, memLimit: 2 * GB },
   }),
@@ -76,8 +78,8 @@ export const desktops: Desktop[] = [
   desktop({
     name: "build-bot",
     startedAt: iso(12 * 60 * 1000),
-    settings: { memoryBytes: 4 * GB, nanoCpus: 4e9, camera: "", vpnConnectionId: null, lanExceptions: [] },
-    agents: [agent("Claude Code", "", true, 1)],
+    settings: { memoryBytes: 4 * GB, nanoCpus: 4e9, camera: "", vpnConnectionId: null, lanExceptions: [], mounts: [] },
+    agents: [agent("a terminal", "", true, 1)],
     stats: { cpuPercent: 91, memBytes: 3.1 * GB, memLimit: 4 * GB },
   }),
   desktop({
@@ -146,6 +148,8 @@ function customImage(slug: string, title: string, description: string, over: Par
     desktops: [],
     behind: [],
     checked: null,
+    installed: true,
+    official: false,
     custom: true,
     secrets: false,
     baseUpdated: false,
@@ -164,6 +168,7 @@ export const images: CatalogImage[] = [
     behind: [],
     checked: iso(2 * HOUR),
     ...PLAIN,
+    official: true,
   },
   {
     ref: BETA,
@@ -175,6 +180,10 @@ export const images: CatalogImage[] = [
     checked: iso(2 * HOUR),
     ...PLAIN,
   },
+  ...([ ["kde", "Debian KDE Plasma", "KDE Plasma with Chromium and Discover for installing apps."], ["mate", "Debian MATE", "MATE with Arc styling, Chromium and Software for installing apps."] ] as const).map(([name, title, description]) => ({
+    ...PLAIN, ref: `ghcr.io/zefhemel/deskyard-debian-${name}:latest`, title, description,
+    version: "", desktops: [], behind: [], checked: null, installed: false, official: true,
+  })),
   customImage("python-lab", "Python lab", "Python 3.13, uv and JupyterLab", {}),
   customImage("work-signed-in", "Work, signed in", "Chromium and the work apps, signed in to everything", { secrets: true }),
   customImage("video-tools", "Video tools", "Kdenlive and ffmpeg", { baseUpdated: true }),
@@ -189,7 +198,7 @@ export const recipes: Recipe[] = [
 export const tokens: Record<string, Token[]> = {
   alice: [
     { id: "7f3kq2", name: "claude on zef's laptop", createdBy: "zef", created: iso(10 * DAY), expires: null, lastUsed: iso(2 * 60 * 1000), expired: false },
-    { id: "m2q9x8", name: "nightly CI", createdBy: "zef", created: iso(4 * DAY), expires: new Date(now + 26 * DAY).toISOString(), lastUsed: iso(5 * HOUR), expired: false },
+    { id: "m2q9x8", name: "Work laptop", createdBy: "zef", created: iso(4 * DAY), expires: new Date(now + 26 * DAY).toISOString(), lastUsed: iso(5 * HOUR), expired: false },
     { id: "a81c4d", name: "demo for sam", createdBy: "anna", created: iso(21 * DAY), expires: iso(14 * DAY), lastUsed: iso(14 * DAY), expired: true },
   ],
 };
@@ -220,7 +229,7 @@ const ago = (secs: number) => iso(secs * 1000);
 
 /** What each mock agent has been doing, newest first. Times are relative to now so the page looks alive. */
 function summaryOf(a: AgentPresence): AgentSummary {
-  if (a.name === "deploy-bot") {
+  if (a.name === "My laptop") {
     return {
       ...a,
       now: [
@@ -239,7 +248,7 @@ function summaryOf(a: AgentPresence): AgentSummary {
       ],
     };
   }
-  if (a.name === "Claude Code") {
+  if (a.name === "a terminal") {
     return {
       ...a,
       now: [{ kind: "command", text: "go test ./...", since: ago(18) }],

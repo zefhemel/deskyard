@@ -1,0 +1,78 @@
+#!/bin/bash
+# The shared Chromium: one profile for human and agent. Started on demand
+# (cdp-connect, the `chromium` command), not with the desktop. Its CDP port 9220 is
+# internal; agents use 9221 through cdp-connect.
+# The profile must not be Chromium's default dir: Chromium ignores
+# --remote-debugging-port there.
+PROFILE=/workspace/.config/chromium-shared
+
+for _ in $(seq 100); do
+    [ -S /tmp/.X11-unix/X1 ] && break
+    sleep 0.1
+done
+# Wait for a window manager and a panel work area, regardless of panel edge.
+for _ in $(seq 200); do
+    if /usr/local/bin/desktop-ready; then
+        if [ "$WORKSPACE_DESKTOP" = xfce ]; then
+            xprop -root _NET_WORKAREA 2>/dev/null | grep -Eq '= *[0-9]+, *[1-9]' && break
+        else
+            xprop -root _NET_WORKAREA 2>/dev/null | grep -q '= ' && break
+        fi
+    fi
+    sleep 0.1
+done
+
+flags=(
+    --user-data-dir="$PROFILE"
+    --remote-debugging-port=9220
+    --no-first-run
+    --no-default-browser-check
+    --password-store=basic
+    --start-maximized
+)
+# A container restart may leave Chromium's crash-acknowledgment state set,
+# which otherwise prevents both restoring and saving later sessions. Only
+# recover a previously open browser, never reopen a human-closed session.
+if [ -e "$PROFILE/.open" ] \
+    && ! /usr/bin/curl -fs -o /dev/null --max-time 1 http://127.0.0.1:9220/json/version 2>/dev/null; then
+    flags+=(--restore-last-session --hide-crash-restore-bubble)
+fi
+# Chromium's sandbox needs user namespaces, which Docker's default seccomp
+# profile blocks (they are allowed in Flatpak mode).
+if ! unshare -Ur true 2>/dev/null; then
+    flags+=(--no-sandbox --test-type)
+fi
+
+# Gamepads reach web pages through the Input Interposer.
+. /etc/workspace/gamepads.sh
+
+# While Chromium is open the marker exists, so the next start of the desktop
+# (start-session) brings it back. A person closing it (exit 0) removes the
+# marker; a crash or the container stopping keeps it.
+MARKER="$PROFILE/.open"
+mkdir -p "$PROFILE" && touch "$MARKER"
+/usr/bin/chromium "${flags[@]}" "$@"
+status=$?
+shared_browser_running() {
+    local candidate arg shared main
+    for candidate in $(pgrep -u "$(id -u)" -x chromium); do
+        shared=0
+        main=1
+        [ -r "/proc/$candidate/cmdline" ] || continue
+        while IFS= read -r -d '' arg; do
+            case "$arg" in
+                --user-data-dir="$PROFILE") shared=1 ;;
+                --type=*) main=0 ;;
+            esac
+        done < "/proc/$candidate/cmdline"
+        [ "$shared" = 1 ] && [ "$main" = 1 ] && return 0
+    done
+    return 1
+}
+# (A second start only hands its URL to the running browser and exits 0.)
+# (The desktop stopping closes it too; start-session marks that.)
+if [ "$status" = 0 ] && [ ! -e "$XDG_RUNTIME_DIR/stopping" ] \
+    && ! shared_browser_running; then
+    rm -f "$MARKER"
+fi
+exit "$status"

@@ -5,6 +5,8 @@ status: implemented
 date: "2026-10-22"
 plan: "[[superpowers/plans/2026-10-22-agent-activity|Agent activity plan]]"
 ---
+
+**Implemented positioning update, 2026-10-24:** Deskyard is framed around human remote access and control through the browser and CLI. The Agents tab is now Remote access, agent tokens are access tokens, and presence is CLI activity. Skills remain shipped as optional integrations. Existing `/api/agent/v1/` routes, JSON fields and internal identifiers remain compatible. Agent-focused wording below records the original design; current terminology is documented in [[Architecture/Remote access API]], [[Architecture/Access tokens]] and [[Architecture/CLI activity]].
 People watching a desktop can see which agents are working on it and what they're doing:
 - **Presence.** Agents appear next to the people viewing it, as "zef's agent", presence inferred from recent activity.
 - **Summary.** Hovering or clicking an agent shows what it's doing now and what it did recently.
@@ -96,8 +98,8 @@ These would make it a failure even if it worked:
 
 - **Format.** Events carry a sequence number and a timestamp. The in-desktop ring holds the last 15 minutes, capped at 5,000 events. When it's full, the oldest events are dropped.
 - **Reading it.** The supervisor reads with a cursor and resumes where it left off. On its first connection it backfills the whole ring, so "Recently" and presence also cover what happened before anyone looked.
-- **When it's read.** The supervisor reads while the desktop is running and at least one UI page is open. That's the same rule as stats collection, so wall tiles show inside agents too.
-- **Pairing starts and ends.** A command's start and end events share an id. A start with no end after 15 minutes is dropped.
+- **When it's read.** The supervisor reads while the desktop is running and at least one UI page is open (plus 3 minutes afterwards), or automatic memory reclamation is eligible. That's the same rule as stats collection, so wall tiles show inside agents too.
+- **Pairing starts and ends.** A command's start and end events share an id. Superseding the original 15-minute expiry (2026-10-23): starts remain until their ends, an explicit idle status or an epoch reset, bounded by the existing count caps. The desktop ring separately retains running keys past history expiry and sends `{"kind":"status","commandsRunning":bool}` heartbeats every 15 seconds of inactivity; overflow stays busy until stream restart. Automatic memory reclamation requires a fresh explicit idle report, reconciles missing ends on idle, and invalidates readiness on subsequent activity. Legacy blank heartbeats cannot authorize automatic reclamation.
 - **Untrusted input.** Masking runs in `deskyard` before an event is written. The stream is writable by anything running as `user`, so the supervisor treats it as untrusted:
   - it caps the length of every field;
   - it masks again;

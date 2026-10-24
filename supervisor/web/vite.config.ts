@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig, type ProxyOptions } from "vite";
 import preact from "@preact/preset-vite";
 import tailwindcss from "@tailwindcss/vite";
@@ -36,5 +37,19 @@ export default defineConfig({
   build: {
     outDir: "../internal/web/dist",
     emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        index: fileURLToPath(new URL("./index.html", import.meta.url)),
+        "deskyard-screen": fileURLToPath(
+          new URL("./src/selkies/adapter.ts", import.meta.url),
+        ),
+      },
+      output: {
+        entryFileNames: (chunk) =>
+          chunk.name === "deskyard-screen"
+            ? "deskyard-screen.js"
+            : "assets/[name]-[hash].js",
+      },
+    },
   },
 });

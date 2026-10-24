@@ -349,7 +349,9 @@ func (s *Server) build(ctx context.Context, rec recipes.Recipe, opts buildOption
 		} else {
 			s.Desktops.ForgetImage(rec.Base)
 			if img, err := s.Eng.ImageInspect(ctx, rec.Base); err == nil {
-				s.images.setNewest(rec.Base, img.ID)
+				if err := s.images.setNewest(rec.Base, img.ID); err != nil {
+					return fmt.Errorf("recording base image: %w", err)
+				}
 			}
 		}
 	}

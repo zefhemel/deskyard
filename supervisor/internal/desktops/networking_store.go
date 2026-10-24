@@ -29,6 +29,7 @@ type networkIntent struct {
 }
 
 func cloneSettings(s Settings) Settings {
+	s.Mounts = slices.Clone(s.Mounts)
 	s.LANExceptions = slices.Clone(s.LANExceptions)
 	for i := range s.LANExceptions {
 		s.LANExceptions[i].Ports = slices.Clone(s.LANExceptions[i].Ports)

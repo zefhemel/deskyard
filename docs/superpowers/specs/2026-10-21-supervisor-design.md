@@ -5,6 +5,8 @@ status: approved
 plan: "[[superpowers/plans/2026-10-22-supervisor|Supervisor plan]]"
 date: "2026-10-21"
 ---
+
+**Implemented positioning update, 2026-10-24:** Deskyard is framed around human remote access and control through the browser and CLI. The Agents tab is now Remote access, agent tokens are access tokens, and presence is CLI activity. Skills remain shipped as optional integrations. Existing `/api/agent/v1/` routes, JSON fields and internal identifiers remain compatible. Agent-focused wording below records the original design; current terminology is documented in [[Architecture/Remote access API]], [[Architecture/Access tokens]] and [[Architecture/CLI activity]].
 The supervisor is one Go binary that creates, runs and shares many desktops: persistent Linux desktops in containers. The product is called **Deskyard** through the container engine (Docker now, Podman later). It has accounts, and each desktop has a list of accounts that may use it. Agents elsewhere use a desktop through the same `deskyard` command that's inside it, with a token an admin hands out. The repository splits into the supervisor and the desktop images. Mockups are in the UI section; their HTML sources are in the folder next to this page.
 
 # Intent
@@ -306,6 +308,10 @@ The repository builds desktop images under `images/`; it starts with one, `image
   - `.deskyard/`: `accounts.json`, `tokens.json`, `images.json`, `session.key`, `certmagic/`.
 - In a container, the data folder must be mounted **at the same path** (`-v /srv/desktops:/srv/desktops`), so a path means the same thing to the supervisor and the engine. On startup the supervisor checks this with a marker file and a short-lived helper container, and refuses to start with an explanation if it doesn't match. Run directly, this check is skipped.
 
+## Implemented addition: host folders (23 October 2026)
+
+Admins may also configure per-desktop mounts of existing engine-host folders at non-overlapping paths below `/mnt/`, with read-only/read-write access. This extends the original home-only storage model: these host folders persist independently, are not seeded or chowned by desktop initialization, and are excluded from image-from-desktop templates and workspace file browsing. Settings live in the `deskyard.setting.mounts` container label and survive upgrades and other recreation. Applying edits recreates the container; running desktops restart and stopped ones stay stopped. A read-only strict-bind helper validates source existence/type before stop, without requiring sources to be visible in the supervisor container; sources are never auto-created. Read-only enforcement includes nested mounts and requires Docker API 1.44+ and recursive read-only kernel support. Desktops with host folders disable setuid/file-capability privilege gains. Detaching a mount never deletes its source; desktop removal only deletes its private workspace when requested. See [[Architecture/Workspace folder]] and [[Architecture/Lifecycle]]. Named dynamic sharing between desktops remains separate investigation work, not implemented by this addition.
+
 # Settings per desktop
 
 Chosen at creation by an admin, editable later. Applying a change recreates the container right away (a restart; the UI says so):
@@ -324,10 +330,15 @@ Long operations (create with an image pull, upgrade) run as jobs: the API return
 
 - **Create** (admin): validate name; pull the image if missing and check its contract; make the folder (or reuse an existing one with that name, e.g. a copy made on the host), network; create the container (restart policy `unless-stopped`); connect or publish (see Networks); start; grant access to the accounts chosen in the dialog.
 - **Start / stop / restart** (anyone with access): engine API; stop with a 30 s timeout.
+- **Reclaim memory** (admin, implemented 2026-10-23): explicit button on a running desktop's details page. Request 128 MiB via the optional engine capability, preserving live apps and excluding concurrent lifecycle/reclaim operations. Report resident bytes before/after (including file cache, excluding compressed swap) and partial success; show unsupported-host and helper errors. Rootful Linux Docker with cgroup v2 and swap is required; verified on macOS/OrbStack. Temporary capability-free helpers run through the Docker socket with only the target cgroup writable. No host swap configuration. This extends the original lifecycle design based on the [[superpowers/spikes/2026-10-23-idle-memory|Idle desktop memory reclamation spike]].
 - **Remove** (admin): stop; remove container and network; remove the desktop's ID from all accounts. The folder is kept unless "also delete files" was ticked; the dialog itself is the confirmation.
 - **Upgrade / switch image** (admin): see Images.
 
 # Monitoring
+
+Automatic idle reclamation (implemented 2026-10-23) extends the manual action: after 15 continuous minutes with zero viewers, attempt once per absence on supported hosts. Check every 30 seconds and serialize requests. Viewer return resets the timer, including joins/leaves between checks; supervisor/container restarts and re-enabling the preference begin fresh timers. Skip active tracked agents, running command/browser/forward work, other desktop operations and missing/stale inside idle status, retrying eligibility later without consuming the attempt. Actual attempts, including failures/partial results, consume it. Recheck guards after reserving the operation slot. Default-on `autoReclaim` is an administrator-editable per-desktop preference in `memory-policy.json`, keyed by stable desktop ID and saved immediately without a restart; opting out does not disable the manual button. Require a current explicit command-status heartbeat, so legacy desktop services cannot authorize automatic work. Arbitrary background work outside Deskyard reporting requires opt-out.
+
+Memory reclamation capability is checked once before serving requests (implemented 2026-10-23). Verify rootful Linux Docker, cgroup v2 memory/swap controls and the entire helper/reclaim/cleanup path on a tiny disposable target; this checks active swap and writable `memory.reclaim` with swappiness without touching existing desktops. Log the result and cache `{enabled, reason?}` in `GET /api/host`. A failed probe disables the button and API action while allowing normal startup. Restart after changing host support to re-probe. Per-desktop swap/runtime failures remain local to their request.
 
 - **Stats**: one stats stream per running desktop while any UI page is open (and a few minutes after). CPU % and memory (usage minus page cache), against the desktop's limits when it has them and the host's CPUs and memory when it doesn't, kept 15 minutes at 5 s resolution in memory. Pushed to the UI over server-sent events (`/api/events`), filtered to the desktops the account can see, together with status changes from the engine's event stream and viewer counts.
 - **Processes**: `top` with `-eo pid,user,pcpu,rss,etime,args`, polled every 3 s while the Processes tab is open, sorted by CPU. No kill action in v1.

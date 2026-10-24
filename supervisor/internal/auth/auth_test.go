@@ -3,6 +3,7 @@ package auth
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -11,6 +12,23 @@ func TestPassword(t *testing.T) {
 	h := HashPassword("correct horse")
 	if !CheckPassword(h, "correct horse") || CheckPassword(h, "wrong") || CheckPassword("garbage", "x") {
 		t.Fatal("password check")
+	}
+}
+
+// TestProductionParams guards the cost of real hashes: the other packages'
+// tests lower it with UseTestParams.
+func TestProductionParams(t *testing.T) {
+	h := HashPassword("pw")
+	if !strings.HasPrefix(h, "$argon2id$v=19$m=65536,t=3,p=2$") {
+		t.Fatalf("hash parameters changed: %s", h)
+	}
+	// A hash made with the test parameters still checks.
+	saved := []any{argonMemory, argonTime, argonThreads}
+	UseTestParams()
+	cheap := HashPassword("pw")
+	argonMemory, argonTime, argonThreads = saved[0].(uint32), saved[1].(uint32), saved[2].(uint8)
+	if !strings.HasPrefix(cheap, "$argon2id$v=19$m=64,t=1,p=1$") || !CheckPassword(cheap, "pw") || CheckPassword(cheap, "x") {
+		t.Fatalf("test hash: %s", cheap)
 	}
 }
 

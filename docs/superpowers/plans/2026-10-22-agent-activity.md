@@ -5,6 +5,11 @@ status: done
 date: "2026-10-22"
 spec: "[[superpowers/specs/2026-10-22-agent-activity-design|Agent activity design]]"
 ---
+
+**Implemented positioning update, 2026-10-24:** Deskyard is framed around human remote access and control through the browser and CLI. The Agents tab is now Remote access, agent tokens are access tokens, and presence is CLI activity. Skills remain shipped as optional integrations. Existing `/api/agent/v1/` routes, JSON fields and internal identifiers remain compatible. Agent-focused wording below records the original design; current terminology is documented in [[Architecture/Remote access API]], [[Architecture/Access tokens]] and [[Architecture/CLI activity]].
+
+**Implemented amendment, 2026-10-23:** the [[superpowers/plans/2026-10-22-supervisor|Supervisor plan]] adds automatic idle reclamation. Its eligible desktops are followed even without UI viewers. Explicit command-status heartbeats replace blank keepalives for current binaries and include commands older than history; legacy readers remain compatible. Starts no longer expire after 15 minutes: ends, explicit idle status or epoch resets clear them, with existing count bounds. This supersedes the original expiry and UI-only subscription instructions/tests retained below.
+
 # Agent Activity Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -559,7 +564,7 @@ git commit -m "supervisor: record outside agents' commands, screen actions, copi
 - Create: `supervisor/internal/server/activity_inside.go` — the reader per running desktop.
 - Modify: `supervisor/internal/server/server.go` — the `inside *insideReader` field in the struct, and in `Run`: `s.inside = newInsideReader(s)` before the goroutines, then `go s.inside.run(ctx)`. `New` stays untouched (Task 6 edits it).
 - Modify: `supervisor/internal/server/events.go` — `s.inside.wake()` next to `s.stats.wake()` in `handleEvents` and `watchEngine`.
-- Create: `docs/Architecture/Agent activity.md` — component page (`status: built`, `partOf: "[[Architecture/Supervisor]]"`, `uses: [[Architecture/Agent API]], [[Architecture/Activity stream]], [[Architecture/Web UI]]`); add `[[Architecture/Agent activity]]` to `uses` of `docs/Architecture/Web UI.md`.
+- Create: `docs/Architecture/Agent activity.md` — component page (`status: built`, `partOf: "[[Architecture/Supervisor]]"`, `uses: [[Architecture/Remote access API]], [[Architecture/Activity stream]], [[Architecture/Web UI]]`); add `[[Architecture/CLI activity]]` to `uses` of `docs/Architecture/Web UI.md`.
 - Test: `supervisor/internal/server/activity_inside_test.go`, `supervisor/tests/test_activity.py`
 
 **Interfaces:**

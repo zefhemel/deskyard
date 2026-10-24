@@ -4,6 +4,8 @@ Use this workflow for a Docker engine that also holds unrelated desktops. It nev
 
 The commands below target the macOS/arm64 OrbStack development host. They require Go, Node, Python, uv, Docker CLI, the current `deskyard-debian-xfce:selkies` image, the pinned Gluetun image, WireGuard kernel support and internet access for Alpine tools/public HTTPS. The container mode currently mounts `/Users/zef/.orbstack/run/docker.sock` and builds Linux/arm64. Adapt that socket/architecture explicitly for another host; these results do not establish native Linux support.
 
+Set `CC_TEST_IMAGE` to a recent compatible desktop image to verify current image behavior; native and containerized fixture supervisors both honor it. If omitted, the helper retains its historical `deskyard-debian-xfce:selkies` default.
+
 From `supervisor/`, after `make build`:
 
 ```sh

@@ -126,10 +126,10 @@ func runRemoteAdd(a *App, c *call) error {
 	}
 	tok := c.str("--token", a.Getenv("DESKYARD_TOKEN"))
 	if tok == "" {
-		return usagef(c.cmd, "no token: pass --token dyt_… (create one on the desktop's Agents tab)")
+		return usagef(c.cmd, "no token: pass --token dyt_… (create one on the desktop's Remote access tab)")
 	}
 	if !strings.HasPrefix(tok, "dyt_") {
-		return usagef(c.cmd, "that doesn't look like an agent token (they start with dyt_): copy it from the desktop's Agents tab")
+		return usagef(c.cmd, "that doesn't look like an access token (they start with dyt_): copy it from the desktop's Remote access tab")
 	}
 	t, err := remote.ParseURL(rawURL)
 	if err != nil {
@@ -199,7 +199,7 @@ func runRemoteList(a *App, c *call) error {
 		return enc.Encode(rows)
 	}
 	if len(cfg.Remotes) == 0 {
-		fmt.Fprintln(a.Stdout, "No remotes. Get a token on a desktop's Agents tab, then: deskyard remote add NAME https://host/NAME --token dyt_…")
+		fmt.Fprintln(a.Stdout, "No remotes. Get a token on a desktop's Remote access tab, then: deskyard remote add NAME https://host/NAME --token dyt_…")
 		return nil
 	}
 	tw := tabwriter.NewWriter(a.Stdout, 0, 0, 2, ' ', 0)

@@ -138,7 +138,7 @@ export function ViewersPopover({
       )}
       {agents.length > 0 && (
         <>
-          <h3 class="mt-3 mb-1.5 text-[13px] font-semibold text-muted">Agents</h3>
+          <h3 class="mt-3 mb-1.5 text-[13px] font-semibold text-muted">CLI activity</h3>
           <AgentRows name={name} agents={agents} />
         </>
       )}

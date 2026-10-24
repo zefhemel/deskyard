@@ -1,13 +1,14 @@
 // A button that opens a small menu (the ⋯ menus, the account menu, the
 // desktop bar's Keys and Quality).
 import type { ComponentChildren } from "preact";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { cx } from "./ui.tsx";
 
 export interface MenuItem {
   label: ComponentChildren;
   onSelect: () => void;
   danger?: boolean;
+  disabled?: boolean;
   /** Draw a separator above this item. */
   separated?: boolean;
   checked?: boolean;
@@ -28,6 +29,27 @@ interface MenuProps {
 export function Menu({ items, trigger, align = "right", class: extra, onClose }: MenuProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const [maxHeight, setMaxHeight] = useState<number>();
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const viewport = window.visualViewport;
+    const resize = () => {
+      if (!menu.current) return;
+      const bottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
+      setMaxHeight(Math.max(0, bottom - menu.current.getBoundingClientRect().top - 8));
+    };
+    resize();
+    window.addEventListener("resize", resize);
+    viewport?.addEventListener("resize", resize);
+    viewport?.addEventListener("scroll", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      viewport?.removeEventListener("resize", resize);
+      viewport?.removeEventListener("scroll", resize);
+    };
+  }, [open]);
 
   const close = () => {
     setOpen(false);
@@ -59,9 +81,11 @@ export function Menu({ items, trigger, align = "right", class: extra, onClose }:
       {trigger({ open, toggle: () => (open ? close() : setOpen(true)) })}
       {open && (
         <div
+          ref={menu}
           role="menu"
+          style={{ maxHeight: maxHeight === undefined ? undefined : `${maxHeight}px` }}
           class={cx(
-            "absolute top-[calc(100%+4px)] z-40 min-w-[180px] rounded-[9px] border border-line bg-surface p-[5px] text-ink shadow-[0_14px_30px_-12px_rgba(23,34,49,.35)]",
+            "absolute top-[calc(100%+4px)] z-40 min-w-[180px] overflow-y-auto overscroll-contain rounded-[9px] border border-line bg-surface p-[5px] text-ink shadow-[0_14px_30px_-12px_rgba(23,34,49,.35)]",
             align === "right" ? "right-0" : "left-0",
           )}
         >
@@ -72,8 +96,9 @@ export function Menu({ items, trigger, align = "right", class: extra, onClose }:
                 type="button"
                 role={item.checked === undefined ? "menuitem" : "menuitemcheckbox"}
                 aria-checked={item.checked}
+                disabled={item.disabled}
                 class={cx(
-                  "flex w-full cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-2.5 py-2 text-left text-[15px] whitespace-nowrap hover:bg-[#e7ebf0]",
+                  "flex w-full cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-2.5 py-2 text-left text-[15px] whitespace-nowrap enabled:hover:bg-[#e7ebf0] disabled:cursor-default disabled:opacity-60",
                   item.danger ? "text-danger" : "text-ink",
                 )}
                 onClick={() => {

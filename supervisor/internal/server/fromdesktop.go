@@ -262,7 +262,71 @@ func (s *Server) walkHome(ctx context.Context, name string, fn func(rel string, 
 	} else if !errors.Is(err, fs.ErrPermission) {
 		return err
 	}
-	rc, err := s.Desktops.FolderTar(ctx, name)
+	// A file with several names (a package store's hard links, say) has
+	// its content once in the archive, at whichever name tar met first:
+	// possibly one always left out (~/.cache). As walkHere does, give every
+	// name as a file of its own: the other names come last, read again.
+	links := map[string][]string{} // first name → the others
+	if err := walkTar(ctx, s, name, nil, func(rel string, h *tar.Header, content contentFunc) error {
+		if h.Typeflag == tar.TypeLink {
+			if target := tarRel(h.Linkname); target != "" {
+				links[target] = append(links[target], rel)
+			}
+			return nil
+		}
+		return fn(rel, h, content)
+	}); err != nil || len(links) == 0 {
+		return err
+	}
+	targets := make([]string, 0, len(links))
+	for t := range links {
+		if strings.Contains(t, "\n") {
+			return fmt.Errorf("can't reread hard link %q: a newline in its name", t)
+		}
+		targets = append(targets, t)
+	}
+	slices.Sort(targets)
+	return walkTar(ctx, s, name, targets, func(rel string, h *tar.Header, content contentFunc) error {
+		if h.Typeflag != tar.TypeReg {
+			return nil // changed since: no longer the file it was
+		}
+		names := links[rel]
+		if len(names) == 0 {
+			return nil // a requested file became a directory: ignore its children
+		}
+		rd, size, err := content()
+		if err != nil {
+			return err
+		}
+		if len(names) > 1 {
+			// One read for several names: through a temporary file.
+			f, err := os.CreateTemp("", "deskyard-link-*")
+			if err != nil {
+				return err
+			}
+			defer os.Remove(f.Name())
+			defer f.Close()
+			if _, err := io.Copy(f, rd); err != nil {
+				return err
+			}
+			for _, n := range names {
+				if _, err := f.Seek(0, io.SeekStart); err != nil {
+					return err
+				}
+				if err := fn(n, linkHeader(h, n), func() (io.Reader, int64, error) { return io.LimitReader(f, size), size, nil }); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		return fn(names[0], linkHeader(h, names[0]), func() (io.Reader, int64, error) { return rd, size, nil })
+	})
+}
+
+// walkTar calls fn for each entry of the helper's archive of a desktop's
+// folder (of paths only, if any).
+func walkTar(ctx context.Context, s *Server, name string, paths []string, fn func(rel string, h *tar.Header, content contentFunc) error) error {
+	rc, err := s.Desktops.FolderTar(ctx, name, paths...)
 	if err != nil {
 		return err
 	}
@@ -276,8 +340,8 @@ func (s *Server) walkHome(ctx context.Context, name string, fn func(rel string, 
 			rc.Close()
 			return err
 		}
-		rel := strings.Trim(path.Clean(strings.TrimPrefix(h.Name, "./")), "/")
-		if rel == "." || rel == "" || strings.HasPrefix(rel, "../") {
+		rel := tarRel(h.Name)
+		if rel == "" {
 			continue
 		}
 		if err := fn(rel, h, func() (io.Reader, int64, error) { return tr, h.Size, nil }); err != nil {
@@ -286,6 +350,23 @@ func (s *Server) walkHome(ctx context.Context, name string, fn func(rel string, 
 		}
 	}
 	return rc.Close()
+}
+
+// tarRel is the path in the folder of a name in the helper's archive ("" for
+// the folder itself or a name outside it).
+func tarRel(name string) string {
+	rel := strings.Trim(path.Clean(strings.TrimPrefix(name, "./")), "/")
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
+		return ""
+	}
+	return rel
+}
+
+// linkHeader is h, a file's header, for another of its names.
+func linkHeader(h *tar.Header, rel string) *tar.Header {
+	out := *h
+	out.Name = "./" + rel
+	return &out
 }
 
 // skipHere tells walks of the folder which folders not to go into: those
@@ -431,8 +512,7 @@ func (zeros) Read(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// desktopFlatpaks are a desktop's per-user Flatpak apps and remotes, and how
-// to read a remote's GPG key.
+// desktopFlatpaks holds per-user Flatpak apps, remotes and loaded GPG keys.
 type desktopFlatpaks struct {
 	apps    []recipes.InstalledFlatpak
 	remotes []recipes.UserRemote
@@ -459,13 +539,20 @@ func (s *Server) desktopFlatpaks(ctx context.Context, c desktops.Desktop) deskto
 			return out
 		}
 		out.apps, out.remotes = recipes.ParseFlatpakList(string(list)), recipes.ParseFlatpakRemotes(string(rms))
-		out.key = func(remote string) []byte {
-			if !plain(remote) {
-				return nil
+		// Resolve keys while discovery owns ctx; consumers may run after it closes.
+		keys := map[string][]byte{}
+		for _, rm := range out.remotes {
+			if !plain(rm.Name) {
+				continue
 			}
-			b, _ := s.execOutput(ctx, c, "cat", "/workspace/"+recipes.FlatpakKeyPath(remote))
-			return b
+			b, err := s.execOutput(ctx, c, "cat", "/workspace/"+recipes.FlatpakKeyPath(rm.Name))
+			if err != nil {
+				out.notes = append(out.notes, "Couldn't read the Flatpak key for "+rm.Name+": "+err.Error())
+				continue
+			}
+			keys[rm.Name] = b
 		}
+		out.key = func(remote string) []byte { return keys[remote] }
 		return out
 	}
 	root, err := os.OpenRoot(filepath.Join(s.Desktops.Cfg.DataDir, c.Name))

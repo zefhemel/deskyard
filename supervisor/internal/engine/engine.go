@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"sync"
 	"time"
 )
 
@@ -17,6 +16,8 @@ var ErrNotFound = errors.New("not found")
 type Mount struct {
 	Source, Target string // Source is a host path
 	ReadOnly       bool
+	// MustExist uses a strict bind: a missing host source is an error, never created.
+	MustExist bool
 }
 
 type ContainerSpec struct {
@@ -49,6 +50,8 @@ type ContainerSpec struct {
 	// NoHealthcheck turns off the image's HEALTHCHECK, which would otherwise
 	// run the image's own command in the container.
 	NoHealthcheck bool
+	// NoNewPrivileges prevents setuid and file capabilities granting new privileges.
+	NoNewPrivileges bool
 }
 
 type Container struct {
@@ -91,7 +94,10 @@ type Process struct {
 	Stderr io.Reader
 	Resize func(cols, rows uint) error
 	Wait   func() (int, error)
-	Close  func()
+	// Close disposes attached I/O, unblocking reads and writes. It is safe to
+	// call repeatedly or concurrently; command termination is not guaranteed.
+	// Stdin.Close is separate: non-TTY execs retain output after end of input.
+	Close func()
 }
 
 type Stats struct {
@@ -177,53 +183,8 @@ type Engine interface {
 	Info(ctx context.Context) (HostInfo, error)
 }
 
-// Output runs cmd and returns its stdout, stderr and exit code.
+// Output runs cmd with bounded capture and returns its stdout, stderr and exit code.
 func Output(ctx context.Context, e Engine, id string, spec ExecSpec) (stdout, stderr []byte, code int, err error) {
-	p, err := e.Exec(ctx, id, spec)
-	if err != nil {
-		return nil, nil, -1, err
-	}
-	closeProcess := sync.OnceFunc(p.Close)
-	stop := context.AfterFunc(ctx, closeProcess)
-	defer stop()
-	defer closeProcess()
-	type res struct {
-		b   []byte
-		err error
-	}
-	type exit struct {
-		code int
-		err  error
-	}
-	outc, errc := make(chan res, 1), make(chan res, 1)
-	waitc := make(chan exit, 1)
-	go func() { b, err := io.ReadAll(p.Stdout); outc <- res{b, err} }()
-	go func() {
-		if p.Stderr == nil {
-			errc <- res{}
-			return
-		}
-		b, err := io.ReadAll(p.Stderr)
-		errc <- res{b, err}
-	}()
-	go func() { code, err := p.Wait(); waitc <- exit{code, err} }()
-	var out, stderrResult res
-	var result exit
-	for remaining := 3; remaining > 0; remaining-- {
-		select {
-		case out = <-outc:
-			outc = nil
-		case stderrResult = <-errc:
-			errc = nil
-		case result = <-waitc:
-			waitc = nil
-		case <-ctx.Done():
-			closeProcess()
-			return out.b, stderrResult.b, -1, ctx.Err()
-		}
-	}
-	if ctx.Err() != nil {
-		return out.b, stderrResult.b, -1, ctx.Err()
-	}
-	return out.b, stderrResult.b, result.code, errors.Join(result.err, out.err, stderrResult.err)
+	result, err := Run(ctx, e, id, spec, RunOptions{})
+	return result.Stdout, result.Stderr, result.Code, err
 }

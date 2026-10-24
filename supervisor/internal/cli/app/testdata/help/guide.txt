@@ -1,4 +1,4 @@
-deskyard guide: short manual for AI agents
+deskyard guide: short manual for desktop access and control
 
 Usage: deskyard [-d NAME] guide
 

@@ -5,6 +5,8 @@ status: approved
 plan: "[[superpowers/plans/2026-10-22-audio-and-ports|Audio and ports plan]]"
 date: "2026-10-22"
 ---
+
+**Implemented positioning update, 2026-10-24:** Deskyard is framed around human remote access and control through the browser and CLI. The Agents tab is now Remote access, agent tokens are access tokens, and presence is CLI activity. Skills remain shipped as optional integrations. Existing `/api/agent/v1/` routes, JSON fields and internal identifiers remain compatible. Agent-focused wording below records the original design; current terminology is documented in [[Architecture/Remote access API]], [[Architecture/Access tokens]] and [[Architecture/CLI activity]].
 Four additions to Deskyard, built on the [[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]:
 - sound from a desktop plays for everyone who has it open;
 - viewers can turn on their mic, which is off by default;

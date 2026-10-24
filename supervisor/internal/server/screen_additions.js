@@ -1,3 +1,6 @@
+// Legacy compatibility bridge for desktop images without the v1 hook contract.
+// New images use supervisor/web/src/selkies/adapter.ts. Keep this bridge only
+// until support for pre-contract Selkies 2.1.0 images is explicitly retired.
 // Deskyard's additions to Selkies' web client. The supervisor serves this as
 // /<name>/screen/deskyard.js and loads it before any of Selkies' scripts.
 //
@@ -29,9 +32,90 @@
 // - Keeps Selkies from taking the focus out of the desktop page: it focuses
 //   its text-input host when a stream attaches, which blurred the page and
 //   closed its open menus. That focus waits until this frame has the focus.
+// - Lets Selkies' client run over plain http (an insecure context), on its
+//   JPEG and WASM fallbacks, with its sound played without an AudioWorklet.
 // - window.deskyardScreen, the hooks the desktop page drives Selkies with.
 (() => {
   "use strict";
+
+  // --- plain http ---------------------------------------------------------------
+  // Reached over plain http on a LAN address, the page isn't a secure context:
+  // the browser has no AudioWorklet, mic, camera or async clipboard, and no
+  // WebCodecs either in Chromium and Firefox (WebKit keeps them).
+  // Selkies' client then refuses to start ("requires a secure connection"),
+  // although it has a fallback for each of the first two: with no
+  // VideoDecoder it pins the stream to JPEG, and with no AudioDecoder it
+  // decodes Opus with libopus in WASM. So it's told the context is secure
+  // (its other checks of isSecureContext also need navigator.clipboard,
+  // which isn't there), and its sound playback's AudioWorklet runs on a
+  // ScriptProcessorNode (below). The page reads deskyardScreen.insecure.
+  const insecure = window.isSecureContext === false;
+  if (insecure) {
+    try { Object.defineProperty(window, "isSecureContext", { configurable: true, get: () => true }); } catch {}
+  }
+
+  // An AudioWorklet stand-in for a context that has none: addModule runs the
+  // module's code on the page, with the worklet scope's globals, and an
+  // AudioWorkletNode is a ScriptProcessorNode that calls its processor's
+  // process() for each 128-frame block, its port one end of a MessageChannel.
+  // Enough for Selkies' playback (one output, messages on the port) and our
+  // sound tap; it plays on the page's main thread, so a busy page can make
+  // it stutter.
+  const Base = window.BaseAudioContext || window.AudioContext;
+  if (Base && !("audioWorklet" in Base.prototype) && typeof Base.prototype.createScriptProcessor === "function") {
+    const registered = new WeakMap(); // context -> Map(name -> processor class)
+    let port = null; // the port of the processor being made
+    class AudioWorkletProcessor {
+      constructor() { this.port = port; }
+    }
+    Object.defineProperty(Base.prototype, "audioWorklet", {
+      configurable: true,
+      get() {
+        const ctx = this;
+        return {
+          async addModule(url) {
+            const code = await (await fetch(url)).text();
+            if (!registered.has(ctx)) registered.set(ctx, new Map());
+            const scope = {
+              AudioWorkletProcessor,
+              registerProcessor: (name, cls) => registered.get(ctx).set(name, cls),
+              sampleRate: ctx.sampleRate,
+              get currentTime() { return ctx.currentTime; },
+              get currentFrame() { return Math.round(ctx.currentTime * ctx.sampleRate); },
+            };
+            new Function("scope", `with (scope) {\n${code}\n}`)(scope);
+          },
+        };
+      },
+    });
+    window.AudioWorkletNode = function AudioWorkletNode(ctx, name, options = {}) {
+      const cls = registered.get(ctx)?.get(name);
+      if (!cls) throw new DOMException(`No AudioWorkletProcessor "${name}"`, "InvalidStateError");
+      const channels = (options.outputChannelCount && options.outputChannelCount[0]) || 2;
+      const node = ctx.createScriptProcessor(1024, 1, channels);
+      const ch = new MessageChannel();
+      port = ch.port2;
+      let proc;
+      try { proc = new cls(options); } finally { port = null; }
+      node.port = ch.port1;
+      const BLOCK = 128;
+      const ins = [new Float32Array(BLOCK)];
+      const outs = Array.from({ length: channels }, () => new Float32Array(BLOCK));
+      let running = true;
+      node.onaudioprocess = (e) => {
+        const input = e.inputBuffer.getChannelData(0);
+        for (let at = 0; at < e.outputBuffer.length; at += BLOCK) {
+          ins[0].set(input.subarray(at, at + BLOCK));
+          for (const o of outs) o.fill(0);
+          if (running) {
+            try { running = proc.process([ins], [outs], {}) !== false; } catch (err) { running = false; console.warn("Deskyard: worklet stand-in:", err); }
+          }
+          for (let c = 0; c < channels; c++) e.outputBuffer.getChannelData(c).set(outs[c], at);
+        }
+      };
+      return node;
+    };
+  }
 
   // --- Selkies' tab id ----------------------------------------------------------
   // Gone before Selkies' code reads it, so it makes a new one for this load.
@@ -340,8 +424,30 @@
     display = { ...display, ...d };
     for (const fn of displayListeners) try { fn(display); } catch {}
   };
+  // The socket worker can deliver the join IDR to the decoder before the
+  // page processes PIPELINE_RESETTING. If that first picture is lost, ask
+  // again promptly instead of waiting for Selkies' three-second watchdog.
+  let firstPictureTimer = null;
+  const awaitFirstPicture = () => {
+    clearTimeout(firstPictureTimer);
+    const current = transport;
+    let attempts = 0;
+    const retry = () => {
+      firstPictureTimer = null;
+      if (transport !== current || !current || current.readyState !== PageWebSocket.OPEN) return;
+      // Selkies creates a visible placeholder canvas before decoding. Its
+      // status marker is hidden by the first decoded/presented frame on
+      // every rendering path, including video and offscreen canvas.
+      if (document.getElementById("status-display")?.classList.contains("hidden")) return;
+      sendOwn("REQUEST_KEYFRAME");
+      if (++attempts < 5) firstPictureTimer = setTimeout(retry, 250);
+    };
+    firstPictureTimer = setTimeout(retry, 100);
+  };
   const onText = (text) => {
-    if (text.startsWith("DISPLAY_OWNER ")) {
+    if (text === "MODE websockets" || text === "PIPELINE_RESETTING primary") {
+      awaitFirstPicture();
+    } else if (text.startsWith("DISPLAY_OWNER ")) {
       setDisplay({ owner: true });
     } else if (text.startsWith("clipboard_reply,")) {
       if (display.owner === null) setDisplay({ owner: true });
@@ -350,6 +456,7 @@
       try { m = JSON.parse(text); } catch { return; }
       if (m.type === "stream_resolution" && m.displayId === "primary" && m.width > 0 && m.height > 0) {
         setDisplay({ width: m.width, height: m.height });
+        awaitFirstPicture();
       } else if (m.type === "display_settings" && m.displayId === "primary") {
         setDisplay({ settings: m.settings || {}, owner: display.owner === null ? false : display.owner });
       }
@@ -361,6 +468,7 @@
     configurable: true,
     get: () => transport,
     set: (t) => {
+      clearTimeout(firstPictureTimer);
       transport = t;
       if (!t) {
         sendOwn = null;
@@ -388,6 +496,7 @@
       t.addEventListener("open", () => transport === t && setState("connected"));
       t.addEventListener("close", () => {
         if (transport !== t) return;
+        clearTimeout(firstPictureTimer);
         forbid();
         setState("disconnected");
       });
@@ -398,11 +507,127 @@
     },
   });
 
+  // --- local touch view --------------------------------------------------------
+  // Reuse the pinned client's gesture classification and complete touch lifecycle.
+  // Its pinch normally sends Ctrl+wheel to the app. Route only touch pinches to
+  // the local view; mouse Ctrl+wheel and two-finger scrolling at fit stay intact.
+  let viewZoom = 1;
+  let currentInput;
+  let requestedTouchMode = null;
+  const gestures = new Set();
+  const emitGesture = (g) => { for (const fn of gestures) fn(g); };
+  Object.defineProperty(window, "webrtcInput", {
+    configurable: true,
+    get: () => currentInput,
+    set(input) {
+      currentInput = input;
+      if (!input || input.__deskyardGestures) return;
+      input.__deskyardGestures = true;
+      // A transform changes child client coordinates during a gesture. Keep
+      // the gesture's stored positions in the stable top-level viewport instead.
+      const points = (x1, y1, x2, y2) => {
+        const frame = window.frameElement;
+        if (!frame) return [x1, y1, x2, y2];
+        const rect = frame.getBoundingClientRect();
+        const sx = rect.width / frame.clientWidth, sy = rect.height / frame.clientHeight;
+        return [rect.left + x1 * sx, rect.top + y1 * sy, rect.left + x2 * sx, rect.top + y2 * sy];
+      };
+      for (const name of ["_twoFingerStart", "_twoFingerMove"]) {
+        const original = input[name];
+        if (typeof original === "function") input[name] = function (...args) {
+          return original.apply(this, points(...args));
+        };
+      }
+      // Follow this finger's relative cursor at the parent's viewport edges.
+      // Echo coordinates include the client's prediction before the server reply.
+      const placeCursor = input._placeEchoCursor;
+      if (typeof placeCursor === "function") input._placeEchoCursor = function (...args) {
+        const result = placeCursor.apply(this, args);
+        const echo = this._echo, box = this._streamBox?.(), frame = window.frameElement;
+        if (gestures.size && this._trackpadMode && this._trackpadTouches?.size === 1 &&
+            (this._trackpadGestureMode === "moving" || this._trackpadGestureMode === "dragging") &&
+            echo && echo.display === this.displayId && box?.scaleX > 0 && box?.scaleY > 0 && frame) {
+          let x = echo.x, y = echo.y;
+          for (const [, dx, dy] of this._echoDeltas) [x, y] = this._echoStep(x, y, dx, dy);
+          const rect = frame.getBoundingClientRect();
+          emitGesture({ kind: "cursor", x: rect.left + (box.left + x / box.scaleX) * rect.width / frame.clientWidth,
+            y: rect.top + (box.top + y / box.scaleY) * rect.height / frame.clientHeight });
+        }
+        return result;
+      };
+      // Parent scrolling moves the transformed iframe underneath the finger.
+      // Compensate the stored child coordinates so that isn't relative motion.
+      const move = input._trackpadMove;
+      const touchFrames = new WeakMap();
+      if (typeof move === "function") input._trackpadMove = function (touch, x, y, time) {
+        const frame = window.frameElement;
+        if (frame) {
+          const rect = frame.getBoundingClientRect(), previous = touchFrames.get(touch);
+          if (previous) {
+            touch.lastX += (previous.left - rect.left) * frame.clientWidth / rect.width;
+            touch.lastY += (previous.top - rect.top) * frame.clientHeight / rect.height;
+          }
+          touchFrames.set(touch, { left: rect.left, top: rect.top });
+        }
+        return move.call(this, touch, x, y, time);
+      };
+      const mode = input.setTrackpadMode;
+      if (typeof mode === "function") input.setTrackpadMode = function (value) {
+        return mode.call(this, requestedTouchMode ?? value);
+      };
+      const zoom = input._sendZoomNotches;
+      const scroll = input._drainScrollNotches;
+      if (typeof zoom === "function") input._sendZoomNotches = function (notches) {
+        if (gestures.size && this._twoFinger?.kind === "pinch") {
+          if (notches) emitGesture({ kind: "zoom", factor: Math.pow(1.1, notches), x: this._twoFinger.x0, y: this._twoFinger.y0 });
+          return;
+        }
+        return zoom.call(this, notches);
+      };
+      if (typeof scroll === "function") input._drainScrollNotches = function (delta, vertical) {
+        if (gestures.size && viewZoom > 1.001 && this._twoFinger?.kind === "scroll") {
+          emitGesture({ kind: "pan", dx: vertical ? 0 : delta, dy: vertical ? delta : 0 });
+          return 0;
+        }
+        return scroll.call(this, delta, vertical);
+      };
+    },
+  });
+  // Actual focus, rather than a guessed toggle, follows keyboard dismissal too.
+  const keyboardListeners = new Set();
+  const reportKeyboard = () => {
+    const visible = document.activeElement?.id === "keyboard-input-assist";
+    for (const fn of keyboardListeners) fn(visible);
+  };
+  addListener.call(document, "focusin", reportKeyboard);
+  addListener.call(document, "focusout", () => queueMicrotask(reportKeyboard));
+
   // --- hooks for the desktop page ----------------------------------------------
   const videoIds = ["stream", "videoStream", "videoCanvas", "videoWorkerCanvas"];
   window.deskyardScreen = {
     /** This tab's id, as on the stream URL; the mic endpoint takes it. */
     tab,
+    setTouchMode(trackpad) {
+      requestedTouchMode = !!trackpad;
+      currentInput?.setTrackpadMode?.(requestedTouchMode);
+    },
+    setViewZoom(value) { viewZoom = Math.max(1, Math.min(4, value)); },
+    keyboard(show) {
+      const input = document.getElementById("keyboard-input-assist");
+      if (!input) return;
+      pendingFocus = null;
+      if (show) {
+        input.value = "";
+        // Bypass our automatic-focus guard, synchronously in the user's tap.
+        focusElement.call(input, { preventScroll: true });
+      } else input.blur();
+      reportKeyboard();
+    },
+    /**
+     * Whether the page is an insecure context (plain http): no mic, camera
+     * or clipboard access, and a JPEG stream where there's no WebCodecs.
+     */
+    insecure,
     /** Sends a message to Selkies' client (e.g. {type: "pipelineControl", …}). */
     post(msg) {
       window.postMessage(msg, location.origin);
@@ -415,6 +640,14 @@
      * (kind "microphone" or "webcam").
      */
     on(type, fn) {
+      if (type === "deskyard.gesture") {
+        gestures.add(fn);
+        return () => gestures.delete(fn);
+      }
+      if (type === "deskyard.keyboard") {
+        keyboardListeners.add(fn);
+        return () => keyboardListeners.delete(fn);
+      }
       if (type === "deskyard.state") {
         stateListeners.add(fn);
         return () => stateListeners.delete(fn);

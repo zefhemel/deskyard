@@ -5,6 +5,15 @@ status: done
 date: "2026-10-22"
 spec: "[[superpowers/specs/2026-10-22-custom-images-design|Custom images design]]"
 ---
+
+# CI follow-up — 23 October 2026
+
+- [x] Preserve hard-linked package files when a Linux permission helper reads the workspace; cover excluded-cache targets and multiple selected aliases in a regression test.
+- [x] Seed integration fixtures through the desktop user and scope build cancellation assertions to the test’s own build container.
+
+The original implementation checklist below is retained as historical context; this follow-up records the CI corrections separately.
+
+Image paths in this completed plan describe the original layout. The [[superpowers/specs/2026-10-23-desktop-variants-design|Desktop image variants design]] moves shared files to `images/common/`, the Dockerfile to `images/Dockerfile` and image tests to `images/tests/`.
 # Custom Images Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

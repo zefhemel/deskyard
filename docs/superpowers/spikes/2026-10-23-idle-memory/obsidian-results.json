@@ -1,0 +1,1152 @@
+{
+  "date": "2026-10-23",
+  "app": "Obsidian 1.14.5 (Flatpak, ARM64)",
+  "desktop": "obs",
+  "notesAdded": 201,
+  "workload": [
+    "GUI note edits",
+    "graph view",
+    "full-text search (8,400 matches across 200 synthetic notes)"
+  ],
+  "measurement": "cgroup samples every 0.5 seconds; UI edit invocation to synthetic file mtime; timings include remote input and about 2 s app autosave debounce",
+  "operation": {
+    "startedMs": 1792769242110,
+    "completedObservedMs": 1792769253273,
+    "visibleResult": "Deskyard\nDesktops\nImages\nAccounts\n3 of 4 running\nMemory 1.4 of 16 GB\nA\nadmin\nadmin\nDesktops\nobs\nRunning for 13 minutes\nOpen\nRestart\nStop\nReclaim memory\n\u22ef\nOverview\nProcesses\nAgents\nSettings\nAccess\nA\nadmin is viewing\nOpen desktop\nA\nadmin is viewing\n\nSame desktop, one mouse and keyboard. It follows the window of whoever resized last.\n\nCPU, last 15 minutes\n1%\nMemory\n0.8 GB\nDesktop\n/obs/\nFiles\n/Users/zef/deskyard/obs\nImage\nobsidian 2026-10-23 17:08\nTools\nnode 24.22.1 (image), python 3.13.16 (image)\nAccess\nAdmins only Change\nLimits\nNo limits\nAgent tokens\nNone Manage\nCreated\n23 October\nStarted\n23 October\nobs: resident memory 950 MB \u2192 865 MB\nSwapped pages may still use compressed RAM."
+  },
+  "helperResult": {
+    "before": 996155392,
+    "after": 907055104,
+    "requestedBytes": 134217728,
+    "partial": false,
+    "completedAt": 1792769247.857
+  },
+  "idleAfterReclaim": {
+    "start": 1792769253.087341,
+    "end": 1792769293.5648246,
+    "sampleCount": 81,
+    "medianResidentBytes": 950665216,
+    "medianSwapBytes": 84774912,
+    "snapshot": {
+      "time": 1792769273.319299,
+      "memory.current": 954486784,
+      "memory.swap.current": 84774912,
+      "memory.stat": {
+        "anon": 712798208,
+        "file": 221143040,
+        "kernel": 0,
+        "kernel_stack": 0,
+        "pagetables": 0,
+        "sec_pagetables": 0,
+        "percpu": 0,
+        "sock": 0,
+        "vmalloc": 0,
+        "shmem": 66424832,
+        "file_mapped": 145465344,
+        "file_dirty": 49152,
+        "file_writeback": 0,
+        "swapcached": 0,
+        "anon_thp": 0,
+        "file_thp": 0,
+        "shmem_thp": 0,
+        "inactive_anon": 70029312,
+        "active_anon": 728506368,
+        "inactive_file": 106549248,
+        "active_file": 48164864,
+        "unevictable": 278528,
+        "slab_reclaimable": 0,
+        "slab_unreclaimable": 0,
+        "slab": 0,
+        "workingset_refault_anon": 2060,
+        "workingset_refault_file": 618632,
+        "workingset_activate_anon": 1,
+        "workingset_activate_file": 34587,
+        "workingset_restore_anon": 1,
+        "workingset_restore_file": 34940,
+        "workingset_nodereclaim": 0,
+        "pgdemote_kswapd": 0,
+        "pgdemote_direct": 0,
+        "pgdemote_khugepaged": 0,
+        "pgdemote_proactive": 0,
+        "pgsteal_kswapd": 0,
+        "pgsteal_direct": 0,
+        "pgsteal_khugepaged": 0,
+        "pgsteal_proactive": 900900,
+        "pgscan_kswapd": 0,
+        "pgscan_direct": 0,
+        "pgscan_khugepaged": 0,
+        "pgscan_proactive": 1163436,
+        "pgrefill": 431357,
+        "pgscan": 1163436,
+        "pgsteal": 900900,
+        "pswpin": 2052,
+        "pswpout": 18471,
+        "pgfault": 699132,
+        "pgmajfault": 6037,
+        "pgactivate": 256009,
+        "pgdeactivate": 0,
+        "pglazyfree": 0,
+        "pglazyfreed": 0,
+        "swpin_zero": 0,
+        "swpout_zero": 0,
+        "thp_fault_alloc": 7,
+        "thp_collapse_alloc": 0,
+        "thp_swpout": 0,
+        "thp_swpout_fallback": 0
+      },
+      "memory.events": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0,
+        "sock_throttled": 0
+      },
+      "cpu.stat": {
+        "usage_usec": 60283812,
+        "user_usec": 40756555,
+        "system_usec": 19527256,
+        "nice_usec": 3000,
+        "nr_periods": 0,
+        "nr_throttled": 0,
+        "throttled_usec": 0,
+        "nr_bursts": 0,
+        "burst_usec": 0
+      },
+      "zram_mm_stat": [
+        "67256320",
+        "16703003",
+        "19587072",
+        "0",
+        "88686592",
+        "2260",
+        "0",
+        "35",
+        "851"
+      ],
+      "obsidian": [
+        {
+          "pid": 501,
+          "minorFaults": 37687,
+          "majorFaults": 459,
+          "startTicks": 6689668
+        },
+        {
+          "pid": 525,
+          "minorFaults": 3328,
+          "majorFaults": 5,
+          "startTicks": 6689738
+        },
+        {
+          "pid": 544,
+          "minorFaults": 3377,
+          "majorFaults": 2,
+          "startTicks": 6689860
+        },
+        {
+          "pid": 574,
+          "minorFaults": 23789,
+          "majorFaults": 88,
+          "startTicks": 6689885
+        },
+        {
+          "pid": 580,
+          "minorFaults": 5019,
+          "majorFaults": 6,
+          "startTicks": 6689886
+        },
+        {
+          "pid": 596,
+          "minorFaults": 80327,
+          "majorFaults": 244,
+          "startTicks": 6689893
+        },
+        {
+          "pid": 909,
+          "minorFaults": 11612,
+          "majorFaults": 124,
+          "startTicks": 6710582
+        },
+        {
+          "pid": 1155,
+          "minorFaults": 10265,
+          "majorFaults": 167,
+          "startTicks": 6726976
+        },
+        {
+          "pid": 1173,
+          "minorFaults": 3385,
+          "majorFaults": 7,
+          "startTicks": 6727019
+        },
+        {
+          "pid": 1200,
+          "minorFaults": 3437,
+          "majorFaults": 0,
+          "startTicks": 6727144
+        },
+        {
+          "pid": 1224,
+          "minorFaults": 5874,
+          "majorFaults": 63,
+          "startTicks": 6727169
+        },
+        {
+          "pid": 1230,
+          "minorFaults": 4063,
+          "majorFaults": 0,
+          "startTicks": 6727172
+        }
+      ]
+    }
+  },
+  "afterEditing": {
+    "start": 1792769327.9782434,
+    "end": 1792769377.1194375,
+    "sampleCount": 98,
+    "medianResidentBytes": 933662720.0,
+    "medianSwapBytes": 78802944.0,
+    "snapshot": {
+      "time": 1792769352.2858593,
+      "memory.current": 933437440,
+      "memory.swap.current": 78802944,
+      "memory.stat": {
+        "anon": 719540224,
+        "file": 193646592,
+        "kernel": 0,
+        "kernel_stack": 0,
+        "pagetables": 0,
+        "sec_pagetables": 0,
+        "percpu": 0,
+        "sock": 0,
+        "vmalloc": 0,
+        "shmem": 67514368,
+        "file_mapped": 174206976,
+        "file_dirty": 135168,
+        "file_writeback": 0,
+        "swapcached": 0,
+        "anon_thp": 0,
+        "file_thp": 0,
+        "shmem_thp": 0,
+        "inactive_anon": 731893760,
+        "active_anon": 74461184,
+        "inactive_file": 51908608,
+        "active_file": 74227712,
+        "unevictable": 278528,
+        "slab_reclaimable": 0,
+        "slab_unreclaimable": 0,
+        "slab": 0,
+        "workingset_refault_anon": 3449,
+        "workingset_refault_file": 665355,
+        "workingset_activate_anon": 5,
+        "workingset_activate_file": 34587,
+        "workingset_restore_anon": 5,
+        "workingset_restore_file": 34940,
+        "workingset_nodereclaim": 0,
+        "pgdemote_kswapd": 0,
+        "pgdemote_direct": 0,
+        "pgdemote_khugepaged": 0,
+        "pgdemote_proactive": 0,
+        "pgsteal_kswapd": 0,
+        "pgsteal_direct": 0,
+        "pgsteal_khugepaged": 0,
+        "pgsteal_proactive": 956491,
+        "pgscan_kswapd": 0,
+        "pgscan_direct": 0,
+        "pgscan_khugepaged": 0,
+        "pgscan_proactive": 1233410,
+        "pgrefill": 449783,
+        "pgscan": 1233410,
+        "pgsteal": 956491,
+        "pswpin": 3436,
+        "pswpout": 18471,
+        "pgfault": 801555,
+        "pgmajfault": 6827,
+        "pgactivate": 270392,
+        "pgdeactivate": 0,
+        "pglazyfree": 0,
+        "pglazyfreed": 0,
+        "swpin_zero": 0,
+        "swpout_zero": 0,
+        "thp_fault_alloc": 7,
+        "thp_collapse_alloc": 0,
+        "thp_swpout": 0,
+        "thp_swpout_fallback": 0
+      },
+      "memory.events": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0,
+        "sock_throttled": 0
+      },
+      "cpu.stat": {
+        "usage_usec": 67326786,
+        "user_usec": 45868686,
+        "system_usec": 21458099,
+        "nice_usec": 3000,
+        "nr_periods": 0,
+        "nr_throttled": 0,
+        "throttled_usec": 0,
+        "nr_bursts": 0,
+        "burst_usec": 0
+      },
+      "zram_mm_stat": [
+        "61304832",
+        "15370968",
+        "19480576",
+        "0",
+        "88686592",
+        "2156",
+        "0",
+        "34",
+        "851"
+      ],
+      "obsidian": [
+        {
+          "pid": 501,
+          "minorFaults": 39883,
+          "majorFaults": 504,
+          "startTicks": 6689668
+        },
+        {
+          "pid": 525,
+          "minorFaults": 3328,
+          "majorFaults": 5,
+          "startTicks": 6689738
+        },
+        {
+          "pid": 544,
+          "minorFaults": 3377,
+          "majorFaults": 2,
+          "startTicks": 6689860
+        },
+        {
+          "pid": 574,
+          "minorFaults": 26511,
+          "majorFaults": 162,
+          "startTicks": 6689885
+        },
+        {
+          "pid": 580,
+          "minorFaults": 5212,
+          "majorFaults": 6,
+          "startTicks": 6689886
+        },
+        {
+          "pid": 596,
+          "minorFaults": 116838,
+          "majorFaults": 375,
+          "startTicks": 6689893
+        },
+        {
+          "pid": 909,
+          "minorFaults": 11973,
+          "majorFaults": 125,
+          "startTicks": 6710582
+        },
+        {
+          "pid": 1155,
+          "minorFaults": 10821,
+          "majorFaults": 178,
+          "startTicks": 6726976
+        },
+        {
+          "pid": 1173,
+          "minorFaults": 3385,
+          "majorFaults": 7,
+          "startTicks": 6727019
+        },
+        {
+          "pid": 1200,
+          "minorFaults": 3437,
+          "majorFaults": 0,
+          "startTicks": 6727144
+        },
+        {
+          "pid": 1224,
+          "minorFaults": 6071,
+          "majorFaults": 63,
+          "startTicks": 6727169
+        },
+        {
+          "pid": 1230,
+          "minorFaults": 4203,
+          "majorFaults": 0,
+          "startTicks": 6727172
+        }
+      ]
+    }
+  },
+  "editTrials": [
+    {
+      "label": "Baseline edit 01",
+      "startedMs": 1792769163707,
+      "inputFinishedMs": 1792769163820,
+      "savedMs": 1792769165713.1897,
+      "contentVerified": true,
+      "editToSaveMs": 2006.189697265625
+    },
+    {
+      "label": "Baseline edit 02",
+      "startedMs": 1792769175087,
+      "inputFinishedMs": 1792769175189,
+      "savedMs": 1792769177094.9458,
+      "contentVerified": true,
+      "editToSaveMs": 2007.94580078125
+    },
+    {
+      "label": "Baseline edit 03",
+      "startedMs": 1792769182732,
+      "inputFinishedMs": 1792769182829,
+      "savedMs": 1792769184737.492,
+      "contentVerified": true,
+      "editToSaveMs": 2005.491943359375
+    },
+    {
+      "label": "After reclaim 01",
+      "startedMs": 1792769296957,
+      "inputFinishedMs": 1792769297329,
+      "interactionStartedMs": 1792769294581,
+      "savedMs": 1792769299227.198,
+      "contentVerified": true,
+      "editToSaveMs": 2270.197998046875
+    },
+    {
+      "label": "After reclaim 02",
+      "startedMs": 1792769311506,
+      "inputFinishedMs": 1792769311576,
+      "savedMs": 1792769313509.8174,
+      "contentVerified": true,
+      "editToSaveMs": 2003.8173828125
+    },
+    {
+      "label": "After reclaim 03",
+      "startedMs": 1792769320473,
+      "inputFinishedMs": 1792769320543,
+      "savedMs": 1792769322478.1624,
+      "contentVerified": true,
+      "editToSaveMs": 2005.162353515625
+    }
+  ],
+  "originalObsidianProcessesSurvived": true,
+  "initialProcessCount": 12,
+  "finalProcessCount": 12,
+  "majorFaultsDuringReclaimAndIdle": 30,
+  "majorFaultsOnResumeAndEditing": 260,
+  "minorFaultsOnResumeAndEditing": 39518,
+  "oomKillDelta": 0,
+  "sharedZramCompressedGrowthIdleBytes": 19566592,
+  "sharedZramCompressedGrowthAfterEditingBytes": 19460096,
+  "limitations": [
+    "Single sequential run on a shared host; not a latency benchmark",
+    "Cgroup resident bytes include file cache",
+    "Shared zram counters are not per-desktop and do not measure physical RAM returned to macOS",
+    "The Selkies viewer remained connected and the manual button was used",
+    "Resident memory dropped about 168 MiB when the control tab was activated, before the reclaim helper sampled it. Attribute only the helper before/after difference to this reclaim observation; the earlier UI baseline is not the reclaim baseline."
+  ],
+  "beforeControlTabActivation": {
+    "start": 1792769232.3233123,
+    "end": 1792769241.4401457,
+    "sampleCount": 19,
+    "medianResidentBytes": 1172041728,
+    "medianSwapBytes": 0,
+    "snapshot": {
+      "time": 1792769236.8779645,
+      "memory.current": 1171722240,
+      "memory.swap.current": 0,
+      "memory.stat": {
+        "anon": 772472832,
+        "file": 376795136,
+        "kernel": 0,
+        "kernel_stack": 0,
+        "pagetables": 0,
+        "sec_pagetables": 0,
+        "percpu": 0,
+        "sock": 0,
+        "vmalloc": 0,
+        "shmem": 87183360,
+        "file_mapped": 191328256,
+        "file_dirty": 86016,
+        "file_writeback": 0,
+        "swapcached": 0,
+        "anon_thp": 0,
+        "file_thp": 0,
+        "shmem_thp": 0,
+        "inactive_anon": 764362752,
+        "active_anon": 116989952,
+        "inactive_file": 199036928,
+        "active_file": 90578944,
+        "unevictable": 278528,
+        "slab_reclaimable": 0,
+        "slab_unreclaimable": 0,
+        "slab": 0,
+        "workingset_refault_anon": 0,
+        "workingset_refault_file": 601462,
+        "workingset_activate_anon": 0,
+        "workingset_activate_file": 34587,
+        "workingset_restore_anon": 0,
+        "workingset_restore_file": 34940,
+        "workingset_nodereclaim": 0,
+        "pgdemote_kswapd": 0,
+        "pgdemote_direct": 0,
+        "pgdemote_khugepaged": 0,
+        "pgdemote_proactive": 0,
+        "pgsteal_kswapd": 0,
+        "pgsteal_direct": 0,
+        "pgsteal_khugepaged": 0,
+        "pgsteal_proactive": 825003,
+        "pgscan_kswapd": 0,
+        "pgscan_direct": 0,
+        "pgscan_khugepaged": 0,
+        "pgscan_proactive": 979273,
+        "pgrefill": 234261,
+        "pgscan": 979273,
+        "pgsteal": 825003,
+        "pswpin": 0,
+        "pswpout": 0,
+        "pgfault": 646370,
+        "pgmajfault": 4780,
+        "pgactivate": 151472,
+        "pgdeactivate": 0,
+        "pglazyfree": 0,
+        "pglazyfreed": 0,
+        "swpin_zero": 0,
+        "swpout_zero": 0,
+        "thp_fault_alloc": 7,
+        "thp_collapse_alloc": 0,
+        "thp_swpout": 0,
+        "thp_swpout_fallback": 0
+      },
+      "memory.events": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0,
+        "sock_throttled": 0
+      },
+      "cpu.stat": {
+        "usage_usec": 57563790,
+        "user_usec": 38925450,
+        "system_usec": 18638339,
+        "nice_usec": 3000,
+        "nr_periods": 0,
+        "nr_throttled": 0,
+        "throttled_usec": 0,
+        "nr_bursts": 0,
+        "burst_usec": 0
+      },
+      "zram_mm_stat": [
+        "4096",
+        "64",
+        "20480",
+        "0",
+        "88686592",
+        "0",
+        "0",
+        "0",
+        "815"
+      ],
+      "obsidian": [
+        {
+          "pid": 501,
+          "minorFaults": 36369,
+          "majorFaults": 459,
+          "startTicks": 6689668
+        },
+        {
+          "pid": 525,
+          "minorFaults": 3328,
+          "majorFaults": 5,
+          "startTicks": 6689738
+        },
+        {
+          "pid": 544,
+          "minorFaults": 3377,
+          "majorFaults": 2,
+          "startTicks": 6689860
+        },
+        {
+          "pid": 574,
+          "minorFaults": 22962,
+          "majorFaults": 88,
+          "startTicks": 6689885
+        },
+        {
+          "pid": 580,
+          "minorFaults": 4837,
+          "majorFaults": 6,
+          "startTicks": 6689886
+        },
+        {
+          "pid": 596,
+          "minorFaults": 75742,
+          "majorFaults": 216,
+          "startTicks": 6689893
+        },
+        {
+          "pid": 909,
+          "minorFaults": 11612,
+          "majorFaults": 124,
+          "startTicks": 6710582
+        },
+        {
+          "pid": 1155,
+          "minorFaults": 9879,
+          "majorFaults": 167,
+          "startTicks": 6726976
+        },
+        {
+          "pid": 1173,
+          "minorFaults": 3385,
+          "majorFaults": 7,
+          "startTicks": 6727019
+        },
+        {
+          "pid": 1200,
+          "minorFaults": 3437,
+          "majorFaults": 0,
+          "startTicks": 6727144
+        },
+        {
+          "pid": 1224,
+          "minorFaults": 5665,
+          "majorFaults": 63,
+          "startTicks": 6727169
+        },
+        {
+          "pid": 1230,
+          "minorFaults": 3920,
+          "majorFaults": 0,
+          "startTicks": 6727172
+        }
+      ]
+    }
+  },
+  "beforeKernelReclaim": {
+    "time": 1792769242.9531898,
+    "memory.current": 996446208,
+    "memory.swap.current": 0,
+    "memory.stat": {
+      "anon": 772620288,
+      "file": 200347648,
+      "kernel": 0,
+      "kernel_stack": 0,
+      "pagetables": 0,
+      "sec_pagetables": 0,
+      "percpu": 0,
+      "sock": 0,
+      "vmalloc": 0,
+      "shmem": 87183360,
+      "file_mapped": 179945472,
+      "file_dirty": 0,
+      "file_writeback": 0,
+      "swapcached": 0,
+      "anon_thp": 0,
+      "file_thp": 0,
+      "shmem_thp": 0,
+      "inactive_anon": 325107712,
+      "active_anon": 556457984,
+      "inactive_file": 88137728,
+      "active_file": 25034752,
+      "unevictable": 278528,
+      "slab_reclaimable": 0,
+      "slab_unreclaimable": 0,
+      "slab": 0,
+      "workingset_refault_anon": 0,
+      "workingset_refault_file": 601462,
+      "workingset_activate_anon": 0,
+      "workingset_activate_file": 34587,
+      "workingset_restore_anon": 0,
+      "workingset_restore_file": 34940,
+      "workingset_nodereclaim": 0,
+      "pgdemote_kswapd": 0,
+      "pgdemote_direct": 0,
+      "pgdemote_khugepaged": 0,
+      "pgdemote_proactive": 0,
+      "pgsteal_kswapd": 0,
+      "pgsteal_direct": 0,
+      "pgsteal_khugepaged": 0,
+      "pgsteal_proactive": 868090,
+      "pgscan_kswapd": 0,
+      "pgscan_direct": 0,
+      "pgscan_khugepaged": 0,
+      "pgscan_proactive": 1024198,
+      "pgrefill": 239408,
+      "pgscan": 1024198,
+      "pgsteal": 868090,
+      "pswpin": 0,
+      "pswpout": 0,
+      "pgfault": 651844,
+      "pgmajfault": 4780,
+      "pgactivate": 153194,
+      "pgdeactivate": 0,
+      "pglazyfree": 0,
+      "pglazyfreed": 0,
+      "swpin_zero": 0,
+      "swpout_zero": 0,
+      "thp_fault_alloc": 7,
+      "thp_collapse_alloc": 0,
+      "thp_swpout": 0,
+      "thp_swpout_fallback": 0
+    },
+    "memory.events": {
+      "low": 0,
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0,
+      "oom_group_kill": 0,
+      "sock_throttled": 0
+    },
+    "cpu.stat": {
+      "usage_usec": 58029766,
+      "user_usec": 39259320,
+      "system_usec": 18770445,
+      "nice_usec": 3000,
+      "nr_periods": 0,
+      "nr_throttled": 0,
+      "throttled_usec": 0,
+      "nr_bursts": 0,
+      "burst_usec": 0
+    },
+    "zram_mm_stat": [
+      "4096",
+      "64",
+      "20480",
+      "0",
+      "88686592",
+      "0",
+      "0",
+      "0",
+      "815"
+    ],
+    "obsidian": [
+      {
+        "pid": 501,
+        "minorFaults": 36374,
+        "majorFaults": 459,
+        "startTicks": 6689668
+      },
+      {
+        "pid": 525,
+        "minorFaults": 3328,
+        "majorFaults": 5,
+        "startTicks": 6689738
+      },
+      {
+        "pid": 544,
+        "minorFaults": 3377,
+        "majorFaults": 2,
+        "startTicks": 6689860
+      },
+      {
+        "pid": 574,
+        "minorFaults": 23016,
+        "majorFaults": 88,
+        "startTicks": 6689885
+      },
+      {
+        "pid": 580,
+        "minorFaults": 4839,
+        "majorFaults": 6,
+        "startTicks": 6689886
+      },
+      {
+        "pid": 596,
+        "minorFaults": 75922,
+        "majorFaults": 216,
+        "startTicks": 6689893
+      },
+      {
+        "pid": 909,
+        "minorFaults": 11612,
+        "majorFaults": 124,
+        "startTicks": 6710582
+      },
+      {
+        "pid": 1155,
+        "minorFaults": 9920,
+        "majorFaults": 167,
+        "startTicks": 6726976
+      },
+      {
+        "pid": 1173,
+        "minorFaults": 3385,
+        "majorFaults": 7,
+        "startTicks": 6727019
+      },
+      {
+        "pid": 1200,
+        "minorFaults": 3437,
+        "majorFaults": 0,
+        "startTicks": 6727144
+      },
+      {
+        "pid": 1224,
+        "minorFaults": 5665,
+        "majorFaults": 63,
+        "startTicks": 6727169
+      },
+      {
+        "pid": 1230,
+        "minorFaults": 3928,
+        "majorFaults": 0,
+        "startTicks": 6727172
+      }
+    ]
+  },
+  "fiveSecondsAfterCompletion": {
+    "time": 1792769253.087341,
+    "memory.current": 908840960,
+    "memory.swap.current": 86462464,
+    "memory.stat": {
+      "anon": 710713344,
+      "file": 177455104,
+      "kernel": 0,
+      "kernel_stack": 0,
+      "pagetables": 0,
+      "sec_pagetables": 0,
+      "percpu": 0,
+      "sock": 0,
+      "vmalloc": 0,
+      "shmem": 66424832,
+      "file_mapped": 134586368,
+      "file_dirty": 20480,
+      "file_writeback": 0,
+      "swapcached": 0,
+      "anon_thp": 0,
+      "file_thp": 0,
+      "shmem_thp": 0,
+      "inactive_anon": 68538368,
+      "active_anon": 727867392,
+      "inactive_file": 62869504,
+      "active_file": 48164864,
+      "unevictable": 278528,
+      "slab_reclaimable": 0,
+      "slab_unreclaimable": 0,
+      "slab": 0,
+      "workingset_refault_anon": 1643,
+      "workingset_refault_file": 610708,
+      "workingset_activate_anon": 0,
+      "workingset_activate_file": 34587,
+      "workingset_restore_anon": 0,
+      "workingset_restore_file": 34940,
+      "workingset_nodereclaim": 0,
+      "pgdemote_kswapd": 0,
+      "pgdemote_direct": 0,
+      "pgdemote_khugepaged": 0,
+      "pgdemote_proactive": 0,
+      "pgsteal_kswapd": 0,
+      "pgsteal_direct": 0,
+      "pgsteal_khugepaged": 0,
+      "pgsteal_proactive": 900900,
+      "pgscan_kswapd": 0,
+      "pgscan_direct": 0,
+      "pgscan_khugepaged": 0,
+      "pgscan_proactive": 1163436,
+      "pgrefill": 431357,
+      "pgscan": 1163436,
+      "pgsteal": 900900,
+      "pswpin": 1639,
+      "pswpout": 18471,
+      "pgfault": 683928,
+      "pgmajfault": 5854,
+      "pgactivate": 256009,
+      "pgdeactivate": 0,
+      "pglazyfree": 0,
+      "pglazyfreed": 0,
+      "swpin_zero": 0,
+      "swpout_zero": 0,
+      "thp_fault_alloc": 7,
+      "thp_collapse_alloc": 0,
+      "thp_swpout": 0,
+      "thp_swpout_fallback": 0
+    },
+    "memory.events": {
+      "low": 0,
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0,
+      "oom_group_kill": 0,
+      "sock_throttled": 0
+    },
+    "cpu.stat": {
+      "usage_usec": 58738112,
+      "user_usec": 39714400,
+      "system_usec": 19023711,
+      "nice_usec": 3000,
+      "nr_periods": 0,
+      "nr_throttled": 0,
+      "throttled_usec": 0,
+      "nr_bursts": 0,
+      "burst_usec": 0
+    },
+    "zram_mm_stat": [
+      "68927488",
+      "17092894",
+      "19607552",
+      "0",
+      "88686592",
+      "2275",
+      "0",
+      "35",
+      "851"
+    ],
+    "obsidian": [
+      {
+        "pid": 501,
+        "minorFaults": 36762,
+        "majorFaults": 459,
+        "startTicks": 6689668
+      },
+      {
+        "pid": 525,
+        "minorFaults": 3328,
+        "majorFaults": 5,
+        "startTicks": 6689738
+      },
+      {
+        "pid": 544,
+        "minorFaults": 3377,
+        "majorFaults": 2,
+        "startTicks": 6689860
+      },
+      {
+        "pid": 574,
+        "minorFaults": 23602,
+        "majorFaults": 88,
+        "startTicks": 6689885
+      },
+      {
+        "pid": 580,
+        "minorFaults": 4952,
+        "majorFaults": 6,
+        "startTicks": 6689886
+      },
+      {
+        "pid": 596,
+        "minorFaults": 78810,
+        "majorFaults": 229,
+        "startTicks": 6689893
+      },
+      {
+        "pid": 909,
+        "minorFaults": 11612,
+        "majorFaults": 124,
+        "startTicks": 6710582
+      },
+      {
+        "pid": 1155,
+        "minorFaults": 10149,
+        "majorFaults": 167,
+        "startTicks": 6726976
+      },
+      {
+        "pid": 1173,
+        "minorFaults": 3385,
+        "majorFaults": 7,
+        "startTicks": 6727019
+      },
+      {
+        "pid": 1200,
+        "minorFaults": 3437,
+        "majorFaults": 0,
+        "startTicks": 6727144
+      },
+      {
+        "pid": 1224,
+        "minorFaults": 5811,
+        "majorFaults": 63,
+        "startTicks": 6727169
+      },
+      {
+        "pid": 1230,
+        "minorFaults": 4026,
+        "majorFaults": 0,
+        "startTicks": 6727172
+      }
+    ]
+  },
+  "thirtySecondsAfterCompletion": {
+    "time": 1792769277.8613765,
+    "memory.current": 952832000,
+    "memory.swap.current": 82030592,
+    "memory.stat": {
+      "anon": 711651328,
+      "file": 221175808,
+      "kernel": 0,
+      "kernel_stack": 0,
+      "pagetables": 0,
+      "sec_pagetables": 0,
+      "percpu": 0,
+      "sock": 0,
+      "vmalloc": 0,
+      "shmem": 66424832,
+      "file_mapped": 145530880,
+      "file_dirty": 81920,
+      "file_writeback": 0,
+      "swapcached": 0,
+      "anon_thp": 0,
+      "file_thp": 0,
+      "shmem_thp": 0,
+      "inactive_anon": 72671232,
+      "active_anon": 724717568,
+      "inactive_file": 106590208,
+      "active_file": 48164864,
+      "unevictable": 278528,
+      "slab_reclaimable": 0,
+      "slab_unreclaimable": 0,
+      "slab": 0,
+      "workingset_refault_anon": 2730,
+      "workingset_refault_file": 618632,
+      "workingset_activate_anon": 5,
+      "workingset_activate_file": 34587,
+      "workingset_restore_anon": 5,
+      "workingset_restore_file": 34940,
+      "workingset_nodereclaim": 0,
+      "pgdemote_kswapd": 0,
+      "pgdemote_direct": 0,
+      "pgdemote_khugepaged": 0,
+      "pgdemote_proactive": 0,
+      "pgsteal_kswapd": 0,
+      "pgsteal_direct": 0,
+      "pgsteal_khugepaged": 0,
+      "pgsteal_proactive": 900900,
+      "pgscan_kswapd": 0,
+      "pgscan_direct": 0,
+      "pgscan_khugepaged": 0,
+      "pgscan_proactive": 1163436,
+      "pgrefill": 431357,
+      "pgscan": 1163436,
+      "pgsteal": 900900,
+      "pswpin": 2717,
+      "pswpout": 18471,
+      "pgfault": 704042,
+      "pgmajfault": 6226,
+      "pgactivate": 256009,
+      "pgdeactivate": 0,
+      "pglazyfree": 0,
+      "pglazyfreed": 0,
+      "swpin_zero": 0,
+      "swpout_zero": 0,
+      "thp_fault_alloc": 7,
+      "thp_collapse_alloc": 0,
+      "thp_swpout": 0,
+      "thp_swpout_fallback": 0
+    },
+    "memory.events": {
+      "low": 0,
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0,
+      "oom_group_kill": 0,
+      "sock_throttled": 0
+    },
+    "cpu.stat": {
+      "usage_usec": 60670817,
+      "user_usec": 41047956,
+      "system_usec": 19622861,
+      "nice_usec": 3000,
+      "nr_periods": 0,
+      "nr_throttled": 0,
+      "throttled_usec": 0,
+      "nr_bursts": 0,
+      "burst_usec": 0
+    },
+    "zram_mm_stat": [
+      "64532480",
+      "16233736",
+      "19542016",
+      "0",
+      "88686592",
+      "2212",
+      "0",
+      "35",
+      "851"
+    ],
+    "obsidian": [
+      {
+        "pid": 501,
+        "minorFaults": 37694,
+        "majorFaults": 459,
+        "startTicks": 6689668
+      },
+      {
+        "pid": 525,
+        "minorFaults": 3328,
+        "majorFaults": 5,
+        "startTicks": 6689738
+      },
+      {
+        "pid": 544,
+        "minorFaults": 3377,
+        "majorFaults": 2,
+        "startTicks": 6689860
+      },
+      {
+        "pid": 574,
+        "minorFaults": 23808,
+        "majorFaults": 88,
+        "startTicks": 6689885
+      },
+      {
+        "pid": 580,
+        "minorFaults": 5020,
+        "majorFaults": 6,
+        "startTicks": 6689886
+      },
+      {
+        "pid": 596,
+        "minorFaults": 80428,
+        "majorFaults": 244,
+        "startTicks": 6689893
+      },
+      {
+        "pid": 909,
+        "minorFaults": 11880,
+        "majorFaults": 124,
+        "startTicks": 6710582
+      },
+      {
+        "pid": 1155,
+        "minorFaults": 10276,
+        "majorFaults": 167,
+        "startTicks": 6726976
+      },
+      {
+        "pid": 1173,
+        "minorFaults": 3385,
+        "majorFaults": 7,
+        "startTicks": 6727019
+      },
+      {
+        "pid": 1200,
+        "minorFaults": 3437,
+        "majorFaults": 0,
+        "startTicks": 6727144
+      },
+      {
+        "pid": 1224,
+        "minorFaults": 5885,
+        "majorFaults": 63,
+        "startTicks": 6727169
+      },
+      {
+        "pid": 1230,
+        "minorFaults": 4075,
+        "majorFaults": 0,
+        "startTicks": 6727172
+      }
+    ]
+  },
+  "retainedResidentDifferenceAfterEditingBytes": 62492672.0,
+  "baselineMedianEditToSaveMs": 2006.189697265625
+}

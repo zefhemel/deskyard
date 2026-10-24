@@ -1,0 +1,14 @@
+{
+  "nonce": "8e28a7e9",
+  "results": {
+    "unicode": "unicode-\u65e5",
+    "ctrl": "0162",
+    "completion-unique": "native-tab",
+    "ctrl-done": "done",
+    "alt-done": "done",
+    "alt-ready": "ready",
+    "alt": "1b7879",
+    "ctrl-ready": "ready"
+  },
+  "input_note": "Commands and modifier following characters via CDP; modifier buttons and dismiss/reopen native adb taps."
+}

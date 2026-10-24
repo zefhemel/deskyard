@@ -1,30 +1,15 @@
 """The supervisor's API: sessions, desktops, access, desktop proxy, isolation."""
 
 import json
-import socket
 import subprocess
-import time
 import uuid
 
 import requests
 
-from conftest import ADMIN_PASSWORD, IMAGE, Client, docker
+from conftest import ADMIN_PASSWORD, docker
+from helpers import in_desktop, make_account, put, wait_until, ws_handshake
 
 SELKIES_WEB = "/opt/selkies/lib/python3.13/site-packages/selkies/selkies_web"
-
-
-def ws_handshake(base, path, cookies=None, origin=None, headers=None) -> int:
-    hdrs = {"Connection": "Upgrade", "Upgrade": "websocket", "Sec-WebSocket-Version": "13",
-            "Sec-WebSocket-Key": "MDEyMzQ1Njc4OWFiY2RlZg==", "Sec-WebSocket-Protocol": "binary", **(headers or {})}
-    if origin:
-        hdrs["Origin"] = origin
-    try:
-        r = requests.get(base + path, headers=hdrs, cookies=cookies, timeout=5, stream=True)
-        status = r.status_code
-        r.close()
-        return status
-    except requests.exceptions.ReadTimeout:
-        return 101
 
 
 def test_every_route_needs_a_session(supervisor):
@@ -58,18 +43,17 @@ def test_create_desktop_and_lifecycle(admin, desktop, name, supervisor):
     assert desktop["state"] == "running"
     assert admin.get(f"/{name}/").status_code == 200  # the UI's desktop page
     assert admin.get(f"/{name}/screen/").status_code == 200
-    assert ws_handshake(admin.base, f"/{name}/screen/api/websockets", admin.cookies, origin=admin.base) == 101
-    assert ws_handshake(admin.base, f"/{name}/screen/api/websockets", admin.cookies, origin="https://evil.example") == 403
-    assert ws_handshake(admin.base, f"/{name}/screen/api/websockets", origin=admin.base) == 401
+    # (Who may open its stream: test_screen.test_stream_needs_session_access_and_same_origin.)
     for action, state in [("stop", "stopped"), ("start", "running"), ("restart", "running")]:
         assert admin.post(f"/api/desktops/{name}/{action}").status_code == 204
         assert admin.desktop(name)["state"] == state
-    for _ in range(60):  # the desktop takes a few seconds after a restart
-        png = admin.get(f"/api/desktops/{name}/screen.png")
-        if png.status_code == 200:
-            break
-        time.sleep(1)
-    assert png.status_code == 200 and png.content[:4] == b"\x89PNG"
+
+    def screenshot():
+        r = admin.get(f"/api/desktops/{name}/screen.png")
+        return r if r.status_code == 200 else None
+
+    png = wait_until(screenshot, 60, 1)  # the desktop takes a few seconds after a restart
+    assert png and png.content[:4] == b"\x89PNG"
     procs = admin.get(f"/api/desktops/{name}/processes").json()
     assert any("Xvfb" in " ".join(r) for r in procs["rows"])
 
@@ -114,8 +98,7 @@ def test_revoking_access_closes_the_desktop(admin, desktop, name, supervisor):
     import asyncio
     import websockets
 
-    user = "u" + uuid.uuid4().hex[:5]
-    admin.post("/api/accounts", json={"username": user, "password": "pw", "admin": False, "desktops": [name]})
+    user = make_account(admin, [name])
     anna = supervisor.client().login(user, "pw")
     cookie = "; ".join(f"{k}={v}" for k, v in anna.cookies.items())
 
@@ -175,13 +158,12 @@ def test_image_without_contract_refused(admin, name):
 
 
 def test_settings_change_recreates_and_keeps_folder(admin, desktop, name, supervisor):
-    (supervisor.data / name / "probe.txt").write_text("hi")
+    put(name, "probe.txt", b"hi")
     old = desktop["id"]
     assert desktop["created"] and desktop["job"] is None
     size = admin.get(f"/api/desktops/{name}/folder").json()
     assert size["path"].endswith("/" + name) and size["bytes"] >= 2
-    user = "u" + uuid.uuid4().hex[:5]
-    admin.post("/api/accounts", json={"username": user, "password": "pw", "admin": False, "desktops": [name]})
+    user = make_account(admin, [name])
     anna = supervisor.client().login(user, "pw")
     r = admin.patch(f"/api/desktops/{name}", json={"memoryBytes": 2 << 30, "nanoCpus": 2_000_000_000})
     job = r.json()["job"]
@@ -193,8 +175,8 @@ def test_settings_change_recreates_and_keeps_folder(admin, desktop, name, superv
     c = admin.desktop(name)
     assert c["id"] == old and c["state"] == "running"
     assert c["created"] == desktop["created"] and c["job"] is None
-    assert c["settings"] == {"memoryBytes": 2 << 30, "nanoCpus": 2_000_000_000, "camera": ""}
-    assert (supervisor.data / name / "probe.txt").read_text() == "hi"
+    assert c["settings"] == {"memoryBytes": 2 << 30, "nanoCpus": 2_000_000_000, "camera": "", "mounts": []}
+    assert in_desktop(name, "cat", "/workspace/probe.txt") == "hi"
 
 
 def test_restart_rediscovers_desktops(supervisor, admin, desktop, name):
