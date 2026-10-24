@@ -66,8 +66,9 @@ def patch(client: Path):
     replace('type===`audioTick`){', f'type===`audioTick`){{{H}.audioTick();')
     replace('alert(`Microphone error:', f'{H}.alert(`Microphone error:')
     replace('alert(`Webcam error:', f'{H}.alert(`Webcam error:')
+    defaults = Path(__file__).with_name('client_defaults.js').read_text()
     for name in CORE_FILES:
-        (client / name).write_text(source)
+        (client / name).write_text(defaults + '\n' + source)
     index.write_text(page.replace('<head>', '<head>' + MARKER, 1))
 
 

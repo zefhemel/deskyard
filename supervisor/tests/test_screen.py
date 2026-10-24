@@ -152,11 +152,19 @@ def test_client_comes_from_the_image_not_the_desktop(admin, desktop, name):
         assert wait_until(lambda: admin.get(f"/{name}/screen/api/websockets").status_code == 503)
         page = admin.get(f"/{name}/screen/")
         assert page.status_code == 200 and page.headers["Cache-Control"] == "no-store"
-        assert page.text.index('<script src="deskyard.js"></script>') < page.text.index('<script type="module"')
-        asset = re.search(r'src="\./(assets/index-[^"]+\.js)"', page.text).group(1)
-        assert admin.get(f"/{name}/screen/{asset}").status_code == 200
-        js = admin.get(f"/{name}/screen/deskyard.js")
+        modern = '<meta name="deskyard-client-contract" content="1">' in page.text
+        adapter = "deskyard-v1.js" if modern else "deskyard.js"
+        adapter_tag = f'<script type="module" src="{adapter}"></script>' if modern else f'<script src="{adapter}"></script>'
+        # The modern adapter is itself a module: compare with the actual
+        # upstream entry script rather than the first module in the page.
+        upstream = re.search(r'<script\b[^>]*src="\./(assets/index-[^"]+\.js)"[^>]*></script>', page.text)
+        assert upstream is not None and 'type="module"' in upstream.group(0)
+        assert page.text.index(adapter_tag) < upstream.start()
+        asset = admin.get(f"/{name}/screen/{upstream.group(1)}")
+        assert asset.status_code == 200 and asset.headers["Cache-Control"] == "no-cache"
+        js = admin.get(f"/{name}/screen/{adapter}")
         assert js.status_code == 200 and js.headers["Cache-Control"] == "no-store" and "deskyardScreen" in js.text
+        assert js.headers["Content-Type"].startswith("text/javascript")
     finally:
         docker("exec", f"deskyard-{name}", "supervisorctl", "start", "selkies")
 
@@ -183,12 +191,33 @@ def test_client_additions_in_a_browser(supervisor, admin, desktop, name):
 
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base)
+        page.context.add_init_script("""window.__screenNativePrimitives = {
+            rawPointer: 'onpointerrawupdate' in window,
+            eventListener: EventTarget.prototype.addEventListener,
+            focus: HTMLElement.prototype.focus, connect: AudioNode.prototype.connect,
+            socket: window.WebSocket, workerPost: Worker.prototype.postMessage,
+            audio: window.AudioContext, capture: navigator.mediaDevices?.getUserMedia,
+            secure: window.isSecureContext,
+        };""")
         open_desktop(page, supervisor.base, name)
         f = page.frames[1]
         assert f.url == f"{supervisor.base}/{name}/screen/"
         f.wait_for_function("window.deskyardScreen && window.deskyardScreen.state() === 'connected'", timeout=30000)
         f.wait_for_function("window.deskyardScreen.video() !== null", timeout=30000)
-        assert f.evaluate("'onpointerrawupdate' in window") is False
+        modern = f.evaluate("!!document.querySelector('meta[name=deskyard-client-contract]')")
+        if modern:
+            assert f.evaluate("window.__deskyardHooks.version === 1 && window.__deskyardHooks.pointerMoveOnly === true")
+            assert f.evaluate("""() => {
+                const n = window.__screenNativePrimitives;
+                return n.rawPointer === ('onpointerrawupdate' in window) &&
+                    n.eventListener === EventTarget.prototype.addEventListener &&
+                    n.focus === HTMLElement.prototype.focus && n.connect === AudioNode.prototype.connect &&
+                    n.socket === window.WebSocket && n.workerPost === Worker.prototype.postMessage &&
+                    n.audio === window.AudioContext && n.capture === navigator.mediaDevices?.getUserMedia &&
+                    n.secure === window.isSecureContext;
+            }""")
+        else:
+            assert f.evaluate("'onpointerrawupdate' in window") is False
 
         # The tab id is on the stream URL (the supervisor ties the mic to it);
         # the desktop page reads it from the frame.
