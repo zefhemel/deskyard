@@ -69,6 +69,8 @@ The shared desktop Dockerfile installs Debian trixie, XFCE, Chromium, Flatpak, s
 | Node and Python runtimes | MIT and PSF-family licensing respectively, plus bundled third-party code. Keep their complete license material. Python's managed runtime build can add native libraries. |
 | Go, Node build stages, TypeScript, Vite, CI actions | Build tools are not automatically runtime dependencies. Preserve obligations for any runtime code or assets they actually place in the output. |
 
+The locally rebuilt Flatpak CLI and shared library include an upstream libglnx retry backport. Their complete corresponding Debian source package (original source, Debian patch archive including the added patch, and `.dsc`) is shipped at `/usr/share/doc/flatpak/deskyard-source/`. Existing Debian copyright and license files remain installed with the binary packages. The build and patch are recorded in [[Architecture/Desktop runtime]].
+
 The two Python test lockfiles use pytest, Playwright, Pillow, requests, PyYAML and their dependencies, with websockets additionally in supervisor tests. Installed metadata identifies permissive MIT, Apache, BSD, PSF and MIT-CMU licenses, except certifi's MPL-2.0 certificate bundle. These test environments and Playwright browser downloads are not copied into production by the checked Dockerfiles. Test dependencies do not force the application to adopt their license.
 
 User-installed Flatpak applications, mise tools and agent CLIs require their own review if bundled into a commercial custom image. Flathub availability is not blanket permission to redistribute an application. The base image's instructions for installing Claude Code and Codex do not themselves bundle those products or confer resale rights for their services.

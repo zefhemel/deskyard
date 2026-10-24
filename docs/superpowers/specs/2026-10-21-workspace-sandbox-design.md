@@ -105,6 +105,7 @@ One container, one image. A process supervisor runs:
 ## Flatpak
 
 - `flatpak` installed in the image; Flathub configured as a `--user` remote.
+- Implemented startup correction (2026-10-24): rebuild Debian’s current Flatpak security source with the upstream libglnx `openat2()` retry for temporary `EAGAIN` errors. Both the CLI and shared library retain the existing confinement flags and security patches; the image carries the corresponding source. See [[Architecture/Desktop runtime]] and [[Testing/Flatpak startup 2026-10-24]].
 - Running apps needs bubblewrap to create namespaces, which Docker's defaults block. The shipped compose file (and documented `docker run` command) applies:
   - `seccomp=<shipped profile>` — Docker's default profile plus the namespace syscalls bubblewrap needs (prefer this over `unconfined`; fall back to `unconfined` only if a custom profile proves unworkable, and document why),
   - `apparmor=unconfined`,

@@ -436,6 +436,12 @@ install and override tools in their own home folder.
 
 ### Flatpak
 
+Desktop images include the upstream Flatpak fix for intermittent GL-extension
+`invalid merge-dirs` launch errors. It retries temporary directory-resolution
+failures while retaining Debian's security patches. Existing desktops receive
+it through an image upgrade. The rebuilt packages' corresponding source is
+included at `/usr/share/doc/flatpak/deskyard-source/`.
+
 Flatpak apps run inside bubblewrap, which needs namespaces that Docker's
 defaults block. Every desktop therefore runs with Docker's default seccomp
 profile plus the namespace and mount syscalls, `apparmor=unconfined` and

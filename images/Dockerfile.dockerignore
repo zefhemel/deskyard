@@ -4,6 +4,8 @@
 !images/*/rootfs
 !images/common/patches
 !images/common/finalize.sh
+!images/common/build-flatpak.sh
+!images/tests/native/flatpak-openat2.c
 !supervisor
 supervisor/web/node_modules
 supervisor/internal/web/dist

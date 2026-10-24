@@ -1,4 +1,6 @@
-# Selkies idle-CPU patches
+# Runtime patches
+
+## Selkies idle-CPU patches
 
 Three patches that cut what an idle desktop costs. Without them, a desktop
 with one idle viewer used about 11 % of a core, nearly all of it spent
@@ -31,3 +33,9 @@ the image builds pixelflux itself instead of installing the PyPI wheel (the
 All three are Deskyard-local until upstream takes them, or something like
 them. When bumping Selkies or pixelflux, refresh the patches against the new
 source, or drop the ones that upstream has absorbed.
+
+## Flatpak directory-resolution retry
+
+`flatpak-openat2.diff` backports the upstream libglnx retry for transient `openat2()` `EAGAIN` failures into Debian trixie's security-patched Flatpak source. Without it, a valid GL-extension directory can intermittently produce `Extension org.freedesktop.Platform.GL.default has invalid merge-dirs`, preventing apps from starting. The upstream diagnosis and patch are in [Flatpak issue 6783](https://github.com/flatpak/flatpak/issues/6783). Only `EAGAIN` is retried; all resolution flags, permanent failures and Debian's security fixes remain intact.
+
+The `flatpak` stage builds the CLI and shared library together, runs the deterministic regression in `images/tests/native/flatpak-openat2.c`, and installs the resulting Debian packages into the common runtime. `git apply --check` requires an exact-context match before Debian's patch stack applies the fix. A future Debian source version containing the fix must remove this backport instead of silently dropping it. The image carries the complete corresponding Debian source package, including the added patch, under `/usr/share/doc/flatpak/deskyard-source/`.

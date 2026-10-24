@@ -228,6 +228,8 @@ Usage errors → stderr help, exit 2. Works with `DISPLAY` unset (defaults to `:
 
 ## Task 6: Flatpak support with on/off switch
 
+- [x] Startup correction (2026-10-24): backport the upstream libglnx `openat2()` `EAGAIN` retry into Debian’s current Flatpak CLI and library, ship corresponding source, and verify fault injection against both the original and patched code. Acceptance evidence: [[Testing/Flatpak startup 2026-10-24]].
+
 **Files:**
 
 - Create: `scripts/gen-seccomp.py`, `seccomp/flatpak.json`, `rootfs/usr/local/bin/flatpak`

@@ -78,14 +78,31 @@ RUN for p in /patches/pixelflux-*.diff; do git apply --verbose "$p" || exit 1; d
         /build/bin/pip wheel --no-deps --no-build-isolation -w /out/wheels . \
     && mkdir -p /out/opt/pixelflux/lib && cp -a /usr/local/lib/lib*.so* /out/opt/pixelflux/lib/
 
+# Flatpak 1.16.6's security backports lack libglnx's openat2 EAGAIN retry.
+# Rebuild Debian's signed source with that upstream fix for both CLI and GUI.
+FROM debian:trixie-slim AS flatpak
+ARG DEBIAN_FRONTEND=noninteractive
+RUN sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends dpkg-dev git \
+    && apt-get build-dep -y --no-install-recommends flatpak
+WORKDIR /src
+RUN apt-get source flatpak && mv flatpak-*/ source
+COPY images/common/patches/flatpak-openat2.diff /tmp/flatpak-openat2.diff
+COPY images/tests/native/flatpak-openat2.c /tmp/flatpak-openat2-test.c
+COPY images/common/build-flatpak.sh /tmp/build-flatpak.sh
+RUN sh /tmp/build-flatpak.sh
+
 FROM debian:trixie-slim AS runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
+COPY --from=flatpak /out/source/ /usr/share/doc/flatpak/deskyard-source/
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=bind,from=flatpak,source=/out/debs,target=/tmp/flatpak-debs \
+    apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl procps supervisor dbus dbus-x11 \
         x11-utils xdg-utils fonts-dejavu-core python3-gi gir1.2-wnck-3.0 \
-        chromium socat xdotool xclip maim flatpak git openssh-client tmux \
+        chromium socat xdotool xclip maim flatpak git openssh-client tmux /tmp/flatpak-debs/*.deb \
         pipewire pipewire-pulse wireplumber pulseaudio-utils \
     && rm -rf /var/lib/apt/lists/* \
     # rootfs/usr/bin/flatpak wraps the real binary.
