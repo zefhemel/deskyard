@@ -3,10 +3,11 @@ deskyard browser connect: forward the desktop's browser to a local CDP port
 Usage: deskyard [-d NAME] browser connect [--port N]
 
 Listens on 127.0.0.1:PORT and forwards the Chrome DevTools Protocol to the
-desktop's shared Chromium (the one on its desktop, with the human's logins),
-so Playwright, Puppeteer or DevTools tools connect as if the browser were
-local. Prints the URL, then keeps running until Ctrl-C. Run it in the
-background. Inside a desktop it isn't needed: CDP is at http://127.0.0.1:9221.
+desktop's shared Chromium (the one on its desktop, with your signed-in
+sessions), so Playwright, Puppeteer or DevTools tools connect as if the
+browser were local. Prints the URL, then keeps running until Ctrl-C. Run it in
+the background. Inside a desktop it isn't needed: CDP is at
+http://127.0.0.1:9221.
 
 Options:
   --port N             local port (0 = any free port) (default 9222)

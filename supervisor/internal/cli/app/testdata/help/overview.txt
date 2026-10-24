@@ -2,7 +2,7 @@ deskyard: use a Deskyard desktop (a Linux desktop with a shared browser) from in
 
 Usage: deskyard [-d NAME] COMMAND [ARGS...]
 
-New here? Run `deskyard guide` (written for AI agents) and `deskyard COMMAND --help`.
+New here? Run `deskyard guide` and `deskyard COMMAND --help`.
 
 Desktop (screen, mouse, keyboard):
   screenshot [FILE|-]                  PNG of the whole screen
@@ -40,7 +40,7 @@ Remotes:
 
 Information:
   status [--json]                      show the desktop's name, state, image and screen
-  guide                                short manual for AI agents
+  guide                                short manual for desktop access and control
   describe --json                      machine-readable description of every command
   help [COMMAND...]                    help for a command
   version                              print the version
@@ -53,7 +53,7 @@ Choosing a desktop:
 Environment:
   DESKYARD_REMOTE  remote to use when -d isn't given
   DESKYARD_URL     desktop URL (https://host/alice) to use without a remotes.json; needs DESKYARD_TOKEN
-  DESKYARD_TOKEN   agent token for DESKYARD_URL, and the default for `remote add --token`
+  DESKYARD_TOKEN   access token for DESKYARD_URL, and the default for `remote add --token`
   DESKYARD_SETTLE  seconds screenshot and zoom wait before capturing (default 0.3)
   XDG_CONFIG_HOME  where remotes.json lives (default ~/.config)
 

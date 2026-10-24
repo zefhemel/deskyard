@@ -68,7 +68,7 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
   const tabs: { id: Tab; label: string }[] = [
     { id: "overview", label: "Overview" },
     { id: "processes", label: "Processes" },
-    { id: "agents", label: "Agents" },
+    { id: "agents", label: "Remote access" },
     ...(me.admin
       ? [
           { id: "settings" as const, label: "Settings" },
@@ -206,7 +206,7 @@ function ViewersPanel({
           resized last.
         </p>
         {agents.length > 0 && (
-          <p class="mt-1.5 mb-0 text-[13px]" aria-label="Agents">
+          <p class="mt-1.5 mb-0 text-[13px]" aria-label="CLI activity">
             {names(agents.map(agentLabel))} {agents.length === 1 ? "is" : "are"} working here.
           </p>
         )}
@@ -304,7 +304,7 @@ function Facts({
         )}
         <dt class="text-muted">Limits</dt>
         <dd class="m-0">{limits(c.settings)}</dd>
-        <dt class="text-muted">Agent tokens</dt>
+        <dt class="text-muted">Access tokens</dt>
         <dd class="m-0">
           {c.tokens ? `${c.tokens} active` : "None"}{" "}
           <button type="button" class={link} onClick={() => onTab("agents")}>

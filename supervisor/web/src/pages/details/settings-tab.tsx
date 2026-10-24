@@ -172,7 +172,7 @@ function MemoryPolicy({ desktop: c, host }: { desktop: Desktop; host: Host | nul
     <section class="max-w-[620px] px-5 pb-5">
       <fieldset disabled={saving} class="m-0 min-w-0 border-0 p-0">
         <Check id="auto-reclaim" checked={enabled} onChange={(v) => void save(v)} title="Automatically reclaim idle memory">
-          Reclaim once after 15 minutes with no viewers, when agents and desktop operations are idle. A returning viewer resets the timer. Apps keep running; their next interaction may be slower. This preference saves immediately without restarting the desktop.
+          Reclaim once after 15 minutes with no viewers, when CLI activity and desktop operations are idle. A returning viewer resets the timer. Apps keep running; their next interaction may be slower. This preference saves immediately without restarting the desktop.
         </Check>
       </fieldset>
       {host && !host.memoryReclaim.enabled && <Note>Unavailable on this host: {host.memoryReclaim.reason}</Note>}

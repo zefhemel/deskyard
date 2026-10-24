@@ -65,7 +65,7 @@ export function Applications({ name, selected, onSelect, onWindows }: {
     <button type="button" class="min-h-10 cursor-pointer rounded-md px-2.5 font-semibold hover:bg-bar-hover" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>Apps</button>
     {error && !open && <button type="button" class="text-amber-300" title={error} onClick={() => setOpen(true)}>!</button>}
     {open && <div class="text-ink"><Dialog title="Applications" onClose={close}
-      intro="Launch or switch a window. Focus is shared with other viewers and agents."
+      intro="Launch or switch a window. Focus is shared with other viewers and CLI clients."
       footer={<Button onClick={() => setOpen(false)} disabled={busy}>Close</Button>}>
       <input class="mb-4 w-full rounded-lg border border-line bg-white p-3" placeholder="Search applications and windows" aria-label="Search applications and windows" value={query} onInput={(e) => setQuery(e.currentTarget.value)} />
       {error && <p role="status" class="mb-3 text-danger">{error}</p>}

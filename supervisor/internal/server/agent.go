@@ -28,7 +28,7 @@ const agentPrefix = "/api/agent/v1"
 func (s *Server) serveAgent(w http.ResponseWriter, r *http.Request) {
 	bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "an agent token is required (Authorization: Bearer dyt_…)")
+		writeError(w, http.StatusUnauthorized, "an access token is required (Authorization: Bearer dyt_…)")
 		return
 	}
 	t, ok := s.tokens.check(strings.TrimSpace(bearer))

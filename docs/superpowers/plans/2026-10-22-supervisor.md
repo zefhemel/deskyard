@@ -6,6 +6,8 @@ date: "2026-10-22"
 spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 ---
 
+**Implemented positioning update, 2026-10-24:** Deskyard is framed around human remote access and control through the browser and CLI. The Agents tab is now Remote access, agent tokens are access tokens, and presence is CLI activity. Skills remain shipped as optional integrations. Existing `/api/agent/v1/` routes, JSON fields and internal identifiers remain compatible. Agent-focused wording below records the original design; current terminology is documented in [[Architecture/Remote access API]], [[Architecture/Access tokens]] and [[Architecture/CLI activity]].
+
 Image paths in this completed plan describe the original layout. The [[superpowers/specs/2026-10-23-desktop-variants-design|Desktop image variants design]] moves shared files to `images/common/`, the Dockerfile to `images/Dockerfile` and image tests to `images/tests/`.
 # Status (2026-10-22)
 

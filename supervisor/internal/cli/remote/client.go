@@ -11,10 +11,10 @@ import (
 	"time"
 )
 
-// APIPath is the agent API's root path on a supervisor.
+// APIPath is the remote access API's root path on a supervisor.
 const APIPath = "/api/agent/v1"
 
-// Client talks to one desktop's agent API.
+// Client talks to one desktop's remote access API.
 type Client struct {
 	Alias   string // remote name, for messages ("alice"); may equal Desktop
 	Base    string
@@ -68,7 +68,7 @@ func (c *Client) WSURL(p string) string {
 	return u
 }
 
-// Header returns the auth header for agent API calls.
+// Header returns the auth header for remote access API calls.
 func (c *Client) Header() http.Header {
 	h := http.Header{}
 	h.Set("Authorization", "Bearer "+c.Token)
@@ -82,7 +82,7 @@ func (c *Client) httpClient() *http.Client {
 	return http.DefaultClient
 }
 
-// Do sends an authenticated request to the agent API.
+// Do sends an authenticated request to the remote access API.
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 	resp, err := c.httpClient().Do(req)
@@ -111,12 +111,12 @@ func (c *Client) Info(ctx context.Context) (*Info, error) {
 	}
 	var info Info
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		return nil, fmt.Errorf("%s answered with something that isn't the agent API (%v): check the URL", c.Base, err)
+		return nil, fmt.Errorf("%s answered with something that isn't the remote access API (%v): check the URL", c.Base, err)
 	}
 	return &info, nil
 }
 
-// APIError is an error answer from the agent API, already phrased with what
+// APIError is an error answer from the remote access API, already phrased with what
 // to do next.
 type APIError struct {
 	Status int
@@ -153,7 +153,7 @@ func (c *Client) explain(status int, msg string) string {
 	name := c.Label()
 	switch status {
 	case http.StatusUnauthorized:
-		return fmt.Sprintf("token rejected (401): ask someone with access to %s for a new token (on its Agents tab; this one is wrong, expired or revoked), then run `deskyard remote add %s %s --token dyt_…` again",
+		return fmt.Sprintf("token rejected (401): ask someone with access to %s for a new token (on its Remote access tab; this one is wrong, expired or revoked), then run `deskyard remote add %s %s --token dyt_…` again",
 			name, aliasOr(c.Alias, name), (&Target{Base: c.Base, Desktop: c.Desktop}).URL())
 	case http.StatusConflict:
 		if msg == "" {
@@ -161,7 +161,7 @@ func (c *Client) explain(status int, msg string) string {
 		}
 		return msg + " (409)"
 	case http.StatusNotFound:
-		return fmt.Sprintf("%s has no agent API (404): check the URL (expected https://host/%s)", c.Base, name)
+		return fmt.Sprintf("%s has no remote access API (404): check the URL (expected https://host/%s)", c.Base, name)
 	case http.StatusForbidden:
 		if msg == "" {
 			msg = "forbidden"

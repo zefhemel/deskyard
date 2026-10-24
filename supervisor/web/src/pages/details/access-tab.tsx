@@ -44,12 +44,12 @@ export function AccessTab({ desktop: c }: { desktop: Desktop }) {
   return (
     <div class="max-w-[620px] px-5 py-5">
       <p class="mt-0 mb-3.5 text-sm text-muted">
-        Who can open {c.name}, start and stop it, and give agents tokens for it. Changing this doesn't restart anything.
+        Who can open {c.name}, start and stop it, and create access tokens for it. Changing this doesn't restart anything.
       </p>
       {accounts.data ? <AccessPicks accounts={accounts.data} value={value} onChange={setValue} /> : <ErrorText error={accounts.error} />}
       {removed.length > 0 && (
         <p class="mt-1.5 mb-0 text-[13px] text-muted">
-          Taking {c.name} away from {removed.join(", ")} also closes their open desktop on it and revokes their agent tokens for it.
+          Taking {c.name} away from {removed.join(", ")} also closes their open desktop on it and revokes their access tokens for it.
         </p>
       )}
       <div class="mt-4">

@@ -5,6 +5,8 @@ status: approved
 plan: "[[superpowers/plans/2026-10-22-supervisor|Supervisor plan]]"
 date: "2026-10-21"
 ---
+
+**Implemented positioning update, 2026-10-24:** Deskyard is framed around human remote access and control through the browser and CLI. The Agents tab is now Remote access, agent tokens are access tokens, and presence is CLI activity. Skills remain shipped as optional integrations. Existing `/api/agent/v1/` routes, JSON fields and internal identifiers remain compatible. Agent-focused wording below records the original design; current terminology is documented in [[Architecture/Remote access API]], [[Architecture/Access tokens]] and [[Architecture/CLI activity]].
 The supervisor is one Go binary that creates, runs and shares many desktops: persistent Linux desktops in containers. The product is called **Deskyard** through the container engine (Docker now, Podman later). It has accounts, and each desktop has a list of accounts that may use it. Agents elsewhere use a desktop through the same `deskyard` command that's inside it, with a token an admin hands out. The repository splits into the supervisor and the desktop images. Mockups are in the UI section; their HTML sources are in the folder next to this page.
 
 # Intent

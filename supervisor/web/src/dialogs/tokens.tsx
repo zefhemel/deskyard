@@ -49,10 +49,10 @@ export function NewTokenDialog({ desktop, onClose, onCreated }: { desktop: strin
 
   return (
     <Dialog
-      title={`New agent token for ${desktop}`}
+      title={`New access token for ${desktop}`}
       intro={
         <>
-          For an agent running elsewhere. It can use {desktop}'s shell, files, browser and desktop as <span class="mono">user</span>, and
+          Use {desktop} from your own machine: its shell, files, browser and desktop as <span class="mono">user</span>, and
           nothing else.
         </>
       }
@@ -70,7 +70,7 @@ export function NewTokenDialog({ desktop, onClose, onCreated }: { desktop: strin
       }
     >
       <Field label="Name" htmlFor="tn" hint="Who or what will use it, so you recognise it later.">
-        <input id="tn" type="text" autocomplete="off" placeholder="claude on zef's laptop" value={name} onInput={(e) => setName(e.currentTarget.value)} />
+        <input id="tn" type="text" autocomplete="off" placeholder="My laptop" value={name} onInput={(e) => setName(e.currentTarget.value)} />
       </Field>
       <Field
         label="Expires"
@@ -109,7 +109,7 @@ export function TokenCreatedDialog({ desktop, token: t, onClose }: { desktop: st
   return (
     <Dialog
       title="Token created"
-      intro="Copy it now: it won't be shown again. On the agent's machine, run:"
+      intro="Copy it now: it won't be shown again. On your machine, run:"
       onClose={onClose}
       onSubmit={onClose}
       wide
@@ -134,7 +134,7 @@ export function TokenCreatedDialog({ desktop, token: t, onClose }: { desktop: st
         <dd class="m-0">{expires}</dd>
       </dl>
       <Note>
-        The agent can then run <span class="mono">desktop -c {desktop} guide</span> to learn the rest.
+        Then run <span class="mono">deskyard -d {desktop} guide</span> to learn the rest.
       </Note>
     </Dialog>
   );

@@ -16,7 +16,7 @@ func (a *App) writeOverview(w io.Writer) {
 
 Usage: deskyard [-d NAME] COMMAND [ARGS...]
 
-New here? Run `+"`deskyard guide`"+` (written for AI agents) and `+"`deskyard COMMAND --help`"+`.
+New here? Run `+"`deskyard guide`"+` and `+"`deskyard COMMAND --help`"+`.
 `)
 	for _, g := range groups {
 		fmt.Fprintf(w, "\n%s:\n", g.Title)
@@ -173,7 +173,7 @@ func runDescribe(a *App, _ *call) error {
 	doc := describeDoc{
 		Name:        "deskyard",
 		Version:     a.version(),
-		Description: "Use a Deskyard desktop (a Linux desktop with a shared Chromium) from inside it or remotely through its agent API. Run commands as `deskyard [-d NAME] <name> <arguments...>`; arguments are positional in the listed order, flags go after the command name.",
+		Description: "Use a Deskyard desktop (a Linux desktop with a shared Chromium) from inside it or remotely through its remote access API. Run commands as `deskyard [-d NAME] <name> <arguments...>`; arguments are positional in the listed order, flags go after the command name.",
 		Usage:       "deskyard [-d NAME] COMMAND [ARGS...]",
 		GlobalFlags: globalFlags,
 		Environment: environment,

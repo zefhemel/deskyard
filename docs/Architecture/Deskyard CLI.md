@@ -8,7 +8,7 @@ uses:
   - "[[Architecture/Shared terminal]]"
 spec: "[[superpowers/specs/2026-10-21-workspace-sandbox-design|Workspace Sandbox design]]"
 ---
-The `deskyard` command: screenshots, mouse and keyboard on the shared display, for agents that work by looking at the screen. One Go binary (`supervisor/cmd/deskyard`) that also works remotely (see [[Architecture/Remote CLI]]), with the same subcommands. The supervisor runs it through exec for thumbnails and remote screen actions, so it's part of the image contract. Remotely it also maps ports with `forward` (see [[Architecture/Port forwarding]]); inside the desktop the hidden `forward-helper` is its other end. Files: `supervisor/cmd/deskyard`, `supervisor/internal/cli/`.
+The `deskyard` command: screenshots, mouse and keyboard on the shared display, for people controlling the desktop from a terminal or scripts. One Go binary (`supervisor/cmd/deskyard`) that also works remotely (see [[Architecture/Remote CLI]]), with the same subcommands. The supervisor runs it through exec for thumbnails and remote screen actions, so it's part of the image contract. Remotely it also maps ports with `forward` (see [[Architecture/Port forwarding]]); inside the desktop the hidden `forward-helper` is its other end. Files: `supervisor/cmd/deskyard`, `supervisor/internal/cli/`.
 
 `deskyard terminal [SESSION]` joins the shared tmux terminal (default `main`), locally or through remote interactive exec. The hidden `terminal-helper SESSION` uses `supervisor/internal/terminal` to attach on a private runtime socket, with exact session names and context cancellation.
 

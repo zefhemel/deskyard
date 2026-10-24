@@ -317,7 +317,7 @@ func (a *App) loadConfig() (*remote.Config, string, error) {
 	return cfg, p, err
 }
 
-const addHint = "No remotes yet? Get a token on the desktop's Agents tab, then run `deskyard remote add NAME https://host/NAME --token dyt_…`"
+const addHint = "No remotes yet? Get a token on the desktop's Remote access tab, then run `deskyard remote add NAME https://host/NAME --token dyt_…`"
 
 // target picks the remote to talk to. It returns nil, nil when the command
 // should act locally (inside a desktop with no remote chosen).
@@ -379,7 +379,7 @@ func (a *App) envRemote(u string) (*remote.Client, error) {
 	}
 	tok := a.Getenv("DESKYARD_TOKEN")
 	if tok == "" {
-		return nil, errors.New("DESKYARD_URL is set but DESKYARD_TOKEN isn't: set it to the agent token (dyt_…) for that desktop")
+		return nil, errors.New("DESKYARD_URL is set but DESKYARD_TOKEN isn't: set it to the access token (dyt_…) for that desktop")
 	}
 	return &remote.Client{Alias: t.Desktop, Base: t.Base, Desktop: t.Desktop, Token: tok, HTTP: a.HTTP}, nil
 }

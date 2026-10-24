@@ -208,7 +208,7 @@ func init() {
 
 		{Name: "forward", Group: "shell", Summary: "map TCP ports between this machine and the desktop",
 			Usage: "forward [-R] PORT[:PORT]...",
-			Desc: "Maps TCP ports both ways until Ctrl-C, over the agent API (no port is opened anywhere else). Each argument is one mapping. " +
+			Desc: "Maps TCP ports both ways until Ctrl-C, over the remote access API (no port is opened anywhere else). Each argument is one mapping. " +
 				"PORT or LOCAL:DESKTOP: this machine's 127.0.0.1:LOCAL becomes localhost:DESKTOP in the desktop (a dev server here, reachable by the desktop's browser). " +
 				"-R PORT or -R DESKTOP:LOCAL (reverse; one -R before each such mapping): the desktop's localhost:DESKTOP becomes 127.0.0.1:LOCAL here. " +
 				"Both ends listen on loopback only; the desktop won't listen below 1024 (plain forward only; -R just dials, so -R 80:8080 works). A port in use on either side fails that mapping, which is retried, and the others carry on. " +
@@ -224,7 +224,7 @@ func init() {
 		// Browser
 		{Name: "browser connect", Group: "browser", Summary: "forward the desktop's browser to a local CDP port",
 			Usage: "browser connect [--port N]",
-			Desc: "Listens on 127.0.0.1:PORT and forwards the Chrome DevTools Protocol to the desktop's shared Chromium (the one on its desktop, with the human's logins), so Playwright, Puppeteer or DevTools tools connect as if the browser were local. " +
+			Desc: "Listens on 127.0.0.1:PORT and forwards the Chrome DevTools Protocol to the desktop's shared Chromium (the one on its desktop, with your signed-in sessions), so Playwright, Puppeteer or DevTools tools connect as if the browser were local. " +
 				"Prints the URL, then keeps running until Ctrl-C. Run it in the background. Inside a desktop it isn't needed: CDP is at http://127.0.0.1:9221.",
 			Flags:    []Flag{{Name: "--port", Type: "integer", Value: "N", Default: "9222", Desc: "local port (0 = any free port)"}},
 			Output:   Output{Type: "text", Desc: "first line: the local CDP URL (http://127.0.0.1:9222); connection log on stderr"},
@@ -234,10 +234,10 @@ func init() {
 		// Remotes
 		{Name: "remote add", Group: "remote", Summary: "save a desktop as a remote",
 			Usage: "remote add NAME URL --token dyt_…",
-			Desc:  "Checks the token against the desktop's agent API and saves the remote in remotes.json (" + "$XDG_CONFIG_HOME/deskyard, default ~/.config/deskyard; mode 0600). URL is the desktop's address, like https://host/alice. Tokens come from the desktop's Agents tab. The first remote becomes the default.",
+			Desc:  "Checks the token against the desktop's remote access API and saves the remote in remotes.json (" + "$XDG_CONFIG_HOME/deskyard, default ~/.config/deskyard; mode 0600). URL is the desktop's address, like https://host/alice. Tokens come from the desktop's Remote access tab. The first remote becomes the default.",
 			Args: []Arg{{Name: "name", Type: "string", Required: true, Desc: "local name for the remote (letters, digits, . _ -)"},
 				{Name: "url", Type: "string", Required: true, Desc: "the desktop's URL, e.g. https://host/alice"}},
-			Flags:    []Flag{{Name: "--token", Type: "string", Value: "TOKEN", Desc: "agent token (dyt_…); defaults to $DESKYARD_TOKEN"}},
+			Flags:    []Flag{{Name: "--token", Type: "string", Value: "TOKEN", Desc: "access token (dyt_…); defaults to $DESKYARD_TOKEN"}},
 			Output:   Output{Type: "text", Desc: "a confirmation line"},
 			Examples: []string{"deskyard remote add alice https://desktops.example.com/alice --token dyt_…"},
 			Where:    whereLocal, Exit: exitStd, run: runRemoteAdd},
@@ -248,7 +248,7 @@ func init() {
 				Fields: map[string]string{"name": "remote name", "url": "desktop URL", "desktop": "desktop name on the supervisor", "default": "whether it is the default"}},
 			Examples: []string{"deskyard remote list"}, Where: whereLocal, Exit: exitStd, run: runRemoteList},
 		{Name: "remote remove", Group: "remote", Summary: "forget a remote",
-			Usage: "remote remove NAME", Desc: "Removes a saved remote (the token itself stays valid until someone revokes it on the Agents tab).",
+			Usage: "remote remove NAME", Desc: "Removes a saved remote (the token itself stays valid until someone revokes it on the Remote access tab).",
 			Args:   []Arg{{Name: "name", Type: "string", Required: true, Desc: "remote name"}},
 			Output: noOutput, Examples: []string{"deskyard remote remove alice"}, Where: whereLocal, Exit: exitStd, run: runRemoteRemove},
 		{Name: "remote default", Group: "remote", Summary: "set or show the default remote",
@@ -264,7 +264,7 @@ func init() {
 			Output: Output{Type: "text", Desc: `"key: value" lines; with --json an object`,
 				Fields: map[string]string{"name": "desktop name", "state": "running, stopped, …", "image": "image reference", "imageTitle": "image title", "imageVersion": "image version", "screen": "{width,height}", "remote": "remote used (absent locally)", "url": "desktop URL (absent locally)", "local": "true when acting locally"}},
 			Examples: []string{"deskyard -d alice status"}, Where: whereBoth, Exit: exitStd, run: runStatus},
-		{Name: "guide", Group: "info", Summary: "short manual for AI agents",
+		{Name: "guide", Group: "info", Summary: "short manual for desktop access and control",
 			Usage: "guide", Desc: "Prints a short manual: how a desktop is laid out, the three ways to work (shell, browser, desktop) and when to use which.",
 			Output: Output{Type: "text", Desc: "the guide"}, Examples: []string{"deskyard guide"}, Where: whereLocal, Exit: exitStd, run: runGuide},
 		{Name: "describe", Group: "info", Summary: "machine-readable description of every command",
@@ -306,7 +306,7 @@ var environment = []struct {
 }{
 	{"DESKYARD_REMOTE", "remote to use when -d isn't given"},
 	{"DESKYARD_URL", "desktop URL (https://host/alice) to use without a remotes.json; needs DESKYARD_TOKEN"},
-	{"DESKYARD_TOKEN", "agent token for DESKYARD_URL, and the default for `remote add --token`"},
+	{"DESKYARD_TOKEN", "access token for DESKYARD_URL, and the default for `remote add --token`"},
 	{"DESKYARD_SETTLE", "seconds screenshot and zoom wait before capturing (default 0.3)"},
 	{"XDG_CONFIG_HOME", "where remotes.json lives (default ~/.config)"},
 }

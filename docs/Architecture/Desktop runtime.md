@@ -8,10 +8,10 @@ uses:
   - "[[Architecture/Selkies]]"
   - "[[Architecture/Chromium]]"
   - "[[Architecture/Caddy]]"
-  - "[[Architecture/Agent tooling]]"
+  - "[[Architecture/Desktop tools]]"
 spec: "[[superpowers/specs/2026-10-23-desktop-variants-design|Desktop image variants design]]"
 ---
-The common Debian trixie image layer beneath XFCE, KDE Plasma and MATE. It provides streaming and audio, the shared browser, agent tools, user/workspace initialization, Flatpak and service supervision. `images/Dockerfile` contains the shared build stages and the three final desktop targets; `docker-bake.hcl` builds them together once per architecture, reusing the expensive CLI and patched codec dependencies. The common layer is an internal build stage, not a separately published or selectable desktop.
+The common Debian trixie image layer beneath XFCE, KDE Plasma and MATE. It provides streaming and audio, the shared browser, desktop tools, user/workspace initialization, Flatpak and service supervision. `images/Dockerfile` contains the shared build stages and the three final desktop targets; `docker-bake.hcl` builds them together once per architecture, reusing the expensive CLI and patched codec dependencies. The common layer is an internal build stage, not a separately published or selectable desktop.
 
 Shared configuration is copied after desktop package installation so a startup-script change does not rebuild desktop packages. Shared files live in `images/common/rootfs/` and patches in `images/common/patches/`. Desktop packages, native session adapters and defaults live in the respective final layers and `images/debian-{xfce,kde,mate}/rootfs/`. KDE ships Discover and the Flatpak backend; XFCE and MATE ship GNOME Software and its Flatpak plugin. The stores use libflatpak directly and the per-user Flathub remote, keeping installations in `/workspace`; the CLI wrapper alone does not enforce GUI installation scope. Matching GTK/KDE portal packages are installed, but the document portal cannot mount its FUSE filesystem under the current engine configuration. Apps depending on document-portal file grants remain a limitation; LibreOffice's permitted workspace access and graphical saving were verified.
 

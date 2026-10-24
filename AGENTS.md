@@ -1,6 +1,6 @@
 # Project guidance
 
-Deskyard runs persistent Linux desktops in containers, shared by people and AI agents, through a Go supervisor with a Preact web UI.
+Deskyard runs persistent Linux desktops in containers, accessed and shared by people through a browser or CLI, through a Go supervisor with a Preact web UI.
 
 ## Before making changes
 

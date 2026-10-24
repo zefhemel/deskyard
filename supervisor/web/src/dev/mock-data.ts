@@ -12,7 +12,7 @@ const PLAIN = { installed: true, official: false, custom: false, secrets: false,
 const LATEST = "ghcr.io/zefhemel/deskyard-debian-xfce:latest";
 const BETA = "ghcr.io/zefhemel/deskyard-debian-xfce:beta";
 
-const AGENT_COLORS: Record<string, string> = { "deploy-bot": "#e0457b", "Claude Code": "#d97706", "nightly CI": "#2f9e8f" };
+const AGENT_COLORS: Record<string, string> = { "My laptop": "#e0457b", "a terminal": "#d97706", "Work laptop": "#2f9e8f" };
 
 /** A mock agent last active `secsAgo` seconds ago (active means in the last 10). */
 function agent(name: string, owner: string, inside: boolean, secsAgo: number): AgentPresence {
@@ -66,10 +66,10 @@ export const desktops: Desktop[] = [
     access: ["anna"],
     viewers: ["zef", "anna"],
     forwards: [
-      { token: "deploy-bot", direction: "in", port: 3000 },
-      { token: "deploy-bot", direction: "out", port: 5173 },
+      { token: "My laptop", direction: "in", port: 3000 },
+      { token: "My laptop", direction: "out", port: 5173 },
     ],
-    agents: [agent("deploy-bot", "zef", false, 2), agent("Claude Code", "", true, 4), agent("nightly CI", "anna", false, 270)],
+    agents: [agent("My laptop", "zef", false, 2), agent("a terminal", "", true, 4), agent("Work laptop", "anna", false, 270)],
     tokens: 2,
     stats: { cpuPercent: 34, memBytes: 1.4 * GB, memLimit: 2 * GB },
   }),
@@ -78,7 +78,7 @@ export const desktops: Desktop[] = [
     name: "build-bot",
     startedAt: iso(12 * 60 * 1000),
     settings: { memoryBytes: 4 * GB, nanoCpus: 4e9, camera: "", mounts: [] },
-    agents: [agent("Claude Code", "", true, 1)],
+    agents: [agent("a terminal", "", true, 1)],
     stats: { cpuPercent: 91, memBytes: 3.1 * GB, memLimit: 4 * GB },
   }),
   desktop({
@@ -197,7 +197,7 @@ export const recipes: Recipe[] = [
 export const tokens: Record<string, Token[]> = {
   alice: [
     { id: "7f3kq2", name: "claude on zef's laptop", createdBy: "zef", created: iso(10 * DAY), expires: null, lastUsed: iso(2 * 60 * 1000), expired: false },
-    { id: "m2q9x8", name: "nightly CI", createdBy: "zef", created: iso(4 * DAY), expires: new Date(now + 26 * DAY).toISOString(), lastUsed: iso(5 * HOUR), expired: false },
+    { id: "m2q9x8", name: "Work laptop", createdBy: "zef", created: iso(4 * DAY), expires: new Date(now + 26 * DAY).toISOString(), lastUsed: iso(5 * HOUR), expired: false },
     { id: "a81c4d", name: "demo for sam", createdBy: "anna", created: iso(21 * DAY), expires: iso(14 * DAY), lastUsed: iso(14 * DAY), expired: true },
   ],
 };
@@ -228,7 +228,7 @@ const ago = (secs: number) => iso(secs * 1000);
 
 /** What each mock agent has been doing, newest first. Times are relative to now so the page looks alive. */
 function summaryOf(a: AgentPresence): AgentSummary {
-  if (a.name === "deploy-bot") {
+  if (a.name === "My laptop") {
     return {
       ...a,
       now: [
@@ -247,7 +247,7 @@ function summaryOf(a: AgentPresence): AgentSummary {
       ],
     };
   }
-  if (a.name === "Claude Code") {
+  if (a.name === "a terminal") {
     return {
       ...a,
       now: [{ kind: "command", text: "go test ./...", since: ago(18) }],

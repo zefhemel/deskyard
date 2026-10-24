@@ -50,7 +50,7 @@ def test_agent_presence_and_summary(cli, remote, supervisor, name):
 
 
 def check_agent_presence_and_summary(base, name):
-    title = "cli test · admin's agent"
+    title = "cli test · admin's CLI"
     with sync_playwright() as pw:
         browser, page = signed_in(pw, base)
         page.goto(f"{base}/{name}/")
@@ -58,7 +58,7 @@ def check_agent_presence_and_summary(base, name):
         expect(chip).to_be_visible(timeout=30000)
         expect(chip.locator("[data-agent]")).to_have_attribute("title", title)
         chip.click()
-        expect(page.get_by_role("heading", name="Agents")).to_be_visible()
+        expect(page.get_by_role("heading", name="CLI activity")).to_be_visible()
         row = page.get_by_role("button", name=title)
         expect(row).to_be_visible()
         row.hover()
@@ -90,7 +90,7 @@ def test_open_popover_stays_open_when_the_stream_connects(cli, remote, superviso
             chip = page.get_by_role("button", name="Viewers and port mappings")
             expect(chip).to_be_visible(timeout=30000)
             chip.click()
-            agents = page.get_by_role("heading", name="Agents")
+            agents = page.get_by_role("heading", name="CLI activity")
             expect(agents).to_be_visible()
             expect(page.get_by_text("Connected", exact=True)).to_be_hidden()
             docker("exec", f"deskyard-{name}", "supervisorctl", "start", "selkies")

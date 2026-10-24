@@ -2,8 +2,8 @@
 
 # Deskyard
 
-Small, persistent Linux desktops in containers, each shared between humans
-and AI agents alike, run and shared by one app: the **supervisor**.
+Persistent Linux desktops you can access, share and control from anywhere—
+in your browser or terminal. One app, the **supervisor**, runs them in containers.
 
 ![The desktop: Chromium on this project's GitHub page, and a terminal using node (installed with mise) and the deskyard command](docs/screenshot.png)
 
@@ -24,21 +24,18 @@ What's in a desktop:
   Download button. Drop files on the screen to copy them onto the desktop.
   Badges show who has their mic or camera on. On phones and narrow tablets,
   Lock size, resolution presets, Keys, Quality and Download are in the scrollable More menu.
-- **One shared Chromium** with one profile: log in once on the desktop and
-  the agent is logged in too. It starts when someone opens it or an agent
-  connects to it.
-- **Computer use**: a `deskyard` command for screenshots, clicks and typing
-  on the same screen, inside the desktop and, with a token, from anywhere
-  else.
+- **One shared Chromium** with one profile: your tabs and sign-ins stay
+  with the desktop. It starts when you open it or connect through browser tools.
+- **Remote access and control**: use the `deskyard` command from your terminal
+  for shells, shared terminals, file transfers, screenshots, clicks and typing.
+  Map ports to reach services on either machine.
 - **Persistent installs**: `/workspace` (the user's home) is a plain folder
   on the host (`~/deskyard/<name>`). Tools installed with mise, npm, uv or
   Flatpak live there and survive restarts and image upgrades.
-- **Agent skills** for Claude Code, Codex and other agents, so they know how
-  to use all of the above.
-- **Agent presence**: agents working on a desktop, inside it or from
-  elsewhere, show up next to the people viewing it, with what they're
-  running and have just done, and marks on the screen where they click and
-  type. Typed text and secrets on command lines are hidden.
+- **CLI activity**: see terminal clients and programs working on a desktop
+  alongside browser viewers, with what they are running, recent actions,
+  and marks on the screen where they click and type. Typed text and secrets
+  on command lines are hidden.
 
 The desktop image is Debian 13, `linux/arm64` and `linux/amd64`. About 0.4 GB
 of RAM per running desktop with Chromium open, so several fit on an 8 GB
@@ -103,7 +100,7 @@ The full screen is still transmitted. Windows are followed about once a
 second, and known child dialogs are included; menus outside that region,
 windows beyond the screen edges, minimum application sizes, and phone
 keyboard behavior still need broader device testing. Use Full desktop when
-needed. Agent action marks are hidden while focused.
+needed. CLI action marks are hidden while focused.
 
 ## Install
 
@@ -114,7 +111,7 @@ and the images' `latest` tags.
 
 ### The `deskyard` command
 
-For agents and people outside a desktop (inside one, it's already there).
+For access from your own terminal outside a desktop (inside one, it's already there).
 On Linux or macOS:
 
 ```bash
@@ -206,7 +203,7 @@ serve it over https or accept what plain http costs.
 over http as insecure and turn features off. The desktop page says so in
 its bar ("Not secure: some features off"). What still works: the picture,
 keyboard and mouse, sound, the Clipboard button's text box (both ways),
-Lock size, Quality, upload, download and the agent overlay. Gamepads
+Lock size, Quality, upload, download and the CLI activity overlay. Gamepads
 should too in Chromium and Safari, which keep the Gamepad API over http. What doesn't:
 
 - **Mic and camera**: the browser has no `getUserMedia`. The Audio panel
@@ -315,14 +312,14 @@ container runtime). An
 engine that cannot enforce this fails the check before the desktop stops.
 Desktops with host folders also disable privilege gains through setuid
 executables and file capabilities; user-namespace sandboxes remain available.
-Everyone with access to the desktop, including agents, gets its mounted
+Everyone with access to the desktop, including remote CLI clients, gets its mounted
 folders. Settings and mounts survive restarts and image upgrades.
 
 Removing a mount never deletes its source. Removing a desktop only deletes
 its private workspace when requested; independently mounted folders elsewhere
 are left alone. Mounted host folders are not included when making an image
 from a desktop. The supervisor's Files and Download views still browse only
-`/workspace`; use desktop apps or the agent CLI for mounted folders.
+`/workspace`; use desktop apps or the CLI for mounted folders.
 
 ### Reclaiming memory
 
@@ -334,7 +331,7 @@ more slowly when accessed again.
 
 On supported hosts, each desktop also gets one automatic 128 MiB reclaim
 attempt after 15 minutes with no viewers. A returning viewer resets the timer,
-even if they leave again between checks. Active agents, desktop operations,
+even if they leave again between checks. Active CLI clients, desktop operations,
 and missing or stale activity reports delay reclamation without consuming the
 attempt. Failed attempts are not retried during that absence. Checks run every
 30 seconds and requests run one at a time. Supervisor/container restarts start
@@ -456,8 +453,8 @@ Docker's configuration changes. Chromium also uses them to run with its own
 sandbox.
 
 `systempaths=unconfined` leaves `/proc/sys` writable, and root in the
-container is root on the host for those files. So nothing reachable by the
-agent or the internet runs as root in a desktop: there is no `sudo`, Caddy
+container is root on the host for those files. So nothing reachable by
+desktop users or the internet runs as root in a desktop: there is no `sudo`, Caddy
 runs as its own user, and the supervisor runs every command as `user`.
 
 On Ubuntu 24.04+ hosts, unprivileged user namespaces may be restricted by
@@ -477,16 +474,61 @@ password.
 | See, open, start, stop, restart desktops | all | those it has access to |
 | Create, remove, change settings, upgrade | yes | no |
 | Reclaim memory | yes | no |
-| Create agent tokens | yes | for desktops it has access to |
+| Create access tokens | yes | for desktops it has access to |
 | Accounts, access, image catalog | yes | no |
 
 Everyone with access to a desktop opens the **same desktop**: one screen,
 one mouse, one keyboard, like two people at one desk. The desktop follows
 the browser window of whoever resized last. The supervisor shows who's
 viewing on the tiles, the details page and the desktop page's bar, but nothing
-arbitrates between people (or agents) driving it at the same time.
+arbitrates between people and CLI clients driving it at the same time.
 
-## Agents
+## Remote access and control
+
+Use `deskyard` from your laptop or another machine with an **access token**.
+Anyone with access to a desktop creates one on its **Remote access** tab,
+with a name and optional expiry. Copy the setup command when it is shown;
+the token is only displayed once. Install `deskyard` on your machine
+(see Install), then:
+
+```bash
+deskyard remote add alice https://desktops.example.com/alice --token dyt_...
+deskyard -d alice exec -- ls ~            # one command; exit code passed through
+deskyard -d alice shell                   # interactive shell
+deskyard -d alice terminal                # shared terminal; rejoin later
+deskyard cp ./notes.md alice:/workspace/notes.md    # and back
+deskyard -d alice screenshot > s.png      # every screen action works remotely
+deskyard -d alice click 640 400
+deskyard -d alice browser connect --port 9222   # the shared Chromium on local 127.0.0.1:9222
+```
+
+With `browser connect` running, Playwright's
+`chromium.connect_over_cdp("http://127.0.0.1:9222")` (use
+`browser.contexts[0]`, the shared profile), Puppeteer or chrome-devtools
+tools work as if the browser were local. `deskyard remote default alice`
+saves typing `-d`; `DESKYARD_URL` and `DESKYARD_TOKEN` work without a config
+file. For command help, use `deskyard --help`, `deskyard guide` (a short
+manual) and `deskyard describe --json` (machine-readable command descriptions).
+
+A token reaches one desktop's shell, files, browser and desktop, nothing
+else: no other desktops, no lifecycle, settings or accounts. Start a stopped
+desktop from the web UI before connecting. Revoking a token, or its expiry,
+closes its open connections at once, and a token dies with its creator's access.
+
+### Port mapping
+
+Reach a server on one machine from the other, with the same access token:
+
+```bash
+deskyard -d alice forward 3000 &      # your 127.0.0.1:3000 is localhost:3000 in the desktop
+deskyard -d alice forward -R 5173 &   # the desktop's localhost:5173 is your 127.0.0.1:5173
+```
+
+The first lets the desktop call a service running on your machine; the second lets you open a dev server running in the desktop in your own browser. To use different port numbers, write `LOCAL:DESKTOP` for a plain mapping (`8080:3000`: your 8080 is the desktop's 3000) and `DESKTOP:LOCAL` after `-R` (`-R 80:8080`: the desktop's 80 is your 8080). Several mappings can share one command (at most 64 plain ones and 256 in all), and one token can hold four such links per desktop. Everything goes over the existing HTTPS connection (no extra ports are opened on the desktop host) and listens only on `127.0.0.1`. Only *listening* in the desktop is limited to ports from 1024 up, so plain `forward 80` is refused while `-R 80:8080` works (the helper just dials). If the connection drops or the desktop restarts, `deskyard` reconnects by itself with backoff (up to 30 s): `-R` local ports stay bound meanwhile, and plain mappings come back in the desktop once the link is back. People watching the desktop see which ports your token maps (up to 64 per token are listed). "Linked to …" and the `out` lines are printed when the link is accepted, a moment before the desktop helper is known to be running.
+
+## Optional agent integrations
+
+The desktop also ships skills for tools such as Claude Code and Codex.
 
 **Inside a desktop.** Install an agent into `/workspace` from the desktop
 terminal and run it there:
@@ -531,47 +573,6 @@ The image links its skills into `~/.claude/skills`, `~/.codex/skills`,
 They update with the image. To customise one, replace its link with a real
 directory; it won't be touched again.
 
-**From elsewhere** (a laptop, CI, another sandbox), the only way in is the
-`deskyard` command with an **agent token**. Anyone with access to a desktop
-creates one on its Agents tab, with a name and an optional expiry; it's
-shown once, with the line to paste on the agent's machine. Install
-`deskyard` there (see Install), then:
-
-```bash
-deskyard remote add alice https://desktops.example.com/alice --token dyt_...
-deskyard -d alice exec -- ls ~            # one command; exit code passed through
-deskyard -d alice shell                   # interactive shell
-deskyard cp ./notes.md alice:/workspace/notes.md    # and back
-deskyard -d alice screenshot > s.png      # every screen action works remotely
-deskyard -d alice click 640 400
-deskyard -d alice browser connect --port 9222   # the shared Chromium on local 127.0.0.1:9222
-```
-
-With `browser connect` running, Playwright's
-`chromium.connect_over_cdp("http://127.0.0.1:9222")` (use
-`browser.contexts[0]`, the shared profile), Puppeteer or chrome-devtools
-tools work as if the browser were local. `deskyard remote default alice`
-saves typing `-d`; `DESKYARD_URL` and `DESKYARD_TOKEN` work without a config
-file. The command explains itself to agents: `deskyard --help`, `desktop
-guide` (a short manual) and `deskyard describe --json` (every command as a
-tool schema).
-
-A token reaches one desktop's shell, files, browser and desktop, nothing
-else: no other desktops, no lifecycle, settings or accounts. Agents can't
-start a stopped desktop. Revoking a token, or its expiry, closes its open
-connections at once, and a token dies with its creator's access.
-
-### Port mapping
-
-Reach a server on one machine from the other, with the same agent token:
-
-```bash
-deskyard -d alice forward 3000 &      # your 127.0.0.1:3000 is localhost:3000 in the desktop
-deskyard -d alice forward -R 5173 &   # the desktop's localhost:5173 is your 127.0.0.1:5173
-```
-
-The first lets the desktop (or an agent in it) call a service running on your machine; the second lets you open a dev server running in the desktop in your own browser. To use different port numbers, write `LOCAL:DESKTOP` for a plain mapping (`8080:3000`: your 8080 is the desktop's 3000) and `DESKTOP:LOCAL` after `-R` (`-R 80:8080`: the desktop's 80 is your 8080). Several mappings can share one command (at most 64 plain ones and 256 in all), and one token can hold four such links per desktop. Everything goes over the existing HTTPS connection (no extra ports are opened on the desktop host) and listens only on `127.0.0.1`. Only *listening* in the desktop is limited to ports from 1024 up, so plain `forward 80` is refused while `-R 80:8080` works (the helper just dials). If the connection drops or the desktop restarts, `deskyard` reconnects by itself with backoff (up to 30 s): `-R` local ports stay bound meanwhile, and plain mappings come back in the desktop once the link is back. People watching the desktop see which ports your token maps (up to 64 per token are listed). "Linked to …" and the `out` lines are printed when the link is accepted, a moment before the desktop helper is known to be running.
-
 ## Configuration
 
 Environment variables of the supervisor:
@@ -612,15 +613,15 @@ startup and refuses to run, with an explanation, if they don't match.
   machine, so the supervisor is the most privileged thing there. Run
   directly on Linux, its user needs the `docker` group, which is
   root-equivalent; in a container, mounting the socket is the same.
-- Every route but the login page needs a signed-in account; agent tokens
-  work only on the agent API. Failed logins are throttled.
+- Every route but the login page needs a signed-in account; access tokens
+  work only on the remote access API. Failed logins are throttled.
 - Desktops have no password and nothing else of their own facing the
   network: only Caddy on 8080, which wants a per-desktop token that only
   the supervisor has. With the supervisor in a container, desktops publish
   no ports; run directly, each publishes only 8080 on host `127.0.0.1`.
 - The supervisor never serves pages from a desktop: it serves the desktop
   client itself (taken from the desktop's image) and proxies only the
-  desktop's WebSocket and, for agents, the browser's CDP.
+  desktop's WebSocket and, for CLI clients, the browser's CDP.
 - No `sudo` in desktops, and every command the supervisor runs in one runs
   as `user`.
 - Over plain HTTP, passwords travel in clear text: keep the default
@@ -632,7 +633,7 @@ startup and refuses to run, with an explanation, if they don't match.
 ```
 supervisor/
   cmd/deskyard-supervisor/     the supervisor
-  cmd/deskyard/     the deskyard command (inside desktops and for agents elsewhere)
+  cmd/deskyard/     the deskyard command (inside desktops and for remote access)
   internal/         engine interface and Docker implementation, accounts, auth,
                     desktops, the HTTP server and proxy, the embedded UI
   web/              the UI: Preact + TypeScript + Tailwind, built with Vite
@@ -728,7 +729,7 @@ docker buildx bake --load     # all desktop targets, shared stages built once
 cd images/tests
 uv run playwright install chromium   # once
 uv run pytest -m "not slow"
-uv run pytest                        # also: memory budget, Flatpak app, agent CLIs
+uv run pytest                        # also: memory budget, Flatpak app, CLIs
 ```
 
 Screenshots and stats land in `images/tests/artifacts/<desktop>/`.

@@ -43,7 +43,7 @@ Confirmed requirements from the project owner:
 - Configure custom DNS per desktop, with an administrator-controlled way to enable or disable it for that desktop.
 - Independently enable or disable VPN routing per desktop. When enabled, all of that desktop's internet traffic must use the VPN, not only its browser traffic. NordVPN is a concrete provider of interest; provider integration and credentials have not yet been designed or verified.
 - Enforce the selected policy outside the desktop. These are not merely default settings that the desktop user can change or bypass.
-- The VPN scope is the ordinary desktop network path, not complete lockdown. Keep existing agent port forwarding unchanged; deliberate alternate tunnels or proxies through allowed applications or forwarding are outside the VPN feature's bypass-prevention scope.
+- The VPN scope is the ordinary desktop network path, not complete lockdown. Keep existing CLI port forwarding unchanged; deliberate alternate tunnels or proxies through allowed applications or forwarding are outside the VPN feature's bypass-prevention scope.
 - For VPN-enabled desktops, block access to the home network by default. Administrators can configure explicit exceptions; preserving Deskyard's access to the desktop must not grant the desktop general access to the host or LAN.
 - Allow DNS filtering and VPN routing to be used separately or together. Selecting a VPN must not silently override an enabled custom DNS policy.
 - Make setup as easy as possible through Deskyard's UI, without requiring the administrator to edit Docker networking, firewall rules or routing tables.
