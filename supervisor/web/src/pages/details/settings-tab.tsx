@@ -26,15 +26,12 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
   const [dockerAccess, setDockerAccess] = useState(c.settings.dockerAccess ?? false);
   const savedMounts = c.settings.mounts ?? [];
   const [mounts, setMounts] = useState(savedMounts);
-  const { host, jobs, refresh } = useLive();
+  const { host } = useLive();
   const run = useJob(() => {
-    refresh();
     notify(`${c.name}'s settings are saved`);
-  });
-  // Live state survives this tab unmounting and follows jobs after a reload.
-  // Keep the local Starting state while the save request is still pending.
-  const job = run.running ? run.job : jobs[c.name] ?? null;
-  const saving = job?.status === "running";
+  }, c.name);
+  const job = run.job;
+  const saving = run.running;
   const progressPanel = useRef<HTMLElement>(null);
   useEffect(() => {
     if (saving) progressPanel.current?.scrollIntoView({ block: "nearest" });

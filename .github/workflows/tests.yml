@@ -4,7 +4,7 @@
 #   make test-ci), the image suite and the supervisor suite run directly;
 # - main, nightly and by hand: everything (the suites of make test-all),
 #   including the supervisor suite with the supervisor in a container.
-# A separate five-test runtime smoke matrix covers XFCE, KDE and MATE.
+# A separate five-test runtime smoke matrix covers XFCE and MATE.
 # Each job builds its desktop image once, from the images workflow's cache.
 name: Tests
 
@@ -124,7 +124,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        desktop: [xfce, kde, mate]
+        desktop: [xfce, mate]
     env:
       AC_DESKTOP: ${{ matrix.desktop }}
       AC_IMAGE: deskyard-debian-${{ matrix.desktop }}:smoke

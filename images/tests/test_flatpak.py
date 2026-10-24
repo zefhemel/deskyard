@@ -3,12 +3,11 @@ import time
 import pytest
 
 from sandbox import docker
-from sandbox import DESKTOP
 
 
 def test_graphical_store_has_flatpak_backend_without_system_package_manager(image):
-    store = "plasma-discover" if DESKTOP == "kde" else "gnome-software"
-    backend = "plasma-discover-backend-flatpak" if DESKTOP == "kde" else "gnome-software-plugin-flatpak"
+    store = "gnome-software"
+    backend = "gnome-software-plugin-flatpak"
     result = docker("run", "--rm", "--entrypoint", "sh", image, "-c",
                     f"command -v {store} && dpkg-query -W -f='${{db:Status-Status}}' {backend}")
     assert result.stdout.splitlines()[-1] == "installed"
@@ -18,11 +17,11 @@ def test_graphical_store_has_flatpak_backend_without_system_package_manager(imag
 
 @pytest.mark.network
 def test_store_opens_as_user(sandbox, artifacts_dir):
-    store = "plasma-discover" if DESKTOP == "kde" else "gnome-software"
+    store = "gnome-software"
     sandbox.exec(f"setsid -f {store} >/tmp/software-store.log 2>&1")
     deadline = time.time() + 180
     while time.time() < deadline:
-        if sandbox.exec("xdotool search --onlyvisible --class '(discover|gnome-software|org.gnome.Software)'", check=False).returncode == 0:
+        if sandbox.exec("xdotool search --onlyvisible --class '(gnome-software|org.gnome.Software)'", check=False).returncode == 0:
             break
         time.sleep(1)
     else:

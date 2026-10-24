@@ -48,7 +48,8 @@ def mock_page(p, base, path):
 
 
 @pytest.mark.parametrize("width", [390, 1280])
-def test_settings_reattaches_visible_image_pull_progress(mock_ui, width):
+@pytest.mark.parametrize("outcome", ["done", "failed", "disconnected"])
+def test_settings_reattaches_visible_image_pull_progress(mock_ui, width, outcome):
     """A settings download stays visible after reload and switching tabs."""
     with sync_playwright() as p:
         browser, page = mock_page(p, mock_ui, "/desktops/alice?tab=settings")
@@ -71,6 +72,8 @@ def test_settings_reattaches_visible_image_pull_progress(mock_ui, width):
         })();""")
         page.reload()
         page.wait_for_function("window.testJobs.length === 1")
+        expect(page.get_by_role("region", name="Desktop operation", exact=True)).to_contain_text("Starting")
+        expect(page.get_by_role("radio").first).to_be_disabled()
 
         def update(status, message, progress):
             page.evaluate("j => window.testJobs[0].onmessage({data: JSON.stringify(j)})",
@@ -91,7 +94,13 @@ def test_settings_reattaches_visible_image_pull_progress(mock_ui, width):
         update("running", "Preparing image", None)
         expect(panel).to_contain_text("Preparing image")
         expect(panel).not_to_contain_text("%")
-        update("done", "Done", None)
+        if outcome == "disconnected":
+            page.evaluate("window.testJobs[0].onerror()")
+            expect(page.get_by_text("Lost the connection to the job", exact=True)).to_be_visible()
+        else:
+            update(outcome, "Download failed" if outcome == "failed" else "Done", None)
+            if outcome == "failed":
+                expect(page.get_by_text("Download failed", exact=True)).to_be_visible()
         expect(panel).to_have_count(0)
         expect(page.get_by_role("radio").first).to_be_enabled()
         browser.close()
@@ -104,7 +113,7 @@ def test_settings_save_brings_pending_progress_into_view(mock_ui):
         pending = []
         page.route("**/api/desktops/alice", lambda route: pending.append(route)
                    if route.request.method == "PATCH" else route.continue_())
-        page.get_by_role("radio", name="Debian KDE Plasma", exact=False).check()
+        page.get_by_role("radio", name="Debian MATE", exact=False).check()
         page.locator('form button[type="submit"]').click()
         panel = page.get_by_role("region", name="Desktop operation", exact=True)
         expect(panel).to_contain_text("Starting")

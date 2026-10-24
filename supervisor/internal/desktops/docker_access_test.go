@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -36,9 +37,19 @@ func (e *dockerAccessEngine) Create(ctx context.Context, s engine.ContainerSpec)
 func (e *dockerAccessEngine) Exec(ctx context.Context, id string, s engine.ExecSpec) (*engine.Process, error) {
 	if strings.Contains(strings.Join(s.Cmd, " "), "-S /docker.sock") {
 		e.probes++
+		// The folder check runs first in the combined helper.
+		for _, m := range e.specs[id].Mounts {
+			if m.Source == dockerSocket {
+				continue
+			}
+			st, err := os.Stat(m.Source)
+			if err != nil || !st.IsDir() {
+				return &engine.Process{Stdout: bytes.NewReader(nil), Stderr: bytes.NewReader(nil), Wait: func() (int, error) { return 1, nil }, Close: func() {}}, nil
+			}
+		}
 		code := 0
 		if !e.socketAvailable {
-			code = 1
+			code = 2
 		}
 		return &engine.Process{Stdout: bytes.NewReader(nil), Stderr: bytes.NewReader(nil), Wait: func() (int, error) { return code, nil }, Close: func() {}}, nil
 	}
@@ -60,7 +71,7 @@ func TestDockerAccessOptInAndRecreation(t *testing.T) {
 	if len(initial.Mounts) != 1 || initial.Env["DESKYARD_DOCKER_ACCESS"] != "" {
 		t.Fatal("default grants access")
 	}
-	if err := s.checkDockerAccess(ctx, true); err != nil {
+	if err := s.checkHostSources(ctx, nil, true); err != nil {
 		t.Fatal(err)
 	}
 	if e.probes != 1 {
@@ -185,5 +196,59 @@ func TestVPNDockerAccessPersistenceAndPreflight(t *testing.T) {
 	after, err := s.Get(ctx, "alice")
 	if err != nil || after.Container.ID != d.Container.ID || !after.Container.Running() || e.stops != stops {
 		t.Fatalf("socket preflight disturbed VPN desktop: %+v %v", after, err)
+	}
+}
+
+// Combined permissions must share one helper lifecycle.
+func TestHostPreflightCombinesFoldersAndSocket(t *testing.T) {
+	for _, managed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "direct", true: "vpn"}[managed], func(t *testing.T) {
+			s, p, _, conn := pairSetup(t)
+			p.fakeEngine.port = p.port
+			e := &dockerAccessEngine{mountEngine: &mountEngine{fakeEngine: p.fakeEngine, specs: map[string]engine.ContainerSpec{}}, socketAvailable: true}
+			s.Eng = &vpnDockerAccessEngine{dockerAccessEngine: e, network: p}
+			set := Settings{Image: "img", DockerAccess: true, Mounts: []HostMount{{Source: t.TempDir(), Target: "/mnt/data"}}}
+			if managed {
+				set.VPNConnectionID = conn.ID
+			}
+			for _, operation := range []string{"create", "recreate"} {
+				t.Run(operation, func(t *testing.T) {
+					before := len(e.specs)
+					var err error
+					if operation == "create" {
+						_, err = s.Create(context.Background(), "alice", set, noProgress)
+					} else {
+						_, err = s.Recreate(context.Background(), "alice", set, noProgress)
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					// Recreate replaces the desktop spec under the same fake ID.
+					want := 2
+					if operation == "recreate" {
+						want = 1
+					}
+					if got := len(e.specs) - before; got != want {
+						t.Fatalf("created %d new container specs, want %d (one shared preflight)", got, want)
+					}
+					for id, spec := range e.specs {
+						if spec.Image != helperImage {
+							continue
+						}
+						if len(spec.Mounts) != 2 {
+							t.Fatalf("probe mounts: %+v", spec.Mounts)
+						}
+						for _, m := range spec.Mounts {
+							if !m.ReadOnly || !m.MustExist {
+								t.Fatalf("unsafe probe bind: %+v", m)
+							}
+						}
+						if _, exists := e.cs[id]; exists {
+							t.Fatalf("probe leaked: %s", id)
+						}
+					}
+				})
+			}
+		})
 	}
 }

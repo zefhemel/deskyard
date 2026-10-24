@@ -306,7 +306,7 @@ When a desktop stops (stop, restart, upgrades), its native session manager
 logs out and saves the session; Chromium saves its tabs independently.
 Native session restoration applies to applications that support that
 desktop's session protocol. XFCE uses Settings > Session and Startup;
-KDE Plasma and MATE use their own session settings. Most Electron and
+MATE uses their own session settings. Most Electron and
 Flatpak apps do not restore their windows through this protocol.
 
 Switching desktop images keeps your files, installed Flatpak apps, tools
@@ -388,14 +388,13 @@ configuration change.
 ### Images and upgrades
 
 The **Images** page holds the catalog of images desktops can be created
-from. XFCE, KDE Plasma and MATE are built-in choices, visible before download.
+from. XFCE and MATE are built-in choices, visible before download.
 They share one Debian runtime; XFCE remains the default on first start:
 
 
 | Desktop | Image | Graphical app installer |
 | --- | --- | --- |
 | XFCE (default) | `ghcr.io/zefhemel/deskyard-debian-xfce:latest` | Software |
-| KDE Plasma | `ghcr.io/zefhemel/deskyard-debian-kde:latest` | Discover |
 | MATE | `ghcr.io/zefhemel/deskyard-debian-mate:latest` | Software |
 
 Choose **Install** on an available image to download it, or select it when
@@ -406,11 +405,10 @@ in the catalog and cannot be removed. Other contract-compatible references
 can still be added with **Add image**.
 
 MATE uses Arc, Papirus icons, Noto fonts and a blue wallpaper, with a single
-dark bottom panel containing Files, Chromium and Software shortcuts. KDE keeps
-its original Debian/Breeze appearance. Saved user appearance and panel settings
+dark bottom panel containing Files, Chromium and Software shortcuts. Saved user appearance and panel settings
 take precedence over the image defaults.
 
-Open **Discover** or **Software** from the desktop application menu to find
+Open **Software** from the desktop application menu to find
 and install Flatpak apps such as LibreOffice. Flathub is configured for the
 desktop user; apps install in `/workspace` without an administrator password
 and survive image upgrades. The first catalog refresh needs internet access.
@@ -423,14 +421,14 @@ the container configuration does not expose the FUSE device needed by the
 document portal.
 
 In local ARM64 samples, idle memory without a viewer was about 213 MiB for
-XFCE, 258 MiB for MATE and 522 MiB for KDE. See the [desktop validation
+XFCE and 258 MiB for MATE. See the [desktop validation
 report](docs/Testing/Desktop%20variants%202026-10-23.md) for conditions,
 viewer/browser measurements and screenshots. Those samples predate MATE's
 theme refresh. New registry tags become
 available after the image workflow publishes from `main`; local Bake
 builds use `deskyard-debian-<desktop>:dev`.
 
-CI rebuilds all three weekly (Debian security updates) and on every change, tagged `latest` and with the date
+CI rebuilds both weekly (Debian security updates) and on every change, tagged `latest` and with the date
 (`2026.10.22`). The supervisor checks downloaded images for newer versions daily (or on "Check
 now"); available images stay undownloaded. The catalog shows **Available**,
 **Installed** or **Update available** when desktops are behind.
@@ -678,10 +676,9 @@ supervisor/
   Dockerfile        node build -> go build -> alpine
   compose.yaml      the supervisor in a container
 images/
-  Dockerfile       common build stages and three final desktop targets
+  Dockerfile       common build stages and two final desktop targets
   common/          shared rootfs and streaming patches
   debian-xfce/     XFCE rootfs overlay
-  debian-kde/      KDE Plasma rootfs overlay
   debian-mate/     MATE rootfs overlay
   tests/           shared desktop image tests
 docs/               design notes (a SilverBullet space)
@@ -735,7 +732,7 @@ or run pytest in the suite's folder (`uv run pytest test_ui_audio.py`).
 `build`, `perf`, `webkit` (left out by default) and `serial`.
 
 The Tests workflow also runs a five-test runtime smoke selection on each of
-XFCE, KDE and MATE. Each job builds its desktop target from the image cache and
+XFCE and MATE. Each job builds its desktop target from the image cache and
 checks readiness, desktop identity, the default browser, native shared-terminal
 defaults and home persistence across restart/recreation. The full supervisor
 and browser suites continue to use XFCE.
@@ -751,7 +748,7 @@ suites build and test (default `deskyard-debian-xfce:test`); outside make,
 `AC_IMAGE` (image suite) and `CC_TEST_IMAGE` (supervisor suite) name it.
 Firefox is skipped where Playwright's Firefox can't start (on some Macs).
 On Linux, tests write workspace fixtures through the desktop as UID 1000,
-since the runner may not own the workspace. In Chromium, loopback bootstrap API GETs, UI assets and login use
+since the runner may not own the workspace. In Chromium, loopback bootstrap API GETs, UI assets, login and mic/camera badge POSTs use
 Playwright's request transport to avoid Chromium's `ERR_NETWORK_CHANGED` when
 Docker changes network interfaces. Each request is sent once, including login
 POSTs; other mutations, downloads, live streams and Selkies' client use the browser. Documents stay on the native browser transport to preserve their network address space for event WebSockets. Navigation
@@ -771,9 +768,9 @@ uv run pytest                        # also: memory budget, Flatpak app, CLIs
 ```
 
 Screenshots and stats land in `images/tests/artifacts/<desktop>/`.
-`AC_DESKTOP=kde` or `AC_DESKTOP=mate` selects another target (default: `xfce`);
+`AC_DESKTOP=mate` selects another target (default: `xfce`);
 `AC_IMAGE=<tag>` skips the build and should match `AC_DESKTOP`. The root Makefile
-also accepts `make test-image AC_DESKTOP=mate` or `kde` and builds the matching
+also accepts `make test-image AC_DESKTOP=mate` and builds the matching
 target. The supervisor integration suite still uses XFCE-specific terminal and
 panel assertions, so full `make test` requires `AC_DESKTOP=xfce`. For example:
 
@@ -782,7 +779,7 @@ AC_DESKTOP=mate AC_IMAGE=deskyard-debian-mate:dev uv run pytest -m "not slow and
 ```
 
 To build only one image from the repository root:
-`docker build --target debian-kde -f images/Dockerfile -t deskyard-debian-kde:dev .`.
+`docker build --target debian-mate -f images/Dockerfile -t deskyard-debian-mate:dev .`.
 XFCE panel/layout tests run only for XFCE; shared boot, security, stream,
 Flatpak and persistence checks apply to each variant.
 

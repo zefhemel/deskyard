@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -130,5 +132,103 @@ func TestUIEventsWebSocketRejectsInputAndUnsubscribes(t *testing.T) {
 			t.Fatal("closed feed retained its subscriber")
 		case <-time.After(time.Millisecond):
 		}
+	}
+}
+
+// socketEventPair exercises the event writer against a real WebSocket peer.
+// The handler stays alive until cleanup; CloseRead processes ping/pong frames.
+func socketEventPair(t *testing.T) (*socketEventWriter, *websocket.Conn, <-chan struct{}) {
+	t.Helper()
+	ctx, cleanup := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cleanup)
+	accepted := make(chan *websocket.Conn, 1)
+	release := make(chan struct{})
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ws, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		accepted <- ws
+		<-release
+	}))
+	t.Cleanup(ts.Close)
+	t.Cleanup(func() { close(release) })
+	peer, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { peer.CloseNow() })
+	var server *websocket.Conn
+	select {
+	case server = <-accepted:
+	case <-ctx.Done():
+		t.Fatal("WebSocket accept did not complete")
+	}
+	t.Cleanup(func() { server.CloseNow() })
+	server.CloseRead(ctx)
+	cancelled := make(chan struct{})
+	var once sync.Once
+	return &socketEventWriter{ctx: ctx, ws: server, cancel: func() {
+		once.Do(func() { close(cancelled) })
+		cleanup()
+	}}, peer, cancelled
+}
+
+func TestSocketEventWriterHeartbeat(t *testing.T) {
+	writer, peer, cancelled := socketEventPair(t)
+	peer.CloseRead(writer.ctx)
+	writer.comment()
+	select {
+	case <-cancelled:
+		t.Fatal("acknowledged heartbeat cancelled the event feed")
+	default:
+	}
+	if writer.ctx.Err() != nil {
+		t.Fatalf("heartbeat did not complete before its deadline: %v", writer.ctx.Err())
+	}
+}
+
+func TestSocketEventWriterHeartbeatFailure(t *testing.T) {
+	for _, state := range []string{"closed", "stalled"} {
+		t.Run(state, func(t *testing.T) {
+			writer, peer, cancelled := socketEventPair(t)
+			if state == "closed" {
+				peer.CloseNow()
+			}
+			// A peer that never reads cannot process the ping and send a pong.
+			// Bound the parent context instead of waiting for the 5s write limit.
+			ctx, cancel := context.WithTimeout(writer.ctx, 100*time.Millisecond)
+			defer cancel()
+			writer.ctx = ctx
+			writer.comment()
+			select {
+			case <-cancelled:
+			default:
+				t.Fatalf("%s peer did not cancel the event feed", state)
+			}
+		})
+	}
+}
+
+func TestSocketEventWriterInvalidJSONCancels(t *testing.T) {
+	writer, _, cancelled := socketEventPair(t)
+	writer.send("stats", "{invalid json")
+	select {
+	case <-cancelled:
+	default:
+		t.Fatal("invalid event JSON did not cancel the feed")
+	}
+}
+
+func TestSocketEventWriterWriteFailureCancels(t *testing.T) {
+	writer, _, cancelled := socketEventPair(t)
+	// Closing the local transport makes the write failure deterministic; a
+	// remote close can race a successful write into the operating system buffer.
+	writer.ws.CloseNow()
+	writer.send("stats", `{"name":"alice"}`)
+	select {
+	case <-cancelled:
+	default:
+		t.Fatal("failed event write did not cancel the feed")
 	}
 }

@@ -149,7 +149,7 @@ export const images: CatalogImage[] = [
     checked: iso(2 * HOUR),
     ...PLAIN,
   },
-  ...([ ["kde", "Debian KDE Plasma", "KDE Plasma with Chromium and Discover for installing apps."], ["mate", "Debian MATE", "MATE with Arc styling, Chromium and Software for installing apps."] ] as const).map(([name, title, description]) => ({
+  ...([ ["mate", "Debian MATE", "MATE with Arc styling, Chromium and Software for installing apps."] ] as const).map(([name, title, description]) => ({
     ...PLAIN, ref: `ghcr.io/zefhemel/deskyard-debian-${name}:latest`, title, description,
     version: "", desktops: [], behind: [], checked: null, installed: false, official: true,
   })),

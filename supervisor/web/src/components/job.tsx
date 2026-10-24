@@ -15,9 +15,13 @@ export interface JobRun {
 }
 
 /** `onDone` runs once the job finishes successfully. */
-export function useJob(onDone: (job: Job) => void): JobRun {
-  const { trackJob } = useLive();
-  const [job, setJob] = useState<Job | null>(null);
+export function useJob(onDone: (job: Job) => void, desktop?: string): JobRun {
+  const { jobTracker } = useLive();
+  const [id, setID] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+  const job: Job | null = starting
+    ? { status: "running", message: "Starting", progress: null }
+    : desktop ? jobTracker.forDesktop(desktop) : id ? jobTracker.get(id) : null;
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
   const done = useRef(onDone);
@@ -34,27 +38,27 @@ export function useJob(onDone: (job: Job) => void): JobRun {
   const start = useCallback(
     async (begin: () => Promise<JobRef>) => {
       setError(null);
-      setJob({ status: "running", message: "Starting", progress: null });
+      setStarting(true);
       try {
         const { job: id } = await begin();
-        trackJob(id, (j) => {
+        setID(id);
+        jobTracker.track(id, (j) => {
           if (!mounted.current) {
             if (j.status === "failed") notify(j.error || j.message || "A job failed", { error: true, ms: 8000 });
             return;
           }
-          setJob(j);
-          if (j.status === "failed") setError(j.error || j.message || "Failed");
           if (j.status === "done") done.current(j);
-        });
+        }, desktop);
       } catch (e) {
-        setJob(null);
         setError(errorMessage(e));
+      } finally {
+        setStarting(false);
       }
     },
-    [trackJob],
+    [jobTracker, desktop],
   );
 
-  return { job, error, running: job?.status === "running", start };
+  return { job, error: error || (job?.status === "failed" ? job.error || job.message || "Failed" : null), running: job?.status === "running", start };
 }
 
 /** The progress block shown in a dialog while its job runs. */

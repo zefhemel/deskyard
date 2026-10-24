@@ -11,7 +11,7 @@ OrbStack keep the networks in their VM, so a Mac never sees this.)
 So, for every test (conftest imports this): Page.goto and Page.reload load
 the page again when it or something it loaded failed so, and every browser
 context counts and logs such failures (pytest shows the log with a failed
-test). In Chromium, loopback bootstrap API GETs, UI assets and login use Playwright's request transport,
+test). In Chromium, loopback bootstrap API GETs, UI assets, login and mic/camera badge POSTs use Playwright's request transport,
 which is independent of Chromium's network-change detector. Each request
 is sent once; other mutations, downloads, live streams and Selkies' client
 stay on the browser's transport. Documents remain native to preserve their network
@@ -82,12 +82,14 @@ def _settle(page: Page):
 
 
 _failures: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
-# Match bootstrap requests at the routing layer: even route.fallback() needs
-# Python callbacks, so matching media updates would pause them during sleeps.
+# Match only the requests we forward at the routing layer: route.fallback()
+# also needs Python callbacks, so broader matching would pause native traffic
+# during the audio tests' recording sleeps.
 BOOTSTRAP_API = r"api/(?:me|host|desktops|images|login)"
+CAPTURE_API = r"api/desktops/[a-z][a-z0-9-]*/(?:mic|cam)"
 LOOPBACK = re.compile(
     r"^https?://(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?/"
-    rf"(?:{BOOTSTRAP_API}"
+    rf"(?:{BOOTSTRAP_API}|{CAPTURE_API}"
     r"|(?:assets|src|@vite|node_modules)/[^?]*"
     r")/?(?:\?[^#]*)?$"
 )
@@ -101,8 +103,12 @@ MAPPED_API = re.compile(
 
 def _request_transport(route):
     request = route.request
+    path = urlsplit(request.url).path
+    post = request.method == "POST" and (
+        path == "/api/login" or re.fullmatch(rf"/{CAPTURE_API}", path) is not None
+    )
     if request.resource_type not in {"document", "script", "stylesheet", "xhr", "fetch"} or (
-            request.method != "GET" and urlsplit(request.url).path != "/api/login"):
+            request.method != "GET" and not post):
         route.fallback()
         return
     # No retries here: replaying a mutation after an uncertain response
@@ -115,7 +121,7 @@ def _request_transport(route):
             # original Host/Origin and cookies so this stays an insecure origin.
             options = {"url": request.url.replace(parsed.hostname, "127.0.0.1", 1),
                        "headers": {**request.all_headers(), "host": parsed.netloc}}
-        route.fulfill(response=route.fetch(max_redirects=0, **options))
+        route.fulfill(response=route.fetch(max_redirects=0, max_retries=0, **options))
     except Error:
         route.abort("failed")
 

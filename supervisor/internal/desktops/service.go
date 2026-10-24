@@ -320,10 +320,7 @@ func (s *Service) Create(ctx context.Context, name string, set Settings, progres
 	if len(set.Mounts) > 0 {
 		progress("Checking host folders", -1)
 	}
-	if err := s.checkHostMountSources(ctx, set.Mounts); err != nil {
-		return Desktop{}, err
-	}
-	if err := s.checkDockerAccess(ctx, set.DockerAccess); err != nil {
+	if err := s.checkHostSources(ctx, set.Mounts, set.DockerAccess); err != nil {
 		return Desktop{}, err
 	}
 	if _, err := s.EnsureImage(ctx, set.Image, progress); err != nil {

@@ -5,6 +5,9 @@ status: implemented
 date: "2026-10-23"
 plan: "[[superpowers/plans/2026-10-23-desktop-variants|Desktop image variants plan]]"
 ---
+
+KDE support was removed on 24 October 2026: only XFCE and MATE are built, published, tested and offered as built-in choices. KDE details below describe the historical implementation; saved image references remain usable as manually added prebuilt images.
+
 Offer Debian XFCE, KDE Plasma and MATE desktops above one shared Debian trixie runtime. The user selected KDE and MATE and approved the shared layering approach after the image investigation. This extends the [[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]] and preserves the implemented [[superpowers/specs/2026-10-22-selkies-design|Selkies screen design]] and [[superpowers/specs/2026-10-22-custom-images-design|Custom images design]].
 
 # Images and builds

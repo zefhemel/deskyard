@@ -10,7 +10,6 @@ type officialImage struct {
 
 var officialImages = []officialImage{
 	{"ghcr.io/zefhemel/deskyard-debian-xfce:latest", "Debian XFCE", "A lightweight desktop with Chromium and Software for installing apps."},
-	{"ghcr.io/zefhemel/deskyard-debian-kde:latest", "Debian KDE Plasma", "KDE Plasma with Chromium and Discover for installing apps."},
 	{"ghcr.io/zefhemel/deskyard-debian-mate:latest", "Debian MATE", "MATE with Arc styling, Chromium and Software for installing apps."},
 }
 

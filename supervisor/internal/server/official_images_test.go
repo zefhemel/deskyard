@@ -12,7 +12,18 @@ import (
 	"testing"
 )
 
-const testKDE = "ghcr.io/zefhemel/deskyard-debian-kde:latest"
+const testMATE = "ghcr.io/zefhemel/deskyard-debian-mate:latest"
+
+func TestKDENoLongerOfficialButSavedReferencesRemain(t *testing.T) {
+	const retired = "ghcr.io/zefhemel/deskyard-debian-kde:latest"
+	if _, ok := officialImageFor(retired); ok {
+		t.Fatal("KDE must not be offered as an official image")
+	}
+	entries := availableEntries([]catalogEntry{{Ref: retired, Newest: "saved"}})
+	if len(entries) != 3 || entries[0].Ref != retired || entries[0].Newest != "saved" {
+		t.Fatalf("saved image lost or unexpected built-in choices: %+v", entries)
+	}
+}
 
 func discoveryRows(t *testing.T, bt *catalogTest) []map[string]any {
 	t.Helper()
@@ -43,7 +54,7 @@ func TestOfficialDiscoveryWithoutPullingOrChangingSavedCatalog(t *testing.T) {
 	if rows := discoveryRows(t, bt); rows[0]["ref"] != "img" {
 		t.Fatalf("default moved: %v", rows)
 	}
-	for _, name := range []string{"xfce", "kde", "mate"} {
+	for _, name := range []string{"xfce", "mate"} {
 		r := discoveryRow(t, bt, "ghcr.io/zefhemel/deskyard-debian-"+name+":latest")
 		if r["installed"] != false || r["official"] != true || r["title"] == "" || r["description"] == "" {
 			t.Errorf("available: %v", r)
@@ -59,15 +70,15 @@ func TestOfficialDiscoveryWithoutPullingOrChangingSavedCatalog(t *testing.T) {
 }
 func TestOfficialCatalogDeduplicatesNormalizedReferences(t *testing.T) {
 	bt := newCatalogTest(t)
-	_ = bt.s.images.put(catalogEntry{Ref: "ghcr.io/zefhemel/deskyard-debian-kde"})
+	_ = bt.s.images.put(catalogEntry{Ref: "ghcr.io/zefhemel/deskyard-debian-mate"})
 	n := 0
 	for _, r := range discoveryRows(t, bt) {
-		if sameRef(r["ref"].(string), testKDE) {
+		if sameRef(r["ref"].(string), testMATE) {
 			n++
 		}
 	}
 	if n != 1 {
-		t.Fatalf("KDE rows: %d", n)
+		t.Fatalf("MATE rows: %d", n)
 	}
 }
 func TestUpdateChecksDoNotInstallAvailableImages(t *testing.T) {
@@ -94,26 +105,26 @@ func TestInstallOfficialImageOnDemand(t *testing.T) {
 	bt := newCatalogTest(t)
 	bt.s.Eng = discoveryEngine{bt.e}
 	bt.s.Desktops.Eng = bt.s.Eng
-	j := bt.wait(bt.start("POST", "/api/images/install", map[string]string{"ref": testKDE}))
+	j := bt.wait(bt.start("POST", "/api/images/install", map[string]string{"ref": testMATE}))
 	if j.Status != "done" {
 		t.Fatalf("install: %+v", j)
 	}
-	r := discoveryRow(t, bt, testKDE)
+	r := discoveryRow(t, bt, testMATE)
 	if r["installed"] != true || r["official"] != true {
 		t.Fatalf("installed: %v", r)
 	}
-	if !slices.Equal(bt.e.pulls, []string{testKDE}) || bt.s.images.newest(testKDE) != "sha256:downloaded" {
+	if !slices.Equal(bt.e.pulls, []string{testMATE}) || bt.s.images.newest(testMATE) != "sha256:downloaded" {
 		t.Fatal("install not recorded")
 	}
 }
 func TestFailedOfficialInstallRemainsAvailable(t *testing.T) {
 	bt := newCatalogTest(t)
 	bt.e.pullErr = errors.New("offline")
-	j := bt.wait(bt.start("POST", "/api/images/install", map[string]string{"ref": testKDE}))
+	j := bt.wait(bt.start("POST", "/api/images/install", map[string]string{"ref": testMATE}))
 	if j.Status == "done" {
 		t.Fatal("failed install succeeded")
 	}
-	if r := discoveryRow(t, bt, testKDE); r["installed"] != false {
+	if r := discoveryRow(t, bt, testMATE); r["installed"] != false {
 		t.Fatalf("failed installed: %v", r)
 	}
 }
@@ -121,7 +132,7 @@ func TestInstallRequiresAdminAndKnownImage(t *testing.T) {
 	bt := newCatalogTest(t)
 	_ = bt.s.images.put(catalogEntry{Ref: "deskyard-custom/tools:latest", Custom: true})
 	anna := login(t, bt.ts, "anna")
-	if code, _ := bt.do(anna, "POST", "/api/images/install", map[string]string{"ref": testKDE}); code != http.StatusForbidden {
+	if code, _ := bt.do(anna, "POST", "/api/images/install", map[string]string{"ref": testMATE}); code != http.StatusForbidden {
 		t.Fatalf("nonadmin: %d", code)
 	}
 	for _, ref := range []string{"example.invalid/unknown"} {
@@ -136,8 +147,8 @@ func TestInstallRequiresAdminAndKnownImage(t *testing.T) {
 
 func TestOfficialImageUsedOnDemandRecordsLocalVersion(t *testing.T) {
 	bt := newCatalogTest(t)
-	bt.s.images.noteLocal(testKDE, "sha256:used")
-	e, ok := bt.s.images.entry(testKDE)
+	bt.s.images.noteLocal(testMATE, "sha256:used")
+	e, ok := bt.s.images.entry(testMATE)
 	if !ok || e.Newest != "sha256:used" || e.Checked != nil {
 		t.Fatalf("local use: %+v", e)
 	}

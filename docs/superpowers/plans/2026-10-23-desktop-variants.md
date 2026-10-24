@@ -5,6 +5,9 @@ status: done
 date: "2026-10-23"
 spec: "[[superpowers/specs/2026-10-23-desktop-variants-design|Desktop image variants design]]"
 ---
+
+KDE support was removed on 24 October 2026: only XFCE and MATE are built, published, tested and offered as built-in choices. KDE details below describe the historical implementation; saved image references remain usable as manually added prebuilt images.
+
 **Goal:** Offer XFCE, KDE Plasma and MATE with one shared desktop runtime.
 
 **Architecture:** `images/Dockerfile` branches from `runtime` into three final targets. Common rootfs/patches are shared; desktop adapters own native configuration, start, logout and readiness. Bake builds all targets in one graph per architecture.

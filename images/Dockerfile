@@ -217,22 +217,6 @@ ENTRYPOINT ["/usr/local/bin/workspace-init"]
 
 # Desktop layers branch from the same runtime. Keep XFCE last so an ordinary
 # docker build without --target retains the original default.
-FROM runtime AS debian-kde
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        plasma-desktop plasma-workspace kwin-x11 konsole dolphin \
-        systemsettings kde-config-gtk-style breeze-icon-theme \
-    && rm -rf /var/lib/apt/lists/*
-ENV WORKSPACE_DESKTOP=kde XDG_CURRENT_DESKTOP=KDE DESKTOP_SESSION=plasma \
-    KDE_SESSION_VERSION=6 KDE_FULL_SESSION=true QT_QUICK_BACKEND=software
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        plasma-discover plasma-discover-backend-flatpak xdg-desktop-portal-kde \
-    && rm -rf /var/lib/apt/lists/*
-COPY images/common/rootfs/ /
-COPY images/debian-kde/rootfs/ /
-RUN --mount=type=bind,source=images/common/finalize.sh,target=/tmp/finalize.sh bash /tmp/finalize.sh
-LABEL org.opencontainers.image.title="Debian KDE Plasma" \
-      org.opencontainers.image.description="Debian trixie with KDE Plasma, Chromium, Flatpak, mise and uv"
-
 FROM runtime AS debian-mate
 RUN apt-get update && apt-get install -y --no-install-recommends \
         mate-desktop-environment-core \

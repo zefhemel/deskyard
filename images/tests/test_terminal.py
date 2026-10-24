@@ -249,8 +249,8 @@ def test_emulator_shared_defaults_tabs_cwd_and_explicit_commands(sandbox):
     """Exercise installed defaults, Debian alternatives, new tabs and explicit commands."""
     from sandbox import DESKTOP, wait_until
     import shlex
-    terminal = {'xfce': 'xfce4-terminal', 'kde': 'konsole', 'mate': 'mate-terminal'}[DESKTOP]
-    cwd_flag = '--workdir' if DESKTOP == 'kde' else '--working-directory'
+    terminal = {'xfce': 'xfce4-terminal', 'mate': 'mate-terminal'}[DESKTOP]
+    cwd_flag = '--working-directory'
     socket = '/run/workspace/deskyard-terminal/tmux.sock'
     def names():
         return set(sandbox.exec('deskyard terminal-list').stdout.splitlines())
@@ -258,18 +258,12 @@ def test_emulator_shared_defaults_tabs_cwd_and_explicit_commands(sandbox):
         sandbox.exec('setsid -f ' + cmd + ' >/dev/null 2>&1')
     # Simulate existing preferences before any emulator starts. Migration must
     # replace old unshared commands while retaining unrelated appearance.
-    if DESKTOP == 'kde':
-        sandbox.exec("mkdir -p ~/.local/share/konsole; printf '[General]\\nName=Personal\\nCommand=/bin/bash\\n[Appearance]\\nFont=Monospace,17,-1,5,50,0,0,0,0,0\\nColorScheme=WhiteOnBlack\\n' > ~/.local/share/konsole/Personal.profile; printf '[Desktop Entry]\\nDefaultProfile=Personal.profile\\n' > ~/.config/konsolerc")
-    elif DESKTOP == 'xfce':
+    if DESKTOP == 'xfce':
         sandbox.exec("printf '[Configuration]\\nRunCustomCommand=FALSE\\nFontName=Monospace 17\\nColorBackground=#123456\\n' > ~/.config/xfce4/terminal/terminalrc; printf 'TerminalEmulator=nonexistent-old-choice\\n' > ~/.config/xfce4/helpers.rc")
     else:
         sandbox.exec("gsettings set org.mate.terminal.profile:/org/mate/terminal/profiles/default/ use-custom-command false; gsettings set org.mate.terminal.profile:/org/mate/terminal/profiles/default/ font 'Monospace 17'")
     sandbox.exec('deskyard-terminal-configure')
-    if DESKTOP == 'kde':
-        assert 'DefaultProfile=Personal.profile' in sandbox.exec('cat ~/.config/konsolerc').stdout
-        profile = sandbox.exec('cat ~/.local/share/konsole/Personal.profile').stdout
-        assert 'Font=Monospace,17,' in profile and 'ColorScheme=WhiteOnBlack' in profile
-    elif DESKTOP == 'xfce':
+    if DESKTOP == 'xfce':
         profile = sandbox.exec('cat ~/.config/xfce4/terminal/terminalrc').stdout
         assert 'FontName=Monospace 17' in profile and 'ColorBackground=#123456' in profile
     else:
@@ -286,7 +280,7 @@ def test_emulator_shared_defaults_tabs_cwd_and_explicit_commands(sandbox):
     assert wait_until(lambda: len(names()) == 2, 15), names()
     launch('x-terminal-emulator')
     assert wait_until(lambda: len(names()) == 3, 15), names()
-    menu = {'xfce': 'xfce4-terminal', 'kde': 'org.kde.konsole', 'mate': 'mate-terminal'}[DESKTOP]
+    menu = {'xfce': 'xfce4-terminal', 'mate': 'mate-terminal'}[DESKTOP]
     if DESKTOP == 'xfce':
         # XFCE intentionally lacks the gio CLI; use its actual application menu.
         launch('xfce4-appfinder --disable-server')
@@ -307,21 +301,8 @@ def test_emulator_shared_defaults_tabs_cwd_and_explicit_commands(sandbox):
         here = next(iter(names() - before_here))
         assert sandbox.exec(f"tmux -S {socket} display-message -p -t ={here}: '#{{pane_current_path}}'").stdout.strip() == '/workspace/terminal-project'
 
-    if DESKTOP == 'kde':
-        launch('dolphin --new-window /workspace/terminal-project')
-        manager = wait_until(lambda: sandbox.exec('xdotool search --onlyvisible --class dolphin', check=False).stdout.strip(), 10)
-        assert manager
-        manager = manager.splitlines()[-1]
-        # Dolphin's external terminal and embedded Konsole part both consume
-        # the native profile, rather than bypassing its shared command.
-        for key in ['shift+F4', 'F4']:
-            before_here = names()
-            sandbox.exec(f'xdotool windowactivate --sync {manager} key {key}')
-            assert wait_until(lambda: len(names()) == len(before_here) + 1, 15), (key, names())
-            here = next(iter(names() - before_here))
-            assert sandbox.exec(f"tmux -S {socket} display-message -p -t ={here}: '#{{pane_current_path}}'").stdout.strip() == '/workspace/terminal-project'
     before = names()
-    arg = '-e' if DESKTOP == 'kde' else '-x'
+    arg = '-x'
     launch(f"{terminal} {arg} sh -c " + shlex.quote('printf explicit-command > /workspace/explicit-terminal-proof'))
     assert wait_until(lambda: sandbox.exec('cat /workspace/explicit-terminal-proof', check=False).stdout == 'explicit-command', 15)
     assert names() == before
@@ -332,7 +313,7 @@ def test_native_chooser_and_named_title(sandbox):
     """Native chooser hides lease internals and switches only its initiating client."""
     sandbox.exec("python3 - <<'PY'\n" + r'''
 import os, pty, select, subprocess, time
-terminal={'xfce':'xfce4-terminal','mate':'mate-terminal','kde':'konsole'}[os.environ['WORKSPACE_DESKTOP']]
+terminal={'xfce':'xfce4-terminal','mate':'mate-terminal'}[os.environ['WORKSPACE_DESKTOP']]
 socket='/run/workspace/deskyard-terminal/tmux.sock'
 def tmux(*args):
     return subprocess.check_output(['tmux','-S',socket,*args],text=True).strip()

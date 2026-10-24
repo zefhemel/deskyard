@@ -3,6 +3,7 @@
 // jobs running on them, whoever started them.
 import { createContext, type ComponentChildren } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { JobTracker } from "./lib/job-tracker.ts";
 import { watchUIEvents } from "./lib/event-feed.ts";
 import {
   api,
@@ -27,8 +28,8 @@ export interface Live {
   host: Host | null;
   /** Running jobs by desktop name, for busy tiles. */
   jobs: Record<string, Job>;
-  /** Follows a job; its progress also shows on the desktop's tile. */
-  trackJob: (id: string, onUpdate?: (job: Job) => void) => () => void;
+  /** Shared job states, retained across forms and tab navigation. */
+  jobTracker: JobTracker;
   /** Gets the desktops and the host again (after a change the events may not cover). */
   refresh: () => void;
   onStats: (listener: StatsListener) => () => void;
@@ -59,11 +60,11 @@ function upsert(list: Desktop[], c: Desktop): Desktop[] {
 export function LiveProvider({ me, children }: { me: Me; children: ComponentChildren }) {
   const [desktops, setDesktops] = useState<Desktop[] | null>(null);
   const [host, setHost] = useState<Host | null>(null);
-  const [jobs, setJobs] = useState<Record<string, Job>>({});
+  const [jobTracker] = useState(() => new JobTracker(watchJob));
+  const [jobVersion, setJobVersion] = useState(0);
   const statsListeners = useRef(new Set<StatsListener>());
   const activityListeners = useRef(new Set<ActivityListener>());
   const hostTimer = useRef<number | undefined>(undefined);
-  const followed = useRef(new Set<string>());
 
   const loadHost = useCallback(() => {
     api.host().then(setHost, () => undefined);
@@ -150,30 +151,22 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
     };
   }, [refresh, loadHost, hostSoon]);
 
-  const trackJob = useCallback((id: string, onUpdate?: (job: Job) => void) => {
-    followed.current.add(id);
-    let name: string | undefined;
-    return watchJob(id, (job) => {
-      if (job.desktop) name = job.desktop;
-      if (name) {
-        const key = name;
-        setJobs((all) => {
-          const next = { ...all };
-          if (job.status === "running") next[key] = job;
-          else delete next[key];
-          return next;
-        });
-      }
-      onUpdate?.(job);
+  useEffect(() => {
+    const unsubscribe = jobTracker.subscribe(job => {
+      setJobVersion(version => version + 1);
+      if (job.status !== "running") refresh();
     });
-  }, []);
+    return () => { unsubscribe(); jobTracker.dispose(); };
+  }, [jobTracker, refresh]);
 
-  // Jobs someone else started (or this browser started before a reload).
+  // Discover operations started elsewhere and reconnect after a page reload.
   useEffect(() => {
     for (const c of desktops ?? []) {
-      if (c.job && !followed.current.has(c.job)) trackJob(c.job);
+      if (c.job) jobTracker.track(c.job, undefined, c.name);
     }
-  }, [desktops, trackJob]);
+  }, [desktops, jobTracker]);
+
+  const jobs = useMemo(() => jobTracker.runningByDesktop(), [jobTracker, jobVersion]);
 
   const onStats = useCallback((listener: StatsListener) => {
     statsListeners.current.add(listener);
@@ -190,8 +183,8 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
   }, []);
 
   const value = useMemo<Live>(
-    () => ({ me, desktops, host, jobs, trackJob, refresh, onStats, onActivity }),
-    [me, desktops, host, jobs, trackJob, refresh, onStats, onActivity],
+    () => ({ me, desktops, host, jobs, jobTracker, refresh, onStats, onActivity }),
+    [me, desktops, host, jobs, jobTracker, refresh, onStats, onActivity, jobVersion],
   );
   return <LiveContext.Provider value={value}>{children}</LiveContext.Provider>;
 }

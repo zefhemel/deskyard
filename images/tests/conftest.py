@@ -34,8 +34,8 @@ def pytest_configure(config):
     if os.environ.get("PYTEST_XDIST_WORKER") or os.environ.get("AC_IMAGE") or config.option.collectonly:
         return
     desktop = os.environ.get("AC_DESKTOP", "xfce")
-    if desktop not in {"xfce", "kde", "mate"}:
-        raise ValueError("AC_DESKTOP must be xfce, kde or mate")
+    if desktop not in {"xfce", "mate"}:
+        raise ValueError("AC_DESKTOP must be xfce or mate")
     tag = f"deskyard-debian-{desktop}:test"
     subprocess.run(["docker", "build", "-q", "-t", tag, "-f", str(REPO.parent / "Dockerfile"), "--target", f"debian-{desktop}", str(REPO.parent.parent)], check=True,
                    stdout=subprocess.DEVNULL)

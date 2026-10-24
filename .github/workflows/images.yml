@@ -100,14 +100,11 @@ jobs:
           set: |
             *.platform=${{ matrix.platform }}
             debian-xfce.tags=${{ env.IMAGE_PREFIX }}debian-xfce
-            debian-kde.tags=${{ env.IMAGE_PREFIX }}debian-kde
             debian-mate.tags=${{ env.IMAGE_PREFIX }}debian-mate
             *.labels.org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             *.labels.org.opencontainers.image.revision=${{ github.sha }}
             debian-xfce.cache-from=type=gha,scope=debian-xfce-${{ matrix.arch }}
             debian-xfce.cache-to=type=gha,mode=max,scope=debian-xfce-${{ matrix.arch }}
-            debian-kde.cache-from=type=gha,scope=debian-kde-${{ matrix.arch }}
-            debian-kde.cache-to=type=gha,mode=max,scope=debian-kde-${{ matrix.arch }}
             debian-mate.cache-from=type=gha,scope=debian-mate-${{ matrix.arch }}
             debian-mate.cache-to=type=gha,mode=max,scope=debian-mate-${{ matrix.arch }}
             *.output=${{ env.PUSH == 'true' && 'type=image,push-by-digest=true,name-canonical=true,push=true' || 'type=cacheonly' }}

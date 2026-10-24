@@ -4,7 +4,7 @@
 import time
 from sandbox import DESKTOP, PANELS
 
-TERMINAL = {"xfce": "xfce4-terminal", "kde": "konsole", "mate": "mate-terminal"}[DESKTOP]
+TERMINAL = {"xfce": "xfce4-terminal", "mate": "mate-terminal"}[DESKTOP]
 
 import pytest
 
@@ -42,10 +42,9 @@ def terminal_cwds(sandbox):
 
 def test_terminals_restored_with_their_folders(sandbox, artifacts_dir):
     # Like a person opening it from the panel: inside the desktop session, so the
-    # session manager knows and authenticates it. KDE keeps ICE cookies in a
-    # runtime file, so SESSION_MANAGER alone only gives legacy window restore.
+    # session manager knows and authenticates it.
     sandbox.exec(f"mkdir -p ~/project && export $(tr '\\0' '\\n' < /proc/$(pgrep -o -x {PANELS[DESKTOP]})/environ | grep -E '^(SESSION_MANAGER|ICEAUTHORITY)=')"
-                 f" && setsid -f {TERMINAL} {'--workdir' if DESKTOP == 'kde' else '--working-directory'}=/workspace/project >/dev/null 2>&1")
+                 f" && setsid -f {TERMINAL} --working-directory=/workspace/project >/dev/null 2>&1")
     before = wait_until(lambda: terminal_cwds(sandbox) if "/workspace/project" in terminal_cwds(sandbox) else None, 15)
     assert before, terminal_cwds(sandbox)
     time.sleep(2)  # the session manager knows the terminal
