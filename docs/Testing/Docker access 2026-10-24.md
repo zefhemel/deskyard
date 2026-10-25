@@ -1,7 +1,9 @@
 ---
 displayName: Docker desktop access testing — 24 October 2026
-status: complete
 date: "2026-10-24"
+tags: "verification"
+result: "passed"
+scope: "Administrator opt-in Docker socket access, ordinary-user Docker build/run and access revocation on the tested setup."
 ---
 Implemented the administrator **Docker daemon access** checkbox for desktop creation and Settings. Image authoring has been removed from the supervisor; standalone Dockerfiles remain a manual way to build images that can be added to the catalog. See [[Architecture/Lifecycle]], [[Architecture/Desktop runtime]] and [[Architecture/Engine adapter]].
 

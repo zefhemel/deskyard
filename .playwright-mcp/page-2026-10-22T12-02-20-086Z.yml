@@ -1,0 +1,28 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - link "‹ Desktops" [ref=e3] [cursor=pointer]:
+      - /url: /
+      - text: ‹
+      - generic [ref=e4]: Desktops
+    - generic [ref=e6]: alice
+    - generic [ref=e7]: Connecting
+    - button "Viewers and port mappings" [ref=e11] [cursor=pointer]:
+      - generic [ref=e12]:
+        - generic "zef" [ref=e14]: z
+        - generic "anna" [ref=e16]: a
+        - generic "sam" [ref=e18]: s
+        - generic "deploy-bot · zef's agent" [ref=e20]:
+          - generic [ref=e21]: z
+          - generic [aria-hidden] [ref=e22]: 🤖
+      - generic [ref=e23]: zef, anna and sam
+      - generic [ref=e24]: ⇄ 2
+    - generic [ref=e25]:
+      - button "Clipboard" [ref=e26] [cursor=pointer]
+      - button "Keys ▾" [ref=e28] [cursor=pointer]:
+        - text: Keys
+        - generic [ref=e29]: ▾
+      - button "Quality ▾" [ref=e31] [cursor=pointer]:
+        - text: Quality
+        - generic [ref=e32]: ▾
+      - button "More" [ref=e34] [cursor=pointer]: ⋯
+  - iframe [ref=e35]

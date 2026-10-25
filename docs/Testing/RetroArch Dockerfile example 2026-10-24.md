@@ -1,7 +1,9 @@
 ---
 displayName: RetroArch Dockerfile example testing — 24 October 2026
 date: "2026-10-24"
-status: complete
+tags: "verification"
+result: "passed"
+scope: "Standalone ARM64 image build and offline empty-workspace acceptance, including the five packaged cores."
 ---
 The standalone `examples/retroarch/` build packages RetroArch and five source-built cores for a new Deskyard workspace. The ARM64 build from an extracted standalone folder and final offline empty-volume acceptance passed, including all five core ABI checks, menu startup, optional SNES content loading and configuration persistence across container replacement. This record includes the initial build failure and its correction.
 
@@ -15,7 +17,7 @@ The five repositories are Snes9x, FCEUmm, Genesis Plus GX, Gambatte and Beetle P
 
 The default Dockerfile instead resolves the published XFCE `latest` base. Flathub's stable RetroArch application and runtime, Debian builder tag and compiler packages are also moving inputs. The image is not bit-for-bit reproducible. Installed Flatpak refs/commits are recorded at `/usr/share/doc/deskyard-retroarch/flatpak-commits.txt`; the local base override fixes only one input for this run.
 
-The original trial folder included build/test support files and a copied Flatpak seccomp profile with its upstream Apache license and modification notice. The later Docker-from-desktop validation moved all test-only files to `images/manual/retroarch/`; the distributed example and resulting image now contain only build/runtime files and notices. The manual ABI probe is supplied separately to the check rather than shipped in the desktop image. It adds no supervisor API or UI feature. This run preceded removal of supervisor image authoring later on 24 October. The standalone Dockerfile and runtime home-template mechanism remain supported; the recipe and UI build workflows are removed. See [[Architecture/Recipes]] and [[Licensing]] for the mechanism and optional non-commercial core restrictions.
+The original trial folder included build/test support files and a copied Flatpak seccomp profile with its upstream Apache license and modification notice. The later Docker-from-desktop validation moved all test-only files to `images/manual/retroarch/`; the distributed example and resulting image now contain only build/runtime files and notices. The manual ABI probe is supplied separately to the check rather than shipped in the desktop image. It adds no supervisor API or UI feature. This run preceded removal of supervisor image authoring later on 24 October. The standalone Dockerfile and runtime home-template mechanism remain supported; the recipe and UI build workflows are removed. See [[Architecture/Desktop runtime|Desktop runtime]] and [[Licensing]] for the mechanism and optional non-commercial core restrictions.
 
 # Regression baseline
 

@@ -151,10 +151,11 @@ jobs:
 
       # These tests use the image's Chromium via xdg-open/CDP and its native
       # terminal emulator. They do not need host Playwright browser downloads.
-      - name: Check desktop, browser, shared terminal and persistence
+      - name: Check desktop, browser, input recovery, shared terminal and persistence
         working-directory: images/tests
         run: >-
           uv run pytest -q
           test_variants.py
+          test_selkies.py::test_input_recovers_after_x_connection_failure
           test_terminal.py::test_emulator_shared_defaults_tabs_cwd_and_explicit_commands
           test_persistence.py::test_skeleton_seeded_once_and_not_overwritten

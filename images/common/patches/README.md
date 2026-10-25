@@ -1,5 +1,13 @@
 # Runtime patches
 
+## X input recovery
+
+`selkies-x-input-recovery.diff` fixes Selkies 2.1.0's input backend remaining disconnected after an X reply timeout. The event watcher retries missing connections every 500 ms, with one worker at a time and the existing 20-second X reply/handshake bound. The worker prepares the display, keyboard and mouse before publishing them together. Initial connection failures also enter recovery; shutdown invalidates in-flight results, and a later lifecycle cannot inherit an earlier worker's connection. Cursor negotiation/cache and tracked pointer coordinates are refreshed with the connection. All event-reader X calls are inside its recovery boundary.
+
+The image's existing `selkies-*.diff` build step applies this patch after the idle key-timer patch and fails if it cannot apply. `images/tests/test_selkies.py::test_input_recovers_after_x_connection_failure` runs `images/tests/native/selkies-input-recovery.py` against the installed package and a private Xvfb server. It holds a real server grab past the first reconnect timeout, checks delivered mouse-button and keyboard events after release, covers initial connection failure and closed-connection recovery, and rejects late reconnections after shutdown. It does not mock the X protocol or touch the desktop's session display. The native timeout is shortened only inside the test process. This regression also runs in the XFCE/MATE CI smoke matrix.
+
+This fixes permanent input loss after an X stall; it does not establish the cause of the initial MATE display stall observed on 24 October. See `docs/Testing/MATE stream startup 2026-10-24.md` for the reproduction, verification and remaining limits.
+
 ## Selkies idle-CPU patches
 
 Three patches that cut what an idle desktop costs. Without them, a desktop

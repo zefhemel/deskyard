@@ -1,6 +1,9 @@
 ---
 displayName: Shared terminal testing — 23 October 2026
 date: "2026-10-23"
+tags: "verification"
+result: "partial"
+scope: "Named shell create/join, browser and native terminal interaction across the recorded desktop and mobile environments."
 ---
 The implemented [[superpowers/specs/2026-10-23-shared-terminal-design|Shared terminal design]] shares named Bash shells between the browser, remote CLI and native desktop terminals. This record uses the built supervisor and updated desktop image, with native mobile simulators/emulators distinguished from headless browser checks.
 

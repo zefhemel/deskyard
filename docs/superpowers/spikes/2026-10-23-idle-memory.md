@@ -1,6 +1,9 @@
 ---
 displayName: Idle desktop memory reclamation spike
 date: "2026-10-23"
+tags: "spike"
+status: "concluded"
+conclusion: "cgroup-v2 memory reclamation released memory while preserving application state on the tested OrbStack setup."
 ---
 **An XFCE desktop with sandboxed Chromium can release memory on the tested macOS/OrbStack setup without stopping its applications.** A disposable host helper successfully requested cgroup-v2 `memory.reclaim`; unsaved browser text and a JavaScript-only nonce survived. This is a feasibility experiment, not an implemented supervisor feature or an automatic idle policy.
 

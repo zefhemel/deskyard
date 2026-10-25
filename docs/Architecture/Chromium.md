@@ -5,7 +5,7 @@ partOf: "[[Architecture/Desktop]]"
 uses:
   - "[[Architecture/Session]]"
   - "[[Architecture/Workspace folder]]"
-spec: "[[superpowers/specs/2026-10-21-workspace-sandbox-design|Workspace Sandbox design]]"
+spec: "[[superpowers/specs/2026-10-23-desktop-variants-design|Desktop image variants design]]"
 ---
 The shared browser: one profile in the workspace folder for everyone using the desktop. It starts on demand, when someone opens it or a CLI client connects over CDP (`127.0.0.1:9221` inside, through `cdp-connect`, which also restarts it), and comes back after a restart if it was open. Remote clients reach CDP through the [[Architecture/Remote access API]]. Files: `images/common/rootfs/usr/local/bin/start-chromium`, `cdp-connect`.
 

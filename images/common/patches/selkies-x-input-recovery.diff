@@ -1,0 +1,172 @@
+--- a/selkies/input_handler.py
++++ b/selkies/input_handler.py
+@@ -4591,6 +4591,8 @@
+         self.app_wayland_display = app_wayland_display
+         self._app_wl_display_cached = None
+         self._x_reconnect_thread = None
++        self._x_input_active = False
++        self._x_input_generation = 0
+         self._x11_monitor_build_lock = asyncio.Lock()
+         self._x_event_wake = None
+         self._x_watcher_fd = None
+@@ -4892,27 +4894,25 @@
+             pass
+ 
+     def _reconnect_xdisplay(self) -> None:
+-        """Rebuild the input X connection after a bounded reply-wait closed it.
+-
+-        Fire-and-forget: the rebuild runs on a worker thread and installs via
+-        the loop (_install_reconnected_xdisplay), so xdisplay stays None — and
+-        input degraded to the xdotool fallbacks — until the attempt lands;
+-        callers just continue and the next X failure retries. The thread is
+-        needed because every caller sits on the event loop, and against a
+-        server hung under another client's grab — the main condition this
+-        reconnect exists to survive — close() and the connection setup would
+-        freeze the loop for the whole outage. The handshake itself is bounded
+-        so a permanently dead server cannot pin the thread forever.
++        """Rebuild off-loop; the event watcher retries while X is unavailable.
++
++        A single failed handshake must not strand every future input event.
++        Only one worker runs at a time, and its result belongs to the lifecycle
++        that started it, so a late connection cannot revive a stopped handler.
+         """
++        if not self._x_input_active:
++            return
+         self._disarm_x_event_watcher()
+         if self._x_reconnect_thread is not None and self._x_reconnect_thread.is_alive():
+             return
++        generation = self._x_input_generation
+         old = self.xdisplay
+         self.xdisplay = None
+         self.keyboard = None
+         self.mouse = None
+ 
+         def _attempt():
++            disp = None
+             try:
+                 if old is not None:
+                     try:
+@@ -4920,38 +4920,44 @@
+                     except Exception:
+                         pass
+                 disp = display.Display(blocking_timeout=INPUT_X_REPLY_TIMEOUT_S)
++                # These constructors query X too. Prepare the whole backend on
++                # the worker before publishing it to event-loop consumers.
++                keyboard = _XTestKeyboard(disp)
++                mouse = _XTestMouse(disp)
++                self.loop.call_soon_threadsafe(
++                    self._install_reconnected_xdisplay, disp, keyboard, mouse, generation)
++                disp = None  # Ownership passed to the loop callback.
+             except Exception as e:
+-                logger_webrtc_input.error(f"Could not reconnect input X display: {e}")
+-                return
+-            try:
+-                self.loop.call_soon_threadsafe(self._install_reconnected_xdisplay, disp)
+-            except RuntimeError:
+-                try:
+-                    disp.close()
+-                except Exception:
+-                    pass
++                logger_webrtc_input.warning(f"Could not reconnect input X display; will retry: {e}")
++            finally:
++                if disp is not None:
++                    try:
++                        disp.close()
++                    except Exception:
++                        pass
+ 
+         self._x_reconnect_thread = threading.Thread(
+             target=_attempt, name="x-input-reconnect", daemon=True
+         )
+         self._x_reconnect_thread.start()
+ 
+-    def _install_reconnected_xdisplay(self, disp: Any) -> None:
+-        """Loop-side half of _reconnect_xdisplay: wire the fresh connection into
+-        every consumer in one step so nothing observes a half-initialized display."""
+-        if self.xdisplay is not None:
+-            # An earlier attempt already landed; drop this connection.
++    def _install_reconnected_xdisplay(self, disp: Any, keyboard: Any,
++                                     mouse: Any, generation: int) -> None:
++        """Publish a fully prepared backend only to its still-active lifecycle."""
++        if (not self._x_input_active or generation != self._x_input_generation
++                or self.xdisplay is not None):
+             try:
+                 disp.close()
+             except Exception:
+                 pass
+             return
+         self.xdisplay = disp
+-        self._apply_input_x_reply_bound()
++        self.keyboard = keyboard
++        self.mouse = mouse
++        self._xfixes_negotiated = False
++        self._cursor_msg_cache = None
++        self.last_x = self.last_y = -1
+         self._arm_x_event_watcher()
+-        self.__keyboard_connect()
+-        if not self.is_wayland:
+-            self.mouse = _XTestMouse(self.xdisplay)
+         logger_webrtc_input.warning("Input X connection was unresponsive; reconnected.")
+ 
+     def _is_x_conn_closed(self, exc: BaseException) -> bool:
+@@ -5287,6 +5293,8 @@
+     async def connect(self) -> None:
+         """Bring the input backends up: X/Wayland connections, DPI detection,
+         keyboard reset, persistent gamepads, and the background key tasks."""
++        self._x_input_generation += 1
++        self._x_input_active = True
+         if not self.is_wayland and X11_LIBS_AVAILABLE:
+             # Bounded handshake: a server hung under another client's grab must
+             # surface as a failure, not freeze the loop.
+@@ -5333,7 +5341,7 @@
+             self.key_sweep_task = asyncio.create_task(self._key_stale_sweep())
+         if self.key_repeat_task is None:
+             self.key_repeat_task = asyncio.create_task(self._key_repeat_loop())
+-        if self.xdisplay is not None and self.keymap_watch_task is None:
++        if not self.is_wayland and X11_LIBS_AVAILABLE and self.keymap_watch_task is None:
+             self.keymap_watch_task = asyncio.create_task(self._keymap_watch_loop())
+ 
+     def _virtual_key(self, keysym: int, down: bool) -> None:
+@@ -5488,6 +5496,8 @@
+         collection happens to run — and every transport switch builds a new
+         handler.
+         """
++        self._x_input_active = False
++        self._x_input_generation += 1
+         logger_webrtc_input.debug("Releasing gamepad associations (persistent instances stay up).")
+         for conn_id in list(self._pointer_echoes):
+             self._drop_pointer_echo(conn_id)
+@@ -8664,23 +8674,21 @@
+         return True
+ 
+     async def _keymap_watch_loop(self) -> None:
+-        """Drain X events for MappingNotify: this session's sole X event consumer,
+-        since pixelflux delivers cursors from its own XFixes thread."""
++        """Drain MappingNotify and keep retrying a lost X input connection."""
+         while True:
+             if self.xdisplay is None:
+-                # Idle poll only: the event wake is not armed while a reconnect
+-                # is in flight, and a foreign remap is not urgent here.
++                self._reconnect_xdisplay()
+                 await asyncio.sleep(0.5)
+                 continue
+-            wake = self._x_event_wake
+-            if wake is not None:
+-                wake.clear()
+-            if self.xdisplay.pending_events() == 0:
+-                self._arm_x_event_watcher()
+-                await self._wait_x_event(timeout=2.0)
+-            if self.xdisplay is None:
+-                continue
+             try:
++                wake = self._x_event_wake
++                if wake is not None:
++                    wake.clear()
++                if self.xdisplay.pending_events() == 0:
++                    self._arm_x_event_watcher()
++                    await self._wait_x_event(timeout=2.0)
++                if self.xdisplay is None:
++                    continue
+                 while self.xdisplay.pending_events():
+                     self._dispatch_keymap_event(self.xdisplay.next_event())
+             except asyncio.CancelledError:

@@ -1,4 +1,13 @@
+---
+tags: "verification"
+result: "partial"
+scope: "Structural review of commit 4a89e30 and the separately requested KDE removal; findings and verification limits remain in the body."
+displayName: "Code quality review 2026-10-24"
+---
 Review of commit `4a89e30` and a separate, user-requested removal of KDE support. The review did not modify the audited job-state or mount-validation implementation. KDE removal is in the working tree and has not been committed or pushed. `HEAD` and `origin/main` both remain `4a89e30`.
+
+# Current disposition
+The findings below describe the reviewed commit, not the current defect list. Commit `02898bb` subsequently introduced shared `JobTracker` ownership with resumed failure/remount coverage, unified `checkHostSources` with lifecycle and combined socket/folder tests, targeted heartbeat/closed/stalled-peer and malformed-event checks, and removal of routine tracked image artifacts. See [[Testing/CI transport regressions 2026-10-24]]. Current remaining platform/media acceptance is recorded in [[Features/Deployment and device verification]].
 
 # Findings
 

@@ -343,8 +343,7 @@ folders. Settings and mounts survive restarts and image upgrades.
 
 Removing a mount never deletes its source. Removing a desktop only deletes
 its private workspace when requested; independently mounted folders elsewhere
-are left alone. Mounted host folders are not included when making an image
-from a desktop. The supervisor's Files and Download views still browse only
+are left alone. Mounted host folders are outside the supervisor workspace browser. The supervisor's Files and Download views still browse only
 `/workspace`; use desktop apps or the CLI for mounted folders.
 
 ### Reclaiming memory
@@ -707,6 +706,10 @@ make vet            # Go static checks
 make release VERSION=v1.2.3   # cross-compiled binaries in dist/
 make image          # the supervisor's container image
 ```
+
+### Project records
+
+The [project operations manual](docs/Operations%20manual.md) describes how the owner and agents plan, work, review feedback, verify outcomes and maintain the records. The [owner dashboard](docs/index.md) shows requests, current capabilities and unscheduled loose ends through live SilverBullet views. No baked sections are used. The documentation space tracks features, outcome-based milestones, design specs, implementation plans, components, spikes and verification evidence. [The documentation manual](docs/AGENTS.md) defines their fields and lifecycle; `docs/CONFIG.md` registers native SilverBullet schemas. Use SilverBullet comments addressed to `@agent` for contextual feedback; the [Agent inbox](docs/Agent%20inbox.md) collects open requests for agents to check during work. Invoke `$sb-inbox` to process that queue explicitly; its repository skill lives in `.agents/skills/sb-inbox/`. Milestones have no target dates. Completed implementation plans are purged after durable decisions and evidence are retained; design specs stay while they describe the current system or agreed future work. Git preserves the history. From the repository root, with SilverBullet Desktop available, check metadata and relationships using `sb --space "Container Computer" script --file scripts/check-docs.lua --json`; run `sb` outside an agent sandbox so it can reach Desktop.
 
 ### Terminal access prototype
 

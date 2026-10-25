@@ -6,7 +6,7 @@ uses:
   - "[[Architecture/Access tokens]]"
   - "[[Architecture/Engine adapter]]"
   - "[[Architecture/Deskyard CLI]]"
-spec: "[[superpowers/specs/2026-10-22-audio-and-ports-design|Audio and ports design]]"
+spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 ---
 TCP port mappings between your machine and a desktop, over a single authenticated connection. `deskyard -d alice forward 3000` makes your machine’s `127.0.0.1:3000` reachable as `localhost:3000` inside the desktop; `forward -R 5173` does the reverse, making the desktop's `localhost:5173` available on your machine. Everything listens on loopback only. A mapping is `LOCAL:DESKTOP` for plain `forward` and `DESKTOP:LOCAL` after `-R`. Only listening in the desktop is limited to ports from 1024 up; `forward 80` is refused, but `forward -R 80:8080` works because the helper only dials. Like any local process in the desktop, pages in the desktop's browser can reach the in-mapped ports.
 

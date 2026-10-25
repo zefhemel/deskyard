@@ -1,6 +1,9 @@
 ---
 displayName: WebSocket event testing — 24 October 2026
 date: "2026-10-24"
+tags: "verification"
+result: "partial"
+scope: "Session-authenticated event transport and four-viewer Chromium behavior; other browser coverage remains limited."
 ---
 The browser's permanent desktop-list and screen-action feeds now use session-authenticated WebSockets on `/api/events` and `/api/desktops/{name}/screen-events`. Ordinary HTTP clients retain SSE, and finite job-progress streams remain SSE. This change avoids exhausting Chromium's six HTTP/1 fetch connections when several desktop tabs share one origin. See [[Architecture/Web UI]], [[Architecture/Monitoring]] and [[superpowers/specs/2026-10-22-agent-activity-design|Agent activity design]].
 

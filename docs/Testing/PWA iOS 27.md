@@ -1,5 +1,8 @@
 ---
 displayName: PWA testing — iOS 27
+tags: "verification"
+result: "partial"
+scope: "iOS simulator Home Screen installation, keyboard, rotation and focus; physical-device coverage is not established."
 ---
 The mobile prototype was installed through Safari's actual Add to Home Screen flow on an iPhone 18 Pro simulator running iOS 27.0 (24A434), using Xcode 27 Device Hub. The test used the plain HTTP LAN endpoint and the restricted demo account. This is native simulator evidence, not a physical-device claim.
 

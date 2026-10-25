@@ -1,45 +1,36 @@
-Design documents for **Deskyard**: persistent Linux desktops ("desktops") in containers, accessed and shared by people through a browser or CLI, run by one supervisor binary (the repository's `README.md` explains how to use it). This folder is a SilverBullet space and reads fine as plain Markdown on GitHub too.
+Deskyard: persistent shared Linux desktops, operated through a browser and CLI. This is the owner dashboard; the [[Operations manual|Project operations manual]] explains how we work. Source records hold current state and the views below are derived from them.
 
-It holds use cases, the architecture, and specs and plans written with the superpowers brainstorming and writing-plans skills and kept in their folders:
+The capability inventory is based on current code and scoped observations, not a fresh certification of every deployment or device. Agents verify features against agreed criteria; the owner accepts milestones. Next milestone selection is deferred at the owner's request.
 
-- [[Use cases]]: family and small-company scenarios, shared needs and open questions; the family use case is the immediate priority.
-- [[Specs]]: what we build and why, one design spec per topic, in `superpowers/specs/`.
-- [[Plans]]: how a spec gets built, step by step, in `superpowers/plans/`.
-- [[Architecture]]: the system's components, built and planned, one page each in `Architecture/`, with diagrams drawn from them.
-- [[superpowers/spikes/2026-10-23-shared-folders|Dynamic shared folders on Mac and Linux investigation]]: filesystem permission limits, live mount feasibility, platform evidence and the recommended implementation approach.
+# Needs your attention
+${docs.orMessage(docs.attentionRows(), "No decision, review or acceptance request is currently recorded for you.")}
 
-- [[Testing/Shared terminal 2026-10-23|Shared terminal testing — 23 October 2026]]: the implemented create/join flow, desktop and native mobile evidence, and verification limits.
-- [[Testing/Docker access 2026-10-24|Docker desktop access testing — 24 October 2026]]: explicit socket permission, standalone client-tools image, ordinary-user build/run and revocation evidence.
-- [[Testing/RetroArch fresh desktop 2026-10-24|RetroArch fresh desktop testing — 24 October 2026]]: clean-image installation, the ARM64 Core Downloader configuration workaround, GUI Snes9x installation and gameplay evidence.
-- [[Testing/RetroArch Dockerfile example 2026-10-24|RetroArch Dockerfile example testing — 24 October 2026]]: standalone image build, pinned core sources and offline empty-volume acceptance, tracked separately from the interactive installation trial.
-- [[superpowers/spikes/2026-10-23-terminal-access|Shared terminal access prototype]]: historical experimental evidence, superseded by the implemented shared terminal.
+# Milestone status
+${docs.orMessage(docs.milestoneRows(), "No active milestone. Next milestone selection is deferred; none has been prepared.")}
 
-Agents working here: read [[AGENTS]] first.
+# Work in progress
+${docs.orMessage(docs.workRows(), "No feature implementation is currently recorded as active. The loose ends below are not scheduled commitments.")}
 
-# Specs
-${query[[
-  from p = index.contentPages "spec"
-  order by p.date desc
-  select {
-    Spec = "[[" .. p.name .. "|" .. (p.displayName or p.name) .. "]]",
-    Status = p.status,
-    Date = p.date,
-  }
-]]}
+# Current capabilities
+${docs.orMessage(docs.capabilityRows(), "No current capability records are available.")}
 
-# Plans
-${query[[
-  from p = index.contentPages "plan"
-  order by p.date desc
-  select {
-    Plan = "[[" .. p.name .. "|" .. (p.displayName or p.name) .. "]]",
-    Status = p.status,
-    Date = p.date,
-  }
-]]}
+# Loose ends
+${docs.orMessage(docs.looseEndRows(), "No unscheduled loose ends are recorded.")}
 
-- [[Testing/Code quality review 2026-10-24|Code quality review — 24 October 2026]]: structural findings, coverage, committed/local file inventory and KDE removal verification.
+# Documentation health
+${docs.orMessage(docs.healthRows(), "No closed execution plans, obsolete specs or missing summary/next-action fields are flagged by the record checks. Native lint is verified separately.")}
 
-- [[Testing/CI transport regressions 2026-10-24|CI transport regressions — 24 October 2026]]: failing Settings assertion, Chromium microphone report transport and focused event WebSocket coverage.
+The full [[Loose ends]] view also includes parked investigations. Requests to agents are in [[Agent inbox]]; they are separate from the decisions and reviews above. A satisfied mention can be cleared while its discussion is preserved until the author resolves it.
 
-- [[Testing/Desktop startup readiness 2026-10-24|Desktop startup readiness — 24 October 2026]]: delayed X initialization, withheld streaming, bounded setup and real cold-boot/restart/input verification.
+# Explore
+- [[Features]]: current capability, maturity, acceptance and limitations.
+- [[Milestones]]: outcome-based scope and acceptance, without planning dates.
+- [[Architecture]]: components and dependencies as implemented.
+- [[Specs]]: retained current design contracts and rationale.
+- [[Plans]]: temporary active execution instructions; completed plans are purged.
+- [[Spikes]]: scoped feasibility findings, including parked approaches.
+- [[Verification]]: test/review evidence with environments and limits.
+- [[Use cases]]: family-first needs and open product questions.
+- [[Licensing]]: distribution obligations and outstanding release work.
+- [[Testing/Current capability inventory|Current inventory audit]] and [[Testing/Project record schemas|SilverBullet workflow checks and feedback]].
+- [[Operations manual|Project operations manual]], [[AGENTS|Documentation conventions]] and [[Dashboard views|Dashboard view definitions]].

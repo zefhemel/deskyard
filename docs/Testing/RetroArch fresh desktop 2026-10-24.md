@@ -1,7 +1,9 @@
 ---
 displayName: RetroArch fresh desktop testing — 24 October 2026
 date: "2026-10-24"
-status: complete
+tags: "verification"
+result: "passed"
+scope: "Fresh ARM64 desktop RetroArch installation, GUI core installation and observed gameplay with the recorded workaround."
 ---
 A fresh XFCE desktop trial installed RetroArch 1.22.2, installed Snes9x through RetroArch's own Core Downloader and verified movement in the user-selected Super Mario World game. The trial is complete, with an ARM64 caveat: the downloader needed an explicit core-list URL before the GUI installation worked.
 

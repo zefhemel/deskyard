@@ -1,3 +1,9 @@
+---
+tags: "verification"
+result: "partial"
+scope: "MATE startup barrier, delayed-display regression, cold boot and restart behavior on the tested local setup."
+displayName: "Desktop startup readiness 2026-10-24"
+---
 MATE's intermittent black screen investigation and startup barrier correction on 24 October 2026. This distinguishes the observed display-size race from the still-unidentified operation that caused the original startup delay. See [[Architecture/Desktop runtime]] and [[Architecture/Session]].
 
 # Observed failure and temporary recovery

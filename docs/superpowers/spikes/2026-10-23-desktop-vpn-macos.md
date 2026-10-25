@@ -1,7 +1,9 @@
 ---
 displayName: Desktop VPN on macOS spike
-tags: spike
 date: "2026-10-23"
+tags: "spike"
+status: "concluded"
+conclusion: "A per-desktop outbound VPN is feasible on OrbStack; this probe is not a full enforcement audit."
 ---
 Can an outbound VPN for an individual Deskyard desktop be tested on this Mac before deploying on Linux? **Yes: an isolated OrbStack probe passed with a real desktop container.** This is feasibility evidence for [[Use cases|the family networking use case]], not an implemented Deskyard feature or a complete enforcement audit.
 

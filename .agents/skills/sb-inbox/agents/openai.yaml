@@ -1,0 +1,6 @@
+interface:
+  display_name: "SilverBullet agent inbox"
+  short_description: "Process project comments addressed to @agent"
+  default_prompt: "Use $sb-inbox to process the pending SilverBullet agent comments and report what needs my input."
+policy:
+  allow_implicit_invocation: false

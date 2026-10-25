@@ -112,7 +112,7 @@ RUN --mount=type=bind,from=flatpak,source=/out/debs,target=/tmp/flatpak-debs \
 # over one WebSocket) with its web client, into a venv: Selkies and pcmflux
 # from PyPI, pixelflux from the stage above. Pinned: Selkies 2.1.0 (the latest
 # 2.1.x on 2026-10-22) and the pixelflux and pcmflux versions it requires.
-# Selkies' idle-CPU patches (images/common/patches) are applied to the
+# Selkies' runtime patches (images/common/patches) are applied to the
 # installed package, and must apply exactly. Its web client lands in
 # /opt/selkies/lib/python3.13/site-packages/selkies/selkies_web, which the
 # supervisor extracts from the image.

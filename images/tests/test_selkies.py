@@ -4,6 +4,7 @@ WebSocket behind Caddy's token, with only the features Deskyard offers."""
 import asyncio
 import json
 import time
+from pathlib import Path
 from sandbox import DESKTOP, PANELS
 
 import pytest
@@ -19,6 +20,13 @@ WEB_CLIENT = "/opt/selkies/lib/python3.13/site-packages/selkies/selkies_web"
 SUPERVISOR_ORIGIN = "http://supervisor.deskyard.invalid"
 # Anchored, so it doesn't match the shell running it.
 SELKIES_PID = "pgrep -f '^/opt/selkies/bin/python3 /opt/selkies/bin/selkies '"
+
+
+def test_input_recovers_after_x_connection_failure(sandbox):
+    """A failed reconnect must not strand input or revive a disconnected handler."""
+    script = Path(__file__).parent / "native" / "selkies-input-recovery.py"
+    docker("cp", str(script), f"{sandbox.name}:/tmp/selkies-input-recovery.py")
+    sandbox.exec("/opt/selkies/bin/python /tmp/selkies-input-recovery.py", timeout=40)
 
 
 async def first_binary_frame(url: str, timeout: float) -> bytes:

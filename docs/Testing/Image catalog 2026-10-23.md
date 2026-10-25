@@ -1,6 +1,9 @@
 ---
 displayName: Image catalog testing — 23 October 2026
 date: "2026-10-23"
+tags: "verification"
+result: "passed"
+scope: "Official image discovery, installation and desktop picker behavior in the recorded local checks."
 ---
 The approved discovery follow-up to [[superpowers/specs/2026-10-23-desktop-variants-design|Desktop image variants design]] adds official choices before download, an Install action and a first-use hint in the desktop picker. Saved entries/defaults and custom images remain intact.
 

@@ -6,7 +6,7 @@ uses:
   - "[[Architecture/Deskyard CLI]]"
   - "[[Architecture/Chromium]]"
   - "[[Architecture/Workspace folder]]"
-spec: "[[superpowers/specs/2026-10-21-workspace-sandbox-design|Workspace Sandbox design]]"
+spec: "[[superpowers/specs/2026-10-23-desktop-variants-design|Desktop image variants design]]"
 ---
 Tools available in the desktop: mise, uv and npm install into the home folder, and Flatpak apps install with `--user`. People use these tools through desktop terminals or the [[Architecture/Remote CLI]]. Optional agent integrations are supported by the shipped skills in `images/common/rootfs/opt/workspace/skills/`, which explain the desktop, shared browser and screen controls.
 

@@ -2,6 +2,8 @@ How Deskyard is put together, one page per component in `Architecture/`, tagged 
 
 The diagram is drawn from the components' frontmatter: `partOf` puts a component inside its container, `uses` draws an arrow. Solid boxes are built, dashed ones planned, dotted ones outside this repository. Each component's page shows the part of the diagram around it.
 
+Maintain these pages with the [[Operations manual#Keep architecture aligned with implementation|Architecture completion review]]; [[AGENTS#Architecture maintenance|Metadata conventions]] define the graph fields. The implementation is the reference for current behavior.
+
 ${docs.architecture()}
 
 # Components

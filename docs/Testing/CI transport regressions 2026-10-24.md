@@ -1,6 +1,9 @@
 ---
 displayName: CI transport regressions, 24 October 2026
 date: "2026-10-24"
+tags: "verification"
+result: "partial"
+scope: "Settings recreation and microphone event transport regressions, with the recorded local integration coverage."
 ---
 The Tests workflow run `40104810507`, at commit `4a89e30`, failed the settings recreation assertion in both supervisor modes. Its native job also timed out starting the first microphone in `test_two_mics`.
 
@@ -10,7 +13,7 @@ The Tests workflow run `40104810507`, at commit `4a89e30`, failed the settings r
 
 The native job logged `net::ERR_NETWORK_CHANGED` for the microphone badge POST. Linux Docker bridge creation/removal is visible to Chromium while other workers create desktops. The Audio panel deliberately waits for the supervisor to acknowledge its badge report before starting capture; a failed report keeps the mic off. Increasing the wait cannot complete that rejected operation. Production capture and badge behavior remains unchanged.
 
-`supervisor/tests/netchange.py` now forwards loopback mic/camera badge POSTs through Playwright's request transport, as it already does for bootstrap requests. It sends each report once with transport retries and redirect following disabled. It aborts on an uncertain response without falling back to another send. Other mutations, event streams, screen traffic and documents retain their native transport; mapped insecure test hostnames still forward only bootstrap API calls. The narrow route pattern avoids intercepting media streams while Python records audio. See [[Architecture/Web UI]] and [[superpowers/specs/2026-10-22-audio-and-ports-design|Audio and ports design]] for the capture responsibilities and privacy requirements.
+`supervisor/tests/netchange.py` now forwards loopback mic/camera badge POSTs through Playwright's request transport, as it already does for bootstrap requests. It sends each report once with transport retries and redirect following disabled. It aborts on an uncertain response without falling back to another send. Other mutations, event streams, screen traffic and documents retain their native transport; mapped insecure test hostnames still forward only bootstrap API calls. The narrow route pattern avoids intercepting media streams while Python records audio. See [[Architecture/Web UI]] and [[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]] for the capture responsibilities and privacy requirements.
 
 # Verification and limits
 

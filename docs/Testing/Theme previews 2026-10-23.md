@@ -1,6 +1,9 @@
 ---
 displayName: Desktop theme previews — 23 October 2026
 date: "2026-10-23"
+tags: "verification"
+result: "passed"
+scope: "Recorded desktop theme previews and the selected MATE appearance; KDE preview was not selected."
 ---
 Visual previews of a coordinated appearance for the KDE and MATE images from [[superpowers/specs/2026-10-23-desktop-variants-design|Desktop image variants design]]. These are real 1280×800 screenshots from disposable containers with fresh homes, using the same file-manager content, terminal sample and window placement. The initial preview task did not change runtime defaults. The selection below records the subsequent MATE-only implementation; KDE's themed preview was not selected.
 

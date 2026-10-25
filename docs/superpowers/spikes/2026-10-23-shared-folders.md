@@ -1,6 +1,10 @@
 ---
 displayName: Dynamic shared folders on Mac and Linux investigation
 date: "2026-10-23"
+tags: "spike"
+status: "concluded"
+conclusion: "Supervisor-managed live mounts are feasible on tested storage; ACL-only isolation is unsuitable for the tested Mac-backed folders."
+features: ["[[Features/Named shared folders]]"]
 ---
 Dynamic named folders are feasible without changing desktop UIDs: a supervisor-controlled helper can attach a read-only or writable mount to a running desktop's mount namespace. This was verified on this Mac with OrbStack, using both Mac-backed folders and Linux-native storage, and between real XFCE and MATE desktops. A global shared root protected only by POSIX permissions/ACLs is unsuitable for the current Mac-backed storage: the tested filesystem rejected ACLs and did not isolate the test UIDs using mode 0700.
 

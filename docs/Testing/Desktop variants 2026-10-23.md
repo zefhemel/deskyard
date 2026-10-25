@@ -1,7 +1,12 @@
 ---
 displayName: Desktop variants testing — 23 October 2026
 date: "2026-10-23"
+tags: "verification"
+result: "partial"
+scope: "Local ARM64 image builds and graphical application checks; amd64 runtime and registry publication were not verified."
 ---
+This record preserves the original three-variant experiment and its observations. KDE has since been retired; current image targets and CI smoke coverage are XFCE and MATE. Commands and counts below describe the recorded runs, not the current supported matrix.
+
 Local validation of [[superpowers/specs/2026-10-23-desktop-variants-design|Desktop image variants design]] on native ARM64 Docker (OrbStack, 15.66 GiB VM memory). All three final targets build together with `VERSION=test docker buildx bake --load`. Expensive shared dependency stages are reused; changing common startup scripts retains desktop package caches. amd64 runtime checks and registry publication were not performed locally.
 
 # Graphical applications
@@ -48,7 +53,7 @@ BuildKit's checks for all three targets with both configured platforms reported 
 
 # CI smoke selection — 24 October 2026
 
-`.github/workflows/tests.yml` adds an independent `variant-smoke` matrix for XFCE, KDE and MATE on native amd64 Ubuntu runners. Each job builds its final image target using the corresponding images-workflow cache, allows unprivileged user namespaces, and runs five existing image runtime tests with `AC_DESKTOP`, `AC_IMAGE` and `AC_POOL=0`. The selection covers desktop identity/readiness and panel ownership, absence of other desktop sessions, default-browser MIME configuration plus an actual `xdg-open` target in shared Chromium, native terminal profile migration/tabs/working directories/explicit commands, and home skeleton preservation across restart and container recreation. It does not duplicate the full supervisor or browser matrix, which remains on XFCE.
+At the time of these observations, `.github/workflows/tests.yml` added an independent `variant-smoke` matrix for XFCE, KDE and MATE on native amd64 Ubuntu runners. Each job builds its final image target using the corresponding images-workflow cache, allows unprivileged user namespaces, and runs five existing image runtime tests with `AC_DESKTOP`, `AC_IMAGE` and `AC_POOL=0`. The selection covers desktop identity/readiness and panel ownership, absence of other desktop sessions, default-browser MIME configuration plus an actual `xdg-open` target in shared Chromium, native terminal profile migration/tabs/working directories/explicit commands, and home skeleton preservation across restart and container recreation. It does not duplicate the full supervisor or browser matrix, which remains on XFCE.
 
 Reproduce the selection from `images/tests/` with a built image:
 

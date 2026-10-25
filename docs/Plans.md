@@ -1,23 +1,3 @@
-How a spec gets built: one implementation plan per spec, tagged `#plan`, in `superpowers/plans/`, linking its spec in `spec`. A plan's status is `active` or `done`; its steps are tasks, ticked as they're done.
+Temporary execution instructions for an approved change. Completed, cancelled and superseded plans are purged after useful decisions, evidence and genuine remaining work have moved into the current records. Git retains their history. [[Features]], [[Loose ends]] and retained [[Specs]] carry durable project knowledge. See [[Operations manual#Retention and current truth|Retention rules]].
 
-${query[[
-  from p = index.contentPages "plan"
-  order by p.date desc
-  select {
-    Plan = "[[" .. p.name .. "|" .. (p.displayName or p.name) .. "]]",
-    Status = p.status,
-    Spec = p.spec,
-    Date = p.date,
-  }
-]]}
-
-# Open steps
-${query[[
-  from t = index.tasks()
-  where not t.done and t.page:startsWith("superpowers/plans/")
-  order by t.page
-  select {
-    Plan = "[[" .. t.page .. "]]",
-    Step = t.name,
-  }
-]]}
+${docs.orMessage(query[[from p = index.contentPages "plan" where p.status == "draft" or p.status == "active" order by p.name select {Plan="[[" .. p.name .. "|" .. p.displayName .. "]]", Stage=p.status, Spec=p.spec}]], "No active implementation plans. Start one when a concrete approved task needs execution steps.")}

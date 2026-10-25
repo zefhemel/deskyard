@@ -1,6 +1,9 @@
 ---
 displayName: Shared terminal access prototype
 date: "2026-10-23"
+tags: "spike"
+status: "superseded"
+conclusion: "The Zellij prototype demonstrated shared sessions and was superseded by the implemented tmux design."
 ---
 **Superseded on 23 October 2026 by [[superpowers/specs/2026-10-23-shared-terminal-design|Shared terminal design]], implemented with image-owned tmux and the authenticated supervisor terminal. The unchanged-source statements below describe this historical experiment only. Its results and limitations are preserved here.**
 

@@ -1,3 +1,9 @@
+---
+tags: "verification"
+result: "passed"
+scope: "Deterministic Flatpak openat2 regression and the recorded local image acceptance test."
+displayName: "Flatpak startup 2026-10-24"
+---
 Nightly Tests run [40057546598](https://github.com/zefhemel/deskyard/actions/runs/40057546598) failed in `test_silverbullet_edge_flatpak` with `Extension org.freedesktop.Platform.GL.default has invalid merge-dirs`. This was reproduced with Debian Flatpak `1.16.6-1~deb13u3` and traced to the missing upstream libglnx retry described in [Flatpak issue 6783](https://github.com/flatpak/flatpak/issues/6783).
 
 # Deterministic regression

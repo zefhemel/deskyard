@@ -1,0 +1,64 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - link "‹ Desktops" [ref=e3] [cursor=pointer]:
+      - /url: /
+      - text: ‹
+      - generic [ref=e4]: Desktops
+    - generic [ref=e6]: alice
+    - generic [ref=e7]: Connected
+    - button "Viewers and port mappings" [expanded] [active] [ref=e11] [cursor=pointer]:
+      - generic [ref=e12]:
+        - generic "zef" [ref=e14]: z
+        - generic "anna" [ref=e16]: a
+        - generic "sam" [ref=e18]: s
+        - generic "deploy-bot · zef's agent" [ref=e20]:
+          - generic [ref=e21]: z
+          - generic [aria-hidden] [ref=e22]: 🤖
+      - generic [ref=e23]: zef, anna and sam
+      - generic [ref=e24]: ⇄ 2
+    - generic [ref=e25]:
+      - button "Clipboard" [ref=e26] [cursor=pointer]
+      - button "Keys ▾" [ref=e28] [cursor=pointer]:
+        - text: Keys
+        - generic [ref=e29]: ▾
+      - button "Quality ▾" [ref=e31] [cursor=pointer]:
+        - text: Quality
+        - generic [ref=e32]: ▾
+      - button "More" [ref=e34] [cursor=pointer]: ⋯
+    - generic [ref=e36]:
+      - heading "Viewing" [level=3] [ref=e37]
+      - list [ref=e38]:
+        - listitem [ref=e39]:
+          - generic "zef" [ref=e40]: z
+          - generic [ref=e41]: zef
+        - listitem [ref=e42]:
+          - generic "anna" [ref=e43]: a
+          - generic [ref=e44]: anna
+        - listitem [ref=e45]:
+          - generic "sam" [ref=e46]: s
+          - generic [ref=e47]: sam
+      - heading "Agents" [level=3] [ref=e48]
+      - list [ref=e49]:
+        - listitem [ref=e50]:
+          - button "z deploy-bot · zef's agent" [ref=e51] [cursor=pointer]:
+            - generic "deploy-bot · zef's agent" [ref=e52]:
+              - generic [ref=e53]: z
+              - generic [aria-hidden] [ref=e54]: 🤖
+            - generic [ref=e55]: deploy-bot · zef's agent
+            - generic [aria-hidden] [ref=e56]: ▾
+        - listitem [ref=e57]:
+          - button "🤖 Claude Code · in this desktop" [ref=e58] [cursor=pointer]:
+            - generic "Claude Code · in this desktop" [ref=e59]: 🤖
+            - generic [ref=e62]: Claude Code · in this desktop
+            - generic [aria-hidden] [ref=e63]: ▾
+        - listitem [ref=e64]:
+          - button "a nightly CI · anna's agent" [ref=e65] [cursor=pointer]:
+            - generic "nightly CI · anna's agent" [ref=e66]:
+              - generic [ref=e67]: a
+              - generic [aria-hidden] [ref=e68]: 🤖
+            - generic [ref=e69]: nightly CI · anna's agent
+            - generic [aria-hidden] [ref=e70]: ▾
+      - heading "Port mappings" [level=3] [ref=e71]
+      - list "Port mappings" [ref=e72]:
+        - listitem [ref=e73]: "deploy-bot: 3000 in · 5173 out"
+  - iframe [ref=e35]
