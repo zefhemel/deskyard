@@ -232,8 +232,49 @@ func (s *Server) checkImages(ctx context.Context, progress func(string, float64)
 			errs = append(errs, err)
 		}
 	}
+	s.pruneImages(ctx)
 	s.events.refresh()
 	return errors.Join(errs...)
+}
+
+// pruneImages deletes desktop image versions that nothing uses any more:
+// ones no tag names (an older version that a newer pull or build of its tag
+// replaced), that no container runs from and that no environment definition
+// or catalog entry pins. Tagged images, local builds and custom images
+// included, are never touched, and the engine refuses any image a container
+// still uses. Failures are logged; the next check tries again.
+func (s *Server) pruneImages(ctx context.Context) {
+	pruner, ok := s.Eng.(engine.ImagePruner)
+	if !ok {
+		return
+	}
+	old, err := pruner.DanglingImages(ctx, map[string]string{"deskyard.kind": "desktop"})
+	if err != nil || len(old) == 0 {
+		if err != nil {
+			s.Log.Warn("listing old desktop images", "err", err)
+		}
+		return
+	}
+	keep, err := s.Environments.ImagesInUse(ctx)
+	if err != nil {
+		s.Log.Warn("listing images in use", "err", err)
+		return
+	}
+	for _, e := range s.images.entries() {
+		keep[s.images.newest(e.Ref)] = true
+	}
+	for _, img := range old {
+		if keep[img.ID] {
+			continue
+		}
+		if err := pruner.RemoveImage(ctx, img.ID); err != nil {
+			if !errors.Is(err, engine.ErrNotFound) {
+				s.Log.Warn("removing an old desktop image", "id", img.ID, "err", err)
+			}
+			continue
+		}
+		s.Log.Info("removed an old desktop image", "id", img.ID, "bytes", img.Size)
+	}
 }
 
 func (c *catalog) checkLoop(ctx context.Context, s *Server) {
@@ -477,6 +518,7 @@ func (s *Server) handleUpgradeImage(w http.ResponseWriter, r *http.Request) {
 				errs = append(errs, err)
 			}
 		}
+		s.pruneImages(ctx)
 		return errors.Join(errs...)
 	})
 	writeJSON(w, http.StatusAccepted, map[string]string{"job": id})

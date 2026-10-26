@@ -332,6 +332,27 @@ func (s *Service) creating(name string) Environment {
 	return Environment{ID: name, Name: name, State: "creating", Folder: s.Layout.HomeOf(name)}
 }
 
+// ImagesInUse returns the IDs of the images that environment definitions pin
+// (stopped environments without a container included) and that containers
+// on the engine run from, of any supervisor and in any state, parked
+// replacements included.
+func (s *Service) ImagesInUse(ctx context.Context) (map[string]bool, error) {
+	inUse := map[string]bool{}
+	for _, def := range s.Defs.List() {
+		if def.Image.ID != "" {
+			inUse[def.Image.ID] = true
+		}
+	}
+	all, err := s.Eng.List(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range all {
+		inUse[c.ImageID] = true
+	}
+	return inUse, nil
+}
+
 // List returns every defined environment, with or without a container, and
 // those being created.
 func (s *Service) List(ctx context.Context) ([]Environment, error) {

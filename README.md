@@ -308,6 +308,13 @@ preinstalled with the image (outside `/workspace`, so they update with it);
 `mise use` wins over them. There's no `sudo`, and anything installed with
 `apt` or changed outside `/workspace` is lost when the image is updated.
 
+Stopping, starting and restarting keep the environment's container, so changes
+outside `/workspace` (including `/tmp`) last until the container is rebuilt:
+by an upgrade or a settings change that needs it. Stopped environments keep
+their container too. Nothing in `/workspace` or a shared folder is ever
+cleaned up; only removing an environment with "also delete files" deletes its
+folder.
+
 uv defaults to its own Python installations in `/workspace` so installed
 tools do not depend on the image's Python. This default comes from
 `/etc/uv/uv.toml`; explicit uv flags and user configuration can override it.
@@ -482,6 +489,11 @@ CI rebuilds it weekly (Debian security updates) and on every change, tagged `lat
 (`2026.10.22`). The supervisor checks downloaded images for newer versions daily (or on "Check
 now"); available images stay undownloaded. The catalog shows **Available**,
 **Installed** or **Update available** when environments are behind.
+After each check and each upgrade, the supervisor deletes old versions of
+desktop images that nothing uses any more: images no tag names (a newer pull
+or build replaced them), that no container runs from, stopped ones included,
+and that no environment pins. Tagged images, such as local builds and custom
+images, are never deleted.
 
 Upgrading an environment recreates its container on the new image with the same
 settings and folder; the Images page can upgrade all environments on an image

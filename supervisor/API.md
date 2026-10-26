@@ -236,12 +236,14 @@ Volume names follow the environment name rules (2–32 characters) and can't be 
 | `POST /api/images/install` | `{"ref"}` | 202 `{"job"}` (uses a known catalog image locally, pulling only when missing, and checks the contract) |
 | `POST /api/images` | `{"ref"}` | 202 `{"job"}` (uses a local image or pulls a missing reference, then checks the contract) |
 | `DELETE /api/images?ref=…` | | 204; 400 for built-in official refs; 409 while any definition uses it, including stopped environments without a container |
-| `POST /api/images/check` | | 202 `{"job"}` (pull installed non-custom refs, recompute updates) |
-| `POST /api/images/upgrade` | `{"ref"}` | 202 `{"job"}` (upgrades every environment behind on it) |
+| `POST /api/images/check` | | 202 `{"job"}` (pull installed non-custom refs, recompute updates, delete unused old desktop images) |
+| `POST /api/images/upgrade` | `{"ref"}` | 202 `{"job"}` (upgrades every environment behind on it, then deletes unused old desktop images) |
 
 `GET /api/images` merges saved entries with the built-in XFCE choice without pulling. `installed` means the reference exists locally; `official` identifies built-in refs; retired KDE and MATE references remain only where saved. Static titles/descriptions are supplied before download. Saved order and the configured default are preserved. Environment creation can pull available images on first use; successful use records the resolved local version. An unavailable registry or failed pull is reported through the job, leaving the choice available for retry.
 
 Adding or installing an image validates the Deskyard contract even when the reference is already present locally. Local references, including `deskyard-custom/…`, can be added without contacting a registry. Missing references are pulled through the normal job flow. An incompatible local image fails validation instead of being replaced by a pull.
+
+Unused old desktop images are untagged images labelled `deskyard.kind=desktop` that no container on the engine (of any state or supervisor) uses and that no environment definition or catalog entry pins. Removal never forces, and failures are only logged; the next check tries again.
 
 `DELETE /api/images?ref=…` removes only the catalog entry. It does not delete Docker tags, images, legacy recipe JSON or source folders. Existing legacy locally built images remain usable and keep their exclusion from registry update checks. The daily update check (and `POST /api/images/check`) also skips missing images.
 

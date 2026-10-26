@@ -535,8 +535,10 @@ func (d *Docker) CopyFromImage(ctx context.Context, ref, path string) (io.ReadCl
 	if err != nil {
 		return nil, wrap(err)
 	}
+	// With its volumes: a desktop image declares VOLUME /workspace, so each
+	// copy would otherwise leave an anonymous volume behind.
 	remove := func() {
-		_, _ = d.c.ContainerRemove(context.WithoutCancel(ctx), created.ID, client.ContainerRemoveOptions{Force: true})
+		_, _ = d.c.ContainerRemove(context.WithoutCancel(ctx), created.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 	}
 	res, err := d.c.CopyFromContainer(ctx, created.ID, client.CopyFromContainerOptions{SourcePath: path})
 	if err != nil {
