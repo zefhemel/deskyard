@@ -3,6 +3,7 @@ package environments
 import (
 	"context"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -81,5 +82,65 @@ func TestVPNHostMountsSurviveDisableAndRecreate(t *testing.T) {
 		if !reflect.DeepEqual(d.Settings.Mounts, want) || len(spec.Mounts) != 2 || !spec.Mounts[1].MustExist || !spec.NoNewPrivileges {
 			t.Fatalf("lost host folder safety: settings=%+v spec=%+v", d.Settings, spec)
 		}
+	}
+}
+
+// A VPN environment's settings are saved through withSettings: its grants
+// must survive every change, on or off the VPN.
+func TestVPNSettingsKeepVolumes(t *testing.T) {
+	s, e, _, conn := pairSetup(t)
+	mounts := &vpnMountEngine{mountEngine: &mountEngine{fakeEngine: e.fakeEngine, specs: map[string]engine.ContainerSpec{}}, network: e}
+	s.Eng = mounts
+	e.fakeEngine.port = e.port
+	ctx := context.Background()
+	addVolume(t, s, "photos")
+	want := []VolumeGrant{{Name: "photos", ReadOnly: true}}
+	d, err := s.Create(ctx, "alice", Settings{Image: "img", VPNConnectionID: conn.ID, Volumes: want}, noProgress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range []func(*Settings){
+		func(set *Settings) { set.MemoryBytes = 1 << 30 },
+		func(set *Settings) { set.VPNConnectionID = "" },
+		func(set *Settings) { set.VPNConnectionID = conn.ID },
+	} {
+		set := d.Settings
+		change(&set)
+		d, err = s.Recreate(ctx, "alice", set, noProgress)
+		if err != nil {
+			t.Fatal(err)
+		}
+		spec := mounts.specs["deskyard-alice"]
+		m, ok := volumeMount(spec, "/share/photos")
+		if !reflect.DeepEqual(d.Settings.Volumes, want) || !ok || !m.ReadOnly || !m.MustExist || !spec.NoNewPrivileges {
+			t.Fatalf("lost the grant: settings=%+v spec=%+v", d.Settings, spec)
+		}
+	}
+}
+
+// Taking back a grant whose folder is missing, through a VPN settings change,
+// clears its error at once.
+func TestVPNDroppingGrantClearsFolderError(t *testing.T) {
+	s, e, _, conn := pairSetup(t)
+	mounts := &vpnMountEngine{mountEngine: &mountEngine{fakeEngine: e.fakeEngine, specs: map[string]engine.ContainerSpec{}}, network: e}
+	s.Eng = mounts
+	e.fakeEngine.port = e.port
+	ctx := context.Background()
+	addVolume(t, s, "photos")
+	if _, err := s.Create(ctx, "alice", Settings{Image: "img", VPNConnectionID: conn.ID, Volumes: []VolumeGrant{{Name: "photos"}}}, noProgress); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(s.Layout.VolumeOf("photos")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.checkFolders("alice"); err == nil {
+		t.Fatal("no folder error")
+	}
+	d, err := s.Recreate(ctx, "alice", Settings{Image: "img", VPNConnectionID: conn.ID}, noProgress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Error != "" {
+		t.Fatalf("error kept: %q", d.Error)
 	}
 }

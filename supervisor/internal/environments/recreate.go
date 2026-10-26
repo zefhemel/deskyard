@@ -95,9 +95,9 @@ func (s *Service) Recreate(ctx context.Context, name string, set Settings, progr
 }
 
 // Apply validates and preflights next's container-affecting settings (image,
-// limits, network, mounts, Docker access, camera), saves them as name's
-// definition, a new revision when they differ, and replaces its container
-// (if it has one) to match. The old container is parked until the new one is
+// limits, network, mounts, volume grants, Docker access, camera), saves them
+// as name's definition, a new revision when they differ, and replaces its
+// container (if it has one) to match. The old container is parked until the new one is
 // up; if that fails, the old one comes back and the definition stays ahead of
 // it, with the error, until a start or another change applies it. The caller
 // reserves its operation slot.
@@ -142,6 +142,14 @@ func (s *Service) applyDirect(ctx context.Context, name string, next Definition,
 	if err := s.checkHostSources(ctx, next.Mounts, next.DockerAccess); err != nil {
 		return err
 	}
+	// A container can't be replaced without its folders, so that is refused
+	// before anything is saved; without one the change is only saved, and
+	// the start that builds it is refused instead.
+	if c.Container.ID != "" {
+		if err := s.missingFolder(name, next.Volumes); err != nil {
+			return err
+		}
+	}
 	if next.Camera != "" && next.Camera != c.Settings.Camera {
 		if err := s.CheckCamera(ctx, name, next.Camera); err != nil {
 			return err
@@ -163,7 +171,8 @@ func (s *Service) applyDirect(ctx context.Context, name string, next Definition,
 		prev := *d
 		d.Image = ImageRef{Ref: next.Image.Ref, ID: img.ID}
 		d.Limits, d.Network = next.Limits, next.Network
-		d.Mounts, d.DockerAccess, d.Camera = next.Mounts, next.DockerAccess, next.Camera
+		d.Mounts, d.Volumes = next.Mounts, next.Volumes
+		d.DockerAccess, d.Camera = next.DockerAccess, next.Camera
 		*d = d.clone()
 		if ContainerAffecting(prev, *d) {
 			d.Revision = prev.Revision + 1
@@ -173,6 +182,9 @@ func (s *Service) applyDirect(ctx context.Context, name string, next Definition,
 	if err != nil {
 		return err
 	}
+	// A folder error of the old grants goes with them; one of the new
+	// grants (only without a container) shows at once.
+	_ = s.checkFolders(name)
 	if c.Container.ID == "" {
 		// Built from the definition when started, or by reconcile once
 		// the error of an earlier build is cleared.
@@ -201,7 +213,8 @@ func (s *Service) applied(name string, err error) error {
 func (s *Service) revertSettings(name string, prev Definition) error {
 	_, err := s.Defs.Update(name, func(d *Definition) error {
 		d.Image, d.Limits, d.Network = prev.Image, prev.Limits, prev.Network
-		d.Mounts, d.DockerAccess, d.Camera = prev.Mounts, prev.DockerAccess, prev.Camera
+		d.Mounts, d.Volumes = prev.Mounts, prev.Volumes
+		d.DockerAccess, d.Camera = prev.DockerAccess, prev.Camera
 		d.Revision = prev.Revision
 		*d = d.clone()
 		return nil
@@ -214,6 +227,9 @@ func (s *Service) revertSettings(name string, prev Definition) error {
 // dropped from the definition first, and a pinned image gone from the engine
 // pulled again by its reference, each as a new revision.
 func (s *Service) applyDefinition(ctx context.Context, c Environment, progress func(string, float64)) error {
+	if err := s.checkFolders(c.Name); err != nil {
+		return err
+	}
 	if err := s.checkHostSources(ctx, c.Settings.Mounts, c.Settings.DockerAccess); err != nil {
 		return s.applied(c.Name, err)
 	}

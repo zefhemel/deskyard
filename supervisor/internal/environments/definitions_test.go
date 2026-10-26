@@ -3,6 +3,7 @@ package environments
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -22,6 +23,7 @@ func testDefinition(name string) Definition {
 		Limits:        Limits{MemoryBytes: 1 << 30, NanoCPUs: 2e9},
 		Network:       Network{Kind: NetworkIsolated},
 		Mounts:        []HostMount{{Source: "/srv/photos", Target: "/mnt/photos", ReadOnly: true}},
+		Volumes:       []VolumeGrant{},
 		Camera:        "/dev/video10",
 		MemoryReclaim: true,
 		Power:         PowerRunning,
@@ -68,12 +70,12 @@ func TestDefinitionsRoundTripSpecKeys(t *testing.T) {
 	if first["name"] != "alice" {
 		t.Fatalf("environments are saved sorted by name, got %v first", first["name"])
 	}
-	for _, key := range []string{"name", "created", "revision", "image", "limits", "network", "mounts", "dockerAccess", "camera", "memoryReclaim", "power"} {
+	for _, key := range []string{"name", "created", "revision", "image", "limits", "network", "mounts", "volumes", "dockerAccess", "camera", "memoryReclaim", "power"} {
 		if _, ok := first[key]; !ok {
 			t.Errorf("missing key %q in %s", key, b)
 		}
 	}
-	if len(first) != 11 {
+	if len(first) != 12 {
 		t.Errorf("unexpected keys in %v", first)
 	}
 	if img := first["image"].(map[string]any); img["ref"] != alice.Image.Ref || img["id"] != "sha256:abc" {
@@ -153,6 +155,18 @@ func TestDefinitionsLoadRejectsUnknownVersion(t *testing.T) {
 		if _, err := LoadDefinitions(path); err == nil || !strings.Contains(err.Error(), "version") {
 			t.Errorf("%s: err = %v", body, err)
 		}
+	}
+}
+
+func TestDefinitionsLoadExplainsNewlyReservedName(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "environments.json")
+	b, _ := json.Marshal(definitionsFile{Version: 1, Environments: []Definition{testDefinition("alice"), testDefinition("volumes")}})
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadDefinitions(path)
+	if err == nil || !strings.Contains(err.Error(), `"volumes"`) || !strings.Contains(err.Error(), "before upgrading") {
+		t.Fatalf("err = %v", err)
 	}
 }
 
@@ -376,7 +390,7 @@ func TestDefinitionSettings(t *testing.T) {
 	d.Network = Network{Kind: NetworkVPN, Connection: "conn-1", LANExceptions: []vpn.Exception{{Destination: "10.0.0.1/32", Protocol: "tcp", Ports: []vpn.PortRange{{Start: 22, End: 22}}}}}
 	d.DockerAccess = true
 	s := d.Settings()
-	want := Settings{Image: d.Image.Ref, MemoryBytes: 1 << 30, NanoCPUs: 2e9, Camera: "/dev/video10", VPNConnectionID: "conn-1", LANExceptions: d.Network.LANExceptions, Mounts: d.Mounts, DockerAccess: true}
+	want := Settings{Image: d.Image.Ref, MemoryBytes: 1 << 30, NanoCPUs: 2e9, Camera: "/dev/video10", VPNConnectionID: "conn-1", LANExceptions: d.Network.LANExceptions, Mounts: d.Mounts, Volumes: d.Volumes, DockerAccess: true}
 	if !reflect.DeepEqual(s, want) {
 		t.Fatalf("Settings() = %+v", s)
 	}
@@ -384,5 +398,57 @@ func TestDefinitionSettings(t *testing.T) {
 	s.LANExceptions[0].Ports[0].Start = 1
 	if d.Mounts[0].Source != "/srv/photos" || d.Network.LANExceptions[0].Ports[0].Start != 22 {
 		t.Fatal("Settings() shares memory with the definition")
+	}
+}
+
+func TestContainerAffectingVolumes(t *testing.T) {
+	base := testDefinition("alice")
+	base.Volumes = []VolumeGrant{{Name: "photos", ReadOnly: true}, {Name: "docs"}}
+	for name, volumes := range map[string][]VolumeGrant{
+		"grant":   {{Name: "photos", ReadOnly: true}, {Name: "docs"}, {Name: "music"}},
+		"revoke":  {{Name: "photos", ReadOnly: true}},
+		"mode":    {{Name: "photos"}, {Name: "docs"}},
+		"reorder": {{Name: "docs"}, {Name: "photos", ReadOnly: true}},
+	} {
+		d := base
+		d.Volumes = volumes
+		if !ContainerAffecting(base, d) || !ContainerAffecting(d, base) {
+			t.Errorf("%s is not container-affecting", name)
+		}
+	}
+	a, b := base, base
+	a.Volumes, b.Volumes = nil, []VolumeGrant{}
+	if ContainerAffecting(a, b) {
+		t.Error("nil and empty grants differ")
+	}
+	if s := base.Settings(); !reflect.DeepEqual(s.Volumes, base.Volumes) {
+		t.Fatalf("Settings() lost the grants: %+v", s.Volumes)
+	}
+}
+
+func TestValidateVolumeGrants(t *testing.T) {
+	for _, grants := range [][]VolumeGrant{nil, {}, {{Name: "photos", ReadOnly: true}, {Name: "docs"}}} {
+		if err := ValidateVolumeGrants(grants); err != nil {
+			t.Fatalf("%+v: %v", grants, err)
+		}
+	}
+	many := make([]VolumeGrant, 17)
+	for i := range many {
+		many[i] = VolumeGrant{Name: fmt.Sprintf("v%d", i)}
+	}
+	for name, grants := range map[string][]VolumeGrant{
+		"too many":  many,
+		"duplicate": {{Name: "photos"}, {Name: "photos", ReadOnly: true}},
+		"bad name":  {{Name: "A"}},
+		"no name":   {{}},
+	} {
+		if ValidateVolumeGrants(grants) == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+	d := testDefinition("alice")
+	d.Volumes = []VolumeGrant{{Name: "photos"}, {Name: "photos"}}
+	if d.validate() == nil {
+		t.Error("a definition with duplicate grants is valid")
 	}
 }

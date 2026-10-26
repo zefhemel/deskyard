@@ -17,6 +17,29 @@ type HostMount struct {
 	ReadOnly bool   `json:"readOnly"`
 }
 
+// ShareRoot is where granted volumes appear in an environment, each at
+// ShareRoot/<volume>. Host folders stay below /mnt/, so the two can't overlap.
+const ShareRoot = "/share"
+
+// ValidateVolumeGrants checks an environment's grants: at most 16, of valid
+// volume names, each volume once. Whether the volumes exist is checked apart.
+func ValidateVolumeGrants(grants []VolumeGrant) error {
+	if len(grants) > 16 {
+		return errors.New("an environment can have at most 16 volumes")
+	}
+	for i, g := range grants {
+		if err := ValidName(g.Name); err != nil {
+			return fmt.Errorf("volume %d: %w", i+1, err)
+		}
+		for _, other := range grants[:i] {
+			if g.Name == other.Name {
+				return fmt.Errorf("volume %s is granted twice", g.Name)
+			}
+		}
+	}
+	return nil
+}
+
 func ValidateHostMounts(mounts []HostMount) error {
 	if len(mounts) > 16 {
 		return errors.New("an environment can have at most 16 host folders")

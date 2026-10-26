@@ -2,9 +2,10 @@ import type { ComponentChildren } from "preact";
 import { VPNFields } from "../components/vpn.tsx";
 import { parseExceptions, type ExceptionRow } from "../lib/vpn-form.ts";
 import { useEffect, useState } from "preact/hooks";
-import { api, type NameCheck } from "../api.ts";
+import { api, type NameCheck, type VolumeGrant } from "../api.ts";
 import { AccessPicks, DockerAccessField, cpuOptions, ImagePick, memoryOptions } from "../components/environment-fields.tsx";
 import { JobProgress, useJob } from "../components/job.tsx";
+import { VolumeGrantFields } from "../components/volume-grants.tsx";
 import { Button, Dialog, ErrorText, Field, Seg } from "../components/ui.tsx";
 import { useLive } from "../live.tsx";
 import { useFetch } from "../lib/use-fetch.ts";
@@ -27,6 +28,8 @@ export function NewEnvironmentDialog({ onClose }: { onClose: () => void }) {
   const [lan, setLAN] = useState<ExceptionRow[]>([]);
   const [vpnError, setVPNError] = useState<string | null>(null);
   const accounts = useFetch(() => api.accounts(), "accounts");
+  const volumes = useFetch(() => api.volumes(), "volumes");
+  const [grants, setGrants] = useState<VolumeGrant[]>([]);
 
   const [name, setName] = useState("");
   const [check, setCheck] = useState<NameCheck | null>(null);
@@ -92,7 +95,7 @@ export function NewEnvironmentDialog({ onClose }: { onClose: () => void }) {
     try {
       const lanExceptions = vpnID ? parseExceptions(lan) : [];
       setVPNError(null);
-      void run.start(() => api.createEnvironment({ name, image, memoryBytes: memory, nanoCpus: cpus, access, dockerAccess, vpnConnectionId:vpnID || null, lanExceptions }));
+      void run.start(() => api.createEnvironment({ name, image, memoryBytes: memory, nanoCpus: cpus, access, dockerAccess, volumes: grants, vpnConnectionId:vpnID || null, lanExceptions }));
     } catch(e) {setVPNError(e instanceof Error ? e.message : String(e));}
   };
   const submit = () => {
@@ -139,6 +142,7 @@ export function NewEnvironmentDialog({ onClose }: { onClose: () => void }) {
           </Field>
           {vpn.data ? <VPNFields connections={vpn.data.connections} value={vpnID} onChange={setVPNID} rows={lan} onRows={setLAN} /> : <ErrorText error={vpn.error} />}
           <DockerAccessField value={dockerAccess} onChange={setDockerAccess} />
+          {volumes.data ? <VolumeGrantFields grants={grants} volumes={volumes.data.volumes} onChange={setGrants} creating /> : <ErrorText error={volumes.error} />}
           <Field label="Who can use it">
             {accounts.data ? <AccessPicks accounts={accounts.data} value={access} onChange={setAccess} /> : <ErrorText error={accounts.error} />}
           </Field>

@@ -482,3 +482,27 @@ func TestReconcileBoundsStalledPull(t *testing.T) {
 		t.Fatal("cut-short build not recorded as failed")
 	}
 }
+
+// A lost container comes back with exactly the grants of its definition.
+func TestReconcileLostContainerKeepsVolumes(t *testing.T) {
+	s, e, _ := definitionService(t)
+	ctx := context.Background()
+	addVolume(t, s, "photos")
+	addVolume(t, s, "docs")
+	grants := []VolumeGrant{{Name: "photos", ReadOnly: true}, {Name: "docs"}}
+	if _, err := s.Create(ctx, "alice", Settings{Image: "img", Volumes: grants}, noProgress); err != nil {
+		t.Fatal(err)
+	}
+	delete(e.cs, "deskyard-alice")
+	delete(e.specs, "deskyard-alice")
+	fresh := reopen(t, s)
+	if err := fresh.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	spec := e.specs["deskyard-alice"]
+	photos, okP := volumeMount(spec, "/share/photos")
+	docs, okD := volumeMount(spec, "/share/docs")
+	if !okP || !okD || !photos.ReadOnly || docs.ReadOnly || !spec.NoNewPrivileges {
+		t.Fatalf("recreated with other grants: %+v", spec)
+	}
+}

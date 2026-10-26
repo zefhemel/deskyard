@@ -60,6 +60,12 @@ func TestPrepareModes(t *testing.T) {
 	if got := l.HomeOf("alice"); got != filepath.Join(l.Data, "home", "alice") {
 		t.Fatalf("HomeOf: %s", got)
 	}
+	if st, err := os.Stat(l.Volume); err != nil || !st.IsDir() || st.Mode().Perm() != 0o755 {
+		t.Fatalf("%s: %v %v", l.Volume, err, st)
+	}
+	if got := l.VolumeOf("photos"); got != filepath.Join(l.Data, "volume", "photos") {
+		t.Fatalf("VolumeOf: %s", got)
+	}
 }
 
 func TestInstanceIDStable(t *testing.T) {

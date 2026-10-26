@@ -39,6 +39,20 @@ export interface HostMount {
   readOnly: boolean;
 }
 
+/** A volume granted to an environment, mounted at /share/<name>. */
+export interface VolumeGrant {
+  name: string;
+  readOnly: boolean;
+}
+/** A named volume; environments are those whose definitions grant it. */
+export interface Volume {
+  name: string;
+  created: string;
+  kind: "local";
+  folder: string;
+  environments: VolumeGrant[];
+}
+
 export interface VPNReference { id: string; name: string }
 export interface VPNConnection {
   id: string; name: string; provider: "nordvpn"; country: string;
@@ -58,12 +72,13 @@ export interface VPNStatus {
 export interface VPNRollout { connection: VPNConnection; environments: (VPNReference & {error?: string})[] }
 export interface EnvironmentVPNSettings { vpnConnectionId: string | null; lanExceptions: LANException[] }
 export interface SettingsPatch extends Partial<EnvironmentVPNSettings> {
-  image?: string; memoryBytes?: number; nanoCpus?: number; camera?: string; dockerAccess?: boolean; mounts?: HostMount[];
+  image?: string; memoryBytes?: number; nanoCpus?: number; camera?: string; dockerAccess?: boolean; mounts?: HostMount[]; volumes?: VolumeGrant[];
 }
 
 export interface Settings extends EnvironmentVPNSettings {
   dockerAccess: boolean;
   mounts: HostMount[];
+  volumes: VolumeGrant[];
   memoryBytes: number;
   nanoCpus: number;
   /** The host's virtual camera this environment has to itself; "" for none. */
@@ -319,7 +334,7 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
-    /** The environments a VPN conflict names. */
+    /** The environments a VPN or volume conflict names. */
     readonly environments: VPNReference[] = [],
   ) {
     super(message);
@@ -386,7 +401,7 @@ export const api = {
   environment: (name: string) => request<Environment>("GET", c(name)),
   terminalSessions: (name: string, signal?: AbortSignal) =>
     request<{ sessions: { name: string }[] }>("GET", `${c(name)}/terminal/sessions`, undefined, signal),
-  createEnvironment: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: string[]; dockerAccess: boolean; mounts?: HostMount[] } & EnvironmentVPNSettings) =>
+  createEnvironment: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: string[]; dockerAccess: boolean; mounts?: HostMount[]; volumes?: VolumeGrant[] } & EnvironmentVPNSettings) =>
     request<JobRef>("POST", "/api/environments", body),
   power: (name: string, action: "start" | "stop" | "restart") => request<void>("POST", `${c(name)}/${action}`),
   setMemoryPolicy: (name: string, memoryReclaim: boolean) => request<void>("PUT", `${c(name)}/memory-policy`, { memoryReclaim }),
@@ -444,6 +459,10 @@ export const api = {
   removeImage: (ref: string) => request<void>("DELETE", `/api/images?ref=${enc(ref)}`),
   checkImages: () => request<JobRef>("POST", "/api/images/check"),
   upgradeImage: (ref: string) => request<JobRef>("POST", "/api/images/upgrade", { ref }),
+
+  volumes: () => request<{ volumes: Volume[] }>("GET", "/api/volumes"),
+  createVolume: (name: string) => request<{ volume: Volume; adopted: boolean }>("POST", "/api/volumes", { name }),
+  deleteVolume: (name: string, deleteFiles: boolean) => request<void>("DELETE", `/api/volumes/${enc(name)}?deleteFiles=${deleteFiles}`),
 
   cancelJob: (id: string) => request<void>("POST", `/api/jobs/${enc(id)}/cancel`),
 };

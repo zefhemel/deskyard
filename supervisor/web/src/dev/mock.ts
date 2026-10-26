@@ -7,7 +7,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 import type { CreatedToken, Environment, Job } from "../api.ts";
-import { accounts, activityOf, conflicts, environments, FOLDER, images, processRows, refreshImages, tokens } from "./mock-data.ts";
+import { accounts, activityOf, conflicts, environments, FOLDER, images, processRows, refreshImages, tokens, volumes } from "./mock-data.ts";
 
 
 const GB = 1024 ** 3;
@@ -114,6 +114,20 @@ function host() {
     return { device, taken: !!owner, ...(owner ? { environment: owner.name } : {}) };
   });
   return { cpus: 8, memBytes: 16 * GB, running: running.length, total: list.length, memUsed: running.reduce((s, c) => s + (c.stats?.memBytes ?? 0), 0), cameras, memoryReclaim: { enabled: true } };
+}
+
+function volumeJSON(v: (typeof volumes)[number]) {
+  const users = environments
+    .flatMap((c) => c.settings.volumes.filter((g) => g.name === v.name).map((g) => ({ name: c.name, readOnly: g.readOnly })))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return { ...v, folder: `${FOLDER}/volume/${v.name}`, environments: users };
+}
+
+/** The 400 for a grant of a volume that doesn't exist, as the supervisor answers. */
+function unknownVolume(grants: unknown): string | null {
+  if (!Array.isArray(grants)) return null;
+  const missing = (grants as { name: string }[]).find((g) => !volumes.some((v) => v.name === g.name));
+  return missing ? `no volume ${missing.name}` : null;
 }
 
 // Stats every 5 s and a visitor now and then, so the pages move. Started by
@@ -270,24 +284,51 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   if (path === "/api/validate-name") {
     const name = url.searchParams.get("name") ?? "";
     if (environments.some((c) => c.name === name)) return json(res, 200, { ok: false, error: "an environment with that name already exists", folderExists: false });
-    if (["api", "login", "logout", "assets", "static", "healthz", "environments"].includes(name)) return json(res, 200, { ok: false, error: `${name} is reserved.`, folderExists: false });
+    if (["api", "login", "logout", "assets", "static", "healthz", "environments", "volumes"].includes(name)) return json(res, 200, { ok: false, error: `${name} is reserved.`, folderExists: false });
     return json(res, 200, { ok: true, folderExists: name === "old-project", folder: `${FOLDER}/home/${name}` });
   }
   if (path === "/api/environments" && method === "GET") return json(res, 200, { environments: visible(), conflicts: m.admin ? conflicts : [] });
   if (path === "/api/environments" && method === "POST") {
     const b = await readBody(req);
+    const bad = unknownVolume(b.volumes);
+    if (bad) return json(res, 400, { error: bad });
     const name = String(b.name);
     const img = images.find((i) => i.ref === b.image) ?? images[0]!;
     const c: Environment = {
       name, state: "creating", power: "running", revision: 1, appliedRevision: 0, error: "", conflict: "",
       startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/home/${name}`, image: img.ref, imageTitle: img.title,
-      memoryReclaim: true, imageVersion: img.version, updateAvailable: null, settings: { dockerAccess: b.dockerAccess === true, memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), camera: "", vpnConnectionId: null, lanExceptions: [], mounts: [] },
+      memoryReclaim: true, imageVersion: img.version, updateAvailable: null, settings: { dockerAccess: b.dockerAccess === true, memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), camera: "", vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: (b.volumes as Environment["settings"]["volumes"]) ?? [] },
       vpn: {state:"disabled",changedAt:"0001-01-01T00:00:00Z",exitIpObservedAt:"0001-01-01T00:00:00Z",desiredRevision:0,appliedRevision:0,idle:false},
       access: (b.access as string[]) ?? [], viewers: [], mics: [], cams: [], webcam: false, terminal: true, forwards: [], agents: [], tokens: 0, stats: null,
     };
     environments.push(c);
     changed(c);
     return json(res, 202, job(["Pulling image, 120 of 820 MB", "Pulling image, 540 of 820 MB", "Creating the container", "Starting"], () => setState(c, "running"), name));
+  }
+  if (path.startsWith("/api/volumes") && !m.admin) return json(res, 403, { error: "admins only" });
+  if (path === "/api/volumes" && method === "GET") {
+    return json(res, 200, { volumes: [...volumes].sort((a, b) => a.name.localeCompare(b.name)).map(volumeJSON) });
+  }
+  if (path === "/api/volumes" && method === "POST") {
+    const name = String((await readBody(req)).name ?? "");
+    if (!/^[a-z][a-z0-9-]{0,30}[a-z0-9]$/.test(name)) return json(res, 400, { error: "Use 2–32 lowercase letters, digits and dashes, starting with a letter." });
+    if (["api", "login", "logout", "assets", "static", "healthz", "environments", "volumes"].includes(name)) return json(res, 400, { error: `${name} is reserved` });
+    if (volumes.some((v) => v.name === name)) return json(res, 409, { error: "a volume with that name already exists" });
+    const v = { name, created: new Date().toISOString(), kind: "local" as const };
+    volumes.push(v);
+    // "old-photos" stands in for a folder kept by an earlier delete.
+    return json(res, 201, { volume: volumeJSON(v), adopted: name === "old-photos" });
+  }
+  const vol = /^\/api\/volumes\/([^/]+)$/.exec(path);
+  if (vol?.[1] && method === "DELETE") {
+    const v = volumes.find((x) => x.name === vol[1]);
+    if (!v) return json(res, 404, { error: "no such volume" });
+    const users = volumeJSON(v).environments;
+    if (users.length) {
+      return json(res, 409, { error: `${v.name} is used by ${users.map((u) => u.name).join(", ")}`, environments: users.map((u) => ({ id: u.name, name: u.name })) });
+    }
+    volumes.splice(volumes.indexOf(v), 1);
+    return json(res, 204);
   }
   if (path === "/api/accounts" && method === "GET") {
     return json(res, 200, m.admin ? accounts.map(({ password: _, ...a }) => a) : accounts.map((a) => ({ username: a.username })));
@@ -368,6 +409,9 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   }
   if (sub === "" && method === "PATCH") {
     const b = await readBody(req);
+    const current = c.settings.volumes;
+    const bad = unknownVolume(Array.isArray(b.volumes) ? (b.volumes as { name: string }[]).filter((g) => !current.some((x) => x.name === g.name)) : null);
+    if (bad) return json(res, 400, { error: bad });
     c.revision++;
     changed(c);
     return json(res, 202, job(["Recreating the container", "Starting"], () => {
@@ -376,6 +420,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
       if (typeof b.nanoCpus === "number") c.settings.nanoCpus = b.nanoCpus;
       if (typeof b.dockerAccess === "boolean") c.settings.dockerAccess = b.dockerAccess;
       if (Array.isArray(b.mounts)) c.settings.mounts = b.mounts as Environment["settings"]["mounts"];
+      if (Array.isArray(b.volumes)) c.settings.volumes = b.volumes as Environment["settings"]["volumes"];
       if (typeof b.image === "string") c.image = b.image;
       if (typeof b.camera === "string") {
         c.settings.camera = b.camera;

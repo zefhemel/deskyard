@@ -70,6 +70,10 @@ func (s *Server) routes() {
 	h("POST /api/images/check", s.handleCheckImages)
 	h("POST /api/images/upgrade", s.handleUpgradeImage)
 
+	h("GET /api/volumes", s.handleListVolumes)
+	h("POST /api/volumes", s.handleCreateVolume)
+	h("DELETE /api/volumes/{name}", s.handleDeleteVolume)
+
 	m.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such API route")
 	})

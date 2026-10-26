@@ -6,6 +6,8 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -438,5 +440,172 @@ func TestRemoveKeepingFilesThenCreateReusesHome(t *testing.T) {
 	}
 	if _, err := os.Stat(kept); err != nil || second.Revision != 1 || !second.Created.After(first.Created) || second.Container.Env[TokenEnv] == first.Container.Env[TokenEnv] {
 		t.Fatalf("re-created: %+v %v", second, err)
+	}
+}
+
+// addVolume adds the volume name with its folder, as CreateVolume would.
+func addVolume(t *testing.T, s *Service, name string) {
+	t.Helper()
+	if err := os.MkdirAll(s.Layout.VolumeOf(name), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Vols.Add(Volume{Name: name, Created: time.Now().UTC(), Kind: VolumeLocal}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// volumeMount is the mount of target in spec.
+func volumeMount(spec engine.ContainerSpec, target string) (engine.Mount, bool) {
+	for _, m := range spec.Mounts {
+		if m.Target == target {
+			return m, true
+		}
+	}
+	return engine.Mount{}, false
+}
+
+func TestCreateContainerMountsVolumes(t *testing.T) {
+	s, eng := mountService(t)
+	ctx := context.Background()
+	addVolume(t, s, "photos")
+	addVolume(t, s, "docs")
+	grants := []VolumeGrant{{Name: "photos", ReadOnly: true}, {Name: "docs"}}
+	if err := s.seed(ctx, "alice", Settings{Image: "img", Volumes: grants}); err != nil {
+		t.Fatal(err)
+	}
+	spec := eng.specs["deskyard-alice"]
+	want := []engine.Mount{
+		{Source: s.Layout.HomeOf("alice"), Target: "/workspace", MustExist: true},
+		{Source: s.Layout.VolumeOf("photos"), Target: "/share/photos", ReadOnly: true, MustExist: true},
+		{Source: s.Layout.VolumeOf("docs"), Target: "/share/docs", MustExist: true},
+	}
+	if !slices.Equal(spec.Mounts, want) || !spec.NoNewPrivileges {
+		t.Fatalf("mounts %+v, no new privileges %v", spec.Mounts, spec.NoNewPrivileges)
+	}
+	if c, _ := s.Get(ctx, "alice"); !slices.Equal(c.Settings.Volumes, grants) {
+		t.Fatalf("settings: %+v", c.Settings)
+	}
+	// Without host folders or volumes, privileges aren't restricted.
+	if err := s.seed(ctx, "bob", Settings{Image: "img"}); err != nil {
+		t.Fatal(err)
+	}
+	if eng.specs["deskyard-bob"].NoNewPrivileges {
+		t.Fatal("no new privileges without host folders or volumes")
+	}
+}
+
+// A grant of a volume missing from volumes.json, as a hand-edited file can
+// have, doesn't stop the supervisor: it is the environment's error.
+func TestUnknownGrantIsEnvironmentError(t *testing.T) {
+	s, _ := mountService(t)
+	ctx := context.Background()
+	if err := s.seed(ctx, "alice", Settings{Image: "img"}); err != nil {
+		t.Fatal(err)
+	}
+	s.Defs.checkGrants = nil // as a hand edit, past the check
+	if _, err := s.Defs.Update("alice", func(d *Definition) error {
+		d.Volumes = []VolumeGrant{{Name: "ghost"}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fresh := reopen(t, s)
+	err := fresh.Start(ctx, "alice")
+	if err == nil || !strings.Contains(err.Error(), "uses volume ghost, which doesn't exist") {
+		t.Fatalf("start: %v", err)
+	}
+	if c, _ := fresh.Get(ctx, "alice"); c.Error != err.Error() || c.Running() {
+		t.Fatalf("environment: %+v", c)
+	}
+	// Taking the grant back is allowed, and clears the error.
+	if _, err := fresh.Defs.Update("alice", func(d *Definition) error {
+		d.Volumes = nil
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := fresh.Start(ctx, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := fresh.Get(ctx, "alice"); c.Error != "" {
+		t.Fatalf("error kept: %q", c.Error)
+	}
+}
+
+// Taking back a grant whose folder is missing, through a settings change,
+// clears its error at once rather than at the next reconcile pass.
+func TestDroppingGrantClearsFolderError(t *testing.T) {
+	s, eng, _ := definitionService(t)
+	ctx := context.Background()
+	addVolume(t, s, "photos")
+	for _, withContainer := range []bool{true, false} {
+		if _, err := s.Create(ctx, "alice", Settings{Image: "img", Volumes: []VolumeGrant{{Name: "photos"}}}, noProgress); err != nil {
+			t.Fatal(err)
+		}
+		if !withContainer {
+			delete(eng.cs, "deskyard-alice")
+			delete(eng.specs, "deskyard-alice")
+		}
+		if err := os.Remove(s.Layout.VolumeOf("photos")); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.checkFolders("alice"); err == nil {
+			t.Fatal("no folder error")
+		}
+		if c, _ := s.Get(ctx, "alice"); c.Error == "" {
+			t.Fatal("folder error not shown")
+		}
+		c, err := s.Recreate(ctx, "alice", Settings{Image: "img"}, noProgress)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.Error != "" {
+			t.Fatalf("with container %v: error kept: %q", withContainer, c.Error)
+		}
+		if err := os.Mkdir(s.Layout.VolumeOf("photos"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Remove(ctx, "alice", true); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// A missing volume folder blocks a start, which never makes one, and the
+// error clears once the folder is back.
+func TestStartRefusesMissingVolumeFolder(t *testing.T) {
+	s, eng, _ := definitionService(t)
+	ctx := context.Background()
+	addVolume(t, s, "photos")
+	if _, err := s.Create(ctx, "alice", Settings{Image: "img", Volumes: []VolumeGrant{{Name: "photos"}}}, noProgress); err != nil {
+		t.Fatal(err)
+	}
+	delete(eng.cs, "deskyard-alice")
+	delete(eng.specs, "deskyard-alice")
+	folder := s.Layout.VolumeOf("photos")
+	if err := os.Remove(folder); err != nil {
+		t.Fatal(err)
+	}
+	err := s.Start(ctx, "alice")
+	if err == nil || !strings.Contains(err.Error(), "alice uses volume photos, whose folder "+folder+" is missing") {
+		t.Fatalf("start: %v", err)
+	}
+	if _, created := eng.specs["deskyard-alice"]; created {
+		t.Fatal("a container was created without the volume folder")
+	}
+	if _, err := os.Stat(folder); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("start made the volume folder")
+	}
+	if c, _ := s.Get(ctx, "alice"); c.Error != err.Error() {
+		t.Fatalf("error not shown: %+v", c)
+	}
+	if err := os.Mkdir(folder, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Start(ctx, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := s.Get(ctx, "alice"); c.Error != "" || !c.Running() {
+		t.Fatalf("environment: %+v", c)
 	}
 }

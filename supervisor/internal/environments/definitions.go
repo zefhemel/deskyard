@@ -47,6 +47,13 @@ type Limits struct {
 	NanoCPUs    int64 `json:"nanoCPUs"`    // 0: no limit
 }
 
+// VolumeGrant gives an environment a named volume, mounted at
+// /share/<name>. The definition is the only record of who has which volume.
+type VolumeGrant struct {
+	Name     string `json:"name"`
+	ReadOnly bool   `json:"readOnly"`
+}
+
 type Network struct {
 	Kind          string          `json:"kind"`
 	Connection    string          `json:"connection,omitempty"` // a saved VPN connection's ID, for kind vpn
@@ -57,13 +64,14 @@ type Network struct {
 // environments.json. It is the only authority: containers are built from it
 // and their labels are never read back as configuration.
 type Definition struct {
-	Name     string      `json:"name"`
-	Created  time.Time   `json:"created"`
-	Revision uint64      `json:"revision"` // bumped by container-affecting changes only
-	Image    ImageRef    `json:"image"`
-	Limits   Limits      `json:"limits"`
-	Network  Network     `json:"network"`
-	Mounts   []HostMount `json:"mounts"`
+	Name     string        `json:"name"`
+	Created  time.Time     `json:"created"`
+	Revision uint64        `json:"revision"` // bumped by container-affecting changes only
+	Image    ImageRef      `json:"image"`
+	Limits   Limits        `json:"limits"`
+	Network  Network       `json:"network"`
+	Mounts   []HostMount   `json:"mounts"`
+	Volumes  []VolumeGrant `json:"volumes"`
 	// DockerAccess and Camera are as in Settings.
 	DockerAccess  bool   `json:"dockerAccess"`
 	Camera        string `json:"camera"`
@@ -82,16 +90,19 @@ func (d Definition) Settings() Settings {
 		VPNConnectionID: d.Network.Connection,
 		LANExceptions:   d.Network.LANExceptions,
 		Mounts:          d.Mounts,
+		Volumes:         d.Volumes,
 		DockerAccess:    d.DockerAccess,
 	})
 }
 
 // ContainerAffecting reports whether a and b differ in anything their
-// container is built from: image, limits, network, mounts, Docker access or
-// camera. Memory reclaim and power are applied without a new container.
+// container is built from: image, limits, network, mounts, volume grants,
+// Docker access or camera. Memory reclaim and power are applied without a new
+// container.
 func ContainerAffecting(a, b Definition) bool {
 	return a.Image != b.Image || a.Limits != b.Limits || !sameNetwork(a.Network, b.Network) ||
-		!slices.Equal(a.Mounts, b.Mounts) || a.DockerAccess != b.DockerAccess || a.Camera != b.Camera
+		!slices.Equal(a.Mounts, b.Mounts) || !slices.Equal(a.Volumes, b.Volumes) ||
+		a.DockerAccess != b.DockerAccess || a.Camera != b.Camera
 }
 
 func sameNetwork(a, b Network) bool {
@@ -103,6 +114,7 @@ func sameNetwork(a, b Network) bool {
 
 func cloneSettings(s Settings) Settings {
 	s.Mounts = slices.Clone(s.Mounts)
+	s.Volumes = slices.Clone(s.Volumes)
 	s.LANExceptions = slices.Clone(s.LANExceptions)
 	for i := range s.LANExceptions {
 		s.LANExceptions[i].Ports = slices.Clone(s.LANExceptions[i].Ports)
@@ -111,10 +123,13 @@ func cloneSettings(s Settings) Settings {
 }
 
 func (d Definition) clone() Definition {
-	s := cloneSettings(Settings{Mounts: d.Mounts, LANExceptions: d.Network.LANExceptions})
-	d.Mounts, d.Network.LANExceptions = s.Mounts, s.LANExceptions
+	s := cloneSettings(Settings{Mounts: d.Mounts, Volumes: d.Volumes, LANExceptions: d.Network.LANExceptions})
+	d.Mounts, d.Volumes, d.Network.LANExceptions = s.Mounts, s.Volumes, s.LANExceptions
 	if d.Mounts == nil {
 		d.Mounts = []HostMount{}
+	}
+	if d.Volumes == nil {
+		d.Volumes = []VolumeGrant{}
 	}
 	return d
 }
@@ -152,7 +167,10 @@ func (d Definition) validate() error {
 	default:
 		return fmt.Errorf("unknown network kind %q", d.Network.Kind)
 	}
-	return ValidateHostMounts(d.Mounts)
+	if err := ValidateHostMounts(d.Mounts); err != nil {
+		return err
+	}
+	return ValidateVolumeGrants(d.Volumes)
 }
 
 type definitionsFile struct {
@@ -168,6 +186,12 @@ type Definitions struct {
 
 	mu   sync.Mutex
 	defs map[string]Definition // never mutated; replaced on every change
+	// checkGrants, when set, refuses grants of volumes that don't exist. Put
+	// and Update call it with mu held, before saving, with only the grants
+	// the change adds, so an unrelated edit of a definition whose volume went
+	// missing still saves. Volume deletion holds mu (Hold) while it checks
+	// for grants, so the two can't race.
+	checkGrants func(grants []VolumeGrant) error
 }
 
 // LoadDefinitions reads path; a missing file is an empty store. Any invalid
@@ -191,6 +215,11 @@ func LoadDefinitions(path string) (*Definitions, error) {
 		return nil, fmt.Errorf("%s: unsupported version %d (want %d)", path, f.Version, definitionsVersion)
 	}
 	for _, def := range f.Environments {
+		if IsReserved(def.Name) {
+			// A name an upgrade newly reserved (such as "volumes"): stop with
+			// the remedy rather than a bare validation error.
+			return nil, fmt.Errorf("%s: environment %q: the name is now reserved by the supervisor; delete that environment with the previous version, or remove its entry from this file, before upgrading", path, def.Name)
+		}
 		if err := def.validate(); err != nil {
 			return nil, fmt.Errorf("%s: environment %q: %w", path, def.Name, err)
 		}
@@ -228,6 +257,9 @@ func (d *Definitions) Put(def Definition) error {
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if err := d.checkNewGrants(d.defs[def.Name].Volumes, def.Volumes); err != nil {
+		return err
+	}
 	next := make(map[string]Definition, len(d.defs)+1)
 	for name, v := range d.defs {
 		next[name] = v
@@ -256,6 +288,9 @@ func (d *Definitions) Update(name string, change func(*Definition) error) (Defin
 	if err := def.validate(); err != nil {
 		return Definition{}, fmt.Errorf("invalid environment definition: %w", err)
 	}
+	if err := d.checkNewGrants(cur.Volumes, def.Volumes); err != nil {
+		return Definition{}, err
+	}
 	next := make(map[string]Definition, len(d.defs))
 	for n, v := range d.defs {
 		next[n] = v
@@ -265,6 +300,32 @@ func (d *Definitions) Update(name string, change func(*Definition) error) (Defin
 		return Definition{}, err
 	}
 	return def.clone(), nil
+}
+
+// checkNewGrants passes the grants in next that aren't in cur to
+// checkGrants; d.mu is held.
+func (d *Definitions) checkNewGrants(cur, next []VolumeGrant) error {
+	if d.checkGrants == nil {
+		return nil
+	}
+	var added []VolumeGrant
+	for _, g := range next {
+		if !slices.ContainsFunc(cur, func(c VolumeGrant) bool { return c.Name == g.Name }) {
+			added = append(added, g)
+		}
+	}
+	if len(added) == 0 {
+		return nil
+	}
+	return d.checkGrants(added)
+}
+
+// Hold runs fn with every definition, sorted by name, while no definition
+// can change.
+func (d *Definitions) Hold(fn func(defs []Definition) error) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return fn(sortedDefinitions(d.defs))
 }
 
 // Delete removes the definition of name, or returns ErrNotFound.

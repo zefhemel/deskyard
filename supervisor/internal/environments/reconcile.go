@@ -188,7 +188,7 @@ func (s *Service) ReconcileOnce(ctx context.Context) Report {
 		if _, isBusy := busy[def.Name]; isBusy {
 			continue
 		}
-		err := s.checkHome(def.Name)
+		err := s.checkFolders(def.Name)
 		if err == nil {
 			err = s.reconcileOne(ctx, def, claims[def.Name])
 		}

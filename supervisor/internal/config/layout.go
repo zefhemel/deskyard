@@ -14,14 +14,16 @@ import (
 )
 
 // Layout is where the supervisor keeps things in its data folder. The JSON
-// stores (environments.json, accounts.json, tokens.json, networks.json,
-// images.json) sit at the top of Data; the folders below hold the rest.
+// stores (environments.json, volumes.json, accounts.json, tokens.json,
+// networks.json, images.json) sit at the top of Data; the folders below hold
+// the rest.
 type Layout struct {
 	Data   string
 	Secret string // 0700: session key, proxy tokens, VPN credentials, TLS storage
 	State  string // 0700: instance ID, recovery and network journals, VPN scratch
 	Cache  string // disposable: Selkies web clients extracted from images
 	Home   string // home/<name>: each environment's /workspace
+	Volume string // volume/<name>: each named volume's data
 }
 
 func NewLayout(data string) Layout {
@@ -31,11 +33,15 @@ func NewLayout(data string) Layout {
 		State:  filepath.Join(data, "state"),
 		Cache:  filepath.Join(data, "cache"),
 		Home:   filepath.Join(data, "home"),
+		Volume: filepath.Join(data, "volume"),
 	}
 }
 
 // HomeOf is the environment's workspace folder.
 func (l Layout) HomeOf(name string) string { return filepath.Join(l.Home, name) }
+
+// VolumeOf is the named volume's data folder.
+func (l Layout) VolumeOf(name string) string { return filepath.Join(l.Volume, name) }
 
 // Prepare creates the layout's folders. secret/ and state/ are made
 // owner-only even when they already exist with wider modes.
@@ -48,7 +54,7 @@ func (l Layout) Prepare() error {
 			return err
 		}
 	}
-	for _, dir := range []string{l.Cache, l.Home} {
+	for _, dir := range []string{l.Cache, l.Home, l.Volume} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}

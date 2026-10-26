@@ -585,3 +585,52 @@ func TestReservationStatErrorReleasesSlot(t *testing.T) {
 	}
 	release()
 }
+
+// Grant changes recreate the environment; a failed recreation brings the old
+// container back with its mounts, and the definition stays ahead. A grant of
+// a volume whose folder is missing is refused before anything is touched.
+func TestRecreateKeepsVolumesAndRollsBack(t *testing.T) {
+	s, eng := mountService(t)
+	ctx := context.Background()
+	addVolume(t, s, "photos")
+	if err := s.seed(ctx, "alice", Settings{Image: "img"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.Start(ctx, "deskyard-alice"); err != nil {
+		t.Fatal(err)
+	}
+	set := Settings{Image: "img", Volumes: []VolumeGrant{{Name: "photos", ReadOnly: true}}}
+	c, err := s.Recreate(ctx, "alice", set, noProgress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, ok := volumeMount(eng.specs["deskyard-alice"], "/share/photos")
+	if !ok || !m.ReadOnly || c.Revision != 2 || c.AppliedRevision != 2 || len(c.Settings.Volumes) != 1 {
+		t.Fatalf("grant not applied: %+v %+v", m, c)
+	}
+	eng.failImage = "broken"
+	set = Settings{Image: "broken", Volumes: []VolumeGrant{{Name: "photos"}}}
+	if _, err := s.Recreate(ctx, "alice", set, noProgress); err == nil {
+		t.Fatal("expected failure")
+	}
+	c, err = s.Get(ctx, "alice")
+	if err != nil || c.Revision != 3 || c.AppliedRevision != 2 || c.Error == "" || c.Settings.Volumes[0].ReadOnly {
+		t.Fatalf("definition not kept ahead: %+v %v", c, err)
+	}
+	if m, ok := volumeMount(eng.specs["deskyard-alice"], "/share/photos"); !ok || !m.ReadOnly || !c.Running() {
+		t.Fatalf("old container not restored: %+v %+v", m, c)
+	}
+	eng.failImage = ""
+	addVolume(t, s, "docs")
+	if err := os.Remove(s.Layout.VolumeOf("docs")); err != nil {
+		t.Fatal(err)
+	}
+	stops := eng.stops
+	set = Settings{Image: "img", Volumes: []VolumeGrant{{Name: "photos"}, {Name: "docs"}}}
+	if _, err := s.Recreate(ctx, "alice", set, noProgress); err == nil || !strings.Contains(err.Error(), "folder") {
+		t.Fatalf("granted a volume without its folder: %v", err)
+	}
+	if c, _ := s.Get(ctx, "alice"); eng.stops != stops || !c.Running() || c.Revision != 3 || len(c.Settings.Volumes) != 1 {
+		t.Fatalf("refused grant disrupted the environment: %+v", c)
+	}
+}

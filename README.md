@@ -232,7 +232,7 @@ environment runs as a container `deskyard-<name>` on its own network
 `deskyard-<name>`, so environments can't reach each other.
 
 The supervisor keeps each environment's definition (image, limits, network,
-host folders, Docker access, camera, memory preference and whether it should
+host folders, volume grants, Docker access, camera, memory preference and whether it should
 run) in `environments.json`, not on its container. The container is
 disposable: if it is lost, the supervisor recreates it from the definition
 with the same name, home folder, access grants, tokens and settings. A stopped
@@ -356,6 +356,40 @@ Removing a mount never deletes its source. Removing an environment only deletes
 its private workspace when requested; independently mounted folders elsewhere
 are left alone. Mounted host folders are outside the supervisor workspace browser. The supervisor's Files and Download views still browse only
 `/workspace`; use desktop apps or the CLI for mounted folders.
+
+### Volumes
+
+A volume is a named folder that the supervisor keeps in its data folder
+(`<data folder>/volume/<name>`) and that admins share between selected
+environments. Create one on the **Volumes** page, then grant it to an
+environment under **Settings → Volumes**: choose the volume and whether it is
+read-only (new grants default to read-write). The environment sees it at
+`/share/<volume>`; the path can't be changed. Environments without a grant
+have no `/share/<volume>`. Read-only grants are enforced by the kernel
+(recursively read-only bind mounts), and environments with volumes disable
+privilege gains through setuid executables and file capabilities, as with
+host folders.
+
+Grant changes apply by recreating the container, like other settings: saving
+restarts a running environment with the new mounts, and a failed recreation
+restores the old container. A stopped environment picks the change up at its
+next start. An environment can have up to 16 volumes.
+
+Volume names follow the environment name rules and can't be changed. A new
+volume's folder is owned by the desktop user (UID 1000) with mode 0755, so
+every environment writes as the same user. If `volume/<name>` already exists,
+for example kept from a deleted volume or restored from a backup, creating the
+volume adopts it untouched and the page says so.
+
+Deleting a volume is refused while any environment's settings grant it, running
+or stopped, and the refusal names those environments; remove the grants first.
+It is also refused while a container still mounts it because a grant's removal
+hasn't been applied yet. Deleting keeps the folder unless you tick "Delete the
+files". Removing an environment, even with its files, never touches volumes.
+If a granted volume's folder goes missing, the environment reports an error and
+doesn't start until the folder is back; the supervisor never recreates it empty.
+Volumes are plain folders, so back them up with host tools like homes. There is
+no CLI for volumes; they are managed in the web UI or through `/api/volumes`.
 
 ### Reclaiming memory
 
@@ -660,12 +694,14 @@ Environment variables of the supervisor:
   tokens.json         access tokens (hashed)
   networks.json       saved VPN connections (no credentials)
   images.json         the image catalog
+  volumes.json        named volumes (grants live in environments.json)
   secret/             session key, per-environment proxy tokens (proxy/<name>),
                       VPN service credentials (vpn/<connection-id>/), TLS certificates (certmagic/)
   state/              this supervisor's instance ID, replacement records (recovery/<name>.json),
                       VPN network transitions (network/transitions.json), VPN runtime scratch (vpn/)
   cache/              Selkies web clients extracted from images; safe to delete
   home/<name>/        each environment's /workspace, owned by UID 1000
+  volume/<name>/      each volume's files, shared at /share/<name>
 ```
 
 JSON files are written atomically with mode 0600, and existing `accounts.json`

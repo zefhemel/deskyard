@@ -9,6 +9,7 @@ import { Button, Check, ErrorText, Field, Note, Seg } from "../../components/ui.
 import { useLive } from "../../live.tsx";
 import { useFetch } from "../../lib/use-fetch.ts";
 import { HostMountFields } from "../../components/host-mounts.tsx";
+import { VolumeGrantFields } from "../../components/volume-grants.tsx";
 import { UPGRADE_NOTE } from "../../dialogs/upgrade.tsx";
 
 export function SettingsTab({ environment: c }: { environment: Environment }) {
@@ -25,6 +26,9 @@ export function SettingsTab({ environment: c }: { environment: Environment }) {
   const [dockerAccess, setDockerAccess] = useState(c.settings.dockerAccess ?? false);
   const savedMounts = c.settings.mounts ?? [];
   const [mounts, setMounts] = useState(savedMounts);
+  const volumes = useFetch(() => api.volumes(), "volumes");
+  const savedVolumes = c.settings.volumes ?? [];
+  const [grants, setGrants] = useState(savedVolumes);
   const { host } = useLive();
   const run = useJob(() => {
     notify(`${c.name}'s settings are saved`);
@@ -36,7 +40,7 @@ export function SettingsTab({ environment: c }: { environment: Environment }) {
     if (saving) progressPanel.current?.scrollIntoView({ block: "nearest" });
   }, [saving]);
 
-  const draft = { image, dockerAccess, memoryBytes: memory, nanoCpus: cpus, camera, vpnConnectionId: vpnID, lan, mounts };
+  const draft = { image, dockerAccess, memoryBytes: memory, nanoCpus: cpus, camera, vpnConnectionId: vpnID, lan, mounts, volumes: grants };
   const changed = environmentSettingsChanged(c, draft);
   const save = () => {
     try {
@@ -88,6 +92,7 @@ export function SettingsTab({ environment: c }: { environment: Environment }) {
           </Field>
           <DockerAccessField value={dockerAccess} onChange={setDockerAccess} />
           <HostMountFields mounts={mounts} onChange={setMounts} />
+          {volumes.data ? <VolumeGrantFields grants={grants} volumes={volumes.data.volumes} onChange={setGrants} /> : <ErrorText error={volumes.error} />}
         </fieldset>
         {changed && (
           <Note>
@@ -113,6 +118,7 @@ export function SettingsTab({ environment: c }: { environment: Environment }) {
                 setLAN(exceptionRows(c.settings.lanExceptions ?? []));
                 setVPNError(null);
                 setMounts(savedMounts);
+                setGrants(savedVolumes);
               }}
             >
               Undo changes

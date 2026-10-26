@@ -1,4 +1,4 @@
-import type { EnvironmentVPNSettings, LANException, VPNInput, VPNStatus, VPNUpdate, VPNReference, Job, Settings, SettingsPatch, HostMount } from "../api.ts";
+import type { EnvironmentVPNSettings, LANException, VPNInput, VPNStatus, VPNUpdate, VPNReference, Job, Settings, SettingsPatch, HostMount, VolumeGrant } from "../api.ts";
 
 export interface ConnectionForm {
   name: string;
@@ -134,6 +134,7 @@ export interface EnvironmentSettingsDraft {
   vpnConnectionId: string;
   lan: ExceptionRow[];
   mounts?: HostMount[];
+  volumes?: VolumeGrant[];
 }
 type SavedEnvironmentSettings = { image: string; settings: Settings };
 function environmentSettingsPatch(saved: SavedEnvironmentSettings, draft: EnvironmentSettingsDraft): SettingsPatch {
@@ -148,6 +149,7 @@ function environmentSettingsPatch(saved: SavedEnvironmentSettings, draft: Enviro
   if (draft.dockerAccess !== undefined && draft.dockerAccess !== (saved.settings.dockerAccess ?? false)) patch.dockerAccess = draft.dockerAccess;
   if (draft.camera !== saved.settings.camera) patch.camera = draft.camera;
   if (draft.mounts !== undefined && JSON.stringify(draft.mounts) !== JSON.stringify(saved.settings.mounts ?? [])) patch.mounts = draft.mounts;
+  if (draft.volumes !== undefined && JSON.stringify(draft.volumes) !== JSON.stringify(saved.settings.volumes ?? [])) patch.volumes = draft.volumes;
   return patch;
 }
 export function environmentSettingsChanged(saved: SavedEnvironmentSettings, draft: EnvironmentSettingsDraft): boolean {

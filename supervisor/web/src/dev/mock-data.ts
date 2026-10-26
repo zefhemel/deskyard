@@ -45,7 +45,7 @@ function environment(c: Partial<Environment> & { name: string }): Environment {
     memoryReclaim: true,
     updateAvailable: null,
     vpn: {state:"disabled",changedAt:"0001-01-01T00:00:00Z",exitIpObservedAt:"0001-01-01T00:00:00Z",desiredRevision:0,appliedRevision:0,idle:false},
-    settings: { dockerAccess: false, memoryBytes: 0, nanoCpus: 0, camera: "", vpnConnectionId: null, lanExceptions: [], mounts: [] },
+    settings: { dockerAccess: false, memoryBytes: 0, nanoCpus: 0, camera: "", vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: [] },
     access: [],
     viewers: [],
     mics: [],
@@ -66,7 +66,7 @@ export const environments: Environment[] = [
     startedAt: iso(3 * DAY),
     imageVersion: "2026.10.15",
     updateAvailable: "2026.10.22",
-    settings: { dockerAccess: false, memoryBytes: 2 * GB, nanoCpus: 2e9, camera: "", vpnConnectionId: null, lanExceptions: [], mounts: [] },
+    settings: { dockerAccess: false, memoryBytes: 2 * GB, nanoCpus: 2e9, camera: "", vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: [{ name: "photos", readOnly: false }] },
     access: ["anna"],
     viewers: ["zef", "anna"],
     forwards: [
@@ -77,11 +77,18 @@ export const environments: Environment[] = [
     tokens: 2,
     stats: { cpuPercent: 34, memBytes: 1.4 * GB, memLimit: 2 * GB },
   }),
-  environment({ name: "research", startedAt: iso(5 * HOUR), access: ["anna", "sam"], viewers: ["anna"], stats: { cpuPercent: 8, memBytes: 0.9 * GB, memLimit: 16 * GB } }),
+  environment({
+    name: "research",
+    startedAt: iso(5 * HOUR),
+    settings: { dockerAccess: false, memoryBytes: 0, nanoCpus: 0, camera: "", vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: [{ name: "photos", readOnly: true }] },
+    access: ["anna", "sam"],
+    viewers: ["anna"],
+    stats: { cpuPercent: 8, memBytes: 0.9 * GB, memLimit: 16 * GB },
+  }),
   environment({
     name: "build-bot",
     startedAt: iso(12 * 60 * 1000),
-    settings: { dockerAccess: false, memoryBytes: 4 * GB, nanoCpus: 4e9, camera: "", vpnConnectionId: null, lanExceptions: [], mounts: [] },
+    settings: { dockerAccess: false, memoryBytes: 4 * GB, nanoCpus: 4e9, camera: "", vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: [] },
     agents: [agent("a terminal", "", true, 1)],
     stats: { cpuPercent: 91, memBytes: 3.1 * GB, memLimit: 4 * GB },
   }),
@@ -111,6 +118,12 @@ export const environments: Environment[] = [
   }),
   // Defined but without a container: it's built on start.
   environment({ name: "archive", state: "stopped", power: "stopped", startedAt: "", appliedRevision: 0 }),
+];
+
+/** Volumes as in volumes.json; who uses each comes from the environments' grants. */
+export const volumes: { name: string; created: string; kind: "local" }[] = [
+  { name: "photos", created: iso(20 * DAY), kind: "local" },
+  { name: "datasets", created: iso(4 * DAY), kind: "local" },
 ];
 
 /** Containers of this supervisor's that it can't match to a definition. */

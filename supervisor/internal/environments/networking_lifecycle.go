@@ -89,6 +89,11 @@ func (n *Networking) recreate(ctx context.Context, name string, set Settings, pr
 	if err = n.service.checkHostSources(ctx, set.Mounts, set.DockerAccess); err != nil {
 		return Environment{}, err
 	}
+	// The old container is stopped below: refuse a change it couldn't be
+	// replaced by while it is still running.
+	if err = n.service.missingFolder(name, set.Volumes); err != nil {
+		return Environment{}, err
+	}
 	img, err := n.service.EnsureImage(ctx, set.Image, progress)
 	if err != nil {
 		return Environment{}, err
@@ -158,6 +163,8 @@ func (n *Networking) recreate(ctx context.Context, name string, set Settings, pr
 		}
 		return Environment{}, err
 	}
+	// A folder error of the old grants goes with them.
+	_ = n.service.checkFolders(name)
 	if err = n.apply(ctx, r, progress); err != nil {
 		return Environment{}, err
 	}
@@ -368,7 +375,7 @@ func (n *Networking) finishRemove(ctx context.Context, r networkTransition) erro
 		return errors.New("could not remove environment network")
 	}
 	if r.DeleteFiles {
-		if err := s.deleteFolder(ctx, r.Name); err != nil {
+		if err := s.removeTree(ctx, s.Layout.Home, r.Name); err != nil {
 			return err
 		}
 	}

@@ -18,6 +18,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -67,6 +68,7 @@ type Settings struct {
 	VPNConnectionID string
 	LANExceptions   []vpn.Exception
 	Mounts          []HostMount
+	Volumes         []VolumeGrant // mounted at ShareRoot/<volume>
 	DockerAccess    bool
 }
 
@@ -116,6 +118,7 @@ type Service struct {
 	Cfg        Config
 	Layout     config.Layout // from Cfg.DataDir
 	Defs       *Definitions  // environments.json
+	Vols       *Volumes      // volumes.json
 	// Instance is this supervisor's ID (config.InstanceID). Only containers
 	// and networks labelled with it are considered.
 	Instance string
@@ -135,36 +138,48 @@ type Service struct {
 	// the removal's.
 	Removed func(name string) error
 
-	mu        sync.Mutex
-	busy      map[string]string // name → transient state
-	errs      map[string]string // name → why its last change failed
-	homeErrs  map[string]string // name → its missing home folder, shown over errs
-	failed    map[string]bool   // names without a container whose build failed
-	conflicts []Conflict        // found by the latest reconcile pass
-	repins    []Repin           // since the latest reconcile pass
-	imgInfo   map[string]engine.Image
-	camMu     sync.Mutex // held while a camera is checked and given
+	mu         sync.Mutex
+	busy       map[string]string // name → transient state
+	errs       map[string]string // name → why its last change failed
+	folderErrs map[string]string // name → its missing home or volume folder, shown over errs
+	failed     map[string]bool   // names without a container whose build failed
+	conflicts  []Conflict        // found by the latest reconcile pass
+	repins     []Repin           // since the latest reconcile pass
+	imgInfo    map[string]engine.Image
+	camMu      sync.Mutex // held while a camera is checked and given
+	// volMu serialises creating and deleting volumes, folders included. Lock
+	// order: volMu, then Defs.mu, then Vols.mu.
+	volMu sync.Mutex
 }
 
-// New makes a service with no definitions yet (saved to environments.json in
-// the data folder once there are) and no instance ID. Open loads them.
+// New makes a service with no definitions or volumes yet (saved to
+// environments.json and volumes.json in the data folder once there are) and
+// no instance ID. Open loads them.
 func New(e engine.Engine, cfg Config, log *slog.Logger) *Service {
 	layout := config.NewLayout(cfg.DataDir)
-	return &Service{Eng: e, Cfg: cfg, Layout: layout, Log: log,
+	s := &Service{Eng: e, Cfg: cfg, Layout: layout, Log: log,
 		Defs: &Definitions{path: definitionsPath(layout), defs: map[string]Definition{}},
-		busy: map[string]string{}, errs: map[string]string{}, homeErrs: map[string]string{},
+		Vols: &Volumes{path: volumesPath(layout), vols: map[string]Volume{}},
+		busy: map[string]string{}, errs: map[string]string{}, folderErrs: map[string]string{},
 		failed: map[string]bool{}, imgInfo: map[string]engine.Image{}}
+	s.Defs.checkGrants = s.checkGrants
+	return s
 }
 
-// Open makes the service of supervisor instance, with the definitions saved
-// in the data folder.
+// Open makes the service of supervisor instance, with the definitions and
+// volumes saved in the data folder.
 func Open(e engine.Engine, cfg Config, instance string, log *slog.Logger) (*Service, error) {
 	s := New(e, cfg, log)
 	defs, err := LoadDefinitions(definitionsPath(s.Layout))
 	if err != nil {
 		return nil, err
 	}
-	s.Defs, s.Instance = defs, instance
+	vols, err := LoadVolumes(volumesPath(s.Layout))
+	if err != nil {
+		return nil, err
+	}
+	defs.checkGrants = s.checkGrants
+	s.Defs, s.Vols, s.Instance = defs, vols, instance
 	return s, nil
 }
 
@@ -257,12 +272,12 @@ func (s *Service) clearError(name, msg string) {
 	}
 }
 
-// errorOf is name's error: a missing home folder over why its last change
-// failed, which is kept for when the folder is back.
+// errorOf is name's error: a missing home or volume folder over why its last
+// change failed, which is kept for when the folder is back.
 func (s *Service) errorOf(name string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if msg := s.homeErrs[name]; msg != "" {
+	if msg := s.folderErrs[name]; msg != "" {
 		return msg
 	}
 	return s.errs[name]
@@ -425,23 +440,43 @@ func (s *Service) missingHome(name string) error {
 	return fmt.Errorf("%s's home folder %s is missing", name, s.Layout.HomeOf(name))
 }
 
-// checkHome records a missing home folder as name's error, and clears that
-// error once the folder is back. It is kept apart from the error of a failed
-// change, which shows again once the folder is back. Only creation makes a
-// home.
-func (s *Service) checkHome(name string) error {
-	err := s.missingHome(name)
-	_, defined := s.Defs.Get(name)
-	exists := s.FolderExists(name)
+// missingVolume is the error of the first of grants, name's, whose volume
+// isn't in volumes.json or whose folder is missing; nil when there is none.
+func (s *Service) missingVolume(name string, grants []VolumeGrant) error {
+	for _, g := range grants {
+		if _, ok := s.Vols.Get(g.Name); !ok {
+			return fmt.Errorf("%s uses volume %s, which doesn't exist", name, g.Name)
+		}
+		folder := s.Layout.VolumeOf(g.Name)
+		if st, err := os.Stat(folder); err != nil || !st.IsDir() {
+			return fmt.Errorf("%s uses volume %s, whose folder %s is missing", name, g.Name, folder)
+		}
+	}
+	return nil
+}
+
+// missingFolder is name's missing home folder, or else the first volume
+// of grants missing as missingVolume has it; nil when there is none.
+func (s *Service) missingFolder(name string, grants []VolumeGrant) error {
+	if !s.FolderExists(name) {
+		return s.missingHome(name)
+	}
+	return s.missingVolume(name, grants)
+}
+
+// checkFolders records a missing home or granted volume folder as name's
+// error, and clears that error once the folder is back. It is kept apart from
+// the error of a failed change, which shows again once the folder is back.
+// Only creation makes a home, and only CreateVolume a volume folder.
+func (s *Service) checkFolders(name string) error {
+	def, defined := s.Defs.Get(name)
+	err := s.missingFolder(name, def.Volumes)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if exists || !defined {
-		delete(s.homeErrs, name)
+	if err == nil || !defined {
+		delete(s.folderErrs, name)
 	} else {
-		s.homeErrs[name] = err.Error()
-	}
-	if exists {
-		return nil
+		s.folderErrs[name] = err.Error()
 	}
 	return err
 }
@@ -480,7 +515,7 @@ func (s *Service) forget(name string) error {
 	}
 	s.setError(name, "")
 	s.mu.Lock()
-	delete(s.homeErrs, name)
+	delete(s.folderErrs, name)
 	s.mu.Unlock()
 	if err := os.Remove(s.tokenPath(name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
@@ -526,7 +561,8 @@ func withSettings(def Definition, set Settings, image string) Definition {
 	if set.VPNConnectionID != "" {
 		next.Network = Network{Kind: NetworkVPN, Connection: set.VPNConnectionID, LANExceptions: set.LANExceptions}
 	}
-	next.Mounts, next.DockerAccess, next.Camera = set.Mounts, set.DockerAccess, set.Camera
+	next.Mounts, next.Volumes = set.Mounts, set.Volumes
+	next.DockerAccess, next.Camera = set.DockerAccess, set.Camera
 	next = next.clone()
 	if ContainerAffecting(def, next) {
 		next.Revision++
@@ -591,6 +627,12 @@ func (s *Service) Create(ctx context.Context, name string, set Settings, progres
 		progress("Checking host folders", -1)
 	}
 	if err := s.checkHostSources(ctx, set.Mounts, set.DockerAccess); err != nil {
+		return Environment{}, err
+	}
+	if err := ValidateVolumeGrants(set.Volumes); err != nil {
+		return Environment{}, err
+	}
+	if err := s.missingVolume(name, set.Volumes); err != nil {
 		return Environment{}, err
 	}
 	img, err := s.EnsureImage(ctx, set.Image, progress)
@@ -761,6 +803,9 @@ func (s *Service) createContainer(ctx context.Context, name string, revision uin
 	if err := ValidateHostMounts(set.Mounts); err != nil {
 		return err
 	}
+	if err := ValidateVolumeGrants(set.Volumes); err != nil {
+		return err
+	}
 	token, err := s.proxyToken(name)
 	if err != nil {
 		return err
@@ -774,7 +819,7 @@ func (s *Service) createContainer(ctx context.Context, name string, revision uin
 		Mounts:  []engine.Mount{{Source: s.Layout.HomeOf(name), Target: "/workspace", MustExist: true}},
 		Network: containerName(name), Aliases: []string{containerName(name)},
 		MemoryBytes: set.MemoryBytes, NanoCPUs: set.NanoCPUs, ShmBytes: shmBytes,
-		Flatpak: true, Restart: "unless-stopped", NoNewPrivileges: len(set.Mounts) > 0,
+		Flatpak: true, Restart: "unless-stopped", NoNewPrivileges: len(set.Mounts) > 0 || len(set.Volumes) > 0,
 	}
 	if set.DockerAccess {
 		spec.Mounts = append(spec.Mounts, engine.Mount{Source: dockerSocket, Target: dockerSocket, MustExist: true})
@@ -782,6 +827,10 @@ func (s *Service) createContainer(ctx context.Context, name string, revision uin
 	}
 	for _, m := range set.Mounts {
 		spec.Mounts = append(spec.Mounts, engine.Mount{Source: m.Source, Target: m.Target, ReadOnly: m.ReadOnly, MustExist: true})
+	}
+	// Strict too: a missing volume folder is an error, never made empty.
+	for _, g := range set.Volumes {
+		spec.Mounts = append(spec.Mounts, engine.Mount{Source: s.Layout.VolumeOf(g.Name), Target: path.Join(ShareRoot, g.Name), ReadOnly: g.ReadOnly, MustExist: true})
 	}
 	if set.Camera != "" {
 		s.camMu.Lock()
@@ -858,7 +907,8 @@ func (s *Service) Restart(ctx context.Context, name string) error {
 
 // power is Start or Restart by action; "resume" (the reconcile pass) only
 // starts an existing container, leaving a definition ahead of it for a start,
-// restart or edit to apply. A missing home folder refuses all of them.
+// restart or edit to apply. A missing home or volume folder refuses all of
+// them.
 func (s *Service) power(ctx context.Context, name, action string) error {
 	if s.Networking != nil {
 		unlock, err := s.Networking.lock(ctx, name)
@@ -875,7 +925,7 @@ func (s *Service) power(ctx context.Context, name, action string) error {
 		if err := s.Networking.startable(name); err != nil {
 			return err
 		}
-		if err := s.checkHome(name); err != nil {
+		if err := s.checkFolders(name); err != nil {
 			return err
 		}
 		if err := s.setPower(name, PowerRunning); err != nil {
@@ -895,7 +945,7 @@ func (s *Service) power(ctx context.Context, name, action string) error {
 	if c.Conflict != "" {
 		return fmt.Errorf("%w: %s", ErrConflict, c.Conflict)
 	}
-	if err := s.checkHome(name); err != nil {
+	if err := s.checkFolders(name); err != nil {
 		return err
 	}
 	if err := s.setPower(name, PowerRunning); err != nil {
@@ -938,13 +988,14 @@ func (s *Service) power(ctx context.Context, name, action string) error {
 // build creates the container of an environment that has none, from its
 // definition. A camera gone from the host is first dropped from the
 // definition, as is a pinned image gone from the engine replaced, each as a
-// new revision. A missing home folder is an error: only creation makes one.
+// new revision. A missing home or volume folder is an error: only creation
+// makes a home, and only CreateVolume a volume folder.
 func (s *Service) build(ctx context.Context, name string) error {
 	def, ok := s.Defs.Get(name)
 	if !ok {
 		return ErrNotFound
 	}
-	if err := s.checkHome(name); err != nil {
+	if err := s.checkFolders(name); err != nil {
 		return err
 	}
 	if def.Camera != "" && s.cameraGone(def.Camera) {
@@ -1078,7 +1129,7 @@ func (s *Service) Remove(ctx context.Context, name string, deleteFiles bool) err
 	}
 	var folderErr error
 	if deleteFiles {
-		folderErr = s.deleteFolder(ctx, name)
+		folderErr = s.removeTree(ctx, s.Layout.Home, name)
 	}
 	return errors.Join(folderErr, s.removed(name))
 }
@@ -1129,21 +1180,37 @@ func (s *Service) FolderSize(name string) (bytes int64, complete bool) {
 	return bytes, complete
 }
 
-// deleteFolder removes a workspace folder. Its files belong to UID 1000 (and
-// Flatpak leaves read-only directories), so the removal runs in a helper
-// container of alpine, as root.
-func (s *Service) deleteFolder(ctx context.Context, name string) error {
-	folder := s.Layout.HomeOf(name)
+// removeTree removes the folder child of root, such as a workspace folder
+// in home/. Its files belong to UID 1000 (and Flatpak leaves read-only
+// directories), so the removal runs in a helper container of alpine, as root.
+func (s *Service) removeTree(ctx context.Context, root, child string) error {
+	if child == "" || child == "." || child == ".." || strings.ContainsRune(child, '/') {
+		return fmt.Errorf("not a folder name: %q", child)
+	}
+	folder := filepath.Join(root, child)
 	if err := os.RemoveAll(folder); err == nil {
 		return nil
 	}
+	if err := s.runHelper(ctx, "deskyard-remove-", root, "/remove-root", "rm", "-rf", "/remove-root/"+child); err != nil {
+		return err
+	}
+	if _, err := os.Stat(folder); err == nil {
+		return fmt.Errorf("could not delete %s", folder)
+	}
+	return nil
+}
+
+// runHelper runs cmd as root in a helper container with the host folder root
+// mounted at target, and waits (up to a minute) for it to finish. It reports
+// only failures to run it: callers check the outcome on disk.
+func (s *Service) runHelper(ctx context.Context, prefix, root, target string, cmd ...string) error {
 	if err := s.ensureHelper(ctx); err != nil {
 		return err
 	}
-	hname := "deskyard-remove-" + randomHex(4)
+	hname := prefix + randomHex(4)
 	_, err := s.Eng.Create(ctx, engine.ContainerSpec{
-		Name: hname, Image: helperImage, Cmd: []string{"rm", "-rf", "/home-root/" + name},
-		Mounts: []engine.Mount{{Source: s.Layout.Home, Target: "/home-root"}},
+		Name: hname, Image: helperImage, Cmd: cmd,
+		Mounts: []engine.Mount{{Source: root, Target: target}},
 	})
 	if err != nil {
 		return err
@@ -1158,9 +1225,6 @@ func (s *Service) deleteFolder(ctx context.Context, name string) error {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
-	}
-	if _, err := os.Stat(folder); err == nil {
-		return fmt.Errorf("could not delete %s", folder)
 	}
 	return nil
 }

@@ -26,6 +26,8 @@ type settingsJSON struct {
 	Camera          string                   `json:"camera"` // the host device, "" for none
 	Mounts          []environments.HostMount `json:"mounts"`
 	DockerAccess    bool                     `json:"dockerAccess"`
+	// Volumes is never null, like LANExceptions and Mounts.
+	Volumes []environments.VolumeGrant `json:"volumes"`
 }
 
 type statsJSON struct {
@@ -73,7 +75,7 @@ func (s *Server) environmentJSON(ctx context.Context, c environments.Environment
 		Revision: c.Revision, AppliedRevision: c.AppliedRevision, Power: c.Power, Error: c.Error, Conflict: c.Conflict,
 		ImageTitle: c.ImageLabels["org.opencontainers.image.title"], ImageVersion: c.ImageLabels["org.opencontainers.image.version"],
 		VPN:      c.VPN,
-		Settings: settingsJSON{MemoryBytes: c.Settings.MemoryBytes, NanoCPUs: c.Settings.NanoCPUs, Camera: c.Settings.Camera, LANExceptions: c.Settings.LANExceptions, Mounts: c.Settings.Mounts, DockerAccess: c.Settings.DockerAccess},
+		Settings: settingsJSON{MemoryBytes: c.Settings.MemoryBytes, NanoCPUs: c.Settings.NanoCPUs, Camera: c.Settings.Camera, LANExceptions: c.Settings.LANExceptions, Mounts: c.Settings.Mounts, DockerAccess: c.Settings.DockerAccess, Volumes: c.Settings.Volumes},
 		Access:   []string{}, Viewers: s.viewers.names(c.Name),
 		Mics: s.viewers.mics(c.Name), Cams: s.viewers.cams(c.Name), Webcam: c.Webcam(), Forwards: s.forwards.list(c.Name), Agents: s.activity.Present(c.Name),
 	}
@@ -86,6 +88,9 @@ func (s *Server) environmentJSON(ctx context.Context, c environments.Environment
 	}
 	if j.Settings.Mounts == nil {
 		j.Settings.Mounts = []environments.HostMount{}
+	}
+	if j.Settings.Volumes == nil {
+		j.Settings.Volumes = []environments.VolumeGrant{}
 	}
 	if !c.Created.IsZero() {
 		j.Created = &c.Created
@@ -247,15 +252,16 @@ func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var req struct {
-		VPNConnectionID optionalVPN              `json:"vpnConnectionId"`
-		LANExceptions   []vpn.Exception          `json:"lanExceptions"`
-		Name            string                   `json:"name"`
-		Image           string                   `json:"image"`
-		MemoryBytes     int64                    `json:"memoryBytes"`
-		NanoCPUs        int64                    `json:"nanoCpus"`
-		Access          []string                 `json:"access"`
-		Mounts          []environments.HostMount `json:"mounts"`
-		DockerAccess    bool                     `json:"dockerAccess"`
+		VPNConnectionID optionalVPN                `json:"vpnConnectionId"`
+		LANExceptions   []vpn.Exception            `json:"lanExceptions"`
+		Name            string                     `json:"name"`
+		Image           string                     `json:"image"`
+		MemoryBytes     int64                      `json:"memoryBytes"`
+		NanoCPUs        int64                      `json:"nanoCpus"`
+		Access          []string                   `json:"access"`
+		Mounts          []environments.HostMount   `json:"mounts"`
+		DockerAccess    bool                       `json:"dockerAccess"`
+		Volumes         []environments.VolumeGrant `json:"volumes"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad request")
@@ -263,6 +269,9 @@ func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request)
 	}
 	if err := environments.ValidateHostMounts(req.Mounts); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !s.checkVolumeGrants(w, nil, req.Volumes) {
 		return
 	}
 	if err := environments.ValidNewName(req.Name); err != nil {
@@ -286,7 +295,7 @@ func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-	set, err := s.Environments.ValidateNetworkSettings(environments.Settings{Image: req.Image, MemoryBytes: req.MemoryBytes, NanoCPUs: req.NanoCPUs, VPNConnectionID: req.VPNConnectionID.ID, LANExceptions: req.LANExceptions, Mounts: req.Mounts, DockerAccess: req.DockerAccess})
+	set, err := s.Environments.ValidateNetworkSettings(environments.Settings{Image: req.Image, MemoryBytes: req.MemoryBytes, NanoCPUs: req.NanoCPUs, VPNConnectionID: req.VPNConnectionID.ID, LANExceptions: req.LANExceptions, Mounts: req.Mounts, DockerAccess: req.DockerAccess, Volumes: req.Volumes})
 	if err != nil {
 		vpnError(w, err)
 		return
@@ -340,14 +349,15 @@ func (s *Server) handleUpdateEnvironment(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var req struct {
-		VPNConnectionID optionalVPN               `json:"vpnConnectionId"`
-		LANExceptions   *[]vpn.Exception          `json:"lanExceptions"`
-		Image           *string                   `json:"image"`
-		MemoryBytes     *int64                    `json:"memoryBytes"`
-		NanoCPUs        *int64                    `json:"nanoCpus"`
-		Camera          *string                   `json:"camera"`
-		Mounts          *[]environments.HostMount `json:"mounts"`
-		DockerAccess    *bool                     `json:"dockerAccess"`
+		VPNConnectionID optionalVPN                 `json:"vpnConnectionId"`
+		LANExceptions   *[]vpn.Exception            `json:"lanExceptions"`
+		Image           *string                     `json:"image"`
+		MemoryBytes     *int64                      `json:"memoryBytes"`
+		NanoCPUs        *int64                      `json:"nanoCpus"`
+		Camera          *string                     `json:"camera"`
+		Mounts          *[]environments.HostMount   `json:"mounts"`
+		DockerAccess    *bool                       `json:"dockerAccess"`
+		Volumes         *[]environments.VolumeGrant `json:"volumes"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad request")
@@ -362,6 +372,12 @@ func (s *Server) handleUpdateEnvironment(w http.ResponseWriter, r *http.Request)
 	}
 	if err := environments.ValidateHostMounts(set.Mounts); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.Volumes != nil {
+		set.Volumes = *req.Volumes
+	}
+	if !s.checkVolumeGrants(w, c.Settings.Volumes, set.Volumes) {
 		return
 	}
 	if req.VPNConnectionID.Set {
