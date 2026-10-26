@@ -193,7 +193,7 @@ def prepare(mode):
         if mode == "container":
             docker("exec", cfg["Endpoint"], "ip", "link", "set", "wg0", "down")
             cfg["SelfID"] = prefix + "-supervisor"
-            cfg["Listen"] = "0.0.0.0:8080"
+            cfg["Listen"] = "0.0.0.0:7343"
         write(d / "fixture.json", cfg)
         print(d)
     except BaseException:
@@ -239,7 +239,7 @@ def start(d):
             "-e",
             f"CC_TEST_IMAGE={image}",
             "-p",
-            "127.0.0.1::8080",
+            "127.0.0.1::7343",
             "alpine:3.22",
             str(d / "supervisor.test"),
             "-test.run",
@@ -270,7 +270,7 @@ def start(d):
         port = docker(
             "inspect",
             "--format",
-            '{{(index (index .NetworkSettings.Ports "8080/tcp") 0).HostPort}}',
+            '{{(index (index .NetworkSettings.Ports "7343/tcp") 0).HostPort}}',
             cfg["SelfID"],
         )
         url = "http://127.0.0.1:" + port
@@ -311,7 +311,7 @@ def check(d):
     for name in ready["names"]:
         token = json.loads(
             req(
-                "/api/desktops/" + name + "/tokens",
+                "/api/environments/" + name + "/tokens",
                 {"name": "VPN end-to-end verification"},
             )
         )["token"]
@@ -328,10 +328,10 @@ def check(d):
             env=env,
         )
         assert result == "1000", result
-        files = json.loads(req("/api/desktops/" + name + "/files"))
+        files = json.loads(req("/api/environments/" + name + "/files"))
         assert any(x["name"] == "vpn-e2e.txt" for x in files["entries"])
         assert (
-            req("/api/desktops/" + name + "/download?path=/workspace/vpn-e2e.txt")
+            req("/api/environments/" + name + "/download?path=/workspace/vpn-e2e.txt")
             == b"vpn-e2e-workspace"
         )
         png = subprocess.run(
@@ -339,7 +339,7 @@ def check(d):
         ).stdout
         assert png.startswith(b"\x89PNG")
         (d / (name + ".png")).write_bytes(png)
-        activity = json.loads(req("/api/desktops/" + name + "/activity"))
+        activity = json.loads(req("/api/environments/" + name + "/activity"))
         assert activity["agents"], activity
         # Production screen proxy performs authenticated Caddy dialing.
         assert req("/" + name + "/screen/api/websockets") == b""

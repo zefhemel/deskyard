@@ -1,5 +1,6 @@
-// Live state shared by every signed-in page: who is signed in, the desktops
-// they can see (kept current through /api/events), the host's numbers and the
+// Live state shared by every signed-in page: who is signed in, the
+// environments they can see (kept current through /api/events) and, for
+// admins, containers that conflict with them, the host's numbers and the
 // jobs running on them, whoever started them.
 import { createContext, type ComponentChildren } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -9,7 +10,8 @@ import {
   api,
   watchJob,
   type ActivityEvent,
-  type Desktop,
+  type Conflict,
+  type Environment,
   type Host,
   type Job,
   type Me,
@@ -24,16 +26,18 @@ type ActivityListener = (e: ActivityEvent) => void;
 export interface Live {
   me: Me;
   /** null until the first load. */
-  desktops: Desktop[] | null;
+  environments: Environment[] | null;
+  /** This supervisor's containers it can't match to a definition (admins only). */
+  conflicts: Conflict[];
   host: Host | null;
-  /** Running jobs by desktop name, for busy tiles. */
+  /** Running jobs by environment name, for busy tiles. */
   jobs: Record<string, Job>;
   /** Shared job states, retained across forms and tab navigation. */
   jobTracker: JobTracker;
-  /** Gets the desktops and the host again (after a change the events may not cover). */
+  /** Gets the environments and the host again (after a change the events may not cover). */
   refresh: () => void;
   onStats: (listener: StatsListener) => () => void;
-  /** Agent summaries, at most once a second per desktop. */
+  /** Agent summaries, at most once a second per environment. */
   onActivity: (listener: ActivityListener) => () => void;
 }
 
@@ -45,20 +49,21 @@ export function useLive(): Live {
   return live;
 }
 
-export function useDesktop(name: string): Desktop | null | undefined {
-  const { desktops } = useLive();
-  if (!desktops) return undefined;
-  return desktops.find((c) => c.name === name) ?? null;
+export function useEnvironment(name: string): Environment | null | undefined {
+  const { environments } = useLive();
+  if (!environments) return undefined;
+  return environments.find((c) => c.name === name) ?? null;
 }
 
-function upsert(list: Desktop[], c: Desktop): Desktop[] {
+function upsert(list: Environment[], c: Environment): Environment[] {
   const rest = list.filter((x) => x.name !== c.name);
   rest.push(c);
   return rest.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function LiveProvider({ me, children }: { me: Me; children: ComponentChildren }) {
-  const [desktops, setDesktops] = useState<Desktop[] | null>(null);
+  const [environments, setEnvironments] = useState<Environment[] | null>(null);
+  const [conflicts, setConflicts] = useState<Conflict[]>([]);
   const [host, setHost] = useState<Host | null>(null);
   const [jobTracker] = useState(() => new JobTracker(watchJob));
   const [jobVersion, setJobVersion] = useState(0);
@@ -84,9 +89,11 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
     const generation = ++refreshGeneration.current;
     window.clearTimeout(refreshTimer.current);
     const load = (wait: number) => {
-      api.desktops().then(
+      api.environments().then(
         (list) => {
-          if (refreshGeneration.current === generation) setDesktops(list);
+          if (refreshGeneration.current !== generation) return;
+          setEnvironments(list.environments);
+          setConflicts(list.conflicts);
         },
         () => {
           if (refreshGeneration.current === generation) {
@@ -102,20 +109,25 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
   useEffect(() => {
     refresh();
     const hostInterval = window.setInterval(loadHost, 15000);
+    // Conflicts come from the supervisor's reconcile pass, which no event
+    // reports: admins look again as often as it runs.
+    const conflictInterval = me.admin
+      ? window.setInterval(() => api.environments().then((list) => setConflicts(list.conflicts), () => undefined), 30000)
+      : undefined;
     const es = watchUIEvents("/api/events");
-    es.addEventListener("desktop", (e: MessageEvent<string>) => {
-      const c = JSON.parse(e.data) as Desktop;
-      setDesktops((list) => (list ? upsert(list, c) : list));
+    es.addEventListener("environment", (e: MessageEvent<string>) => {
+      const c = JSON.parse(e.data) as Environment;
+      setEnvironments((list) => (list ? upsert(list, c) : list));
       hostSoon();
     });
     es.addEventListener("removed", (e: MessageEvent<string>) => {
       const { name } = JSON.parse(e.data) as RemovedEvent;
-      setDesktops((list) => (list ? list.filter((c) => c.name !== name) : list));
+      setEnvironments((list) => (list ? list.filter((c) => c.name !== name) : list));
       hostSoon();
     });
     es.addEventListener("stats", (e: MessageEvent<string>) => {
       const s = JSON.parse(e.data) as StatsEvent;
-      setDesktops((list) =>
+      setEnvironments((list) =>
         list
           ? list.map((c) =>
               c.name === s.name ? { ...c, stats: { cpuPercent: s.cpuPercent, memBytes: s.memBytes, memLimit: s.memLimit } } : c,
@@ -126,7 +138,7 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
     });
     es.addEventListener("viewers", (e: MessageEvent<string>) => {
       const v = JSON.parse(e.data) as ViewersEvent;
-      setDesktops((list) => (list ? list.map((c) => (c.name === v.name ? { ...c, viewers: v.viewers, mics: v.mics, cams: v.cams, forwards: v.forwards, agents: v.agents ?? c.agents } : c)) : list));
+      setEnvironments((list) => (list ? list.map((c) => (c.name === v.name ? { ...c, viewers: v.viewers, mics: v.mics, cams: v.cams, forwards: v.forwards, agents: v.agents ?? c.agents } : c)) : list));
     });
     es.addEventListener("activity", (e: MessageEvent<string>) => {
       const a = JSON.parse(e.data) as ActivityEvent;
@@ -146,10 +158,11 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
       ++refreshGeneration.current;
       es.close();
       window.clearInterval(hostInterval);
+      window.clearInterval(conflictInterval);
       window.clearTimeout(hostTimer.current);
       window.clearTimeout(refreshTimer.current);
     };
-  }, [refresh, loadHost, hostSoon]);
+  }, [refresh, loadHost, hostSoon, me.admin]);
 
   useEffect(() => {
     const unsubscribe = jobTracker.subscribe(job => {
@@ -161,12 +174,12 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
 
   // Discover operations started elsewhere and reconnect after a page reload.
   useEffect(() => {
-    for (const c of desktops ?? []) {
+    for (const c of environments ?? []) {
       if (c.job) jobTracker.track(c.job, undefined, c.name);
     }
-  }, [desktops, jobTracker]);
+  }, [environments, jobTracker]);
 
-  const jobs = useMemo(() => jobTracker.runningByDesktop(), [jobTracker, jobVersion]);
+  const jobs = useMemo(() => jobTracker.runningByEnvironment(), [jobTracker, jobVersion]);
 
   const onStats = useCallback((listener: StatsListener) => {
     statsListeners.current.add(listener);
@@ -183,8 +196,8 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
   }, []);
 
   const value = useMemo<Live>(
-    () => ({ me, desktops, host, jobs, jobTracker, refresh, onStats, onActivity }),
-    [me, desktops, host, jobs, jobTracker, refresh, onStats, onActivity, jobVersion],
+    () => ({ me, environments, conflicts, host, jobs, jobTracker, refresh, onStats, onActivity }),
+    [me, environments, conflicts, host, jobs, jobTracker, refresh, onStats, onActivity, jobVersion],
   );
   return <LiveContext.Provider value={value}>{children}</LiveContext.Provider>;
 }

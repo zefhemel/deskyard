@@ -184,7 +184,7 @@ func TestUsageErrors(t *testing.T) {
 	h := newHarness(t)
 	h.inside = true
 	for _, args := range [][]string{{}, {"bogus"}, {"click", "1"}, {"zoom", "50", "50", "10", "10"}, {"remote"}, {"remote", "bogus"},
-		{"exec"}, {"cp", "a"}, {"remote", "add", "x"}, {"--nope"}, {"-d"}, {"status", "--bogus"}, {"exec", "--cwd"}} {
+		{"exec"}, {"cp", "a"}, {"remote", "add", "x"}, {"--nope"}, {"-e"}, {"status", "--bogus"}, {"exec", "--cwd"}} {
 		r := h.run(args...)
 		if r.code != 2 {
 			t.Errorf("%v: exit %d, want 2 (stderr %q)", args, r.code, r.stderr)
@@ -198,10 +198,10 @@ func TestUsageErrors(t *testing.T) {
 func TestNoRemoteChosen(t *testing.T) {
 	h := newHarness(t)
 	r := h.run("screenshot")
-	if r.code != 1 || !strings.Contains(r.stderr, "no remote chosen: run `deskyard remote list`, then use -d NAME") {
+	if r.code != 1 || !strings.Contains(r.stderr, "no remote chosen: run `deskyard remote list`, then use -e NAME") {
 		t.Errorf("%+v", r)
 	}
-	r = h.run("-d", "nope", "size")
+	r = h.run("-e", "nope", "size")
 	if r.code != 1 || !strings.Contains(r.stderr, `no remote named "nope"`) {
 		t.Errorf("%+v", r)
 	}
@@ -218,7 +218,7 @@ func remoteHarness(t *testing.T) (*harness, *clitest.Fake) {
 	}
 	f := clitest.New(t, "alice")
 	h := newHarness(t)
-	if r := h.run("remote", "add", "al", f.DesktopURL(), "--token", clitest.Token); r.code != 0 {
+	if r := h.run("remote", "add", "al", f.EnvironmentURL(), "--token", clitest.Token); r.code != 0 {
 		t.Fatalf("remote add: %+v", r)
 	}
 	return h, f
@@ -228,25 +228,25 @@ func TestRemoteCommands(t *testing.T) {
 	f := clitest.New(t, "alice")
 	h := newHarness(t)
 
-	r := h.run("remote", "add", "al", f.DesktopURL(), "--token", "dyt_bad_token")
+	r := h.run("remote", "add", "al", f.EnvironmentURL(), "--token", "dyt_bad_token")
 	if r.code != 1 || !strings.Contains(r.stderr, "token rejected (401): ask someone with access to alice") {
 		t.Errorf("bad token: %+v", r)
 	}
 	r = h.run("remote", "add", "al", f.URL+"/bob", "--token", clitest.Token)
-	if r.code != 1 || !strings.Contains(r.stderr, `this token is for the desktop "alice", not "bob"`) {
-		t.Errorf("wrong desktop: %+v", r)
+	if r.code != 1 || !strings.Contains(r.stderr, `this token is for the environment "alice", not "bob"`) {
+		t.Errorf("wrong environment: %+v", r)
 	}
-	r = h.run("remote", "add", "al", f.DesktopURL(), "--token", clitest.Token)
+	r = h.run("remote", "add", "al", f.EnvironmentURL(), "--token", clitest.Token)
 	if r.code != 0 || !strings.Contains(r.stdout, "Added remote al") || !strings.Contains(r.stdout, "default") {
 		t.Errorf("add: %+v", r)
 	}
-	// A URL without the desktop's name learns it from the token.
+	// A URL without the environment's name learns it from the token.
 	r = h.run("remote", "add", "two", f.URL, "--token", clitest.Token)
 	if r.code != 0 {
 		t.Errorf("add two: %+v", r)
 	}
 	cfg, err := remote.Load(h.config)
-	if err != nil || cfg.Remotes["two"].Desktop != "alice" || cfg.Default != "al" {
+	if err != nil || cfg.Remotes["two"].Environment != "alice" || cfg.Default != "al" {
 		t.Errorf("config: %+v %v", cfg, err)
 	}
 
@@ -274,11 +274,11 @@ func TestRemoteCommands(t *testing.T) {
 
 	// Stopped: the token works, so the remote is saved with a note.
 	f.Stopped = true
-	r = h.run("remote", "add", "st", f.DesktopURL(), "--token", clitest.Token)
+	r = h.run("remote", "add", "st", f.EnvironmentURL(), "--token", clitest.Token)
 	if r.code != 0 || !strings.Contains(r.stdout, "alice is stopped") {
 		t.Errorf("add stopped: %+v", r)
 	}
-	r = h.run("-d", "st", "status")
+	r = h.run("-e", "st", "status")
 	if r.code != 1 || !strings.Contains(r.stderr, "alice is stopped; someone with access can start it") {
 		t.Errorf("status stopped: %+v", r)
 	}
@@ -303,7 +303,7 @@ func TestEnvRemote(t *testing.T) {
 	}
 	f := clitest.New(t, "alice")
 	h := newHarness(t)
-	h.env["DESKYARD_URL"] = f.DesktopURL()
+	h.env["DESKYARD_URL"] = f.EnvironmentURL()
 	h.env["DESKYARD_TOKEN"] = clitest.Token
 	if r := h.run("size"); r.code != 0 || r.stdout != "1280 800\n" {
 		t.Errorf("%+v", r)
@@ -430,25 +430,25 @@ func TestForwardArgs(t *testing.T) {
 		t.Fatal("no forward command")
 	}
 	got, err := parseForwardArgs(cmd, []string{"3000", "3000:8000", "-R", "5173:5174", "--reverse", "9229"})
-	want := []*portMap{{local: 3000, desktop: 3000}, {local: 3000, desktop: 8000}, {reverse: true, desktop: 5173, local: 5174}, {reverse: true, desktop: 9229, local: 9229}}
+	want := []*portMap{{local: 3000, env: 3000}, {local: 3000, env: 8000}, {reverse: true, env: 5173, local: 5174}, {reverse: true, env: 9229, local: 9229}}
 	if err != nil || len(got) != len(want) {
 		t.Fatalf("got %v %v", got, err)
 	}
 	for i := range want {
-		if got[i].reverse != want[i].reverse || got[i].local != want[i].local || got[i].desktop != want[i].desktop {
+		if got[i].reverse != want[i].reverse || got[i].local != want[i].local || got[i].env != want[i].env {
 			t.Errorf("mapping %d: got %+v, want %+v", i, *got[i], *want[i])
 		}
 	}
 	h := newHarness(t)
 	for _, args := range [][]string{{}, {"abc"}, {"0"}, {"70000"}, {"1:2:3"}, {"3000:"}, {":3000"}, {"-R"}, {"3000", "-R"}, {"-R", "-R", "1"}, {"-X", "3000"}, {"30.5"}, {"3000", "4000:3000"}, {"-R", "1:9000", "-R", "2:9000"}} {
-		r := h.run(append([]string{"-d", "x", "forward"}, args...)...)
+		r := h.run(append([]string{"-e", "x", "forward"}, args...)...)
 		if r.code != 2 || !strings.Contains(r.stderr, "usage: deskyard forward") {
 			t.Errorf("forward %v: exit %d, want 2 (stderr %q)", args, r.code, r.stderr)
 		}
 	}
 	h.inside = true
 	r := h.run("forward", "3000")
-	if r.code != 2 || !strings.Contains(r.stderr, "forward maps ports between this machine and a desktop; choose one with -d NAME") {
+	if r.code != 2 || !strings.Contains(r.stderr, "forward maps ports between this machine and an environment; choose one with -e NAME") {
 		t.Errorf("inside: %+v", r)
 	}
 	if r := h.run("forward", "--help"); r.code != 0 || !strings.Contains(r.stdout, "-R") {
@@ -600,7 +600,7 @@ func TestForwardReconnects(t *testing.T) {
 	if n := len(f.ForwardStarts()); n != 2 {
 		t.Errorf("%d connections, want 2", n)
 	}
-	if !strings.Contains(stderr.String(), "Lost alice (desktop stopped), retrying in") {
+	if !strings.Contains(stderr.String(), "Lost alice (environment stopped), retrying in") {
 		t.Errorf("stderr: %s", stderr.String())
 	}
 	if got, err := roundTrip(outLocal, "c"); got != "echo c" {
@@ -671,8 +671,173 @@ func TestForwardArgsCaps(t *testing.T) {
 		}
 	}
 	h := newHarness(t)
-	r := h.run(append([]string{"-d", "x", "forward"}, build(65, 0)...)...)
-	if r.code != 2 || !strings.Contains(r.stderr, "at most 64 mappings into the desktop") {
+	r := h.run(append([]string{"-e", "x", "forward"}, build(65, 0)...)...)
+	if r.code != 2 || !strings.Contains(r.stderr, "at most 64 mappings into the environment") {
 		t.Errorf("65 ins: exit %d, stderr %q", r.code, r.stderr)
+	}
+}
+
+// twoEnvironments saves remotes alice (the default) and bob, each a fake.
+func twoEnvironments(t *testing.T) (*harness, *clitest.Fake, *clitest.Fake) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake runs commands with sh")
+	}
+	alice, bob := clitest.New(t, "alice"), clitest.New(t, "bob")
+	h := newHarness(t)
+	for _, f := range []*clitest.Fake{alice, bob} {
+		if r := h.run("remote", "add", f.Name, f.EnvironmentURL(), "--token", clitest.Token); r.code != 0 {
+			t.Fatalf("remote add %s: %+v", f.Name, r)
+		}
+	}
+	return h, alice, bob
+}
+
+func TestEnvironmentFlag(t *testing.T) {
+	h, alice, bob := twoEnvironments(t)
+	for _, args := range [][]string{
+		{"-e", "bob", "screenshot"},
+		{"--environment", "bob", "screenshot"},
+		{"-e=bob", "screenshot"},
+		{"--environment=bob", "screenshot"},
+	} {
+		na, nb := len(alice.Requests()), len(bob.Requests())
+		r := h.run(args...)
+		if r.code != 0 || r.stdout != string(clitest.FakePNG) {
+			t.Errorf("%v: %+v", args, r)
+		}
+		if len(alice.Requests()) != na || len(bob.Requests()) != nb+1 {
+			t.Errorf("%v: went to the wrong environment (alice %d→%d, bob %d→%d)", args, na, len(alice.Requests()), nb, len(bob.Requests()))
+		}
+	}
+	// Without -e the default (alice, the first remote) is used.
+	n := len(alice.Requests())
+	if r := h.run("screenshot"); r.code != 0 || len(alice.Requests()) != n+1 {
+		t.Errorf("default: %+v", r)
+	}
+	// DESKYARD_REMOTE still picks one; -e wins over it.
+	h.env["DESKYARD_REMOTE"] = "bob"
+	if r := h.run("status", "--json"); !strings.Contains(r.stdout, `"name": "bob"`) {
+		t.Errorf("DESKYARD_REMOTE: %+v", r)
+	}
+	if r := h.run("-e", "alice", "status", "--json"); !strings.Contains(r.stdout, `"name": "alice"`) {
+		t.Errorf("-e over DESKYARD_REMOTE: %+v", r)
+	}
+}
+
+func TestOldTargetFlagsAreUnknown(t *testing.T) {
+	h, alice, bob := twoEnvironments(t)
+	for _, args := range [][]string{
+		{"-d", "bob", "screenshot"},
+		{"--desktop", "bob", "screenshot"},
+		{"--desktop=bob", "screenshot"},
+		{"-c=bob", "screenshot"},
+		{"-e"},
+		{"--environment"},
+		{"-e="},
+		{"status", "-e", "bob"},
+		{"status", "--environment=bob"},
+	} {
+		r := h.run(args...)
+		if r.code != 2 || !strings.HasPrefix(r.stderr, "deskyard") {
+			t.Errorf("%v: exit %d, want 2 (stderr %q)", args, r.code, r.stderr)
+		}
+	}
+	if r := h.run("-d", "bob", "size"); !strings.Contains(r.stderr, `deskyard: unknown option "-d"`) {
+		t.Errorf("-d message: %q", r.stderr)
+	}
+	if len(alice.Requests())+len(bob.Requests()) != 0 {
+		t.Errorf("a refused command reached an environment")
+	}
+}
+
+func TestGlobalEnvironmentAndExecEnv(t *testing.T) {
+	h, alice, bob := twoEnvironments(t)
+	r := h.run("-e", "bob", "exec", "-e", "CI=1", "--", "true")
+	if r.code != 0 {
+		t.Fatalf("%+v", r)
+	}
+	if len(alice.Requests()) != 0 {
+		t.Errorf("went to alice")
+	}
+	reqs := bob.Requests()
+	if len(reqs) != 1 || reqs[0].Env["CI"] != "1" || strings.Join(reqs[0].Argv, " ") != "true" {
+		t.Errorf("request: %+v", reqs)
+	}
+}
+
+func TestRemotesFileUsesEnvironment(t *testing.T) {
+	h, _, _ := twoEnvironments(t)
+	data, err := os.ReadFile(h.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw struct {
+		Remotes map[string]map[string]any `json:"remotes"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if raw.Remotes["bob"]["environment"] != "bob" {
+		t.Errorf("remotes.json: %s", data)
+	}
+	if _, ok := raw.Remotes["bob"]["desktop"]; ok {
+		t.Errorf("remotes.json still has desktop: %s", data)
+	}
+	r := h.run("remote", "list", "--json")
+	var rows []map[string]any
+	if err := json.Unmarshal([]byte(r.stdout), &rows); err != nil || len(rows) != 2 || rows[1]["environment"] != "bob" || rows[1]["desktop"] != nil {
+		t.Errorf("list --json: %s %v", r.stdout, err)
+	}
+}
+
+func TestErrorPrefix(t *testing.T) {
+	h := newHarness(t)
+	if r := h.run("bogus"); r.code != 2 || !strings.HasPrefix(r.stderr, "deskyard: ") {
+		t.Errorf("usage error: %q", r.stderr)
+	}
+	if r := h.run("screenshot"); r.code != 1 || !strings.HasPrefix(r.stderr, "deskyard: no remote chosen") {
+		t.Errorf("error: %q", r.stderr)
+	}
+}
+
+func TestHelpNamesEnvironment(t *testing.T) {
+	h := newHarness(t)
+	for _, args := range [][]string{{"--help"}, {"guide"}, {"describe", "--json"}, {"exec", "--help"}} {
+		out := h.run(args...).stdout
+		if strings.Contains(out, "-d NAME") || strings.Contains(out, "--desktop") {
+			t.Errorf("%v still mentions -d/--desktop", args)
+		}
+		if !strings.Contains(out, "-e NAME") {
+			t.Errorf("%v doesn't mention -e NAME", args)
+		}
+	}
+	var doc struct {
+		GlobalFlags []Flag `json:"globalFlags"`
+		Commands    []struct {
+			Name  string `json:"name"`
+			Flags []Flag `json:"flags"`
+		} `json:"commands"`
+	}
+	if err := json.Unmarshal([]byte(h.run("describe", "--json").stdout), &doc); err != nil {
+		t.Fatal(err)
+	}
+	var global, execEnv string
+	for _, f := range doc.GlobalFlags {
+		if f.Name == "--environment" && f.Short == "-e" {
+			global = f.Desc
+		}
+	}
+	for _, c := range doc.Commands {
+		for _, f := range c.Flags {
+			if c.Name == "exec" && f.Name == "--env" && f.Short == "-e" {
+				execEnv = f.Desc
+			}
+		}
+	}
+	if !strings.Contains(global, "before the command") || !strings.Contains(global, "exec -e") {
+		t.Errorf("global -e description doesn't tell it apart from exec -e: %q", global)
+	}
+	if !strings.Contains(execEnv, "after exec") || !strings.Contains(execEnv, "environment variable") {
+		t.Errorf("exec -e description doesn't tell it apart from the global -e: %q", execEnv)
 	}
 }

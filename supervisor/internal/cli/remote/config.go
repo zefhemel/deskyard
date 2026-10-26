@@ -10,14 +10,14 @@ import (
 	"sort"
 )
 
-// Remote is one saved remote: a local alias for a desktop reached through
+// Remote is one saved remote: a local alias for an environment reached through
 // a supervisor's agent API with a token.
 type Remote struct {
-	Name    string `json:"-"`
-	URL     string `json:"url"`     // as given to `remote add`
-	Base    string `json:"base"`    // supervisor base URL
-	Desktop string `json:"desktop"` // the desktop's name on the supervisor
-	Token   string `json:"token"`
+	Name        string `json:"-"`
+	URL         string `json:"url"`         // as given to `remote add`
+	Base        string `json:"base"`        // supervisor base URL
+	Environment string `json:"environment"` // the environment's name on the supervisor
+	Token       string `json:"token"`
 }
 
 // Config is the content of remotes.json.

@@ -1,6 +1,6 @@
 deskyard drag: left-drag from one point to another
 
-Usage: deskyard [-d NAME] drag X1 Y1 X2 Y2
+Usage: deskyard [-e NAME] drag X1 Y1 X2 Y2
 
 Presses the left button at X1 Y1, moves to X2 Y2 and releases it.
 
@@ -15,5 +15,5 @@ Prints: nothing
 Examples:
   deskyard drag 100 100 400 300
 
-Where: inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)
+Where: inside an environment it acts locally; elsewhere on the chosen environment (-e NAME)
 Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop

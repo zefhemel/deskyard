@@ -82,7 +82,7 @@ func TestCandidateCancellationAlwaysCleansPrivateFilesAndOwnedResources(t *testi
 	if len(e.netCreated) != len(e.netRemoved) || len(e.containers) != 0 {
 		t.Fatalf("leaked resources: %+v", e)
 	}
-	entries, err := os.ReadDir(m.stateDir + "/vpn/tests")
+	entries, err := os.ReadDir(m.stateDir + "/vpn/test")
 	if err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}

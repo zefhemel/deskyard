@@ -21,8 +21,9 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
+	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 // filesEngine is a running "alice" whose /workspace is a real folder on this
@@ -203,12 +204,17 @@ func newFilesServer(t *testing.T) (*Server, *httptest.Server, string) {
 	accts, _ := accounts.Load(dir)
 	_, _ = accts.EnsureAdmin("admin", "pw")
 	_, _ = accts.Create("anna", "pw", false, nil)
-	_, _ = accts.Create("ben", "pw", false, []string{"id-alice"})
+	_, _ = accts.Create("ben", "pw", false, nil)
 	e := &filesEngine{root: root}
-	s, err := New(Options{Log: log, Eng: e, Accounts: accts, StateDir: dir, DefaultImage: "img",
-		Desktops: desktops.New(e, desktops.Config{DataDir: dir, Subnet: "10.0.0.0/16"}, log),
-		UI:       fstest.MapFS{"index.html": {Data: []byte("ui")}}})
+	s, err := New(Options{Log: log, Eng: e, Accounts: accts, Layout: config.NewLayout(dir), DefaultImage: "img",
+		Environments: environments.New(e, environments.Config{DataDir: dir, Subnet: "10.0.0.0/16"}, log),
+		UI:           fstest.MapFS{"index.html": {Data: []byte("ui")}}})
 	if err != nil {
+		t.Fatal(err)
+	}
+	defineEnvironments(t, s)
+	// Granted once alice is defined: startup drops grants of undefined names.
+	if err := accts.SetAccess("alice", []string{"ben"}); err != nil {
 		t.Fatal(err)
 	}
 	ts := httptest.NewServer(s)
@@ -251,7 +257,7 @@ func TestFilesListAndDownload(t *testing.T) {
 	}
 	_ = os.Chtimes(filepath.Join(root, "data.bin"), now.Add(-2*time.Hour), now.Add(-2*time.Hour))
 	admin := login(t, ts, "admin")
-	base := ts.URL + "/api/desktops/alice"
+	base := ts.URL + "/api/environments/alice"
 
 	t.Run("list", func(t *testing.T) {
 		code, body, _ := fetch(t, admin, base+"/files")
@@ -358,7 +364,7 @@ func TestFilesListAndDownload(t *testing.T) {
 func TestFilesAccess(t *testing.T) {
 	s, ts, root := newFilesServer(t)
 	write(t, filepath.Join(root, "f.txt"), "hi", time.Now())
-	base := ts.URL + "/api/desktops/alice"
+	base := ts.URL + "/api/environments/alice"
 	for _, route := range []string{"/files", "/download?path=f.txt"} {
 		if code, _, _ := fetch(t, login(t, ts, "ben"), base+route); code != 200 {
 			t.Errorf("a viewer on %s: %d", route, code)
@@ -370,7 +376,7 @@ func TestFilesAccess(t *testing.T) {
 		if code, _, _ := fetch(t, anon, base+route); code != 401 {
 			t.Errorf("anonymous on %s: %d", route, code)
 		}
-		_, secret, err := s.tokens.create("bot", "id-alice", "admin", nil)
+		_, secret, err := s.tokens.create("bot", "alice", "admin", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -390,7 +396,7 @@ func TestFilesAccess(t *testing.T) {
 func TestFilesStoppedDesktop(t *testing.T) {
 	_, ts := newTestServer(t) // alice is stopped here
 	admin := login(t, ts, "admin")
-	if code, _, _ := fetch(t, admin, ts.URL+"/api/desktops/alice/files"); code != 409 {
+	if code, _, _ := fetch(t, admin, ts.URL+"/api/environments/alice/files"); code != 409 {
 		t.Errorf("stopped: %d", code)
 	}
 }
@@ -435,7 +441,7 @@ func TestFolderZipSurvivesTarQuirks(t *testing.T) {
 	admin := login(t, ts, "admin")
 	for _, exit := range []int{0, 1} { // 1: "file changed as we read it", the archive is complete
 		e.tarExit = exit
-		code, body, _ := fetch(t, admin, ts.URL+"/api/desktops/alice/download?path=dir")
+		code, body, _ := fetch(t, admin, ts.URL+"/api/environments/alice/download?path=dir")
 		if code != 200 {
 			t.Fatalf("exit %d: %d", exit, code)
 		}

@@ -29,13 +29,13 @@ type observation struct {
 
 // Status observes at most once per five seconds across all viewers. Callers
 // can poll it on HealthInterval and publish changes on their event stream.
-func (m *Manager) Status(ctx context.Context, desktopID string) (Status, error) {
-	if !validID(desktopID) {
-		return Status{}, invalid("desktopID", "invalid identity")
+func (m *Manager) Status(ctx context.Context, environment string) (Status, error) {
+	if !validRuntime(environment) {
+		return Status{}, invalid("environment", "invalid identity")
 	}
 	checkCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
-	unlock, lockErr := m.lockDesktop(checkCtx, desktopID)
+	unlock, lockErr := m.lockEnvironment(checkCtx, environment)
 	if lockErr != nil {
 		return Status{}, lockErr
 	}
@@ -44,10 +44,10 @@ func (m *Manager) Status(ctx context.Context, desktopID string) (Status, error) 
 	if m.observations == nil {
 		m.observations = map[string]*observation{}
 	}
-	o := m.observations[desktopID]
+	o := m.observations[environment]
 	if o == nil {
 		o = &observation{}
-		m.observations[desktopID] = o
+		m.observations[environment] = o
 	}
 	m.mu.Unlock()
 	now := time.Now().UTC()
@@ -58,12 +58,12 @@ func (m *Manager) Status(ctx context.Context, desktopID string) (Status, error) 
 	next.CurrentExitIP = ""
 	next.State = "blocked"
 	next.Reason = "VPN runtime is unavailable"
-	cs, err := m.eng.List(checkCtx, runtimeLabels(desktopID))
+	cs, err := m.eng.List(checkCtx, m.runtimeLabels(environment))
 	if err != nil {
 		next.Reason = "VPN runtime discovery failed"
 	}
 	if err == nil && len(cs) == 1 && cs[0].State == "running" {
-		verify, readErr := os.ReadFile(filepath.Join(m.directory(desktopID), "verify.sh"))
+		verify, readErr := os.ReadFile(filepath.Join(m.directory(environment), "verify.sh"))
 		if readErr == nil && m.probe(checkCtx, cs[0].ID, string(verify)+" && ("+controlProbe+")") == nil {
 			next.State = "connecting"
 			if o.EverConnected {

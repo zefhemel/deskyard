@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 type hostSettingsEngine struct {
@@ -36,15 +36,24 @@ func (e *hostSettingsEngine) List(context.Context, map[string]string) ([]engine.
 	return []engine.Container{e.current}, nil
 }
 func (e *hostSettingsEngine) ImageInspect(context.Context, string) (engine.Image, error) {
-	return engine.Image{ID: "img", Labels: map[string]string{desktops.LabelContract: desktops.Contract}}, nil
+	return engine.Image{ID: "img", Labels: map[string]string{environments.LabelContract: environments.Contract}}, nil
 }
 func (e *hostSettingsEngine) Create(_ context.Context, s engine.ContainerSpec) (string, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if s.Labels[desktops.LabelManaged] == "true" {
+	if s.Labels[environments.LabelManaged] == "true" {
 		e.current = engine.Container{ID: s.Name, Name: s.Name, Image: s.Image, ImageID: "img", Labels: s.Labels, Env: s.Env, State: "exited"}
 	}
 	return s.Name, nil
+}
+func (e *hostSettingsEngine) Rename(_ context.Context, id, name string) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if id != e.current.Name && id != e.current.ID {
+		return engine.ErrNotFound
+	}
+	e.current.Name = name
+	return nil
 }
 func (e *hostSettingsEngine) Remove(context.Context, string) error { return nil }
 func (e *hostSettingsEngine) Start(context.Context, string) error  { return nil }
@@ -56,11 +65,11 @@ func TestHostMountSettingsAPI(t *testing.T) {
 	e := &hostSettingsEngine{current: alice}
 	e.current.Labels = maps.Clone(alice.Labels)
 	e.current.Image = "img"
-	e.current.Env = map[string]string{desktops.TokenEnv: "token"}
+	e.current.Env = map[string]string{environments.TokenEnv: "token"}
 	s, ts := newTestServerWith(t, e)
 	admin := login(t, ts, "admin")
 	anna := login(t, ts, "anna")
-	if err := s.Accounts.SetAccess("id-alice", []string{"anna"}); err != nil {
+	if err := s.Accounts.SetAccess("alice", []string{"anna"}); err != nil {
 		t.Fatal(err)
 	}
 	send := func(client *http.Client, method, path, body string) (int, []byte) {
@@ -77,20 +86,20 @@ func TestHostMountSettingsAPI(t *testing.T) {
 		return resp.StatusCode, buf.Bytes()
 	}
 	invalid := `{"mounts":[{"source":"/host/data","target":"/workspace","readOnly":true}]}`
-	if code, _ := send(admin, "PATCH", "/api/desktops/alice", invalid); code != 400 {
+	if code, _ := send(admin, "PATCH", "/api/environments/alice", invalid); code != 400 {
 		t.Fatalf("unsafe target: %d", code)
 	}
-	if code, _ := send(admin, "POST", "/api/desktops", `{"name":"new-desktop","mounts":[{"source":"relative","target":"/mnt/data"}]}`); code != 400 {
+	if code, _ := send(admin, "POST", "/api/environments", `{"name":"new-desktop","mounts":[{"source":"relative","target":"/mnt/data"}]}`); code != 400 {
 		t.Fatalf("invalid create mounts: %d", code)
 	}
-	if code, _ := send(anna, "PATCH", "/api/desktops/alice", `{"mounts":[]}`); code != 403 {
+	if code, _ := send(anna, "PATCH", "/api/environments/alice", `{"mounts":[]}`); code != 403 {
 		t.Fatalf("non-admin: %d", code)
 	}
-	mounts := []desktops.HostMount{{Source: t.TempDir(), Target: "/mnt/photos", ReadOnly: true}}
+	mounts := []environments.HostMount{{Source: t.TempDir(), Target: "/mnt/photos", ReadOnly: true}}
 	patch := func(body any) {
 		t.Helper()
 		raw, _ := json.Marshal(body)
-		code, b := send(admin, "PATCH", "/api/desktops/alice", string(raw))
+		code, b := send(admin, "PATCH", "/api/environments/alice", string(raw))
 		if code != 202 {
 			t.Fatalf("PATCH: %d %s", code, b)
 		}
@@ -109,13 +118,13 @@ func TestHostMountSettingsAPI(t *testing.T) {
 		}
 	}
 	patch(map[string]any{"mounts": mounts})
-	code, b := send(admin, "GET", "/api/desktops/alice", "")
+	code, b := send(admin, "GET", "/api/environments/alice", "")
 	if code != 200 {
 		t.Fatal(code)
 	}
 	var got struct {
 		Settings struct {
-			Mounts []desktops.HostMount `json:"mounts"`
+			Mounts []environments.HostMount `json:"mounts"`
 		} `json:"settings"`
 	}
 	if err := json.Unmarshal(b, &got); err != nil {
@@ -125,12 +134,12 @@ func TestHostMountSettingsAPI(t *testing.T) {
 		t.Fatalf("not exposed by API: %s", b)
 	}
 	patch(map[string]any{"nanoCpus": int64(1e9)})
-	c, _ := s.Desktops.Get(context.Background(), "alice")
+	c, _ := s.Environments.Get(context.Background(), "alice")
 	if !reflect.DeepEqual(c.Settings.Mounts, mounts) {
 		t.Fatal("omitting mounts lost them")
 	}
-	patch(map[string]any{"mounts": []desktops.HostMount{}})
-	c, _ = s.Desktops.Get(context.Background(), "alice")
+	patch(map[string]any{"mounts": []environments.HostMount{}})
+	c, _ = s.Environments.Get(context.Background(), "alice")
 	if len(c.Settings.Mounts) != 0 {
 		t.Fatal("empty list did not detach")
 	}

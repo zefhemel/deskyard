@@ -54,12 +54,12 @@ type Command struct {
 }
 
 const (
-	whereBoth   = "inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)"
+	whereBoth   = "inside an environment it acts locally; elsewhere on the chosen environment (-e NAME)"
 	whereLocal  = "on this machine (no remote needed)"
-	whereRemote = "on the chosen remote (-d NAME); inside a desktop without a remote it acts locally"
+	whereRemote = "on the chosen environment (-e NAME); inside an environment without one chosen it acts locally"
 	exitStd     = "0 ok, 1 error, 2 usage error"
 	exitDesktop = "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
-	exitExec    = "the command's own exit code; 1 when it couldn't run (connection, token, stopped desktop), 2 usage error"
+	exitExec    = "the command's own exit code; 1 when it couldn't run (connection, token, stopped environment), 2 usage error"
 )
 
 var (
@@ -168,104 +168,104 @@ func init() {
 			Where: whereBoth, Exit: exitDesktop, run: runDesktop},
 
 		// Shell and files
-		{Name: "exec", Group: "shell", Summary: "run a command on the desktop",
+		{Name: "exec", Group: "shell", Summary: "run a command in the environment",
 			Usage: "exec [OPTIONS] -- CMD [ARG...]",
 			Desc:  "Runs one command as user (in /workspace unless --cwd) and streams its stdin, stdout and stderr; exits with the command's exit code. The command is run as given, not through a shell: for pipes, globs or && use `-- bash -lc '...'`.",
 			Args:  []Arg{{Name: "cmd", Type: "string", Required: true, Variadic: true, Desc: "the command and its arguments"}},
 			Flags: []Flag{
 				{Name: "--json", Type: "boolean", Desc: `buffer the output and print one JSON object {"stdout","stderr","exit"} instead of streaming; exit 0 when the JSON was printed`},
 				{Name: "--tty", Short: "-t", Type: "boolean", Desc: "run in a terminal (for programs that need one); stdout and stderr are merged"},
-				{Name: "--cwd", Type: "string", Value: "DIR", Default: "/workspace", Desc: "working directory on the desktop"},
-				{Name: "--env", Short: "-e", Type: "string[]", Value: "K=V", Desc: "set an environment variable (repeatable)"},
+				{Name: "--cwd", Type: "string", Value: "DIR", Default: "/workspace", Desc: "working directory in the environment"},
+				{Name: "--env", Short: "-e", Type: "string[]", Value: "K=V", Desc: "after exec: set an environment variable for the command (repeatable); not the global -e NAME before exec, which chooses the environment"},
 			},
 			Output: Output{Type: "stream", Desc: `the command's stdout and stderr as they arrive; with --json one object {"stdout":string,"stderr":string,"exit":int}, using "stdoutBase64"/"stderrBase64" (base64) instead when the output isn't UTF-8`,
 				Fields: map[string]string{"stdout": "standard output (UTF-8)", "stderr": "standard error (UTF-8)", "exit": "exit code", "stdoutBase64": "standard output, base64, when not UTF-8", "stderrBase64": "standard error, base64, when not UTF-8"}},
-			Examples: []string{"deskyard -d alice exec -- ls -la", "deskyard exec --json -- bash -lc 'cd app && npm test'", "echo hi | deskyard exec -- tee /workspace/hi.txt"},
+			Examples: []string{"deskyard -e alice exec -- ls -la", "deskyard -e alice exec -e CI=1 -- make test", "deskyard exec --json -- bash -lc 'cd app && npm test'", "echo hi | deskyard exec -- tee /workspace/hi.txt"},
 			Where:    whereRemote, Exit: exitExec, stopAtArg: true, run: runExec},
 		{Name: "terminal", Group: "shell", Summary: "join a shared terminal session",
-			Usage: "terminal [SESSION]", Desc: "Joins a shared Bash login shell in /workspace, default main. Browser, CLI and desktop clients share the same session. Inside an existing native shared terminal, press Ctrl-B then s and choose the session instead of nesting this command. Detach with Ctrl-B then D; jobs survive disconnect but end when the desktop restarts. Session names use 1–64 letters, digits, underscores or dashes and start with a letter or digit.",
+			Usage: "terminal [SESSION]", Desc: "Joins a shared Bash login shell in /workspace, default main. Browser, CLI and desktop clients share the same session. Inside an existing native shared terminal, press Ctrl-B then s and choose the session instead of nesting this command. Detach with Ctrl-B then D; jobs survive disconnect but end when the environment restarts. Session names use 1–64 letters, digits, underscores or dashes and start with a letter or digit.",
 			Args: []Arg{{Name: "session", Type: "string", Default: "main", Desc: "shared session name"}}, Output: Output{Type: "stream", Desc: "shared terminal input and output"},
-			Examples: []string{"deskyard -d alice terminal", "deskyard terminal build-2"}, Where: whereRemote, Exit: exitExec, run: runTerminal},
+			Examples: []string{"deskyard -e alice terminal", "deskyard terminal build-2"}, Where: whereRemote, Exit: exitExec, run: runTerminal},
 		{Name: "terminal-new", Group: "shell", Hidden: true, Examples: []string{"deskyard terminal-new"}, Summary: "open an independent shared terminal", Desc: "Internal native terminal default, preserving the current directory.", Usage: "terminal-new", Where: whereLocal, Exit: exitExec, Output: noOutput, run: runTerminalRuntime},
 		{Name: "terminal-list", Group: "shell", Hidden: true, Examples: []string{"deskyard terminal-list"}, Summary: "list shared terminal sessions", Desc: "Internal bounded session discovery.", Usage: "terminal-list", Where: whereLocal, Exit: exitStd, Output: noOutput, run: runTerminalRuntime},
 		{Name: "terminal-lease", Group: "shell", Hidden: true, Examples: []string{"deskyard terminal-lease main 0123456789abcdef0123456789abcdef"}, Summary: "own a shared terminal attachment", Desc: "Internal non-TTY attachment lifetime lease.", Usage: "terminal-lease SESSION ATTACHMENT", Where: whereLocal, Exit: exitExec, Output: noOutput, Args: []Arg{{Name: "session", Type: "string", Required: true}, {Name: "attachment", Type: "string", Required: true}}, run: runTerminalRuntime},
 		{Name: "terminal-attach", Group: "shell", Hidden: true, Examples: []string{"deskyard terminal-attach 0123456789abcdef0123456789abcdef"}, Summary: "join a prepared terminal attachment", Desc: "Internal TTY attachment to an existing lease.", Usage: "terminal-attach ATTACHMENT", Where: whereLocal, Exit: exitExec, Output: noOutput, Args: []Arg{{Name: "attachment", Type: "string", Required: true}}, run: runTerminalRuntime},
 		{Name: "terminal-helper", Group: "shell", Hidden: true, Examples: []string{"deskyard terminal-helper main"}, Summary: "attach the image shared terminal", Desc: "Internal shared terminal attachment.", Usage: "terminal-helper SESSION", Where: whereLocal, Exit: exitExec, Output: noOutput, Args: []Arg{{Name: "session", Type: "string", Required: true}}, run: runTerminal},
 		{Name: "shell", Group: "shell", Summary: "interactive login shell",
-			Usage: "shell", Desc: "Opens an interactive bash login shell on the desktop in your terminal (raw mode, resizes follow your window). Exit with `exit` or Ctrl-D. For scripted use, prefer exec.",
+			Usage: "shell", Desc: "Opens an interactive bash login shell in the environment in your terminal (raw mode, resizes follow your window). Exit with `exit` or Ctrl-D. For scripted use, prefer exec.",
 			Output:   Output{Type: "stream", Desc: "the terminal session"},
-			Examples: []string{"deskyard -d alice shell"},
+			Examples: []string{"deskyard -e alice shell"},
 			Where:    whereRemote, Exit: "the shell's exit code; 1 when it couldn't start", run: runShell},
-		{Name: "cp", Group: "shell", Summary: "copy files to or from a desktop",
+		{Name: "cp", Group: "shell", Summary: "copy files to or from an environment",
 			Usage: "cp SRC DST",
-			Desc: "Copies a file or directory between this machine and a desktop; write the desktop side as NAME:/path (NAME is a remote; an empty NAME, as in :/path, means the chosen remote). " +
+			Desc: "Copies a file or directory between this machine and an environment; write the environment side as NAME:/path (NAME is a remote; an empty NAME, as in :/path, means the chosen environment). " +
 				"A file lands at DST, or inside DST when it is an existing directory. A directory's contents land in DST, which is created (like `cp -r SRC/. DST`). " +
-				"SRC - reads stdin; DST - writes to stdout (a tar stream for a directory). Files land as user; inside a desktop, two local paths are copied locally.",
+				"SRC - reads stdin; DST - writes to stdout (a tar stream for a directory). Files land as user; inside an environment, two local paths are copied locally.",
 			Args:     []Arg{{Name: "src", Type: "path", Required: true, Desc: "local path, -, or NAME:/path"}, {Name: "dst", Type: "path", Required: true, Desc: "local path, -, or NAME:/path"}},
 			Output:   Output{Type: "none", Desc: "nothing, unless DST is - (the file's bytes or a tar stream)"},
 			Examples: []string{"deskyard cp ./report.pdf alice:/workspace/", "deskyard cp ./site alice:/workspace/site", "deskyard cp alice:/workspace/out.csv ."},
 			Where:    whereRemote, Exit: exitStd, run: runCp},
 
-		{Name: "forward", Group: "shell", Summary: "map TCP ports between this machine and the desktop",
+		{Name: "forward", Group: "shell", Summary: "map TCP ports between this machine and the environment",
 			Usage: "forward [-R] PORT[:PORT]...",
 			Desc: "Maps TCP ports both ways until Ctrl-C, over the remote access API (no port is opened anywhere else). Each argument is one mapping. " +
-				"PORT or LOCAL:DESKTOP: this machine's 127.0.0.1:LOCAL becomes localhost:DESKTOP in the desktop (a dev server here, reachable by the desktop's browser). " +
-				"-R PORT or -R DESKTOP:LOCAL (reverse; one -R before each such mapping): the desktop's localhost:DESKTOP becomes 127.0.0.1:LOCAL here. " +
-				"Both ends listen on loopback only; the desktop won't listen below 1024 (plain forward only; -R just dials, so -R 80:8080 works). A port in use on either side fails that mapping, which is retried, and the others carry on. " +
-				"When the connection drops (the desktop stops or restarts, the network blips) it keeps its local listeners, closes open connections and reconnects with backoff (1 s up to 30 s). " +
-				"It exits only on Ctrl-C, or when the token is refused. Run it in the background. Inside a desktop it needs -d too.",
-			Args:  []Arg{{Name: "port", Type: "string", Required: true, Variadic: true, Desc: "a mapping: PORT or LOCAL:DESKTOP; after -R, PORT or DESKTOP:LOCAL"}},
-			Flags: []Flag{{Name: "--reverse", Short: "-R", Type: "boolean", Desc: "the next mapping is reverse: a port in the desktop becomes a port here"}},
-			Output: Output{Type: "text", Desc: `one line per mapping each time it goes live: "in LOCAL DESKTOP" or "out DESKTOP 127.0.0.1:LOCAL"; on stderr one line per state change (linked, lost and retrying, port in use)`,
-				Fields: map[string]string{"in": "LOCAL DESKTOP: this machine's port, reachable in the desktop at localhost:DESKTOP", "out": "DESKTOP ADDR: the desktop's port, reachable here at ADDR"}},
-			Examples: []string{"deskyard -d alice forward 3000 -R 5173", "deskyard -d alice forward 8080:3000 &", "deskyard -d alice forward -R 9229:19229"},
-			Where:    "on the chosen remote (-d NAME); inside a desktop too, since it maps ports between two machines. Ports are LOCAL:DESKTOP, or DESKTOP:LOCAL after -R. The desktop won't listen below 1024. \"Linked to ...\" and the out lines appear when the link is accepted, before the desktop side is known to run", Exit: "0 after Ctrl-C, 1 when the token is refused (401) or no remote is set up, 2 usage error", rawArgs: true, run: runForward},
+				"PORT or LOCAL:ENV: this machine's 127.0.0.1:LOCAL becomes localhost:ENV in the environment (a dev server here, reachable by the environment's browser). " +
+				"-R PORT or -R ENV:LOCAL (reverse; one -R before each such mapping): the environment's localhost:ENV becomes 127.0.0.1:LOCAL here. " +
+				"Both ends listen on loopback only; the environment won't listen below 1024 (plain forward only; -R just dials, so -R 80:8080 works). A port in use on either side fails that mapping, which is retried, and the others carry on. " +
+				"When the connection drops (the environment stops or restarts, the network blips) it keeps its local listeners, closes open connections and reconnects with backoff (1 s up to 30 s). " +
+				"It exits only on Ctrl-C, or when the token is refused. Run it in the background. Inside an environment it needs -e too.",
+			Args:  []Arg{{Name: "port", Type: "string", Required: true, Variadic: true, Desc: "a mapping: PORT or LOCAL:ENV; after -R, PORT or ENV:LOCAL"}},
+			Flags: []Flag{{Name: "--reverse", Short: "-R", Type: "boolean", Desc: "the next mapping is reverse: a port in the environment becomes a port here"}},
+			Output: Output{Type: "text", Desc: `one line per mapping each time it goes live: "in LOCAL ENV" or "out ENV 127.0.0.1:LOCAL"; on stderr one line per state change (linked, lost and retrying, port in use)`,
+				Fields: map[string]string{"in": "LOCAL ENV: this machine's port, reachable in the environment at localhost:ENV", "out": "ENV ADDR: the environment's port, reachable here at ADDR"}},
+			Examples: []string{"deskyard -e alice forward 3000 -R 5173", "deskyard -e alice forward 8080:3000 &", "deskyard -e alice forward -R 9229:19229"},
+			Where:    "on the chosen environment (-e NAME); inside an environment too, since it maps ports between two machines. Ports are LOCAL:ENV, or ENV:LOCAL after -R. The environment won't listen below 1024. \"Linked to ...\" and the out lines appear when the link is accepted, before the environment side is known to run", Exit: "0 after Ctrl-C, 1 when the token is refused (401) or no remote is set up, 2 usage error", rawArgs: true, run: runForward},
 
 		// Browser
-		{Name: "browser connect", Group: "browser", Summary: "forward the desktop's browser to a local CDP port",
+		{Name: "browser connect", Group: "browser", Summary: "forward the environment's browser to a local CDP port",
 			Usage: "browser connect [--port N]",
-			Desc: "Listens on 127.0.0.1:PORT and forwards the Chrome DevTools Protocol to the desktop's shared Chromium (the one on its desktop, with your signed-in sessions), so Playwright, Puppeteer or DevTools tools connect as if the browser were local. " +
-				"Prints the URL, then keeps running until Ctrl-C. Run it in the background. Inside a desktop it isn't needed: CDP is at http://127.0.0.1:9221.",
+			Desc: "Listens on 127.0.0.1:PORT and forwards the Chrome DevTools Protocol to the environment's shared Chromium (the one on its desktop, with your signed-in sessions), so Playwright, Puppeteer or DevTools tools connect as if the browser were local. " +
+				"Prints the URL, then keeps running until Ctrl-C. Run it in the background. Inside an environment it isn't needed: CDP is at http://127.0.0.1:9221.",
 			Flags:    []Flag{{Name: "--port", Type: "integer", Value: "N", Default: "9222", Desc: "local port (0 = any free port)"}},
 			Output:   Output{Type: "text", Desc: "first line: the local CDP URL (http://127.0.0.1:9222); connection log on stderr"},
-			Examples: []string{"deskyard -d alice browser connect &", "# then in Python: p.chromium.connect_over_cdp(\"http://127.0.0.1:9222\")"},
+			Examples: []string{"deskyard -e alice browser connect &", "# then in Python: p.chromium.connect_over_cdp(\"http://127.0.0.1:9222\")"},
 			Where:    whereRemote, Exit: exitStd, run: runBrowserConnect},
 
 		// Remotes
-		{Name: "remote add", Group: "remote", Summary: "save a desktop as a remote",
+		{Name: "remote add", Group: "remote", Summary: "save an environment as a remote",
 			Usage: "remote add NAME URL --token dyt_…",
-			Desc:  "Checks the token against the desktop's remote access API and saves the remote in remotes.json (" + "$XDG_CONFIG_HOME/deskyard, default ~/.config/deskyard; mode 0600). URL is the desktop's address, like https://host/alice. Tokens come from the desktop's Remote access tab. The first remote becomes the default.",
-			Args: []Arg{{Name: "name", Type: "string", Required: true, Desc: "local name for the remote (letters, digits, . _ -)"},
-				{Name: "url", Type: "string", Required: true, Desc: "the desktop's URL, e.g. https://host/alice"}},
+			Desc:  "Checks the token against the environment's remote access API and saves the remote in remotes.json (" + "$XDG_CONFIG_HOME/deskyard, default ~/.config/deskyard; mode 0600). URL is the environment's address, like https://host/alice. Tokens come from the environment's Remote access tab. The first remote becomes the default.",
+			Args: []Arg{{Name: "name", Type: "string", Required: true, Desc: "local name for the remote, used with -e NAME (letters, digits, . _ -)"},
+				{Name: "url", Type: "string", Required: true, Desc: "the environment's URL, e.g. https://host/alice"}},
 			Flags:    []Flag{{Name: "--token", Type: "string", Value: "TOKEN", Desc: "access token (dyt_…); defaults to $DESKYARD_TOKEN"}},
 			Output:   Output{Type: "text", Desc: "a confirmation line"},
-			Examples: []string{"deskyard remote add alice https://desktops.example.com/alice --token dyt_…"},
+			Examples: []string{"deskyard remote add alice https://deskyard.example.com/alice --token dyt_…"},
 			Where:    whereLocal, Exit: exitStd, run: runRemoteAdd},
 		{Name: "remote list", Group: "remote", Summary: "list saved remotes",
 			Usage: "remote list [--json]", Desc: "Lists the saved remotes; * marks the default.",
 			Flags: []Flag{flagJSON},
-			Output: Output{Type: "text", Desc: "a table NAME URL TOKEN (token ID only); with --json an array of {name,url,desktop,default}",
-				Fields: map[string]string{"name": "remote name", "url": "desktop URL", "desktop": "desktop name on the supervisor", "default": "whether it is the default"}},
+			Output: Output{Type: "text", Desc: "a table NAME URL TOKEN (token ID only); with --json an array of {name,url,environment,default}",
+				Fields: map[string]string{"name": "remote name", "url": "environment URL", "environment": "environment name on the supervisor", "default": "whether it is the default"}},
 			Examples: []string{"deskyard remote list"}, Where: whereLocal, Exit: exitStd, run: runRemoteList},
 		{Name: "remote remove", Group: "remote", Summary: "forget a remote",
 			Usage: "remote remove NAME", Desc: "Removes a saved remote (the token itself stays valid until someone revokes it on the Remote access tab).",
 			Args:   []Arg{{Name: "name", Type: "string", Required: true, Desc: "remote name"}},
 			Output: noOutput, Examples: []string{"deskyard remote remove alice"}, Where: whereLocal, Exit: exitStd, run: runRemoteRemove},
 		{Name: "remote default", Group: "remote", Summary: "set or show the default remote",
-			Usage: "remote default [NAME]", Desc: "Makes NAME the remote used when no -d or DESKYARD_REMOTE is given; without NAME prints the current default.",
+			Usage: "remote default [NAME]", Desc: "Makes NAME the remote used when no -e or DESKYARD_REMOTE is given; without NAME prints the current default.",
 			Args:   []Arg{{Name: "name", Type: "string", Desc: "remote name"}},
 			Output: Output{Type: "text", Desc: "without NAME: the default's name, or nothing"}, Examples: []string{"deskyard remote default alice"},
 			Where: whereLocal, Exit: exitStd, run: runRemoteDefault},
 
 		// Info
-		{Name: "status", Group: "info", Summary: "show the desktop's name, state, image and screen",
-			Usage: "status [--json]", Desc: "Shows which desktop the command talks to and its state, image and screen size.",
+		{Name: "status", Group: "info", Summary: "show the environment's name, state, image and screen",
+			Usage: "status [--json]", Desc: "Shows which environment the command talks to and its state, image and screen size.",
 			Flags: []Flag{flagJSON},
 			Output: Output{Type: "text", Desc: `"key: value" lines; with --json an object`,
-				Fields: map[string]string{"name": "desktop name", "state": "running, stopped, …", "image": "image reference", "imageTitle": "image title", "imageVersion": "image version", "screen": "{width,height}", "remote": "remote used (absent locally)", "url": "desktop URL (absent locally)", "local": "true when acting locally"}},
-			Examples: []string{"deskyard -d alice status"}, Where: whereBoth, Exit: exitStd, run: runStatus},
-		{Name: "guide", Group: "info", Summary: "short manual for desktop access and control",
-			Usage: "guide", Desc: "Prints a short manual: how a desktop is laid out, the three ways to work (shell, browser, desktop) and when to use which.",
+				Fields: map[string]string{"name": "environment name", "state": "running, stopped, …", "image": "image reference", "imageTitle": "image title", "imageVersion": "image version", "screen": "{width,height}", "remote": "remote used (absent locally)", "url": "environment URL (absent locally)", "local": "true when acting locally"}},
+			Examples: []string{"deskyard -e alice status"}, Where: whereBoth, Exit: exitStd, run: runStatus},
+		{Name: "guide", Group: "info", Summary: "short manual for environment access and control",
+			Usage: "guide", Desc: "Prints a short manual: how an environment is laid out, the three ways to work (shell, browser, desktop) and when to use which.",
 			Output: Output{Type: "text", Desc: "the guide"}, Examples: []string{"deskyard guide"}, Where: whereLocal, Exit: exitStd, run: runGuide},
 		{Name: "describe", Group: "info", Summary: "machine-readable description of every command",
 			Usage: "describe --json", Desc: "Prints every command with its arguments, flags, output and exit codes as JSON, to load as tool definitions.",
@@ -276,19 +276,19 @@ func init() {
 			Usage: "help [COMMAND...]", Desc: "Prints help for a command, or the overview. Same as COMMAND --help.",
 			Args:   []Arg{{Name: "command", Type: "string", Variadic: true, Desc: "command name, e.g. click or remote add"}},
 			Output: Output{Type: "text", Desc: "help text"}, Examples: []string{"deskyard help cp"}, Where: whereLocal, Exit: exitStd, run: runHelp},
-		{Name: "forward-helper", Group: "shell", Hidden: true, Summary: "the desktop side of deskyard forward",
+		{Name: "forward-helper", Group: "shell", Hidden: true, Summary: "the environment side of deskyard forward",
 			Usage:    "forward-helper",
-			Desc:     "Serves the desktop side of the forward protocol on stdin and stdout (frames with a u32 length prefix): listens on and dials 127.0.0.1 in the desktop. The supervisor runs it as user for /api/agent/v1/forward.",
+			Desc:     "Serves the environment side of the forward protocol on stdin and stdout (frames with a u32 length prefix): listens on and dials 127.0.0.1 in the environment. The supervisor runs it as user for /api/agent/v1/forward.",
 			Output:   Output{Type: "bytes", Desc: "protocol frames"},
 			Examples: []string{"deskyard forward-helper"},
-			Where:    "inside a desktop", Exit: exitStd, run: runForwardHelper},
-		{Name: "activity-serve", Group: "shell", Hidden: true, Summary: "the desktop's activity stream",
+			Where:    "inside an environment", Exit: exitStd, run: runForwardHelper},
+		{Name: "activity-serve", Group: "shell", Hidden: true, Summary: "the environment's activity stream",
 			Usage:    "activity-serve [--listen ADDR]",
-			Desc:     "Serves the desktop's activity stream: reads event datagrams on UDP ADDR, keeps the last 15 minutes, and serves them as NDJSON on GET /events over HTTP on the same ADDR. The image runs it as user; the supervisor reads it through the desktop's Caddy.",
+			Desc:     "Serves the environment's activity stream: reads event datagrams on UDP ADDR, keeps the last 15 minutes, and serves them as NDJSON on GET /events over HTTP on the same ADDR. The image runs it as user; the supervisor reads it through the environment's Caddy.",
 			Flags:    []Flag{{Name: "--listen", Type: "string", Value: "ADDR", Default: "127.0.0.1:6092", Desc: "address for both the UDP socket and the HTTP listener"}},
 			Output:   Output{Type: "stream", Desc: "none; serves until stopped"},
 			Examples: []string{"deskyard activity-serve --listen 127.0.0.1:6092"},
-			Where:    "inside a desktop", Exit: exitStd, run: runActivityServe},
+			Where:    "inside an environment", Exit: exitStd, run: runActivityServe},
 		{Name: "version", Group: "info", Summary: "print the version",
 			Usage: "version", Desc: "Prints the deskyard command's version.",
 			Output: Output{Type: "text", Desc: "the version"}, Examples: []string{"deskyard version"}, Where: whereLocal, Exit: exitStd, run: runVersion},
@@ -296,7 +296,7 @@ func init() {
 }
 
 var globalFlags = []Flag{
-	{Name: "--desktop", Short: "-d", Type: "string", Value: "NAME", Desc: "use the remote NAME (see `deskyard remote list`); before the command"},
+	{Name: "--environment", Short: "-e", Type: "string", Value: "NAME", Desc: "the environment to use, by its remote name (see `deskyard remote list`); only before the command name: after it, as in `exec -e K=V`, -e is a command's own flag"},
 	{Name: "--help", Short: "-h", Type: "boolean", Desc: "help for the command"},
 }
 
@@ -304,8 +304,8 @@ var environment = []struct {
 	Name string `json:"name"`
 	Desc string `json:"description"`
 }{
-	{"DESKYARD_REMOTE", "remote to use when -d isn't given"},
-	{"DESKYARD_URL", "desktop URL (https://host/alice) to use without a remotes.json; needs DESKYARD_TOKEN"},
+	{"DESKYARD_REMOTE", "remote (environment) to use when -e isn't given"},
+	{"DESKYARD_URL", "environment URL (https://host/alice) to use without a remotes.json; needs DESKYARD_TOKEN"},
 	{"DESKYARD_TOKEN", "access token for DESKYARD_URL, and the default for `remote add --token`"},
 	{"DESKYARD_SETTLE", "seconds screenshot and zoom wait before capturing (default 0.3)"},
 	{"XDG_CONFIG_HOME", "where remotes.json lives (default ~/.config)"},
@@ -318,7 +318,7 @@ var exitCodes = []struct {
 	{"0", "ok"},
 	{"1", "error (the message on stderr says what to do next)"},
 	{"2", "usage error (bad command, flag or argument)"},
-	{"other", "exec, shell and screen actions pass through the exit code of the command on the desktop"},
+	{"other", "exec, shell and screen actions pass through the exit code of the command in the environment"},
 }
 
 // visibleCommands are the commands help and describe list.

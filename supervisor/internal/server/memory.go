@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 // detectMemoryReclaim runs once, before the server starts accepting requests.
@@ -38,12 +38,12 @@ func (s *Server) detectMemoryReclaim(ctx context.Context) {
 }
 
 func (s *Server) handleReclaimMemory(w http.ResponseWriter, r *http.Request) {
-	c, a, ok := s.desktopFor(w, r, auth.Manage)
+	c, a, ok := s.environmentFor(w, r, auth.Manage)
 	if !ok {
 		return
 	}
 	if !c.Running() {
-		writeError(w, http.StatusConflict, desktops.ErrStopped.Error())
+		writeError(w, http.StatusConflict, environments.ErrStopped.Error())
 		return
 	}
 	if !s.memoryReclaim.Enabled {
@@ -56,7 +56,7 @@ func (s *Server) handleReclaimMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Keep the desktop running, while excluding concurrent lifecycle/reclaim requests.
-	release, err := s.Desktops.Reserve(c.Name, "")
+	release, err := s.Environments.Reserve(c.Name, "")
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
@@ -73,7 +73,30 @@ func (s *Server) handleReclaimMemory(w http.ResponseWriter, r *http.Request) {
 		writeError(w, code, err.Error())
 		return
 	}
-	s.Log.Info("reclaimed memory", "desktop", c.Name, "by", a.Username,
+	s.Log.Info("reclaimed memory", "environment", c.Name, "by", a.Username,
 		"before", result.BeforeBytes, "after", result.AfterBytes, "partial", result.Partial)
 	writeJSON(w, http.StatusOK, result)
+}
+
+// handleMemoryPolicy saves an environment's memory reclaim preference in its
+// definition, without touching its container.
+func (s *Server) handleMemoryPolicy(w http.ResponseWriter, r *http.Request) {
+	c, _, ok := s.environmentFor(w, r, auth.Manage)
+	if !ok {
+		return
+	}
+	var req struct {
+		MemoryReclaim *bool `json:"memoryReclaim"`
+	}
+	if err := readJSON(r, &req); err != nil || req.MemoryReclaim == nil {
+		writeError(w, http.StatusBadRequest, "memoryReclaim must be a boolean")
+		return
+	}
+	if err := s.Environments.SetMemoryReclaim(c.Name, *req.MemoryReclaim); err != nil {
+		writeError(w, errorStatus(err), err.Error())
+		return
+	}
+	s.inside.wake()
+	s.publishEnvironment(r.Context(), c.Name)
+	w.WriteHeader(http.StatusNoContent)
 }

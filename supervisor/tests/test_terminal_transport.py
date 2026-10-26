@@ -33,7 +33,7 @@ def client_count(name):
 @contextmanager
 def attachment(admin, name):
     cookie = "; ".join(f"{key}={value}" for key, value in admin.cookies.items())
-    with connect(admin.base.replace("http:", "ws:") + f"/api/desktops/{name}/terminal",
+    with connect(admin.base.replace("http:", "ws:") + f"/api/environments/{name}/terminal",
                  origin=admin.base, additional_headers={"Cookie": cookie}) as ws:
         ws.send(json.dumps({"cols": 80, "rows": 24}))
         ready = json.loads(ws.recv(timeout=10))
@@ -87,7 +87,7 @@ def test_browser_terminal_lease_lifetime(admin, desktop, name):
     # Close during preparation, before a ready frame can be observed.
     cookie = "; ".join(f"{key}={value}" for key, value in admin.cookies.items())
     for _ in range(8):
-        with connect(admin.base.replace("http:", "ws:") + f"/api/desktops/{name}/terminal",
+        with connect(admin.base.replace("http:", "ws:") + f"/api/environments/{name}/terminal",
                      origin=admin.base, additional_headers={"Cookie": cookie}) as ws:
             ws.send(json.dumps({"cols":80,"rows":24}))
     eventually(lambda: client_count(name), "0")
@@ -96,7 +96,7 @@ def test_browser_terminal_lease_lifetime(admin, desktop, name):
 
 def test_remote_terminal_disconnect_and_eof(cli, remote, name):
     for mode in ("disconnect", "eof"):
-        process = subprocess.Popen([cli, "-d", name, "terminal"], env=remote.env,
+        process = subprocess.Popen([cli, "-e", name, "terminal"], env=remote.env,
                                    stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         try:
             process.stdin.write(f'printf {mode} > /workspace/lease-cli\r'.encode())

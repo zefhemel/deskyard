@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/netip"
 	"path/filepath"
+	"regexp"
 	"strconv"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
@@ -13,12 +14,14 @@ import (
 
 const GluetunImage = "qmcgaw/gluetun@sha256:c2ee4191762fca6b6a3c3359a731198a95d9c9af4db32d466e223bf3a84e779b"
 const (
-	LabelRole       = "deskyard.vpn.role"
-	LabelDesktopID  = "deskyard.vpn.desktop-id"
-	LabelConnection = "deskyard.vpn.connection-id"
-	LabelRevision   = "deskyard.vpn.revision"
-	labelPolicy     = "deskyard.vpn.policy"
-	runtimeRole     = "gateway"
+	LabelRole        = "deskyard.vpn.role"
+	LabelEnvironment = "deskyard.vpn.environment" // the name of the environment a runtime serves
+	LabelConnection  = "deskyard.vpn.connection-id"
+	LabelRevision    = "deskyard.vpn.revision"
+	// LabelInstance is the supervisor instance owning a runtime, as on environments.
+	LabelInstance = "deskyard.instance"
+	labelPolicy   = "deskyard.vpn.policy"
+	runtimeRole   = "gateway"
 )
 
 // The fixture-only provider is typed and unexported. User input cannot select
@@ -36,14 +39,14 @@ type resolverPolicy uint8
 const publicDNSOverTunnel resolverPolicy = 0
 
 type runtimeInput struct {
-	DesktopID, Name, Network, Directory string
-	Connection                          Connection
-	Credentials                         CredentialFiles
-	Exceptions                          []Exception
-	Reserved                            []netip.Prefix
-	PublishLocal                        bool
-	Fixture                             *wireguardFixture
-	Resolver                            resolverPolicy
+	Environment, Instance, Network, Directory string
+	Connection                                Connection
+	Credentials                               CredentialFiles
+	Exceptions                                []Exception
+	Reserved                                  []netip.Prefix
+	PublishLocal                              bool
+	Fixture                                   *wireguardFixture
+	Resolver                                  resolverPolicy
 }
 type runtimeConfig struct {
 	Spec     engine.ContainerSpec
@@ -51,8 +54,8 @@ type runtimeConfig struct {
 }
 
 func buildRuntime(in runtimeInput) (runtimeConfig, error) {
-	if !validID(in.DesktopID) || in.Network == "" {
-		return runtimeConfig{}, invalid("runtime", "desktop identity and network are required")
+	if !validRuntime(in.Environment) || in.Network == "" {
+		return runtimeConfig{}, invalid("runtime", "environment identity and network are required")
 	}
 	if in.Resolver != publicDNSOverTunnel {
 		return runtimeConfig{}, invalid("resolverPolicy", "unsupported resolver policy")
@@ -66,12 +69,12 @@ func buildRuntime(in runtimeInput) (runtimeConfig, error) {
 	if err != nil {
 		return runtimeConfig{}, err
 	}
-	spec := engine.ContainerSpec{Name: "deskyard-vpn-" + in.DesktopID, Image: GluetunImage, Network: in.Network, Restart: "no", CapAdd: []string{"NET_ADMIN"}, Devices: []string{"/dev/net/tun"}, Env: map[string]string{
+	spec := engine.ContainerSpec{Name: runtimeName(in.Environment), Image: GluetunImage, Network: in.Network, Restart: "no", CapAdd: []string{"NET_ADMIN"}, Devices: []string{"/dev/net/tun"}, Env: map[string]string{
 		"VPN_SERVICE_PROVIDER": "nordvpn", "VPN_TYPE": "openvpn", "OPENVPN_PROTOCOL": "udp", "OPENVPN_PROCESS_USER": "root", "SERVER_COUNTRIES": in.Connection.Country,
 		"OPENVPN_USER_SECRETFILE": "/run/secrets/openvpn_user", "OPENVPN_PASSWORD_SECRETFILE": "/run/secrets/openvpn_password",
 		"HTTP_CONTROL_SERVER_ADDRESS": "127.0.0.1:8000", "HTTP_CONTROL_SERVER_AUTH_CONFIG_FILEPATH": "/gluetun/auth/config.toml",
 		"FIREWALL_INPUT_PORTS": "8080", "DNS_SERVER": "on", "DNS_UPSTREAM_RESOLVER_TYPE": "plain", "DNS_UPSTREAM_PLAIN_ADDRESSES": "1.1.1.1:53", "DNS_UPSTREAM_IPV6": "off", "BLOCK_MALICIOUS": "off", "DNS_UPDATE_PERIOD": "0", "VERSION_INFORMATION": "off", "HEALTH_RESTART_VPN": "on",
-	}, Labels: map[string]string{LabelRole: runtimeRole, LabelDesktopID: in.DesktopID, LabelConnection: in.Connection.ID, LabelRevision: strconv.FormatUint(in.Connection.Revision, 10)}}
+	}, Labels: map[string]string{LabelRole: runtimeRole, LabelEnvironment: in.Environment, LabelConnection: in.Connection.ID, LabelRevision: strconv.FormatUint(in.Connection.Revision, 10)}}
 	spec.Mounts = []engine.Mount{{Source: in.Credentials.Username, Target: "/run/secrets/openvpn_user", ReadOnly: true}, {Source: in.Credentials.Password, Target: "/run/secrets/openvpn_password", ReadOnly: true}, {Source: filepath.Join(in.Directory, "auth.toml"), Target: "/gluetun/auth/config.toml", ReadOnly: true}, {Source: filepath.Join(in.Directory, "post-rules.txt"), Target: "/iptables/post-rules.txt", ReadOnly: true}}
 	if in.Fixture != nil {
 		f := in.Fixture
@@ -89,6 +92,9 @@ func buildRuntime(in runtimeInput) (runtimeConfig, error) {
 		port := 0
 		spec.PublishLocal = &port
 	}
+	if in.Instance != "" {
+		spec.Labels[LabelInstance] = in.Instance
+	}
 	// Configuration identity includes only
 	// versioned mount paths, public metadata and the exact enforced policy.
 	encoded, _ := json.Marshal(struct {
@@ -99,3 +105,13 @@ func buildRuntime(in runtimeInput) (runtimeConfig, error) {
 	spec.Labels[labelPolicy] = hex.EncodeToString(sum[:])
 	return runtimeConfig{spec, policy}, nil
 }
+
+var runtimeRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$`)
+
+// validRuntime checks a runtime's identity: an environment's name, or a
+// connection test's random ID.
+func validRuntime(id string) bool { return runtimeRE.MatchString(id) }
+
+// runtimeName is the gateway container of the environment id. Environment
+// names have no '.', so it is never an environment's container name.
+func runtimeName(id string) string { return "deskyard-" + id + ".vpn" }

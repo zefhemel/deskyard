@@ -24,9 +24,9 @@ func TestParseMiseTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []Tool{
-		{"node", "22.1.0", "desktop"},
+		{"node", "22.1.0", "environment"},
 		{"node", "24.0.0", "image"},
-		{"node", "19", "desktop"},
+		{"node", "19", "environment"},
 		{"python", "3.13.1", "image"},
 	}
 	if len(got) != len(want) {

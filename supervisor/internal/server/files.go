@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 // Browsing and downloading a desktop's files. Everything is read inside the
@@ -51,7 +51,7 @@ func insideRoot(p, root string) bool {
 
 // resolveFile has the desktop resolve p (relative to /workspace) and refuses
 // anything that ends up outside /workspace. The result is the real path.
-func (s *Server) resolveFile(ctx context.Context, c desktops.Desktop, p string) (string, error) {
+func (s *Server) resolveFile(ctx context.Context, c environments.Environment, p string) (string, error) {
 	if p == "" {
 		p = filesRoot
 	}
@@ -78,7 +78,7 @@ func (s *Server) resolveFile(ctx context.Context, c desktops.Desktop, p string) 
 }
 
 // fileKind is "dir", "file" or "other" for a resolved path, with its size.
-func (s *Server) fileKind(ctx context.Context, c desktops.Desktop, real string) (kind string, size int64, err error) {
+func (s *Server) fileKind(ctx context.Context, c environments.Environment, real string) (kind string, size int64, err error) {
 	// find's %y is a letter, so the answer doesn't depend on the desktop's locale.
 	out, err := s.execOutput(ctx, c, "find", real, "-maxdepth", "0", "-printf", `%y\t%s`)
 	if err != nil {
@@ -107,13 +107,13 @@ func fileError(w http.ResponseWriter, err error) {
 }
 
 // filesTarget is the common start of both routes: access, running, a resolved path.
-func (s *Server) filesTarget(w http.ResponseWriter, r *http.Request, ctx context.Context) (desktops.Desktop, string, string, int64, bool) {
-	c, _, ok := s.desktopFor(w, r, auth.View)
+func (s *Server) filesTarget(w http.ResponseWriter, r *http.Request, ctx context.Context) (environments.Environment, string, string, int64, bool) {
+	c, _, ok := s.environmentFor(w, r, auth.View)
 	if !ok {
 		return c, "", "", 0, false
 	}
 	if !c.Running() {
-		writeError(w, http.StatusConflict, desktops.ErrStopped.Error())
+		writeError(w, http.StatusConflict, environments.ErrStopped.Error())
 		return c, "", "", 0, false
 	}
 	real, err := s.resolveFile(ctx, c, r.URL.Query().Get("path"))
@@ -235,14 +235,14 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 
 // abortDownload cuts the connection: a failure after the headers went out
 // must not look like a complete download.
-func (s *Server) abortDownload(w http.ResponseWriter, c desktops.Desktop, real string, err error) {
-	s.Log.Warn("download failed", "desktop", c.Name, "path", real, "err", err)
+func (s *Server) abortDownload(w http.ResponseWriter, c environments.Environment, real string, err error) {
+	s.Log.Warn("download failed", "environment", c.Name, "path", real, "err", err)
 	panic(http.ErrAbortHandler)
 }
 
 // execStream runs cmd as the desktop's user and hands its stdout to fn. An exit
 // code above okUpTo is an error, as is fn's.
-func (s *Server) execStream(ctx context.Context, c desktops.Desktop, okUpTo int, cmd []string, fn func(stdout io.Reader) error) error {
+func (s *Server) execStream(ctx context.Context, c environments.Environment, okUpTo int, cmd []string, fn func(stdout io.Reader) error) error {
 	result, err := engine.Run(ctx, s.Eng, c.Container.ID, engine.ExecSpec{Cmd: cmd, User: "user", WorkDir: filesRoot, Env: append([]string{"LC_ALL=C"}, execEnv...)}, engine.RunOptions{Consume: fn, StderrLimit: 4096})
 	if err != nil {
 		return err

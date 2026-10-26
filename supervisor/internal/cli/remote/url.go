@@ -8,17 +8,17 @@ import (
 	"strings"
 )
 
-// Target is a parsed desktop URL: the supervisor's base URL and the
-// desktop's name (empty when the URL names only the supervisor).
+// Target is a parsed environment URL: the supervisor's base URL and the
+// environment's name (empty when the URL names only the supervisor).
 type Target struct {
-	Base    string // scheme://host[:port][/prefix], no trailing slash
-	Desktop string
+	Base        string // scheme://host[:port][/prefix], no trailing slash
+	Environment string
 }
 
-// ParseURL splits a desktop URL such as https://host/alice or
+// ParseURL splits an environment URL such as https://host/alice or
 // http://127.0.0.1:8080/prefix/alice into the supervisor base URL and the
-// desktop name (the last path segment). A URL without a path names only
-// the supervisor; the token then decides which desktop it is.
+// environment name (the last path segment). A URL without a path names only
+// the supervisor; the token then decides which environment it is.
 func ParseURL(raw string) (Target, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
@@ -37,7 +37,7 @@ func ParseURL(raw string) (Target, error) {
 	// A pasted agent API URL: drop the API part.
 	if i := strings.Index("/"+path+"/", "/api/agent/"); i >= 0 {
 		path = strings.Trim(path[:max(i-1, 0)], "/")
-		return Target{Base: u.Scheme + "://" + u.Host + prefix(path), Desktop: ""}, nil
+		return Target{Base: u.Scheme + "://" + u.Host + prefix(path), Environment: ""}, nil
 	}
 	if path == "" {
 		return Target{Base: u.Scheme + "://" + u.Host}, nil
@@ -45,8 +45,8 @@ func ParseURL(raw string) (Target, error) {
 	segs := strings.Split(path, "/")
 	name := segs[len(segs)-1]
 	return Target{
-		Base:    u.Scheme + "://" + u.Host + prefix(strings.Join(segs[:len(segs)-1], "/")),
-		Desktop: name,
+		Base:        u.Scheme + "://" + u.Host + prefix(strings.Join(segs[:len(segs)-1], "/")),
+		Environment: name,
 	}, nil
 }
 
@@ -57,10 +57,10 @@ func prefix(p string) string {
 	return "/" + p
 }
 
-// URL is the human-facing desktop URL (base + name).
+// URL is the human-facing environment URL (base + name).
 func (t Target) URL() string {
-	if t.Desktop == "" {
+	if t.Environment == "" {
 		return t.Base
 	}
-	return t.Base + "/" + t.Desktop
+	return t.Base + "/" + t.Environment
 }

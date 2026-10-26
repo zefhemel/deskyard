@@ -1,8 +1,8 @@
 import { VPNFields, VPNStatus } from "../../components/vpn.tsx";
-import { desktopSettingsChanged, saveDesktopSettings, exceptionRows, type ExceptionRow } from "../../lib/vpn-form.ts";
+import { environmentSettingsChanged, saveEnvironmentSettings, exceptionRows, type ExceptionRow } from "../../lib/vpn-form.ts";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { api, type Desktop, type Host } from "../../api.ts";
-import { DockerAccessField, cpuOptions, ImagePick, memoryOptions } from "../../components/desktop-fields.tsx";
+import { api, type Environment, type Host } from "../../api.ts";
+import { DockerAccessField, cpuOptions, ImagePick, memoryOptions } from "../../components/environment-fields.tsx";
 import { JobProgress, useJob } from "../../components/job.tsx";
 import { notify } from "../../components/toast.tsx";
 import { Button, Check, ErrorText, Field, Note, Seg } from "../../components/ui.tsx";
@@ -11,7 +11,7 @@ import { useFetch } from "../../lib/use-fetch.ts";
 import { HostMountFields } from "../../components/host-mounts.tsx";
 import { UPGRADE_NOTE } from "../../dialogs/upgrade.tsx";
 
-export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
+export function SettingsTab({ environment: c }: { environment: Environment }) {
   const vpn = useFetch(() => api.vpnConnections(), "vpn-connections");
   const [vpnID, setVPNID] = useState(c.settings.vpnConnectionId ?? "");
   const [lan, setLAN] = useState<ExceptionRow[]>(exceptionRows(c.settings.lanExceptions ?? []));
@@ -37,11 +37,11 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
   }, [saving]);
 
   const draft = { image, dockerAccess, memoryBytes: memory, nanoCpus: cpus, camera, vpnConnectionId: vpnID, lan, mounts };
-  const changed = desktopSettingsChanged(c, draft);
+  const changed = environmentSettingsChanged(c, draft);
   const save = () => {
     try {
       setVPNError(null);
-      void saveDesktopSettings(c, draft, (body) => run.start(() => api.updateSettings(c.name, body)));
+      void saveEnvironmentSettings(c, draft, (body) => run.start(() => api.updateSettings(c.name, body)));
     } catch (e) {
       setVPNError(e instanceof Error ? e.message : String(e));
     }
@@ -50,7 +50,7 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
   const catalog = images.data ?? [];
   const list = catalog.some((i) => i.ref === c.image)
     ? catalog
-    : [{ ref: c.image, title: c.imageTitle, version: c.imageVersion, description: "Not in the catalog any more.", installed: true, official: false, desktops: [], behind: [], checked: null }, ...catalog];
+    : [{ ref: c.image, title: c.imageTitle, version: c.imageVersion, description: "Not in the catalog any more.", installed: true, official: false, environments: [], behind: [], checked: null }, ...catalog];
 
   return (
     <>
@@ -62,8 +62,8 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
         }}
       >
         {saving && (
-          <section ref={progressPanel} aria-label="Desktop operation" aria-live="polite">
-            <h2 class="mb-2 text-sm font-semibold">Desktop operation</h2>
+          <section ref={progressPanel} aria-label="Environment operation" aria-live="polite">
+            <h2 class="mb-2 text-sm font-semibold">Environment operation</h2>
             <JobProgress job={job} />
           </section>
         )}
@@ -84,7 +84,7 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
             <ErrorText error={vpn.error} />
           )}
           <Field label="Camera">
-            <CameraPick desktop={c} host={host} value={camera} onChange={setCamera} />
+            <CameraPick environment={c} host={host} value={camera} onChange={setCamera} />
           </Field>
           <DockerAccessField value={dockerAccess} onChange={setDockerAccess} />
           <HostMountFields mounts={mounts} onChange={setMounts} />
@@ -120,22 +120,22 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
           )}
         </div>
       </form>
-      <MemoryPolicy desktop={c} host={host} />
+      <MemoryPolicy environment={c} host={host} />
     </>
   );
 }
 
 /**
- * The host's virtual camera this desktop has to itself, which its viewers'
- * webcams feed. One desktop per camera: another desktop's can't be picked.
+ * The host's virtual camera this environment has to itself, which its viewers'
+ * webcams feed. One environment per camera: another environment's can't be picked.
  */
-function CameraPick({ desktop: c, host, value, onChange }: { desktop: Desktop; host: Host | null; value: string; onChange: (v: string) => void }) {
+function CameraPick({ environment: c, host, value, onChange }: { environment: Environment; host: Host | null; value: string; onChange: (v: string) => void }) {
   const cameras = host?.cameras;
   if (cameras === null) {
     return <p class="m-0 text-sm text-muted">Cameras aren't available here: the container engine isn't on this machine.</p>;
   }
   if (!cameras?.length && !value) {
-    return <p class="m-0 text-sm text-muted">This machine has no virtual camera for desktops (v4l2loopback).</p>;
+    return <p class="m-0 text-sm text-muted">This machine has no virtual camera for environments (v4l2loopback).</p>;
   }
   const list = cameras ?? [];
   return (
@@ -146,7 +146,7 @@ function CameraPick({ desktop: c, host, value, onChange }: { desktop: Desktop; h
         return (
           <option key={cam.device} value={cam.device} disabled={other}>
             {cam.device}
-            {other ? ` (${cam.desktop ?? "another desktop"} has it)` : ""}
+            {other ? ` (${cam.environment ?? "another environment"} has it)` : ""}
           </option>
         );
       })}
@@ -156,11 +156,11 @@ function CameraPick({ desktop: c, host, value, onChange }: { desktop: Desktop; h
 }
 
 /** This preference saves independently of container settings. */
-function MemoryPolicy({ desktop: c, host }: { desktop: Desktop; host: Host | null }) {
-  const [enabled, setEnabled] = useState(c.autoReclaim);
+function MemoryPolicy({ environment: c, host }: { environment: Environment; host: Host | null }) {
+  const [enabled, setEnabled] = useState(c.memoryReclaim);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => setEnabled(c.autoReclaim), [c.name, c.autoReclaim]);
+  useEffect(() => setEnabled(c.memoryReclaim), [c.name, c.memoryReclaim]);
   const save = async (value: boolean) => {
     setSaving(true);
     setEnabled(value);
@@ -179,7 +179,7 @@ function MemoryPolicy({ desktop: c, host }: { desktop: Desktop; host: Host | nul
     <section class="max-w-[620px] px-5 pb-5">
       <fieldset disabled={saving} class="m-0 min-w-0 border-0 p-0">
         <Check id="auto-reclaim" checked={enabled} onChange={(v) => void save(v)} title="Automatically reclaim idle memory">
-          Reclaim once after 15 minutes with no viewers, when CLI activity and desktop operations are idle. A returning viewer resets the timer. Apps keep running; their next interaction may be slower. This preference saves immediately without restarting the desktop.
+          Reclaim once after 15 minutes with no viewers, when CLI activity and environment operations are idle. A returning viewer resets the timer. Apps keep running; their next interaction may be slower. This preference saves immediately without restarting the environment.
         </Check>
       </fieldset>
       {host && !host.memoryReclaim.enabled && <Note>Unavailable on this host: {host.memoryReclaim.reason}</Note>}

@@ -1,11 +1,11 @@
 import { VPNStatus } from "./vpn.tsx";
-import type { Desktop, Job } from "../api.ts";
-import { limits, memoryOf, statusKind, statusLine } from "../lib/format.ts";
-import { DesktopMenu } from "./desktop-menu.tsx";
+import type { Environment, Job } from "../api.ts";
+import { limits, memoryOf, notice, statusKind, statusLine } from "../lib/format.ts";
+import { EnvironmentMenu } from "./environment-menu.tsx";
 import { Monitor } from "./screen.tsx";
 import { cx, Meter, Status, Tag } from "./ui.tsx";
 
-export function Meters({ desktop: c }: { desktop: Desktop }) {
+export function Meters({ environment: c }: { environment: Environment }) {
   const cpu = Math.round(c.stats?.cpuPercent ?? 0);
   const mem = c.stats?.memBytes ?? 0;
   const memLimit = c.stats?.memLimit ?? 0;
@@ -27,7 +27,7 @@ export function Meters({ desktop: c }: { desktop: Desktop }) {
   );
 }
 
-export function ImageLine({ desktop: c, admin }: { desktop: Desktop; admin: boolean }) {
+export function ImageLine({ environment: c, admin }: { environment: Environment; admin: boolean }) {
   if (!c.imageTitle && !c.imageVersion) return null;
   return (
     <div class="mt-2 text-[12.5px] text-muted">
@@ -42,17 +42,28 @@ export function ImageLine({ desktop: c, admin }: { desktop: Desktop; admin: bool
   );
 }
 
-export function Tile({ desktop: c, job, now, admin }: { desktop: Desktop; job: Job | undefined; now: number; admin: boolean }) {
+/** A conflict, a failed change or one not applied yet; nothing when there's none. */
+export function NoticeLine({ environment: c, class: extra }: { environment: Environment; class?: string }) {
+  const n = notice(c);
+  if (!n) return null;
+  return (
+    <p role={n.kind === "error" ? "alert" : undefined} class={cx("m-0 text-[13px]", n.kind === "error" ? "text-danger" : "text-busy", extra)}>
+      {n.text}
+    </p>
+  );
+}
+
+export function Tile({ environment: c, job, now, admin }: { environment: Environment; job: Job | undefined; now: number; admin: boolean }) {
   const kind = statusKind(c);
   const busy = kind === "busy";
   return (
     <article class="relative">
-      <Monitor desktop={c} job={job} now={now} />
+      <Monitor environment={c} job={job} now={now} />
       <div class="px-0.5 pt-3">
         <div class="flex items-center gap-2.5">
           <div class="flex min-w-0 flex-col gap-0.5">
             <h2 class="truncate text-[17px] leading-tight font-semibold">
-              <a href={`/desktops/${c.name}`} class="text-ink no-underline hover:underline">
+              <a href={`/environments/${c.name}`} class="text-ink no-underline hover:underline">
                 {c.name}
               </a>
             </h2>
@@ -60,20 +71,21 @@ export function Tile({ desktop: c, job, now, admin }: { desktop: Desktop; job: J
           </div>
           {!busy && (
             <div class="ml-auto flex gap-1">
-              <DesktopMenu desktop={c} />
+              <EnvironmentMenu environment={c} />
             </div>
           )}
         </div>
+        <NoticeLine environment={c} class="mt-2" />
         {c.state === "running" && (
           <div class="mt-2 flex gap-3 text-sm">
             <a href={`/${c.name}/`}>Desktop</a>
             <a href={`/${c.name}/terminal/`}>Terminal</a>
           </div>
         )}
-        {c.state === "running" && <Meters desktop={c} />}
+        {c.state === "running" && <Meters environment={c} />}
         {c.state === "stopped" && <div class={cx("mt-2.5 text-[13px] text-muted")}>{limits(c.settings)}</div>}
         <div class="mt-2"><VPNStatus vpn={c.vpn} compact /></div>
-        {!busy && <ImageLine desktop={c} admin={admin} />}
+        {!busy && <ImageLine environment={c} admin={admin} />}
       </div>
     </article>
   );

@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 // These guards must run before any host helper is started.
@@ -23,7 +23,7 @@ func TestReclaimMemoryGuards(t *testing.T) {
 	s, ts := newTestServer(t)
 	admin := login(t, ts, "admin")
 	anna := login(t, ts, "anna")
-	if err := s.Accounts.SetAccess("id-alice", []string{"anna"}); err != nil {
+	if err := s.Accounts.SetAccess("alice", []string{"anna"}); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
@@ -37,7 +37,7 @@ func TestReclaimMemoryGuards(t *testing.T) {
 		{"stopped desktop", admin, ts.URL, http.StatusConflict},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := status(t, tc.client, "POST", ts.URL+"/api/desktops/alice/reclaim-memory", tc.origin); got != tc.want {
+			if got := status(t, tc.client, "POST", ts.URL+"/api/environments/alice/reclaim-memory", tc.origin); got != tc.want {
 				t.Fatalf("got %d, want %d", got, tc.want)
 			}
 		})
@@ -117,7 +117,7 @@ func TestMemoryReclaimBootStatusGatesAPI(t *testing.T) {
 				if !strings.Contains(host.MemoryReclaim.Reason, "no swap") {
 					t.Fatal(host.MemoryReclaim.Reason)
 				}
-				if got := status(t, admin, "POST", ts.URL+"/api/desktops/bob/reclaim-memory", ts.URL); got != 501 {
+				if got := status(t, admin, "POST", ts.URL+"/api/environments/bob/reclaim-memory", ts.URL); got != 501 {
 					t.Fatalf("disabled endpoint: %d", got)
 				}
 			}
@@ -144,7 +144,7 @@ func (e *reclaimEngine) ReclaimMemory(ctx context.Context, id string) (engine.Me
 func runningReclaimEngine() *reclaimEngine {
 	return &reclaimEngine{fakeEngine: fakeEngine{others: []engine.Container{{
 		ID: "bob-container", Name: "deskyard-bob", State: "running",
-		Labels: map[string]string{"deskyard.managed": "true", "deskyard.name": "bob", "deskyard.id": "id-bob"},
+		Labels: map[string]string{"deskyard.managed": "true", "deskyard.name": "bob", "deskyard.revision": "1"},
 	}}}}
 }
 
@@ -154,7 +154,7 @@ func TestReclaimMemoryResultAndFailures(t *testing.T) {
 	admin := login(t, ts, "admin")
 	post := func() *http.Response {
 		t.Helper()
-		req, _ := http.NewRequest("POST", ts.URL+"/api/desktops/bob/reclaim-memory", nil)
+		req, _ := http.NewRequest("POST", ts.URL+"/api/environments/bob/reclaim-memory", nil)
 		req.Header.Set("Origin", ts.URL)
 		res, err := admin.Do(req)
 		if err != nil {
@@ -183,7 +183,7 @@ func TestReclaimMemoryResultAndFailures(t *testing.T) {
 		if r.StatusCode != tc.want {
 			t.Fatalf("got %d want %d", r.StatusCode, tc.want)
 		}
-		if len(s.Desktops.Busy()) != 0 {
+		if len(s.Environments.Busy()) != 0 {
 			t.Fatal("failure left desktop busy")
 		}
 		if !s.memoryReclaim.Enabled {
@@ -201,7 +201,7 @@ func TestReclaimMemoryExcludesConcurrentOperations(t *testing.T) {
 	defer close(e.release)
 	finished := make(chan int, 1)
 	go func() {
-		req, _ := http.NewRequest("POST", ts.URL+"/api/desktops/bob/reclaim-memory", nil)
+		req, _ := http.NewRequest("POST", ts.URL+"/api/environments/bob/reclaim-memory", nil)
 		req.Header.Set("Origin", ts.URL)
 		res, err := admin.Do(req)
 		if err != nil {
@@ -217,11 +217,11 @@ func TestReclaimMemoryExcludesConcurrentOperations(t *testing.T) {
 		t.Fatal("reclaim did not start")
 	}
 	for _, action := range []string{"reclaim-memory", "stop", "restart"} {
-		if got := status(t, admin, "POST", ts.URL+"/api/desktops/bob/"+action, ts.URL); got != 409 {
+		if got := status(t, admin, "POST", ts.URL+"/api/environments/bob/"+action, ts.URL); got != 409 {
 			t.Errorf("%s: %d", action, got)
 		}
 	}
-	if c, err := s.Desktops.Get(context.Background(), "bob"); err != nil || c.State != "running" {
+	if c, err := s.Environments.Get(context.Background(), "bob"); err != nil || c.State != "running" {
 		t.Fatal("reclaim changed the running state", c.State, err)
 	}
 	// release before test-server cleanup waits for the handler.
@@ -255,12 +255,12 @@ func TestPowerPublishesFinalStateWithReservation(t *testing.T) {
 	admin := login(t, ts, "admin")
 	events := subscribe(t, s)
 	for _, tc := range []struct{ action, state string }{{"start", "running"}, {"stop", "stopped"}} {
-		if got := status(t, admin, "POST", ts.URL+"/api/desktops/bob/"+tc.action, ts.URL); got != 204 {
+		if got := status(t, admin, "POST", ts.URL+"/api/environments/bob/"+tc.action, ts.URL); got != 204 {
 			t.Fatalf("%s: %d", tc.action, got)
 		}
 		select {
 		case ev := <-events:
-			c, ok := ev.data.(desktops.Desktop)
+			c, ok := ev.data.(environments.Environment)
 			if !ok || c.State != tc.state {
 				t.Fatalf("%s published %+v", tc.action, ev.data)
 			}
@@ -297,7 +297,7 @@ func TestPowerInFlightExcludesReclaimMemory(t *testing.T) {
 			defer close(e.powerRelease)
 			finished := make(chan int, 1)
 			go func() {
-				req, _ := http.NewRequest("POST", ts.URL+"/api/desktops/bob/"+action, nil)
+				req, _ := http.NewRequest("POST", ts.URL+"/api/environments/bob/"+action, nil)
 				req.Header.Set("Origin", ts.URL)
 				res, err := admin.Do(req)
 				if err != nil {
@@ -312,7 +312,7 @@ func TestPowerInFlightExcludesReclaimMemory(t *testing.T) {
 			case <-time.After(5 * time.Second):
 				t.Fatal("power operation did not start")
 			}
-			if got := status(t, admin, "POST", ts.URL+"/api/desktops/bob/reclaim-memory", ts.URL); got != 409 {
+			if got := status(t, admin, "POST", ts.URL+"/api/environments/bob/reclaim-memory", ts.URL); got != 409 {
 				t.Errorf("reclaim while %s in flight: %d", action, got)
 			}
 			e.powerRelease <- struct{}{}

@@ -1,7 +1,7 @@
 // CPU and memory over the last 15 minutes: the history from
-// /api/desktops/{name}/stats, then each `stats` event appended.
+// /api/environments/{name}/stats, then each `stats` event appended.
 import { useEffect, useState } from "preact/hooks";
-import { api, type Desktop, type StatsPoint } from "../api.ts";
+import { api, type Environment, type StatsPoint } from "../api.ts";
 import { useLive } from "../live.tsx";
 import { memoryOf } from "../lib/format.ts";
 import { Chart } from "./chart.tsx";
@@ -9,7 +9,7 @@ import { Chart } from "./chart.tsx";
 const SLOTS = 180; // 15 minutes at 5 s
 const WINDOW_MS = 15 * 60 * 1000;
 
-export function ChartsPanel({ desktop: c }: { desktop: Desktop }) {
+export function ChartsPanel({ environment: c }: { environment: Environment }) {
   const { onStats } = useLive();
   const [points, setPoints] = useState<StatsPoint[]>([]);
   const [memLimit, setMemLimit] = useState(0);

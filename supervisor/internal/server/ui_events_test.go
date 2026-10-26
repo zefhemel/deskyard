@@ -31,10 +31,10 @@ func TestUIEventsWebSocketSnapshotAndUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = json.Unmarshal(b, &msg); err != nil || msg.Type != "desktop" || !strings.Contains(string(msg.Data), `"name":"alice"`) {
+	if err = json.Unmarshal(b, &msg); err != nil || msg.Type != "environment" || !strings.Contains(string(msg.Data), `"name":"alice"`) {
 		t.Fatalf("snapshot: %s %v", b, err)
 	}
-	s.events.publish(event{kind: "stats", desktopID: "id-alice", data: map[string]string{"name": "alice"}})
+	s.events.publish(event{kind: "stats", environment: "alice", data: map[string]string{"name": "alice"}})
 	_, b, err = ws.Read(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -47,7 +47,7 @@ func TestUIEventsWebSocketSnapshotAndUpdate(t *testing.T) {
 func TestUIEventsWebSocketRejectsForeignOrigin(t *testing.T) {
 	_, ts := newTestServer(t)
 	client := login(t, ts, "admin")
-	for _, path := range []string{"/api/events", "/api/desktops/alice/screen-events"} {
+	for _, path := range []string{"/api/events", "/api/environments/alice/screen-events"} {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		ws, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+path, &websocket.DialOptions{HTTPClient: client, HTTPHeader: http.Header{"Origin": {"https://attacker.invalid"}}})
 		cancel()
@@ -62,11 +62,11 @@ func TestUIEventsWebSocketRejectsForeignOrigin(t *testing.T) {
 
 func TestScreenEventsWebSocketClosesOnRevoke(t *testing.T) {
 	s, ts := newTestServer(t)
-	_ = s.Accounts.SetAccess("id-alice", []string{"anna"})
+	_ = s.Accounts.SetAccess("alice", []string{"anna"})
 	client := login(t, ts, "anna")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+"/api/desktops/alice/screen-events", &websocket.DialOptions{HTTPClient: client, HTTPHeader: http.Header{"Origin": {ts.URL}}})
+	ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+"/api/environments/alice/screen-events", &websocket.DialOptions{HTTPClient: client, HTTPHeader: http.Header{"Origin": {ts.URL}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestScreenEventsWebSocketClosesOnRevoke(t *testing.T) {
 	if err != nil || !strings.Contains(string(b), `"type":"screen"`) || !strings.Contains(string(b), `"pos":[10,20]`) {
 		t.Fatalf("screen: %s %v", b, err)
 	}
-	_ = s.Accounts.SetAccess("id-alice", nil)
+	_ = s.Accounts.SetAccess("alice", nil)
 	_, _, err = ws.Read(ctx)
 	if err == nil || ctx.Err() != nil {
 		t.Fatalf("idle stream did not close on revoke: %v", err)
@@ -92,8 +92,8 @@ func TestUIEventsWebSocketRequiresSessionAndDesktopAccess(t *testing.T) {
 		status int
 	}{
 		{"/api/events", http.DefaultClient, http.StatusUnauthorized},
-		{"/api/desktops/alice/screen-events", http.DefaultClient, http.StatusUnauthorized},
-		{"/api/desktops/alice/screen-events", anna, http.StatusNotFound},
+		{"/api/environments/alice/screen-events", http.DefaultClient, http.StatusUnauthorized},
+		{"/api/environments/alice/screen-events", anna, http.StatusNotFound},
 	} {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		ws, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+tc.path, &websocket.DialOptions{HTTPClient: tc.client, HTTPHeader: http.Header{"Origin": {ts.URL}}})

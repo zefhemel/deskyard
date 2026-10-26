@@ -3,18 +3,18 @@
 import type { ComponentChildren } from "preact";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-import { api, type Desktop } from "../api.ts";
+import { api, type Environment } from "../api.ts";
 import { Avatar, Avatars } from "../components/avatar.tsx";
-import { power } from "../components/desktop-menu.tsx";
+import { power } from "../components/environment-menu.tsx";
 import { Menu, type MenuItem } from "../components/menu.tsx";
 import { ViewersPopover } from "../components/viewers-popover.tsx";
 import { notify, notifyError } from "../components/toast.tsx";
 import { Button, cx } from "../components/ui.tsx";
 import { DownloadDialog } from "../dialogs/download.tsx";
-import { useDesktop, useLive } from "../live.tsx";
+import { useEnvironment, useLive } from "../live.tsx";
 import { agentTitle } from "../lib/activity-format.ts";
 import { vpnPresentation } from "../lib/vpn-form.ts";
-import { names } from "../lib/format.ts";
+import { names, notice } from "../lib/format.ts";
 import { TouchControls, useVisibleViewport } from "./touch-controls.tsx";
 import { ZoomViewport } from "./zoom-viewport.tsx";
 import { AudioControl } from "./audio-panel.tsx";
@@ -100,7 +100,7 @@ const barButton =
   "inline-flex cursor-pointer items-center gap-1.5 rounded-[7px] border-0 bg-transparent px-2.5 py-[7px] text-[13.5px] font-semibold whitespace-nowrap text-bar-text no-underline hover:bg-bar-hover hover:text-white";
 
 export function DesktopPage({ name }: { name: string }) {
-  const c = useDesktop(name);
+  const c = useEnvironment(name);
   const viewport = useVisibleViewport();
   useEffect(() => {
     document.title = name;
@@ -110,13 +110,13 @@ export function DesktopPage({ name }: { name: string }) {
     <div data-desktop-page data-software-keyboard={String(viewport?.keyboard ?? false)} class="fixed inset-0 flex flex-col bg-glass" style={viewport ? { top: `${viewport.top}px`, bottom: "auto", height: `${viewport.height}px` } : undefined}>
       {c === undefined ? null : c === null ? (
         <Centered>
-          <p>There's no desktop named {name}, or you can't use it.</p>
+          <p>There's no environment named {name}, or you can't use it.</p>
           <a href="/" class="text-[#9ec0ff]">
-            Back to the desktops
+            Back to the environments
           </a>
         </Centered>
       ) : (
-        <Desktop desktop={c} />
+        <Desktop environment={c} />
       )}
     </div>
   );
@@ -126,7 +126,7 @@ function Centered({ children }: { children: ComponentChildren }) {
   return <div class="flex flex-1 flex-col items-center justify-center gap-3.5 px-6 text-center text-[15px] text-[#c5cdd8]">{children}</div>;
 }
 
-function Desktop({ desktop: c }: { desktop: Desktop }) {
+function Desktop({ environment: c }: { environment: Environment }) {
   const { me, host } = useLive();
   const { route } = useLocation();
   const frame = useRef<HTMLIFrameElement>(null);
@@ -316,9 +316,9 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
           { label: "Stop", onSelect: () => power(c.name, "stop") },
         ]
       : []),
-    { label: "Details", onSelect: () => route(`/desktops/${c.name}`), separated: running },
+    { label: "Details", onSelect: () => route(`/environments/${c.name}`), separated: running },
     { label: "Terminal", onSelect: () => route(`/${c.name}/terminal/`), class: "sm:hidden" },
-    ...(me.admin ? [{ label: "Settings", onSelect: () => route(`/desktops/${c.name}?tab=settings`) }] : []),
+    ...(me.admin ? [{ label: "Settings", onSelect: () => route(`/environments/${c.name}?tab=settings`) }] : []),
     // Phones and narrow tablets need these actions in More.
     ...(showing
       ? [
@@ -348,8 +348,8 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
   return (
     <>
       <div class="relative flex h-[46px] flex-none items-center gap-1.5 bg-bar px-2.5 text-sm text-[#e6ebf1]">
-        <a href="/" class={barButton} title="Desktops">
-          ‹ <span class="max-sm:hidden">Desktops</span>
+        <a href="/" class={barButton} title="Environments">
+          ‹ <span class="max-sm:hidden">Environments</span>
         </a>
         <span class="mx-1.5 h-[22px] w-px bg-[#2e3d52] max-sm:mx-0.5" />
         <a href={`/${c.name}/terminal/`} class={cx(barButton, "max-sm:hidden")}>Terminal</a>
@@ -361,7 +361,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
           </span>
         ) : null}
         {c.vpn && c.vpn.state !== "disabled" && (
-          <a href={`/desktops/${c.name}`} class={cx(barButton, c.vpn.state === "blocked" && "text-[#ffb7ad]!")} title={vpnPresentation(c.vpn).detail || "VPN status is separate from the desktop stream connection"}>
+          <a href={`/environments/${c.name}`} class={cx(barButton, c.vpn.state === "blocked" && "text-[#ffb7ad]!")} title={vpnPresentation(c.vpn).detail || "VPN status is separate from the desktop stream connection"}>
             {vpnPresentation(c.vpn).label}
           </a>
         )}
@@ -492,7 +492,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
       {showing && touchControls && <TouchControls keyboard={keyboard} trackpad={trackpad} zoom={zoom}
         onKeyboard={toggleKeyboard} onMode={chooseTouchMode} onFit={() => setZoom(1)} onKey={sendKeys} />}
       {!running ? (
-        <Stopped desktop={c} />
+        <Stopped environment={c} />
       ) : (
         <ZoomViewport screen={screen} frame={frame} zoom={zoom} onZoom={setZoom}>
         <iframe
@@ -506,9 +506,9 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
         />
         </ZoomViewport>
       )}
-      {running && <DropZone desktop={c.name} frame={frame} frameKey={frameKey} />}
+      {running && <DropZone environment={c.name} frame={frame} frameKey={frameKey} />}
       {showing && zoom === 1 && <ActivityOverlay name={c.name} geometry={() => selkiesScreenGeometry(frame.current)} />}
-      {downloadOpen && running && <DownloadDialog desktop={c} onClose={closeDownload} />}
+      {downloadOpen && running && <DownloadDialog environment={c} onClose={closeDownload} />}
     </>
   );
 }
@@ -537,11 +537,13 @@ function NotSecure() {
   );
 }
 
-function Stopped({ desktop: c }: { desktop: Desktop }) {
+function Stopped({ environment: c }: { environment: Environment }) {
+  const problem = notice(c);
   if (c.state === "stopped") {
     return (
       <Centered>
         <p class="text-lg font-semibold text-white">{c.name} is stopped</p>
+        {problem && <p class={cx("max-w-[480px] text-center text-sm", problem.kind === "error" ? "text-[#f0a49b]" : "text-[#9aa6b5]")}>{problem.text}</p>}
         <Button variant="primary" onClick={() => power(c.name, "start")}>
           Start
         </Button>

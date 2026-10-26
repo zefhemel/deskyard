@@ -1,6 +1,6 @@
 deskyard remote list: list saved remotes
 
-Usage: deskyard [-d NAME] remote list [--json]
+Usage: deskyard [-e NAME] remote list [--json]
 
 Lists the saved remotes; * marks the default.
 
@@ -8,7 +8,7 @@ Options:
   --json               print JSON instead of text
 
 Prints: a table NAME URL TOKEN (token ID only); with --json an array of
-  {name,url,desktop,default}
+  {name,url,environment,default}
 
 Examples:
   deskyard remote list

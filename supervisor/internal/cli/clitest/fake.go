@@ -43,7 +43,7 @@ type Fake struct {
 	Name    string
 	Dir     string // stands in for /workspace
 	Stopped bool
-	// Desktop handles argv[0] == "deskyard" (the command inside a desktop);
+	// Desktop handles argv[0] == "deskyard" (the command inside an environment);
 	// the default answers size and screenshot.
 	Desktop func(args []string, stdout, stderr io.Writer) int
 
@@ -56,7 +56,7 @@ type Fake struct {
 	forwardStarts []string
 }
 
-// New starts a fake for a desktop called name.
+// New starts a fake for an environment called name.
 func New(t testing.TB, name string) *Fake {
 	f := &Fake{Name: name, Dir: t.TempDir()}
 	mux := http.NewServeMux()
@@ -69,8 +69,8 @@ func New(t testing.TB, name string) *Fake {
 	return f
 }
 
-// URL of the desktop, as given to `remote add`.
-func (f *Fake) DesktopURL() string { return f.Server.URL + "/" + f.Name }
+// EnvironmentURL is the environment's URL, as given to `remote add`.
+func (f *Fake) EnvironmentURL() string { return f.Server.URL + "/" + f.Name }
 
 // Requests returns the exec requests so far.
 func (f *Fake) Requests() []ExecRequest {

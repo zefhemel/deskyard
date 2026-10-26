@@ -49,7 +49,7 @@ export function VPNFields({
     <>
       <Field
         label="VPN connection"
-        htmlFor="desktop-vpn"
+        htmlFor="environment-vpn"
         hint={
           selected
             ? `NordVPN · ${selected.country}. Internet access stays blocked if the VPN is unavailable.`
@@ -58,7 +58,7 @@ export function VPNFields({
               : "No VPN uses direct internet access."
         }
       >
-        <select id="desktop-vpn" value={value} onChange={(e) => onChange(e.currentTarget.value)}>
+        <select id="environment-vpn" value={value} onChange={(e) => onChange(e.currentTarget.value)}>
           <option value="">No VPN</option>
           {value && !selected && <option value={value}>Selected connection unavailable</option>}
           {connections.map((c) => (
@@ -74,7 +74,7 @@ export function VPNFields({
       {value && (
         <Field
           label="Local network exceptions"
-          hint="Allow only the listed private IPv4 destinations and ports directly outside the VPN. Other desktop and reserved networks remain blocked. Agent port forwarding is unchanged."
+          hint="Allow only the listed private IPv4 destinations and ports directly outside the VPN. Other environment and reserved networks remain blocked. Agent port forwarding is unchanged."
         >
           {rows.map((row, i) => (
             <div key={i} class="mb-2 rounded-lg border border-line bg-white p-3">

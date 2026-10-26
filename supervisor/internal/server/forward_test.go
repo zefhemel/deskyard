@@ -21,8 +21,9 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
+	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/forward"
 )
 
@@ -336,19 +337,20 @@ func TestForwardLinkCapPerToken(t *testing.T) {
 		accts, _ := accounts.Load(dir)
 		_, _ = accts.EnsureAdmin("admin", "pw")
 		e := &forwardEngine{}
-		s, err := New(Options{Log: log, Eng: e, Accounts: accts, StateDir: dir, DefaultImage: "img",
-			Desktops: desktops.New(e, desktops.Config{DataDir: dir, Subnet: "10.0.0.0/16"}, log),
-			UI:       fstest.MapFS{"index.html": {Data: []byte("ui")}}})
+		s, err := New(Options{Log: log, Eng: e, Accounts: accts, Layout: config.NewLayout(dir), DefaultImage: "img",
+			Environments: environments.New(e, environments.Config{DataDir: dir, Subnet: "10.0.0.0/16"}, log),
+			UI:           fstest.MapFS{"index.html": {Data: []byte("ui")}}})
 		if err != nil {
 			t.Fatal(err)
 		}
+		defineEnvironments(t, s)
 		srv := httptest.NewServer(s)
 		t.Cleanup(srv.Close)
-		_, bot, err := s.tokens.create("bot", "id-alice", "admin", nil)
+		_, bot, err := s.tokens.create("bot", "alice", "admin", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, other, err := s.tokens.create("other", "id-alice", "admin", nil)
+		_, other, err := s.tokens.create("other", "alice", "admin", nil)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -1,8 +1,8 @@
-deskyard guide: short manual for desktop access and control
+deskyard guide: short manual for environment access and control
 
-Usage: deskyard [-d NAME] guide
+Usage: deskyard [-e NAME] guide
 
-Prints a short manual: how a desktop is laid out, the three ways to work
+Prints a short manual: how an environment is laid out, the three ways to work
 (shell, browser, desktop) and when to use which.
 
 Prints: the guide

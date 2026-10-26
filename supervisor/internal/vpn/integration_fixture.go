@@ -15,7 +15,7 @@ type FixturePeer struct {
 	Endpoint                           netip.Addr
 	PublicKey, PrivateKeyFile, Address string
 }
-type FixtureResolver func(desktopID, network string) (FixturePeer, error)
+type FixtureResolver func(environment, network string) (FixturePeer, error)
 
 var fixtureManagers = struct {
 	sync.RWMutex
@@ -36,7 +36,7 @@ func (m *Manager) buildRuntime(in runtimeInput) (runtimeConfig, error) {
 	if resolve == nil {
 		return buildRuntime(in)
 	}
-	peer, err := resolve(in.DesktopID, in.Network)
+	peer, err := resolve(in.Environment, in.Network)
 	if err != nil {
 		return runtimeConfig{}, err
 	}

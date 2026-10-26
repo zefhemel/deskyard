@@ -1,4 +1,4 @@
-"""Copying files onto a desktop: POST /api/desktops/{name}/upload."""
+"""Copying files onto a desktop: POST /api/environments/{name}/upload."""
 
 import asyncio
 import os
@@ -14,7 +14,7 @@ from helpers import exec_ws, make_token
 
 
 def up(client, name, fname, data, **kw):
-    return client.post(f"/api/desktops/{name}/upload", params={"name": fname}, data=data, **kw)
+    return client.post(f"/api/environments/{name}/upload", params={"name": fname}, data=data, **kw)
 
 
 def desk(desktop) -> Path:
@@ -50,7 +50,7 @@ def raw_post(admin, name, fname, length):
     u = urlparse(admin.base)
     cookie = "; ".join(f"{k}={v}" for k, v in admin.cookies.items())
     s = socket.create_connection((u.hostname, u.port), timeout=10)
-    s.sendall((f"POST /api/desktops/{name}/upload?name={quote(fname)} HTTP/1.1\r\nHost: {u.netloc}\r\nOrigin: {admin.base}\r\n"
+    s.sendall((f"POST /api/environments/{name}/upload?name={quote(fname)} HTTP/1.1\r\nHost: {u.netloc}\r\nOrigin: {admin.base}\r\n"
                f"Cookie: {cookie}\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n").encode())
     return s
 
@@ -79,18 +79,18 @@ def test_upload_limits(admin, desktop, name):
 def test_access_and_tokens(admin, desktop, name, supervisor):
     user = "u" + uuid.uuid4().hex[:6]
     for who, ds in [(user, []), (user + "v", [name])]:
-        assert admin.post("/api/accounts", json={"username": who, "password": "pw-" + who, "admin": False, "desktops": ds}).status_code == 201
+        assert admin.post("/api/accounts", json={"username": who, "password": "pw-" + who, "admin": False, "environments": ds}).status_code == 201
     try:
         stranger = supervisor.client().login(user, "pw-" + user)
         viewer = supervisor.client().login(user + "v", "pw-" + user + "v")
         assert up(stranger, name, "n.txt", b"x").status_code == 404
         assert up(viewer, name, "v.txt", b"x").status_code == 200
-        assert requests.post(f"{supervisor.base}/api/desktops/{name}/upload?name=a", data=b"x", headers={"Origin": supervisor.base}, timeout=10).status_code == 401
+        assert requests.post(f"{supervisor.base}/api/environments/{name}/upload?name=a", data=b"x", headers={"Origin": supervisor.base}, timeout=10).status_code == 401
         tok = make_token(admin, name)["token"]
-        r = requests.post(f"{supervisor.base}/api/desktops/{name}/upload?name=a", data=b"x",
+        r = requests.post(f"{supervisor.base}/api/environments/{name}/upload?name=a", data=b"x",
                           headers={"Authorization": f"Bearer {tok}", "Origin": supervisor.base}, timeout=10)
         assert r.status_code == 401
-        assert requests.post(f"{supervisor.base}/api/desktops/{name}/upload?name=a", data=b"x", cookies=admin.cookies,
+        assert requests.post(f"{supervisor.base}/api/environments/{name}/upload?name=a", data=b"x", cookies=admin.cookies,
                              headers={"Origin": "https://evil.example"}, timeout=10).status_code == 403
         assert sorted(p.name for p in desk(desktop).iterdir()) == ["v.txt"]
     finally:

@@ -15,8 +15,8 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/forward"
 )
 
@@ -269,7 +269,7 @@ func parseForwardStart(b []byte) ([]int, error) {
 // client's WebSocket and `deskyard forward-helper`, run in the desktop as
 // user. Frames are checked for size and type only; Listen and Listening are
 // observed so viewers see which ports are mapped.
-func (s *Server) agentForward(w http.ResponseWriter, r *http.Request, c desktops.Desktop, t token) {
+func (s *Server) agentForward(w http.ResponseWriter, r *http.Request, c environments.Environment, t token) {
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {
 		return
@@ -298,7 +298,7 @@ func (s *Server) agentForward(w http.ResponseWriter, r *http.Request, c desktops
 	lk := newForwardLink(t.Name, outs)
 	lk.tokenID = t.ID
 	if !s.forwards.tryAdd(c.Name, lk) {
-		fail(fmt.Sprintf("this token already has %d forward links open on this desktop; close one first", maxLinksPerToken))
+		fail(fmt.Sprintf("this token already has %d forward links open on this environment; close one first", maxLinksPerToken))
 		return
 	}
 	// The live mappings (listFor) replace this text in the activity API.
@@ -329,7 +329,7 @@ func (s *Server) agentForward(w http.ResponseWriter, r *http.Request, c desktops
 		close(stderrDone)
 	}
 	s.publishViewers(c.Name, c.ID)
-	s.Log.Info("agent forward", "desktop", c.Name, "token", t.Name, "out", outs)
+	s.Log.Info("agent forward", "environment", c.Name, "token", t.Name, "out", outs)
 
 	go keepAlive(ctx, ws)
 	err = relayForward(ctx, ws, p.Stdin, p.Stdout, lk, func() { s.publishViewers(c.Name, c.ID) })
@@ -337,8 +337,8 @@ func (s *Server) agentForward(w http.ResponseWriter, r *http.Request, c desktops
 	switch {
 	case ctx.Err() != nil: // the client left, or the token was revoked
 	case errors.Is(err, errHelperEnded):
-		if cur, err := s.desktopByID(ctx, c.ID); err != nil || !cur.Running() {
-			_ = ws.Close(websocket.StatusGoingAway, "desktop stopped")
+		if cur, err := s.Environments.Get(ctx, c.Name); err != nil || !cur.Running() {
+			_ = ws.Close(websocket.StatusGoingAway, "environment stopped")
 			return
 		}
 		code, _ := p.Wait()
@@ -351,9 +351,9 @@ func (s *Server) agentForward(w http.ResponseWriter, r *http.Request, c desktops
 			fail("the forward helper failed: " + msg)
 			return
 		}
-		_ = ws.Close(websocket.StatusGoingAway, "the desktop side closed")
+		_ = ws.Close(websocket.StatusGoingAway, "the environment side closed")
 	case errors.Is(err, errBadFrame):
-		s.Log.Info("agent forward closed", "desktop", c.Name, "token", t.Name, "err", err)
+		s.Log.Info("agent forward closed", "environment", c.Name, "token", t.Name, "err", err)
 		_ = ws.Close(websocket.StatusPolicyViolation, closeReason(err.Error()))
 	}
 }

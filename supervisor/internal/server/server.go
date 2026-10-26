@@ -21,21 +21,22 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/activity"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
+	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 )
 
 type Server struct {
-	Log      *slog.Logger
-	Eng      engine.Engine
-	Desktops *desktops.Service
-	Accounts *accounts.Store
-	Sessions *auth.Sessions
-	Throttle *auth.Throttle
-	StateDir string
-	UI       fs.FS // the built web UI (index.html, assets/…)
+	Log          *slog.Logger
+	Eng          engine.Engine
+	Environments *environments.Service
+	Accounts     *accounts.Store
+	Sessions     *auth.Sessions
+	Throttle     *auth.Throttle
+	Layout       config.Layout
+	UI           fs.FS // the built web UI (index.html, assets/…)
 
 	vpnTests    vpnTester
 	jobs        *jobs
@@ -51,9 +52,9 @@ type Server struct {
 	thumbs      *thumbnails
 	tokens      *tokenStore
 	images      *catalog
+	reconcile   chan struct{} // wakes the environments' reconcile loop
 
 	memoryReclaim engine.MemoryReclaimSupport
-	memoryPolicy  *memoryPolicy
 
 	activity       *activity.Tracker
 	activityPub    *throttle
@@ -65,9 +66,9 @@ type Server struct {
 type Options struct {
 	Log          *slog.Logger
 	Eng          engine.Engine
-	Desktops     *desktops.Service
+	Environments *environments.Service
 	Accounts     *accounts.Store
-	StateDir     string
+	Layout       config.Layout // the data folder; stores at its top, secrets, journals and caches below
 	UI           fs.FS
 	Secure       bool // served over HTTPS
 	DefaultImage string
@@ -77,51 +78,59 @@ type Options struct {
 }
 
 func New(o Options) (*Server, error) {
-	connections, err := vpn.NewStore(o.StateDir)
+	connections, err := vpn.NewStore(filepath.Join(o.Layout.Data, "networks.json"), o.Layout.Secret)
 	if err != nil {
 		return nil, err
 	}
-	manager := vpn.NewManager(o.Eng, connections, o.StateDir)
-	if o.Desktops.Networking == nil {
-		if err := o.Desktops.ConfigureNetworking(connections, manager, o.StateDir); err != nil {
+	manager := vpn.NewManager(o.Eng, connections, o.Layout.State).ForInstance(o.Environments.Instance)
+	if o.Environments.Networking == nil {
+		if err := o.Environments.ConfigureNetworking(connections, manager, o.Layout.State); err != nil {
 			return nil, err
 		}
 	}
-	key, err := sessionKey(o.StateDir)
+	key, err := sessionKey(o.Layout.Secret)
 	if err != nil {
 		return nil, err
 	}
 	s := &Server{
 		vpnTests: manager,
-		Log:      o.Log, Eng: o.Eng, Desktops: o.Desktops, Accounts: o.Accounts,
+		Log:      o.Log, Eng: o.Eng, Environments: o.Environments, Accounts: o.Accounts,
 		Sessions: &auth.Sessions{Key: key, Secure: o.Secure}, Throttle: &auth.Throttle{},
-		StateDir: o.StateDir, UI: o.UI,
+		Layout: o.Layout, UI: o.UI,
 		jobs: newJobs(), events: newHub(), viewers: newViewers(), terminals: newTerminalConnections(), forwards: newForwards(), viewersPub: newThrottle(viewersInterval), streamDials: newDialGates(),
-		clients:     &clientFiles{eng: o.Eng, dir: filepath.Join(o.StateDir, "clients")},
+		clients:     &clientFiles{eng: o.Eng, dir: filepath.Join(o.Layout.Cache, "client")},
 		activityPub: newThrottle(activityInterval), screenWatchers: newViewers(),
+		reconcile: make(chan struct{}, 1),
 	}
 	s.activity = s.newActivity(o.ActivityPresence)
 	s.stats = newStatsCollector(s)
 	s.thumbs = newThumbnails(s)
-	if s.tokens, err = loadTokens(o.StateDir); err != nil {
+	if s.tokens, err = loadTokens(o.Layout.Data); err != nil {
 		return nil, err
 	}
-	if err := s.tokens.bindAccounts(s.Accounts); err != nil {
-		return nil, fmt.Errorf("reconciling agent token creators: %w", err)
+	// Grants and tokens of names without a definition are left over from a
+	// removal whose cleanup didn't persist; a later environment of the name
+	// must not inherit them.
+	if err := s.Accounts.Retain(func(name string) bool { _, ok := s.Environments.Defs.Get(name); return ok }); err != nil {
+		return nil, fmt.Errorf("dropping grants of removed environments: %w", err)
+	}
+	if err := s.tokens.bind(s.Accounts, s.environmentCreated); err != nil {
+		return nil, fmt.Errorf("reconciling agent tokens: %w", err)
 	}
 	s.tokens.onGone = func(t token) { s.activity.Forget(t.ID) }
-	if s.images, err = loadCatalog(o.StateDir, o.DefaultImage); err != nil {
+	if s.images, err = loadCatalog(o.Layout.Data, o.DefaultImage); err != nil {
 		return nil, err
 	}
-	s.Desktops.ImageUsed = func(ref, id string) {
+	s.Environments.ImageUsed = func(ref, id string) {
 		if err := s.images.noteLocal(ref, id); err != nil {
 			s.Log.Warn("recording local image", "ref", ref, "err", err)
 		}
 	}
+	s.Environments.ConflictsChanged = s.events.refresh
+	s.Environments.Removed = s.environmentRemoved
+	// An environment whose pinned image was pulled again has a new revision.
+	s.Environments.Repinned = func([]environments.Repin) { s.events.refresh() }
 	o.Accounts.OnChange = s.accountsChanged
-	if s.memoryPolicy, err = loadMemoryPolicy(filepath.Join(o.StateDir, "memory-policy.json")); err != nil {
-		return nil, err
-	}
 	s.detectMemoryReclaim(o.StartupContext)
 	s.routes()
 	return s, nil
@@ -131,8 +140,9 @@ func New(o Options) (*Server, error) {
 func (s *Server) Run(ctx context.Context) {
 	context.AfterFunc(ctx, s.terminals.shutdown)
 	s.inside = newInsideReader(s)
-	go s.Desktops.Networking.Run(ctx, func(name string) { s.publishDesktop(ctx, name) })
+	go s.Environments.Networking.Run(ctx, func(name string) { s.publishEnvironment(ctx, name) })
 	go s.watchEngine(ctx)
+	go s.Environments.Run(ctx, s.reconcile)
 	go s.stats.run(ctx)
 	go s.inside.run(ctx)
 	go s.tokens.expireLoop(ctx, s)
@@ -141,8 +151,8 @@ func (s *Server) Run(ctx context.Context) {
 	go s.idleMemoryLoop(ctx)
 }
 
-func sessionKey(stateDir string) ([]byte, error) {
-	p := filepath.Join(stateDir, "session.key")
+func sessionKey(secretDir string) ([]byte, error) {
+	p := filepath.Join(secretDir, "session.key")
 	b, err := os.ReadFile(p)
 	if err == nil && len(b) >= 32 {
 		return b, nil
@@ -172,7 +182,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.api.ServeHTTP(w, r)
 	case first == "assets" || strings.Contains(first, "."):
 		s.serveStatic(w, r)
-	case first == "" || desktops.IsReserved(first):
+	case first == "" || environments.IsReserved(first):
 		s.serveIndex(w, r)
 	default:
 		s.serveDesktop(w, r, first, rest)
@@ -288,12 +298,19 @@ func (s *Server) writeIndex(w http.ResponseWriter) {
 	_, _ = w.Write([]byte("<!doctype html><title>Supervisor</title><p>The web UI isn't built: run <code>make -C supervisor web</code>."))
 }
 
+// environmentCreated is when the named environment was created; false when
+// it isn't defined.
+func (s *Server) environmentCreated(name string) (time.Time, bool) {
+	def, ok := s.Environments.Defs.Get(name)
+	return def.Created, ok
+}
+
 // accountsChanged closes desktop connections and event streams of accounts
 // whose access or sessions changed.
 func (s *Server) accountsChanged(usernames ...string) {
 	for _, u := range usernames {
 		a, ok := s.Accounts.Get(u)
-		stillAllowed := func(desktopID string) bool { return ok && a.HasAccess(desktopID) }
+		stillAllowed := func(name string) bool { return ok && a.HasAccess(name) }
 		s.terminals.revalidate(s, u)
 		s.viewers.revoke(u, stillAllowed)
 		s.screenWatchers.revoke(u, stillAllowed)

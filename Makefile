@@ -60,7 +60,7 @@ test-image-build:
 	[ "$(BUILD_IMAGE)" = 0 ] || docker build -q -t $(TEST_IMAGE) --target debian-$(AC_DESKTOP) -f images/Dockerfile .
 
 test-engine: test-image-build
-	cd supervisor && go test -tags engine ./internal/desktops/ ./internal/engine/...
+	cd supervisor && go test -tags engine ./internal/environments/ ./internal/engine/...
 
 test-image: test-image-build
 	$(call two_passes,$(IMAGE_TESTS),)

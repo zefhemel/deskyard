@@ -2,6 +2,9 @@ package accounts
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
@@ -56,11 +59,43 @@ func TestPasswordChangeBumpsEpochAndAccess(t *testing.T) {
 	if got := s.WithAccess("c1"); len(got) != 1 || got[0] != "anna" {
 		t.Fatal(got)
 	}
-	_ = s.Forget(func(id string) bool { return id == "c1" })
+	_ = s.Forget("c1")
 	if a, _ := s.Get("anna"); a.HasAccess("c1") {
 		t.Fatal("forget")
 	}
 	if len(notified) < 2 {
 		t.Fatal("no change notifications")
 	}
+}
+
+func TestRetainDropsGrantsOfUndefinedEnvironments(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := Load(dir)
+	_, _ = s.EnsureAdmin("admin", "x")
+	if _, err := s.Create("anna", "pw", false, []string{"alice", "gone"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Retain(func(name string) bool { return name == "alice" }); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, _ := Load(dir)
+	a, _ := reloaded.Get("anna")
+	if !a.HasAccess("alice") || a.HasAccess("gone") {
+		t.Fatalf("grants after retain: %v", a.Environments)
+	}
+	if a.EnvironmentTokenEpochs["gone"] != 1 {
+		t.Fatalf("dropped grant kept its token revision: %v", a.EnvironmentTokenEpochs)
+	}
+	if !strings.Contains(readFile(t, dir), `"environments"`) {
+		t.Fatal("grants not stored under environments")
+	}
+}
+
+func readFile(t *testing.T, dir string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(dir, "accounts.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }

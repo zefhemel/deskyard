@@ -186,7 +186,7 @@ const barButton =
 function noCamera(name: string, webcam: boolean, host: Host | null, admin: boolean): string | null {
   if (webcam) return null;
   if (host && host.cameras === null) return "Cameras aren't available here: the container engine isn't on this machine";
-  if (!host || host.cameras?.length === 0) return "This machine has no virtual camera for desktops";
+  if (!host || host.cameras?.length === 0) return "This machine has no virtual camera for environments";
   return admin ? `${name} has no camera yet; give it one in its Settings` : `${name} has no camera yet; an admin can give it one`;
 }
 

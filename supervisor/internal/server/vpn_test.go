@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 	"io"
 	"net/http"
@@ -56,7 +56,7 @@ func TestVPNAdminRoutesAndRedaction(t *testing.T) {
 func TestVPNMissingSelectionIsValidationError(t *testing.T) {
 	_, ts := newTestServer(t)
 	admin := login(t, ts, "admin")
-	for _, route := range []struct{ method, path, body string }{{"POST", "/api/desktops", `{"name":"test-vpn","vpnConnectionId":"missing"}`}, {"PATCH", "/api/desktops/alice", `{"vpnConnectionId":"missing"}`}} {
+	for _, route := range []struct{ method, path, body string }{{"POST", "/api/environments", `{"name":"test-vpn","vpnConnectionId":"missing"}`}, {"PATCH", "/api/environments/alice", `{"vpnConnectionId":"missing"}`}} {
 		req, _ := http.NewRequest(route.method, ts.URL+route.path, strings.NewReader(route.body))
 		req.Header.Set("Origin", ts.URL)
 		resp, err := admin.Do(req)
@@ -139,14 +139,14 @@ func TestVPNJobsAreSanitizedAndExposeResults(t *testing.T) {
 }
 func TestVPNRegularUserCanReadSelectedStatus(t *testing.T) {
 	c := alice
-	c.Labels = map[string]string{desktops.LabelManaged: "true", desktops.LabelName: "bob", desktops.LabelID: "id-bob", vpn.LabelConnection: "selected-vpn"}
+	c.Labels = map[string]string{environments.LabelManaged: "true", environments.LabelName: "bob", environments.LabelRevision: "1", vpn.LabelConnection: "selected-vpn"}
 	c.ID = "bob"
 	c.Name = "deskyard-bob"
-	c.Env = map[string]string{desktops.TokenEnv: "proxy-secret"}
+	c.Env = map[string]string{environments.TokenEnv: "proxy-secret"}
 	s, ts := newTestServerWith(t, fakeEngine{others: []engine.Container{c}})
-	s.Accounts.SetAccess("id-bob", []string{"anna"})
+	s.Accounts.SetAccess("bob", []string{"anna"})
 	user := login(t, ts, "anna")
-	resp, err := user.Get(ts.URL + "/api/desktops/bob")
+	resp, err := user.Get(ts.URL + "/api/environments/bob")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,11 +161,11 @@ func TestVPNFilesystemFailuresDoNotExposePrivateCauses(t *testing.T) {
 	s, ts := newTestServer(t)
 	admin := login(t, ts, "admin")
 	u, p := "private-user", "private-password"
-	c, err := s.Desktops.Networking.Connections.Create(vpn.Input{Name: "Europe", Provider: "nordvpn", Country: "Netherlands", Username: &u, Password: &p})
+	c, err := s.Environments.Networking.Connections.Create(vpn.Input{Name: "Europe", Provider: "nordvpn", Country: "Netherlands", Username: &u, Password: &p})
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(s.StateDir, "vpn", "connections.json")
+	path := filepath.Join(s.Layout.Data, "networks.json")
 	if err = os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestVPNFilesystemFailuresDoNotExposePrivateCauses(t *testing.T) {
 		}
 		body, _ := io.ReadAll(response.Body)
 		response.Body.Close()
-		if response.StatusCode != 500 || strings.Contains(string(body), s.StateDir) || strings.Contains(string(body), "directory") || strings.Contains(string(body), "connections.json") {
+		if response.StatusCode != 500 || strings.Contains(string(body), s.Layout.Data) || strings.Contains(string(body), "directory") || strings.Contains(string(body), "networks.json") {
 			t.Errorf("%s %s exposed private filesystem cause: %d %s", tc.method, tc.path, response.StatusCode, body)
 		}
 	}

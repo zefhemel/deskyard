@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 type snapshotEngine struct {
@@ -25,11 +25,11 @@ func (e *snapshotEngine) List(context.Context, map[string]string) ([]engine.Cont
 }
 
 func TestEventsQueuedLifecycleCannotOverwriteSnapshot(t *testing.T) {
-	eng := &snapshotEngine{}
+	eng := &snapshotEngine{list: func() ([]engine.Container, error) { return []engine.Container{alice}, nil }}
 	s, ts := newTestServerWith(t, eng)
 	client := login(t, ts, "admin")
 	eng.list = func() ([]engine.Container, error) {
-		s.events.publish(event{kind: "desktop", desktopID: "id-alice", data: desktops.Desktop{Name: "alice", ID: "id-alice", State: "running"}})
+		s.events.publish(event{kind: "environment", environment: "alice", data: environments.Environment{Name: "alice", ID: "alice", State: "running"}})
 		return []engine.Container{alice}, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -47,7 +47,7 @@ func TestEventsQueuedLifecycleCannotOverwriteSnapshot(t *testing.T) {
 		if !strings.HasPrefix(line, "data: ") {
 			continue
 		}
-		var c desktopJSON
+		var c environmentJSON
 		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &c); err != nil {
 			t.Fatal(err)
 		}

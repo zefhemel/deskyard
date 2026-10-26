@@ -1,6 +1,6 @@
 deskyard help: help for a command
 
-Usage: deskyard [-d NAME] help [COMMAND...]
+Usage: deskyard [-e NAME] help [COMMAND...]
 
 Prints help for a command, or the overview. Same as COMMAND --help.
 

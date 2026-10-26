@@ -1,18 +1,19 @@
 import { useEffect, useState } from "preact/hooks";
 import { useLocation, useRoute } from "preact-iso";
-import { api, type AgentPresence, type Desktop, type Forward } from "../api.ts";
+import { api, type AgentPresence, type Environment, type Forward } from "../api.ts";
 import { agentLabel } from "../lib/activity-format.ts";
 import { VPNStatus } from "../components/vpn.tsx";
 import { Avatars } from "../components/avatar.tsx";
 import { ChartsPanel } from "../components/charts-panel.tsx";
-import { DesktopMenu, power } from "../components/desktop-menu.tsx";
+import { EnvironmentMenu, power } from "../components/environment-menu.tsx";
 import { Monitor } from "../components/screen.tsx";
+import { NoticeLine } from "../components/tile.tsx";
 import { ReclaimMemoryButton } from "../components/reclaim-memory.tsx";
 import { ForwardLines } from "../components/viewers-popover.tsx";
 import { Page } from "../components/topbar.tsx";
 import { btnClass, Button, cx, Status, Tag } from "../components/ui.tsx";
 import { UpgradeDialog } from "../dialogs/upgrade.tsx";
-import { useDesktop, useLive, useNow } from "../live.tsx";
+import { useEnvironment, useLive, useNow } from "../live.tsx";
 import { day, limits, names, statusKind, statusLine, toolsLine } from "../lib/format.ts";
 import { AccessTab } from "./details/access-tab.tsx";
 import { AgentsTab } from "./details/agents-tab.tsx";
@@ -24,7 +25,7 @@ type Tab = "overview" | "processes" | "agents" | "settings" | "access";
 export function DetailsPage() {
   const { params } = useRoute();
   const name = params.name ?? "";
-  const c = useDesktop(name);
+  const c = useEnvironment(name);
   if (c === undefined) {
     return (
       <Page>
@@ -38,25 +39,25 @@ export function DetailsPage() {
         <Crumbs />
         <h1 class="mb-3 text-[30px] font-bold">{name}</h1>
         <p class="text-muted">
-          There's no desktop with this name, or you can't use it.
+          There's no environment with this name, or you can't use it.
         </p>
       </Page>
     );
   }
-  return <DesktopDetail desktop={c} />;
+  return <EnvironmentDetail environment={c} />;
 }
 
 function Crumbs() {
   return (
     <div class="mb-2 text-sm">
       <a href="/" class="text-muted no-underline hover:underline">
-        Desktops
+        Environments
       </a>
     </div>
   );
 }
 
-function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
+function EnvironmentDetail({ environment: c }: { environment: Environment }) {
   const { me, jobs } = useLive();
   const { query, route } = useLocation();
   const now = useNow(10000);
@@ -73,7 +74,7 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
   ];
   const tab: Tab = tabs.find((t) => t.id === query.tab)?.id ?? "overview";
   const setTab = (t: Tab) =>
-    route(`/desktops/${c.name}${t === "overview" ? "" : `?tab=${t}`}`, true);
+    route(`/environments/${c.name}${t === "overview" ? "" : `?tab=${t}`}`, true);
 
   return (
     <Page>
@@ -100,14 +101,15 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
               Start
             </Button>
           )}
-          <DesktopMenu
-            desktop={c}
+          <EnvironmentMenu
+            environment={c}
             power={false}
             onRemoved={() => route("/")}
           />
         </div>
       </div>
 
+      <NoticeLine environment={c} class="-mt-3 mb-5" />
       <nav
         class="mb-6 flex gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden border-b border-line"
         role="tablist"
@@ -132,20 +134,20 @@ function DesktopDetail({ desktop: c }: { desktop: Desktop }) {
       </nav>
       {tab === "overview" ? (
         <div class="grid grid-cols-[minmax(0,1.55fr)_minmax(320px,1fr)] items-start gap-8 max-[900px]:grid-cols-1">
-          <Monitor desktop={c} job={jobs[c.name]} now={now} big />
+          <Monitor environment={c} job={jobs[c.name]} now={now} big />
           <div class="flex flex-col gap-4">
             <ViewersPanel viewers={c.viewers} mics={c.mics} cams={c.cams} forwards={c.forwards} agents={c.agents} />
             <div class="rounded-[10px] border border-line bg-surface px-5 py-[18px]"><VPNStatus vpn={c.vpn} /></div>
-            <ChartsPanel desktop={c} />
-            <Facts desktop={c} admin={me.admin} onTab={setTab} />
+            <ChartsPanel environment={c} />
+            <Facts environment={c} admin={me.admin} onTab={setTab} />
           </div>
         </div>
       ) : (
         <div class="overflow-hidden rounded-[10px] border border-line bg-surface">
-          {tab === "processes" && <ProcessesTab desktop={c} />}
-          {tab === "agents" && <AgentsTab desktop={c} />}
-          {tab === "settings" && <SettingsTab desktop={c} />}
-          {tab === "access" && <AccessTab desktop={c} />}
+          {tab === "processes" && <ProcessesTab environment={c} />}
+          {tab === "agents" && <AgentsTab environment={c} />}
+          {tab === "settings" && <SettingsTab environment={c} />}
+          {tab === "access" && <AccessTab environment={c} />}
         </div>
       )}
     </Page>
@@ -189,7 +191,7 @@ function ViewersPanel({
   );
 }
 
-/** The desktop's mise tools as one line, or "" when it isn't running, has none, or can't say. */
+/** The environment's mise tools as one line, or "" when it isn't running, has none, or can't say. */
 function useTools(name: string, running: boolean): string {
   const [line, setLine] = useState("");
   useEffect(() => {
@@ -208,11 +210,11 @@ function useTools(name: string, running: boolean): string {
 }
 
 function Facts({
-  desktop: c,
+  environment: c,
   admin,
   onTab,
 }: {
-  desktop: Desktop;
+  environment: Environment;
   admin: boolean;
   onTab: (t: Tab) => void;
 }) {
@@ -270,6 +272,17 @@ function Facts({
             </dd>
           </>
         )}
+        {c.revision > 0 && (
+          <>
+            <dt class="text-muted">Revision</dt>
+            <dd class="m-0">
+              {c.revision}
+              {c.appliedRevision === 0
+                ? " (no container yet)"
+                : c.appliedRevision !== c.revision && ` (container built from ${c.appliedRevision})`}
+            </dd>
+          </>
+        )}
         <dt class="text-muted">Limits</dt>
         <dd class="m-0">{limits(c.settings)}</dd>
         <dt class="text-muted">Access tokens</dt>
@@ -292,13 +305,13 @@ function Facts({
           </>
         )}
       </dl>
-      {upgrading && <UpgradeDesktop desktop={c} onClose={() => setUpgrading(false)} />}
+      {upgrading && <UpgradeEnvironment environment={c} onClose={() => setUpgrading(false)} />}
     </div>
   );
 }
 
-/** Upgrades one desktop. */
-function UpgradeDesktop({ desktop: c, onClose }: { desktop: Desktop; onClose: () => void }) {
+/** Upgrades one environment. */
+function UpgradeEnvironment({ environment: c, onClose }: { environment: Environment; onClose: () => void }) {
   return (
     <UpgradeDialog
       title={`Upgrade ${c.name}?`}

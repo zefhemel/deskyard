@@ -11,7 +11,7 @@ import { Menu } from "./menu.tsx";
 import { cx, Meter } from "./ui.tsx";
 
 const nav = [
-  { href: "/", label: "Desktops", match: (p: string) => p === "/" || p.startsWith("/desktops/") },
+  { href: "/", label: "Environments", match: (p: string) => p === "/" || p.startsWith("/environments/") },
   { href: "/images", label: "Images", match: (p: string) => p === "/images" },
   { href: "/_vpn", label: "VPN connections", match: (p: string) => p === "/_vpn" },
   { href: "/accounts", label: "Accounts", match: (p: string) => p === "/accounts" },
@@ -35,7 +35,7 @@ export function TopBar() {
         Deskyard
       </a>
       {me.admin && (
-        <nav class="ml-3 flex gap-1 max-[900px]:order-last max-[900px]:ml-0 max-[900px]:w-full">
+        <nav class="ml-3 flex gap-1 max-[900px]:order-last max-[900px]:ml-0 max-[900px]:w-full max-[900px]:flex-wrap">
           {nav.map((n) => (
             <a
               key={n.href}

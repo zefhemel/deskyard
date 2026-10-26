@@ -1,4 +1,4 @@
-// Who is viewing a desktop, and the port mappings agents have set up with
+// Who is viewing an environment's desktop, and the port mappings agents set up with
 // `deskyard forward`. The popover is the desktop bar's; ForwardLines is also
 // the details page's "viewing" card.
 import { useEffect, useRef, useState } from "preact/hooks";

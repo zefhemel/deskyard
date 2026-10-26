@@ -66,7 +66,7 @@ export function LoginPage() {
           Deskyard
         </span>
         <h1 class="mb-1.5 text-[26px] leading-tight font-bold tracking-[-0.015em]">Sign in</h1>
-        <p class="mb-6 text-muted">to use the desktops on this machine.</p>
+        <p class="mb-6 text-muted">to use the environments on this machine.</p>
         <Field label="Username" htmlFor="u">
           <input
             id="u"

@@ -1,5 +1,5 @@
 import { useState } from "preact/hooks";
-import { api, type Desktop, type CreatedToken, type Token } from "../../api.ts";
+import { api, type Environment, type CreatedToken, type Token } from "../../api.ts";
 import { notifyError } from "../../components/toast.tsx";
 import { Button, Tag } from "../../components/ui.tsx";
 import { NewTokenDialog, TokenCreatedDialog } from "../../dialogs/tokens.tsx";
@@ -10,7 +10,7 @@ import { useFetch } from "../../lib/use-fetch.ts";
 const th = "border-b border-line px-4 py-[11px] text-left text-[13px] font-semibold text-muted";
 const td = "border-b border-hairline px-4 py-[13px] align-middle";
 
-export function AgentsTab({ desktop: c }: { desktop: Desktop }) {
+export function AgentsTab({ environment: c }: { environment: Environment }) {
   const { me } = useLive();
   const tokens = useFetch(() => api.tokens(c.name), c.name);
   const [creating, setCreating] = useState(false);
@@ -45,7 +45,7 @@ export function AgentsTab({ desktop: c }: { desktop: Desktop }) {
               {tokens.data.map((t) => (
                 <TokenRow
                   key={t.id}
-                  desktop={c.name}
+                  environment={c.name}
                   token={t}
                   canRevoke={me.admin || t.createdBy === me.username}
                   onChanged={tokens.reload}
@@ -57,7 +57,7 @@ export function AgentsTab({ desktop: c }: { desktop: Desktop }) {
       )}
       {creating && (
         <NewTokenDialog
-          desktop={c.name}
+          environment={c.name}
           onClose={() => setCreating(false)}
           onCreated={(t) => {
             setCreating(false);
@@ -66,12 +66,12 @@ export function AgentsTab({ desktop: c }: { desktop: Desktop }) {
           }}
         />
       )}
-      {created && <TokenCreatedDialog desktop={c.name} token={created} onClose={() => setCreated(null)} />}
+      {created && <TokenCreatedDialog environment={c.name} token={created} onClose={() => setCreated(null)} />}
     </>
   );
 }
 
-function TokenRow({ desktop, token: t, canRevoke, onChanged }: { desktop: string; token: Token; canRevoke: boolean; onChanged: () => void }) {
+function TokenRow({ environment, token: t, canRevoke, onChanged }: { environment: string; token: Token; canRevoke: boolean; onChanged: () => void }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const muted = t.expired ? "text-muted" : "";
@@ -79,7 +79,7 @@ function TokenRow({ desktop, token: t, canRevoke, onChanged }: { desktop: string
   const revoke = async () => {
     setBusy(true);
     try {
-      await api.deleteToken(desktop, t.id);
+      await api.deleteToken(environment, t.id);
       onChanged();
     } catch (e) {
       notifyError(e);

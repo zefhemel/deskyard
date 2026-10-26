@@ -10,18 +10,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 func TestDockerAccessSettingsAPI(t *testing.T) {
 	e := &hostSettingsEngine{current: alice}
 	e.current.Labels = maps.Clone(alice.Labels)
 	e.current.Image = "img"
-	e.current.Env = map[string]string{desktops.TokenEnv: "token"}
+	e.current.Env = map[string]string{environments.TokenEnv: "token"}
 	s, ts := newTestServerWith(t, e)
 	admin := login(t, ts, "admin")
 	anna := login(t, ts, "anna")
-	if err := s.Accounts.SetAccess("id-alice", []string{"anna"}); err != nil {
+	if err := s.Accounts.SetAccess("alice", []string{"anna"}); err != nil {
 		t.Fatal(err)
 	}
 	send := func(client *http.Client, method, path string, body map[string]any) (int, []byte) {
@@ -38,7 +38,7 @@ func TestDockerAccessSettingsAPI(t *testing.T) {
 		return resp.StatusCode, b
 	}
 	for _, method := range []string{"POST", "PATCH"} {
-		path := "/api/desktops"
+		path := "/api/environments"
 		if method == "PATCH" {
 			path += "/alice"
 		}
@@ -48,7 +48,7 @@ func TestDockerAccessSettingsAPI(t *testing.T) {
 	}
 	exposed := func(want bool) {
 		t.Helper()
-		code, b := send(admin, "GET", "/api/desktops/alice", nil)
+		code, b := send(admin, "GET", "/api/environments/alice", nil)
 		var got struct {
 			Settings struct {
 				DockerAccess bool `json:"dockerAccess"`
@@ -60,7 +60,7 @@ func TestDockerAccessSettingsAPI(t *testing.T) {
 	}
 	patch := func(body map[string]any) {
 		t.Helper()
-		code, b := send(admin, "PATCH", "/api/desktops/alice", body)
+		code, b := send(admin, "PATCH", "/api/environments/alice", body)
 		if code != 202 {
 			t.Fatalf("PATCH %d %s", code, b)
 		}
@@ -83,13 +83,13 @@ func TestDockerAccessSettingsAPI(t *testing.T) {
 	exposed(true)
 	patch(map[string]any{"nanoCpus": int64(1e9)})
 	exposed(true)
-	d, _ := s.Desktops.Get(context.Background(), "alice")
+	d, _ := s.Environments.Get(context.Background(), "alice")
 	if !d.Settings.DockerAccess || d.Container.Env["DESKYARD_DOCKER_ACCESS"] != "1" {
 		t.Fatal("permission lost during unrelated update")
 	}
 	patch(map[string]any{"dockerAccess": false})
 	exposed(false)
-	d, _ = s.Desktops.Get(context.Background(), "alice")
+	d, _ = s.Environments.Get(context.Background(), "alice")
 	if d.Container.Env["DESKYARD_DOCKER_ACCESS"] != "" {
 		t.Fatal("revocation retained startup permission")
 	}

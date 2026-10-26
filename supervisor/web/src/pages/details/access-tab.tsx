@@ -1,13 +1,13 @@
 import { useEffect, useState } from "preact/hooks";
-import { api, type Desktop } from "../../api.ts";
-import { AccessPicks } from "../../components/desktop-fields.tsx";
+import { api, type Environment } from "../../api.ts";
+import { AccessPicks } from "../../components/environment-fields.tsx";
 import { notify } from "../../components/toast.tsx";
 import { Button, ErrorText, errorMessage } from "../../components/ui.tsx";
 import { useFetch } from "../../lib/use-fetch.ts";
 
 const same = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
 
-export function AccessTab({ desktop: c }: { desktop: Desktop }) {
+export function AccessTab({ environment: c }: { environment: Environment }) {
   const accounts = useFetch(() => api.accounts(), "accounts");
   const [value, setValue] = useState(c.access);
   const [error, setError] = useState<string | null>(null);

@@ -1,6 +1,6 @@
 deskyard key: press keys or shortcuts
 
-Usage: deskyard [-d NAME] key COMBO...
+Usage: deskyard [-e NAME] key COMBO...
 
 Presses keys one after another, in xdotool syntax: Return, Escape, Tab,
 BackSpace, Up, F5, ctrl+l, ctrl+shift+t, super.
@@ -14,5 +14,5 @@ Examples:
   deskyard key ctrl+l
   deskyard key ctrl+a BackSpace
 
-Where: inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)
+Where: inside an environment it acts locally; elsewhere on the chosen environment (-e NAME)
 Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop

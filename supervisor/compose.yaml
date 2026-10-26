@@ -3,7 +3,7 @@
 #   DESKYARD_DATA_DIR=/srv/deskyard docker compose up -d
 #   docker compose logs supervisor     # first start: the generated admin password
 #
-# then open http://localhost:8080.
+# then open http://localhost:7343.
 #
 # Put DESKYARD_DATA_DIR (and optionally DESKYARD_ADMIN_PASSWORD,
 # DESKYARD_DOMAIN) in a .env file next to this one to avoid typing them.
@@ -28,7 +28,7 @@ services:
       # supervisor is the most privileged thing here: keep it updated and
       # don't expose it without HTTPS.
       - /var/run/docker.sock:/var/run/docker.sock
-      # The data folder (workspace folders and .deskyard/ state) must be
+      # The data folder (definitions, state/, secret/ and home/) must be
       # mounted at the SAME path inside as on the host: the supervisor hands
       # these paths to the engine as bind mounts for desktops, and the engine
       # resolves them on the host. The supervisor checks this on startup and
@@ -40,6 +40,6 @@ services:
       # replace this line with:
       #   - "80:80"
       #   - "443:443"
-      # Publishing 8080 on all interfaces without HTTPS sends passwords in
+      # Publishing 7343 on all interfaces without HTTPS sends passwords in
       # clear text; only do that on a trusted network.
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:7343:7343"

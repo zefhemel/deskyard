@@ -22,7 +22,7 @@ def test_status_and_auth(admin, desktop, name):
     assert requests.get(admin.base + "/api/agent/v1", cookies=admin.cookies, timeout=5).status_code == 401
     assert requests.get(admin.base + "/api/agent/v1", headers={"Authorization": "Bearer dyt_nope_x"}, timeout=5).status_code == 401
     # The token can't use the UI API.
-    assert requests.get(admin.base + "/api/desktops", headers=h, timeout=5).status_code == 401
+    assert requests.get(admin.base + "/api/environments", headers=h, timeout=5).status_code == 401
 
 
 def test_exec_as_user_with_stdin_and_exit_code(admin, desktop, name):
@@ -59,10 +59,10 @@ def test_token_is_for_one_desktop_and_revocable(admin, desktop, name):
         t = make_token(admin, other)
         h = {"Authorization": f"Bearer {t['token']}"}
         assert requests.get(admin.base + "/api/agent/v1", headers=h, timeout=10).json()["name"] == other
-        assert admin.delete(f"/api/desktops/{other}/tokens/{t['id']}").status_code == 204
+        assert admin.delete(f"/api/environments/{other}/tokens/{t['id']}").status_code == 204
         assert requests.get(admin.base + "/api/agent/v1", headers=h, timeout=5).status_code == 401
     finally:
-        admin.delete(f"/api/desktops/{other}?files=1")
+        admin.delete(f"/api/environments/{other}?files=1")
 
 
 def test_revoking_closes_open_exec(admin, desktop, name):
@@ -73,7 +73,7 @@ def test_revoking_closes_open_exec(admin, desktop, name):
         async with websockets.connect(url, additional_headers={"Authorization": f"Bearer {t['token']}"}) as ws:
             await ws.send(json.dumps({"argv": ["sleep", "60"]}))
             await asyncio.sleep(1)
-            admin.delete(f"/api/desktops/{name}/tokens/{t['id']}")
+            admin.delete(f"/api/environments/{name}/tokens/{t['id']}")
             await asyncio.wait_for(ws.wait_closed(), 10)
     asyncio.run(run())
 
@@ -85,7 +85,7 @@ def test_expired_token_refused(admin, desktop, name):
     assert requests.get(admin.base + "/api/agent/v1", headers=h, timeout=10).status_code == 200
     time.sleep(3)
     assert requests.get(admin.base + "/api/agent/v1", headers=h, timeout=5).status_code == 401
-    listed = {x["id"]: x for x in admin.get(f"/api/desktops/{name}/tokens").json()}
+    listed = {x["id"]: x for x in admin.get(f"/api/environments/{name}/tokens").json()}
     assert listed[t["id"]]["expired"]
 
 
@@ -94,9 +94,9 @@ def test_regular_account_tokens(admin, desktop, name, supervisor):
     anna = supervisor.client().login(user, "pw")
     mine = make_token(anna, name)
     admins = make_token(admin, name)
-    assert anna.delete(f"/api/desktops/{name}/tokens/{admins['id']}").status_code == 403
+    assert anna.delete(f"/api/environments/{name}/tokens/{admins['id']}").status_code == 403
     # Losing access revokes the tokens the account created.
-    admin.put(f"/api/desktops/{name}/access", json={"usernames": []})
+    admin.put(f"/api/environments/{name}/access", json={"usernames": []})
     h = {"Authorization": f"Bearer {mine['token']}"}
     assert requests.get(admin.base + "/api/agent/v1", headers=h, timeout=5).status_code == 401
     assert requests.get(admin.base + "/api/agent/v1", headers={"Authorization": f"Bearer {admins['token']}"}, timeout=10).status_code == 200
@@ -105,8 +105,8 @@ def test_regular_account_tokens(admin, desktop, name, supervisor):
 
 def test_stopped_desktop_answers_409(admin, desktop, name):
     t = make_token(admin, name)
-    admin.post(f"/api/desktops/{name}/stop")
+    admin.post(f"/api/environments/{name}/stop")
     h = {"Authorization": f"Bearer {t['token']}"}
     r = requests.get(admin.base + "/api/agent/v1/cdp/json/version", headers=h, timeout=10)
     assert r.status_code == 409 and "stopped" in r.json()["error"]
-    admin.post(f"/api/desktops/{name}/start")
+    admin.post(f"/api/environments/{name}/start")

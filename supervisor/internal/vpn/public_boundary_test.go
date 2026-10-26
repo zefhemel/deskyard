@@ -39,8 +39,8 @@ func TestEnsureRedactsStoreFilesystemFailure(t *testing.T) {
 	if err := os.WriteFile(sentinel, []byte("file"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	m.store.dir = sentinel // Get now fails with ENOTDIR and the private path.
-	_, err := m.Ensure(context.Background(), strings.Repeat("a", 32), "alice", "desktop", c.ID, nil, false)
+	m.store.metadata = filepath.Join(sentinel, "networks.json") // Get now fails with ENOTDIR and the private path.
+	_, err := m.Ensure(context.Background(), strings.Repeat("a", 32), "desktop", c.ID, nil, false)
 	if err == nil {
 		t.Fatal("unreadable store accepted")
 	}

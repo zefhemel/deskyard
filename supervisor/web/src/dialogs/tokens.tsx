@@ -26,7 +26,7 @@ function expiresAt(expiry: Expiry, date: string): Date | null | undefined {
   return new Date(Date.now() + expiry * 86400 * 1000);
 }
 
-export function NewTokenDialog({ desktop, onClose, onCreated }: { desktop: string; onClose: () => void; onCreated: (t: CreatedToken) => void }) {
+export function NewTokenDialog({ environment, onClose, onCreated }: { environment: string; onClose: () => void; onCreated: (t: CreatedToken) => void }) {
   const [name, setName] = useState("");
   const [expiry, setExpiry] = useState<Expiry>(30);
   const [date, setDate] = useState("");
@@ -40,7 +40,7 @@ export function NewTokenDialog({ desktop, onClose, onCreated }: { desktop: strin
     setBusy(true);
     setError(null);
     try {
-      onCreated(await api.createToken(desktop, { name: name.trim(), expires: when ? when.toISOString() : null }));
+      onCreated(await api.createToken(environment, { name: name.trim(), expires: when ? when.toISOString() : null }));
     } catch (e) {
       setError(errorMessage(e));
       setBusy(false);
@@ -49,10 +49,10 @@ export function NewTokenDialog({ desktop, onClose, onCreated }: { desktop: strin
 
   return (
     <Dialog
-      title={`New access token for ${desktop}`}
+      title={`New access token for ${environment}`}
       intro={
         <>
-          Use {desktop} from your own machine: its shell, files, browser and desktop as <span class="mono">user</span>, and
+          Use {environment} from your own machine: its shell, files, browser and desktop as <span class="mono">user</span>, and
           nothing else.
         </>
       }
@@ -97,7 +97,7 @@ function snippet(remoteAdd: string): string {
   return remoteAdd.replace(/ --token /, " \\\n  --token ");
 }
 
-export function TokenCreatedDialog({ desktop, token: t, onClose }: { desktop: string; token: CreatedToken; onClose: () => void }) {
+export function TokenCreatedDialog({ environment, token: t, onClose }: { environment: string; token: CreatedToken; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     setCopied(await copyText(t.remoteAdd));
@@ -128,13 +128,13 @@ export function TokenCreatedDialog({ desktop, token: t, onClose }: { desktop: st
       <dl class="mb-[18px] grid grid-cols-[max-content_1fr] gap-x-[18px] gap-y-[9px] text-sm">
         <dt class="text-muted">Name</dt>
         <dd class="m-0">{t.name}</dd>
-        <dt class="text-muted">Desktop</dt>
-        <dd class="m-0">{desktop}</dd>
+        <dt class="text-muted">Environment</dt>
+        <dd class="m-0">{environment}</dd>
         <dt class="text-muted">Expires</dt>
         <dd class="m-0">{expires}</dd>
       </dl>
       <Note>
-        Then run <span class="mono">deskyard -d {desktop} guide</span> to learn the rest.
+        Then run <span class="mono">deskyard -e {environment} guide</span> to learn the rest.
       </Note>
     </Dialog>
   );

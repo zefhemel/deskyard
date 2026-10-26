@@ -11,7 +11,7 @@ export const UPGRADE_NOTE = (
   </>
 );
 
-/** Confirms an upgrade (one desktop or every desktop behind on an image), then follows its job. */
+/** Confirms an upgrade (one environment or every environment behind on an image), then follows its job. */
 export function UpgradeDialog({
   title,
   intro,

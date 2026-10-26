@@ -1,6 +1,6 @@
 deskyard mouse-up: release a mouse button
 
-Usage: deskyard [-d NAME] mouse-up [left|right|middle]
+Usage: deskyard [-e NAME] mouse-up [left|right|middle]
 
 Releases a mouse button pressed with mouse-down.
 
@@ -12,5 +12,5 @@ Prints: nothing
 Examples:
   deskyard mouse-up
 
-Where: inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)
+Where: inside an environment it acts locally; elsewhere on the chosen environment (-e NAME)
 Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop

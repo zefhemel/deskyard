@@ -1,9 +1,9 @@
-deskyard guide: how to work on a Deskyard desktop
+deskyard guide: how to work in a Deskyard environment
 
-WHAT A DESKTOP IS
-A desktop is a persistent Debian Linux desktop in a container, with a shared
-Chromium browser. Open it in your web browser or use this CLI from your
-terminal. Everyone with access shares the same screen and browser profile.
+WHAT AN ENVIRONMENT IS
+An environment is a persistent Debian Linux desktop in a container, with a
+shared Chromium browser. Open it in your web browser or use this CLI from
+your terminal. Everyone with access shares the same screen and browser profile.
 
 - One Linux user, `user`, home /workspace. Commands run as user, in
   /workspace by default. There is no sudo and no apt-get install.
@@ -14,20 +14,20 @@ terminal. Everyone with access shares the same screen and browser profile.
     uv tool install PKG            Python CLIs; uv run / uv venv for projects
     flatpak install --user -y --noninteractive flathub APP_ID   desktop apps
   Node and Python come preinstalled.
-- Leave the desktop's services alone (Caddy, Selkies, Chromium, D-Bus,
+- Leave the environment's services alone (Caddy, Selkies, Chromium, D-Bus,
   supervisord): killing them disconnects viewers.
 
 WHERE YOU ARE
-- Inside a desktop: every command acts on it directly. No setup.
+- Inside an environment: every command acts on it directly. No setup.
 - Anywhere else: talk to it through a remote. A token comes from the
-  desktop's Remote access tab; then:
+  environment's Remote access tab; then:
     deskyard remote add alice https://host/alice --token dyt_...
-    deskyard -d alice status
-  The first remote is the default; -d NAME or DESKYARD_REMOTE picks
-  another. DESKYARD_URL + DESKYARD_TOKEN work without saving anything.
-  A token reaches one desktop's shell, files, browser and desktop, nothing
-  else. A stopped desktop answers "alice is stopped"; start it in the
-  web UI with your account before connecting.
+    deskyard -e alice status
+  The first remote is the default; -e NAME (--environment NAME, before the
+  command) or DESKYARD_REMOTE picks another. DESKYARD_URL + DESKYARD_TOKEN
+  work without saving anything. A token reaches one environment's shell,
+  files, browser and desktop, nothing else. A stopped environment answers
+  "alice is stopped"; start it in the web UI with your account first.
 
 THREE WAYS TO WORK
 
@@ -36,7 +36,7 @@ THREE WAYS TO WORK
     deskyard exec -- ls -la                    run a command, exit code passes through
     deskyard exec -- bash -lc 'cd app && npm test'   pipes, &&, globs need bash -lc
     deskyard exec --json -- cat notes.txt      {"stdout","stderr","exit"} in one object
-    deskyard exec --cwd /workspace/app -e CI=1 -- make
+    deskyard exec --cwd /workspace/app -e CI=1 -- make   -e after exec: a variable
     echo data | deskyard exec -- tee /workspace/in.txt   stdin is streamed
     deskyard cp ./src alice:/workspace/src     upload (file or directory)
     deskyard cp alice:/workspace/out.csv .     download
@@ -44,16 +44,16 @@ THREE WAYS TO WORK
     deskyard shell                             interactive shell
 
 2. Browser: connect browser tools to your existing Chromium session.
-   The desktop's Chromium shares the same profile and signed-in sessions
+   The environment's Chromium shares the same profile and signed-in sessions
    whether you open it on screen or connect through CDP.
-   Inside the desktop CDP is at http://127.0.0.1:9221. From elsewhere:
-    deskyard -d alice browser connect &        forwards http://127.0.0.1:9222
+   Inside the environment CDP is at http://127.0.0.1:9221. From elsewhere:
+    deskyard -e alice browser connect &        forwards http://127.0.0.1:9222
    then attach to the shared browser:
     browser = p.chromium.connect_over_cdp("http://127.0.0.1:9222")
     page = browser.contexts[0].new_page()      your own tab, in the shared profile
    Open a separate tab when other people are using the browser.
    browser.close() only disconnects. For a login, 2FA or CAPTCHA, open
-   the desktop in your web browser and complete it there.
+   the environment in your web browser and complete it there.
 
 3. Desktop: for anything without an API: desktop apps, browser UI outside
    the page (permission prompts, file pickers), or checking what is on
@@ -79,22 +79,22 @@ WHICH ONE
   a screenshot to check the result.
 
 PORTS
-  Map TCP ports between your machine and a desktop (from outside it):
-    deskyard -d alice forward 3000 &       your 127.0.0.1:3000 is localhost:3000 in the desktop
-    deskyard -d alice forward -R 5173 &    the desktop's localhost:5173 is your 127.0.0.1:5173
+  Map TCP ports between your machine and an environment (from outside it):
+    deskyard -e alice forward 3000 &       your 127.0.0.1:3000 is localhost:3000 in alice
+    deskyard -e alice forward -R 5173 &    alice's localhost:5173 is your 127.0.0.1:5173
   Mix several in one command (-R goes before each reverse one). Port
-  order: plain LOCAL:DESKTOP (forward 8080:3000: your 8080 is the desktop's
-  3000); after -R it is DESKTOP:LOCAL (-R 80:8080: the desktop's 80 is your
-  8080). Loopback only; the desktop won't listen below 1024, so plain
+  order: plain LOCAL:ENV (forward 8080:3000: your 8080 is the environment's
+  3000); after -R it is ENV:LOCAL (-R 80:8080: the environment's 80 is your
+  8080). Loopback only; the environment won't listen below 1024, so plain
   "forward 80" fails but "-R 80:8080" works (it only dials). On a lost link
   it reconnects by itself: -R local ports stay bound meanwhile, plain
-  mappings come back in the desktop once the link is back. It prints "in
-  LOCAL DESKTOP" / "out DESKTOP 127.0.0.1:LOCAL" and "Linked to ..." when the
-  link is accepted, a moment before the desktop side is known to run.
+  mappings come back in the environment once the link is back. It prints
+  "in LOCAL ENV" / "out ENV 127.0.0.1:LOCAL" and "Linked to ..." when the
+  link is accepted, a moment before the environment side is known to run.
   Limits: 4 links per token, 64 plain and 256 mappings per command. The
   viewers see which ports your token maps.
 
-SHARING A DESKTOP
+SHARING AN ENVIRONMENT
 - Other viewers see every window you open. Coordinate mouse and keyboard use.
 - CLI activity and screen actions are visible alongside browser viewers.
 - Keep long-running programs in the background (setsid -f CMD) so they

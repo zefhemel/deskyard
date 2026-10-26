@@ -52,7 +52,7 @@ type Input struct {
 func (Input) MarshalJSON() ([]byte, error) { return nil, errors.New("VPN input is write-only") }
 
 // CredentialFiles contains engine-host paths for read-only secret mounts. The
-// supervisor's state directory must be mounted at the same host path in Docker.
+// supervisor's data folder must be mounted at the same host path in Docker.
 // Paths are never part of public JSON responses.
 type CredentialFiles struct {
 	Username string `json:"-"`
@@ -67,20 +67,26 @@ type connectionFile struct {
 	Connections []connectionRecord `json:"connections"`
 }
 
-// Store keeps metadata under stateDir/vpn and secrets in owner-only files. The
-// caller passes the supervisor's private .deskyard directory, not its workspace.
-// One supervisor owns a state directory; the mutex serializes its operations.
+// Store keeps metadata in one file (the supervisor's networks.json) and
+// secrets in owner-only files under secretDir/vpn/<connection-id>. One
+// supervisor owns a store; the mutex serializes its operations.
 type Store struct {
-	mu  sync.Mutex
-	dir string
+	mu       sync.Mutex
+	metadata string
+	secrets  string
 }
 
-func NewStore(stateDir string) (*Store, error) {
-	dir, err := filepath.Abs(filepath.Join(stateDir, "vpn"))
+func NewStore(metadataPath, secretDir string) (*Store, error) {
+	metadata, err := filepath.Abs(metadataPath)
 	if err != nil {
 		return nil, err
 	}
-	for _, p := range []string{dir, filepath.Join(dir, "secrets")} {
+	secretDir, err = filepath.Abs(secretDir)
+	if err != nil {
+		return nil, err
+	}
+	secrets := filepath.Join(secretDir, "vpn")
+	for _, p := range []string{secretDir, secrets} {
 		if err := os.MkdirAll(p, 0o700); err != nil {
 			return nil, err
 		}
@@ -88,7 +94,7 @@ func NewStore(stateDir string) (*Store, error) {
 			return nil, err
 		}
 	}
-	s := &Store{dir: dir}
+	s := &Store{metadata: metadata, secrets: secrets}
 	if _, err := s.load(); err != nil {
 		return nil, err
 	}
@@ -97,7 +103,7 @@ func NewStore(stateDir string) (*Store, error) {
 
 func (s *Store) load() ([]connectionRecord, error) {
 	var f connectionFile
-	if err := store.ReadJSON(filepath.Join(s.dir, "connections.json"), &f); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := store.ReadJSON(s.metadata, &f); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
 	ids, names := map[string]bool{}, map[string]bool{}
@@ -114,7 +120,7 @@ func (s *Store) load() ([]connectionRecord, error) {
 	return f.Connections, nil
 }
 func (s *Store) save(rs []connectionRecord) error {
-	return store.WriteJSON(filepath.Join(s.dir, "connections.json"), connectionFile{rs})
+	return store.WriteJSON(s.metadata, connectionFile{rs})
 }
 func validID(id string) bool {
 	if len(id) != 32 {
@@ -198,7 +204,7 @@ func (s *Store) Create(in Input) (Connection, error) {
 	}
 	r := connectionRecord{Connection: Connection{ID: id, Name: in.Name, Provider: in.Provider, Country: in.Country, Revision: 1, CredentialsConfigured: true}, CredentialRef: ref}
 	if err = s.save(append(rs, r)); err != nil {
-		os.RemoveAll(filepath.Join(s.dir, "secrets", id))
+		os.RemoveAll(filepath.Join(s.secrets, id))
 		return Connection{}, err
 	}
 	return r.Connection, nil
@@ -256,7 +262,7 @@ func (s *Store) Update(id string, in Input) (Connection, error) {
 	rs[i] = r
 	if err = s.save(rs); err != nil {
 		if changed {
-			os.RemoveAll(filepath.Join(s.dir, "secrets", id, r.CredentialRef))
+			os.RemoveAll(filepath.Join(s.secrets, id, r.CredentialRef))
 		}
 		return Connection{}, err
 	}
@@ -278,7 +284,7 @@ func (s *Store) Delete(id string) error {
 	if err = s.save(slices.Delete(rs, i, i+1)); err != nil {
 		return err
 	}
-	return os.RemoveAll(filepath.Join(s.dir, "secrets", id))
+	return os.RemoveAll(filepath.Join(s.secrets, id))
 }
 
 // SecretFiles resolves private file paths for internal runtime configuration.
@@ -297,7 +303,7 @@ func (s *Store) SecretFiles(id string) (CredentialFiles, error) {
 	return s.credentialFiles(id, rs[i].CredentialRef)
 }
 func (s *Store) credentialFiles(id, ref string) (CredentialFiles, error) {
-	files := CredentialFiles{filepath.Join(s.dir, "secrets", id, ref, "username"), filepath.Join(s.dir, "secrets", id, ref, "password")}
+	files := CredentialFiles{filepath.Join(s.secrets, id, ref, "username"), filepath.Join(s.secrets, id, ref, "password")}
 	for _, p := range []string{files.Username, files.Password} {
 		info, err := os.Lstat(p)
 		if err != nil || !info.Mode().IsRegular() || info.Size() == 0 || info.Mode().Perm() != 0o600 {
@@ -311,7 +317,7 @@ func (s *Store) writeCredentials(id, username, password string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(s.dir, "secrets", id, ref)
+	dir := filepath.Join(s.secrets, id, ref)
 	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
 		return "", err
 	}

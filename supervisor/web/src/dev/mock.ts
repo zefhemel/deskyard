@@ -6,8 +6,8 @@ import { readFileSync, existsSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
-import type { Desktop, CreatedToken, Job } from "../api.ts";
-import { accounts, activityOf, desktops, FOLDER, images, processRows, refreshImages, tokens } from "./mock-data.ts";
+import type { CreatedToken, Environment, Job } from "../api.ts";
+import { accounts, activityOf, conflicts, environments, FOLDER, images, processRows, refreshImages, tokens } from "./mock-data.ts";
 
 
 const GB = 1024 ** 3;
@@ -47,20 +47,23 @@ function me() {
   return accounts.find((a) => a.username === session);
 }
 
-function visible(): Desktop[] {
+function visible(): Environment[] {
   const m = me();
   if (!m) return [];
-  const list = m.admin ? desktops : desktops.filter((c) => c.access.includes(m.username));
+  const list = m.admin ? environments : environments.filter((c) => c.access.includes(m.username));
   return list.map((c) => (m.admin ? c : { ...c, access: [] })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function changed(c: Desktop): void {
-  broadcast("desktop", c);
+function changed(c: Environment): void {
+  broadcast("environment", c);
 }
 
-function setState(c: Desktop, state: Desktop["state"], later?: Desktop["state"]): void {
+function setState(c: Environment, state: Environment["state"], later?: Environment["state"]): void {
   c.state = state;
+  if (state === "running" || state === "stopped") c.power = state;
   if (state === "running") {
+    c.appliedRevision = c.revision;
+    c.error = "";
     c.startedAt = new Date().toISOString();
     c.stats = { cpuPercent: 5, memBytes: 0.6 * GB, memLimit: c.settings.memoryBytes || 16 * GB };
   }
@@ -74,10 +77,10 @@ function setState(c: Desktop, state: Desktop["state"], later?: Desktop["state"])
 }
 
 let jobSeq = 1;
-function job(messages: string[], after: () => void, desktop?: string): { job: string } {
+function job(messages: string[], after: () => void, environment?: string): { job: string } {
   const id = `job${jobSeq++}`;
-  const steps: Job[] = messages.map((m, i) => ({ status: "running", message: m, progress: (i + 1) / (messages.length + 1), desktop }));
-  steps.push({ status: "done", message: "Done", progress: 1, desktop });
+  const steps: Job[] = messages.map((m, i) => ({ status: "running", message: m, progress: (i + 1) / (messages.length + 1), environment }));
+  steps.push({ status: "done", message: "Done", progress: 1, environment });
   jobs.set(id, { steps, after });
   // The job finishes on its own schedule, whether or not anyone follows it.
   setTimeout(after, steps.length * 700);
@@ -108,7 +111,7 @@ function host() {
   const running = list.filter((c) => c.state === "running");
   const cameras = ["/dev/video0", "/dev/video1"].map((device) => {
     const owner = list.find((c) => c.settings.camera === device);
-    return { device, taken: !!owner, ...(owner ? { desktop: owner.name } : {}) };
+    return { device, taken: !!owner, ...(owner ? { environment: owner.name } : {}) };
   });
   return { cpus: 8, memBytes: 16 * GB, running: running.length, total: list.length, memUsed: running.reduce((s, c) => s + (c.stats?.memBytes ?? 0), 0), cameras, memoryReclaim: { enabled: true } };
 }
@@ -118,7 +121,7 @@ function host() {
 function startTimers(): void {
 setInterval(() => {
   const t = new Date().toISOString();
-  for (const c of desktops) {
+  for (const c of environments) {
     if (c.state !== "running" || !c.stats) continue;
     const s = c.stats;
     s.cpuPercent = Math.max(0.5, Math.min(99, s.cpuPercent * 0.7 + (s.cpuPercent + (Math.random() - 0.5) * 30) * 0.3));
@@ -127,18 +130,18 @@ setInterval(() => {
   }
 }, 5000);
 setInterval(() => {
-  const alice = desktops.find((c) => c.name === "alice");
+  const alice = environments.find((c) => c.name === "alice");
   if (!alice || alice.state !== "running") return;
   alice.viewers = alice.viewers.includes("sam") ? alice.viewers.filter((v) => v !== "sam") : [...alice.viewers, "sam"];
   broadcast("viewers", { name: "alice", viewers: alice.viewers, mics: alice.mics, cams: alice.cams, forwards: alice.forwards, agents: alice.agents });
 }, 20000);
 // The agents' summaries move on, as they would from the supervisor (once a second at most).
 setInterval(() => {
-  for (const c of desktops) if (c.agents.length) broadcast("activity", activityOf(c));
+  for (const c of environments) if (c.agents.length) broadcast("activity", activityOf(c));
 }, 5000);
 }
 
-function history(c: Desktop) {
+function history(c: Environment) {
   const out = [];
   let cpu = c.stats?.cpuPercent ?? 10;
   let mem = c.stats?.memBytes ?? GB;
@@ -158,7 +161,7 @@ function history(c: Desktop) {
 function fakeScreen(name: string): string {
   return `<!doctype html><html><body style="margin:0;background:#0f151d;height:100vh;overflow:hidden">
 <canvas id="videoCanvas" width="1280" height="800" style="display:none"></canvas>
-<img id="videoStream" src="/api/desktops/${name}/screen.png?full=1" style="position:absolute;inset:0;width:100%;height:100%;object-fit:fill" alt="">
+<img id="videoStream" src="/api/environments/${name}/screen.png?full=1" style="position:absolute;inset:0;width:100%;height:100%;object-fit:fill" alt="">
 <div id="log" style="position:fixed;left:12px;bottom:12px;font:12px monospace;color:#9fb0c3"></div>
 <script>
 const log = (t) => (document.getElementById("log").textContent = t);
@@ -266,22 +269,23 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
 
   if (path === "/api/validate-name") {
     const name = url.searchParams.get("name") ?? "";
-    if (desktops.some((c) => c.name === name)) return json(res, 200, { ok: false, error: `There's already a desktop called ${name}.`, folderExists: true });
-    if (["api", "login", "logout", "assets", "static", "healthz"].includes(name)) return json(res, 200, { ok: false, error: `${name} is reserved.`, folderExists: false });
-    return json(res, 200, { ok: true, folderExists: name === "old-project", folder: `${FOLDER}/${name}` });
+    if (environments.some((c) => c.name === name)) return json(res, 200, { ok: false, error: "an environment with that name already exists", folderExists: false });
+    if (["api", "login", "logout", "assets", "static", "healthz", "environments"].includes(name)) return json(res, 200, { ok: false, error: `${name} is reserved.`, folderExists: false });
+    return json(res, 200, { ok: true, folderExists: name === "old-project", folder: `${FOLDER}/home/${name}` });
   }
-  if (path === "/api/desktops" && method === "GET") return json(res, 200, visible());
-  if (path === "/api/desktops" && method === "POST") {
+  if (path === "/api/environments" && method === "GET") return json(res, 200, { environments: visible(), conflicts: m.admin ? conflicts : [] });
+  if (path === "/api/environments" && method === "POST") {
     const b = await readBody(req);
     const name = String(b.name);
     const img = images.find((i) => i.ref === b.image) ?? images[0]!;
-    const c: Desktop = {
-      id: `${name}-id`, name, state: "creating", startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/${name}`, image: img.ref, imageTitle: img.title,
-      autoReclaim: true, imageVersion: img.version, updateAvailable: null, settings: { dockerAccess: b.dockerAccess === true, memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), camera: "", vpnConnectionId: null, lanExceptions: [], mounts: [] },
+    const c: Environment = {
+      name, state: "creating", power: "running", revision: 1, appliedRevision: 0, error: "", conflict: "",
+      startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/home/${name}`, image: img.ref, imageTitle: img.title,
+      memoryReclaim: true, imageVersion: img.version, updateAvailable: null, settings: { dockerAccess: b.dockerAccess === true, memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), camera: "", vpnConnectionId: null, lanExceptions: [], mounts: [] },
       vpn: {state:"disabled",changedAt:"0001-01-01T00:00:00Z",exitIpObservedAt:"0001-01-01T00:00:00Z",desiredRevision:0,appliedRevision:0,idle:false},
       access: (b.access as string[]) ?? [], viewers: [], mics: [], cams: [], webcam: false, terminal: true, forwards: [], agents: [], tokens: 0, stats: null,
     };
-    desktops.push(c);
+    environments.push(c);
     changed(c);
     return json(res, 202, job(["Pulling image, 120 of 820 MB", "Pulling image, 540 of 820 MB", "Creating the container", "Starting"], () => setState(c, "running"), name));
   }
@@ -290,7 +294,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   }
   if (path === "/api/accounts" && method === "POST") {
     const b = await readBody(req);
-    const a = { username: String(b.username), password: String(b.password), admin: Boolean(b.admin), desktops: (b.desktops as string[]) ?? [], created: new Date().toISOString(), lastLogin: null };
+    const a = { username: String(b.username), password: String(b.password), admin: Boolean(b.admin), environments: (b.environments as string[]) ?? [], created: new Date().toISOString(), lastLogin: null };
     accounts.push(a);
     return json(res, 201, a);
   }
@@ -306,7 +310,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const b = await readBody(req);
     if (b.admin === false && a.admin && accounts.filter((x) => x.admin).length === 1) return json(res, 409, { error: "That would leave no admin." });
     if (typeof b.admin === "boolean") a.admin = b.admin;
-    if (Array.isArray(b.desktops)) a.desktops = b.desktops as string[];
+    if (Array.isArray(b.environments)) a.environments = b.environments as string[];
     return json(res, 200, a);
   }
   if (path === "/api/images" && method === "GET") {
@@ -317,7 +321,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const b = await readBody(req);
     if (!String(b.ref).includes(":")) return json(res, 400, { error: "Give a reference with a tag." });
     return json(res, 202, job(["Pulling " + String(b.ref), "Checking the image contract"], () => {
-      images.push({ installed: true, official: false, ref: String(b.ref), title: "Added image", version: "1.0", description: "Added in the mock", desktops: [], behind: [], checked: new Date().toISOString() });
+      images.push({ installed: true, official: false, ref: String(b.ref), title: "Added image", version: "1.0", description: "Added in the mock", environments: [], behind: [], checked: new Date().toISOString() });
     }));
   }
   if (path === "/api/images/install" && method === "POST") {
@@ -339,7 +343,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   if (path === "/api/images/upgrade") {
     const b = await readBody(req);
     return json(res, 202, job(["Upgrading", "Starting"], () => {
-      for (const c of desktops) if (c.image === b.ref && c.updateAvailable) {
+      for (const c of environments) if (c.image === b.ref && c.updateAvailable) {
         c.imageVersion = c.updateAvailable;
         c.updateAvailable = null;
         changed(c);
@@ -347,28 +351,31 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     }));
   }
 
-  const cm = /^\/api\/desktops\/([^/]+)(?:\/(.+))?$/.exec(path);
-  const c = cm?.[1] ? visible().find((x) => x.name === cm[1]) && desktops.find((x) => x.name === cm[1]) : undefined;
-  if (!cm || !c) return json(res, 404, { error: "No such desktop" });
+  const cm = /^\/api\/environments\/([^/]+)(?:\/(.+))?$/.exec(path);
+  const c = cm?.[1] ? visible().find((x) => x.name === cm[1]) && environments.find((x) => x.name === cm[1]) : undefined;
+  if (!cm || !c) return json(res, 404, { error: "no such environment" });
   const sub = cm[2] ?? "";
 
   if (sub === "terminal/sessions" && method === "GET") {
-    if (c.state !== "running" || !c.terminal) return json(res, 409, { error: "Desktop terminal unavailable" });
+    if (c.state !== "running" || !c.terminal) return json(res, 409, { error: "Environment terminal unavailable" });
     return json(res, 200, { sessions: [{ name: "main" }, { name: "terminal-1" }, { name: "terminal-2" }] });
   }
   if (sub === "" && method === "GET") return json(res, 200, visible().find((x) => x.name === c.name));
   if (sub === "" && method === "DELETE") {
-    desktops.splice(desktops.indexOf(c), 1);
+    environments.splice(environments.indexOf(c), 1);
     broadcast("removed", { name: c.name });
     return json(res, 204);
   }
   if (sub === "" && method === "PATCH") {
     const b = await readBody(req);
+    c.revision++;
+    changed(c);
     return json(res, 202, job(["Recreating the container", "Starting"], () => {
+      if (c.state === "running") c.appliedRevision = c.revision;
       if (typeof b.memoryBytes === "number") c.settings.memoryBytes = b.memoryBytes;
       if (typeof b.nanoCpus === "number") c.settings.nanoCpus = b.nanoCpus;
       if (typeof b.dockerAccess === "boolean") c.settings.dockerAccess = b.dockerAccess;
-      if (Array.isArray(b.mounts)) c.settings.mounts = b.mounts as Desktop["settings"]["mounts"];
+      if (Array.isArray(b.mounts)) c.settings.mounts = b.mounts as Environment["settings"]["mounts"];
       if (typeof b.image === "string") c.image = b.image;
       if (typeof b.camera === "string") {
         c.settings.camera = b.camera;
@@ -379,12 +386,12 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   }
   if (sub === "start") return setState(c, "starting", "running"), json(res, 204);
   if (sub === "memory-policy" && method === "PUT") {
-    c.autoReclaim = (await readBody(req)).autoReclaim === true;
+    c.memoryReclaim = (await readBody(req)).memoryReclaim === true;
     changed(c);
     return json(res, 204);
   }
   if (sub === "reclaim-memory") {
-    if (c.state !== "running") return json(res, 409, { error: "The desktop is stopped" });
+    if (c.state !== "running") return json(res, 409, { error: "The environment is stopped" });
     const beforeBytes = c.stats?.memBytes ?? 512 * 1024 * 1024;
     const afterBytes = Math.max(0, beforeBytes - 128 * 1024 * 1024);
     if (c.stats) c.stats.memBytes = afterBytes;
@@ -399,6 +406,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     return json(res, 204);
   }
   if (sub === "upgrade") {
+    c.revision++;
     setState(c, "upgrading");
     return json(res, 202, job(["Recreating the container on 2026.10.22", "Starting"], () => {
       c.imageVersion = c.updateAvailable ?? c.imageVersion;
@@ -440,7 +448,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const t: CreatedToken = {
       id, name: String(b.name), createdBy: m.username, created: new Date().toISOString(), expires: (b.expires as string | null) ?? null,
       lastUsed: null, expired: false, token: `dyt_${id}_${secret}`,
-      remoteAdd: `deskyard remote add ${c.name} https://desktops.example.com/${c.name} --token dyt_${id}_${secret}`,
+      remoteAdd: `deskyard remote add ${c.name} https://deskyard.example.com/${c.name} --token dyt_${id}_${secret}`,
     };
     const { token: _t, remoteAdd: _r, ...listed } = t;
     (tokens[c.name] ??= []).push(listed);

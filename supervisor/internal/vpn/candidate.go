@@ -49,7 +49,7 @@ func (m *Manager) test(ctx context.Context, connectionID string, in Input) (resu
 	if err != nil {
 		return Status{}, err
 	}
-	root := filepath.Join(m.stateDir, "vpn", "tests")
+	root := filepath.Join(m.stateDir, "vpn", "test")
 	if err = os.MkdirAll(root, 0o700); err != nil {
 		return Status{}, errors.New("VPN test private directory is unavailable")
 	}
@@ -63,7 +63,7 @@ func (m *Manager) test(ctx context.Context, connectionID string, in Input) (resu
 			resultErr = errors.Join(resultErr, errors.New("VPN test private file cleanup failed; reconciliation is required"))
 		}
 	}()
-	candidateStore, err := NewStore(dir)
+	candidateStore, err := NewStore(filepath.Join(dir, "networks.json"), filepath.Join(dir, "secret"))
 	if err != nil {
 		return Status{}, errors.New("VPN test store could not be prepared")
 	}
@@ -77,8 +77,13 @@ func (m *Manager) test(ctx context.Context, connectionID string, in Input) (resu
 	}
 	id := hex.EncodeToString(bytes)
 	network := "deskyard-vpn-test-" + id
-	manager := NewManager(m.eng, candidateStore, dir)
-	labels := map[string]string{LabelRole: "test", LabelDesktopID: id, labelAttempt: id}
+	// The test runtime and network carry this supervisor's instance label,
+	// as every managed resource does.
+	manager := NewManager(m.eng, candidateStore, dir).ForInstance(m.instance)
+	labels := map[string]string{LabelRole: "test", LabelEnvironment: id, labelAttempt: id}
+	if m.instance != "" {
+		labels[LabelInstance] = m.instance
+	}
 	// Reconcile by unique labels/name even if creation committed but its reply
 	// was canceled. Never blindly remove a colliding pre-existing network name.
 	defer func() {
@@ -94,7 +99,7 @@ func (m *Manager) test(ctx context.Context, connectionID string, in Input) (resu
 	if err = m.eng.CreateNetwork(ctx, network, "", labels); err != nil {
 		return Status{}, errors.New("VPN test network creation failed")
 	}
-	if _, err = manager.Ensure(ctx, id, "candidate", network, connection.ID, nil, false); err != nil {
+	if _, err = manager.Ensure(ctx, id, network, connection.ID, nil, false); err != nil {
 		return Status{}, err
 	}
 	ticker := time.NewTicker(HealthInterval)

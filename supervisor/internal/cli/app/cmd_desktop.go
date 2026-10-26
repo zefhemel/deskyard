@@ -34,7 +34,7 @@ func runDesktop(a *App, c *call) error {
 		return err
 	}
 
-	// Remotely: run the desktop's own `deskyard` through exec. A FILE
+	// Remotely: run the environment's own `deskyard` through exec. A FILE
 	// argument is a path on this machine, so the PNG comes back on stdout.
 	file, rest := desktop.OutputFile(action, c.args)
 	argv := append([]string{"deskyard", action}, rest...)

@@ -46,7 +46,7 @@ func TestEnsureReconcilesAmbiguousCreationByAttemptOwnership(t *testing.T) {
 			defer cancel()
 			e := &ambiguousRuntimeEngine{cancel: cancel, collision: collision}
 			m.eng = e
-			_, err := m.Ensure(ctx, strings.Repeat("9", 32), "alice", "desktop", c.ID, nil, false)
+			_, err := m.Ensure(ctx, strings.Repeat("9", 32), "desktop", c.ID, nil, false)
 			if err == nil {
 				t.Fatal("ambiguous creation succeeded")
 			}
@@ -65,7 +65,7 @@ func TestEnsureReportsSanitizedCleanupFailure(t *testing.T) {
 	defer cancel()
 	e := &ambiguousRuntimeEngine{cancel: cancel, failRemove: true}
 	m.eng = e
-	_, err := m.Ensure(ctx, strings.Repeat("a", 32), "alice", "desktop", c.ID, nil, false)
+	_, err := m.Ensure(ctx, strings.Repeat("a", 32), "desktop", c.ID, nil, false)
 	if err == nil || !strings.Contains(err.Error(), "cleanup") || strings.Contains(err.Error(), "secret") {
 		t.Fatalf("cleanup failure not sanitized/reported: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestSuccessfulCandidateReportsPrivateFileCleanupFailure(t *testing.T) {
 		t.Skip("root bypasses filesystem permission boundary")
 	}
 	m, _, c := managerFixture(t)
-	parent := filepath.Join(m.stateDir, "vpn", "tests")
+	parent := filepath.Join(m.stateDir, "vpn", "test")
 	e := &failedPrivateCleanupEngine{parent: parent}
 	m.eng = e
 	t.Cleanup(func() { _ = os.Chmod(parent, 0o700) })
@@ -186,7 +186,7 @@ func TestCandidateCancellationDuringOpenProbeReachesCleanup(t *testing.T) {
 	if len(e.containers) != 0 || len(e.networks) != 0 {
 		t.Fatal("open probe cancellation leaked owned resources")
 	}
-	entries, err := os.ReadDir(filepath.Join(m.stateDir, "vpn", "tests"))
+	entries, err := os.ReadDir(filepath.Join(m.stateDir, "vpn", "test"))
 	if err != nil || len(entries) != 0 {
 		t.Fatalf("open probe cancellation leaked private files: %v", err)
 	}

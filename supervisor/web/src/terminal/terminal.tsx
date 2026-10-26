@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import "./terminal.css";
 import { api } from "../api.ts";
-import { useDesktop } from "../live.tsx";
+import { useEnvironment } from "../live.tsx";
 import { TerminalConnection, type Socket } from "./connection.ts";
 import {
   binaryBytes,
@@ -17,7 +17,7 @@ import { SessionPicker } from "./session-picker.tsx";
 import { terminalLayout } from "./viewport.ts";
 
 export function TerminalPage({ name }: { name: string }) {
-  const desktop = useDesktop(name);
+  const environment = useEnvironment(name);
   const initial = new URLSearchParams(location.search).get("session") ?? "main";
   const [session, setSession] = useState(initial);
   const [revision, setRevision] = useState(0);
@@ -56,7 +56,7 @@ export function TerminalPage({ name }: { name: string }) {
       <div ref={insets} class="terminal-insets" aria-hidden="true" />
       <div class="terminal-too-short" role="status">Rotate to portrait or dismiss the keyboard to use the terminal.</div>
       <header class="terminal-header">
-        <a href="/" aria-label="Desktops">
+        <a href="/" aria-label="Environments">
           ‹
         </a>
         <strong>{name}</strong>
@@ -72,21 +72,21 @@ export function TerminalPage({ name }: { name: string }) {
           Invalid session. Use 1–64 letters, digits, underscores or hyphens,
           starting with a letter or digit.
         </p>
-      ) : desktop === undefined ? (
-        <p class="terminal-notice">Loading desktop…</p>
-      ) : !desktop ? (
+      ) : environment === undefined ? (
+        <p class="terminal-notice">Loading environment…</p>
+      ) : !environment ? (
         <p class="terminal-notice">
-          Desktop not found, or you no longer have access.
+          Environment not found, or you no longer have access.
         </p>
-      ) : !desktop.terminal ? (
+      ) : !environment.terminal ? (
         <p class="terminal-notice">
-          Upgrade this desktop's image to use shared terminals.{" "}
-          <a href={`/desktops/${name}`}>Desktop settings</a>
+          Upgrade this environment's image to use shared terminals.{" "}
+          <a href={`/environments/${name}`}>Environment settings</a>
         </p>
-      ) : desktop.state !== "running" ? (
+      ) : environment.state !== "running" ? (
         <p class="terminal-notice">
-          Desktop is {desktop.state}.{" "}
-          <a href={`/desktops/${name}`}>Open desktop details</a>
+          Environment is {environment.state}.{" "}
+          <a href={`/environments/${name}`}>Open environment details</a>
         </p>
       ) : (
         <TerminalPane
@@ -186,7 +186,7 @@ function TerminalPane({
         Math.max(1, Math.min(300, proposed.rows)),
       );
     const endpoint = new URL(
-      `/api/desktops/${encodeURIComponent(name)}/terminal`,
+      `/api/environments/${encodeURIComponent(name)}/terminal`,
       location.href,
     );
     endpoint.protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -200,14 +200,14 @@ function TerminalPane({
       size: () => [term.cols, term.rows],
       socket: (url) => new WebSocket(url) as unknown as Socket,
       preflight: async () => {
-        const current = await api.desktop(name);
+        const current = await api.environment(name);
         if (!current.terminal)
           throw new Error(
-            "Upgrade this desktop image to use shared terminals.",
+            "Upgrade this environment's image to use shared terminals.",
           );
         if (current.state !== "running")
           throw new Error(
-            `Desktop is ${current.state}. Open its details to start it.`,
+            `Environment is ${current.state}. Open its details to start it.`,
           );
       },
       // Drain old writes before resetting parser/private modes; new output follows this barrier.

@@ -18,13 +18,13 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/activity"
 	"github.com/zefhemel/deskyard/supervisor/internal/cli/transfer"
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 const agentPrefix = "/api/agent/v1"
 
-// serveAgent is the agent API: bearer tokens only, one desktop per token.
+// serveAgent is the agent API: bearer tokens only, one environment per token.
 func (s *Server) serveAgent(w http.ResponseWriter, r *http.Request) {
 	bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok {
@@ -36,9 +36,9 @@ func (s *Server) serveAgent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "the token is unknown, revoked or expired")
 		return
 	}
-	c, err := s.desktopByID(r.Context(), t.DesktopID)
+	c, err := s.Environments.Get(r.Context(), t.Environment)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "the token's desktop no longer exists")
+		writeError(w, http.StatusUnauthorized, "the token's environment no longer exists")
 		return
 	}
 	ctx, cancel := context.WithCancel(r.Context())
@@ -74,20 +74,7 @@ func (s *Server) serveAgent(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) desktopByID(ctx context.Context, id string) (desktops.Desktop, error) {
-	list, err := s.Desktops.List(ctx)
-	if err != nil {
-		return desktops.Desktop{}, err
-	}
-	for _, c := range list {
-		if c.ID == id {
-			return c, nil
-		}
-	}
-	return desktops.Desktop{}, desktops.ErrNotFound
-}
-
-func (s *Server) agentStatus(w http.ResponseWriter, r *http.Request, c desktops.Desktop) {
+func (s *Server) agentStatus(w http.ResponseWriter, r *http.Request, c environments.Environment) {
 	res := map[string]any{
 		"name": c.Name, "state": c.State, "image": c.Image, "api": 1,
 		"imageTitle": c.ImageLabels["org.opencontainers.image.title"], "imageVersion": c.ImageLabels["org.opencontainers.image.version"],
@@ -144,7 +131,7 @@ type execControl struct {
 	EOF    bool   `json:"eof"`
 }
 
-func (s *Server) agentExec(w http.ResponseWriter, r *http.Request, c desktops.Desktop, t token) {
+func (s *Server) agentExec(w http.ResponseWriter, r *http.Request, c environments.Environment, t token) {
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {
 		return
@@ -169,7 +156,7 @@ func (s *Server) agentExec(w http.ResponseWriter, r *http.Request, c desktops.De
 	if start.Cwd == "" {
 		start.Cwd = "/workspace"
 	}
-	s.Log.Info("agent exec", "desktop", c.Name, "token", t.Name, "argv", activity.DisplayCommand(start.Argv), "tty", start.Tty)
+	s.Log.Info("agent exec", "environment", c.Name, "token", t.Name, "argv", activity.DisplayCommand(start.Argv), "tty", start.Tty)
 	var p *engine.Process
 	if session, shared := terminalSession(start.Argv, start.Tty); shared {
 		p, err = s.terminalProcess(ctx, c.Container.ID, session, start.Cols, start.Rows)
@@ -288,8 +275,8 @@ func (s *Server) agentExec(w http.ResponseWriter, r *http.Request, c desktops.De
 
 // agentCDP proxies the shared Chromium's DevTools protocol through the
 // desktop's Caddy (/_cdp/), pointing /json URLs back through this route.
-func (s *Server) agentCDP(w http.ResponseWriter, r *http.Request, c desktops.Desktop, t token, rest string) {
-	addr, tok, err := s.Desktops.Target(r.Context(), c.Name)
+func (s *Server) agentCDP(w http.ResponseWriter, r *http.Request, c environments.Environment, t token, rest string) {
+	addr, tok, err := s.Environments.Target(r.Context(), c.Name)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
@@ -331,13 +318,13 @@ func (s *Server) agentCDP(w http.ResponseWriter, r *http.Request, c desktops.Des
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			if !errors.Is(err, context.Canceled) {
-				s.Log.Debug("cdp proxy", "desktop", c.Name, "err", err)
+				s.Log.Debug("cdp proxy", "environment", c.Name, "err", err)
 			}
 			writeError(w, http.StatusBadGateway, "the browser didn't answer")
 		},
 	}
 	if strings.HasPrefix(rest, "/devtools/") {
-		s.Log.Info("agent browser connect", "desktop", c.Name, "token", t.Name)
+		s.Log.Info("agent browser connect", "environment", c.Name, "token", t.Name)
 		defer s.activity.BrowserOpen(refOf(c), s.agentOf(t))()
 	} else {
 		s.activity.BrowserTouch(refOf(c), s.agentOf(t))

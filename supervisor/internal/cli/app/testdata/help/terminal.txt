@@ -1,12 +1,12 @@
 deskyard terminal: join a shared terminal session
 
-Usage: deskyard [-d NAME] terminal [SESSION]
+Usage: deskyard [-e NAME] terminal [SESSION]
 
 Joins a shared Bash login shell in /workspace, default main. Browser, CLI and
 desktop clients share the same session. Inside an existing native shared
 terminal, press Ctrl-B then s and choose the session instead of nesting this
 command. Detach with Ctrl-B then D; jobs survive disconnect but end when the
-desktop restarts. Session names use 1–64 letters, digits, underscores or
+environment restarts. Session names use 1–64 letters, digits, underscores or
 dashes and start with a letter or digit.
 
 Arguments:
@@ -15,8 +15,8 @@ Arguments:
 Prints: shared terminal input and output
 
 Examples:
-  deskyard -d alice terminal
+  deskyard -e alice terminal
   deskyard terminal build-2
 
-Where: on the chosen remote (-d NAME); inside a desktop without a remote it acts locally
-Exit codes: the command's own exit code; 1 when it couldn't run (connection, token, stopped desktop), 2 usage error
+Where: on the chosen environment (-e NAME); inside an environment without one chosen it acts locally
+Exit codes: the command's own exit code; 1 when it couldn't run (connection, token, stopped environment), 2 usage error

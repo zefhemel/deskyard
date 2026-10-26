@@ -71,6 +71,13 @@ func (e *ScopedEngine) Restart(ctx context.Context, id string, d time.Duration) 
 	}
 	return e.Engine.Restart(ctx, c.ID, d)
 }
+func (e *ScopedEngine) Rename(ctx context.Context, id, name string) error {
+	c, err := e.Inspect(ctx, id)
+	if err != nil {
+		return err
+	}
+	return e.Engine.Rename(ctx, c.ID, name)
+}
 func (e *ScopedEngine) UpdateRestartPolicy(ctx context.Context, id, p string) error {
 	c, err := e.Inspect(ctx, id)
 	if err != nil {

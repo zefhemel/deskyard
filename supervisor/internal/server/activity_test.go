@@ -12,12 +12,13 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/activity"
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
+	"github.com/zefhemel/deskyard/supervisor/internal/config"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/forward"
 )
 
 var (
-	aliceRef = activity.Ref{Name: "alice", ID: "id-alice"}
+	aliceRef = activity.Ref{Name: "alice", ID: "alice"}
 	bot      = activity.Agent{ID: "tok1", Name: "deploy-bot", Owner: "admin"}
 	click    = activity.ScreenAction{Action: "click", Pos: []int{10, 20}}
 )
@@ -25,13 +26,13 @@ var (
 func TestAgentsInDesktopJSON(t *testing.T) {
 	s, _ := newTestServer(t)
 	ctx := context.Background()
-	c, err := s.Desktops.Get(ctx, "alice")
+	c, err := s.Environments.Get(ctx, "alice")
 	if err != nil {
 		t.Fatal(err)
 	}
 	admin, _ := s.Accounts.Get("admin")
 
-	j := s.desktopJSON(ctx, c, admin)
+	j := s.environmentJSON(ctx, c, admin)
 	if j.Agents == nil || len(j.Agents) != 0 {
 		t.Fatalf("no activity: agents = %#v", j.Agents)
 	}
@@ -41,7 +42,7 @@ func TestAgentsInDesktopJSON(t *testing.T) {
 	}
 
 	s.activity.Screen(aliceRef, bot, click)
-	j = s.desktopJSON(ctx, c, admin)
+	j = s.environmentJSON(ctx, c, admin)
 	if len(j.Agents) != 1 || j.Agents[0].ID != "tok1" || j.Agents[0].Name != "deploy-bot" || !j.Agents[0].Active {
 		t.Fatalf("agents = %#v", j.Agents)
 	}
@@ -109,7 +110,7 @@ func TestPresenceChangePublishesViewers(t *testing.T) {
 	evs := subscribe(t, s)
 	// A viewers event just went out: the presence change must not wait
 	// for the viewers throttle.
-	s.publishViewers("alice", "id-alice")
+	s.publishViewers("alice", "alice")
 	for len(evs) < 2 { // viewers and activity
 		time.Sleep(time.Millisecond)
 	}
@@ -120,8 +121,8 @@ func TestPresenceChangePublishesViewers(t *testing.T) {
 	s.activity.Screen(aliceRef, bot, click)
 	select {
 	case e := <-evs:
-		if e.kind != "viewers" || e.desktopID != "id-alice" {
-			t.Fatalf("first event = %s %s", e.kind, e.desktopID)
+		if e.kind != "viewers" || e.environment != "alice" {
+			t.Fatalf("first event = %s %s", e.kind, e.environment)
 		}
 		b, _ := json.Marshal(e.data)
 		var d struct {
@@ -147,8 +148,8 @@ func TestPresenceChangePublishesViewers(t *testing.T) {
 		case e := <-evs:
 			if e.kind == "activity" {
 				activities++
-				if e.desktopID != "id-alice" {
-					t.Errorf("activity desktopID = %q", e.desktopID)
+				if e.environment != "alice" {
+					t.Errorf("activity environment = %q", e.environment)
 				}
 				if a, ok := e.data.(activityJSON); !ok || a.Name != "alice" || len(a.Agents) != 1 {
 					t.Errorf("activity data = %#v", e.data)
@@ -173,8 +174,8 @@ func TestPresenceKnob(t *testing.T) {
 		log := slog.New(slog.NewTextHandler(io.Discard, nil))
 		accts, _ := accounts.Load(dir)
 		e := fakeEngine{}
-		s, err := New(Options{Log: log, Eng: e, Accounts: accts, StateDir: dir, DefaultImage: "img",
-			Desktops:         desktops.New(e, desktops.Config{DataDir: dir, Subnet: "10.0.0.0/16"}, log),
+		s, err := New(Options{Log: log, Eng: e, Accounts: accts, Layout: config.NewLayout(dir), DefaultImage: "img",
+			Environments:     environments.New(e, environments.Config{DataDir: dir, Subnet: "10.0.0.0/16"}, log),
 			ActivityPresence: c.presence})
 		if err != nil {
 			t.Fatal(err)
@@ -193,13 +194,13 @@ func TestActivityRoutes(t *testing.T) {
 	s, ts := newTestServer(t)
 	admin := login(t, ts, "admin")
 	anna := login(t, ts, "anna")
-	for _, p := range []string{"/api/desktops/alice/activity", "/api/desktops/alice/screen-events"} {
+	for _, p := range []string{"/api/environments/alice/activity", "/api/environments/alice/screen-events"} {
 		if got := status(t, anna, "GET", ts.URL+p, ""); got != 404 {
 			t.Errorf("anna %s: %d", p, got)
 		}
 	}
 	s.activity.Screen(aliceRef, bot, click)
-	resp, err := admin.Get(ts.URL + "/api/desktops/alice/activity")
+	resp, err := admin.Get(ts.URL + "/api/environments/alice/activity")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,9 +216,9 @@ func TestActivityRoutes(t *testing.T) {
 
 func TestScreenEventsStream(t *testing.T) {
 	s, ts := newTestServer(t)
-	_ = s.Accounts.SetAccess("id-alice", []string{"anna"})
+	_ = s.Accounts.SetAccess("alice", []string{"anna"})
 	anna := login(t, ts, "anna")
-	resp, err := anna.Get(ts.URL + "/api/desktops/alice/screen-events")
+	resp, err := anna.Get(ts.URL + "/api/environments/alice/screen-events")
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("screen-events: %v %v", err, resp)
 	}
@@ -255,7 +256,7 @@ func TestScreenEventsStream(t *testing.T) {
 	}
 
 	// Taking away access closes the stream, even with nothing to send.
-	_ = s.Accounts.SetAccess("id-alice", nil)
+	_ = s.Accounts.SetAccess("alice", nil)
 	timeout := time.After(2 * time.Second)
 	for {
 		select {
@@ -285,7 +286,7 @@ func within(t *testing.T, what string, f func()) {
 func TestTokenGoneForgetsAgent(t *testing.T) {
 	s, _ := newTestServer(t)
 	mk := func(name string, exp *time.Time) token {
-		tk, _, err := s.tokens.create(name, "id-alice", "admin", exp)
+		tk, _, err := s.tokens.create(name, "alice", "admin", exp)
 		if err != nil {
 			t.Fatal(err)
 		}

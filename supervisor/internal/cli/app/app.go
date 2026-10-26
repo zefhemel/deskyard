@@ -24,7 +24,7 @@ type App struct {
 	Getenv         func(string) string
 	// ConfigPath overrides remotes.json's location (tests).
 	ConfigPath string
-	// Inside reports whether this process runs inside a desktop, where
+	// Inside reports whether this process runs inside an environment, where
 	// commands act locally when no remote is chosen.
 	Inside  func() bool
 	HTTP    *http.Client
@@ -37,7 +37,7 @@ type App struct {
 	callerName string
 	callerSet  bool
 
-	remoteFlag string // -c
+	remoteFlag string // -e/--environment
 }
 
 // New returns an App wired to the process.
@@ -45,16 +45,16 @@ func New(version string) *App {
 	return &App{
 		Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr,
 		Getenv:  os.Getenv,
-		Inside:  insideDesktop,
+		Inside:  insideEnvironment,
 		Version: version,
 		Record:  activity.Send,
 		Caller:  defaultCaller(os.Getenv),
 	}
 }
 
-// insideDesktop: desktop images create /etc/workspace (see
+// insideEnvironment: environment images create /etc/workspace (see
 // images/Dockerfile) and run Linux.
-func insideDesktop() bool {
+func insideEnvironment() bool {
 	if runtime.GOOS != "linux" {
 		return false
 	}
@@ -113,37 +113,43 @@ func (a *App) Run(ctx context.Context, argv []string) int {
 		if ue.cmd != nil {
 			fmt.Fprintf(a.Stderr, "deskyard %s: %s\nusage: deskyard %s\nRun `deskyard %s --help` for details.\n", ue.cmd.Name, ue.msg, ue.cmd.Usage, ue.cmd.Name)
 		} else {
-			fmt.Fprintf(a.Stderr, "desktop: %s\nRun `deskyard --help` for the list of commands, or `deskyard guide` to get started.\n", ue.msg)
+			fmt.Fprintf(a.Stderr, "deskyard: %s\nRun `deskyard --help` for the list of commands, or `deskyard guide` to get started.\n", ue.msg)
 		}
 		return 2
 	}
 	if errors.Is(err, context.Canceled) {
-		fmt.Fprintln(a.Stderr, "desktop: interrupted")
+		fmt.Fprintln(a.Stderr, "deskyard: interrupted")
 		return 130
 	}
-	fmt.Fprintf(a.Stderr, "desktop: %v\n", err)
+	fmt.Fprintf(a.Stderr, "deskyard: %v\n", err)
 	return 1
 }
 
 func (a *App) run(ctx context.Context, argv []string) error {
-	// Global flags.
+	// Global flags, only before the command name: -e is exec's --env after it.
 	for len(argv) > 0 {
 		arg := argv[0]
 		switch {
-		case arg == "-d" || arg == "--desktop":
+		case arg == "-e" || arg == "--environment":
 			if len(argv) < 2 || argv[1] == "" {
-				return usagef(nil, "-d needs a remote name: deskyard -d NAME COMMAND (see `deskyard remote list`)")
+				return usagef(nil, "%s needs an environment name: deskyard -e NAME COMMAND (see `deskyard remote list`)", arg)
 			}
 			a.remoteFlag, argv = argv[1], argv[2:]
 			continue
-		case strings.HasPrefix(arg, "-c="), strings.HasPrefix(arg, "--desktop="):
-			_, v, _ := strings.Cut(arg, "=")
+		case strings.HasPrefix(arg, "-e="), strings.HasPrefix(arg, "--environment="):
+			flag, v, _ := strings.Cut(arg, "=")
+			if v == "" {
+				return usagef(nil, "%s needs an environment name: deskyard -e NAME COMMAND (see `deskyard remote list`)", flag)
+			}
 			a.remoteFlag, argv = v, argv[1:]
 			continue
 		case arg == "-h" || arg == "--help":
 			return a.printHelp(nil)
 		case arg == "--version":
 			return runVersion(a, nil)
+		case arg == "-d" || arg == "--desktop" || strings.HasPrefix(arg, "--desktop="):
+			name, _, _ := strings.Cut(arg, "=")
+			return usagef(nil, "unknown option %q (choose an environment with -e NAME before the command)", name)
 		case strings.HasPrefix(arg, "-") && arg != "-":
 			return usagef(nil, "unknown option %q (options for a command go after it, e.g. deskyard exec --json -- ls)", arg)
 		}
@@ -170,7 +176,7 @@ func (a *App) run(ctx context.Context, argv []string) error {
 
 	c := &call{cmd: cmd, ctx: ctx, flags: map[string][]string{}}
 	if cmd.Group == "desktop" {
-		// Desktop arguments are free text (type, key), so only a lone
+		// Desktop (screen) arguments are free text (type, key), so only a lone
 		// --help is help.
 		if len(rest) == 1 && (rest[0] == "--help" || rest[0] == "-h") {
 			return a.printHelp(strings.Fields(cmd.Name))
@@ -317,10 +323,10 @@ func (a *App) loadConfig() (*remote.Config, string, error) {
 	return cfg, p, err
 }
 
-const addHint = "No remotes yet? Get a token on the desktop's Remote access tab, then run `deskyard remote add NAME https://host/NAME --token dyt_…`"
+const addHint = "No remotes yet? Get a token on the environment's Remote access tab, then run `deskyard remote add NAME https://host/NAME --token dyt_…`"
 
 // target picks the remote to talk to. It returns nil, nil when the command
-// should act locally (inside a desktop with no remote chosen).
+// should act locally (inside an environment with no remote chosen).
 func (a *App) target() (*remote.Client, error) {
 	name := a.remoteFlag
 	if name == "" {
@@ -343,9 +349,9 @@ func (a *App) target() (*remote.Client, error) {
 		return nil, nil
 	}
 	if len(cfg.Remotes) > 0 {
-		return nil, errors.New("no remote chosen: run `deskyard remote list`, then use -d NAME (or set DESKYARD_REMOTE=NAME, or `deskyard remote default NAME`)")
+		return nil, errors.New("no remote chosen: run `deskyard remote list`, then use -e NAME (or set DESKYARD_REMOTE=NAME, or `deskyard remote default NAME`)")
 	}
-	return nil, errors.New("no remote chosen: run `deskyard remote list`, then use -d NAME. " + addHint)
+	return nil, errors.New("no remote chosen: run `deskyard remote list`, then use -e NAME. " + addHint)
 }
 
 func (a *App) namedRemote(name string) (*remote.Client, error) {
@@ -356,9 +362,9 @@ func (a *App) namedRemote(name string) (*remote.Client, error) {
 	if r := cfg.Remotes[name]; r != nil {
 		return a.client(r), nil
 	}
-	// DESKYARD_URL's desktop can be named too (cp alice:/x).
+	// DESKYARD_URL's environment can be named too (cp alice:/x).
 	if u := a.Getenv("DESKYARD_URL"); u != "" {
-		if c, err := a.envRemote(u); err == nil && c.Desktop == name {
+		if c, err := a.envRemote(u); err == nil && c.Environment == name {
 			return c, nil
 		}
 	}
@@ -379,9 +385,9 @@ func (a *App) envRemote(u string) (*remote.Client, error) {
 	}
 	tok := a.Getenv("DESKYARD_TOKEN")
 	if tok == "" {
-		return nil, errors.New("DESKYARD_URL is set but DESKYARD_TOKEN isn't: set it to the access token (dyt_…) for that desktop")
+		return nil, errors.New("DESKYARD_URL is set but DESKYARD_TOKEN isn't: set it to the access token (dyt_…) for that environment")
 	}
-	return &remote.Client{Alias: t.Desktop, Base: t.Base, Desktop: t.Desktop, Token: tok, HTTP: a.HTTP}, nil
+	return &remote.Client{Alias: t.Environment, Base: t.Base, Environment: t.Environment, Token: tok, HTTP: a.HTTP}, nil
 }
 
 func (a *App) client(r *remote.Remote) *remote.Client {

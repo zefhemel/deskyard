@@ -10,12 +10,12 @@ import (
 )
 
 func (s *Server) handleTerminalSessions(w http.ResponseWriter, r *http.Request) {
-	c, _, ok := s.desktopFor(w, r, auth.View)
+	c, _, ok := s.environmentFor(w, r, auth.View)
 	if !ok {
 		return
 	}
 	if c.State != "running" {
-		writeError(w, 409, "start the desktop before listing terminals")
+		writeError(w, 409, "start the environment before listing terminals")
 		return
 	}
 	if c.ImageLabels["deskyard.terminal"] != "tmux-v1" {

@@ -17,15 +17,15 @@ export interface Host {
   cameras: HostCamera[] | null;
 }
 
-/** A host's virtual camera (v4l2loopback) and the desktop that has it, if any. */
+/** A host's virtual camera (v4l2loopback) and the environment that has it, if any. */
 export interface HostCamera {
   device: string;
   taken: boolean;
-  /** Named only when this account can see that desktop. */
-  desktop?: string;
+  /** Named only when this account can see that environment. */
+  environment?: string;
 }
 
-export type DesktopState = "running" | "stopped" | "starting" | "creating" | "upgrading" | "removing";
+export type EnvironmentState = "running" | "stopped" | "starting" | "creating" | "upgrading" | "removing";
 
 export interface Stats {
   cpuPercent: number;
@@ -44,9 +44,10 @@ export interface VPNConnection {
   id: string; name: string; provider: "nordvpn"; country: string;
   revision: number; credentialsConfigured: boolean;
 }
-export interface SavedVPNConnection extends VPNConnection { desktops: VPNReference[] }
+/** An environment using a connection; its id is its name. */
+export interface SavedVPNConnection extends VPNConnection { environments: VPNReference[] }
 export interface VPNInput { name: string; provider: "nordvpn"; country: string; username?: string; password?: string }
-export interface VPNUpdate extends VPNInput { expectedRevision: number; affectedDesktopIds: string[]; confirmRestart: boolean }
+export interface VPNUpdate extends VPNInput { expectedRevision: number; affectedEnvironments: string[]; confirmRestart: boolean }
 export interface LANException { destination: string; protocol: "tcp" | "udp"; ports: {start: number; end: number}[] }
 export interface VPNStatus {
   state: "disabled" | "stopped" | "connecting" | "connected" | "reconnecting" | "blocked";
@@ -54,28 +55,39 @@ export interface VPNStatus {
   connectionId?: string; name?: string; provider?: "nordvpn"; country?: string;
   desiredRevision: number; appliedRevision: number; idle: boolean;
 }
-export interface VPNRollout { connection: VPNConnection; desktops: (VPNReference & {error?: string})[] }
-export interface DesktopVPNSettings { vpnConnectionId: string | null; lanExceptions: LANException[] }
-export interface SettingsPatch extends Partial<DesktopVPNSettings> {
+export interface VPNRollout { connection: VPNConnection; environments: (VPNReference & {error?: string})[] }
+export interface EnvironmentVPNSettings { vpnConnectionId: string | null; lanExceptions: LANException[] }
+export interface SettingsPatch extends Partial<EnvironmentVPNSettings> {
   image?: string; memoryBytes?: number; nanoCpus?: number; camera?: string; dockerAccess?: boolean; mounts?: HostMount[];
 }
 
-export interface Settings extends DesktopVPNSettings {
+export interface Settings extends EnvironmentVPNSettings {
   dockerAccess: boolean;
   mounts: HostMount[];
   memoryBytes: number;
   nanoCpus: number;
-  /** The host's virtual camera this desktop has to itself; "" for none. */
+  /** The host's virtual camera this environment has to itself; "" for none. */
   camera: string;
 }
 
-export interface Desktop {
+export interface Environment {
   /** Image supports named shared terminals. */
   terminal: boolean;
-  autoReclaim: boolean;
-  id: string;
+  /** Reclaim memory automatically while nobody is viewing; saves without restarting. */
+  memoryReclaim: boolean;
+  /** The environment's identity everywhere: there is no separate ID. */
   name: string;
-  state: DesktopState;
+  /** Observed; power is the desired state. */
+  state: EnvironmentState;
+  power: "running" | "stopped";
+  /** The definition's revision, counting container-affecting changes. */
+  revision: number;
+  /** The revision the container was built from; 0 without a container. */
+  appliedRevision: number;
+  /** Why the last change couldn't be applied; "" when it could. */
+  error: string;
+  /** Why a container claiming this name isn't matched to it; "" when none. */
+  conflict: string;
   startedAt: string;
   created: string | null;
   /** The running job (create, upgrade, settings change), if any. */
@@ -93,14 +105,31 @@ export interface Desktop {
   mics: string[];
   /** Viewers with a camera on (per stream, as mics). */
   cams: string[];
-  /** Whether the running desktop has its virtual camera (settings.camera). */
+  /** Whether the running environment has its virtual camera (settings.camera). */
   webcam: boolean;
-  /** Port mappings agents have set up with `deskyard forward`; port is the desktop's. */
+  /** Port mappings agents have set up with `deskyard forward`; port is the environment's. */
   forwards: Forward[];
-  /** Agents at work in the desktop: from outside (a token) or inside (a program). */
+  /** Agents at work in the environment: from outside (a token) or inside (a program). */
   agents: AgentPresence[];
   tokens: number;
   stats: Stats | null;
+}
+
+/**
+ * A container of this supervisor's that it can't match to a definition:
+ * one claiming an undefined name, several claiming one, or one claiming it
+ * under another container name. Only admins are told.
+ */
+export interface Conflict {
+  name: string;
+  kind: "unknown" | "duplicate" | "misnamed";
+  containers: string[];
+  message: string;
+}
+
+export interface EnvironmentList {
+  environments: Environment[];
+  conflicts: Conflict[];
 }
 
 export interface Processes {
@@ -111,7 +140,7 @@ export interface Processes {
 export interface Tool {
   tool: string;
   version: string;
-  source: "desktop" | "image";
+  source: "environment" | "image";
 }
 
 export interface StatsPoint {
@@ -129,7 +158,7 @@ export interface NameCheck {
   ok: boolean;
   error?: string;
   folderExists: boolean;
-  /** The folder the desktop's files would live in (when the name is valid). */
+  /** The folder the environment's files would live in (when the name is valid). */
   folder?: string;
 }
 
@@ -138,14 +167,14 @@ export interface Job {
   message: string;
   progress: number | null;
   error?: string;
-  desktop?: string;
+  environment?: string;
   result?: VPNStatus | VPNRollout;
 }
 
 export interface Account {
   username: string;
   admin: boolean;
-  desktops: string[];
+  environments: string[];
   created: string;
   lastLogin: string | null;
 }
@@ -172,7 +201,7 @@ export interface CatalogImage {
   title: string;
   version: string;
   description: string;
-  desktops: string[];
+  environments: string[];
   behind: string[];
   checked: string | null;
 }
@@ -192,7 +221,7 @@ export interface FileEntry {
 }
 
 export interface FileListing {
-  /** The folder's real path in the desktop, always /workspace or below. */
+  /** The folder's real path in the environment, always /workspace or below. */
   path: string;
   entries: FileEntry[];
   /** True when the folder has more than the 2,000 newest entries shown. */
@@ -216,7 +245,7 @@ export interface StatsEvent extends Stats {
 export interface Forward {
   /** The name of the agent token that set it up. */
   token: string;
-  /** in: this machine's port appears in the desktop; out: the desktop's port appears there. */
+  /** in: this machine's port appears in the environment; out: the environment's port appears there. */
   direction: "in" | "out";
   port: number;
 }
@@ -229,11 +258,11 @@ export interface ViewersEvent {
   agents: AgentPresence[];
 }
 
-// Agent activity: who is at work in a desktop and what they did in the last 15 minutes.
+// Agent activity: who is at work in an environment and what they did in the last 15 minutes.
 export interface AgentPresence {
   id: string;
   name: string;
-  /** The account that made the token; empty for agents inside the desktop. */
+  /** The account that made the token; empty for agents inside the environment. */
   owner: string;
   inside: boolean;
   color: string;
@@ -268,7 +297,7 @@ export interface ActivityEvent {
   name: string;
   agents: AgentSummary[];
 }
-/** A screen action an agent made, from GET /api/desktops/{name}/screen-events. */
+/** A screen action an agent made, from GET /api/environments/{name}/screen-events. */
 export interface ScreenEvent {
   agent: Pick<AgentPresence, "id" | "name" | "color" | "inside">;
   t: string;
@@ -290,7 +319,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
-    readonly desktops: VPNReference[] = [],
+    /** The environments a VPN conflict names. */
+    readonly environments: VPNReference[] = [],
   ) {
     super(message);
   }
@@ -316,17 +346,17 @@ async function request<T>(method: string, path: string, body?: unknown, signal?:
   }
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
-    let desktops: VPNReference[] = [];
+    let environments: VPNReference[] = [];
     try {
       const data: unknown = await res.json();
       if (data && typeof data === "object") {
         if ("error" in data && typeof data.error === "string") message = data.error;
-        if ("desktops" in data && Array.isArray(data.desktops)) desktops = data.desktops as VPNReference[];
+        if ("environments" in data && Array.isArray(data.environments)) environments = data.environments as VPNReference[];
       }
     } catch {
       // not JSON
     }
-    throw new ApiError(res.status, message, desktops);
+    throw new ApiError(res.status, message, environments);
   }
   if (res.status === 204) return undefined as T;
   const text = await res.text();
@@ -334,7 +364,7 @@ async function request<T>(method: string, path: string, body?: unknown, signal?:
 }
 
 const enc = encodeURIComponent;
-const c = (name: string) => `/api/desktops/${enc(name)}`;
+const c = (name: string) => `/api/environments/${enc(name)}`;
 
 export interface MemoryReclaim {
   requestedBytes: number;
@@ -352,16 +382,16 @@ export const api = {
   changePassword: (current: string, next: string) => request<void>("POST", "/api/me/password", { current, new: next }),
   host: () => request<Host>("GET", "/api/host"),
 
-  desktops: () => request<Desktop[]>("GET", "/api/desktops"),
-  desktop: (name: string) => request<Desktop>("GET", c(name)),
+  environments: () => request<EnvironmentList>("GET", "/api/environments"),
+  environment: (name: string) => request<Environment>("GET", c(name)),
   terminalSessions: (name: string, signal?: AbortSignal) =>
     request<{ sessions: { name: string }[] }>("GET", `${c(name)}/terminal/sessions`, undefined, signal),
-  createDesktop: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: string[]; dockerAccess: boolean; mounts?: HostMount[] } & DesktopVPNSettings) =>
-    request<JobRef>("POST", "/api/desktops", body),
+  createEnvironment: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: string[]; dockerAccess: boolean; mounts?: HostMount[] } & EnvironmentVPNSettings) =>
+    request<JobRef>("POST", "/api/environments", body),
   power: (name: string, action: "start" | "stop" | "restart") => request<void>("POST", `${c(name)}/${action}`),
-  setMemoryPolicy: (name: string, autoReclaim: boolean) => request<void>("PUT", `${c(name)}/memory-policy`, { autoReclaim }),
+  setMemoryPolicy: (name: string, memoryReclaim: boolean) => request<void>("PUT", `${c(name)}/memory-policy`, { memoryReclaim }),
   reclaimMemory: (name: string) => request<MemoryReclaim>("POST", `${c(name)}/reclaim-memory`),
-  removeDesktop: (name: string, files: boolean) => request<void>("DELETE", c(name) + (files ? "?files=1" : "")),
+  removeEnvironment: (name: string, files: boolean) => request<void>("DELETE", c(name) + (files ? "?files=1" : "")),
   updateSettings: (name: string, body: SettingsPatch) =>
     request<JobRef>("PATCH", c(name), body),
   setAccess: (name: string, usernames: string[]) => request<void>("PUT", `${c(name)}/access`, { usernames }),
@@ -397,9 +427,9 @@ export const api = {
   testVPN: (body: VPNInput & {connectionId?: string}) => request<JobRef>("POST", "/api/vpn/test", body),
 
   accounts: () => request<Account[]>("GET", "/api/accounts"),
-  createAccount: (body: { username: string; password: string; admin: boolean; desktops: string[] }) =>
+  createAccount: (body: { username: string; password: string; admin: boolean; environments: string[] }) =>
     request<Account>("POST", "/api/accounts", body),
-  updateAccount: (username: string, body: { password?: string; admin?: boolean; desktops?: string[] }) =>
+  updateAccount: (username: string, body: { password?: string; admin?: boolean; environments?: string[] }) =>
     request<Account>("PATCH", `/api/accounts/${enc(username)}`, body),
   deleteAccount: (username: string) => request<void>("DELETE", `/api/accounts/${enc(username)}`),
 
@@ -418,11 +448,11 @@ export const api = {
   cancelJob: (id: string) => request<void>("POST", `/api/jobs/${enc(id)}/cancel`),
 };
 
-/** Uploads one file into the desktop's ~/Desktop, reporting progress as 0..1. */
-export function uploadFile(desktop: string, file: File, onProgress: (fraction: number) => void): Promise<Uploaded> {
+/** Uploads one file into the environment's ~/Desktop, reporting progress as 0..1. */
+export function uploadFile(environment: string, file: File, onProgress: (fraction: number) => void): Promise<Uploaded> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${c(desktop)}/upload?name=${enc(file.name)}`);
+    xhr.open("POST", `${c(environment)}/upload?name=${enc(file.name)}`);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total);
     };

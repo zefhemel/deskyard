@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -82,7 +82,7 @@ func terminalDial(t *testing.T, ts *httptest.Server, c *http.Client) *websocket.
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	ws, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+"/api/desktops/alice/terminal", &websocket.DialOptions{HTTPClient: c, HTTPHeader: http.Header{"Origin": []string{ts.URL}}})
+	ws, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+"/api/environments/alice/terminal", &websocket.DialOptions{HTTPClient: c, HTTPHeader: http.Header{"Origin": []string{ts.URL}}})
 	if err != nil {
 		t.Fatalf("dial %v %v", resp, err)
 	}
@@ -143,7 +143,7 @@ func TestTerminalHTTPGuards(t *testing.T) {
 			case "path":
 				origin = ts.URL + "/bad"
 			}
-			if got := status(t, c, "GET", ts.URL+"/api/desktops/alice/terminal?session="+tc.session, origin); got != tc.want {
+			if got := status(t, c, "GET", ts.URL+"/api/environments/alice/terminal?session="+tc.session, origin); got != tc.want {
 				t.Fatalf("status %d want %d", got, tc.want)
 			}
 			if e.calls.Load() != 0 {
@@ -258,12 +258,12 @@ func TestTerminalCapabilityJSON(t *testing.T) {
 			e.supported = supported
 			e.state = state
 			s, ts := newTestServerWith(t, e)
-			c, err := s.Desktops.Get(context.Background(), "alice")
+			c, err := s.Environments.Get(context.Background(), "alice")
 			if err != nil {
 				t.Fatal(err)
 			}
 			a, _ := s.Accounts.Get("admin")
-			b, _ := json.Marshal(s.desktopJSON(context.Background(), c, a))
+			b, _ := json.Marshal(s.environmentJSON(context.Background(), c, a))
 			var v map[string]any
 			json.Unmarshal(b, &v)
 			if v["terminal"] != supported {
@@ -274,7 +274,7 @@ func TestTerminalCapabilityJSON(t *testing.T) {
 	}
 }
 func TestTerminalRuntimeGeneration(t *testing.T) {
-	first := desktops.Desktop{Container: engine.Container{ID: "same"}, StartedAt: time.Unix(1, 0)}
+	first := environments.Environment{Container: engine.Container{ID: "same"}, StartedAt: time.Unix(1, 0)}
 	next := first
 	next.StartedAt = time.Unix(2, 0)
 	if terminalGeneration(first) == terminalGeneration(next) {
@@ -294,7 +294,7 @@ func TestTerminalCookieLogoutIsolation(t *testing.T) {
 	claims, _ := s.Sessions.Claims(req)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	live := &terminalConnection{claims: claims, desktopID: "id-alice", cancel: cancel}
+	live := &terminalConnection{claims: claims, environment: "alice", cancel: cancel}
 	if !s.terminals.add(live) {
 		t.Fatal("register")
 	}
@@ -304,7 +304,7 @@ func TestTerminalCookieLogoutIsolation(t *testing.T) {
 	claims2, _ := s.Sessions.Claims(req2)
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	defer cancel2()
-	other := &terminalConnection{claims: claims2, desktopID: "id-alice", cancel: cancel2}
+	other := &terminalConnection{claims: claims2, environment: "alice", cancel: cancel2}
 	s.terminals.add(other)
 	defer s.terminals.remove(other)
 	rec := httptest.NewRecorder()
@@ -316,7 +316,7 @@ func TestTerminalCookieLogoutIsolation(t *testing.T) {
 	if ctx.Err() == nil || ctx2.Err() != nil {
 		t.Fatal("logout not isolated")
 	}
-	if s.terminals.add(&terminalConnection{claims: claims, desktopID: "id-alice", cancel: func() {}}) {
+	if s.terminals.add(&terminalConnection{claims: claims, environment: "alice", cancel: func() {}}) {
 		t.Fatal("logout race permits new connection")
 	}
 }
@@ -406,11 +406,11 @@ func TestTerminalAccessRevocationAndShutdown(t *testing.T) {
 		t.Run(how, func(t *testing.T) {
 			e := newTerminalEngine()
 			s, ts := newTestServerWith(t, e)
-			s.Accounts.SetAccess("id-alice", []string{"anna"})
+			s.Accounts.SetAccess("alice", []string{"anna"})
 			ws := terminalDial(t, ts, login(t, ts, "anna"))
 			terminalReady(t, ws)
 			if how == "revoke" {
-				s.Accounts.SetAccess("id-alice", nil)
+				s.Accounts.SetAccess("alice", nil)
 			} else {
 				s.terminals.shutdown()
 			}
@@ -435,11 +435,11 @@ func TestTerminalLogoutOrigin(t *testing.T) {
 func TestTerminalRefusesLifecycleJoin(t *testing.T) {
 	e := newTerminalEngine()
 	s, ts := newTestServerWith(t, e)
-	if err := s.Desktops.Begin("alice", ""); err != nil {
+	if err := s.Environments.Begin("alice", ""); err != nil {
 		t.Fatal(err)
 	}
-	defer s.Desktops.Done("alice")
-	if got := status(t, login(t, ts, "admin"), "GET", ts.URL+"/api/desktops/alice/terminal", ts.URL); got != 409 {
+	defer s.Environments.Done("alice")
+	if got := status(t, login(t, ts, "admin"), "GET", ts.URL+"/api/environments/alice/terminal", ts.URL); got != 409 {
 		t.Fatalf("join during stop got %d", got)
 	}
 	if e.calls.Load() != 0 {

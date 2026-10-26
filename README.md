@@ -9,11 +9,12 @@ in your browser or terminal. One app, the **supervisor**, runs them in container
 
 The supervisor is one Go binary with its web UI built in. You sign in with
 your own account and create, open, start, stop, restart, upgrade and remove
-**desktops**, and see what each one is doing. Every desktop's desktop is
+**environments**, and see what each one is doing. An environment is one
+persistent Linux desktop with its own home folder; its desktop is
 in the browser at `http://host/<name>/`, and everyone with access to it
 opens the same desktop, at the same time if they like. Live UI updates and screen action marks use WebSockets, so multiple viewer tabs also work over plain HTTP without occupying the browser’s limited HTTP fetch connections.
 
-What's in a desktop:
+What's in an environment:
 
 - **XFCE desktop in the browser**, streamed with
   [Selkies](https://github.com/selkies-project/selkies): picture, sound,
@@ -21,24 +22,24 @@ What's in a desktop:
   It resizes to fit your browser window (or keeps a locked size), and the
   bar above it has the clipboard, keys the browser would otherwise take
   (Ctrl+Alt+Del, Alt+Tab, ...), quality presets, sound and mic, and a
-  Download button. Drop files on the screen to copy them onto the desktop.
+  Download button. Drop files on the screen to copy them into the environment.
   Badges show who has their mic or camera on. On phones and narrow tablets,
   Lock size, resolution presets, Keys, Quality and Download are in the scrollable More menu.
 - **One shared Chromium** with one profile: your tabs and sign-ins stay
-  with the desktop. It starts when you open it or connect through browser tools.
+  with the environment. It starts when you open it or connect through browser tools.
 - **Remote access and control**: use the `deskyard` command from your terminal
   for shells, shared terminals, file transfers, screenshots, clicks and typing.
   Map ports to reach services on either machine.
 - **Persistent installs**: `/workspace` (the user's home) is a plain folder
-  on the host (`~/deskyard/<name>`). Tools installed with mise, npm, uv or
+  on the host (`~/deskyard/home/<name>`). Tools installed with mise, npm, uv or
   Flatpak live there and survive restarts and image upgrades.
-- **CLI activity**: see terminal clients and programs working on a desktop
+- **CLI activity**: see terminal clients and programs working in an environment
   alongside browser viewers, with what they are running, recent actions,
   and marks on the screen where they click and type. Typed text and secrets
   on command lines are hidden.
 
 The desktop image is Debian 13, `linux/arm64` and `linux/amd64`. About 0.4 GB
-of RAM per running desktop with Chromium open, so several fit on an 8 GB
+of RAM per running environment with Chromium open, so several fit on an 8 GB
 machine.
 
 ## Install on an iPhone Home Screen
@@ -46,7 +47,7 @@ machine.
 In Safari, open Deskyard, sign in, then choose **Share → View More → Add to
 Home Screen** (the exact share-sheet layout depends on iOS). Leave **Open
 as Web App** enabled and tap **Add**. Launch the Deskyard icon to open the
-app without Safari's address bar; choose a desktop from the wall.
+app without Safari's address bar; choose an environment from the list.
 
 The installed app supports portrait and landscape, keeps controls clear of
 the Dynamic Island and home indicator, and resizes around the software
@@ -93,7 +94,7 @@ and the images' `latest` tags.
 
 ### The `deskyard` command
 
-For access from your own terminal outside a desktop (inside one, it's already there).
+For access from your own terminal outside an environment (inside one, it's already there).
 On Linux or macOS:
 
 ```bash
@@ -129,7 +130,7 @@ chmod +x deskyard-supervisor
 
 It finds the engine at `DESKYARD_ENGINE_HOST`, else `DOCKER_HOST`, else
 the platform's default socket, keeps everything in `~/deskyard` (set
-`DESKYARD_DATA_DIR` for another folder) and listens on `127.0.0.1:8080`. Its
+`DESKYARD_DATA_DIR` for another folder) and listens on `127.0.0.1:7343`. Its
 user must be able to use the Docker socket. More settings: Configuration.
 
 **In a container.** The image `ghcr.io/zefhemel/deskyard` (amd64 and arm64)
@@ -140,7 +141,7 @@ on the host (see Storage):
 docker run -d --name deskyard --restart unless-stopped \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /srv/deskyard:/srv/deskyard -e DESKYARD_DATA_DIR=/srv/deskyard \
-  -p 127.0.0.1:8080:8080 \
+  -p 127.0.0.1:7343:7343 \
   ghcr.io/zefhemel/deskyard:latest
 ```
 
@@ -155,7 +156,7 @@ DESKYARD_DATA_DIR=/srv/deskyard docker compose up -d
 
 Nothing to install: the supervisor pulls
 `ghcr.io/zefhemel/deskyard-debian-xfce:latest` when you create the first
-desktop (see Images and upgrades).
+environment (see Images and upgrades).
 
 ## First start
 
@@ -163,13 +164,13 @@ On first start the supervisor creates the account `admin` and
 prints its generated password once in its log (`docker logs deskyard`, or
 `docker compose logs supervisor`, in a container), unless you set
 `DESKYARD_ADMIN_PASSWORD`.
-Open <http://localhost:8080>, sign in, and create a desktop: give it a name
-like `alice` and its desktop opens at <http://localhost:8080/alice/>.
+Open <http://localhost:7343>, sign in, and create an environment: give it a name
+like `alice` and its desktop opens at <http://localhost:7343/alice/>.
 
 **On a server with a domain.** Set `DESKYARD_DOMAIN=desktops.example.com`,
 point its DNS at the host and let ports 80 and 443 through: the supervisor
 gets a certificate itself and serves HTTPS. In a container, publish `80:80`
-and `443:443` instead of `127.0.0.1:8080:8080` (the compose file shows
+and `443:443` instead of `127.0.0.1:7343:7343` (the compose file shows
 where). Run directly on Linux, let the binary bind low ports with
 `sudo setcap cap_net_bind_service=+ep ./deskyard-supervisor`. Without a domain, keep
 the default localhost binding and put your own HTTPS proxy or Tailscale in
@@ -180,8 +181,8 @@ front.
 To reach Deskyard from other machines at home or in an office, either
 serve it over https or accept what plain http costs.
 
-**Plain http** (`DESKYARD_LISTEN=0.0.0.0:8080`, then
-`http://192.168.1.20:8080`): browsers treat any address but `localhost`
+**Plain http** (`DESKYARD_LISTEN=0.0.0.0:7343`, then
+`http://192.168.1.20:7343`): browsers treat any address but `localhost`
 over http as insecure and turn features off. The desktop page says so in
 its bar ("Not secure: some features off"). What still works: the picture,
 keyboard and mouse, sound, the Clipboard button's text box (both ways),
@@ -201,67 +202,95 @@ should too in Chromium and Safari, which keep the Gamepad API over http. What do
 - **Passwords travel in clear text.** Only on a network you trust.
 
 **https** keeps everything. Without a public domain, the simplest is
-Tailscale: run the supervisor on its default `127.0.0.1:8080`, then
-`tailscale serve --bg 8080` on the same machine, and open
+Tailscale: run the supervisor on its default `127.0.0.1:7343`, then
+`tailscale serve --bg 7343` on the same machine, and open
 `https://<machine>.<tailnet>.ts.net` from any device on your tailnet. Or
 put any reverse proxy with a certificate in front (Caddy:
-`reverse_proxy 127.0.0.1:8080`); it must pass WebSockets through and keep
+`reverse_proxy 127.0.0.1:7343`); it must pass WebSockets through and keep
 the `Host` header. With a public domain, `DESKYARD_DOMAIN` does it
 itself (above).
 
 ## Shared terminal
 
-On a phone, the streamed desktop’s **More → Terminal** action opens the terminal page; the desktop wall also has a direct **Terminal** link. Wider desktop toolbars keep the direct Terminal shortcut.
+On a phone, the streamed desktop’s **More → Terminal** action opens the terminal page; each environment tile also has a direct **Terminal** link. Wider desktop toolbars keep the direct Terminal shortcut.
 
 The create/join walkthrough, screenshots, native keyboard evidence and known limits are in the project space's *Testing/Shared terminal 2026-10-23* page (see [Project records](#project-records)).
 
-Choose **Terminal** beside **Desktop**, or open `http://host/alice/terminal/`, to join the shared shell from the browser using your current login. The **Sessions** picker lists running named shells, including detached shells with live jobs, and marks the current shell. Choose a name to join it, or enter a new name and choose **Create** for another shell. The list refreshes while open; `?session=build-2` opens a shell directly. The page reconnects after brief network interruptions without replaying disconnected input; a closed shell has an explicit **Reopen terminal** action. Restarting a desktop ends its shells and jobs.
+Choose **Terminal** beside **Desktop**, or open `http://host/alice/terminal/`, to join the shared shell from the browser using your current login. The **Sessions** picker lists running named shells, including detached shells with live jobs, and marks the current shell. Choose a name to join it, or enter a new name and choose **Create** for another shell. The list refreshes while open; `?session=build-2` opens a shell directly. The page reconnects after brief network interruptions without replaying disconnected input; a closed shell has an explicit **Reopen terminal** action. Restarting an environment ends its shells and jobs.
 
 On phones, tap **Keyboard** to open the software keyboard. The scrollable key bar provides Ctrl+C/D/L, Esc, Tab, arrows, Home/End, PgUp/PgDn and Delete, plus one-shot Ctrl and Alt. Helper taps keep the keyboard open; paste and composition clear modifiers. Short keyboard viewports use a horizontally scrollable row for controls and session actions. If the browser leaves less than the minimum space for a readable terminal row and 44px controls, the page asks you to rotate to portrait or dismiss the keyboard; the shell stays connected. **History** opens tmux history: use PgUp/PgDn, then Esc to return. The font stays readable when clients have different sizes; a passive smaller client may show a cropped tmux view until it interacts.
 
-`deskyard -d alice terminal` joins the desktop's shared Bash login shell in `/workspace`; `deskyard terminal build-2` selects another named shell. Inside the desktop, ordinary terminal windows and tabs (including **Deskyard Terminal**, the default terminal shortcut and file-manager terminal actions) each open a new shared shell named `terminal-1`, `terminal-2`, and so on, preserving their starting directory. The window/tab title shows the session name. The browser picker joins that exact shell. Within a native shared terminal, press **Ctrl-B then s** and choose its name; outside tmux, `deskyard terminal NAME` joins it. Browser clients use **Sessions** to switch; remote CLI clients detach and reconnect with the chosen name. Saved emulator defaults migrate at desktop startup; explicit emulator command launches such as `xfce4-terminal -x PROGRAM` still run the requested program directly. Run `deskyard terminal` locally to join `main`. Session names contain 1–64 letters, digits, underscores or dashes and start with a letter or digit. Detach with Ctrl-B then D; reconnecting joins the same shell and running jobs. Sessions end when the desktop stops or restarts. Existing desktops need an updated image with tmux and the shared terminal helper.
+`deskyard -e alice terminal` joins the environment's shared Bash login shell in `/workspace`; `deskyard terminal build-2` selects another named shell. Inside the environment, ordinary terminal windows and tabs (including **Deskyard Terminal**, the default terminal shortcut and file-manager terminal actions) each open a new shared shell named `terminal-1`, `terminal-2`, and so on, preserving their starting directory. The window/tab title shows the session name. The browser picker joins that exact shell. Within a native shared terminal, press **Ctrl-B then s** and choose its name; outside tmux, `deskyard terminal NAME` joins it. Browser clients use **Sessions** to switch; remote CLI clients detach and reconnect with the chosen name. Saved emulator defaults migrate at desktop startup; explicit emulator command launches such as `xfce4-terminal -x PROGRAM` still run the requested program directly. Run `deskyard terminal` locally to join `main`. Session names contain 1–64 letters, digits, underscores or dashes and start with a letter or digit. Detach with Ctrl-B then D; reconnecting joins the same shell and running jobs. Sessions end when the environment stops or restarts. Existing environments need an updated image with tmux and the shared terminal helper.
 
-## Desktops
+## Environments
 
-Admins create desktops with a name, an image from the catalog, and
-optionally a memory and CPU limit (by default a desktop may use all of the
-host's). Names are lowercase letters, digits and dashes, start with a letter
-and can't be changed later. Each desktop is a container `deskyard-<name>` on its
-own network `deskyard-<name>`, so desktops can't reach each other.
+Admins create environments with a name, an image from the catalog, and
+optionally a memory and CPU limit (by default an environment may use all of the
+host's). Names are 2 to 32 lowercase letters, digits and dashes, start with a letter
+and can't be changed later; the name is the environment's identity. Each
+environment runs as a container `deskyard-<name>` on its own network
+`deskyard-<name>`, so environments can't reach each other.
+
+The supervisor keeps each environment's definition (image, limits, network,
+host folders, Docker access, camera, memory preference and whether it should
+run) in `environments.json`, not on its container. The container is
+disposable: if it is lost, the supervisor recreates it from the definition
+with the same name, home folder, access grants, tokens and settings. A stopped
+environment may have no container; it gets one when started. Stopping keeps the
+container, so changes outside `/workspace` survive until the container is next
+recreated.
+
+Every settings change that affects the container is saved as a new revision
+and then applied by recreating the container. The old container is stopped and
+set aside until the new one is ready; if the new one fails, the old one comes
+back (running if it was) and the environment shows the error, with the saved
+change still pending. A pending change is tried again only when you start or
+restart the environment or edit its settings. Every 30 seconds, and when a
+container exits or disappears, the supervisor starts environments that should
+be running. Containers it can't match to a definition, or several claiming one
+environment, are shown to administrators as conflicts on the Environments page;
+the supervisor leaves them alone, and a duplicate blocks that environment's
+start, stop and settings until an administrator removes the extra container. A
+name claimed by such a container can't be used for a new environment until the
+container is removed. If a new environment's desktop isn't ready within two
+minutes of its first boot, the creation is undone. Removing an environment
+stops it first, so an interrupted removal never brings it back.
 
 ### Docker daemon access
 
-**Docker daemon access** is an administrator checkbox when creating a desktop
+**Docker daemon access** is an administrator checkbox when creating an environment
 or editing its Settings. It defaults off. Enable it on a desktop image with
 the Docker CLI, such as the standalone [Docker example](examples/docker/README.md).
 The supervisor checks and mounts the engine host's `/var/run/docker.sock`;
 an updated desktop image gives `user` its socket group. Saving a changed
-setting recreates the desktop, preserving its workspace.
+setting recreates the environment's container, preserving its workspace.
 
-Everyone using that desktop can then control the shared Docker daemon and
+Everyone using that environment can then control the shared Docker daemon and
 its containers, with host administrator privileges. Only enable this for
 trusted users. This is separate from directory-only host folder mounts;
 custom/rootless daemon socket locations are not currently supported.
 
 ### Outbound VPN
 
-Administrators can add named connections on **VPN connections** (`/_vpn`), choose a country and enter [NordVPN service credentials](https://support.nordvpn.com/hc/en-us/articles/19685514639633-How-to-find-your-service-credentials-for-manual-NordVPN-setup), which differ from the account login. **Test connection** checks a candidate without changing desktops; blank credentials on an edit retain their saved values. Choose a saved connection or **No VPN** when creating a desktop or on its Settings tab. The same operations are available through the [VPN API](supervisor/API.md#vpn-connections-admin). Each selected desktop gets its own managed Gluetun gateway. Internet access stays blocked while the tunnel is unavailable; only an explicit selection of no VPN restores direct networking. Enabling, disabling or changing VPN settings recreates the desktop while preserving its identity and workspace. Saving settings warns about session disconnection and uses **Save and restart** for running desktops; files remain intact.
+Administrators can add named connections on **VPN connections** (`/_vpn`), choose a country and enter [NordVPN service credentials](https://support.nordvpn.com/hc/en-us/articles/19685514639633-How-to-find-your-service-credentials-for-manual-NordVPN-setup), which differ from the account login. **Test connection** checks a candidate without changing environments; blank credentials on an edit retain their saved values. Choose a saved connection or **No VPN** when creating an environment or on its Settings tab. The same operations are available through the [VPN API](supervisor/API.md#vpn-connections-admin). Each selected environment gets its own managed Gluetun gateway. Internet access stays blocked while the tunnel is unavailable; only an explicit selection of no VPN restores direct networking. Enabling, disabling or changing VPN settings recreates the environment's container while preserving its name and workspace. Saving settings warns about session disconnection and uses **Save and restart** for running environments; files remain intact.
 
-VPN desktop containers do not restart independently after an engine reboot: run the supervisor to recover their namespace and firewall before starting them. While the supervisor runs, background recovery restores the recorded power state after an unexpected desktop exit or a failed stop, retaining a healthy unchanged gateway. Interrupted settings changes, including an explicit No VPN selection, stay visible with a safe diagnostic and are retried; direct access returns only after that selected transition completes. Stopping a desktop keeps its gateway idle and may continue consuming a provider connection. LAN access is denied except for administrator-configured destination, transport and port rules. Existing agent port forwarding remains available; this feature does not prevent deliberate proxies or tunnels through permitted applications.
+VPN environment containers do not restart independently after an engine reboot: run the supervisor to recover their namespace and firewall before starting them. While the supervisor runs, background recovery restores the saved power state after an unexpected container exit or a failed stop, retaining a healthy unchanged gateway and starting a stopped one again in place; a container that keeps crashing is restarted with growing delays, up to five minutes. A stopped environment's gateway is not repaired until the environment is started. Interrupted network changes, including an explicit No VPN selection, stay visible with a safe diagnostic and are finished when the supervisor starts; a change that failed is retried on start, restart or another edit. Direct access returns only after that selected transition completes. Stopping an environment keeps its gateway idle and may continue consuming a provider connection. LAN access is denied except for administrator-configured destination, transport and port rules. Existing agent port forwarding remains available; this feature does not prevent deliberate proxies or tunnels through permitted applications.
 
-Shared connection edits list the affected desktops and require confirmation before validating and applying a new revision. Validation can be cancelled before commit; a failed validation keeps the saved revision. Each desktop rollout reports its own result and retains its selected policy on failure. Connections still used by a desktop cannot be deleted. Users with desktop access see separate VPN health, current exit IP only while connected, historical observations and idle status; only administrators change the configuration.
+Shared connection edits list the affected environments and require confirmation before validating and applying a new revision. Validation can be cancelled before commit; a failed validation keeps the saved revision. Each environment's rollout reports its own result and retains its selected policy on failure. Connections still used by an environment cannot be deleted. Users with access to an environment see separate VPN health, current exit IP only while connected, historical observations and idle status; only administrators change the configuration.
 
 The OrbStack verification uses real Selkies desktops, the supervisor proxy, agent exec/files/activity and shared Chromium with two independent controlled WireGuard tunnels. It covers direct and containerized supervisors, blocked requests during tunnel loss, local access and recovery. Controlled WireGuard does not validate NordVPN service authentication. Live NordVPN service authentication, verified desktop egress and visible MATE desktop access were confirmed on OrbStack on 24 October 2026. Country/credential changes, provider limits, native Linux and a full engine/host reboot remain release checks; see the [verification guide](supervisor/tests/VPN.md) for the exact scope and outstanding observations.
 
-Each enabled desktop adds one long-lived gateway container with its own CPU/memory use and provider connection; stopping the desktop does not release that cost. Desktop resource limits apply to the desktop, not its gateway. Version one uses public DNS through the tunnel, blocks external IPv6 and Docker's embedded resolver, and has no custom DNS selector. LAN exceptions intentionally send only their configured private IPv4 destination, TCP/UDP and ports outside the tunnel; other desktop/control networks and link-local destinations cannot be excepted.
+Each enabled environment adds one long-lived gateway container with its own CPU/memory use and provider connection; stopping the environment does not release that cost. Environment resource limits apply to its container, not its gateway. Version one uses public DNS through the tunnel, blocks external IPv6 and Docker's embedded resolver, and has no custom DNS selector. LAN exceptions intentionally send only their configured private IPv4 destination, TCP/UDP and ports outside the tunnel; other environment/control networks and link-local destinations cannot be excepted.
 
 ### What persists
 
-A desktop's private persistent folder is `/workspace`: the folder
-`<data folder>/<name>` on the host, which you can browse and back up with host tools. Creating a desktop
+An environment's private persistent folder is `/workspace`: the folder
+`<data folder>/home/<name>` on the host, which you can browse and back up with host tools. Creating an environment
 with the name of a folder that already exists reuses that folder, so to copy
-a desktop, copy its folder and create a desktop with the new name.
-Removing a desktop keeps its folder unless you tick "also delete files".
+an environment, copy its folder and create an environment with the new name.
+Removing an environment keeps its folder unless you tick "also delete files".
+If an environment's folder goes missing, the supervisor reports an error and
+does not start it; it never creates the folder again by itself.
 
 | Need | Command |
 |---|---|
@@ -284,7 +313,7 @@ the image version.
 
 ### Desktop state across restarts
 
-When a desktop stops (stop, restart, upgrades), its native session manager
+When an environment stops (stop, restart, upgrades), its native session manager
 logs out and saves the session; Chromium saves its tabs independently.
 Native session restoration applies to applications that support that
 desktop's session protocol. XFCE uses Settings > Session and Startup;
@@ -292,68 +321,68 @@ MATE uses their own session settings. Most Electron and
 Flatpak apps do not restore their windows through this protocol.
 
 Switching desktop images keeps your files, installed Flatpak apps, tools
-and Chromium profile. Each desktop keeps its own settings; open windows
+and Chromium profile. Each environment keeps its own settings; open windows
 are not migrated between different desktop environments.
 
 ### Host folders
 
-Admins can mount existing host folders into an individual desktop under
+Admins can mount existing host folders into an individual environment under
 **Settings → Host folders**. Choose **Add host folder**, enter the absolute
-host path and a desktop path such as `/mnt/photos`, and choose read-only
+host path and a path in the environment such as `/mnt/photos`, and choose read-only
 or read-write access. New entries default to read-only. **Save and restart**
-recreates a running desktop's container; a stopped desktop stays stopped.
+recreates a running environment's container; a stopped environment stays stopped.
 
 Source paths refer to the machine running the container engine. They work
 with the supervisor running directly or in a container; the supervisor
 container does not need those folders mounted into itself. On macOS, the
 container runtime must permit sharing the source folder. Existing host
-permissions must allow the desktop's UID 1000 to access its files; Deskyard
+permissions must allow the environment's UID 1000 to access its files; Deskyard
 does not change ownership or permissions of mounted host folders.
 
-A desktop can mount up to 16 folders at non-overlapping paths below `/mnt/`.
+An environment can mount up to 16 folders at non-overlapping paths below `/mnt/`.
 Home and system paths are reserved so desktop initialization cannot change
 mounted host data or replace its runtime. Missing sources and files are
-rejected before the desktop stops; missing folders are never created.
+rejected before the environment stops; missing folders are never created.
 Source validation requires Docker API 1.44 or newer and recursively read-only
 bind mounts (Linux kernel 5.12 or newer, including the kernel inside a Mac
 container runtime). An
-engine that cannot enforce this fails the check before the desktop stops.
-Desktops with host folders also disable privilege gains through setuid
+engine that cannot enforce this fails the check before the environment stops.
+Environments with host folders also disable privilege gains through setuid
 executables and file capabilities; user-namespace sandboxes remain available.
-Everyone with access to the desktop, including remote CLI clients, gets its mounted
+Everyone with access to the environment, including remote CLI clients, gets its mounted
 folders. Settings and mounts survive restarts and image upgrades.
 
-Removing a mount never deletes its source. Removing a desktop only deletes
+Removing a mount never deletes its source. Removing an environment only deletes
 its private workspace when requested; independently mounted folders elsewhere
 are left alone. Mounted host folders are outside the supervisor workspace browser. The supervisor's Files and Download views still browse only
 `/workspace`; use desktop apps or the CLI for mounted folders.
 
 ### Reclaiming memory
 
-Admins can click **Reclaim memory** on a running desktop's details page to
+Admins can click **Reclaim memory** on a running environment's details page to
 ask the host to release idle memory while its apps keep running. The result
 shows resident memory before and after; this includes file cache, and swapped
 pages may still use compressed RAM. Savings vary and apps may briefly respond
 more slowly when accessed again.
 
-On supported hosts, each desktop also gets one automatic 128 MiB reclaim
+On supported hosts, each environment also gets one automatic 128 MiB reclaim
 attempt after 15 minutes with no viewers. A returning viewer resets the timer,
-even if they leave again between checks. Active CLI clients, desktop operations,
+even if they leave again between checks. Active CLI clients, environment operations,
 and missing or stale activity reports delay reclamation without consuming the
 attempt. Failed attempts are not retried during that absence. Checks run every
 30 seconds and requests run one at a time. Supervisor/container restarts start
-a fresh timer. Admins can turn off **Automatically reclaim idle memory** in a
-desktop's Settings; this saves immediately without a restart and survives
+a fresh timer. Admins can turn off **Automatically reclaim idle memory** in an
+environment's Settings; this saves immediately in its definition without a restart and survives
 container recreation. The manual button remains available.
 
-Automatic reclamation requires the desktop's activity service to send current
+Automatic reclamation requires the environment's activity service to send current
 command-status heartbeats. Older desktop binaries with only blank heartbeats
 keep running normally but skip automatic reclamation; update the desktop image
 to use it. Activity detection covers operations recorded by Deskyard, not plain
 shell commands or other unreported background work; use the opt-out for those.
 
 This requires a rootful Linux Docker engine with cgroup v2 and swap available
-to the desktop. It works through the Docker socket, including with the
+to the environment. It works through the Docker socket, including with the
 supervisor running on macOS against OrbStack. The supervisor pulls a small
 Alpine helper image if needed and removes its temporary helper containers
 after each request. At boot it checks the engine's memory/swap controls and
@@ -362,13 +391,13 @@ tiny disposable container. The log reports whether reclamation is enabled
 and why it is disabled if a check fails. A failed check leaves the rest of
 the supervisor running and disables the button with a reason. Restart the
 supervisor after fixing host support to run the check again. Each request
-still checks the selected desktop's swap settings; a failure there does not
-disable reclamation for other desktops. No memory limits or host swap
+still checks the selected environment's swap settings; a failure there does not
+disable reclamation for other environments. No memory limits or host swap
 configuration change.
 
 ### Images and upgrades
 
-The **Images** page holds the catalog of images desktops can be created
+The **Images** page holds the catalog of images environments can be created
 from. XFCE and MATE are built-in choices, visible before download.
 They share one Debian runtime; XFCE remains the default on first start:
 
@@ -379,7 +408,7 @@ They share one Debian runtime; XFCE remains the default on first start:
 | MATE | `ghcr.io/zefhemel/deskyard-debian-mate:latest` | Software |
 
 Choose **Install** on an available image to download it, or select it when
-creating a desktop to download it on first use. Browsing does not download
+creating an environment to download it on first use. Browsing does not download
 images. Existing saved images and the configured default retain their order;
 custom images remain alongside the built-in choices. Official choices stay
 in the catalog and cannot be removed. Other contract-compatible references
@@ -412,11 +441,15 @@ builds use `deskyard-debian-<desktop>:dev`.
 CI rebuilds both weekly (Debian security updates) and on every change, tagged `latest` and with the date
 (`2026.10.22`). The supervisor checks downloaded images for newer versions daily (or on "Check
 now"); available images stay undownloaded. The catalog shows **Available**,
-**Installed** or **Update available** when desktops are behind.
+**Installed** or **Update available** when environments are behind.
 
-Upgrading a desktop recreates its container on the new image with the same
-settings and folder; the Images page can upgrade all desktops on an image
-at once. Switching a desktop to another image works the same way. Upgrades
+Upgrading an environment recreates its container on the new image with the same
+settings and folder; the Images page can upgrade all environments on an image
+at once. Switching an environment to another image works the same way.
+Each definition pins the image ID its container was built from; if that image
+has disappeared from the engine when the container must be recreated, the
+supervisor pulls the image reference again and records the new ID as a new
+revision. Upgrades
 go forward only: Chromium won't open a profile written by a newer version.
 During a settings save, progress appears above the image picker and scrolls
 into view. Image downloads show transferred MB and a percentage when available;
@@ -458,12 +491,12 @@ Snes9x and Genesis Plus GX carry non-commercial restrictions; see the example's 
 
 Desktop images include the upstream Flatpak fix for intermittent GL-extension
 `invalid merge-dirs` launch errors. It retries temporary directory-resolution
-failures while retaining Debian's security patches. Existing desktops receive
+failures while retaining Debian's security patches. Existing environments receive
 it through an image upgrade. The rebuilt packages' corresponding source is
 included at `/usr/share/doc/flatpak/deskyard-source/`.
 
 Flatpak apps run inside bubblewrap, which needs namespaces that Docker's
-defaults block. Every desktop therefore runs with Docker's default seccomp
+defaults block. Every environment therefore runs with Docker's default seccomp
 profile plus the namespace and mount syscalls, `apparmor=unconfined` and
 `systempaths=unconfined`. These are per-container options; nothing in
 Docker's configuration changes. Chromium also uses them to run with its own
@@ -471,7 +504,7 @@ sandbox.
 
 `systempaths=unconfined` leaves `/proc/sys` writable, and root in the
 container is root on the host for those files. So nothing reachable by
-desktop users or the internet runs as root in a desktop: there is no `sudo`, Caddy
+desktop users or the internet runs as root in an environment: there is no `sudo`, Caddy
 runs as its own user, and the supervisor runs every command as `user`.
 
 On Ubuntu 24.04+ hosts, unprivileged user namespaces may be restricted by
@@ -483,18 +516,18 @@ tested yet. If bubblewrap fails there, try
 
 Accounts are a username and a password; there are no email resets or SSO.
 Admins create accounts, set passwords and make accounts admin or not, and
-choose per desktop which accounts may use it. Everyone can change their own
+choose per environment which accounts may use it. Everyone can change their own
 password.
 
 | | Admin | Regular account |
 | --- | --- | --- |
-| See, open, start, stop, restart desktops | all | those it has access to |
+| See, open, start, stop, restart environments | all | those it has access to |
 | Create, remove, change settings, upgrade | yes | no |
 | Reclaim memory | yes | no |
-| Create access tokens | yes | for desktops it has access to |
+| Create access tokens | yes | for environments it has access to |
 | Accounts, access, image catalog | yes | no |
 
-Everyone with access to a desktop opens the **same desktop**: one screen,
+Everyone with access to an environment opens the **same desktop**: one screen,
 one mouse, one keyboard, like two people at one desk. The desktop follows
 the browser window of whoever resized last. The supervisor shows who's
 viewing on the tiles, the details page and the desktop page's bar, but nothing
@@ -503,51 +536,54 @@ arbitrates between people and CLI clients driving it at the same time.
 ## Remote access and control
 
 Use `deskyard` from your laptop or another machine with an **access token**.
-Anyone with access to a desktop creates one on its **Remote access** tab,
+Anyone with access to an environment creates one on its **Remote access** tab,
 with a name and optional expiry. Copy the setup command when it is shown;
 the token is only displayed once. Install `deskyard` on your machine
 (see Install), then:
 
 ```bash
 deskyard remote add alice https://desktops.example.com/alice --token dyt_...
-deskyard -d alice exec -- ls ~            # one command; exit code passed through
-deskyard -d alice shell                   # interactive shell
-deskyard -d alice terminal                # shared terminal; rejoin later
+deskyard -e alice exec -- ls ~            # one command; exit code passed through
+deskyard -e alice shell                   # interactive shell
+deskyard -e alice terminal                # shared terminal; rejoin later
 deskyard cp ./notes.md alice:/workspace/notes.md    # and back
-deskyard -d alice screenshot > s.png      # every screen action works remotely
-deskyard -d alice click 640 400
-deskyard -d alice browser connect --port 9222   # the shared Chromium on local 127.0.0.1:9222
+deskyard -e alice screenshot > s.png      # every screen action works remotely
+deskyard -e alice click 640 400
+deskyard -e alice browser connect --port 9222   # the shared Chromium on local 127.0.0.1:9222
 ```
 
 With `browser connect` running, Playwright's
 `chromium.connect_over_cdp("http://127.0.0.1:9222")` (use
 `browser.contexts[0]`, the shared profile), Puppeteer or chrome-devtools
-tools work as if the browser were local. `deskyard remote default alice`
-saves typing `-d`; `DESKYARD_URL` and `DESKYARD_TOKEN` work without a config
+tools work as if the browser were local. `-e NAME` (or `--environment NAME`)
+goes before the command; `-d` is no longer accepted. `deskyard remote default alice`
+saves typing `-e`; `DESKYARD_URL` and `DESKYARD_TOKEN` work without a config
 file. For command help, use `deskyard --help`, `deskyard guide` (a short
 manual) and `deskyard describe --json` (machine-readable command descriptions).
 
-A token reaches one desktop's shell, files, browser and desktop, nothing
-else: no other desktops, no lifecycle, settings or accounts. Start a stopped
-desktop from the web UI before connecting. Revoking a token, or its expiry,
+A token reaches one environment's shell, files, browser and desktop, nothing
+else: no other environments, no lifecycle, settings or accounts. Start a stopped
+environment from the web UI before connecting. Revoking a token, or its expiry,
 closes its open connections at once, and a token dies with its creator's access.
+A token also dies with its environment: removing an environment and creating a
+new one with the same name does not bring back its old tokens or access grants.
 
 ### Port mapping
 
 Reach a server on one machine from the other, with the same access token:
 
 ```bash
-deskyard -d alice forward 3000 &      # your 127.0.0.1:3000 is localhost:3000 in the desktop
-deskyard -d alice forward -R 5173 &   # the desktop's localhost:5173 is your 127.0.0.1:5173
+deskyard -e alice forward 3000 &      # your 127.0.0.1:3000 is localhost:3000 in the environment
+deskyard -e alice forward -R 5173 &   # the environment's localhost:5173 is your 127.0.0.1:5173
 ```
 
-The first lets the desktop call a service running on your machine; the second lets you open a dev server running in the desktop in your own browser. To use different port numbers, write `LOCAL:DESKTOP` for a plain mapping (`8080:3000`: your 8080 is the desktop's 3000) and `DESKTOP:LOCAL` after `-R` (`-R 80:8080`: the desktop's 80 is your 8080). Several mappings can share one command (at most 64 plain ones and 256 in all), and one token can hold four such links per desktop. Everything goes over the existing HTTPS connection (no extra ports are opened on the desktop host) and listens only on `127.0.0.1`. Only *listening* in the desktop is limited to ports from 1024 up, so plain `forward 80` is refused while `-R 80:8080` works (the helper just dials). If the connection drops or the desktop restarts, `deskyard` reconnects by itself with backoff (up to 30 s): `-R` local ports stay bound meanwhile, and plain mappings come back in the desktop once the link is back. People watching the desktop see which ports your token maps (up to 64 per token are listed). "Linked to …" and the `out` lines are printed when the link is accepted, a moment before the desktop helper is known to be running.
+The first lets the environment call a service running on your machine; the second lets you open a dev server running in the environment in your own browser. To use different port numbers, write `LOCAL:ENV` for a plain mapping (`8080:3000`: your 8080 is the environment's 3000) and `ENV:LOCAL` after `-R` (`-R 80:8080`: the environment's 80 is your 8080). Several mappings can share one command (at most 64 plain ones and 256 in all), and one token can hold four such links per environment. Everything goes over the existing HTTPS connection (no extra ports are opened on the engine host) and listens only on `127.0.0.1`. Only *listening* in the environment is limited to ports from 1024 up, so plain `forward 80` is refused while `-R 80:8080` works (the helper just dials). If the connection drops or the environment restarts, `deskyard` reconnects by itself with backoff (up to 30 s): `-R` local ports stay bound meanwhile, and plain mappings come back in the environment once the link is back. People watching the desktop see which ports your token maps (up to 64 per token are listed). "Linked to …" and the `out` lines are printed when the link is accepted, a moment before the helper in the environment is known to be running.
 
 ## Optional agent integrations
 
 The desktop also ships skills for tools such as Claude Code and Codex.
 
-**Inside a desktop.** Install an agent into `/workspace` from the desktop
+**Inside an environment.** Install an agent into `/workspace` from its
 terminal and run it there:
 
 ```bash
@@ -555,7 +591,7 @@ curl -fsSL https://claude.ai/install.sh | bash          # Claude Code
 npm i -g @openai/codex                                   # Codex
 ```
 
-Hermes Agent also runs inside a desktop:
+Hermes Agent also runs inside an environment:
 
 ```bash
 curl -fsSL https://hermes-agent.nousresearch.com/install.sh -o /tmp/hermes-install.sh
@@ -566,8 +602,8 @@ LANG=C.UTF-8 hermes
 ```
 
 This installs Hermes into `/workspace`, uses its local terminal backend,
-and makes the desktop's three skills available to it. The optional Hermes
-browser and computer-use downloads are skipped; the desktop's shared
+and makes the image's three skills available to it. The optional Hermes
+browser and computer-use downloads are skipped; the environment's shared
 browser and `deskyard` command remain available through those skills.
 The project space's Hermes Agent trial spike records the
 verified versions, startup checks and limitations. A model conversation
@@ -596,34 +632,69 @@ Environment variables of the supervisor:
 
 | Variable | Default | |
 |---|---|---|
-| `DESKYARD_LISTEN` | `127.0.0.1:8080` (`0.0.0.0:8080` in the image) | address for plain HTTP |
+| `DESKYARD_LISTEN` | `127.0.0.1:7343` (`0.0.0.0:7343` in the image) | address for plain HTTP |
 | `DESKYARD_DOMAIN` | | serve HTTPS for this domain on 80/443, with an automatic certificate |
-| `DESKYARD_DATA_DIR` | `~/deskyard` (required in a container) | workspace folders, and `.deskyard/` for the supervisor's own state |
+| `DESKYARD_DATA_DIR` | `~/deskyard` (required in a container) | environment definitions, home folders and the supervisor's own state (see Storage) |
 | `DESKYARD_ENGINE_HOST` | `DOCKER_HOST`, else the default socket | the engine to drive |
-| `DESKYARD_SUBNET` | `10.213.0.0/16` | each desktop's network gets a /28 from it |
+| `DESKYARD_SUBNET` | `10.213.0.0/16` | each environment's network gets a /28 from it |
 | `DESKYARD_ADMIN_USER` | `admin` | first start only: the first admin |
 | `DESKYARD_ADMIN_PASSWORD` | generated, printed once | first start only: its password |
 | `DESKYARD_IMAGE` | `ghcr.io/zefhemel/deskyard-debian-xfce:latest` | the catalog's first image |
 
 ### Storage
 
-`DESKYARD_DATA_DIR` holds each desktop's folder (`<name>/`, owned by UID
-1000) and `.deskyard/` with `accounts.json`, `tokens.json`, `images.json`, `memory-policy.json`,
-the session key and certificates (all mode 0600). Active desktops are containers
-with `deskyard.*` labels. During settings changes and upgrades, private records
-in `.deskyard/recovery/` preserve the previous image, settings and identity until
-the replacement is ready. A failed or interrupted replacement restores that
-previous desktop; startup retries retained recovery records after reconnecting
-container networks. If recovery still fails, its record remains and operations
-on that desktop are blocked with an explanation. Fix the reported engine/image
-or host-folder issue and restart the supervisor to retry; keep this directory
-with the rest of the supervisor state when backing it up.
+`DESKYARD_DATA_DIR` keeps everything in plain view; there is no hidden folder:
 
-Desktops with managed networking additionally have private intent and complete transition snapshots in `.deskyard/vpn/desktops.json`, so interrupted network changes remain visible and recoverable without reverting an enabled VPN to direct networking. Back up `.deskyard/vpn/` too: it holds saved connections, versioned service credentials and private recovery tokens. Directories are owner-only and files use mode 0600; host administrators can read these secrets.
+```
+<data>/
+  environments.json   environment definitions (no secrets)
+  accounts.json       accounts, password hashes and environment grants
+  tokens.json         access tokens (hashed)
+  networks.json       saved VPN connections (no credentials)
+  images.json         the image catalog
+  secret/             session key, per-environment proxy tokens (proxy/<name>),
+                      VPN service credentials (vpn/<connection-id>/), TLS certificates (certmagic/)
+  state/              this supervisor's instance ID, replacement records (recovery/<name>.json),
+                      VPN network transitions (network/transitions.json), VPN runtime scratch (vpn/)
+  cache/              Selkies web clients extracted from images; safe to delete
+  home/<name>/        each environment's /workspace, owned by UID 1000
+```
+
+JSON files are written atomically with mode 0600, and existing `accounts.json`
+and `tokens.json` files are tightened to 0600 at startup; `secret/` and `state/` are
+owner-only (0700). Host administrators can read these secrets. Back up the
+whole data folder; `cache/` can be left out.
+
+`environments.json` is the only place an environment's settings live. The
+supervisor reads it strictly: an unknown field, a duplicate name or an invalid
+entry stops it from starting rather than being ignored. Containers and networks
+carry only matching labels: `deskyard.managed`, `deskyard.name`,
+`deskyard.revision` (the definition revision the container was built from) and
+`deskyard.instance` (the ID in `state/instance`), plus role labels for VPN
+gateways. Labels are never read back as settings. A supervisor considers only
+containers with its own instance label, so several supervisors with different
+data folders can share one engine without seeing each other's containers.
+
+During settings changes and upgrades, `state/recovery/<name>.json` records the
+replacement in progress (the revision, the set-aside container
+`deskyard-<name>.parked` and whether it was running). It never holds settings.
+A failed replacement restores the old container; startup finishes or reverts an
+interrupted one after reconnecting container networks. If that fails, the record
+stays and operations on that environment are refused with an explanation. Fix
+the reported engine, image or host-folder issue and restart the supervisor to
+retry. VPN environments keep their transition state in
+`state/network/transitions.json`, so interrupted network changes stay visible and
+recoverable without falling back to direct networking.
+
+Data folders from before environment definitions are not migrated. The
+supervisor refuses to start, and says what to remove, when the data folder holds
+a `.deskyard/` folder or when Deskyard containers without an instance label
+mount it. Remove those (or point `DESKYARD_DATA_DIR` at a fresh folder); this
+mostly affects development checkouts.
 
 In a container, the data folder must be mounted **at the same path** as on
-the host (`-v /srv/desktops:/srv/desktops`), because the supervisor hands
-those paths to the engine as bind mounts for desktops. It checks this on
+the host (`-v /srv/deskyard:/srv/deskyard`), because the supervisor hands
+those paths to the engine as bind mounts for environments. It checks this on
 startup and refuses to run, with an explanation, if they don't match.
 
 ## Security
@@ -634,14 +705,14 @@ startup and refuses to run, with an explanation, if they don't match.
   root-equivalent; in a container, mounting the socket is the same.
 - Every route but the login page needs a signed-in account; access tokens
   work only on the remote access API. Failed logins are throttled.
-- Desktops have no password and nothing else of their own facing the
-  network: only Caddy on 8080, which wants a per-desktop token that only
-  the supervisor has. With the supervisor in a container, desktops publish
+- Environments have no password and nothing else of their own facing the
+  network: only Caddy on 8080, which wants a per-environment token that only
+  the supervisor has. With the supervisor in a container, environments publish
   no ports; run directly, each publishes only 8080 on host `127.0.0.1`.
-- The supervisor never serves pages from a desktop: it serves the desktop
-  client itself (taken from the desktop's image) and proxies only the
+- The supervisor never serves pages from an environment: it serves the desktop
+  client itself (taken from the environment's image) and proxies only the
   desktop's WebSocket and, for CLI clients, the browser's CDP.
-- No `sudo` in desktops, and every command the supervisor runs in one runs
+- No `sudo` in environments, and every command the supervisor runs in one runs
   as `user`.
 - Over plain HTTP, passwords travel in clear text: keep the default
   `127.0.0.1` binding unless the network is trusted, or set
@@ -652,9 +723,9 @@ startup and refuses to run, with an explanation, if they don't match.
 ```
 supervisor/
   cmd/deskyard-supervisor/     the supervisor
-  cmd/deskyard/     the deskyard command (inside desktops and for remote access)
+  cmd/deskyard/     the deskyard command (inside environments and for remote access)
   internal/         engine interface and Docker implementation, accounts, auth,
-                    desktops, the HTTP server and proxy, the embedded UI
+                    environments, the HTTP server and proxy, the embedded UI
   web/              the UI: Preact + TypeScript + Tailwind, built with Vite
   tests/            integration tests against a real engine
   Dockerfile        node build -> go build -> alpine
@@ -729,10 +800,10 @@ and browser suites continue to use XFCE.
 
 Both suites run under pytest-xdist (`WORKERS`, default 4), then run the
 timing-sensitive tests, marked `serial`, on their own (`pytest --only-serial`).
-Each test gets a new desktop, taken from a few started ahead of it. The
+Each test gets a new environment, taken from a few started ahead of it. The
 supervisor suite runs a supervisor per worker, each on its own slice of
 `DESKYARD_TEST_SUBNET` (default 10.215.0.0/20): give checkouts that test at the
-same time different ones. The supervisor suite rebuilds the web UI first when
+same time different ones. Teardown removes only the containers and networks labelled with that run's supervisor instance, plus managed containers mounting its data folder. The supervisor suite rebuilds the web UI first when
 its sources are newer than the build. `TEST_IMAGE` names the desktop image the
 suites build and test (default `deskyard-debian-xfce:test`); outside make,
 `AC_IMAGE` (image suite) and `CC_TEST_IMAGE` (supervisor suite) name it.
@@ -773,4 +844,4 @@ To build only one image from the repository root:
 XFCE panel/layout tests run only for XFCE; shared boot, security, stream,
 Flatpak and persistence checks apply to each variant.
 
-For shared-engine VPN verification, use the [scoped VPN test guide](supervisor/tests/VPN.md). Its `vpnintegration` test binary protects existing resources with a unique ownership label. Do not start an ordinary production supervisor or the full-main Python fixture against a Docker engine holding unrelated desktops.
+For shared-engine VPN verification, use the [scoped VPN test guide](supervisor/tests/VPN.md). Its `vpnintegration` test binary protects existing resources with a unique ownership label. Do not start an ordinary production supervisor or the full-main Python fixture against a Docker engine holding unrelated environments.

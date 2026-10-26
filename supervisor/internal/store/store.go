@@ -4,6 +4,8 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -16,6 +18,22 @@ func ReadJSON(path string, v any) error {
 		return err
 	}
 	return json.Unmarshal(b, v)
+}
+
+// Restrict makes an existing path owner-only (0600) when it has a wider
+// mode, as when restored from a backup or written by hand. A missing path
+// is not an error.
+func Restrict(path string) error {
+	st, err := os.Stat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	if st.Mode().Perm()&^0o600 == 0 {
+		return nil
+	}
+	return os.Chmod(path, 0o600)
 }
 
 // WriteJSON replaces path with v as indented JSON, atomically.

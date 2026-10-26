@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 )
 
@@ -36,8 +36,8 @@ type catalog struct {
 
 const checkInterval = 24 * time.Hour
 
-func loadCatalog(stateDir, defaultRef string) (*catalog, error) {
-	c := &catalog{path: filepath.Join(stateDir, "images.json")}
+func loadCatalog(dataDir, defaultRef string) (*catalog, error) {
+	c := &catalog{path: filepath.Join(dataDir, "images.json")}
 	var f struct {
 		Images []catalogEntry `json:"images"`
 	}
@@ -178,7 +178,7 @@ func normRef(ref string) string {
 
 // updateFor returns the version a desktop could upgrade to, if any.
 // Custom images' refs end in :latest, which every rebuild moves.
-func (c *catalog) updateFor(comp desktops.Desktop) *string {
+func (c *catalog) updateFor(comp environments.Environment) *string {
 	newest := c.newest(comp.Image)
 	if newest == "" || comp.ImageID == "" || newest == comp.ImageID {
 		return nil
@@ -222,7 +222,7 @@ func (s *Server) checkImages(ctx context.Context, progress func(string, float64)
 			}
 			continue
 		}
-		s.Desktops.ForgetImage(e.Ref)
+		s.Environments.ForgetImage(e.Ref)
 		img, err := s.Eng.ImageInspect(ctx, e.Ref)
 		if err != nil {
 			errs = append(errs, err)
@@ -277,22 +277,22 @@ func (c *catalog) checkLoop(ctx context.Context, s *Server) {
 // --- API ----------------------------------------------------------------------------------
 
 type catalogImageJSON struct {
-	Installed   bool       `json:"installed"`
-	Official    bool       `json:"official"`
-	Ref         string     `json:"ref"`
-	Title       string     `json:"title"`
-	Version     string     `json:"version"`
-	Description string     `json:"description"`
-	Desktops    []string   `json:"desktops"`
-	Behind      []string   `json:"behind"`
-	Checked     *time.Time `json:"checked"`
+	Installed    bool       `json:"installed"`
+	Official     bool       `json:"official"`
+	Ref          string     `json:"ref"`
+	Title        string     `json:"title"`
+	Version      string     `json:"version"`
+	Description  string     `json:"description"`
+	Environments []string   `json:"environments"`
+	Behind       []string   `json:"behind"`
+	Checked      *time.Time `json:"checked"`
 }
 
 func (s *Server) handleListImages(w http.ResponseWriter, r *http.Request) {
-	list, _ := s.Desktops.List(r.Context())
+	list, _ := s.Environments.List(r.Context())
 	out := []catalogImageJSON{}
 	for _, e := range s.images.entries() {
-		j := catalogImageJSON{Ref: e.Ref, Checked: e.Checked, Desktops: []string{}, Behind: []string{}}
+		j := catalogImageJSON{Ref: e.Ref, Checked: e.Checked, Environments: []string{}, Behind: []string{}}
 		if image, ok := officialImageFor(e.Ref); ok {
 			j.Official, j.Title, j.Description = true, image.Title, image.Description
 		}
@@ -308,7 +308,7 @@ func (s *Server) handleListImages(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, c := range list {
 			if sameRef(c.Image, e.Ref) {
-				j.Desktops = append(j.Desktops, c.Name)
+				j.Environments = append(j.Environments, c.Name)
 				if s.images.updateFor(c) != nil {
 					j.Behind = append(j.Behind, c.Name)
 				}
@@ -363,8 +363,8 @@ func (s *Server) handleInstallImage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) pullCatalogImage(username, ref string) string {
 	return s.jobs.start(username, "", func(ctx context.Context, progress func(string, float64)) error {
-		s.Desktops.ForgetImage(ref)
-		img, err := s.Desktops.EnsureImage(ctx, ref, progress)
+		s.Environments.ForgetImage(ref)
+		img, err := s.Environments.EnsureImage(ctx, ref, progress)
 		if err != nil {
 			return err
 		}
@@ -386,7 +386,7 @@ func (s *Server) handleRemoveImage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "official images remain available in the catalog")
 		return
 	}
-	if user := s.imageUser(r.Context(), ref); user != "" {
+	if user := s.imageUser(ref); user != "" {
 		writeError(w, http.StatusConflict, user+" uses this image")
 		return
 	}
@@ -398,12 +398,13 @@ func (s *Server) handleRemoveImage(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// imageUser names a desktop made from ref, or "" if there is none.
-func (s *Server) imageUser(ctx context.Context, ref string) string {
-	list, _ := s.Desktops.List(ctx)
-	for _, c := range list {
-		if sameRef(c.Image, ref) {
-			return c.Name
+// imageUser names an environment whose definition references ref or pins
+// its newest image, with or without a container, or "" if there is none.
+func (s *Server) imageUser(ref string) string {
+	newest := s.images.newest(ref)
+	for _, def := range s.Environments.Defs.List() {
+		if sameRef(def.Image.Ref, ref) || (newest != "" && def.Image.ID == newest) {
+			return def.Name
 		}
 	}
 	return ""
@@ -432,12 +433,12 @@ func (s *Server) handleUpgradeImage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "an image reference is required")
 		return
 	}
-	behindOn := func(ctx context.Context) ([]desktops.Desktop, error) {
-		list, err := s.Desktops.List(ctx)
+	behindOn := func(ctx context.Context) ([]environments.Environment, error) {
+		list, err := s.Environments.List(ctx)
 		if err != nil {
 			return nil, err
 		}
-		var behind []desktops.Desktop
+		var behind []environments.Environment
 		for _, c := range list {
 			if sameRef(c.Image, req.Ref) && s.images.updateFor(c) != nil {
 				behind = append(behind, c)
@@ -452,18 +453,18 @@ func (s *Server) handleUpgradeImage(w http.ResponseWriter, r *http.Request) {
 		}
 		var errs []error
 		for i, c := range behind {
-			release, err := s.Desktops.Reserve(c.Name, "upgrading")
+			release, err := s.Environments.Reserve(c.Name, "upgrading")
 			if err != nil {
 				errs = append(errs, err)
 				continue
 			}
-			s.publishDesktop(ctx, c.Name)
+			s.publishEnvironment(ctx, c.Name)
 			s.viewers.closeAll(c.Name)
-			_, err = s.Desktops.Recreate(ctx, c.Name, c.Settings, func(msg string, _ float64) {
+			_, err = s.Environments.Recreate(ctx, c.Name, c.Settings, func(msg string, _ float64) {
 				progress(c.Name+": "+msg, float64(i)/float64(len(behind)))
 			})
 			release()
-			s.publishDesktop(ctx, c.Name)
+			s.publishEnvironment(ctx, c.Name)
 			if err != nil {
 				errs = append(errs, err)
 			}

@@ -71,6 +71,7 @@ type Container struct {
 	LocalPort             int               // host 127.0.0.1 port published for 8080, 0 if none
 	MemoryBytes, NanoCPUs int64
 	Devices               []string // host devices passed in (their paths on the host)
+	Mounts                []Mount  // its mounts, Source on the host
 }
 
 func (c Container) Running() bool { return c.State == "running" || c.State == "restarting" }
@@ -144,6 +145,8 @@ type Engine interface {
 	Restart(ctx context.Context, id string, timeout time.Duration) error
 	UpdateRestartPolicy(ctx context.Context, id, policy string) error
 	Remove(ctx context.Context, id string) error
+	// Rename gives a container another name; its ID stays.
+	Rename(ctx context.Context, id, name string) error
 	Inspect(ctx context.Context, id string) (Container, error)
 	List(ctx context.Context, labels map[string]string) ([]Container, error)
 	Exec(ctx context.Context, id string, spec ExecSpec) (*Process, error)

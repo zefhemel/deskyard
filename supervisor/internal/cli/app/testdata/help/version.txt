@@ -1,6 +1,6 @@
 deskyard version: print the version
 
-Usage: deskyard [-d NAME] version
+Usage: deskyard [-e NAME] version
 
 Prints the deskyard command's version.
 

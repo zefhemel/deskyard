@@ -13,8 +13,8 @@ function setup() {
   });
   return { tracker, opened, closed, send: (id: string, job: Job) => updates.get(id)!(job) };
 }
-const running: Job = { status: "running", message: "Downloading", progress: 0.2, desktop: "alice" };
-const failed: Job = { status: "failed", message: "Failed", error: "Download interrupted", progress: null, desktop: "alice" };
+const running: Job = { status: "running", message: "Downloading", progress: 0.2, environment: "alice" };
+const failed: Job = { status: "failed", message: "Failed", error: "Download interrupted", progress: null, environment: "alice" };
 
 test("local and discovered followers share one transport and terminal state", () => {
   const { tracker, opened, send } = setup();
@@ -25,8 +25,8 @@ test("local and discovered followers share one transport and terminal state", ()
   send("one", failed);
   assert.deepEqual(opened, ["one"]);
   assert.equal(tracker.get("one"), failed);
-  assert.equal(tracker.forDesktop("alice"), failed);
-  assert.deepEqual(tracker.runningByDesktop(), {});
+  assert.equal(tracker.forEnvironment("alice"), failed);
+  assert.deepEqual(tracker.runningByEnvironment(), {});
   assert.equal(local.at(-1), failed);
   assert.equal(discovered.at(-1), failed);
   const remounted: Job[] = [];
@@ -35,13 +35,13 @@ test("local and discovered followers share one transport and terminal state", ()
   assert.deepEqual(opened, ["one"]);
 });
 
-test("old completion cannot replace a newer desktop operation", () => {
+test("old completion cannot replace a newer environment operation", () => {
   const { tracker, send } = setup();
   tracker.track("old", undefined, "alice");
   tracker.track("new", undefined, "alice");
   send("new", running);
   send("old", failed);
-  assert.equal(tracker.forDesktop("alice"), running);
+  assert.equal(tracker.forEnvironment("alice"), running);
 });
 
 test("removing a callback keeps shared progress; disposing closes streams and ignores late output", () => {
@@ -51,20 +51,20 @@ test("removing a callback keeps shared progress; disposing closes streams and ig
   unsubscribe();
   send("one", running);
   assert.equal(seen.length, 1);
-  assert.equal(tracker.forDesktop("alice"), running);
+  assert.equal(tracker.forEnvironment("alice"), running);
   tracker.dispose();
   assert.deepEqual(closed, ["one"]);
   send("one", failed);
-  assert.equal(tracker.forDesktop("alice"), null);
+  assert.equal(tracker.forEnvironment("alice"), null);
 });
 
 test("discovered jobs publish Starting before the transport sends any payload", () => {
   const { tracker } = setup();
   const seen: string[] = [];
-  tracker.subscribe(() => seen.push(tracker.forDesktop("alice")?.message ?? "missing"));
+  tracker.subscribe(() => seen.push(tracker.forEnvironment("alice")?.message ?? "missing"));
   tracker.track("one", undefined, "alice");
   assert.deepEqual(seen, ["Starting"]);
-  assert.equal(tracker.runningByDesktop().alice?.status, "running");
+  assert.equal(tracker.runningByEnvironment().alice?.status, "running");
   tracker.track("one", undefined, "alice");
   assert.deepEqual(seen, ["Starting"]);
 });

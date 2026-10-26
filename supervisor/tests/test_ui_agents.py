@@ -22,7 +22,7 @@ def test_forwards_shown(cli, remote, forwards, supervisor, name):
         chip.click()
         expect(page.get_by_text(f"cli test: {p} in")).to_be_visible()
 
-        page.goto(f"{supervisor.base}/desktops/{name}")
+        page.goto(f"{supervisor.base}/environments/{name}")
         expect(page.get_by_text(f"cli test: {p} in")).to_be_visible(timeout=15000)
 
         page.goto(f"{supervisor.base}/{name}/")
@@ -34,13 +34,13 @@ def test_forwards_shown(cli, remote, forwards, supervisor, name):
 
 
 def test_agent_presence_and_summary(cli, remote, supervisor, name):
-    remote("-d", name, "click", "100", "100")
-    remote("-d", name, "exec", "--", "true")
+    remote("-e", name, "click", "100", "100")
+    remote("-e", name, "exec", "--", "true")
     # An agent stays present for 12 s after its last action here
     # (DESKYARD_ACTIVITY_PRESENCE), which a slow run can outlast before the
     # hover: the row then leaves the popover under the pointer. A running
     # command keeps the agent present for the whole test.
-    busy = subprocess.Popen([cli, "-d", name, "exec", "--", "sleep", "600"], env=remote.env,
+    busy = subprocess.Popen([cli, "-e", name, "exec", "--", "sleep", "600"], env=remote.env,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         check_agent_presence_and_summary(supervisor.base, name)
@@ -66,7 +66,7 @@ def check_agent_presence_and_summary(base, name):
         expect(page.get_by_text("clicked", exact=True)).to_be_visible()
         expect(page.get_by_text("true · exit 0")).to_be_visible()
 
-        page.goto(f"{base}/desktops/{name}")
+        page.goto(f"{base}/environments/{name}")
         expect(page.locator("[data-agent]").first).to_be_visible(timeout=15000)
 
         page.goto(f"{base}/")
@@ -79,8 +79,8 @@ def test_open_popover_stays_open_when_the_stream_connects(cli, remote, superviso
     # page gives the screen focus. Either blurred the window, and the bar's
     # popovers close on blur: one opened before the stream connected closed by
     # itself (as test_agent_presence_and_summary's hover found, now and then).
-    remote("-d", name, "exec", "--", "true")  # an agent, so the popover has a row before anyone views
-    busy = subprocess.Popen([cli, "-d", name, "exec", "--", "sleep", "600"], env=remote.env,
+    remote("-e", name, "exec", "--", "true")  # an agent, so the popover has a row before anyone views
+    busy = subprocess.Popen([cli, "-e", name, "exec", "--", "sleep", "600"], env=remote.env,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     docker("exec", f"deskyard-{name}", "supervisorctl", "stop", "selkies")
     try:
@@ -111,7 +111,7 @@ def test_overlay_marks(cli, remote, supervisor, name):
         open_desktop(page, supervisor.base, name)
         time.sleep(1)  # the screen-events stream is open
 
-        remote("-d", name, "click", "200", "150")
+        remote("-e", name, "click", "200", "150")
         click = page.locator('[data-mark="click"]')
         expect(click).to_be_visible(timeout=5000)
         expect(click).to_contain_text("cli test")
@@ -127,7 +127,7 @@ def test_overlay_marks(cli, remote, supervisor, name):
                                f"return {SCREEN}.video().getBoundingClientRect().width <= f.clientWidth + 1; }})()")
         time.sleep(1)
         expect(page.locator("[data-mark]")).to_have_count(0, timeout=5000)
-        remote("-d", name, "click", "600", "400")
+        remote("-e", name, "click", "600", "400")
         expect(click).to_be_visible(timeout=5000)
         box = click.bounding_box()
         pic = page.evaluate(PICTURE)
@@ -136,17 +136,17 @@ def test_overlay_marks(cli, remote, supervisor, name):
         assert abs(box["x"] + box["width"] / 2 - want[0]) <= 3, (box, want)
         assert abs(box["y"] + box["height"] / 2 - want[1]) <= 3, (box, want)
 
-        remote("-d", name, "type", "secret-text")
+        remote("-e", name, "type", "secret-text")
         typing = page.locator('[data-mark="typing"]')
         expect(typing).to_have_text("cli test is typing…", timeout=5000)
         expect(typing).to_have_count(0, timeout=3000)
 
-        remote("-d", name, "key", "ctrl+l")
+        remote("-e", name, "key", "ctrl+l")
         expect(page.locator('[data-mark="key"]')).to_have_text("⌃L", timeout=5000)
 
         marks = page.locator("[data-mark]")
         expect(marks).to_have_count(0, timeout=5000)
-        remote("-d", name, "move", "10", "10")
+        remote("-e", name, "move", "10", "10")
         time.sleep(1.5)
         expect(marks).to_have_count(0)
 

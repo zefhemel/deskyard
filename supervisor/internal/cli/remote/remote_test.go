@@ -31,7 +31,7 @@ func TestParseURL(t *testing.T) {
 			t.Errorf("ParseURL(%q): %v", c.in, err)
 			continue
 		}
-		if got.Base != c.base || got.Desktop != c.name {
+		if got.Base != c.base || got.Environment != c.name {
 			t.Errorf("ParseURL(%q) = %+v, want base %q name %q", c.in, got, c.base, c.name)
 		}
 	}
@@ -40,7 +40,7 @@ func TestParseURL(t *testing.T) {
 			t.Errorf("ParseURL(%q) succeeded, want an error", bad)
 		}
 	}
-	if u := (Target{Base: "https://h/p", Desktop: "a"}).URL(); u != "https://h/p/a" {
+	if u := (Target{Base: "https://h/p", Environment: "a"}).URL(); u != "https://h/p/a" {
 		t.Errorf("URL() = %q", u)
 	}
 }
@@ -54,8 +54,8 @@ func TestConfigRoundTrip(t *testing.T) {
 	if len(c.Remotes) != 0 || c.Default != "" {
 		t.Fatalf("missing file should be empty: %+v", c)
 	}
-	c.Add(&Remote{Name: "alice", URL: "https://h/alice", Base: "https://h", Desktop: "alice", Token: "dyt_a_s"})
-	c.Add(&Remote{Name: "bob", URL: "https://h/bob", Base: "https://h", Desktop: "bob", Token: "dyt_b_s"})
+	c.Add(&Remote{Name: "alice", URL: "https://h/alice", Base: "https://h", Environment: "alice", Token: "dyt_a_s"})
+	c.Add(&Remote{Name: "bob", URL: "https://h/bob", Base: "https://h", Environment: "bob", Token: "dyt_b_s"})
 	if c.Default != "alice" {
 		t.Fatalf("first remote should be the default, got %q", c.Default)
 	}
@@ -136,7 +136,7 @@ func TestValidName(t *testing.T) {
 
 func TestInfoAndErrors(t *testing.T) {
 	f := clitest.New(t, "alice")
-	c := &Client{Alias: "alice", Base: f.URL, Desktop: "alice", Token: clitest.Token}
+	c := &Client{Alias: "alice", Base: f.URL, Environment: "alice", Token: clitest.Token}
 	info, err := c.Info(context.Background())
 	if err != nil {
 		t.Fatal(err)

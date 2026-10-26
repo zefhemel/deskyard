@@ -14,18 +14,18 @@ import (
 // APIPath is the remote access API's root path on a supervisor.
 const APIPath = "/api/agent/v1"
 
-// Client talks to one desktop's remote access API.
+// Client talks to one environment's remote access API.
 type Client struct {
-	Alias   string // remote name, for messages ("alice"); may equal Desktop
-	Base    string
-	Desktop string // expected desktop name; may be empty
-	Token   string
-	HTTP    *http.Client
+	Alias       string // remote name, for messages ("alice"); may equal Environment
+	Base        string
+	Environment string // expected environment name; may be empty
+	Token       string
+	HTTP        *http.Client
 }
 
 // FromRemote builds a client for a saved remote.
 func FromRemote(r *Remote) *Client {
-	return &Client{Alias: r.Name, Base: r.Base, Desktop: r.Desktop, Token: r.Token}
+	return &Client{Alias: r.Name, Base: r.Base, Environment: r.Environment, Token: r.Token}
 }
 
 // Info is GET /api/agent/v1.
@@ -42,15 +42,15 @@ type Info struct {
 	API int `json:"api"`
 }
 
-// Label names the desktop in messages.
+// Label names the environment in messages.
 func (c *Client) Label() string {
-	if c.Desktop != "" {
-		return c.Desktop
+	if c.Environment != "" {
+		return c.Environment
 	}
 	if c.Alias != "" {
 		return c.Alias
 	}
-	return "the desktop"
+	return "the environment"
 }
 
 // URL returns base + APIPath + p.
@@ -92,7 +92,7 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
-// Info fetches the desktop's description. A 409 (stopped) still proves the
+// Info fetches the environment's description. A 409 (stopped) still proves the
 // token works; it comes back as an *APIError with Status 409.
 func (c *Client) Info(ctx context.Context) (*Info, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -154,7 +154,7 @@ func (c *Client) explain(status int, msg string) string {
 	switch status {
 	case http.StatusUnauthorized:
 		return fmt.Sprintf("token rejected (401): ask someone with access to %s for a new token (on its Remote access tab; this one is wrong, expired or revoked), then run `deskyard remote add %s %s --token dyt_…` again",
-			name, aliasOr(c.Alias, name), (&Target{Base: c.Base, Desktop: c.Desktop}).URL())
+			name, aliasOr(c.Alias, name), (&Target{Base: c.Base, Environment: c.Environment}).URL())
 	case http.StatusConflict:
 		if msg == "" {
 			msg = name + " is not running; someone with access can start it"

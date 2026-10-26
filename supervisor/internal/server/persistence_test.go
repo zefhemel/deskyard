@@ -117,22 +117,22 @@ func TestTokenFailedCreateDoesNotPublish(t *testing.T) {
 	if err == nil || secret != "" || tok.ID != "" {
 		t.Fatalf("failed creation exposed token: %+v %q %v", tok, secret, err)
 	}
-	if len(ts.forDesktop("desktop")) != 0 {
+	if len(ts.forEnvironment("desktop")) != 0 {
 		t.Fatal("failed creation published token")
 	}
 }
 
 func TestDeleteTokenReportsPersistenceFailure(t *testing.T) {
 	bt := newCatalogTest(t)
-	withDesktop(t, bt, aliceHome)
-	tok, bearer, err := bt.s.tokens.create("agent", "id-alice", "admin", nil)
+	withEnvironment(t, bt, aliceHome)
+	tok, bearer, err := bt.s.tokens.create("agent", "alice", "admin", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	canceled := false
 	bt.s.tokens.track(tok.ID, func() { canceled = true })
 	bt.s.tokens.path = blockedStatePath(t)
-	code, body := bt.do(bt.admin, "DELETE", "/api/desktops/alice/tokens/"+tok.ID, nil)
+	code, body := bt.do(bt.admin, "DELETE", "/api/environments/alice/tokens/"+tok.ID, nil)
 	if code != 500 {
 		t.Fatalf("delete: %d %s", code, body)
 	}
@@ -141,5 +141,45 @@ func TestDeleteTokenReportsPersistenceFailure(t *testing.T) {
 	}
 	if _, ok := bt.s.tokens.check(bearer); !ok {
 		t.Fatal("failed delete removed live token")
+	}
+}
+
+func TestServerUsesVisibleLayout(t *testing.T) {
+	s, _ := newTestServer(t)
+	l := s.Layout
+	for _, p := range []string{
+		filepath.Join(l.Data, "accounts.json"),
+		filepath.Join(l.Data, "images.json"),
+		filepath.Join(l.Secret, "session.key"),
+		filepath.Join(l.Secret, "vpn"),
+	} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("%s: %v", p, err)
+		}
+	}
+	for _, p := range []string{filepath.Join(l.Data, ".deskyard"), filepath.Join(l.Data, "vpn")} {
+		if _, err := os.Stat(p); err == nil {
+			t.Errorf("%s should not exist", p)
+		}
+	}
+	if s.clients.dir != filepath.Join(l.Cache, "client") {
+		t.Errorf("client cache in %s", s.clients.dir)
+	}
+	if got := s.Environments.Layout.HomeOf("alice"); got != filepath.Join(l.Data, "home", "alice") {
+		t.Errorf("home in %s", got)
+	}
+}
+
+func TestLoadTokensRestrictsWideFile(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "tokens.json")
+	if err := os.WriteFile(p, []byte(`{"tokens":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadTokens(dir); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := os.Stat(p); st.Mode().Perm() != 0o600 {
+		t.Fatalf("mode %v", st.Mode())
 	}
 }

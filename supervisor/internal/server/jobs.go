@@ -16,12 +16,12 @@ import (
 // A job is a long operation (create, upgrade, image pull) whose
 // progress the UI follows over server-sent events at /api/jobs/{id}.
 type jobState struct {
-	Result   any      `json:"result,omitempty"`
-	Status   string   `json:"status"` // running, done, failed
-	Message  string   `json:"message"`
-	Progress *float64 `json:"progress"`
-	Error    string   `json:"error,omitempty"`
-	Desktop  string   `json:"desktop,omitempty"`
+	Result      any      `json:"result,omitempty"`
+	Status      string   `json:"status"` // running, done, failed
+	Message     string   `json:"message"`
+	Progress    *float64 `json:"progress"`
+	Error       string   `json:"error,omitempty"`
+	Environment string   `json:"environment,omitempty"`
 }
 
 // maxJobHistory is how many updates a job keeps for its followers. A verbose job
@@ -31,7 +31,7 @@ const maxJobHistory = 2000
 
 type job struct {
 	owner       string
-	desktop     string
+	environment string
 	cancellable bool
 	cancel      context.CancelFunc
 	done        chan struct{}
@@ -56,8 +56,8 @@ func newJobs() *jobs { return &jobs{byID: map[string]*job{}} }
 type jobFunc func(ctx context.Context, progress func(string, float64)) error
 
 // start runs fn in the background as a job owned by an account.
-func (js *jobs) start(owner, desktop string, fn jobFunc) string {
-	return js.run(owner, desktop, false, fn)
+func (js *jobs) start(owner, environment string, fn jobFunc) string {
+	return js.run(owner, environment, false, fn)
 }
 
 // startCancellable is start for jobs that may be stopped half-way:
@@ -69,11 +69,11 @@ func (js *jobs) startCancellable(owner string, fn jobFunc) string {
 func (js *jobs) startResult(owner string, cancellable bool, fn func(context.Context, func(string, float64)) (any, error)) string {
 	return js.runResult(owner, "", cancellable, fn)
 }
-func (js *jobs) run(owner, desktop string, cancellable bool, fn jobFunc) string {
-	return js.runResult(owner, desktop, cancellable, func(ctx context.Context, p func(string, float64)) (any, error) { return nil, fn(ctx, p) })
+func (js *jobs) run(owner, environment string, cancellable bool, fn jobFunc) string {
+	return js.runResult(owner, environment, cancellable, func(ctx context.Context, p func(string, float64)) (any, error) { return nil, fn(ctx, p) })
 }
-func (js *jobs) runResult(owner, desktop string, cancellable bool, fn func(context.Context, func(string, float64)) (any, error)) string {
-	return js.runCommittedResult(owner, desktop, cancellable, func(ctx context.Context, p func(string, float64), _ func(func() error) error) (any, error) {
+func (js *jobs) runResult(owner, environment string, cancellable bool, fn func(context.Context, func(string, float64)) (any, error)) string {
+	return js.runCommittedResult(owner, environment, cancellable, func(ctx context.Context, p func(string, float64), _ func(func() error) error) (any, error) {
 		return fn(ctx, p)
 	})
 }
@@ -83,12 +83,12 @@ func (js *jobs) runResult(owner, desktop string, cancellable bool, fn func(conte
 func (js *jobs) startCommittedResult(owner string, fn func(context.Context, func(string, float64), func(func() error) error) (any, error)) string {
 	return js.runCommittedResult(owner, "", true, fn)
 }
-func (js *jobs) runCommittedResult(owner, desktop string, cancellable bool, fn func(context.Context, func(string, float64), func(func() error) error) (any, error)) string {
+func (js *jobs) runCommittedResult(owner, environment string, cancellable bool, fn func(context.Context, func(string, float64), func(func() error) error) (any, error)) string {
 	id := randomID(8)
 	ctx, cancel := context.WithCancel(context.Background())
-	j := &job{owner: owner, desktop: desktop, cancellable: cancellable, cancel: cancel,
+	j := &job{owner: owner, environment: environment, cancellable: cancellable, cancel: cancel,
 		done: make(chan struct{}), changed: make(chan struct{})}
-	j.set(jobState{Status: "running", Message: "Starting", Desktop: desktop})
+	j.set(jobState{Status: "running", Message: "Starting", Environment: environment})
 	js.mu.Lock()
 	js.byID[id] = j
 	js.mu.Unlock()
@@ -126,12 +126,12 @@ func (js *jobs) runCommittedResult(owner, desktop string, cancellable bool, fn f
 	return id
 }
 
-// forDesktop returns the running job for a desktop, if there is one.
-func (js *jobs) forDesktop(name string) (string, bool) {
+// forEnvironment returns the running job for an environment, if there is one.
+func (js *jobs) forEnvironment(name string) (string, bool) {
 	js.mu.Lock()
 	defer js.mu.Unlock()
 	for id, j := range js.byID {
-		if j.desktop == name && j.get().Status == "running" {
+		if j.environment == name && j.get().Status == "running" {
 			return id, true
 		}
 	}
@@ -215,7 +215,7 @@ func (j *job) stop() bool {
 func (s *Server) handleJob(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(r)
 	j := s.jobs.get(r.PathValue("id"))
-	if j == nil || (j.owner != a.Username && !a.Admin && !s.canSeeDesktop(r, a, j.desktop)) {
+	if j == nil || (j.owner != a.Username && !a.Admin && !s.canSeeEnvironment(r, a, j.environment)) {
 		writeError(w, http.StatusNotFound, "no such job")
 		return
 	}
@@ -261,12 +261,12 @@ func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// canSeeDesktop: whoever can see a desktop can follow its jobs.
-func (s *Server) canSeeDesktop(r *http.Request, a accounts.Account, name string) bool {
+// canSeeEnvironment: whoever can see an environment can follow its jobs.
+func (s *Server) canSeeEnvironment(r *http.Request, a accounts.Account, name string) bool {
 	if name == "" {
 		return false
 	}
-	c, err := s.Desktops.Get(r.Context(), name)
+	c, err := s.Environments.Get(r.Context(), name)
 	return err == nil && auth.Can(a, auth.View, c.ID)
 }
 

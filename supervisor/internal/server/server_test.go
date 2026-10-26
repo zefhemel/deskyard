@@ -3,19 +3,25 @@ package server
 import (
 	"archive/tar"
 	"bytes"
+	"cmp"
 	"context"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
+	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 )
 
 // fakeEngine knows one stopped desktop, "alice", plus any others a test
@@ -26,7 +32,7 @@ type fakeEngine struct {
 }
 
 var alice = engine.Container{ID: "c1", Name: "deskyard-alice", State: "exited", ImageID: "sha256:abc",
-	Labels: map[string]string{desktops.LabelManaged: "true", desktops.LabelName: "alice", desktops.LabelID: "id-alice"}}
+	Labels: map[string]string{environments.LabelManaged: "true", environments.LabelName: "alice", environments.LabelRevision: "1"}}
 
 func (e fakeEngine) all() []engine.Container { return append([]engine.Container{alice}, e.others...) }
 
@@ -75,26 +81,68 @@ func newTestServer(t *testing.T) (*Server, *httptest.Server) {
 }
 
 func newTestServerWith(t *testing.T, e engine.Engine) (*Server, *httptest.Server) {
-	return newTestServerCfg(t, e, desktops.Config{Subnet: "10.0.0.0/16"})
+	return newTestServerCfg(t, e, environments.Config{Subnet: "10.0.0.0/16"})
 }
 
 // newTestServerCfg is newTestServerWith with the desktops' config (DataDir is set here).
-func newTestServerCfg(t *testing.T, e engine.Engine, cfg desktops.Config) (*Server, *httptest.Server) {
+func newTestServerCfg(t *testing.T, e engine.Engine, cfg environments.Config) (*Server, *httptest.Server) {
 	dir := t.TempDir()
 	cfg.DataDir = dir
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	accts, _ := accounts.Load(dir)
 	_, _ = accts.EnsureAdmin("admin", "pw")
 	_, _ = accts.Create("anna", "pw", false, nil)
-	s, err := New(Options{Log: log, Eng: e, Accounts: accts, StateDir: dir, DefaultImage: "img",
-		Desktops: desktops.New(e, cfg, log),
-		UI:       fstest.MapFS{"index.html": {Data: []byte("<!doctype html>ui")}, "assets/a.js": {Data: []byte("js")}}})
+	s, err := New(Options{Log: log, Eng: e, Accounts: accts, Layout: config.NewLayout(dir), DefaultImage: "img",
+		Environments: environments.New(e, cfg, log),
+		UI:           fstest.MapFS{"index.html": {Data: []byte("<!doctype html>ui")}, "assets/a.js": {Data: []byte("js")}}})
 	if err != nil {
 		t.Fatal(err)
 	}
+	defineEnvironments(t, s)
 	ts := httptest.NewServer(s)
 	t.Cleanup(ts.Close)
 	return s, ts
+}
+
+// defineEnvironments defines every environment container the engine has
+// that isn't defined yet, as if the supervisor had created it. An engine
+// that can't list (as some tests make it) defines nothing.
+func defineEnvironments(t *testing.T, s *Server) {
+	t.Helper()
+	cs, err := s.Eng.List(context.Background(), nil)
+	if err != nil {
+		return
+	}
+	for _, c := range cs {
+		name := c.Labels[environments.LabelName]
+		if !environments.IsEnvironment(c.Labels) || name == "" {
+			continue
+		}
+		if _, ok := s.Environments.Defs.Get(name); ok {
+			continue
+		}
+		revision, _ := strconv.ParseUint(c.Labels[environments.LabelRevision], 10, 64)
+		def := environments.Definition{Name: name, Created: time.Now().UTC(), Revision: max(revision, 1),
+			Image:   environments.ImageRef{Ref: cmp.Or(c.Image, "img"), ID: c.ImageID},
+			Network: environments.Network{Kind: environments.NetworkIsolated}, MemoryReclaim: true, Power: environments.PowerStopped}
+		if c.Running() {
+			def.Power = environments.PowerRunning
+		}
+		for _, d := range c.Devices {
+			if strings.HasPrefix(d, "/dev/video") {
+				def.Camera = d
+			}
+		}
+		if conn := c.Labels[vpn.LabelConnection]; conn != "" {
+			def.Network = environments.Network{Kind: environments.NetworkVPN, Connection: conn}
+		}
+		if err := s.Environments.Defs.Put(def); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(s.Environments.Layout.HomeOf(name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 func login(t *testing.T, ts *httptest.Server, user string) *http.Client {
@@ -131,12 +179,12 @@ func status(t *testing.T, c *http.Client, method, url, origin string) int {
 func TestUnauthenticated(t *testing.T) {
 	_, ts := newTestServer(t)
 	anon := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	for _, p := range []string{"/api/me", "/api/desktops", "/api/events", "/api/accounts"} {
+	for _, p := range []string{"/api/me", "/api/environments", "/api/events", "/api/accounts"} {
 		if got := status(t, anon, "GET", ts.URL+p, ""); got != 401 {
 			t.Errorf("%s: %d", p, got)
 		}
 	}
-	for _, p := range []string{"/", "/alice/", "/desktops/alice", "/accounts"} {
+	for _, p := range []string{"/", "/alice/", "/environments/alice", "/accounts"} {
 		if got := status(t, anon, "GET", ts.URL+p, ""); got != 302 {
 			t.Errorf("%s: %d", p, got)
 		}
@@ -153,19 +201,19 @@ func TestOriginAndPermissions(t *testing.T) {
 	_, ts := newTestServer(t)
 	admin := login(t, ts, "admin")
 	anna := login(t, ts, "anna")
-	if got := status(t, admin, "POST", ts.URL+"/api/desktops/alice/start", "https://evil.example"); got != 403 {
+	if got := status(t, admin, "POST", ts.URL+"/api/environments/alice/start", "https://evil.example"); got != 403 {
 		t.Errorf("foreign origin: %d", got)
 	}
-	if got := status(t, admin, "POST", ts.URL+"/api/desktops/alice/start", ""); got != 403 {
+	if got := status(t, admin, "POST", ts.URL+"/api/environments/alice/start", ""); got != 403 {
 		t.Errorf("no origin: %d", got)
 	}
-	if got := status(t, anna, "GET", ts.URL+"/api/desktops/alice", ""); got != 404 {
+	if got := status(t, anna, "GET", ts.URL+"/api/environments/alice", ""); got != 404 {
 		t.Errorf("anna sees alice: %d", got)
 	}
 	if got := status(t, anna, "GET", ts.URL+"/alice/screen/", ""); got != 404 {
 		t.Errorf("anna gets alice's client: %d", got)
 	}
-	if got := status(t, admin, "GET", ts.URL+"/api/desktops/alice", ""); got != 200 {
+	if got := status(t, admin, "GET", ts.URL+"/api/environments/alice", ""); got != 200 {
 		t.Errorf("admin: %d", got)
 	}
 	if got := status(t, admin, "GET", ts.URL+"/nosuch/", ""); got != 404 {

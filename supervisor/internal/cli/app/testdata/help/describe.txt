@@ -1,6 +1,6 @@
 deskyard describe: machine-readable description of every command
 
-Usage: deskyard [-d NAME] describe --json
+Usage: deskyard [-e NAME] describe --json
 
 Prints every command with its arguments, flags, output and exit codes as JSON,
 to load as tool definitions.

@@ -1,4 +1,4 @@
-import type { DesktopVPNSettings, LANException, VPNInput, VPNStatus, VPNUpdate, VPNReference, Job, Settings, SettingsPatch, HostMount } from "../api.ts";
+import type { EnvironmentVPNSettings, LANException, VPNInput, VPNStatus, VPNUpdate, VPNReference, Job, Settings, SettingsPatch, HostMount } from "../api.ts";
 
 export interface ConnectionForm {
   name: string;
@@ -25,16 +25,16 @@ export function connectionInput(form: ConnectionForm, editing: boolean): VPNInpu
   };
 }
 
-export function connectionUpdate(form: ConnectionForm, preview: { revision: number; desktops: VPNReference[] }): VPNUpdate {
+export function connectionUpdate(form: ConnectionForm, preview: { revision: number; environments: VPNReference[] }): VPNUpdate {
   return {
     ...connectionInput(form, true),
     expectedRevision: preview.revision,
-    affectedDesktopIds: preview.desktops.map((d) => d.id),
-    confirmRestart: preview.desktops.length > 0,
+    affectedEnvironments: preview.environments.map((d) => d.name),
+    confirmRestart: preview.environments.length > 0,
   };
 }
 
-export function desktopVPNPatch(original: DesktopVPNSettings, selection: string, rules: LANException[]): Partial<DesktopVPNSettings> {
+export function environmentVPNPatch(original: EnvironmentVPNSettings, selection: string, rules: LANException[]): Partial<EnvironmentVPNSettings> {
   const id = selection || null;
   return {
     ...(id !== original.vpnConnectionId ? { vpnConnectionId: id } : {}),
@@ -125,7 +125,7 @@ export class CandidateTestSession {
   }
 }
 
-export interface DesktopSettingsDraft {
+export interface EnvironmentSettingsDraft {
   dockerAccess?: boolean;
   image: string;
   memoryBytes: number;
@@ -135,13 +135,13 @@ export interface DesktopSettingsDraft {
   lan: ExceptionRow[];
   mounts?: HostMount[];
 }
-type SavedDesktopSettings = { image: string; settings: Settings };
-function desktopSettingsPatch(saved: SavedDesktopSettings, draft: DesktopSettingsDraft): SettingsPatch {
+type SavedEnvironmentSettings = { image: string; settings: Settings };
+function environmentSettingsPatch(saved: SavedEnvironmentSettings, draft: EnvironmentSettingsDraft): SettingsPatch {
   const rules =
     !draft.vpnConnectionId || JSON.stringify(draft.lan) === JSON.stringify(exceptionRows(saved.settings.lanExceptions))
       ? saved.settings.lanExceptions
       : parseExceptions(draft.lan);
-  const patch: SettingsPatch = desktopVPNPatch(saved.settings, draft.vpnConnectionId, rules);
+  const patch: SettingsPatch = environmentVPNPatch(saved.settings, draft.vpnConnectionId, rules);
   if (draft.image !== saved.image) patch.image = draft.image;
   if (draft.memoryBytes !== saved.settings.memoryBytes) patch.memoryBytes = draft.memoryBytes;
   if (draft.nanoCpus !== saved.settings.nanoCpus) patch.nanoCpus = draft.nanoCpus;
@@ -150,19 +150,19 @@ function desktopSettingsPatch(saved: SavedDesktopSettings, draft: DesktopSetting
   if (draft.mounts !== undefined && JSON.stringify(draft.mounts) !== JSON.stringify(saved.settings.mounts ?? [])) patch.mounts = draft.mounts;
   return patch;
 }
-export function desktopSettingsChanged(saved: SavedDesktopSettings, draft: DesktopSettingsDraft): boolean {
+export function environmentSettingsChanged(saved: SavedEnvironmentSettings, draft: EnvironmentSettingsDraft): boolean {
   try {
-    return Object.keys(desktopSettingsPatch(saved, draft)).length > 0;
+    return Object.keys(environmentSettingsPatch(saved, draft)).length > 0;
   } catch {
     return true;
   } // An invalid visible draft still needs correction or Undo.
 }
-export function saveDesktopSettings<T>(
-  saved: SavedDesktopSettings,
-  draft: DesktopSettingsDraft,
+export function saveEnvironmentSettings<T>(
+  saved: SavedEnvironmentSettings,
+  draft: EnvironmentSettingsDraft,
   begin: (patch: SettingsPatch) => Promise<T>,
 ): Promise<T> | null {
-  const patch = desktopSettingsPatch(saved, draft);
+  const patch = environmentSettingsPatch(saved, draft);
   return Object.keys(patch).length ? begin(patch) : null;
 }
 

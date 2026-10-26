@@ -1,6 +1,6 @@
 deskyard type: type text into the focused window
 
-Usage: deskyard [-d NAME] type TEXT...
+Usage: deskyard [-e NAME] type TEXT...
 
 Types text into the focused window, as keystrokes. Several arguments are
 joined with spaces. Click the field first; use key for Return, Tab or
@@ -14,5 +14,5 @@ Prints: nothing
 Examples:
   deskyard type 'hello world'
 
-Where: inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)
+Where: inside an environment it acts locally; elsewhere on the chosen environment (-e NAME)
 Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop

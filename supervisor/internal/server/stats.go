@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 const (
@@ -33,14 +33,14 @@ type statsCollector struct {
 	mu      sync.Mutex
 	history map[string][]sample
 	last    map[string]statsJSON
-	running map[string]*desktopWorker
+	running map[string]*environmentWorker
 	wakeC   chan struct{}
 	lastUse time.Time
 }
 
 func newStatsCollector(s *Server) *statsCollector {
 	return &statsCollector{s: s, history: map[string][]sample{}, last: map[string]statsJSON{},
-		running: map[string]*desktopWorker{}, wakeC: make(chan struct{}, 1)}
+		running: map[string]*environmentWorker{}, wakeC: make(chan struct{}, 1)}
 }
 
 func (sc *statsCollector) wake() {
@@ -85,9 +85,9 @@ func (sc *statsCollector) reconcile(ctx context.Context) {
 	}
 	look := time.Since(sc.lastUse) < statsLinger
 	sc.mu.Unlock()
-	wanted := map[string]desktops.Desktop{}
+	wanted := map[string]environments.Environment{}
 	if look {
-		list, err := sc.s.Desktops.List(ctx)
+		list, err := sc.s.Environments.List(ctx)
 		if err != nil {
 			return
 		}
@@ -101,7 +101,7 @@ func (sc *statsCollector) reconcile(ctx context.Context) {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
 	for name, worker := range sc.running {
-		if c, ok := wanted[name]; !ok || worker.generation != desktopGeneration(c) {
+		if c, ok := wanted[name]; !ok || worker.generation != environmentGeneration(c) {
 			worker.cancel()
 			delete(sc.last, name)
 		}
@@ -110,13 +110,13 @@ func (sc *statsCollector) reconcile(ctx context.Context) {
 		if _, ok := sc.running[name]; ok {
 			continue
 		}
-		worker := startDesktopWorker(ctx, c)
+		worker := startEnvironmentWorker(ctx, c)
 		sc.running[name] = worker
 		go sc.follow(worker, c, host.CPUs, uint64(host.MemBytes))
 	}
 }
 
-func (sc *statsCollector) follow(worker *desktopWorker, c desktops.Desktop, hostCPUs int, hostMem uint64) {
+func (sc *statsCollector) follow(worker *environmentWorker, c environments.Environment, hostCPUs int, hostMem uint64) {
 	ctx := worker.ctx
 	defer close(worker.done)
 	defer worker.cancel()
@@ -165,7 +165,7 @@ func (sc *statsCollector) follow(worker *desktopWorker, c desktops.Desktop, host
 			h = h[1:]
 		}
 		sc.history[c.Name] = h
-		sc.s.events.publish(event{kind: "stats", desktopID: c.ID, data: map[string]any{
+		sc.s.events.publish(event{kind: "stats", environment: c.ID, data: map[string]any{
 			"name": c.Name, "cpuPercent": js.CPUPercent, "memBytes": js.MemBytes, "memLimit": js.MemLimit, "t": st.Time.UTC(),
 		}})
 		sc.mu.Unlock()
@@ -175,7 +175,7 @@ func (sc *statsCollector) follow(worker *desktopWorker, c desktops.Desktop, host
 func round1(f float64) float64 { return float64(int(f*10+0.5)) / 10 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
-	c, _, ok := s.desktopFor(w, r, auth.View)
+	c, _, ok := s.environmentFor(w, r, auth.View)
 	if !ok {
 		return
 	}
@@ -209,12 +209,12 @@ func newThumbnails(s *Server) *thumbnails { return &thumbnails{s: s, m: map[stri
 const thumbWidth = 480
 
 func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
-	c, _, ok := s.desktopFor(w, r, auth.View)
+	c, _, ok := s.environmentFor(w, r, auth.View)
 	if !ok {
 		return
 	}
 	if !c.Running() {
-		writeError(w, http.StatusConflict, desktops.ErrStopped.Error())
+		writeError(w, http.StatusConflict, environments.ErrStopped.Error())
 		return
 	}
 	full := r.URL.Query().Get("full") == "1"

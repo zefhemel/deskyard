@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 )
@@ -20,28 +20,28 @@ import (
 type journalEngine struct{ rolloutEngine }
 
 func (*journalEngine) ImageInspect(context.Context, string) (engine.Image, error) {
-	return engine.Image{ID: "image", Labels: map[string]string{desktops.LabelContract: desktops.Contract}}, nil
+	return engine.Image{ID: "image", Labels: map[string]string{environments.LabelContract: environments.Contract}}, nil
 }
 
 func TestVPNJournalErrorsAreSafeInPowerHTTPAndDesktopJobs(t *testing.T) {
 	e := &journalEngine{}
 	s, ts := newTestServerWith(t, e)
 	admin := login(t, ts, "admin")
-	st := s.Desktops.Networking.Connections
+	st := s.Environments.Networking.Connections
 	u, p := "user", "password"
 	conn, err := st.Create(vpn.Input{Name: "Home", Provider: "nordvpn", Country: "Netherlands", Username: &u, Password: &p})
 	if err != nil {
 		t.Fatal(err)
 	}
-	const desktopID = "012345678901234567890123456789ab"
-	e.consumer = &engine.Container{ID: "consumer", Name: "deskyard-alice", State: "exited", Labels: map[string]string{desktops.LabelManaged: "true", desktops.LabelName: "alice", desktops.LabelID: desktopID}}
+	e.consumer = &engine.Container{ID: "consumer", Name: "deskyard-alice", State: "exited", Labels: map[string]string{environments.LabelManaged: "true", environments.LabelName: "alice", environments.LabelRevision: "1", vpn.LabelConnection: conn.ID}}
+	defineEnvironments(t, s)
 	dir := filepath.Join(t.TempDir(), "private-state-sentinel")
-	path := filepath.Join(dir, "vpn", "desktops.json")
-	record := map[string]any{"id": desktopID, "name": "alice", "token": "private-token", "created": time.Now(), "settings": desktops.Settings{Image: "img", VPNConnectionID: conn.ID}, "running": true, "revision": 1, "appliedRevision": 1, "runtimeId": "gateway"}
-	if err = store.WriteJSON(path, map[string]any{desktopID: record}); err != nil {
+	path := filepath.Join(dir, "network", "transitions.json")
+	record := map[string]any{"name": "alice", "connectionRevision": 1, "appliedConnectionRevision": 1, "appliedRevision": 1, "runtimeId": "gateway"}
+	if err = store.WriteJSON(path, map[string]any{"version": 1, "transitions": []any{record}}); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.Desktops.ConfigureNetworking(st, &rolloutRuntime{}, dir); err != nil {
+	if err = s.Environments.ConfigureNetworking(st, &rolloutRuntime{}, dir); err != nil {
 		t.Fatal(err)
 	}
 	// A real filesystem failure, after loading a valid durable record. Keep
@@ -59,9 +59,9 @@ func TestVPNJournalErrorsAreSafeInPowerHTTPAndDesktopJobs(t *testing.T) {
 		name, method, path, body string
 		job                      bool
 	}{
-		{"power", "POST", "/api/desktops/alice/stop", "", false},
-		{"create", "POST", "/api/desktops", `{"name":"new-desktop","image":"img","vpnConnectionId":"` + conn.ID + `"}`, true},
-		{"recreate", "PATCH", "/api/desktops/alice", `{"vpnConnectionId":null}`, true},
+		{"power", "POST", "/api/environments/alice/start", "", false},
+		{"create", "POST", "/api/environments", `{"name":"new-desktop","image":"img","vpnConnectionId":"` + conn.ID + `"}`, true},
+		{"recreate", "PATCH", "/api/environments/alice", `{"vpnConnectionId":null}`, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req, _ := http.NewRequest(tc.method, ts.URL+tc.path, strings.NewReader(tc.body))
@@ -97,12 +97,12 @@ func TestVPNJournalErrorsAreSafeInPowerHTTPAndDesktopJobs(t *testing.T) {
 			} else if resp.StatusCode < 400 {
 				t.Fatalf("write failure reported %d: %s", resp.StatusCode, body)
 			}
-			for _, private := range []string{dir, "private-state-sentinel", "desktops.json", "not a directory", "private-token"} {
+			for _, private := range []string{dir, "private-state-sentinel", "transitions.json", "not a directory", "private-token"} {
 				if strings.Contains(string(body), private) {
 					t.Errorf("private cause in public response: %s", body)
 				}
 			}
-			got, err := s.Desktops.Get(context.Background(), "alice")
+			got, err := s.Environments.Get(context.Background(), "alice")
 			if err != nil || got.Settings.VPNConnectionID != conn.ID {
 				t.Fatalf("failed persistence changed selected policy: %+v %v", got.VPN, err)
 			}

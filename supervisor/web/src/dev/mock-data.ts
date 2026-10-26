@@ -1,5 +1,5 @@
 // Fake data for the dev-server mock (mock.ts). Never part of the build.
-import type { Account, ActivityEvent, AgentPresence, AgentSummary, CatalogImage, Desktop, Token } from "../api.ts";
+import type { Account, ActivityEvent, AgentPresence, AgentSummary, CatalogImage, Conflict, Environment, Token } from "../api.ts";
 
 const GB = 1024 ** 3;
 const HOUR = 3600 * 1000;
@@ -27,18 +27,22 @@ function agent(name: string, owner: string, inside: boolean, secsAgo: number): A
   };
 }
 
-function desktop(c: Partial<Desktop> & { name: string }): Desktop {
+function environment(c: Partial<Environment> & { name: string }): Environment {
   return {
-    id: `${c.name}-id`,
     state: "running",
+    power: c.state === "stopped" ? "stopped" : "running",
+    revision: 1,
+    appliedRevision: 1,
+    error: "",
+    conflict: "",
     startedAt: iso(HOUR),
     created: iso(30 * DAY),
     job: null,
-    folder: `${FOLDER}/${c.name}`,
+    folder: `${FOLDER}/home/${c.name}`,
     image: LATEST,
     imageTitle: "Debian XFCE",
     imageVersion: "2026.10.22",
-    autoReclaim: true,
+    memoryReclaim: true,
     updateAvailable: null,
     vpn: {state:"disabled",changedAt:"0001-01-01T00:00:00Z",exitIpObservedAt:"0001-01-01T00:00:00Z",desiredRevision:0,appliedRevision:0,idle:false},
     settings: { dockerAccess: false, memoryBytes: 0, nanoCpus: 0, camera: "", vpnConnectionId: null, lanExceptions: [], mounts: [] },
@@ -56,8 +60,8 @@ function desktop(c: Partial<Desktop> & { name: string }): Desktop {
   };
 }
 
-export const desktops: Desktop[] = [
-  desktop({
+export const environments: Environment[] = [
+  environment({
     name: "alice",
     startedAt: iso(3 * DAY),
     imageVersion: "2026.10.15",
@@ -73,15 +77,15 @@ export const desktops: Desktop[] = [
     tokens: 2,
     stats: { cpuPercent: 34, memBytes: 1.4 * GB, memLimit: 2 * GB },
   }),
-  desktop({ name: "research", startedAt: iso(5 * HOUR), access: ["anna", "sam"], viewers: ["anna"], stats: { cpuPercent: 8, memBytes: 0.9 * GB, memLimit: 16 * GB } }),
-  desktop({
+  environment({ name: "research", startedAt: iso(5 * HOUR), access: ["anna", "sam"], viewers: ["anna"], stats: { cpuPercent: 8, memBytes: 0.9 * GB, memLimit: 16 * GB } }),
+  environment({
     name: "build-bot",
     startedAt: iso(12 * 60 * 1000),
     settings: { dockerAccess: false, memoryBytes: 4 * GB, nanoCpus: 4e9, camera: "", vpnConnectionId: null, lanExceptions: [], mounts: [] },
     agents: [agent("a terminal", "", true, 1)],
     stats: { cpuPercent: 91, memBytes: 3.1 * GB, memLimit: 4 * GB },
   }),
-  desktop({
+  environment({
     name: "notes",
     startedAt: iso(2 * DAY),
     imageVersion: "2026.10.15",
@@ -89,9 +93,10 @@ export const desktops: Desktop[] = [
     access: ["anna"],
     stats: { cpuPercent: 2, memBytes: 0.7 * GB, memLimit: 16 * GB },
   }),
-  desktop({ name: "data-lab", state: "creating", startedAt: "", imageVersion: "" }),
-  desktop({ name: "scratch", state: "stopped", startedAt: "", imageVersion: "2026.10.15", updateAvailable: "2026.10.22" }),
-  desktop({
+  environment({ name: "data-lab", state: "creating", startedAt: "", imageVersion: "" }),
+  // A saved change that applies on the next start.
+  environment({ name: "scratch", state: "stopped", startedAt: "", imageVersion: "2026.10.15", updateAvailable: "2026.10.22", revision: 3, appliedRevision: 2 }),
+  environment({
     name: "work",
     state: "stopped",
     startedAt: "",
@@ -99,14 +104,25 @@ export const desktops: Desktop[] = [
     imageTitle: "Work, signed in",
     imageVersion: "2026-10-20 09:14",
     updateAvailable: "2026-10-22 08:30",
+    // A change whose apply failed: the old container was put back.
+    revision: 5,
+    appliedRevision: 4,
+    error: "mount source /srv/photos is missing on the engine host",
   }),
+  // Defined but without a container: it's built on start.
+  environment({ name: "archive", state: "stopped", power: "stopped", startedAt: "", appliedRevision: 0 }),
+];
+
+/** Containers of this supervisor's that it can't match to a definition. */
+export const conflicts: Conflict[] = [
+  { name: "old-lab", kind: "unknown", containers: ["deskyard-old-lab"], message: "deskyard-old-lab claims environment old-lab, which isn't defined" },
 ];
 
 export const accounts: (Account & { password: string })[] = [
-  { username: "zef", admin: true, desktops: [], created: iso(30 * DAY), lastLogin: iso(0), password: "zef" },
-  { username: "anna", admin: false, desktops: ["alice", "research", "notes"], created: iso(20 * DAY), lastLogin: iso(60 * 1000), password: "anna" },
-  { username: "sam", admin: false, desktops: ["research"], created: iso(10 * DAY), lastLogin: iso(3 * DAY), password: "sam" },
-  { username: "ci", admin: false, desktops: [], created: iso(2 * DAY), lastLogin: null, password: "ci" },
+  { username: "zef", admin: true, environments: [], created: iso(30 * DAY), lastLogin: iso(0), password: "zef" },
+  { username: "anna", admin: false, environments: ["alice", "research", "notes"], created: iso(20 * DAY), lastLogin: iso(60 * 1000), password: "anna" },
+  { username: "sam", admin: false, environments: ["research"], created: iso(10 * DAY), lastLogin: iso(3 * DAY), password: "sam" },
+  { username: "ci", admin: false, environments: [], created: iso(2 * DAY), lastLogin: null, password: "ci" },
 ];
 
 function customImage(slug: string, title: string, description: string, over: Partial<CatalogImage>): CatalogImage {
@@ -115,7 +131,7 @@ function customImage(slug: string, title: string, description: string, over: Par
     title,
     version: "2026-10-20 09:14",
     description,
-    desktops: [],
+    environments: [],
     behind: [],
     checked: null,
     installed: true,
@@ -130,7 +146,7 @@ export const images: CatalogImage[] = [
     title: "Debian XFCE",
     version: "2026.10.22",
     description: "Debian trixie with XFCE, Chromium, Flatpak, mise and uv",
-    desktops: [],
+    environments: [],
     behind: [],
     checked: iso(2 * HOUR),
     ...PLAIN,
@@ -141,14 +157,14 @@ export const images: CatalogImage[] = [
     title: "Debian XFCE, beta",
     version: "2026.10.22-beta",
     description: "Next week's image, for trying changes",
-    desktops: [],
+    environments: [],
     behind: [],
     checked: iso(2 * HOUR),
     ...PLAIN,
   },
   ...([ ["mate", "Debian MATE", "MATE with Arc styling, Chromium and Software for installing apps."] ] as const).map(([name, title, description]) => ({
     ...PLAIN, ref: `ghcr.io/zefhemel/deskyard-debian-${name}:latest`, title, description,
-    version: "", desktops: [], behind: [], checked: null, installed: false, official: true,
+    version: "", environments: [], behind: [], checked: null, installed: false, official: true,
   })),
   customImage("python-lab", "Python lab", "Python 3.13, uv and JupyterLab", {}),
   customImage("work-signed-in", "Work, signed in", "Chromium and the work apps, signed in to everything", {}),
@@ -176,11 +192,11 @@ export const processRows: [number, string, number, number, string, string][] = [
   [1, "root", 0.0, 24576, "3-01:12:46", "/usr/bin/python3 /usr/bin/supervisord -c /etc/supervisor/supervisord.conf"],
 ];
 
-/** Which desktops use which image, recomputed from the desktops. */
+/** Which environments use which image, recomputed from the environments. */
 export function refreshImages(): void {
   for (const img of images) {
-    const on = desktops.filter((c) => c.image === img.ref);
-    img.desktops = on.map((c) => c.name);
+    const on = environments.filter((c) => c.image === img.ref);
+    img.environments = on.map((c) => c.name);
     img.behind = on.filter((c) => c.updateAvailable).map((c) => c.name);
   }
 }
@@ -221,6 +237,6 @@ function summaryOf(a: AgentPresence): AgentSummary {
   return { ...a, now: [], recent: [{ kind: "screen", t: ago(280), action: "screenshot", count: 1 }] };
 }
 
-export function activityOf(c: Desktop): ActivityEvent {
+export function activityOf(c: Environment): ActivityEvent {
   return { name: c.name, agents: c.agents.map(summaryOf) };
 }

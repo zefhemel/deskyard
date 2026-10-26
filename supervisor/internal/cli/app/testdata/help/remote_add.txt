@@ -1,15 +1,16 @@
-deskyard remote add: save a desktop as a remote
+deskyard remote add: save an environment as a remote
 
-Usage: deskyard [-d NAME] remote add NAME URL --token dyt_…
+Usage: deskyard [-e NAME] remote add NAME URL --token dyt_…
 
-Checks the token against the desktop's remote access API and saves the remote
-in remotes.json ($XDG_CONFIG_HOME/deskyard, default ~/.config/deskyard; mode
-0600). URL is the desktop's address, like https://host/alice. Tokens come from
-the desktop's Remote access tab. The first remote becomes the default.
+Checks the token against the environment's remote access API and saves the
+remote in remotes.json ($XDG_CONFIG_HOME/deskyard, default ~/.config/deskyard;
+mode 0600). URL is the environment's address, like https://host/alice. Tokens
+come from the environment's Remote access tab. The first remote becomes the
+default.
 
 Arguments:
-  NAME       string      required  local name for the remote (letters, digits, . _ -)
-  URL        string      required  the desktop's URL, e.g. https://host/alice
+  NAME       string      required  local name for the remote, used with -e NAME (letters, digits, . _ -)
+  URL        string      required  the environment's URL, e.g. https://host/alice
 
 Options:
   --token TOKEN        access token (dyt_…); defaults to $DESKYARD_TOKEN
@@ -17,7 +18,7 @@ Options:
 Prints: a confirmation line
 
 Examples:
-  deskyard remote add alice https://desktops.example.com/alice --token dyt_…
+  deskyard remote add alice https://deskyard.example.com/alice --token dyt_…
 
 Where: on this machine (no remote needed)
 Exit codes: 0 ok, 1 error, 2 usage error

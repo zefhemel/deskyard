@@ -1,15 +1,19 @@
 package server
 
 import (
-	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 func TestImageAuthoringRoutesRemoved(t *testing.T) {
 	bt := newCatalogTest(t)
-	for _, req := range []struct{ method, path string }{{"GET", "/api/recipes"}, {"GET", "/api/recipes/template?base=img"}, {"POST", "/api/recipes"}, {"PUT", "/api/recipes/test"}, {"DELETE", "/api/recipes/test"}, {"POST", "/api/recipes/test/rebuild"}, {"GET", "/api/desktops/alice/image-scan"}, {"POST", "/api/desktops/alice/image"}} {
+	for _, req := range []struct{ method, path string }{{"GET", "/api/recipes"}, {"GET", "/api/recipes/template?base=img"}, {"POST", "/api/recipes"}, {"PUT", "/api/recipes/test"}, {"DELETE", "/api/recipes/test"}, {"POST", "/api/recipes/test/rebuild"}, {"GET", "/api/environments/alice/image-scan"}, {"POST", "/api/environments/alice/image"}} {
 		code, body := bt.do(bt.admin, req.method, req.path, map[string]string{})
 		if code != 404 {
 			t.Errorf("%s %s = %d %s; want 404", req.method, req.path, code, body)
@@ -40,7 +44,7 @@ func TestRemoveLegacyCustomCatalogEntryPreservesImageAndSource(t *testing.T) {
 	if err := bt.s.images.put(catalogEntry{Ref: ref, Custom: true}); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(bt.s.StateDir, "recipes.json")
+	path := filepath.Join(bt.s.Layout.Data, "recipes.json")
 	original := []byte("legacy source stays untouched")
 	if err := os.WriteFile(path, original, 0600); err != nil {
 		t.Fatal(err)
@@ -54,6 +58,32 @@ func TestRemoveLegacyCustomCatalogEntryPreservesImageAndSource(t *testing.T) {
 	}
 	if got, err := os.ReadFile(path); err != nil || string(got) != string(original) {
 		t.Fatalf("source changed: %q %v", got, err)
+	}
+}
+
+// A definition references its image whether or not it has a container.
+func TestRemoveImageRefusedForContainerlessEnvironment(t *testing.T) {
+	bt := newCatalogTest(t)
+	ref := "deskyard-custom/existing:latest"
+	bt.e.addImage(ref, "sha256:prebuilt", "user")
+	if err := bt.s.images.put(catalogEntry{Ref: ref, Newest: "sha256:prebuilt", Custom: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, image := range []environments.ImageRef{{Ref: ref, ID: "sha256:prebuilt"}, {Ref: "elsewhere/other:1", ID: "sha256:prebuilt"}} {
+		def := environments.Definition{Name: "alice", Created: time.Now().UTC(), Revision: 1, Image: image,
+			Network: environments.Network{Kind: environments.NetworkIsolated}, Power: environments.PowerStopped}
+		if err := bt.s.Environments.Defs.Put(def); err != nil {
+			t.Fatal(err)
+		}
+		if code, body := bt.do(bt.admin, "DELETE", "/api/images?ref="+ref, nil); code != 409 || !strings.Contains(string(body), "alice") {
+			t.Fatalf("removed an image a stopped environment without a container uses (%+v): %d %s", image, code, body)
+		}
+	}
+	if err := bt.s.Environments.Defs.Delete("alice"); err != nil {
+		t.Fatal(err)
+	}
+	if code, body := bt.do(bt.admin, "DELETE", "/api/images?ref="+ref, nil); code != 204 {
+		t.Fatalf("remove unused: %d %s", code, body)
 	}
 }
 

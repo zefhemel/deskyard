@@ -33,14 +33,14 @@ class CaptureTransportTests(unittest.TestCase):
     def test_capture_reports_use_request_transport_once(self):
         for kind in ("mic", "cam"):
             with self.subTest(kind=kind):
-                route = loopback_route(f"/api/desktops/desktop-1/{kind}")
+                route = loopback_route(f"/api/environments/desktop-1/{kind}")
                 dispatch(route)
                 route.fetch.assert_called_once_with(max_redirects=0, max_retries=0)
                 route.fulfill.assert_called_once_with(response=route.fetch.return_value)
                 route.fallback.assert_not_called()
 
     def test_failed_capture_is_aborted_without_replaying_it(self):
-        route = loopback_route("/api/desktops/desktop-1/mic")
+        route = loopback_route("/api/environments/desktop-1/mic")
         route.fetch.side_effect = Error("connection lost after sending request")
         dispatch(route)
         route.fetch.assert_called_once_with(max_redirects=0, max_retries=0)
@@ -50,10 +50,10 @@ class CaptureTransportTests(unittest.TestCase):
 
     def test_other_mutations_and_streams_remain_native(self):
         for path, method in (
-            ("/api/desktops", "POST"),
-            ("/api/desktops/desktop-1", "PATCH"),
-            ("/api/desktops/desktop-1/restart", "POST"),
-            ("/api/desktops/desktop-1/mic", "DELETE"),
+            ("/api/environments", "POST"),
+            ("/api/environments/desktop-1", "PATCH"),
+            ("/api/environments/desktop-1/restart", "POST"),
+            ("/api/environments/desktop-1/mic", "DELETE"),
             ("/desktop-1/screen/api/websockets", "GET"),
             ("/api/events", "GET"),
         ):
@@ -64,14 +64,14 @@ class CaptureTransportTests(unittest.TestCase):
                 route.fetch.assert_not_called()
 
     def test_mapped_insecure_hosts_keep_capture_reports_native(self):
-        route = loopback_route("/api/desktops/desktop-1/mic")
+        route = loopback_route("/api/environments/desktop-1/mic")
         route.request.url = route.request.url.replace("127.0.0.1", "deskyard.invalid")
         dispatch(route)
         route.fallback.assert_called_once()
         route.fetch.assert_not_called()
 
     def test_remote_hosts_keep_capture_reports_native(self):
-        route = loopback_route("/api/desktops/desktop-1/mic")
+        route = loopback_route("/api/environments/desktop-1/mic")
         route.request.url = route.request.url.replace("127.0.0.1", "example.com")
         dispatch(route)
         route.fallback.assert_called_once()
@@ -111,20 +111,20 @@ class CaptureRequestTests(unittest.TestCase):
                     page = browser.new_page()
                     page.goto(f"http://127.0.0.1:{server.server_port}/")
                     result = page.evaluate("""async () => {
-                        const r = await fetch('/api/desktops/desktop-1/mic', {
+                        const r = await fetch('/api/environments/desktop-1/mic', {
                             method: 'POST', headers: {'Content-Type': 'application/json'},
                             body: JSON.stringify({on: true, tab: 'viewer-tab', seq: 7})
                         });
                         return {status: r.status, body: await r.json()};
                     }""")
                     self.assertEqual(result, {"status": 409, "body": {"error": "no stream"}})
-                    self.assertEqual(received, [("/api/desktops/desktop-1/mic", "session=viewer", "application/json",
+                    self.assertEqual(received, [("/api/environments/desktop-1/mic", "session=viewer", "application/json",
                                                  {"on": True, "tab": "viewer-tab", "seq": 7})])
                     # A rapid capture toggle schedules its badge report after
                     # the click returns. Python must dispatch its route while
                     # the test waits for the browser's media state to settle.
                     page.evaluate("""() => {
-                        setTimeout(() => fetch('/api/desktops/desktop-1/mic', {
+                        setTimeout(() => fetch('/api/environments/desktop-1/mic', {
                             method: 'POST', headers: {'Content-Type': 'application/json'},
                             body: JSON.stringify({on: false, tab: 'viewer-tab', seq: 8})
                         }), 50);

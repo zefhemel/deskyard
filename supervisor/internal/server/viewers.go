@@ -12,10 +12,10 @@ import (
 // each belongs to, the browser tab it comes from, whether that tab's mic and
 // camera are on, and a way to close it (when access is revoked).
 type conn struct {
-	username  string
-	tab       string // the page's id for its browser tab ("" if it sent none)
-	desktopID string
-	cancel    context.CancelFunc
+	username    string
+	tab         string // the page's id for its browser tab ("" if it sent none)
+	environment string
+	cancel      context.CancelFunc
 	// guarded by viewers.mu: what the tab's page last said, and the sequence
 	// number it said it with (a page numbers its reports; older ones lose).
 	on  [captureKinds]bool
@@ -118,12 +118,12 @@ func (v *viewers) capturing(name string, kind capture) []string {
 }
 
 // revoke closes the connections of an account to desktops it may no longer use.
-func (v *viewers) revoke(username string, stillAllowed func(desktopID string) bool) {
+func (v *viewers) revoke(username string, stillAllowed func(environment string) bool) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	for _, conns := range v.byName {
 		for c := range conns {
-			if c.username == username && !stillAllowed(c.desktopID) {
+			if c.username == username && !stillAllowed(c.environment) {
 				c.cancel()
 			}
 		}
@@ -142,13 +142,13 @@ func (v *viewers) closeAll(name string) {
 // publishViewers tells the UI who is on a desktop and what is mapped. Calls
 // are coalesced per desktop (see throttle), so a client churning mappings
 // can't flood the event stream.
-func (s *Server) publishViewers(name, desktopID string) {
-	s.viewersPub.do(name, func() { s.sendViewers(name, desktopID) })
-	s.publishActivity(name, desktopID) // a token's forward item follows its mappings
+func (s *Server) publishViewers(name, environment string) {
+	s.viewersPub.do(name, func() { s.sendViewers(name, environment) })
+	s.publishActivity(name, environment) // a token's forward item follows its mappings
 }
 
-func (s *Server) sendViewers(name, desktopID string) {
-	s.events.publish(event{kind: "viewers", desktopID: desktopID,
+func (s *Server) sendViewers(name, environment string) {
+	s.events.publish(event{kind: "viewers", environment: environment,
 		data: map[string]any{"name": name, "viewers": s.viewers.names(name), "mics": s.viewers.mics(name), "cams": s.viewers.cams(name), "forwards": s.forwards.list(name),
 			"agents": s.activity.Present(name)}})
 }

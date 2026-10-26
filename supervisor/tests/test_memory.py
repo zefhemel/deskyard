@@ -15,11 +15,11 @@ def test_reclaim_button_preserves_browser_state(admin, supervisor, desktop, name
     if not support["enabled"]:
         with sync_playwright() as pw:
             browser, page = signed_in(pw, supervisor.base)
-            page.goto(f"{supervisor.base}/desktops/{name}")
+            page.goto(f"{supervisor.base}/environments/{name}")
             expect(page.get_by_role("button", name="Reclaim memory", exact=True)).to_be_disabled(timeout=15000)
             expect(page.get_by_text("Unavailable:", exact=False)).to_be_visible()
             browser.close()
-        assert admin.post(f"/api/desktops/{name}/reclaim-memory").status_code == 501
+        assert admin.post(f"/api/environments/{name}/reclaim-memory").status_code == 501
         pytest.skip("boot probe disabled reclamation: " + support["reason"])
     assert "memory reclamation enabled" in supervisor.logs()
     token = make_token(admin, name)
@@ -35,7 +35,7 @@ def test_reclaim_button_preserves_browser_state(admin, supervisor, desktop, name
         remote.close()  # Disconnect; leave the browser and state alive.
 
         browser, page = signed_in(pw, supervisor.base)
-        page.goto(f"{supervisor.base}/desktops/{name}")
+        page.goto(f"{supervisor.base}/environments/{name}")
         button = page.get_by_role("button", name="Reclaim memory", exact=True)
         expect(button).to_be_visible(timeout=15000)
         with page.expect_response(lambda r: r.url.endswith("/reclaim-memory") and r.request.method == "POST", timeout=60000) as response:
@@ -68,15 +68,15 @@ def test_reclaim_button_preserves_browser_state(admin, supervisor, desktop, name
         # Regular accounts may use the desktop, but cannot invoke host controls.
         user = make_account(admin, [name])
         regular = supervisor.client().login(user, "pw")
-        assert regular.post(f"/api/desktops/{name}/reclaim-memory").status_code == 403
+        assert regular.post(f"/api/environments/{name}/reclaim-memory").status_code == 403
         regular_browser, regular_page = signed_in(pw, supervisor.base, user=user, password="pw")
-        regular_page.goto(f"{supervisor.base}/desktops/{name}")
+        regular_page.goto(f"{supervisor.base}/environments/{name}")
         expect(regular_page.get_by_role("heading", name=name, exact=True)).to_be_visible(timeout=15000)
         expect(regular_page.get_by_role("button", name="Reclaim memory", exact=True)).to_have_count(0)
         regular_browser.close()
 
-        assert admin.post(f"/api/desktops/{name}/stop").status_code == 204
-        assert admin.post(f"/api/desktops/{name}/reclaim-memory").status_code == 409
+        assert admin.post(f"/api/environments/{name}/stop").status_code == 204
+        assert admin.post(f"/api/environments/{name}/reclaim-memory").status_code == 409
         page.reload()
         expect(page.get_by_role("button", name="Start", exact=True).first).to_be_visible(timeout=15000)
         expect(page.get_by_role("button", name="Reclaim memory", exact=True)).to_have_count(0)
@@ -92,7 +92,7 @@ def test_reclaim_button_disabled_for_unsupported_host(supervisor, desktop, name)
             "total": 1, "cameras": None,
             "memoryReclaim": {"enabled": False, "reason": "The Linux host has no swap."},
         }))
-        page.goto(f"{supervisor.base}/desktops/{name}")
+        page.goto(f"{supervisor.base}/environments/{name}")
         expect(page.get_by_role("button", name="Reclaim memory", exact=True)).to_be_disabled(timeout=15000)
         expect(page.get_by_text("Unavailable: The Linux host has no swap.", exact=True)).to_be_visible()
         browser.close()
@@ -100,10 +100,10 @@ def test_reclaim_button_disabled_for_unsupported_host(supervisor, desktop, name)
 
 def test_automatic_memory_opt_out_saves_without_restart(admin, supervisor, desktop, name, tmp_path):
     before = admin.desktop(name)
-    assert before["autoReclaim"] is True
+    assert before["memoryReclaim"] is True
     with sync_playwright() as pw:
         browser, page = signed_in(pw, supervisor.base)
-        page.goto(f"{supervisor.base}/desktops/{name}?tab=settings")
+        page.goto(f"{supervisor.base}/environments/{name}?tab=settings")
         toggle = page.get_by_role("checkbox", name="Automatically reclaim idle memory")
         expect(toggle).to_be_checked(timeout=15000)
         with page.expect_response(lambda r: r.url.endswith("/memory-policy") and r.request.method == "PUT") as response:
@@ -111,10 +111,10 @@ def test_automatic_memory_opt_out_saves_without_restart(admin, supervisor, deskt
         assert response.value.status == 204
         expect(toggle).not_to_be_checked()
         after = admin.desktop(name)
-        assert after["autoReclaim"] is False
+        assert after["memoryReclaim"] is False
         assert after["state"] == "running"
         assert after["startedAt"] == before["startedAt"]
-        assert after["id"] == before["id"]
+        assert after["revision"] == before["revision"] and after["appliedRevision"] == before["appliedRevision"]
         page.reload()
         expect(toggle).not_to_be_checked(timeout=15000)
         page.set_viewport_size({"width": 390, "height": 844})
@@ -125,5 +125,5 @@ def test_automatic_memory_opt_out_saves_without_restart(admin, supervisor, deskt
             toggle.check()
         assert response.value.status == 204
         expect(toggle).to_be_checked()
-        assert admin.desktop(name)["autoReclaim"] is True
+        assert admin.desktop(name)["memoryReclaim"] is True
         browser.close()

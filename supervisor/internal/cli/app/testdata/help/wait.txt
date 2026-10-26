@@ -1,6 +1,6 @@
 deskyard wait: pause for a while
 
-Usage: deskyard [-d NAME] wait SECONDS
+Usage: deskyard [-e NAME] wait SECONDS
 
 Pauses for SECONDS, e.g. for a page or app to load before the next screenshot.
 
@@ -12,5 +12,5 @@ Prints: nothing
 Examples:
   deskyard wait 2
 
-Where: inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)
+Where: inside an environment it acts locally; elsewhere on the chosen environment (-e NAME)
 Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop

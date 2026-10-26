@@ -10,7 +10,7 @@ impairments combine:
 - stall_every_s / stall_ms: every N seconds all traffic is held for M ms (Wi-Fi
   hiccups).
 
-    with DelayProxy("127.0.0.1", 8080, delay_ms=60, jitter_ms=20) as proxy:
+    with DelayProxy("127.0.0.1", 7343, delay_ms=60, jitter_ms=20) as proxy:
         page.goto(f"http://127.0.0.1:{proxy.port}/")
 
 It runs its own asyncio loop in a thread, so sync tests (Playwright's sync API) can use it.

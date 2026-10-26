@@ -38,7 +38,7 @@ test:
 # image is built from this checkout first (as TEST_IMAGE), so it has the
 # contract this supervisor checks.
 TEST_IMAGE ?= deskyard-debian-xfce:test
-ENGINE_PACKAGES := ./internal/desktops/ ./internal/engine/...
+ENGINE_PACKAGES := ./internal/environments/ ./internal/engine/...
 test-engine:
 ifdef CC_TEST_IMAGE
 	$(GO) test -tags engine $(ENGINE_PACKAGES)

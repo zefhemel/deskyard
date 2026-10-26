@@ -1,15 +1,15 @@
 deskyard shell: interactive login shell
 
-Usage: deskyard [-d NAME] shell
+Usage: deskyard [-e NAME] shell
 
-Opens an interactive bash login shell on the desktop in your terminal (raw
+Opens an interactive bash login shell in the environment in your terminal (raw
 mode, resizes follow your window). Exit with `exit` or Ctrl-D. For scripted
 use, prefer exec.
 
 Prints: the terminal session
 
 Examples:
-  deskyard -d alice shell
+  deskyard -e alice shell
 
-Where: on the chosen remote (-d NAME); inside a desktop without a remote it acts locally
+Where: on the chosen environment (-e NAME); inside an environment without one chosen it acts locally
 Exit codes: the shell's exit code; 1 when it couldn't start

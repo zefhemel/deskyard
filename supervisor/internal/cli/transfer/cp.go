@@ -192,7 +192,7 @@ func (w *downloadWriter) start() error {
 		}
 		w.file, w.final, w.out = f, target, f
 	default:
-		return fmt.Errorf("unexpected answer from the desktop (is it a Deskyard desktop image?)")
+		return fmt.Errorf("unexpected answer from the environment (is it a Deskyard desktop image?)")
 	}
 	return nil
 }
@@ -223,7 +223,7 @@ func (w *downloadWriter) finish(ok bool) error {
 		}
 	}
 	if ok && w.kind == 0 && w.dst != "-" {
-		return errors.New("unexpected empty answer from the desktop")
+		return errors.New("unexpected empty answer from the environment")
 	}
 	if err == nil && ok {
 		err = w.err
@@ -270,9 +270,9 @@ func LocalCopy(src, dst string) error {
 func remoteFailure(what string, code int, stderr string) error {
 	msg := strings.TrimSpace(stderr)
 	if msg == "" {
-		return fmt.Errorf("%s failed on the desktop (exit %d)", what, code)
+		return fmt.Errorf("%s failed in the environment (exit %d)", what, code)
 	}
-	return fmt.Errorf("%s failed on the desktop (exit %d): %s", what, code, msg)
+	return fmt.Errorf("%s failed in the environment (exit %d): %s", what, code, msg)
 }
 
 // Classify recognises the argv of Upload and Download as the supervisor

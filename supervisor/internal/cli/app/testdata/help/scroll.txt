@@ -1,6 +1,6 @@
 deskyard scroll: scroll at X Y
 
-Usage: deskyard [-d NAME] scroll X Y up|down|left|right [N]
+Usage: deskyard [-e NAME] scroll X Y up|down|left|right [N]
 
 Moves the mouse to X Y and scrolls N notches (default 3) in a direction.
 
@@ -15,5 +15,5 @@ Prints: nothing
 Examples:
   deskyard scroll 640 400 down 5
 
-Where: inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)
+Where: inside an environment it acts locally; elsewhere on the chosen environment (-e NAME)
 Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop

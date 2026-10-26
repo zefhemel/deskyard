@@ -1,6 +1,6 @@
 deskyard remote remove: forget a remote
 
-Usage: deskyard [-d NAME] remote remove NAME
+Usage: deskyard [-e NAME] remote remove NAME
 
 Removes a saved remote (the token itself stays valid until someone revokes it
 on the Remote access tab).

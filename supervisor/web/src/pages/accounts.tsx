@@ -48,15 +48,15 @@ export function AccountsPage() {
                   </td>
                   <td class={td}>
                     {a.admin ? (
-                      <span class="text-muted">Every desktop</span>
-                    ) : a.desktops.length ? (
+                      <span class="text-muted">Every environment</span>
+                    ) : a.environments.length ? (
                       <div class="flex flex-wrap gap-[5px]">
-                        {a.desktops.map((c) => (
+                        {a.environments.map((c) => (
                           <Tag key={c}>{c}</Tag>
                         ))}
                       </div>
                     ) : (
-                      <span class="text-muted">No desktops yet</span>
+                      <span class="text-muted">No environments yet</span>
                     )}
                   </td>
                   <td class={`${td} whitespace-nowrap`}>{a.username === me.username ? "Now" : ago(a.lastLogin)}</td>
@@ -125,7 +125,7 @@ function DeleteAccountDialog({ account: a, self, onClose, onDeleted }: { account
       title={`Delete ${a.username}?`}
       intro={
         <>
-          {a.username} is signed out everywhere, and their access tokens are revoked. Their desktops stay.
+          {a.username} is signed out everywhere, and their access tokens are revoked. Their environments stay.
           {self && " This is your own account: you'll be signed out."}
         </>
       }

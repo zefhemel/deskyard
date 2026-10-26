@@ -4,7 +4,7 @@ import { api, type AgentSummary as Summary } from "../api.ts";
 import { useLive, useNow } from "../live.tsx";
 import { nowLine, recentLine } from "../lib/activity-format.ts";
 
-/** The agents' summaries of a desktop: loaded on first use, then kept current by activity events. */
+/** The agents' summaries of an environment: loaded on first use, then kept current by activity events. */
 export type ActivityState = { status: "loading" | "failed"; agents: null } | { status: "ready"; agents: Summary[] };
 
 export function useActivity(name: string): ActivityState {

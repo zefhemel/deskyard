@@ -1,5 +1,5 @@
-// Package accounts keeps the supervisor's accounts and which desktops each
-// may use, in accounts.json.
+// Package accounts keeps the supervisor's accounts and which environments
+// each may use, in accounts.json. Grants key on environment names.
 package accounts
 
 import (
@@ -20,20 +20,22 @@ import (
 )
 
 type Account struct {
-	Username           string            `json:"username"`
-	PasswordHash       string            `json:"passwordHash"`
-	Admin              bool              `json:"admin"`
-	SessionEpoch       int               `json:"sessionEpoch"`
-	TokenEpoch         uint64            `json:"tokenEpoch,omitempty"`
-	DesktopTokenEpochs map[string]uint64 `json:"desktopTokenEpochs,omitempty"`
-	Desktops           []string          `json:"desktops"` // desktop IDs (the deskyard.id label)
-	Created            time.Time         `json:"created"`
-	LastLogin          time.Time         `json:"lastLogin,omitzero"`
+	Username     string `json:"username"`
+	PasswordHash string `json:"passwordHash"`
+	Admin        bool   `json:"admin"`
+	SessionEpoch int    `json:"sessionEpoch"`
+	TokenEpoch   uint64 `json:"tokenEpoch,omitempty"`
+	// EnvironmentTokenEpochs counts, per environment name, the times this
+	// account lost access to it; agent tokens record the count they were made at.
+	EnvironmentTokenEpochs map[string]uint64 `json:"environmentTokenEpochs,omitempty"`
+	Environments           []string          `json:"environments"` // environment names
+	Created                time.Time         `json:"created"`
+	LastLogin              time.Time         `json:"lastLogin,omitzero"`
 }
 
-// HasAccess reports whether the account may use the desktop.
-func (a Account) HasAccess(desktopID string) bool {
-	return a.Admin || slices.Contains(a.Desktops, desktopID)
+// HasAccess reports whether the account may use the named environment.
+func (a Account) HasAccess(name string) bool {
+	return a.Admin || slices.Contains(a.Environments, name)
 }
 
 var (
@@ -64,8 +66,12 @@ type Store struct {
 	OnChange func(usernames ...string)
 }
 
-func Load(stateDir string) (*Store, error) {
-	s := &Store{path: filepath.Join(stateDir, "accounts.json")}
+// Load reads dataDir/accounts.json (mode 0600: it holds password hashes).
+func Load(dataDir string) (*Store, error) {
+	s := &Store{path: filepath.Join(dataDir, "accounts.json")}
+	if err := store.Restrict(s.path); err != nil {
+		return nil, err
+	}
 	var f file
 	if err := store.ReadJSON(s.path, &f); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
@@ -139,26 +145,26 @@ func (s *Store) Get(username string) (Account, bool) {
 }
 
 func clone(a Account) Account {
-	a.Desktops = slices.Clone(a.Desktops)
-	a.DesktopTokenEpochs = maps.Clone(a.DesktopTokenEpochs)
+	a.Environments = slices.Clone(a.Environments)
+	a.EnvironmentTokenEpochs = maps.Clone(a.EnvironmentTokenEpochs)
 	return a
 }
 
 // retainTokenRevocations makes authorization loss survive later grants and
 // username reuse. A role change invalidates tokens account-wide; access changes
-// only advance the affected desktop's revision.
+// only advance the affected environment's revision.
 func retainTokenRevocations(before Account, after *Account) {
 	after.TokenEpoch = before.TokenEpoch
-	after.DesktopTokenEpochs = maps.Clone(before.DesktopTokenEpochs)
+	after.EnvironmentTokenEpochs = maps.Clone(before.EnvironmentTokenEpochs)
 	if before.Admin != after.Admin {
 		after.TokenEpoch++
 	}
-	for _, id := range before.Desktops {
-		if !after.HasAccess(id) {
-			if after.DesktopTokenEpochs == nil {
-				after.DesktopTokenEpochs = map[string]uint64{}
+	for _, name := range before.Environments {
+		if !after.HasAccess(name) {
+			if after.EnvironmentTokenEpochs == nil {
+				after.EnvironmentTokenEpochs = map[string]uint64{}
 			}
-			after.DesktopTokenEpochs[id] = before.DesktopTokenEpochs[id] + 1
+			after.EnvironmentTokenEpochs[name] = before.EnvironmentTokenEpochs[name] + 1
 		}
 	}
 }
@@ -184,7 +190,7 @@ func (s *Store) admins() int {
 	return n
 }
 
-func (s *Store) Create(username, password string, admin bool, desktops []string) (Account, error) {
+func (s *Store) Create(username, password string, admin bool, environments []string) (Account, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	username = strings.ToLower(username)
@@ -198,9 +204,9 @@ func (s *Store) Create(username, password string, admin bool, desktops []string)
 		return Account{}, errors.New("a password is required")
 	}
 	a := Account{Username: username, PasswordHash: auth.HashPassword(password), Admin: admin,
-		Desktops: slices.Clone(desktops), Created: time.Now().UTC()}
-	if a.Desktops == nil {
-		a.Desktops = []string{}
+		Environments: slices.Clone(environments), Created: time.Now().UTC()}
+	if a.Environments == nil {
+		a.Environments = []string{}
 	}
 	if err := s.publish(append(s.next(), a)); err != nil {
 		return Account{}, err
@@ -279,21 +285,22 @@ func (s *Store) TouchLogin(username string) error {
 	return nil
 }
 
-// SetAccess makes exactly the given accounts (besides admins) able to use the desktop.
-func (s *Store) SetAccess(desktopID string, usernames []string) error {
+// SetAccess makes exactly the given accounts (besides admins) able to use
+// the named environment.
+func (s *Store) SetAccess(name string, usernames []string) error {
 	s.mu.Lock()
 	var changed []string
 	next := s.next()
 	for i := range next {
 		a := &next[i]
 		want := slices.Contains(usernames, a.Username)
-		has := slices.Contains(a.Desktops, desktopID)
+		has := slices.Contains(a.Environments, name)
 		switch {
 		case want && !has:
-			a.Desktops = append(a.Desktops, desktopID)
+			a.Environments = append(a.Environments, name)
 			changed = append(changed, a.Username)
 		case !want && has:
-			a.Desktops = slices.DeleteFunc(a.Desktops, func(id string) bool { return id == desktopID })
+			a.Environments = slices.DeleteFunc(a.Environments, func(n string) bool { return n == name })
 			changed = append(changed, a.Username)
 		}
 		retainTokenRevocations(s.list[i], a)
@@ -306,25 +313,39 @@ func (s *Store) SetAccess(desktopID string, usernames []string) error {
 	return err
 }
 
-// WithAccess lists the regular accounts that may use the desktop.
-func (s *Store) WithAccess(desktopID string) []string {
+// WithAccess lists the regular accounts that may use the named environment.
+func (s *Store) WithAccess(name string) []string {
 	var out []string
 	for _, a := range s.List() {
-		if !a.Admin && slices.Contains(a.Desktops, desktopID) {
+		if !a.Admin && slices.Contains(a.Environments, name) {
 			out = append(out, a.Username)
 		}
 	}
 	return out
 }
 
-// Forget removes desktop IDs that aren't in keep (when known is false for them).
-func (s *Store) Forget(isGone func(desktopID string) bool) error {
+// Forget removes every grant of the named environment, when it is removed or
+// before its name is used again.
+func (s *Store) Forget(name string) error {
+	return s.Retain(func(n string) bool { return n != name })
+}
+
+// Retain keeps only the grants of environments keep accepts; at startup it
+// drops those of names without a definition. It writes only on a change.
+func (s *Store) Retain(keep func(name string) bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	next := s.next()
+	next, changed := s.next(), false
 	for i := range next {
-		next[i].Desktops = slices.DeleteFunc(next[i].Desktops, isGone)
-		retainTokenRevocations(s.list[i], &next[i])
+		n := len(next[i].Environments)
+		next[i].Environments = slices.DeleteFunc(next[i].Environments, func(name string) bool { return !keep(name) })
+		if len(next[i].Environments) != n {
+			changed = true
+			retainTokenRevocations(s.list[i], &next[i])
+		}
+	}
+	if !changed {
+		return nil
 	}
 	return s.publish(next)
 }

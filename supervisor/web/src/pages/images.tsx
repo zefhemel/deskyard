@@ -42,7 +42,7 @@ export function ImagesPage() {
               <tr>
                 <th class={th}>Image</th>
                 <th class={th}>Status / version</th>
-                <th class={th}>Desktops</th>
+                <th class={th}>Environments</th>
                 <th class={th} />
               </tr>
             </thead>
@@ -53,7 +53,7 @@ export function ImagesPage() {
               {!images.data.length && (
                 <tr>
                   <td class={`${td} text-muted`} colSpan={4}>
-                    The catalog is empty: add an image to create desktops from.
+                    The catalog is empty: add an image to create environments from.
                   </td>
                 </tr>
               )}
@@ -61,7 +61,7 @@ export function ImagesPage() {
           </table>
         </div>
       )}
-      <p class="mt-4 text-sm text-muted">Upgrading recreates a desktop on the newest version and restarts it if it's running. {UPGRADE_NOTE}</p>
+      <p class="mt-4 text-sm text-muted">Upgrading recreates an environment's container on the newest version and restarts it if it's running. {UPGRADE_NOTE}</p>
       {adding && (
         <AddImageDialog
           onClose={() => setAdding(false)}
@@ -73,14 +73,14 @@ export function ImagesPage() {
       )}
       {upgrading && (
         <UpgradeDialog
-          title={`Upgrade ${plural(upgrading.behind.length, "desktop")}?`}
+          title={`Upgrade ${plural(upgrading.behind.length, "environment")}?`}
           intro={
             <>
               {upgrading.behind.join(", ")} {upgrading.behind.length === 1 ? "is" : "are"} recreated on {upgrading.title} {upgrading.version}; running
               ones restart.
             </>
           }
-          action={`Upgrade ${plural(upgrading.behind.length, "desktop")}`}
+          action={`Upgrade ${plural(upgrading.behind.length, "environment")}`}
           begin={() => api.upgradeImage(upgrading.ref)}
           onClose={() => {
             setUpgrading(null);
@@ -101,9 +101,9 @@ function ImageRow({
   onUpgrade: () => void;
   onRemoved: () => void;
 }) {
-  const { desktops } = useLive();
-  const version = (name: string) => desktops?.find((c) => c.name === name)?.imageVersion;
-  const current = img.desktops.filter((n) => !img.behind.includes(n));
+  const { environments } = useLive();
+  const version = (name: string) => environments?.find((c) => c.name === name)?.imageVersion;
+  const current = img.environments.filter((n) => !img.behind.includes(n));
   const install = useJob(onRemoved);
   const remove = () => {
     api.removeImage(img.ref).then(onRemoved, notifyError);
@@ -132,7 +132,7 @@ function ImageRow({
         <ErrorText error={install.error} />
       </td>
       <td class={td}>
-        {img.desktops.length ? (
+        {img.environments.length ? (
           <div class="flex flex-wrap gap-[5px]">
             {current.map((n) => (
               <Tag key={n}>{n}</Tag>
@@ -157,10 +157,10 @@ function ImageRow({
         )}
         {img.installed && img.behind.length > 0 ? (
           <Button variant="primary" class="h-[30px]! px-[11px]!" onClick={onUpgrade}>
-            Upgrade {plural(img.behind.length, "desktop")}…
+            Upgrade {plural(img.behind.length, "environment")}…
           </Button>
         ) : (
-          img.desktops.length === 0 && !img.official && (
+          img.environments.length === 0 && !img.official && (
             <Button class="h-[30px]! px-[11px]!" onClick={remove}>
               {"Remove from catalog"}
             </Button>

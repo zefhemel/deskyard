@@ -12,9 +12,9 @@ import (
 var guideText string
 
 func (a *App) writeOverview(w io.Writer) {
-	fmt.Fprint(w, `deskyard: use a Deskyard desktop (a Linux desktop with a shared browser) from inside it or from anywhere else.
+	fmt.Fprint(w, `deskyard: use a Deskyard environment (a Linux desktop with a shared browser) from inside it or from anywhere else.
 
-Usage: deskyard [-d NAME] COMMAND [ARGS...]
+Usage: deskyard [-e NAME] COMMAND [ARGS...]
 
 New here? Run `+"`deskyard guide`"+` and `+"`deskyard COMMAND --help`"+`.
 `)
@@ -27,12 +27,14 @@ New here? Run `+"`deskyard guide`"+` and `+"`deskyard COMMAND --help`"+`.
 		}
 	}
 	fmt.Fprint(w, `
-Choosing a desktop:
-  Inside a desktop, commands act on it directly. Elsewhere they use a remote:
-  -d NAME, else $DESKYARD_REMOTE, else $DESKYARD_URL + $DESKYARD_TOKEN,
-  else the default remote (`+"`deskyard remote default`"+`).
+Choosing an environment:
+  Inside an environment, commands act on it directly. Elsewhere they use a
+  remote: -e NAME (or --environment NAME, before the command), else
+  $DESKYARD_REMOTE, else $DESKYARD_URL + $DESKYARD_TOKEN, else the default
+  remote (`+"`deskyard remote default`"+`). After the command, -e is that
+  command's own flag (exec -e K=V sets an environment variable).
 
-Environment:
+Environment variables:
 `)
 	for _, e := range environment {
 		fmt.Fprintf(w, "  %-16s %s\n", e.Name, e.Desc)
@@ -58,7 +60,7 @@ func (a *App) printHelp(names []string) error {
 		fmt.Fprintf(a.Stdout, "deskyard %s: subcommands\n\n", name)
 		for _, s := range subs {
 			c := findCommand(name + " " + s)
-			fmt.Fprintf(a.Stdout, "  desktop %-34s %s\n", c.Usage, c.Summary)
+			fmt.Fprintf(a.Stdout, "  deskyard %-34s %s\n", c.Usage, c.Summary)
 		}
 		fmt.Fprintf(a.Stdout, "\nRun `deskyard %s SUBCOMMAND --help` for details.\n", name)
 		return nil
@@ -68,7 +70,7 @@ func (a *App) printHelp(names []string) error {
 
 func writeCommandHelp(w io.Writer, c *Command) {
 	fmt.Fprintf(w, "deskyard %s: %s\n\n", c.Name, c.Summary)
-	fmt.Fprintf(w, "Usage: deskyard [-d NAME] %s\n\n", c.Usage)
+	fmt.Fprintf(w, "Usage: deskyard [-e NAME] %s\n\n", c.Usage)
 	fmt.Fprintf(w, "%s\n", wrap(c.Desc, 78, ""))
 	if len(c.Args) > 0 {
 		fmt.Fprint(w, "\nArguments:\n")
@@ -173,8 +175,8 @@ func runDescribe(a *App, _ *call) error {
 	doc := describeDoc{
 		Name:        "deskyard",
 		Version:     a.version(),
-		Description: "Use a Deskyard desktop (a Linux desktop with a shared Chromium) from inside it or remotely through its remote access API. Run commands as `deskyard [-d NAME] <name> <arguments...>`; arguments are positional in the listed order, flags go after the command name.",
-		Usage:       "deskyard [-d NAME] COMMAND [ARGS...]",
+		Description: "Use a Deskyard environment (a Linux desktop with a shared Chromium) from inside it or remotely through its remote access API. Run commands as `deskyard [-e NAME] <name> <arguments...>`: the global -e NAME (--environment) chooses the environment and goes before the command name; arguments are positional in the listed order, and a command's flags go after its name (so exec -e K=V sets an environment variable).",
+		Usage:       "deskyard [-e NAME] COMMAND [ARGS...]",
 		GlobalFlags: globalFlags,
 		Environment: environment,
 		ExitCodes:   exitCodes,

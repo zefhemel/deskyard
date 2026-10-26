@@ -5,19 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"reflect"
 	"sync"
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
-// hub fans out UI events (/api/events). Every event concerns one desktop;
-// each subscriber only receives events of desktops its account can see.
+// hub fans out UI events (/api/events). Every event concerns one environment;
+// each subscriber only receives events of environments its account can see.
 type event struct {
-	kind      string // desktop, removed, stats, viewers
-	desktopID string // "" for events everyone may see
-	data      any
+	kind        string // environment, removed, stats, viewers, activity
+	environment string // "" for events everyone may see
+	data        any
 }
 
 type subscriber struct {
@@ -50,7 +51,8 @@ func (h *hub) publish(e event) {
 	}
 }
 
-// refresh asks every subscriber to resend its full desktop list (access changed).
+// refresh asks every subscriber to resend its full environment list (access
+// or conflicts changed).
 func (h *hub) refresh() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -91,21 +93,22 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		b, _ := json.Marshal(v)
 		sse.send(kind, string(b))
 	}
-	visible := map[string]bool{} // desktop IDs this stream has shown
+	visible := map[string]bool{}  // environment names this stream has shown
+	conflicts := []conflictJSON{} // the conflicts this stream has shown
 	sendAll := func() bool {
 		acct, ok := s.Accounts.Get(a.Username)
 		if !ok {
 			return false
 		}
-		list, err := s.Desktops.List(r.Context())
+		list, err := s.Environments.List(r.Context())
 		if err != nil {
 			return false
 		}
 		now := map[string]bool{}
 		for _, c := range list {
-			if acct.HasAccess(c.ID) || (acct.Admin && c.ID == "") {
+			if acct.HasAccess(c.ID) {
 				now[c.Name] = true
-				send("desktop", s.desktopJSON(r.Context(), c, acct))
+				send("environment", s.environmentJSON(r.Context(), c, acct))
 			}
 		}
 		for name := range visible {
@@ -114,6 +117,11 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		visible = now
+		// Conflicts are sent when they change; a stream starts without any.
+		if now := s.conflictsJSON(acct); !reflect.DeepEqual(now, conflicts) {
+			conflicts = now
+			send("conflicts", conflicts)
+		}
 		return true
 	}
 	if !sendAll() {
@@ -126,13 +134,13 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
-			if e.desktopID != "" && !acct.HasAccess(e.desktopID) {
+			if e.environment != "" && !acct.HasAccess(e.environment) {
 				continue
 			}
 			// Lifecycle payloads can have queued before the snapshot. Resolve
 			// current state rather than allowing an old payload to undo it.
 			name := ""
-			if c, ok := e.data.(desktops.Desktop); ok {
+			if c, ok := e.data.(environments.Environment); ok {
 				name = c.Name
 			}
 			if e.kind == "removed" {
@@ -141,13 +149,13 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if name != "" {
-				c, err := s.Desktops.Get(r.Context(), name)
-				if err != nil && !errors.Is(err, desktops.ErrNotFound) {
+				c, err := s.Environments.Get(r.Context(), name)
+				if err != nil && !errors.Is(err, environments.ErrNotFound) {
 					return
 				}
-				if err == nil && (acct.HasAccess(c.ID) || (acct.Admin && c.ID == "")) {
+				if err == nil && (acct.HasAccess(c.ID)) {
 					visible[name] = true
-					send("desktop", s.desktopJSON(r.Context(), c, acct))
+					send("environment", s.environmentJSON(r.Context(), c, acct))
 				} else {
 					delete(visible, name)
 					send("removed", map[string]string{"name": name})
@@ -173,17 +181,17 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// publishDesktop sends the current state of one desktop to the UI.
-func (s *Server) publishDesktop(ctx context.Context, name string) {
-	c, err := s.Desktops.Get(ctx, name)
+// publishEnvironment sends the current state of one environment to the UI.
+func (s *Server) publishEnvironment(ctx context.Context, name string) {
+	c, err := s.Environments.Get(ctx, name)
 	if err != nil {
 		s.events.publish(event{kind: "removed", data: map[string]string{"name": name}})
 		return
 	}
-	s.events.publish(event{kind: "desktop", desktopID: c.ID, data: c})
+	s.events.publish(event{kind: "environment", environment: c.Name, data: c})
 }
 
-// watchEngine turns engine events about desktops into UI events.
+// watchEngine turns engine events about environments into UI events.
 func (s *Server) watchEngine(ctx context.Context) {
 	for ctx.Err() == nil {
 		evs, err := s.Eng.Events(ctx)
@@ -192,11 +200,11 @@ func (s *Server) watchEngine(ctx context.Context) {
 			continue
 		}
 		for e := range evs {
-			if s.Desktops.Networking != nil {
-				s.Desktops.Networking.NotifyEngineEvent(e)
+			if s.Environments.Networking != nil {
+				s.Environments.Networking.NotifyEngineEvent(e)
 			}
-			name := e.Labels[desktops.LabelName]
-			if name == "" || !desktops.IsDesktop(e.Labels) {
+			name := e.Labels[environments.LabelName]
+			if name == "" || !environments.IsEnvironment(e.Labels) {
 				continue
 			}
 			switch e.Action {
@@ -204,8 +212,17 @@ func (s *Server) watchEngine(ctx context.Context) {
 				s.viewers.closeAll(name)
 			}
 			switch e.Action {
+			case "die", "destroy", "create":
+				// A crash or a lost container is reconciled now; a created
+				// one may duplicate an environment.
+				select {
+				case s.reconcile <- struct{}{}:
+				default:
+				}
+			}
+			switch e.Action {
 			case "start", "die", "stop", "create", "destroy", "restart", "pause", "unpause":
-				s.publishDesktop(ctx, name)
+				s.publishEnvironment(ctx, name)
 				s.stats.wake()
 				s.inside.wake()
 			}

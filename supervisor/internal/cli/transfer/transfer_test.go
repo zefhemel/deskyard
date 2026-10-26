@@ -43,7 +43,7 @@ func setup(t *testing.T) (*clitest.Fake, Exec) {
 		t.Skip("the fake runs commands with sh and tar")
 	}
 	f := clitest.New(t, "alice")
-	c := &remote.Client{Alias: "alice", Base: f.URL, Desktop: "alice", Token: clitest.Token}
+	c := &remote.Client{Alias: "alice", Base: f.URL, Environment: "alice", Token: clitest.Token}
 	return f, func(ctx context.Context, req execws.Request, sio execws.IO) (int, error) {
 		return execws.Run(ctx, c, req, sio)
 	}
@@ -103,7 +103,7 @@ func TestUploadFile(t *testing.T) {
 	}
 	// Failure is reported with the remote's message.
 	err = Upload(ctx(t), exec, filepath.Join(local, "a.txt"), "/no/such/dir/x", nil)
-	if err == nil || !strings.Contains(err.Error(), "copy failed on the desktop") {
+	if err == nil || !strings.Contains(err.Error(), "copy failed in the environment") {
 		t.Errorf("want a failure, got %v", err)
 	}
 }

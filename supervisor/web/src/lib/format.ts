@@ -1,4 +1,4 @@
-import type { Desktop, Settings, Tool } from "../api.ts";
+import type { Environment, Settings, Tool } from "../api.ts";
 
 const GB = 1024 ** 3;
 
@@ -79,8 +79,8 @@ export function until(iso: string, now = Date.now()): string {
   return `in ${duration(Math.max(0, (Date.parse(iso) - now) / 1000))}`;
 }
 
-/** The status line of a desktop: "Running for 3 days", "Stopped", "Creating". */
-export function statusLine(c: Desktop, now = Date.now()): string {
+/** The status line of an environment: "Running for 3 days", "Stopped", "Creating". */
+export function statusLine(c: Environment, now = Date.now()): string {
   switch (c.state) {
     case "running":
       return c.startedAt ? `Running for ${since(c.startedAt, now)}` : "Running";
@@ -99,10 +99,43 @@ export function statusLine(c: Desktop, now = Date.now()): string {
 
 export type StatusKind = "run" | "busy" | "off";
 
-export function statusKind(c: Desktop): StatusKind {
+export function statusKind(c: Pick<Environment, "state">): StatusKind {
   if (c.state === "running") return "run";
   if (c.state === "stopped") return "off";
   return "busy";
+}
+
+export interface Notice {
+  kind: "error" | "pending";
+  text: string;
+}
+
+/**
+ * What an environment's tile and page say beyond its state: a container
+ * conflict, why its last change failed, or a saved change (revision ahead of
+ * the container's) that isn't applied yet. Busy environments wait for their job.
+ */
+export function notice(c: Pick<Environment, "state" | "revision" | "appliedRevision" | "error" | "conflict">): Notice | null {
+  if (c.conflict) return { kind: "error", text: c.conflict };
+  if (statusKind(c) === "busy") return null;
+  // Without a container there is nothing to be behind: start builds it.
+  const ahead = c.appliedRevision > 0 && c.revision > c.appliedRevision;
+  const retry = c.state === "running" ? "restart" : "start";
+  if (c.error) {
+    return { kind: "error", text: ahead ? `${sentence(c.error)} Saved changes aren't applied; the previous container is kept. ${cap(retry)} it to try again.` : c.error };
+  }
+  if (ahead) {
+    return { kind: "pending", text: c.state === "running" ? "Saved changes aren't applied yet; restart to apply them." : "Saved changes apply when it starts." };
+  }
+  return null;
+}
+
+function cap(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function sentence(s: string): string {
+  return /[.!?]$/.test(s) ? s : `${s}.`;
 }
 
 /** "2 GB memory, 2 CPUs", "No limits" */
@@ -126,20 +159,20 @@ export function plural(n: number, word: string, many = `${word}s`): string {
   return `${n} ${n === 1 ? word : many}`;
 }
 
-/** mise tools as "node 24.22 (this desktop) · 24.30 in the image, cowsay 1.6 (image)". */
+/** mise tools as "node 24.22 (this environment) · 24.30 in the image, cowsay 1.6 (image)". */
 export function toolsLine(tools: Tool[]): string {
-  const byTool = new Map<string, { desktop: string[]; image: string[] }>();
+  const byTool = new Map<string, { own: string[]; image: string[] }>();
   for (const t of tools) {
-    const e = byTool.get(t.tool) ?? { desktop: [], image: [] };
+    const e = byTool.get(t.tool) ?? { own: [], image: [] };
     byTool.set(t.tool, e);
-    e[t.source === "image" ? "image" : "desktop"].push(t.version);
+    e[t.source === "image" ? "image" : "own"].push(t.version);
   }
   return [...byTool]
-    .map(([name, { desktop, image }]) => {
-      const d = desktop.join(", ");
+    .map(([name, { own, image }]) => {
+      const d = own.join(", ");
       const i = image.join(", ");
-      if (d && i) return `${name} ${d} (this desktop) · ${i} in the image`;
-      return `${name} ${d || i} (${d ? "this desktop" : "image"})`;
+      if (d && i) return `${name} ${d} (this environment) · ${i} in the image`;
+      return `${name} ${d || i} (${d ? "this environment" : "image"})`;
     })
     .join(", ");
 }

@@ -191,6 +191,11 @@ func (d *Docker) Remove(ctx context.Context, id string) error {
 	return wrap(err)
 }
 
+func (d *Docker) Rename(ctx context.Context, id, name string) error {
+	_, err := d.c.ContainerRename(ctx, id, client.ContainerRenameOptions{NewName: name})
+	return wrap(err)
+}
+
 func (d *Docker) Inspect(ctx context.Context, id string) (engine.Container, error) {
 	res, err := d.c.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
 	if err != nil {
@@ -235,6 +240,9 @@ func (d *Docker) Inspect(ctx context.Context, id string) (engine.Container, erro
 		if b := r.HostConfig.PortBindings[port8080]; len(b) > 0 {
 			c.LocalPort, _ = strconv.Atoi(b[0].HostPort)
 		}
+	}
+	for _, m := range r.Mounts {
+		c.Mounts = append(c.Mounts, engine.Mount{Source: m.Source, Target: m.Destination, ReadOnly: !m.RW})
 	}
 	if r.NetworkSettings != nil {
 		for name, ep := range r.NetworkSettings.Networks {

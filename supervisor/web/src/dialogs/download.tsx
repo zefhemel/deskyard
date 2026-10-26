@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import { api, type Desktop, type FileListing } from "../api.ts";
+import { api, type Environment, type FileListing } from "../api.ts";
 import { ago, bytes } from "../lib/format.ts";
 import { btnClass, Button, Dialog, ErrorText, errorMessage } from "../components/ui.tsx";
 
@@ -14,8 +14,8 @@ function storedShowHidden(): boolean {
   }
 }
 
-/** Browse a desktop's files under /workspace and download a file, or a folder as a zip. */
-export function DownloadDialog({ desktop, onClose }: { desktop: Desktop; onClose: () => void }) {
+/** Browse an environment's files under /workspace and download a file, or a folder as a zip. */
+export function DownloadDialog({ environment, onClose }: { environment: Environment; onClose: () => void }) {
   const [listing, setListing] = useState<FileListing | null>(null);
   const [box, setBox] = useState(ROOT);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +34,7 @@ export function DownloadDialog({ desktop, onClose }: { desktop: Desktop; onClose
     setLoading(true);
     setError(null);
     try {
-      const l = await api.files(desktop.name, path);
+      const l = await api.files(environment.name, path);
       setListing(l);
       setBox(l.path);
     } catch (e) {
@@ -46,7 +46,7 @@ export function DownloadDialog({ desktop, onClose }: { desktop: Desktop; onClose
 
   useEffect(() => {
     void go(ROOT);
-  }, [desktop.name]);
+  }, [environment.name]);
 
   const here = listing?.path ?? ROOT;
   const parent = here.slice(0, Math.max(here.lastIndexOf("/"), 0)) || ROOT;
@@ -61,7 +61,7 @@ export function DownloadDialog({ desktop, onClose }: { desktop: Desktop; onClose
 
   return (
     <Dialog
-      title={`Download from ${desktop.name}`}
+      title={`Download from ${environment.name}`}
       intro="Files under /workspace. A folder downloads as a zip."
       wide
       onClose={onClose}
@@ -71,7 +71,7 @@ export function DownloadDialog({ desktop, onClose }: { desktop: Desktop; onClose
           <Button variant="quiet" onClick={onClose}>
             Close
           </Button>
-          <a class={btnClass("primary")} href={api.downloadUrl(desktop.name, here)} download={`${here.split("/").filter(Boolean).at(-1) || "workspace"}.zip`}>
+          <a class={btnClass("primary")} href={api.downloadUrl(environment.name, here)} download={`${here.split("/").filter(Boolean).at(-1) || "workspace"}.zip`}>
             Download this folder (.zip)
           </a>
         </>
@@ -117,7 +117,7 @@ export function DownloadDialog({ desktop, onClose }: { desktop: Desktop; onClose
             </span>
             <a
               class={btnClass("quiet", "h-[30px]! px-2.5!")}
-              href={api.downloadUrl(desktop.name, join(e.name))}
+              href={api.downloadUrl(environment.name, join(e.name))}
               download={e.dir ? `${e.name}.zip` : e.name}
               aria-label={e.dir ? `Download ${e.name} as zip` : `Download ${e.name}`}
             >

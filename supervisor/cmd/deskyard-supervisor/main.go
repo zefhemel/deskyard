@@ -18,9 +18,9 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/config"
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine/docker"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/server"
 	"github.com/zefhemel/deskyard/supervisor/internal/tlsserve"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
@@ -48,9 +48,9 @@ func main() {
 const usage = `deskyard-supervisor: runs desktops (Linux desktops in containers) and shares them in the browser.
 
 Configuration (environment variables):
-  DESKYARD_LISTEN          address for HTTP (default 127.0.0.1:8080)
+  DESKYARD_LISTEN          address for HTTP (default 127.0.0.1:7343)
   DESKYARD_DOMAIN          serve HTTPS on :443 (and :80) for this domain, with automatic certificates
-  DESKYARD_DATA_DIR        workspace folders and state (default ~/deskyard; required in a container)
+  DESKYARD_DATA_DIR        definitions, state and environment homes (default ~/deskyard; required in a container)
   DESKYARD_ENGINE_HOST     container engine socket (default DOCKER_HOST, else the platform default)
   DESKYARD_SUBNET          address pool for the desktops' networks (default 10.213.0.0/16)
   DESKYARD_ADMIN_USER      the first admin's username (default admin)
@@ -74,7 +74,8 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(cfg.StateDir, 0o700); err != nil {
+	// Before anything is written: an older layout is refused, not adopted.
+	if err := config.CheckLegacy(cfg.DataDir); err != nil {
 		return err
 	}
 	eng, err := docker.New(cfg.EngineHost)
@@ -86,18 +87,29 @@ func run(log *slog.Logger) error {
 	if _, err := eng.Info(ctx); err != nil {
 		return fmt.Errorf("can't reach the container engine (is Docker running, and may this user use its socket?): %w", err)
 	}
+	// Nor are an older supervisor's containers that use this data folder.
+	if err := environments.New(eng, environments.Config{DataDir: cfg.DataDir}, log).CheckLegacyContainers(ctx); err != nil {
+		return err
+	}
+	if err := cfg.Layout.Prepare(); err != nil {
+		return err
+	}
+	instance, err := config.InstanceID(cfg.Layout)
+	if err != nil {
+		return err
+	}
 
 	selfID := ""
 	if cfg.InContainer {
 		if selfID, err = os.Hostname(); err != nil {
 			return err
 		}
-		if err := checkSamePath(ctx, eng, cfg.DataDir); err != nil {
+		if err := checkSamePath(ctx, eng, cfg.Layout); err != nil {
 			return err
 		}
 	}
 
-	accts, err := accounts.Load(cfg.StateDir)
+	accts, err := accounts.Load(cfg.DataDir)
 	if err != nil {
 		return err
 	}
@@ -109,20 +121,23 @@ func run(log *slog.Logger) error {
 		fmt.Fprintf(os.Stderr, "\n  First start: an admin account was created.\n  Username: %s\n  Password: %s\n  (Shown once. Change it after signing in.)\n\n", cfg.AdminUser, generated)
 	}
 
-	comps := desktops.New(eng, desktops.Config{
+	comps, err := environments.Open(eng, environments.Config{
 		DataDir: cfg.DataDir, Subnet: cfg.Subnet.String(), InContainer: cfg.InContainer, SelfID: selfID,
-		LocalEngine: desktops.LocalEngine(cfg.EngineHost),
-	}, log)
-	vpnStore, err := vpn.NewStore(cfg.StateDir)
+		LocalEngine: environments.LocalEngine(cfg.EngineHost),
+	}, instance, log)
 	if err != nil {
 		return err
 	}
-	vpnRuntime := vpn.NewManager(eng, vpnStore, cfg.StateDir)
-	if err := comps.ConfigureNetworking(vpnStore, vpnRuntime, cfg.StateDir); err != nil {
+	vpnStore, err := vpn.NewStore(filepath.Join(cfg.DataDir, "networks.json"), cfg.Layout.Secret)
+	if err != nil {
+		return err
+	}
+	vpnRuntime := vpn.NewManager(eng, vpnStore, cfg.Layout.State).ForInstance(instance)
+	if err := comps.ConfigureNetworking(vpnStore, vpnRuntime, cfg.Layout.State); err != nil {
 		return err
 	}
 	if err := comps.Reconcile(ctx); err != nil {
-		log.Warn("reconciling desktops (networks, gone cameras)", "err", err)
+		log.Warn("reconciling environments", "err", err)
 	}
 
 	ui, err := fs.Sub(web.Dist, "dist")
@@ -131,7 +146,7 @@ func run(log *slog.Logger) error {
 	}
 	srv, err := server.New(server.Options{
 		StartupContext: ctx,
-		Log:            log, Eng: eng, Desktops: comps, Accounts: accts, StateDir: cfg.StateDir,
+		Log:            log, Eng: eng, Environments: comps, Accounts: accts, Layout: cfg.Layout,
 		UI: ui, Secure: cfg.Domain != "", DefaultImage: cfg.DefaultImage,
 		ActivityPresence: cfg.ActivityPresence,
 	})
@@ -141,8 +156,8 @@ func run(log *slog.Logger) error {
 	srv.Run(ctx)
 
 	if cfg.Domain != "" {
-		log.Info("serving HTTPS", "domain", cfg.Domain, "data", cfg.DataDir, "version", version)
-		return tlsserve.Serve(ctx, srv, cfg.Domain, filepath.Join(cfg.StateDir, "certmagic"), log)
+		log.Info("serving HTTPS", "domain", cfg.Domain, "data", cfg.DataDir, "instance", instance, "version", version)
+		return tlsserve.Serve(ctx, srv, cfg.Domain, filepath.Join(cfg.Layout.Secret, "certmagic"), log)
 	}
 	hs := &http.Server{Addr: cfg.Listen, Handler: srv, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
@@ -151,7 +166,7 @@ func run(log *slog.Logger) error {
 		defer cancel()
 		_ = hs.Shutdown(sctx)
 	}()
-	log.Info("listening", "url", "http://"+cfg.Listen, "data", cfg.DataDir, "version", version)
+	log.Info("listening", "url", "http://"+cfg.Listen, "data", cfg.DataDir, "instance", instance, "version", version)
 	if err := hs.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -161,10 +176,11 @@ func run(log *slog.Logger) error {
 // checkSamePath verifies that the data folder is mounted at the same path in
 // the supervisor's container as on the host (bind-mount paths given to the
 // engine are host paths): a helper container mounts that path and must see
-// a marker the supervisor just wrote.
-func checkSamePath(ctx context.Context, eng engine.Engine, dataDir string) error {
+// a marker the supervisor just wrote in state/.
+func checkSamePath(ctx context.Context, eng engine.Engine, layout config.Layout) error {
+	dataDir := layout.Data
 	token := fmt.Sprintf("%d", time.Now().UnixNano())
-	marker := filepath.Join(dataDir, ".deskyard", "same-path-check")
+	marker := filepath.Join(layout.State, "same-path-check")
 	if err := os.WriteFile(marker, []byte(token), 0o600); err != nil {
 		return err
 	}
@@ -186,7 +202,7 @@ func checkSamePath(ctx context.Context, eng engine.Engine, dataDir string) error
 	if err := eng.Start(ctx, name); err != nil {
 		return err
 	}
-	out, _, _, err := engine.Output(ctx, eng, name, engine.ExecSpec{Cmd: []string{"cat", "/check/.deskyard/same-path-check"}})
+	out, _, _, err := engine.Output(ctx, eng, name, engine.ExecSpec{Cmd: []string{"cat", "/check/state/same-path-check"}})
 	if err != nil {
 		return err
 	}

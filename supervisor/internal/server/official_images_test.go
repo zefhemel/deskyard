@@ -49,7 +49,7 @@ func discoveryRow(t *testing.T, bt *catalogTest, ref string) map[string]any {
 }
 func TestOfficialDiscoveryWithoutPullingOrChangingSavedCatalog(t *testing.T) {
 	bt := newCatalogTest(t)
-	path := filepath.Join(bt.s.StateDir, "images.json")
+	path := filepath.Join(bt.s.Layout.Data, "images.json")
 	before, _ := os.ReadFile(path)
 	if rows := discoveryRows(t, bt); rows[0]["ref"] != "img" {
 		t.Fatalf("default moved: %v", rows)
@@ -104,7 +104,7 @@ func (e discoveryEngine) Pull(ctx context.Context, ref string, p func(engine.Pul
 func TestInstallOfficialImageOnDemand(t *testing.T) {
 	bt := newCatalogTest(t)
 	bt.s.Eng = discoveryEngine{bt.e}
-	bt.s.Desktops.Eng = bt.s.Eng
+	bt.s.Environments.Eng = bt.s.Eng
 	j := bt.wait(bt.start("POST", "/api/images/install", map[string]string{"ref": testMATE}))
 	if j.Status != "done" {
 		t.Fatalf("install: %+v", j)

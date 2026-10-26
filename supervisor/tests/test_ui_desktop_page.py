@@ -138,7 +138,7 @@ def test_keys_menu(supervisor, desktop, name, browser_name):
 
 @pytest.mark.parametrize("browser_name", BROWSERS)
 def test_stopped_desktop_page(supervisor, admin, desktop, name, browser_name):
-    admin.post(f"/api/desktops/{name}/stop")
+    admin.post(f"/api/environments/{name}/stop")
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base, browser=browser_name)
         page.goto(f"{supervisor.base}/{name}/")
@@ -208,10 +208,10 @@ def test_webcam_disabled_without_device(supervisor, admin, desktop, name, browse
         open_desktop(page, supervisor.base, name)
         camera = audio_switch(page, "My camera")
         expect(camera).to_be_disabled()
-        expect(page.get_by_role("dialog", name="Audio").get_by_text("This machine has no virtual camera for desktops")).to_be_visible()
+        expect(page.get_by_role("dialog", name="Audio").get_by_text("This machine has no virtual camera for environments")).to_be_visible()
         # An admin can't give it one either.
-        page.goto(f"{supervisor.base}/desktops/{name}?tab=settings")
-        expect(page.get_by_text("This machine has no virtual camera for desktops (v4l2loopback).")).to_be_visible(timeout=15000)
+        page.goto(f"{supervisor.base}/environments/{name}?tab=settings")
+        expect(page.get_by_text("This machine has no virtual camera for environments (v4l2loopback).")).to_be_visible(timeout=15000)
         browser.close()
 
 

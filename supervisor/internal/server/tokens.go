@@ -21,20 +21,23 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 )
 
-// Agent tokens: one desktop each, an optional expiry, revocable; stored as
-// a SHA-256 of the secret (the secret is random, so a slow hash adds nothing).
+// Agent tokens: one environment each, an optional expiry, revocable; stored
+// as a SHA-256 of the secret (the secret is random, so a slow hash adds
+// nothing). A token names its environment and records when that environment
+// was created, so a later environment of the same name doesn't honour it.
 type token struct {
-	ID             string     `json:"id"`
-	Name           string     `json:"name"`
-	DesktopID      string     `json:"desktopId"`
-	Hash           string     `json:"hash"`
-	CreatedBy      string     `json:"createdBy"`
-	CreatorCreated time.Time  `json:"creatorCreated,omitzero"`
-	CreatorEpoch   uint64     `json:"creatorEpoch,omitempty"`
-	GrantEpoch     uint64     `json:"grantEpoch,omitempty"`
-	Created        time.Time  `json:"created"`
-	Expires        *time.Time `json:"expires"`
-	LastUsed       *time.Time `json:"lastUsed"`
+	ID                 string     `json:"id"`
+	Name               string     `json:"name"`
+	Environment        string     `json:"environment"`
+	EnvironmentCreated time.Time  `json:"environmentCreated"`
+	Hash               string     `json:"hash"`
+	CreatedBy          string     `json:"createdBy"`
+	CreatorCreated     time.Time  `json:"creatorCreated,omitzero"`
+	CreatorEpoch       uint64     `json:"creatorEpoch,omitempty"`
+	GrantEpoch         uint64     `json:"grantEpoch,omitempty"`
+	Created            time.Time  `json:"created"`
+	Expires            *time.Time `json:"expires"`
+	LastUsed           *time.Time `json:"lastUsed"`
 }
 
 func (t token) expired(now time.Time) bool { return t.Expires != nil && now.After(*t.Expires) }
@@ -48,17 +51,23 @@ type tokenStore struct {
 	nextID   int
 	dirty    bool
 	closed   map[string]bool // tokens whose connections were closed on expiry
+	// created is when the named environment was created; false when it
+	// isn't defined. Nil until bind.
+	created func(name string) (time.Time, bool)
 
 	// onGone is called, with no lock held, for every token that stops
-	// working: revoked, its creator lost access, its desktop removed, or
-	// expired.
+	// working: revoked, its creator lost access, its environment removed,
+	// or expired.
 	onGone func(token)
 }
 
-func loadTokens(stateDir string) (*tokenStore, error) {
-	ts := &tokenStore{path: filepath.Join(stateDir, "tokens.json"), open: map[string]map[int]context.CancelFunc{}, closed: map[string]bool{}}
+func loadTokens(dataDir string) (*tokenStore, error) {
+	ts := &tokenStore{path: filepath.Join(dataDir, "tokens.json"), open: map[string]map[int]context.CancelFunc{}, closed: map[string]bool{}}
 	var f struct {
 		Tokens []token `json:"tokens"`
+	}
+	if err := store.Restrict(ts.path); err != nil {
+		return nil, err
 	}
 	if err := store.ReadJSON(ts.path, &f); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
@@ -68,31 +77,36 @@ func loadTokens(stateDir string) (*tokenStore, error) {
 }
 
 func tokenCreatorAllowed(t token, a accounts.Account, exists bool) bool {
-	return exists && a.HasAccess(t.DesktopID) && !t.CreatorCreated.IsZero() &&
-		t.CreatorCreated.Equal(a.Created) && t.CreatorEpoch == a.TokenEpoch && t.GrantEpoch == a.DesktopTokenEpochs[t.DesktopID]
+	return exists && a.HasAccess(t.Environment) && !t.CreatorCreated.IsZero() &&
+		t.CreatorCreated.Equal(a.Created) && t.CreatorEpoch == a.TokenEpoch && t.GrantEpoch == a.EnvironmentTokenEpochs[t.Environment]
 }
 
-// bindAccounts upgrades safe legacy records once and purges records whose
-// creator identity or retained authorization revisions no longer match.
-// Migration must persist before the server accepts requests.
-func (ts *tokenStore) bindAccounts(accts *accounts.Store) error {
+// environmentCurrent reports whether t's environment is the one it was made
+// for: defined, and created when t records. Without bind it can't tell.
+func (ts *tokenStore) environmentCurrent(t token) bool {
+	if ts.created == nil {
+		return true
+	}
+	created, ok := ts.created(t.Environment)
+	return ok && created.Equal(t.EnvironmentCreated)
+}
+
+// bind attaches the accounts and environment definitions tokens are checked
+// against, and purges, before the server accepts requests, records whose
+// creator identity, retained authorization revisions or environment no
+// longer match.
+func (ts *tokenStore) bind(accts *accounts.Store, created func(name string) (time.Time, bool)) error {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
+	ts.created = created
 	var next []token
-	changed := false
 	for _, t := range ts.list {
 		a, exists := accts.Get(t.CreatedBy)
-		if t.CreatorCreated.IsZero() && exists && a.HasAccess(t.DesktopID) && !a.Created.After(t.Created) && a.TokenEpoch == 0 && a.DesktopTokenEpochs[t.DesktopID] == 0 {
-			t.CreatorCreated = a.Created
-			changed = true
+		if tokenCreatorAllowed(t, a, exists) && ts.environmentCurrent(t) {
+			next = append(next, t)
 		}
-		if !tokenCreatorAllowed(t, a, exists) {
-			changed = true
-			continue
-		}
-		next = append(next, t)
 	}
-	if changed {
+	if len(next) != len(ts.list) {
 		if err := store.WriteJSON(ts.path, map[string]any{"tokens": next}); err != nil {
 			return err
 		}
@@ -118,20 +132,27 @@ func hashSecret(secret string) string {
 	return hex.EncodeToString(h[:])
 }
 
-func (ts *tokenStore) create(name, desktopID, createdBy string, expires *time.Time) (token, string, error) {
+func (ts *tokenStore) create(name, environment, createdBy string, expires *time.Time) (token, string, error) {
 	secretBytes := make([]byte, 32)
 	_, _ = rand.Read(secretBytes)
 	secret := base64.RawURLEncoding.EncodeToString(secretBytes)
-	t := token{ID: randomID(8), Name: name, DesktopID: desktopID, Hash: hashSecret(secret),
+	t := token{ID: randomID(8), Name: name, Environment: environment, Hash: hashSecret(secret),
 		CreatedBy: createdBy, Created: time.Now().UTC(), Expires: expires}
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
+	if ts.created != nil {
+		created, ok := ts.created(environment)
+		if !ok {
+			return token{}, "", errors.New("no such environment")
+		}
+		t.EnvironmentCreated = created
+	}
 	if ts.accounts != nil {
 		a, exists := ts.accounts.Get(createdBy)
-		if !exists || !a.HasAccess(desktopID) {
-			return token{}, "", errors.New("token creator no longer has desktop access")
+		if !exists || !a.HasAccess(environment) {
+			return token{}, "", errors.New("token creator no longer has access to the environment")
 		}
-		t.CreatorCreated, t.CreatorEpoch, t.GrantEpoch = a.Created, a.TokenEpoch, a.DesktopTokenEpochs[desktopID]
+		t.CreatorCreated, t.CreatorEpoch, t.GrantEpoch = a.Created, a.TokenEpoch, a.EnvironmentTokenEpochs[environment]
 	}
 	next := append(slices.Clone(ts.list), t)
 	if err := store.WriteJSON(ts.path, map[string]any{"tokens": next}); err != nil {
@@ -141,7 +162,8 @@ func (ts *tokenStore) create(name, desktopID, createdBy string, expires *time.Ti
 	return t, "dyt_" + t.ID + "_" + secret, nil
 }
 
-// check resolves a bearer token; it returns the token when valid.
+// check resolves a bearer token; it returns the token when valid, which
+// includes its environment being the one it was made for.
 func (ts *tokenStore) check(bearer string) (token, bool) {
 	rest, ok := strings.CutPrefix(bearer, "dyt_")
 	if !ok {
@@ -157,7 +179,7 @@ func (ts *tokenStore) check(bearer string) (token, bool) {
 		if t.ID != id {
 			continue
 		}
-		if subtle.ConstantTimeCompare([]byte(t.Hash), []byte(hashSecret(secret))) != 1 || t.expired(time.Now()) {
+		if subtle.ConstantTimeCompare([]byte(t.Hash), []byte(hashSecret(secret))) != 1 || t.expired(time.Now()) || !ts.environmentCurrent(t) {
 			return token{}, false
 		}
 		now := time.Now().UTC()
@@ -173,21 +195,23 @@ func (ts *tokenStore) check(bearer string) (token, bool) {
 	return token{}, false
 }
 
-func (ts *tokenStore) forDesktop(desktopID string) []token {
+// forEnvironment lists the tokens of the named environment; tokens left over
+// from an earlier environment of that name are not its.
+func (ts *tokenStore) forEnvironment(name string) []token {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	var out []token
 	for _, t := range ts.list {
-		if t.DesktopID == desktopID {
+		if t.Environment == name && ts.environmentCurrent(t) {
 			out = append(out, t)
 		}
 	}
 	return out
 }
 
-func (ts *tokenStore) activeCount(desktopID string) int {
+func (ts *tokenStore) activeCount(name string) int {
 	n := 0
-	for _, t := range ts.forDesktop(desktopID) {
+	for _, t := range ts.forEnvironment(name) {
 		if !t.expired(time.Now()) {
 			n++
 		}
@@ -235,12 +259,14 @@ func (ts *tokenStore) notifyGone(gone []token) {
 	}
 }
 
-func (ts *tokenStore) forgetDesktop(desktopID string) error {
-	return ts.remove(func(t token) bool { return t.DesktopID == desktopID })
+// forget removes every token of the named environment, including any left
+// over from an earlier environment of that name.
+func (ts *tokenStore) forget(name string) error {
+	return ts.remove(func(t token) bool { return t.Environment == name })
 }
 
 // creatorChanged revokes the tokens of an account that was deleted or lost
-// access to the token's desktop.
+// access to the token's environment.
 func (ts *tokenStore) creatorChanged(s *Server, username string) error {
 	// Serialize the current account lookup with token creation and cleanup. A
 	// delayed callback must not apply an older grant to tokens issued afterward.
@@ -341,12 +367,12 @@ func toTokenJSON(t token) tokenJSON {
 }
 
 func (s *Server) handleListTokens(w http.ResponseWriter, r *http.Request) {
-	c, _, ok := s.desktopFor(w, r, auth.View)
+	c, _, ok := s.environmentFor(w, r, auth.View)
 	if !ok {
 		return
 	}
 	out := []tokenJSON{}
-	for _, t := range s.tokens.forDesktop(c.ID) {
+	for _, t := range s.tokens.forEnvironment(c.Name) {
 		out = append(out, toTokenJSON(t))
 	}
 	slices.SortFunc(out, func(a, b tokenJSON) int { return b.Created.Compare(a.Created) })
@@ -362,7 +388,7 @@ func baseURL(r *http.Request) string {
 }
 
 func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
-	c, a, ok := s.desktopFor(w, r, auth.CreateToken)
+	c, a, ok := s.environmentFor(w, r, auth.CreateToken)
 	if !ok {
 		return
 	}
@@ -378,27 +404,27 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "the expiry date is in the past")
 		return
 	}
-	t, secret, err := s.tokens.create(strings.TrimSpace(req.Name), c.ID, a.Username, req.Expires)
+	t, secret, err := s.tokens.create(strings.TrimSpace(req.Name), c.Name, a.Username, req.Expires)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.Log.Info("agent token created", "desktop", c.Name, "token", t.Name, "by", a.Username)
+	s.Log.Info("agent token created", "environment", c.Name, "token", t.Name, "by", a.Username)
 	j := toTokenJSON(t)
 	j.Token = secret
 	j.RemoteAdd = "deskyard remote add " + c.Name + " " + baseURL(r) + "/" + c.Name + " --token " + secret
-	s.publishDesktop(r.Context(), c.Name)
+	s.publishEnvironment(r.Context(), c.Name)
 	writeJSON(w, http.StatusCreated, j)
 }
 
 func (s *Server) handleDeleteToken(w http.ResponseWriter, r *http.Request) {
-	c, a, ok := s.desktopFor(w, r, auth.CreateToken)
+	c, a, ok := s.environmentFor(w, r, auth.CreateToken)
 	if !ok {
 		return
 	}
 	id := r.PathValue("id")
 	var found *token
-	for _, t := range s.tokens.forDesktop(c.ID) {
+	for _, t := range s.tokens.forEnvironment(c.Name) {
 		if t.ID == id {
 			found = &t
 			break
@@ -408,7 +434,7 @@ func (s *Server) handleDeleteToken(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such token")
 		return
 	}
-	if found.CreatedBy != a.Username && !auth.Can(a, auth.RevokeAnyToken, c.ID) {
+	if found.CreatedBy != a.Username && !auth.Can(a, auth.RevokeAnyToken, c.Name) {
 		writeError(w, http.StatusForbidden, "only its creator or an admin can revoke this token")
 		return
 	}
@@ -416,7 +442,7 @@ func (s *Server) handleDeleteToken(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.Log.Info("agent token revoked", "desktop", c.Name, "token", found.Name, "by", a.Username)
-	s.publishDesktop(r.Context(), c.Name)
+	s.Log.Info("agent token revoked", "environment", c.Name, "token", found.Name, "by", a.Username)
+	s.publishEnvironment(r.Context(), c.Name)
 	w.WriteHeader(http.StatusNoContent)
 }

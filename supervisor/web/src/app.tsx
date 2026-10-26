@@ -6,7 +6,7 @@ import { Toaster } from "./components/toast.tsx";
 import { LiveProvider } from "./live.tsx";
 import { AccountsPage } from "./pages/accounts.tsx";
 import { DetailsPage } from "./pages/details.tsx";
-import { DesktopsPage } from "./pages/desktops.tsx";
+import { EnvironmentsPage } from "./pages/environments.tsx";
 import { DesktopPage } from "./desktop/desktop.tsx";
 import { VPNPage } from "./pages/vpn.tsx";
 import { ImagesPage } from "./pages/images.tsx";
@@ -16,7 +16,7 @@ import { NotFound } from "./pages/not-found.tsx";
 const TerminalPage = lazy(() => import("./terminal/terminal.tsx").then((m) => ({ default: m.TerminalPage })));
 
 /**
- * `/<name>/` (one segment with a trailing slash) is a desktop's desktop page;
+ * `/<name>/` (one segment with a trailing slash) is an environment's desktop page;
  * the UI's own pages have no trailing slash.
  */
 export function desktopName(path: string): string | null {
@@ -61,8 +61,8 @@ function SignedIn() {
         <DesktopPage key={desktop} name={desktop} />
       ) : (
         <Router>
-          <Route path="/" component={DesktopsPage} />
-          <Route path="/desktops/:name" component={DetailsPage} />
+          <Route path="/" component={EnvironmentsPage} />
+          <Route path="/environments/:name" component={DetailsPage} />
           <Route path="/_vpn" component={me.admin ? VPNPage : NotFound} />
           <Route path="/images" component={me.admin ? ImagesPage : NotFound} />
           <Route path="/accounts" component={me.admin ? AccountsPage : NotFound} />

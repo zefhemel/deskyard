@@ -3,34 +3,11 @@ package server
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/activity"
 )
-
-func TestMemoryPolicyPersistsByStableID(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "memory-policy.json")
-	p, err := loadMemoryPolicy(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !p.enabled("id") {
-		t.Fatal("default disabled")
-	}
-	if err := p.set("id", false); err != nil {
-		t.Fatal(err)
-	}
-	p, err = loadMemoryPolicy(path)
-	if err != nil || p.enabled("id") || !p.enabled("new-id") {
-		t.Fatal("lost preference", err)
-	}
-	p.path = t.TempDir() // rename over a directory must fail
-	if err := p.set("id", true); err == nil || p.enabled("id") {
-		t.Fatal("failed save changed policy")
-	}
-}
 
 func TestIdleMemoryReclaim(t *testing.T) {
 	for _, blocker := range []string{"none", "viewer", "operation", "agent", "inside agent", "unknown activity", "opt out", "unsupported", "failure"} {
@@ -64,15 +41,15 @@ func TestIdleMemoryReclaim(t *testing.T) {
 				s.viewers.add("bob", v)
 				s.viewers.remove("bob", v)
 			case "operation":
-				if err := s.Desktops.Begin("bob", ""); err != nil {
+				if err := s.Environments.Begin("bob", ""); err != nil {
 					t.Fatal(err)
 				}
 			case "agent":
-				s.activity.CmdStart(activity.Ref{Name: "bob", ID: "id-bob"}, activity.Agent{ID: "a", Name: "agent"}, "cmd", "sleep")
+				s.activity.CmdStart(activity.Ref{Name: "bob", ID: "bob"}, activity.Agent{ID: "a", Name: "agent"}, "cmd", "sleep")
 			case "inside agent":
-				s.activity.Inside(activity.Ref{Name: "bob", ID: "id-bob"}, activity.Event{Agent: "terminal", Kind: "cmd-start", ID: "cmd", Cmd: "sleep", T: now})
+				s.activity.Inside(activity.Ref{Name: "bob", ID: "bob"}, activity.Event{Agent: "terminal", Kind: "cmd-start", ID: "cmd", Cmd: "sleep", T: now})
 			case "opt out":
-				if err := s.memoryPolicy.set("id-bob", false); err != nil {
+				if err := s.Environments.SetMemoryReclaim("bob", false); err != nil {
 					t.Fatal(err)
 				}
 			case "unsupported":
@@ -87,7 +64,7 @@ func TestIdleMemoryReclaim(t *testing.T) {
 				t.Fatalf("calls %d, blocked %v", got, blocked)
 			}
 			if blocker == "operation" {
-				s.Desktops.Done("bob")
+				s.Environments.Done("bob")
 				tick()
 				if e.calls.Load() != 1 {
 					t.Fatal("busy consumed attempt")
@@ -95,7 +72,7 @@ func TestIdleMemoryReclaim(t *testing.T) {
 			}
 			if blocker == "viewer" || blocker == "opt out" {
 				if blocker == "opt out" {
-					if err := s.memoryPolicy.set("id-bob", true); err != nil {
+					if err := s.Environments.SetMemoryReclaim("bob", true); err != nil {
 						t.Fatal(err)
 					}
 					tick()
@@ -177,7 +154,7 @@ func TestIdleMemoryBusyAgentFinishes(t *testing.T) {
 		s.inside.mu.Unlock()
 		s.reclaimIdle(context.Background(), now, states)
 	}
-	ref := activity.Ref{Name: "bob", ID: "id-bob"}
+	ref := activity.Ref{Name: "bob", ID: "bob"}
 	agent := activity.Agent{ID: "a", Name: "bot"}
 	s.activity.CmdStart(ref, agent, "work", "sleep")
 	tick()

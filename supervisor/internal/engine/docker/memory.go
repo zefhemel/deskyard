@@ -40,7 +40,7 @@ func (d *Docker) ReclaimMemory(ctx context.Context, id string) (engine.MemoryRec
 	}
 	c := target.Container
 	if c.State == nil || !c.State.Running || c.State.Paused || c.State.Pid <= 0 {
-		return engine.MemoryReclaim{}, errors.New("the desktop must be running to reclaim memory")
+		return engine.MemoryReclaim{}, errors.New("the environment must be running to reclaim memory")
 	}
 	// Discover the path through one read-only proc file. No host PID namespace,
 	// Docker socket, or writable host filesystem is exposed to this helper.
@@ -48,7 +48,7 @@ func (d *Docker) ReclaimMemory(ctx context.Context, id string) (engine.MemoryRec
 		Source: fmt.Sprintf("/proc/%d/cgroup", c.State.Pid), Target: "/target-cgroup", ReadOnly: true}},
 		`sed -n 's/^0:://p' /target-cgroup`)
 	if err != nil {
-		return engine.MemoryReclaim{}, fmt.Errorf("discovering the desktop cgroup: %w", err)
+		return engine.MemoryReclaim{}, fmt.Errorf("discovering the environment cgroup: %w", err)
 	}
 	group, err := reclaimCgroup(string(out), c.ID)
 	if err != nil {
@@ -76,14 +76,14 @@ var cgroupPath = regexp.MustCompile(`^/[a-zA-Z0-9_./-]+$`)
 func reclaimCgroup(output, id string) (string, error) {
 	group := strings.TrimSpace(output)
 	if len(id) != 64 || !cgroupPath.MatchString(group) || path.Clean(group) != group {
-		return "", fmt.Errorf("%w: cannot identify this desktop's cgroup", engine.ErrReclaimUnsupported)
+		return "", fmt.Errorf("%w: cannot identify this environment's cgroup", engine.ErrReclaimUnsupported)
 	}
 	for _, part := range strings.Split(group, "/") {
 		if part == id || part == "docker-"+id+".scope" {
 			return group, nil
 		}
 	}
-	return "", fmt.Errorf("%w: cgroup does not belong to this desktop", engine.ErrReclaimUnsupported)
+	return "", fmt.Errorf("%w: cgroup does not belong to this environment", engine.ErrReclaimUnsupported)
 }
 
 // memoryHelper runs only our fixed shell program from the resolved helper image
@@ -166,9 +166,9 @@ const reclaimScript = `
 unsupported() { echo "$1" >&2; exit 20; }
 test -w /target/memory.reclaim || unsupported 'memory.reclaim is unavailable or read-only'
 test -r /target/memory.swap.current || unsupported 'swap accounting is unavailable'
-test "$(cat /target/memory.swap.max)" != 0 || unsupported 'swap is disabled for this desktop'
+test "$(cat /target/memory.swap.max)" != 0 || unsupported 'swap is disabled for this environment'
 awk 'NR>1 && $3>0 {found=1} END {exit !found}' /proc/swaps || unsupported 'the Linux host has no swap'
-grep -q '^populated 1$' /target/cgroup.events || { echo 'the desktop has stopped' >&2; exit 1; }
+grep -q '^populated 1$' /target/cgroup.events || { echo 'the environment has stopped' >&2; exit 1; }
 before=$(cat /target/memory.current)
 swap_before=$(cat /target/memory.swap.current)
 partial=false

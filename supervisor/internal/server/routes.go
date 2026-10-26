@@ -8,7 +8,7 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 func (s *Server) routes() {
@@ -30,33 +30,33 @@ func (s *Server) routes() {
 	h("PUT /api/vpn/connections/{id}", s.handleUpdateVPN)
 	h("DELETE /api/vpn/connections/{id}", s.handleDeleteVPN)
 	h("POST /api/vpn/test", s.handleTestVPN)
-	h("GET /api/desktops", s.handleListDesktops)
-	h("POST /api/desktops", s.handleCreateDesktop)
+	h("GET /api/environments", s.handleListEnvironments)
+	h("POST /api/environments", s.handleCreateEnvironment)
 	h("GET /api/validate-name", s.handleValidateName)
-	h("GET /api/desktops/{name}/terminal", s.handleTerminal)
-	h("GET /api/desktops/{name}/terminal/sessions", s.handleTerminalSessions)
-	h("GET /api/desktops/{name}", s.handleGetDesktop)
-	h("PATCH /api/desktops/{name}", s.handleUpdateDesktop)
-	h("DELETE /api/desktops/{name}", s.handleRemoveDesktop)
-	h("POST /api/desktops/{name}/reclaim-memory", s.handleReclaimMemory)
-	h("PUT /api/desktops/{name}/memory-policy", s.handleMemoryPolicy)
-	h("POST /api/desktops/{name}/{action}", s.handlePower) // start, stop, restart, upgrade, keys
-	h("POST /api/desktops/{name}/mic", s.handleCapture(captureMic))
-	h("POST /api/desktops/{name}/cam", s.handleCapture(captureCam))
-	h("PUT /api/desktops/{name}/access", s.handleSetAccess)
-	h("GET /api/desktops/{name}/screen.png", s.handleScreen)
-	h("GET /api/desktops/{name}/processes", s.handleProcesses)
-	h("GET /api/desktops/{name}/stats", s.handleStats)
-	h("GET /api/desktops/{name}/folder", s.handleFolder)
-	h("GET /api/desktops/{name}/tools", s.handleTools)
-	h("GET /api/desktops/{name}/activity", s.handleActivity)
-	h("GET /api/desktops/{name}/screen-events", s.handleScreenEvents)
-	h("GET /api/desktops/{name}/files", s.handleFiles)
-	h("GET /api/desktops/{name}/download", s.handleDownload)
-	h("POST /api/desktops/{name}/upload", s.handleUpload)
-	h("GET /api/desktops/{name}/tokens", s.handleListTokens)
-	h("POST /api/desktops/{name}/tokens", s.handleCreateToken)
-	h("DELETE /api/desktops/{name}/tokens/{id}", s.handleDeleteToken)
+	h("GET /api/environments/{name}/terminal", s.handleTerminal)
+	h("GET /api/environments/{name}/terminal/sessions", s.handleTerminalSessions)
+	h("GET /api/environments/{name}", s.handleGetEnvironment)
+	h("PATCH /api/environments/{name}", s.handleUpdateEnvironment)
+	h("DELETE /api/environments/{name}", s.handleRemoveEnvironment)
+	h("POST /api/environments/{name}/reclaim-memory", s.handleReclaimMemory)
+	h("PUT /api/environments/{name}/memory-policy", s.handleMemoryPolicy)
+	h("POST /api/environments/{name}/{action}", s.handlePower) // start, stop, restart, upgrade, keys
+	h("POST /api/environments/{name}/mic", s.handleCapture(captureMic))
+	h("POST /api/environments/{name}/cam", s.handleCapture(captureCam))
+	h("PUT /api/environments/{name}/access", s.handleSetAccess)
+	h("GET /api/environments/{name}/screen.png", s.handleScreen)
+	h("GET /api/environments/{name}/processes", s.handleProcesses)
+	h("GET /api/environments/{name}/stats", s.handleStats)
+	h("GET /api/environments/{name}/folder", s.handleFolder)
+	h("GET /api/environments/{name}/tools", s.handleTools)
+	h("GET /api/environments/{name}/activity", s.handleActivity)
+	h("GET /api/environments/{name}/screen-events", s.handleScreenEvents)
+	h("GET /api/environments/{name}/files", s.handleFiles)
+	h("GET /api/environments/{name}/download", s.handleDownload)
+	h("POST /api/environments/{name}/upload", s.handleUpload)
+	h("GET /api/environments/{name}/tokens", s.handleListTokens)
+	h("POST /api/environments/{name}/tokens", s.handleCreateToken)
+	h("DELETE /api/environments/{name}/tokens/{id}", s.handleDeleteToken)
 
 	h("GET /api/accounts", s.handleListAccounts)
 	h("POST /api/accounts", s.handleCreateAccount)
@@ -171,15 +171,15 @@ func (s *Server) handleOwnPassword(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- helpers for desktop routes -----------------------------------------------------------
+// --- helpers for environment routes -------------------------------------------------------
 
-// desktopFor resolves {name} for the signed-in account, writing 404 when it
+// environmentFor resolves {name} for the signed-in account, writing 404 when it
 // doesn't exist or the account can't see it, and 403 when the action isn't allowed.
-func (s *Server) desktopFor(w http.ResponseWriter, r *http.Request, action auth.Action) (desktops.Desktop, accounts.Account, bool) {
+func (s *Server) environmentFor(w http.ResponseWriter, r *http.Request, action auth.Action) (environments.Environment, accounts.Account, bool) {
 	a, _ := s.account(r)
-	c, err := s.Desktops.Get(r.Context(), r.PathValue("name"))
+	c, err := s.Environments.Get(r.Context(), r.PathValue("name"))
 	if err != nil || !auth.Can(a, auth.View, c.ID) {
-		writeError(w, http.StatusNotFound, "no such desktop")
+		writeError(w, http.StatusNotFound, "no such environment")
 		return c, a, false
 	}
 	if !auth.Can(a, action, c.ID) {
@@ -199,11 +199,11 @@ func requireAdmin(w http.ResponseWriter, a accounts.Account) bool {
 
 func errorStatus(err error) int {
 	switch {
-	case errors.Is(err, desktops.ErrNotFound), errors.Is(err, accounts.ErrNotFound):
+	case errors.Is(err, environments.ErrNotFound), errors.Is(err, accounts.ErrNotFound):
 		return http.StatusNotFound
-	case errors.Is(err, desktops.ErrExists), errors.Is(err, accounts.ErrExists),
-		errors.Is(err, desktops.ErrBusy), errors.Is(err, accounts.ErrLastAdmin), errors.Is(err, desktops.ErrStopped),
-		errors.Is(err, desktops.ErrCameraTaken):
+	case errors.Is(err, environments.ErrExists), errors.Is(err, accounts.ErrExists),
+		errors.Is(err, environments.ErrBusy), errors.Is(err, accounts.ErrLastAdmin), errors.Is(err, environments.ErrStopped),
+		errors.Is(err, environments.ErrCameraTaken), errors.Is(err, environments.ErrConflict):
 		return http.StatusConflict
 	default:
 		return http.StatusBadRequest

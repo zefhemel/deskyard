@@ -41,7 +41,7 @@ def test_browser_cli_and_native_launcher_share_shell(supervisor, name, desktop, 
                     return in_desktop(name, 'xdotool', 'search', '--onlyvisible', '--class', 'xfce4-terminal', check=False).splitlines()
                 assert wait_until(windows), 'Installed Deskyard Terminal launcher did not open a terminal'
                 def native_sessions():
-                    response = page.request.get(f'{supervisor.base}/api/desktops/{name}/terminal/sessions')
+                    response = page.request.get(f'{supervisor.base}/api/environments/{name}/terminal/sessions')
                     assert response.status == 200, response.text()
                     return [entry['name'] for entry in response.json()['sessions']]
                 assert wait_until(lambda: len(native_sessions()) == 1), 'Native session not discoverable'
@@ -56,7 +56,7 @@ def test_browser_cli_and_native_launcher_share_shell(supervisor, name, desktop, 
                 command(page, f'export SHARED_PROOF={nonce}; printf "%s" "$$" > /workspace/shared-browser-pid')
                 eventually(lambda: shell(name, 'cat /workspace/shared-browser-pid 2>/dev/null || true').isdigit(), True)
                 pid = shell(name, 'cat /workspace/shared-browser-pid')
-                process = subprocess.Popen([cli, '-d', name, 'terminal', session], env=remote.env,
+                process = subprocess.Popen([cli, '-e', name, 'terminal', session], env=remote.env,
                                            stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
                 os.close(slave)
                 slave = None

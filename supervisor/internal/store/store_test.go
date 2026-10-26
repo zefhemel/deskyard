@@ -33,3 +33,19 @@ func TestMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRestrict(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "x.json")
+	if err := Restrict(p); err != nil {
+		t.Fatal(err) // missing is fine
+	}
+	if err := os.WriteFile(p, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Restrict(p); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := os.Stat(p); st.Mode().Perm() != 0o600 {
+		t.Fatalf("mode %v", st.Mode())
+	}
+}

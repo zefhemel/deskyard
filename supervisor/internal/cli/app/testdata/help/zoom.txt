@@ -1,6 +1,6 @@
 deskyard zoom: PNG of a region at full resolution
 
-Usage: deskyard [-d NAME] zoom X0 Y0 X1 Y1 [FILE|-]
+Usage: deskyard [-e NAME] zoom X0 Y0 X1 Y1 [FILE|-]
 
 Takes a PNG of just the region from the top-left corner X0 Y0 to the
 bottom-right corner X1 Y1 (exclusive), at full resolution: use it to read
@@ -20,5 +20,5 @@ Prints: PNG image bytes on stdout, or nothing when FILE is given (the file is
 Examples:
   deskyard zoom 100 50 420 290 detail.png
 
-Where: inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)
+Where: inside an environment it acts locally; elsewhere on the chosen environment (-e NAME)
 Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop

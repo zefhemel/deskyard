@@ -1,6 +1,6 @@
 deskyard screenshot: PNG of the whole screen
 
-Usage: deskyard [-d NAME] screenshot [FILE|-]
+Usage: deskyard [-e NAME] screenshot [FILE|-]
 
 Takes a PNG screenshot of the whole screen, after a short settle delay
 (DESKYARD_SETTLE seconds, default 0.3) so the screen reflects your last
@@ -18,5 +18,5 @@ Examples:
   deskyard screenshot shot.png
   deskyard screenshot > shot.png
 
-Where: inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)
+Where: inside an environment it acts locally; elsewhere on the chosen environment (-e NAME)
 Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop

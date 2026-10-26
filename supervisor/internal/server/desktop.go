@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/web"
 )
 
@@ -38,7 +38,7 @@ func (s *Server) serveDesktop(w http.ResponseWriter, r *http.Request, name, rest
 		return
 	}
 	a, _ := s.account(r)
-	c, err := s.Desktops.Get(r.Context(), name)
+	c, err := s.Environments.Get(r.Context(), name)
 	if err != nil || !auth.Can(a, auth.View, c.ID) {
 		http.NotFound(w, r) // the same for missing and invisible desktops
 		return
@@ -68,7 +68,7 @@ func (s *Server) serveDesktop(w http.ResponseWriter, r *http.Request, name, rest
 // serveScreen serves /<name>/screen/<file>. Of Selkies' HTTP API only the
 // stream is proxied; its other endpoints (upload, files, screenshots, …) are
 // refused here as well as by the desktop's Caddy.
-func (s *Server) serveScreen(w http.ResponseWriter, r *http.Request, c desktops.Desktop, file string) {
+func (s *Server) serveScreen(w http.ResponseWriter, r *http.Request, c environments.Environment, file string) {
 	switch {
 	case file == "api/websockets" || file == "api/websockets/":
 		s.serveStream(w, r, c)
@@ -129,7 +129,7 @@ func screenAdapterTag(page []byte) (string, error) {
 }
 
 // serveScreenPage serves the client's index.html with our additions.
-func (s *Server) serveScreenPage(w http.ResponseWriter, r *http.Request, c desktops.Desktop) {
+func (s *Server) serveScreenPage(w http.ResponseWriter, r *http.Request, c environments.Environment) {
 	dir, ok := s.clientDir(w, r, c)
 	if !ok {
 		return
@@ -155,7 +155,7 @@ func (s *Server) serveScreenPage(w http.ResponseWriter, r *http.Request, c deskt
 	_, _ = w.Write(page)
 }
 
-func (s *Server) clientDir(w http.ResponseWriter, r *http.Request, c desktops.Desktop) (string, bool) {
+func (s *Server) clientDir(w http.ResponseWriter, r *http.Request, c environments.Environment) (string, bool) {
 	if c.ImageID == "" {
 		http.NotFound(w, r)
 		return "", false
@@ -169,7 +169,7 @@ func (s *Server) clientDir(w http.ResponseWriter, r *http.Request, c desktops.De
 	return dir, true
 }
 
-func (s *Server) serveClientFile(w http.ResponseWriter, r *http.Request, c desktops.Desktop, file string) {
+func (s *Server) serveClientFile(w http.ResponseWriter, r *http.Request, c environments.Environment, file string) {
 	dir, ok := s.clientDir(w, r, c)
 	if !ok {
 		return
@@ -197,7 +197,7 @@ const streamOrigin = "http://supervisor.deskyard.invalid"
 // desktop, adding the desktop's token and dropping the session cookie, and
 // tracks who's viewing. ?tab= names the page's browser tab, for its mic badge.
 // A plain GET is the client's reconnect probe.
-func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, c desktops.Desktop) {
+func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, c environments.Environment) {
 	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 		s.probeStream(w, r, c)
 		return
@@ -211,7 +211,7 @@ func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, c desktops.
 		writeError(w, http.StatusBadRequest, "bad tab id")
 		return
 	}
-	addr, token, err := s.Desktops.Target(r.Context(), c.Name)
+	addr, token, err := s.Environments.Target(r.Context(), c.Name)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
@@ -224,7 +224,7 @@ func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, c desktops.
 	a, _ := s.account(r)
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	cn := &conn{username: a.Username, tab: tab, desktopID: c.ID, cancel: cancel}
+	cn := &conn{username: a.Username, tab: tab, environment: c.ID, cancel: cancel}
 	s.viewers.add(c.Name, cn)
 	s.publishViewers(c.Name, c.ID)
 	defer func() {
@@ -239,7 +239,7 @@ func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, c desktops.
 				// Selkies may have stopped the desktop's stream: restarted
 				// if this viewer gets no picture.
 				resp.Body = newStreamWatch(conn, streamPictureWait, func() {
-					s.Log.Info("desktop stream: no picture for a new viewer; restarting it", "desktop", c.Name, "account", a.Username)
+					s.Log.Info("desktop stream: no picture for a new viewer; restarting it", "environment", c.Name, "account", a.Username)
 				})
 			}
 			return nil
@@ -247,7 +247,7 @@ func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, c desktops.
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			release()
 			if !errors.Is(err, context.Canceled) {
-				s.Log.Debug("desktop stream", "desktop", c.Name, "err", err)
+				s.Log.Debug("desktop stream", "environment", c.Name, "err", err)
 			}
 			w.WriteHeader(http.StatusBadGateway)
 		},
@@ -328,13 +328,13 @@ func streamRequest(out *http.Request, addr, token string) {
 // probeStream answers the client's reconnect probe: 204 when Selkies is up,
 // otherwise 503, which makes the client wait and probe again. (Never 409:
 // Selkies' client takes that as "the server serves WebRTC" and switches.)
-func (s *Server) probeStream(w http.ResponseWriter, r *http.Request, c desktops.Desktop) {
+func (s *Server) probeStream(w http.ResponseWriter, r *http.Request, c environments.Environment) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	addr, token, err := s.Desktops.Target(r.Context(), c.Name)
+	addr, token, err := s.Environments.Target(r.Context(), c.Name)
 	if err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
@@ -375,7 +375,7 @@ func validTab(tab string) bool {
 // (seq), so a late one never undoes a newer one.
 func (s *Server) handleCapture(kind capture) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		c, a, ok := s.desktopFor(w, r, auth.View)
+		c, a, ok := s.environmentFor(w, r, auth.View)
 		if !ok {
 			return
 		}

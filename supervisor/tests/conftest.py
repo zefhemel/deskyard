@@ -170,7 +170,7 @@ class Client(requests.Session):
         kw.setdefault("timeout", 60)
         if url.startswith("/"):
             url = self.base + url
-        if self.before_create and method.upper() == "POST" and url.split("?")[0] == self.base + "/api/desktops":
+        if self.before_create and method.upper() == "POST" and url.split("?")[0] == self.base + "/api/environments":
             self.before_create()
         return super().request(method, url, *a, **kw)
 
@@ -191,7 +191,7 @@ class Client(requests.Session):
 
     def start_create(self, name: str, **kw) -> str:
         """Starts creating a desktop; returns the job."""
-        r = self.post("/api/desktops", json={"name": name, "image": IMAGE, **kw})
+        r = self.post("/api/environments", json={"name": name, "image": IMAGE, **kw})
         assert r.status_code == 202, r.text
         return r.json()["job"]
 
@@ -201,7 +201,7 @@ class Client(requests.Session):
         return self.desktop(name)
 
     def desktop(self, name: str) -> dict:
-        r = self.get(f"/api/desktops/{name}")
+        r = self.get(f"/api/environments/{name}")
         assert r.status_code == 200, r.text
         return r.json()
 
@@ -216,6 +216,7 @@ class Supervisor:
         self.proc = None
         self.container = None
         self.pool: DesktopPool | None = None
+        self._instance = ""
 
     def start(self):
         env = {
@@ -225,7 +226,7 @@ class Supervisor:
         }
         if MODE == "container":
             self.container = f"deskyard-test-supervisor-{uuid.uuid4().hex[:6]}"
-            args = ["run", "-d", "--name", self.container, "-p", f"127.0.0.1:{self.port}:8080",
+            args = ["run", "-d", "--name", self.container, "-p", f"127.0.0.1:{self.port}:7343",
                     "-v", "/var/run/docker.sock:/var/run/docker.sock", "-v", f"{self.data}:{self.data}"]
             for k, v in env.items():
                 args += ["-e", f"{k}={v}"]
@@ -242,6 +243,26 @@ class Supervisor:
             except requests.RequestException:
                 time.sleep(0.3)
         raise TimeoutError("supervisor didn't start:\n" + self.logs())
+
+    def read(self, path: Path) -> str:
+        """A file the supervisor wrote. In container mode through the
+        container: on a Linux engine its files are root's, some owner-only."""
+        if not self.container:
+            return path.read_text()
+        r = docker("exec", self.container, "cat", str(path), check=False)
+        if r.returncode != 0:
+            raise (FileNotFoundError if "No such file" in r.stderr else RuntimeError)(f"reading {path}: {r.stderr}")
+        return r.stdout
+
+    def instance(self) -> str:
+        """The supervisor's instance ID ("" before its first start). Kept
+        once read, so teardown has it after the container is gone."""
+        if not self._instance:
+            try:
+                self._instance = self.read(self.data / "state" / "instance").strip()
+            except FileNotFoundError:
+                pass
+        return self._instance
 
     def logs(self) -> str:
         if self.container:
@@ -305,7 +326,7 @@ class DesktopPool:
     def close(self):
         self.settle()
         for name, _ in self.waiting:
-            self.admin.delete(f"/api/desktops/{name}?files=1")
+            self.admin.delete(f"/api/environments/{name}?files=1")
         self.waiting = []
 
 
@@ -317,13 +338,24 @@ def supervisor(tmp_path_factory):
     sup = Supervisor(base)
     sup.start()
     yield sup
+    instance = sup.instance()  # before stop: container mode reads it through the container
     sup.stop()
-    # Remove what the tests created: desktops carry the test supervisor's data path.
+    # Remove what the tests created, and nothing else on the engine: this
+    # supervisor's containers and networks carry its instance label, and any
+    # other managed container it left (a helper) mounts its data folder.
+    ours = set()
+    if instance:
+        label = f"label=deskyard.instance={instance}"
+        ours.update(docker("ps", "-a", "--format", "{{.Names}}", "--filter", label, check=False).stdout.split())
     for name in docker("ps", "-a", "--format", "{{.Names}}", "--filter", "label=deskyard.managed=true", check=False).stdout.split():
         mounts = docker("inspect", "-f", "{{range .Mounts}}{{.Source}} {{end}}", name, check=False).stdout
         if str(sup.data) in mounts:
-            docker("rm", "-f", name, check=False)
-            docker("network", "rm", name, check=False)
+            ours.add(name)
+    for name in ours:
+        docker("rm", "-f", name, check=False)
+    if instance:
+        for net in docker("network", "ls", "--format", "{{.Name}}", "--filter", label, check=False).stdout.split():
+            docker("network", "rm", net, check=False)
     docker("run", "--rm", "-v", f"{base}:/b", "alpine:3.22", "rm", "-rf", "/b/data", check=False)
     shutil.rmtree(base, ignore_errors=True)
 
@@ -357,7 +389,7 @@ def name(request) -> str:
 def desktop(admin, name, request):
     """A running desktop, removed (with its files) afterwards."""
     yield request.node.pooled_desktop
-    admin.delete(f"/api/desktops/{name}?files=1")
+    admin.delete(f"/api/environments/{name}?files=1")
 
 
 @pytest.fixture(scope="session")
@@ -370,7 +402,7 @@ def cli() -> str:
 def remote(cli, admin, desktop, name, tmp_path):
     """Runs the deskyard command against the test's desktop, as an agent elsewhere:
     remote(*args) with a remote added for it (token "cli test")."""
-    t = admin.post(f"/api/desktops/{name}/tokens", json={"name": "cli test", "expires": None}).json()
+    t = admin.post(f"/api/environments/{name}/tokens", json={"name": "cli test", "expires": None}).json()
     env = {**os.environ, "XDG_CONFIG_HOME": str(tmp_path / "config"), "HOME": str(tmp_path)}
     env.pop("DESKYARD_REMOTE", None)
 

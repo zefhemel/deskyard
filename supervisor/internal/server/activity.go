@@ -10,7 +10,7 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/activity"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 // activityInterval is the least time between two activity events of a desktop.
@@ -41,7 +41,7 @@ func (s *Server) agentOf(t token) activity.Agent {
 	return activity.Agent{ID: t.ID, Name: t.Name, Owner: t.CreatedBy}
 }
 
-func refOf(c desktops.Desktop) activity.Ref { return activity.Ref{Name: c.Name, ID: c.ID} }
+func refOf(c environments.Environment) activity.Ref { return activity.Ref{Name: c.Name, ID: c.ID} }
 
 // activityJSON is what agents are doing on a desktop.
 type activityJSON struct {
@@ -87,12 +87,12 @@ func forwardText(fw []forwardJSON) string {
 
 // publishActivity sends a desktop's activity to the UI, at most once per
 // activityInterval (the last state always follows).
-func (s *Server) publishActivity(name, desktopID string) {
-	if desktopID == "" { // an event without a desktop id would go to everyone
+func (s *Server) publishActivity(name, environment string) {
+	if environment == "" { // an event without an environment would go to everyone
 		return
 	}
 	s.activityPub.do(name, func() {
-		s.events.publish(event{kind: "activity", desktopID: desktopID, data: s.activityJSON(name)})
+		s.events.publish(event{kind: "activity", environment: environment, data: s.activityJSON(name)})
 	})
 }
 
@@ -111,7 +111,7 @@ func (s *Server) activityLoop(ctx context.Context) {
 }
 
 func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
-	c, _, ok := s.desktopFor(w, r, auth.View)
+	c, _, ok := s.environmentFor(w, r, auth.View)
 	if !ok {
 		return
 	}
@@ -121,7 +121,7 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 // handleScreenEvents streams the screen actions agents make on a desktop,
 // for drawing them over the viewer's screen.
 func (s *Server) handleScreenEvents(w http.ResponseWriter, r *http.Request) {
-	c, a, ok := s.desktopFor(w, r, auth.View)
+	c, a, ok := s.environmentFor(w, r, auth.View)
 	if !ok {
 		return
 	}
@@ -132,11 +132,11 @@ func (s *Server) handleScreenEvents(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	// Registered so that a revoke closes the stream even while it is idle.
-	cn := &conn{username: a.Username, desktopID: c.ID, cancel: cancel}
+	cn := &conn{username: a.Username, environment: c.ID, cancel: cancel}
 	s.screenWatchers.add(c.Name, cn)
 	defer s.screenWatchers.remove(c.Name, cn)
-	if !allowed() { // revoked between desktopFor and add
-		writeError(w, http.StatusNotFound, "no such desktop")
+	if !allowed() { // revoked between environmentFor and add
+		writeError(w, http.StatusNotFound, "no such environment")
 		return
 	}
 	events, stop := s.activity.WatchScreen(c.Name)

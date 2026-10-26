@@ -280,7 +280,7 @@ BADGE_WATCH = """(name) => {
   window.__w = setInterval(async () => {
     const before = live();
     let d;
-    try { d = await (await fetch('/api/desktops/' + name)).json(); } catch { return; }
+    try { d = await (await fetch('/api/environments/' + name)).json(); } catch { return; }
     window.__n++;
     if (before && live() && !d.mics.includes('admin')) window.__viol.push(d.mics);
   }, 30);
@@ -321,7 +321,7 @@ def test_cam_badge(supervisor, admin, desktop, name):
         browser, page = signed_in(p, supervisor.base)
         open_desktop(page, supervisor.base, name)
         tab = page.evaluate(f"{SCREEN}.tab")
-        r = page.evaluate("""async (tab) => (await fetch(location.pathname.replace(/\\/$/, '').replace(/^\\//, '/api/desktops/') + '/cam',
+        r = page.evaluate("""async (tab) => (await fetch(location.pathname.replace(/\\/$/, '').replace(/^\\//, '/api/environments/') + '/cam',
             {method: 'POST', body: JSON.stringify({on: true, tab, seq: 1e9})})).status""", tab)
         assert r == 204
         expect(page.locator('[data-avatar="admin"] [data-cam-badge]')).to_be_visible(timeout=10000)
@@ -337,7 +337,7 @@ def test_two_mics(supervisor, admin, desktop, name, tmp_path):
     # Two viewers' mics are mixed into the desktop's one. One turning theirs
     # off, or leaving, never takes the other's away.
     user = "u" + uuid.uuid4().hex[:5]
-    r = admin.post("/api/accounts", json={"username": user, "password": "pw-" + user, "admin": False, "desktops": [name]})
+    r = admin.post("/api/accounts", json={"username": user, "password": "pw-" + user, "admin": False, "environments": [name]})
     assert r.status_code == 201, r.text
     try:
         with sync_playwright() as p:

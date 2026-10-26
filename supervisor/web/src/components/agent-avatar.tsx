@@ -1,5 +1,5 @@
 // A CLI client avatar: the owner's initial with a terminal badge (remote), or
-// a terminal (inside the desktop). A dashed ring pulses while it is active.
+// a terminal (inside the environment). A dashed ring pulses while it is active.
 import type { AgentPresence } from "../api.ts";
 import { agentTitle } from "../lib/activity-format.ts";
 import { cx } from "./ui.tsx";

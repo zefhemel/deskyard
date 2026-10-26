@@ -5,7 +5,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { mockApi } from "./src/dev/mock.ts";
 
 // `npm run dev` serves a fake API (src/dev/mock.ts). With
-// DESKYARD_API=http://localhost:8080 it proxies to a real supervisor
+// DESKYARD_API=http://localhost:7343 it proxies to a real supervisor
 // instead (Origin rewritten, since the supervisor checks it).
 const target = process.env.DESKYARD_API;
 const proxied: ProxyOptions = {

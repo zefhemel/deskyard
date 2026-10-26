@@ -27,18 +27,18 @@ func runCp(a *App, c *call) error {
 	src, dst := transfer.ParseEndpoint(c.args[0]), transfer.ParseEndpoint(c.args[1])
 	switch {
 	case src.IsRemote && dst.IsRemote:
-		return usagef(c.cmd, "both sides are on desktops; copy to this machine first, then on")
+		return usagef(c.cmd, "both sides are on environments; copy to this machine first, then on")
 	case !src.IsRemote && !dst.IsRemote:
 		if a.remoteFlag == "" && a.Inside != nil && a.Inside() {
 			if src.Path == "-" || dst.Path == "-" {
-				return usagef(c.cmd, "- needs a desktop on the other side")
+				return usagef(c.cmd, "- needs an environment on the other side")
 			}
 			end := a.recordCommand([]string{"cp", c.args[0], c.args[1]})
 			err := transfer.LocalCopy(src.Path, dst.Path)
 			end(0, err)
 			return err
 		}
-		return usagef(c.cmd, "neither side is on a desktop: write the desktop side as NAME:/path, e.g. deskyard cp ./file alice:/workspace/ (an empty NAME, :/path, means the chosen remote)")
+		return usagef(c.cmd, "neither side is in an environment: write the environment side as NAME:/path, e.g. deskyard cp ./file alice:/workspace/ (an empty NAME, :/path, means the chosen remote)")
 	}
 	rp := src
 	if dst.IsRemote {
@@ -49,7 +49,7 @@ func runCp(a *App, c *call) error {
 		return err
 	}
 	run := func(ctx context.Context, req execws.Request, sio execws.IO) (int, error) {
-		if cl == nil { // local desktop, NAME: given while inside
+		if cl == nil { // this environment, NAME: given while inside
 			code, err := a.localExec(req, sio.Stdin, orDiscard(sio.Stdout), orDiscard(sio.Stderr))
 			return code, err
 		}
@@ -92,7 +92,7 @@ func runBrowserConnect(a *App, c *call) error {
 	}
 	if cl == nil {
 		fmt.Fprintln(a.Stdout, "http://127.0.0.1:9221")
-		fmt.Fprintln(a.Stderr, "You are inside the desktop: the shared Chromium's CDP is already at http://127.0.0.1:9221; connect to it directly (connect_over_cdp(\"http://127.0.0.1:9221\")).")
+		fmt.Fprintln(a.Stderr, "You are inside the environment: the shared Chromium's CDP is already at http://127.0.0.1:9221; connect to it directly (connect_over_cdp(\"http://127.0.0.1:9221\")).")
 		return nil
 	}
 	ctx, stop := signal.NotifyContext(c.ctx, os.Interrupt, syscall.SIGTERM)
@@ -126,28 +126,28 @@ func runRemoteAdd(a *App, c *call) error {
 	}
 	tok := c.str("--token", a.Getenv("DESKYARD_TOKEN"))
 	if tok == "" {
-		return usagef(c.cmd, "no token: pass --token dyt_… (create one on the desktop's Remote access tab)")
+		return usagef(c.cmd, "no token: pass --token dyt_… (create one on the environment's Remote access tab)")
 	}
 	if !strings.HasPrefix(tok, "dyt_") {
-		return usagef(c.cmd, "that doesn't look like an access token (they start with dyt_): copy it from the desktop's Remote access tab")
+		return usagef(c.cmd, "that doesn't look like an access token (they start with dyt_): copy it from the environment's Remote access tab")
 	}
 	t, err := remote.ParseURL(rawURL)
 	if err != nil {
 		return usagef(c.cmd, "%v", err)
 	}
-	cl := &remote.Client{Alias: name, Base: t.Base, Desktop: t.Desktop, Token: tok, HTTP: a.HTTP}
+	cl := &remote.Client{Alias: name, Base: t.Base, Environment: t.Environment, Token: tok, HTTP: a.HTTP}
 	info, err := cl.Info(c.ctx)
 	stopped := err
 	switch {
 	case err == nil:
-		if t.Desktop != "" && info.Name != "" && info.Name != t.Desktop {
-			return fmt.Errorf("this token is for the desktop %q, not %q: use https://…/%s, or a token for %s", info.Name, t.Desktop, info.Name, t.Desktop)
+		if t.Environment != "" && info.Name != "" && info.Name != t.Environment {
+			return fmt.Errorf("this token is for the environment %q, not %q: use https://…/%s, or a token for %s", info.Name, t.Environment, info.Name, t.Environment)
 		}
 		if info.Name != "" {
-			t.Desktop = info.Name
+			t.Environment = info.Name
 		}
 	case remote.IsStatus(err, http.StatusConflict):
-		// The token works; the desktop is just not running.
+		// The token works; the environment is just not running.
 	default:
 		return err
 	}
@@ -156,7 +156,7 @@ func runRemoteAdd(a *App, c *call) error {
 		return err
 	}
 	_, replaced := cfg.Remotes[name]
-	cfg.Add(&remote.Remote{Name: name, URL: t.URL(), Base: t.Base, Desktop: t.Desktop, Token: tok})
+	cfg.Add(&remote.Remote{Name: name, URL: t.URL(), Base: t.Base, Environment: t.Environment, Token: tok})
 	if err := cfg.Save(path); err != nil {
 		return fmt.Errorf("saving %s: %v", path, err)
 	}
@@ -173,7 +173,7 @@ func runRemoteAdd(a *App, c *call) error {
 	if cfg.Default == name {
 		fmt.Fprintf(a.Stdout, "It is the default remote; try `deskyard status`.\n")
 	} else {
-		fmt.Fprintf(a.Stdout, "Use it with `deskyard -d %s …`, or make it the default with `deskyard remote default %s`.\n", name, name)
+		fmt.Fprintf(a.Stdout, "Use it with `deskyard -e %s …`, or make it the default with `deskyard remote default %s`.\n", name, name)
 	}
 	return nil
 }
@@ -185,21 +185,21 @@ func runRemoteList(a *App, c *call) error {
 	}
 	if c.bool("--json") {
 		type row struct {
-			Name    string `json:"name"`
-			URL     string `json:"url"`
-			Desktop string `json:"desktop"`
-			Default bool   `json:"default"`
+			Name        string `json:"name"`
+			URL         string `json:"url"`
+			Environment string `json:"environment"`
+			Default     bool   `json:"default"`
 		}
 		rows := []row{}
 		for _, r := range cfg.Sorted() {
-			rows = append(rows, row{r.Name, r.URL, r.Desktop, r.Name == cfg.Default})
+			rows = append(rows, row{r.Name, r.URL, r.Environment, r.Name == cfg.Default})
 		}
 		enc := json.NewEncoder(a.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(rows)
 	}
 	if len(cfg.Remotes) == 0 {
-		fmt.Fprintln(a.Stdout, "No remotes. Get a token on a desktop's Remote access tab, then: deskyard remote add NAME https://host/NAME --token dyt_…")
+		fmt.Fprintln(a.Stdout, "No remotes. Get a token on an environment's Remote access tab, then: deskyard remote add NAME https://host/NAME --token dyt_…")
 		return nil
 	}
 	tw := tabwriter.NewWriter(a.Stdout, 0, 0, 2, ' ', 0)
@@ -283,7 +283,7 @@ func runStatus(a *App, c *call) error {
 			return err
 		}
 		st = status{Name: info.Name, State: info.State, Image: info.Image, ImageTitle: info.ImageTitle, ImageVersion: info.ImageVersion,
-			Screen: screen{info.Screen.Width, info.Screen.Height}, Remote: cl.Alias, URL: (&remote.Target{Base: cl.Base, Desktop: info.Name}).URL()}
+			Screen: screen{info.Screen.Width, info.Screen.Height}, Remote: cl.Alias, URL: (&remote.Target{Base: cl.Base, Environment: info.Name}).URL()}
 	}
 	if c.bool("--json") {
 		enc := json.NewEncoder(a.Stdout)
@@ -300,7 +300,7 @@ func runStatus(a *App, c *call) error {
 		fmt.Fprintf(tw, "screen:\t%dx%d\n", st.Screen.Width, st.Screen.Height)
 	}
 	if st.Local {
-		fmt.Fprintf(tw, "where:\tlocal (inside this desktop)\n")
+		fmt.Fprintf(tw, "where:\tlocal (inside this environment)\n")
 	} else {
 		fmt.Fprintf(tw, "remote:\t%s\n", st.Remote)
 		fmt.Fprintf(tw, "url:\t%s\n", st.URL)

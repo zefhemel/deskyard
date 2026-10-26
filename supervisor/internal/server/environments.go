@@ -1,0 +1,729 @@
+package server
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"path"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
+	"github.com/zefhemel/deskyard/supervisor/internal/activity"
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
+	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
+)
+
+type settingsJSON struct {
+	VPNConnectionID *string                  `json:"vpnConnectionId"`
+	LANExceptions   []vpn.Exception          `json:"lanExceptions"`
+	MemoryBytes     int64                    `json:"memoryBytes"`
+	NanoCPUs        int64                    `json:"nanoCpus"`
+	Camera          string                   `json:"camera"` // the host device, "" for none
+	Mounts          []environments.HostMount `json:"mounts"`
+	DockerAccess    bool                     `json:"dockerAccess"`
+}
+
+type statsJSON struct {
+	CPUPercent float64 `json:"cpuPercent"`
+	MemBytes   uint64  `json:"memBytes"`
+	MemLimit   uint64  `json:"memLimit"`
+}
+
+type environmentJSON struct {
+	VPN             environments.VPNStatus `json:"vpn"`
+	Terminal        bool                   `json:"terminal"`
+	MemoryReclaim   bool                   `json:"memoryReclaim"`
+	Name            string                 `json:"name"`
+	State           string                 `json:"state"`
+	Revision        uint64                 `json:"revision"`
+	AppliedRevision uint64                 `json:"appliedRevision"`
+	Power           environments.Power     `json:"power"`
+	Error           string                 `json:"error"`
+	Conflict        string                 `json:"conflict"`
+	StartedAt       *time.Time             `json:"startedAt"`
+	Created         *time.Time             `json:"created"`
+	Job             *string                `json:"job"`
+	Folder          string                 `json:"folder"`
+	Image           string                 `json:"image"`
+	ImageTitle      string                 `json:"imageTitle"`
+	ImageVersion    string                 `json:"imageVersion"`
+	UpdateAvailable *string                `json:"updateAvailable"`
+	Settings        settingsJSON           `json:"settings"`
+	Access          []string               `json:"access"`
+	Viewers         []string               `json:"viewers"`
+	Mics            []string               `json:"mics"`
+	Cams            []string               `json:"cams"`
+	Webcam          bool                   `json:"webcam"`
+	Forwards        []forwardJSON          `json:"forwards"`
+	Agents          []activity.Presence    `json:"agents"`
+	Tokens          int                    `json:"tokens"`
+	Stats           *statsJSON             `json:"stats"`
+}
+
+func (s *Server) environmentJSON(ctx context.Context, c environments.Environment, a accounts.Account) environmentJSON {
+	j := environmentJSON{
+		Terminal:      c.ImageLabels["deskyard.terminal"] == "tmux-v1",
+		MemoryReclaim: c.MemoryReclaim,
+		Name:          c.Name, State: c.State, Folder: c.Folder, Image: c.Image,
+		Revision: c.Revision, AppliedRevision: c.AppliedRevision, Power: c.Power, Error: c.Error, Conflict: c.Conflict,
+		ImageTitle: c.ImageLabels["org.opencontainers.image.title"], ImageVersion: c.ImageLabels["org.opencontainers.image.version"],
+		VPN:      c.VPN,
+		Settings: settingsJSON{MemoryBytes: c.Settings.MemoryBytes, NanoCPUs: c.Settings.NanoCPUs, Camera: c.Settings.Camera, LANExceptions: c.Settings.LANExceptions, Mounts: c.Settings.Mounts, DockerAccess: c.Settings.DockerAccess},
+		Access:   []string{}, Viewers: s.viewers.names(c.Name),
+		Mics: s.viewers.mics(c.Name), Cams: s.viewers.cams(c.Name), Webcam: c.Webcam(), Forwards: s.forwards.list(c.Name), Agents: s.activity.Present(c.Name),
+	}
+	if c.Settings.VPNConnectionID != "" {
+		id := c.Settings.VPNConnectionID
+		j.Settings.VPNConnectionID = &id
+	}
+	if j.Settings.LANExceptions == nil {
+		j.Settings.LANExceptions = []vpn.Exception{}
+	}
+	if j.Settings.Mounts == nil {
+		j.Settings.Mounts = []environments.HostMount{}
+	}
+	if !c.Created.IsZero() {
+		j.Created = &c.Created
+	}
+	if id, ok := s.jobs.forEnvironment(c.Name); ok {
+		j.Job = &id
+	}
+	if c.State == "running" {
+		j.StartedAt = since(c.StartedAt)
+		if st, ok := s.stats.latest(c.Name); ok {
+			j.Stats = &st
+		}
+	}
+	if a.Admin && c.Revision != 0 { // defined, not still being created
+		j.Access = s.Accounts.WithAccess(c.Name)
+		if j.Access == nil {
+			j.Access = []string{}
+		}
+	}
+	if c.Revision != 0 {
+		j.Tokens = s.tokens.activeCount(c.Name)
+		j.UpdateAvailable = s.images.updateFor(c)
+	}
+	return j
+}
+
+// conflictJSON is a container of this supervisor's that it can't match to
+// a definition: one claiming an undefined name ("unknown"), several claiming
+// one ("duplicate"), or one claiming it under another name ("misnamed").
+type conflictJSON struct {
+	Name       string   `json:"name"`
+	Kind       string   `json:"kind"`
+	Containers []string `json:"containers"`
+	Message    string   `json:"message"`
+}
+
+// conflictsJSON are the latest reconcile pass's conflicts; only admins see
+// them, since they name containers outside any grant.
+func (s *Server) conflictsJSON(a accounts.Account) []conflictJSON {
+	out := []conflictJSON{}
+	if !a.Admin {
+		return out
+	}
+	for _, c := range s.Environments.Conflicts() {
+		out = append(out, conflictJSON{Name: c.Name, Kind: c.Reason, Containers: c.Containers, Message: c.String()})
+	}
+	return out
+}
+
+func (s *Server) handleListEnvironments(w http.ResponseWriter, r *http.Request) {
+	a, _ := s.account(r)
+	list, err := s.Environments.List(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out := []environmentJSON{}
+	for _, c := range list {
+		if a.HasAccess(c.Name) {
+			out = append(out, s.environmentJSON(r.Context(), c, a))
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"environments": out, "conflicts": s.conflictsJSON(a)})
+}
+
+func (s *Server) handleGetEnvironment(w http.ResponseWriter, r *http.Request) {
+	c, a, ok := s.environmentFor(w, r, auth.View)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, s.environmentJSON(r.Context(), c, a))
+}
+
+func (s *Server) handleFolder(w http.ResponseWriter, r *http.Request) {
+	c, _, ok := s.environmentFor(w, r, auth.View)
+	if !ok {
+		return
+	}
+	bytes, complete := s.Environments.FolderSize(c.Name)
+	writeJSON(w, http.StatusOK, map[string]any{"path": c.Folder, "bytes": bytes, "complete": complete})
+}
+
+func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
+	a, _ := s.account(r)
+	info, _ := s.Eng.Info(r.Context())
+	list, _ := s.Environments.List(r.Context())
+	var running, total int
+	var memUsed uint64
+	for _, c := range list {
+		if !a.HasAccess(c.Name) {
+			continue
+		}
+		total++
+		if c.State == "running" {
+			running++
+			if st, ok := s.stats.latest(c.Name); ok {
+				memUsed += st.MemBytes
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"cpus": info.CPUs, "memBytes": info.MemBytes, "running": running, "total": total, "memUsed": memUsed,
+		"cameras":       s.hostCameras(list, a),
+		"memoryReclaim": s.memoryReclaim,
+	})
+}
+
+// cameraJSON is one of the host's virtual cameras and the environment that
+// has it (named only to accounts that may see it; taken either way).
+type cameraJSON struct {
+	Device      string `json:"device"`
+	Taken       bool   `json:"taken"`
+	Environment string `json:"environment,omitempty"`
+}
+
+// hostCameras is null when the engine isn't on this machine: its host's
+// cameras can't be seen from here.
+func (s *Server) hostCameras(list []environments.Environment, a accounts.Account) []cameraJSON {
+	if !s.Environments.Cfg.LocalEngine {
+		return nil
+	}
+	out := []cameraJSON{}
+	for _, dev := range s.Environments.HostCameras() {
+		cam := cameraJSON{Device: dev}
+		for _, c := range list {
+			if c.Settings.Camera == dev {
+				cam.Taken = true
+				if a.HasAccess(c.Name) {
+					cam.Environment = c.Name
+				}
+			}
+		}
+		out = append(out, cam)
+	}
+	return out
+}
+
+func (s *Server) handleValidateName(w http.ResponseWriter, r *http.Request) {
+	a, _ := s.account(r)
+	if !requireAdmin(w, a) {
+		return
+	}
+	name := r.URL.Query().Get("name")
+	res := map[string]any{"ok": true, "folderExists": false}
+	if err := environments.ValidNewName(name); err != nil {
+		res["ok"], res["error"] = false, err.Error()
+	} else if _, err := s.Environments.Get(r.Context(), name); err == nil {
+		res["ok"], res["error"] = false, "an environment with that name already exists"
+	} else {
+		res["folderExists"] = s.Environments.FolderExists(name)
+		res["folder"] = s.Environments.Layout.HomeOf(name)
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request) {
+	a, _ := s.account(r)
+	if !requireAdmin(w, a) {
+		return
+	}
+	var req struct {
+		VPNConnectionID optionalVPN              `json:"vpnConnectionId"`
+		LANExceptions   []vpn.Exception          `json:"lanExceptions"`
+		Name            string                   `json:"name"`
+		Image           string                   `json:"image"`
+		MemoryBytes     int64                    `json:"memoryBytes"`
+		NanoCPUs        int64                    `json:"nanoCpus"`
+		Access          []string                 `json:"access"`
+		Mounts          []environments.HostMount `json:"mounts"`
+		DockerAccess    bool                     `json:"dockerAccess"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	if err := environments.ValidateHostMounts(req.Mounts); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := environments.ValidNewName(req.Name); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if _, err := s.Environments.Get(r.Context(), req.Name); err == nil {
+		writeError(w, http.StatusConflict, "an environment with that name already exists")
+		return
+	}
+	if req.Image == "" {
+		req.Image = s.images.defaultRef()
+	}
+	if req.MemoryBytes < 0 || req.NanoCPUs < 0 {
+		writeError(w, http.StatusBadRequest, "limits can't be negative")
+		return
+	}
+	for _, u := range req.Access {
+		if _, ok := s.Accounts.Get(u); !ok {
+			writeError(w, http.StatusBadRequest, "no account "+u)
+			return
+		}
+	}
+	set, err := s.Environments.ValidateNetworkSettings(environments.Settings{Image: req.Image, MemoryBytes: req.MemoryBytes, NanoCPUs: req.NanoCPUs, VPNConnectionID: req.VPNConnectionID.ID, LANExceptions: req.LANExceptions, Mounts: req.Mounts, DockerAccess: req.DockerAccess})
+	if err != nil {
+		vpnError(w, err)
+		return
+	}
+	release, err := s.Environments.Reserve(req.Name, "creating")
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	// Grants and tokens a removal of this name failed to purge must not
+	// carry over to the new environment. Checked again under the
+	// reservation: one created meanwhile keeps its own.
+	if _, ok := s.Environments.Defs.Get(req.Name); ok {
+		release()
+		writeError(w, http.StatusConflict, "an environment with that name already exists")
+		return
+	}
+	if err := s.forgetAccess(req.Name); err != nil {
+		release()
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.activity.ForgetDesktop(req.Name)
+	id := s.jobs.start(a.Username, req.Name, func(ctx context.Context, progress func(string, float64)) error {
+		defer func() {
+			release()
+			s.publishEnvironment(ctx, req.Name)
+		}()
+		_, err := s.Environments.Create(ctx, req.Name, set, progress)
+		if err != nil {
+			s.Log.Warn("create failed", "environment", req.Name, "err", err)
+			// A failure that leaves the environment defined (one not ready
+			// in time, or a VPN creation kept for recovery) can still come
+			// up: it gets its requested access.
+			if _, ok := s.Environments.Defs.Get(req.Name); ok {
+				return errors.Join(err, s.Accounts.SetAccess(req.Name, req.Access))
+			}
+			return err
+		}
+		s.Log.Info("created", "environment", req.Name, "by", a.Username)
+		return s.Accounts.SetAccess(req.Name, req.Access)
+	})
+	// After the job starts, so the event carries its id.
+	s.publishEnvironment(context.Background(), req.Name)
+	writeJSON(w, http.StatusAccepted, map[string]string{"job": id})
+}
+
+func (s *Server) handleUpdateEnvironment(w http.ResponseWriter, r *http.Request) {
+	c, a, ok := s.environmentFor(w, r, auth.Manage)
+	if !ok {
+		return
+	}
+	var req struct {
+		VPNConnectionID optionalVPN               `json:"vpnConnectionId"`
+		LANExceptions   *[]vpn.Exception          `json:"lanExceptions"`
+		Image           *string                   `json:"image"`
+		MemoryBytes     *int64                    `json:"memoryBytes"`
+		NanoCPUs        *int64                    `json:"nanoCpus"`
+		Camera          *string                   `json:"camera"`
+		Mounts          *[]environments.HostMount `json:"mounts"`
+		DockerAccess    *bool                     `json:"dockerAccess"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	set := c.Settings
+	if req.DockerAccess != nil {
+		set.DockerAccess = *req.DockerAccess
+	}
+	if req.Mounts != nil {
+		set.Mounts = *req.Mounts
+	}
+	if err := environments.ValidateHostMounts(set.Mounts); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.VPNConnectionID.Set {
+		set.VPNConnectionID = req.VPNConnectionID.ID
+	}
+	if req.LANExceptions != nil {
+		set.LANExceptions = *req.LANExceptions
+	}
+	var err error
+	set, err = s.Environments.ValidateNetworkSettings(set)
+	if err != nil {
+		vpnError(w, err)
+		return
+	}
+	if req.Image != nil {
+		set.Image = *req.Image
+	}
+	if req.MemoryBytes != nil {
+		set.MemoryBytes = *req.MemoryBytes
+	}
+	if req.NanoCPUs != nil {
+		set.NanoCPUs = *req.NanoCPUs
+	}
+	if set.MemoryBytes < 0 || set.NanoCPUs < 0 {
+		writeError(w, http.StatusBadRequest, "limits can't be negative")
+		return
+	}
+	if req.Camera != nil {
+		set.Camera = *req.Camera
+		if set.Camera != "" && set.Camera != c.Settings.Camera {
+			// Checked again when the container is made, against a race.
+			if err := s.Environments.CheckCamera(r.Context(), c.Name, set.Camera); err != nil {
+				writeError(w, errorStatus(err), err.Error())
+				return
+			}
+		}
+	}
+	s.startRecreate(w, a, c.Name, set, "upgrading")
+}
+
+// startRecreate runs Recreate as a job (settings changes and upgrades).
+func (s *Server) startRecreate(w http.ResponseWriter, a accounts.Account, name string, set environments.Settings, state string) {
+	release, err := s.Environments.Reserve(name, state)
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	id := s.jobs.start(a.Username, name, func(ctx context.Context, progress func(string, float64)) error {
+		defer func() {
+			release()
+			s.publishEnvironment(ctx, name)
+		}()
+		s.viewers.closeAll(name)
+		_, err := s.Environments.Recreate(ctx, name, set, progress)
+		if err == nil {
+			s.Log.Info("recreated", "environment", name, "image", set.Image, "by", a.Username)
+		}
+		return err
+	})
+	s.publishEnvironment(context.Background(), name)
+	writeJSON(w, http.StatusAccepted, map[string]string{"job": id})
+}
+
+// environmentRemoved purges what the server keeps of an environment whose
+// definition a removal deleted (Service.Removed): its grants, agent tokens
+// and activity, and tells clients it is gone.
+func (s *Server) environmentRemoved(name string) error {
+	err := s.forgetAccess(name)
+	if err != nil {
+		s.Log.Error("persisting removed environment access cleanup", "environment", name, "err", err)
+	}
+	s.activity.ForgetDesktop(name)
+	s.events.publish(event{kind: "removed", environment: name, data: map[string]string{"name": name}})
+	return err
+}
+
+// forgetAccess purges the grants and agent tokens of the named environment.
+func (s *Server) forgetAccess(name string) error {
+	return errors.Join(s.Accounts.Forget(name), s.tokens.forget(name))
+}
+
+func (s *Server) handleRemoveEnvironment(w http.ResponseWriter, r *http.Request) {
+	c, a, ok := s.environmentFor(w, r, auth.Manage)
+	if !ok {
+		return
+	}
+	release, err := s.Environments.Reserve(c.Name, "removing")
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	defer release()
+	s.viewers.closeAll(c.Name)
+	ctx, cancel := timeout(r, 5*time.Minute)
+	defer cancel()
+	if err := s.Environments.Remove(ctx, c.Name, r.URL.Query().Get("files") == "1"); err != nil {
+		writeError(w, errorStatus(err), err.Error())
+		return
+	}
+	s.Log.Info("removed", "environment", c.Name, "files", r.URL.Query().Get("files") == "1", "by", a.Username)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handlePower(w http.ResponseWriter, r *http.Request) {
+	action := r.PathValue("action")
+	switch action {
+	case "keys":
+		s.handleKeys(w, r)
+		return
+	case "upgrade":
+		c, a, ok := s.environmentFor(w, r, auth.Manage)
+		if !ok {
+			return
+		}
+		set := c.Settings
+		set.Image = c.Image
+		s.startRecreate(w, a, c.Name, set, "upgrading")
+		return
+	case "start", "stop", "restart":
+	default:
+		writeError(w, http.StatusNotFound, "no such action")
+		return
+	}
+	c, a, ok := s.environmentFor(w, r, auth.Power)
+	if !ok {
+		return
+	}
+	release, err := s.Environments.Reserve(c.Name, "")
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	defer release()
+	ctx, cancel := timeout(r, 2*time.Minute)
+	defer cancel()
+	switch action {
+	case "start":
+		err = s.Environments.Start(ctx, c.Name)
+	case "stop":
+		s.viewers.closeAll(c.Name)
+		err = s.Environments.Stop(ctx, c.Name)
+	case "restart":
+		s.viewers.closeAll(c.Name)
+		err = s.Environments.Restart(ctx, c.Name)
+	}
+	if err != nil {
+		writeError(w, errorStatus(err), err.Error())
+		return
+	}
+	s.Log.Info(action, "environment", c.Name, "by", a.Username)
+	s.publishEnvironment(r.Context(), c.Name)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleSetAccess(w http.ResponseWriter, r *http.Request) {
+	c, _, ok := s.environmentFor(w, r, auth.ManageAccounts)
+	if !ok {
+		return
+	}
+	var req struct {
+		Usernames []string `json:"usernames"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	for _, u := range req.Usernames {
+		if _, ok := s.Accounts.Get(u); !ok {
+			writeError(w, http.StatusBadRequest, "no account "+u)
+			return
+		}
+	}
+	if err := s.Accounts.SetAccess(c.Name, req.Usernames); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.publishEnvironment(r.Context(), c.Name)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// execOutput runs a command as the environment's user and returns its stdout.
+func (s *Server) execOutput(ctx context.Context, c environments.Environment, cmd ...string) ([]byte, error) {
+	// Queries are small; allow image-sized binary output only for screenshots.
+	limit := int64(1 << 20)
+	if len(cmd) == 3 && cmd[0] == "deskyard" && cmd[1] == "screenshot" && cmd[2] == "-" {
+		limit = 32 << 20
+	}
+	result, err := engine.Run(ctx, s.Eng, c.Container.ID, engine.ExecSpec{Cmd: cmd, User: "user", WorkDir: "/workspace", Env: execEnv}, engine.RunOptions{StdoutLimit: limit, StderrLimit: 4096})
+	if err != nil {
+		return nil, err
+	}
+	if result.Code != 0 {
+		return nil, &execError{result.Code, strings.TrimSpace(string(result.Stderr))}
+	}
+	return result.Stdout, nil
+}
+
+type execError struct {
+	code   int
+	stderr string
+}
+
+func (e *execError) Error() string {
+	if e.stderr != "" {
+		return e.stderr
+	}
+	return "command failed"
+}
+
+func (s *Server) handleKeys(w http.ResponseWriter, r *http.Request) {
+	c, _, ok := s.environmentFor(w, r, auth.Power)
+	if !ok {
+		return
+	}
+	var req struct {
+		Keys string `json:"keys"`
+	}
+	if err := readJSON(r, &req); err != nil || strings.TrimSpace(req.Keys) == "" {
+		writeError(w, http.StatusBadRequest, "keys required")
+		return
+	}
+	if !c.Running() {
+		writeError(w, http.StatusConflict, environments.ErrStopped.Error())
+		return
+	}
+	ctx, cancel := timeout(r, 15*time.Second)
+	defer cancel()
+	if _, err := s.execOutput(ctx, c, append([]string{"deskyard", "key"}, strings.Fields(req.Keys)...)...); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleProcesses(w http.ResponseWriter, r *http.Request) {
+	c, _, ok := s.environmentFor(w, r, auth.View)
+	if !ok {
+		return
+	}
+	titles := []string{"PID", "USER", "%CPU", "RSS", "ELAPSED", "COMMAND"}
+	rows := [][]string{}
+	if c.Running() {
+		// ps inside the environment: the engine's own "top" runs the host's ps,
+		// which differs between engines.
+		ctx, cancel := timeout(r, 10*time.Second)
+		defer cancel()
+		out, err := s.execOutput(ctx, c, "ps", "-eo", "pid=,user=,pcpu=,rss=,etime=,args=", "--sort=-pcpu")
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			f := strings.Fields(line)
+			if len(f) < 6 || f[5] == "ps" {
+				continue
+			}
+			rows = append(rows, append(f[:5:5], strings.Join(f[5:], " ")))
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"titles": titles, "rows": rows})
+}
+
+// Tool is one mise tool installed in an environment: by its user
+// ("environment") or in its image under /opt/mise ("image").
+type Tool struct {
+	Tool    string `json:"tool"`
+	Version string `json:"version"`
+	Source  string `json:"source"`
+}
+
+const (
+	maxToolsOutput = 1 << 20 // mise's output comes from the environment: bound it
+	maxTools       = 500
+	maxToolText    = 100
+	imageMiseDir   = "/opt/mise"
+)
+
+// handleTools lists the mise tools of a running environment and where each one is
+// installed. An environment that is stopped, has no mise, or answers with anything
+// odd has no tools to show: that is an empty list, not an error.
+func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
+	c, _, ok := s.environmentFor(w, r, auth.View)
+	if !ok {
+		return
+	}
+	tools := []Tool{}
+	if c.Running() {
+		ctx, cancel := timeout(r, 10*time.Second)
+		defer cancel()
+		if t, err := s.miseTools(ctx, c); err == nil {
+			tools = t
+		}
+	}
+	writeJSON(w, http.StatusOK, tools)
+}
+
+func (s *Server) miseTools(ctx context.Context, c environments.Environment) ([]Tool, error) {
+	// The image's tools live in /opt/mise, apart from the environment's own
+	// MISE_DATA_DIR; mise lists them as well when told to look there.
+	env := append(append([]string{}, execEnv...), "MISE_SHARED_INSTALL_DIRS="+imageMiseDir+"/installs")
+	result, err := engine.Run(ctx, s.Eng, c.Container.ID, engine.ExecSpec{
+		Cmd:  []string{"timeout", "-k", "1", "8", "mise", "ls", "--json"},
+		User: "user", WorkDir: "/workspace", Env: env,
+	}, engine.RunOptions{StdoutLimit: maxToolsOutput, StderrLimit: 4096})
+	if errors.Is(err, engine.ErrOutputLimit) {
+		return nil, errors.New("mise output too large")
+	}
+	if err != nil {
+		return nil, err
+	}
+	if result.Code != 0 {
+		return nil, errors.New("mise failed")
+	}
+	return parseMiseTools(result.Stdout)
+}
+
+// parseMiseTools reads `mise ls --json`: an object of tool name to the list of
+// its installed versions. Entries that don't look right are skipped.
+func parseMiseTools(out []byte) ([]Tool, error) {
+	var all map[string]json.RawMessage
+	if err := json.Unmarshal(out, &all); err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(all))
+	for n := range all {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	tools := []Tool{}
+	for _, n := range names {
+		var entries []json.RawMessage
+		if json.Unmarshal(all[n], &entries) != nil {
+			continue
+		}
+		for _, raw := range entries {
+			var v struct {
+				Version     string `json:"version"`
+				InstallPath string `json:"install_path"`
+				Installed   *bool  `json:"installed"`
+			}
+			if json.Unmarshal(raw, &v) != nil {
+				continue
+			}
+			if v.Version == "" || v.InstallPath == "" || (v.Installed != nil && !*v.Installed) {
+				continue
+			}
+			source := "environment"
+			if p := path.Clean(v.InstallPath); p == imageMiseDir || strings.HasPrefix(p, imageMiseDir+"/") {
+				source = "image"
+			}
+			tools = append(tools, Tool{clip(n), clip(v.Version), source})
+			if len(tools) >= maxTools {
+				return tools, nil
+			}
+		}
+	}
+	return tools, nil
+}
+
+func clip(s string) string {
+	if len(s) > maxToolText {
+		return strings.ToValidUTF8(s[:maxToolText], "")
+	}
+	return s
+}

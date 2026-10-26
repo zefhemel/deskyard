@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 )
@@ -91,7 +91,7 @@ type rolloutRuntime struct {
 }
 
 func (*rolloutRuntime) SetReservedNetworks([]netip.Prefix) error { return nil }
-func (r *rolloutRuntime) Ensure(ctx context.Context, _, _, _, _ string, _ []vpn.Exception, _ bool) (engine.Container, error) {
+func (r *rolloutRuntime) Ensure(ctx context.Context, _, _, _ string, _ []vpn.Exception, _ bool) (engine.Container, error) {
 	if r.entered != nil {
 		close(r.entered)
 		select {
@@ -134,21 +134,21 @@ func TestVPNUpdateCancellationBoundary(t *testing.T) {
 			e := &rolloutEngine{listed: make(chan struct{}, 1)}
 			s, ts := newTestServerWith(t, e)
 			admin := login(t, ts, "admin")
-			st := s.Desktops.Networking.Connections
+			st := s.Environments.Networking.Connections
 			user, password := "user", "password"
 			conn, err := st.Create(vpn.Input{Name: "Home", Provider: "nordvpn", Country: "Netherlands", Username: &user, Password: &password})
 			if err != nil {
 				t.Fatal(err)
 			}
-			const desktopID = "012345678901234567890123456789ab"
-			e.consumer = &engine.Container{ID: "original", Name: "deskyard-alice", State: "exited", Restart: "no", NetworkContainer: "gateway", Labels: map[string]string{desktops.LabelManaged: "true", desktops.LabelName: "alice", desktops.LabelID: desktopID, vpn.LabelConnection: conn.ID}}
+			e.consumer = &engine.Container{ID: "original", Name: "deskyard-alice", State: "exited", Restart: "no", NetworkContainer: "gateway", Labels: map[string]string{environments.LabelManaged: "true", environments.LabelName: "alice", environments.LabelRevision: "1", vpn.LabelConnection: conn.ID}}
+			defineEnvironments(t, s)
 			dir := t.TempDir()
-			record := map[string]any{"id": desktopID, "name": "alice", "token": "private-token", "created": time.Now(), "settings": desktops.Settings{Image: "img", VPNConnectionID: conn.ID}, "running": false, "revision": 1, "appliedRevision": 1, "runtimeId": "gateway"}
-			if err = store.WriteJSON(filepath.Join(dir, "vpn", "desktops.json"), map[string]any{desktopID: record}); err != nil {
+			record := map[string]any{"name": "alice", "connectionRevision": 1, "appliedConnectionRevision": 1, "appliedRevision": 1, "runtimeId": "gateway"}
+			if err = store.WriteJSON(filepath.Join(dir, "network", "transitions.json"), map[string]any{"version": 1, "transitions": []any{record}}); err != nil {
 				t.Fatal(err)
 			}
 			runtime := &rolloutRuntime{}
-			if err = s.Desktops.ConfigureNetworking(st, runtime, dir); err != nil {
+			if err = s.Environments.ConfigureNetworking(st, runtime, dir); err != nil {
 				t.Fatal(err)
 			}
 			s.vpnTests = rolloutTester{e: e}
@@ -156,14 +156,14 @@ func TestVPNUpdateCancellationBoundary(t *testing.T) {
 			if !postcommit {
 				e.stopEntered = make(chan struct{})
 				e.stopRelease = make(chan struct{})
-				go func() { stopDone <- s.Desktops.Stop(context.Background(), "alice") }()
+				go func() { stopDone <- s.Environments.Stop(context.Background(), "alice") }()
 				awaitRollout(t, e.stopEntered)
 			} else {
 				runtime.entered = make(chan struct{})
 				runtime.release = make(chan struct{})
 				runtime.fail = true
 			}
-			body := `{"name":"Changed","provider":"nordvpn","country":"Germany","expectedRevision":1,"affectedDesktopIds":["` + desktopID + `"],"confirmRestart":true}`
+			body := `{"name":"Changed","provider":"nordvpn","country":"Germany","expectedRevision":1,"affectedEnvironments":["alice"],"confirmRestart":true}`
 			req, _ := http.NewRequest("PUT", ts.URL+"/api/vpn/connections/"+conn.ID, strings.NewReader(body))
 			req.Header.Set("Origin", ts.URL)
 			resp, err := admin.Do(req)
@@ -197,7 +197,7 @@ func TestVPNUpdateCancellationBoundary(t *testing.T) {
 				if code != 204 || saved.Revision != 1 || j.get().Error != "cancelled" || e.creates != 0 {
 					t.Fatalf("cancel before commit: status=%d revision=%d creates=%d job=%+v", code, saved.Revision, e.creates, j.get())
 				}
-				got, _ := s.Desktops.Get(context.Background(), "alice")
+				got, _ := s.Environments.Get(context.Background(), "alice")
 				if got.Container.ID != "original" || got.Settings.VPNConnectionID != conn.ID {
 					t.Fatalf("desktop changed: %+v", got)
 				}
@@ -205,7 +205,7 @@ func TestVPNUpdateCancellationBoundary(t *testing.T) {
 				if code != 409 || saved.Revision != 2 || j.get().Status != "done" {
 					t.Fatalf("cancel after commit: status=%d revision=%d job=%+v", code, saved.Revision, j.get())
 				}
-				got, _ := s.Desktops.Get(context.Background(), "alice")
+				got, _ := s.Environments.Get(context.Background(), "alice")
 				if got.VPN.State != "blocked" || got.VPN.DesiredRevision != 2 || got.Settings.VPNConnectionID != conn.ID {
 					t.Fatalf("lost pending policy: %+v", got)
 				}
@@ -215,14 +215,25 @@ func TestVPNUpdateCancellationBoundary(t *testing.T) {
 				}
 				runtime.entered = nil
 				runtime.fail = false
-				if err = s.Desktops.ConfigureNetworking(st, runtime, dir); err != nil {
+				if err = s.Environments.ConfigureNetworking(st, runtime, dir); err != nil {
 					t.Fatal(err)
 				}
-				if err = s.Desktops.Networking.Reconcile(context.Background()); err != nil {
+				// Startup leaves the failed rollout; another edit retries it.
+				if err = s.Environments.Networking.Reconcile(context.Background()); err != nil {
 					t.Fatal(err)
 				}
-				got, _ = s.Desktops.Get(context.Background(), "alice")
-				if got.VPN.AppliedRevision != 2 || got.Container.NetworkContainer != "gateway" || got.Settings.VPNConnectionID != conn.ID {
+				if got, _ = s.Environments.Get(context.Background(), "alice"); got.VPN.AppliedRevision != 1 {
+					t.Fatalf("startup retried a failed rollout: %+v", got.VPN)
+				}
+				var ids []string
+				for _, ref := range s.Environments.Networking.References(conn.ID) {
+					ids = append(ids, ref.ID)
+				}
+				if _, _, err = s.Environments.Networking.UpdateConnection(context.Background(), conn.ID, 2, ids, vpn.Input{Name: "Again", Provider: "nordvpn", Country: "Germany"}, func(string, float64) {}, nil); err != nil {
+					t.Fatal(err)
+				}
+				got, _ = s.Environments.Get(context.Background(), "alice")
+				if got.VPN.AppliedRevision != 3 || got.Container.NetworkContainer != "gateway" || got.Settings.VPNConnectionID != conn.ID {
 					t.Fatalf("recovery lost selection: %+v", got)
 				}
 			}
@@ -230,17 +241,26 @@ func TestVPNUpdateCancellationBoundary(t *testing.T) {
 	}
 }
 
-func TestVPNUpdateUnjournaledReferenceRequiresRepair(t *testing.T) {
+// A container using the connection whose definition doesn't select it needs
+// repair before the connection can change.
+func TestVPNUpdateUnselectedReferenceRequiresRepair(t *testing.T) {
 	e := &rolloutEngine{listed: make(chan struct{}, 1)}
 	s, ts := newTestServerWith(t, e)
 	admin := login(t, ts, "admin")
 	user, password := "user", "password"
-	conn, err := s.Desktops.Networking.Connections.Create(vpn.Input{Name: "Home", Provider: "nordvpn", Country: "Netherlands", Username: &user, Password: &password})
+	conn, err := s.Environments.Networking.Connections.Create(vpn.Input{Name: "Home", Provider: "nordvpn", Country: "Netherlands", Username: &user, Password: &password})
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.consumer = &engine.Container{ID: "original", Name: "deskyard-alice", State: "exited", Labels: map[string]string{desktops.LabelManaged: "true", desktops.LabelName: "alice", desktops.LabelID: "id-alice", vpn.LabelConnection: conn.ID}}
-	req, _ := http.NewRequest("PUT", ts.URL+"/api/vpn/connections/"+conn.ID, strings.NewReader(`{"name":"Changed","provider":"nordvpn","country":"Germany","expectedRevision":1,"affectedDesktopIds":["id-alice"],"confirmRestart":true}`))
+	e.consumer = &engine.Container{ID: "original", Name: "deskyard-alice", State: "exited", Labels: map[string]string{environments.LabelManaged: "true", environments.LabelName: "alice", environments.LabelRevision: "1", vpn.LabelConnection: conn.ID}}
+	defineEnvironments(t, s)
+	if _, err = s.Environments.Defs.Update("alice", func(d *environments.Definition) error {
+		d.Network = environments.Network{Kind: environments.NetworkIsolated}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest("PUT", ts.URL+"/api/vpn/connections/"+conn.ID, strings.NewReader(`{"name":"Changed","provider":"nordvpn","country":"Germany","expectedRevision":1,"affectedEnvironments":["alice"],"confirmRestart":true}`))
 	req.Header.Set("Origin", ts.URL)
 	resp, err := admin.Do(req)
 	if err != nil {
@@ -249,7 +269,7 @@ func TestVPNUpdateUnjournaledReferenceRequiresRepair(t *testing.T) {
 	var body map[string]any
 	json.NewDecoder(resp.Body).Decode(&body)
 	resp.Body.Close()
-	saved, _ := s.Desktops.Networking.Connections.Get(conn.ID)
+	saved, _ := s.Environments.Networking.Connections.Get(conn.ID)
 	if resp.StatusCode != 409 || body["job"] != nil || !strings.Contains(body["error"].(string), "repair") || saved.Revision != 1 || e.creates != 0 {
 		t.Fatalf("missing repair conflict: status=%d body=%v revision=%d", resp.StatusCode, body, saved.Revision)
 	}

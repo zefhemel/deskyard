@@ -116,7 +116,7 @@ def test_second_viewer(cli, remote, supervisor, name):
         # Marks last 1.8 seconds from exec start. Observe while the CLI runs:
         # waiting for its completion first can miss an already expired mark.
         with ThreadPoolExecutor(max_workers=1) as commands:
-            clicked = commands.submit(remote, "-d", name, "click", "300", "200")
+            clicked = commands.submit(remote, "-e", name, "click", "300", "200")
             mark = b.locator('[data-mark="click"]')
             expect(mark).to_be_visible(timeout=5000)
             box = mark.bounding_box()
@@ -166,10 +166,10 @@ def test_four_viewers_do_not_exhaust_http_connections(supervisor, remote, name):
             # A picture alone can hide failed event-feed handshakes. Require
             # desktop snapshots and a real screen event in every viewer too.
             with ThreadPoolExecutor(max_workers=1) as commands:
-                clicked = commands.submit(remote, "-d", name, "click", "300", "200")
+                clicked = commands.submit(remote, "-e", name, "click", "300", "200")
                 for page in pages:
                     expect(page.locator('[data-mark="click"]')).to_be_visible(timeout=5000)
-                    assert any(event["type"] == "desktop" for event in snapshots[page])
+                    assert any(event["type"] == "environment" for event in snapshots[page])
                 clicked.result()
             # Use browser fetch, which competes with EventSource for sockets;
             # Playwright's request client has an independent pool and hides this bug.

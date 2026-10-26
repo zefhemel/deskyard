@@ -3,21 +3,23 @@ package server
 import (
 	"context"
 
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 // A worker owns one desktop runtime. The pointer identifies this particular
 // attachment, even when a cancelled attachment is still unwinding.
-type desktopWorker struct {
+type environmentWorker struct {
 	generation string
 	ctx        context.Context
 	cancel     context.CancelFunc
 	done       chan struct{}
 }
 
-func desktopGeneration(c desktops.Desktop) string { return c.ID + ":" + terminalGeneration(c) }
+func environmentGeneration(c environments.Environment) string {
+	return c.ID + ":" + terminalGeneration(c)
+}
 
-func startDesktopWorker(ctx context.Context, c desktops.Desktop) *desktopWorker {
+func startEnvironmentWorker(ctx context.Context, c environments.Environment) *environmentWorker {
 	ctx, cancel := context.WithCancel(ctx)
-	return &desktopWorker{generation: desktopGeneration(c), ctx: ctx, cancel: cancel, done: make(chan struct{})}
+	return &environmentWorker{generation: environmentGeneration(c), ctx: ctx, cancel: cancel, done: make(chan struct{})}
 }

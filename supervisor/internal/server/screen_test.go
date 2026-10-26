@@ -19,8 +19,8 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 func get(t *testing.T, c *http.Client, url string) (*http.Response, string) {
@@ -184,14 +184,14 @@ func (u *upstream) last() *http.Request {
 	return u.reqs[len(u.reqs)-1]
 }
 
-func runningDesktop(t *testing.T, name string, up http.Handler) engine.Container {
+func runningEnvironment(t *testing.T, name string, up http.Handler) engine.Container {
 	srv := httptest.NewServer(up)
 	t.Cleanup(srv.Close)
 	_, port, _ := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
 	p, _ := strconv.Atoi(port)
 	return engine.Container{ID: "c-" + name, Name: "deskyard-" + name, State: "running", ImageID: "sha256:abc", LocalPort: p,
-		Env:    map[string]string{desktops.TokenEnv: "tok-" + name},
-		Labels: map[string]string{desktops.LabelManaged: "true", desktops.LabelName: name, desktops.LabelID: "id-" + name}}
+		Env:    map[string]string{environments.TokenEnv: "tok-" + name},
+		Labels: map[string]string{environments.LabelManaged: "true", environments.LabelName: name, environments.LabelRevision: "1"}}
 }
 
 type viewersState struct {
@@ -223,7 +223,7 @@ func waitState(t *testing.T, c *http.Client, url string, want viewersState) {
 
 func postMic(t *testing.T, c *http.Client, base, name, body string) int {
 	t.Helper()
-	req, _ := http.NewRequest("POST", base+"/api/desktops/"+name+"/mic", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", base+"/api/environments/"+name+"/mic", strings.NewReader(body))
 	req.Header.Set("Origin", base)
 	resp, err := c.Do(req)
 	if err != nil {
@@ -235,10 +235,10 @@ func postMic(t *testing.T, c *http.Client, base, name, body string) int {
 
 func TestStreamProxyAndMics(t *testing.T) {
 	up := &upstream{}
-	_, ts := newTestServerWith(t, fakeEngine{others: []engine.Container{runningDesktop(t, "bob", up)}})
+	_, ts := newTestServerWith(t, fakeEngine{others: []engine.Container{runningEnvironment(t, "bob", up)}})
 	admin := login(t, ts, "admin")
 	cookie := admin.Jar.Cookies(nil)[0]
-	api := ts.URL + "/api/desktops/bob"
+	api := ts.URL + "/api/environments/bob"
 
 	// The reconnect probe reaches Selkies, without the session.
 	if got := status(t, admin, "GET", ts.URL+"/bob/screen/api/websockets", ""); got != 204 {
@@ -332,7 +332,7 @@ func TestMicsPerStream(t *testing.T) {
 
 func TestStreamDialsSpacedOut(t *testing.T) {
 	up := &upstream{}
-	_, ts := newTestServerWith(t, fakeEngine{others: []engine.Container{runningDesktop(t, "bob", up)}})
+	_, ts := newTestServerWith(t, fakeEngine{others: []engine.Container{runningEnvironment(t, "bob", up)}})
 	admin := login(t, ts, "admin")
 	hdr := http.Header{"Origin": {ts.URL}, "Cookie": {admin.Jar.Cookies(nil)[0].String()}}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -404,12 +404,12 @@ func TestDialGateFreesOnCancel(t *testing.T) {
 }
 
 func TestDesktopReportsWebcam(t *testing.T) {
-	cam := runningDesktop(t, "bob", &upstream{})
+	cam := runningEnvironment(t, "bob", &upstream{})
 	cam.Devices = []string{"/dev/video0"}
-	_, ts := newTestServerWith(t, fakeEngine{others: []engine.Container{cam, runningDesktop(t, "carol", &upstream{})}})
+	_, ts := newTestServerWith(t, fakeEngine{others: []engine.Container{cam, runningEnvironment(t, "carol", &upstream{})}})
 	admin := login(t, ts, "admin")
 	for name, want := range map[string]bool{"bob": true, "carol": false, "alice": false} {
-		_, body := get(t, admin, ts.URL+"/api/desktops/"+name)
+		_, body := get(t, admin, ts.URL+"/api/environments/"+name)
 		var d struct {
 			Webcam *bool `json:"webcam"`
 		}
@@ -443,7 +443,7 @@ func TestCaptureReportsInOrder(t *testing.T) {
 
 func TestCamBadgeEndpoint(t *testing.T) {
 	up := &upstream{}
-	_, ts := newTestServerWith(t, fakeEngine{others: []engine.Container{runningDesktop(t, "bob", up)}})
+	_, ts := newTestServerWith(t, fakeEngine{others: []engine.Container{runningEnvironment(t, "bob", up)}})
 	admin := login(t, ts, "admin")
 	hdr := http.Header{"Origin": {ts.URL}, "Cookie": {admin.Jar.Cookies(nil)[0].String()}}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -454,7 +454,7 @@ func TestCamBadgeEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ws.CloseNow()
-	api := ts.URL + "/api/desktops/bob"
+	api := ts.URL + "/api/environments/bob"
 	waitState(t, admin, api, viewersState{Viewers: []string{"admin"}, Mics: []string{}})
 	post := func(path, body string) int {
 		req, _ := http.NewRequest("POST", api+path, strings.NewReader(body))
@@ -492,31 +492,31 @@ func TestCamerasForAdmins(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	bob := runningDesktop(t, "bob", &upstream{})
+	bob := runningEnvironment(t, "bob", &upstream{})
 	bob.Devices = []string{"/dev/video0"}
-	e := fakeEngine{others: []engine.Container{bob, runningDesktop(t, "carol", &upstream{})}}
-	_, ts := newTestServerCfg(t, e, desktops.Config{SysDir: sys, LocalEngine: true})
+	e := fakeEngine{others: []engine.Container{bob, runningEnvironment(t, "carol", &upstream{})}}
+	_, ts := newTestServerCfg(t, e, environments.Config{SysDir: sys, LocalEngine: true})
 	admin := login(t, ts, "admin")
 
 	_, body := get(t, admin, ts.URL+"/api/host")
 	var host struct {
 		Cameras []struct {
-			Device  string `json:"device"`
-			Taken   bool   `json:"taken"`
-			Desktop string `json:"desktop"`
+			Device      string `json:"device"`
+			Taken       bool   `json:"taken"`
+			Environment string `json:"environment"`
 		} `json:"cameras"`
 	}
 	if err := json.Unmarshal([]byte(body), &host); err != nil || len(host.Cameras) != 2 ||
-		host.Cameras[0].Device != "/dev/video0" || !host.Cameras[0].Taken || host.Cameras[0].Desktop != "bob" || host.Cameras[1].Taken {
+		host.Cameras[0].Device != "/dev/video0" || !host.Cameras[0].Taken || host.Cameras[0].Environment != "bob" || host.Cameras[1].Taken {
 		t.Fatalf("%s", body)
 	}
-	_, body = get(t, admin, ts.URL+"/api/desktops/bob")
+	_, body = get(t, admin, ts.URL+"/api/environments/bob")
 	if !strings.Contains(body, `"camera":"/dev/video0"`) || !strings.Contains(body, `"webcam":true`) {
 		t.Errorf("bob: %s", body)
 	}
 
 	patch := func(name, body string) int {
-		req, _ := http.NewRequest("PATCH", ts.URL+"/api/desktops/"+name, strings.NewReader(body))
+		req, _ := http.NewRequest("PATCH", ts.URL+"/api/environments/"+name, strings.NewReader(body))
 		req.Header.Set("Origin", ts.URL)
 		resp, err := admin.Do(req)
 		if err != nil {

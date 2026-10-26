@@ -18,7 +18,7 @@ def test_browse_and_download(admin, desktop, name):
     put(name, "big.bin", blob)
     user_sh(name, "ln -s /etc /workspace/etc-link")
 
-    r = admin.get(f"/api/desktops/{name}/files")
+    r = admin.get(f"/api/environments/{name}/files")
     assert r.status_code == 200, r.text
     listing = r.json()
     assert listing["path"] == "/workspace"
@@ -28,22 +28,22 @@ def test_browse_and_download(admin, desktop, name):
     mods = [e["modified"] for e in listing["entries"]]
     assert mods == sorted(mods, reverse=True)
 
-    r = admin.get(f"/api/desktops/{name}/files", params={"path": "/workspace/docs"})
+    r = admin.get(f"/api/environments/{name}/files", params={"path": "/workspace/docs"})
     assert {e["name"] for e in r.json()["entries"]} == {"report.txt", "deep"}
 
-    r = admin.get(f"/api/desktops/{name}/download", params={"path": "/workspace/big.bin"})
+    r = admin.get(f"/api/environments/{name}/download", params={"path": "/workspace/big.bin"})
     assert r.status_code == 200
     assert r.content == blob
     assert 'filename=big.bin' in r.headers["Content-Disposition"]
 
-    r = admin.get(f"/api/desktops/{name}/download", params={"path": "docs"})
+    r = admin.get(f"/api/environments/{name}/download", params={"path": "docs"})
     assert r.status_code == 200 and r.headers["Content-Type"] == "application/zip"
     z = zipfile.ZipFile(io.BytesIO(r.content))
     assert z.read("report.txt") == b"quarterly numbers\n"
     assert z.read("deep/notes.md") == b"# notes\n"
 
     # The whole workspace as a zip must not follow the link to /etc.
-    r = admin.get(f"/api/desktops/{name}/download", params={"path": "/workspace"})
+    r = admin.get(f"/api/environments/{name}/download", params={"path": "/workspace"})
     assert r.status_code == 200
     names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
     assert "docs/report.txt" in names and not any(n.startswith("etc-link") for n in names)
@@ -53,21 +53,21 @@ def test_paths_outside_workspace_refused(admin, desktop, name):
     user_sh(name, "ln -s /etc /workspace/etc-link")
     for p in ["..", "/", "/etc/passwd", "/workspace/../etc/passwd", "../etc/passwd", "etc-link", "etc-link/passwd"]:
         for route in ["files", "download"]:
-            r = admin.get(f"/api/desktops/{name}/{route}", params={"path": p})
+            r = admin.get(f"/api/environments/{name}/{route}", params={"path": p})
             assert r.status_code == 403, (route, p, r.status_code, r.text[:100])
-    assert admin.get(f"/api/desktops/{name}/download", params={"path": "nope"}).status_code == 404
+    assert admin.get(f"/api/environments/{name}/download", params={"path": "nope"}).status_code == 404
 
 
 def test_access_and_tokens(admin, desktop, name, supervisor):
     put(name, "f.txt", b"hi")
     user = "u" + uuid.uuid4().hex[:6]
     for who, desktops_ in [(user, []), (user + "v", [name])]:
-        r = admin.post("/api/accounts", json={"username": who, "password": "pw-" + who, "admin": False, "desktops": desktops_})
+        r = admin.post("/api/accounts", json={"username": who, "password": "pw-" + who, "admin": False, "environments": desktops_})
         assert r.status_code == 201, r.text
     try:
         stranger = supervisor.client().login(user, "pw-" + user)
         viewer = supervisor.client().login(user + "v", "pw-" + user + "v")
-        for route in [f"/api/desktops/{name}/files", f"/api/desktops/{name}/download?path=f.txt"]:
+        for route in [f"/api/environments/{name}/files", f"/api/environments/{name}/download?path=f.txt"]:
             assert stranger.get(route).status_code == 404
             assert viewer.get(route).status_code == 200
             assert requests.get(supervisor.base + route, timeout=10).status_code == 401
@@ -125,7 +125,7 @@ def test_folder_zip_with_hard_links_and_unreadable_files(admin, desktop, name):
     put(name, "mix/one.txt", b"one")
     put(name, "mix/locked.txt", b"secret")
     user_sh(name, "cd /workspace/mix && ln one.txt one-link.txt && chmod 000 locked.txt")
-    r = admin.get(f"/api/desktops/{name}/download", params={"path": "mix"})
+    r = admin.get(f"/api/environments/{name}/download", params={"path": "mix"})
     assert r.status_code == 200
     z = zipfile.ZipFile(io.BytesIO(r.content))
     assert z.read("one.txt") == b"one" and z.read("one-link.txt") == b"one"
@@ -141,7 +141,7 @@ def test_client_abort_leaves_no_tar_or_cat_running(admin, desktop, name):
         return [c for c in out if c in ("tar", "cat")]
 
     for path in ["huge", "huge/f0.bin"]:
-        r = admin.get(f"/api/desktops/{name}/download", params={"path": path}, stream=True)
+        r = admin.get(f"/api/environments/{name}/download", params={"path": path}, stream=True)
         assert r.status_code == 200
         next(r.iter_content(65536))
         assert running()  # still streaming

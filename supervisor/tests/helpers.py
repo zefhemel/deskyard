@@ -81,15 +81,15 @@ def video_settings_lines(name) -> list[str]:
 
 # --- accounts, agent tokens, exec ------------------------------------------------------------
 
-def make_account(admin, desktops, password="pw") -> str:
+def make_account(admin, environments, password="pw") -> str:
     user = "u" + uuid.uuid4().hex[:5]
-    r = admin.post("/api/accounts", json={"username": user, "password": password, "admin": False, "desktops": desktops})
+    r = admin.post("/api/accounts", json={"username": user, "password": password, "admin": False, "environments": environments})
     assert r.status_code == 201, r.text
     return user
 
 
 def make_token(client, name, **kw) -> dict:
-    r = client.post(f"/api/desktops/{name}/tokens", json={"name": "test", "expires": None, **kw})
+    r = client.post(f"/api/environments/{name}/tokens", json={"name": "test", "expires": None, **kw})
     assert r.status_code == 201, r.text
     return r.json()
 
@@ -158,7 +158,7 @@ class Forward:
     """A running `deskyard forward`, with its output collected as it comes."""
 
     def __init__(self, cli, remote, *specs, name=None):
-        self.p = subprocess.Popen([cli, "-d", name or remote.name, "forward", *specs], env=remote.env,
+        self.p = subprocess.Popen([cli, "-e", name or remote.name, "forward", *specs], env=remote.env,
                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         self.out, self.err = [], []
         self.lines = queue.Queue()

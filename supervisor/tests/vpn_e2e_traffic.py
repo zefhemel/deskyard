@@ -139,14 +139,14 @@ def traffic(d):
     evidence = {"initialBlocked": True}
     # Container mode starts with its endpoint down to prove pre-tunnel access.
     if cfg["mode"] == "container":
-        for c in r["desktops"]:
+        for c in r["containers"]:
             assert not request(c, "https://1.1.1.1/cdn-cgi/trace"), "startup escaped"
         for name in r["names"]:
             assert req("/" + name + "/screen/api/websockets") == b""
     else:
         evidence["initialBlocked"] = False
     docker("exec", endpoint, "ip", "link", "set", "wg0", "up")
-    for c in r["desktops"]:
+    for c in r["containers"]:
         eventually(
             lambda c=c: request(c, "https://1.1.1.1/cdn-cgi/trace"),
             "tunneled public HTTPS",
@@ -155,7 +155,7 @@ def traffic(d):
     assert len(transfers) == 2 and all(
         int(line.split()[2]) > 1000 for line in transfers
     )
-    for i, c in enumerate(r["desktops"]):
+    for i, c in enumerate(r["containers"]):
         g = json.loads(docker("inspect", r["gateways"][1 - i]))[0]
         address = next(iter(g["NetworkSettings"]["Networks"].values()))["IPAddress"]
         assert not request(c, "http://" + address + ":8080"), (
@@ -163,14 +163,14 @@ def traffic(d):
         )
     docker("exec", endpoint, "ip", "link", "set", "wg0", "down")
     for _ in range(3):
-        for c in r["desktops"]:
+        for c in r["containers"]:
             assert not request(c, "https://1.1.1.1/cdn-cgi/trace"), "loss escaped"
         for name in r["names"]:
             assert req("/" + name + "/screen/api/websockets") == b""
     evidence["lossBlockedAttempts"] = 6
     evidence["localDuringLoss"] = True
     docker("exec", endpoint, "ip", "link", "set", "wg0", "up")
-    for c in r["desktops"]:
+    for c in r["containers"]:
         eventually(
             lambda c=c: request(c, "https://1.1.1.1/cdn-cgi/trace"), "tunnel recovery"
         )
@@ -195,17 +195,17 @@ def lifecycle(d):
     (d / "continue").touch()
     wait_file(d / "gateway-stopped")
     for _ in range(3):
-        assert not request(r["desktops"][0], "https://1.1.1.1/cdn-cgi/trace"), (
+        assert not request(r["containers"][0], "https://1.1.1.1/cdn-cgi/trace"), (
             "stopped gateway escaped"
         )
     (d / "replacement").touch()
     recovered = wait_file(d / "recovered.json")
     eventually(
-        lambda: request(recovered["desktop"], "https://1.1.1.1/cdn-cgi/trace"),
+        lambda: request(recovered["container"], "https://1.1.1.1/cdn-cgi/trace"),
         "replaced gateway tunnel",
     )
     assert (
-        req("/api/desktops/" + r["names"][0] + "/download?path=/workspace/vpn-e2e.txt")
+        req("/api/environments/" + r["names"][0] + "/download?path=/workspace/vpn-e2e.txt")
         == b"vpn-e2e-workspace"
     )
     assert req("/" + r["names"][0] + "/screen/api/websockets") == b""

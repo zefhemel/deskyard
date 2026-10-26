@@ -219,7 +219,7 @@ class LifecycleCountersTests(unittest.TestCase):
             ):
                 d = pathlib.Path(tmp)
                 fixture.write(d / "fixture.json", {"Endpoint": "owned-endpoint"})
-                ready = {"desktops": ["old"], "names": ["desktop"]}
+                ready = {"containers": ["old"], "names": ["desktop"]}
                 rows = f"{direct} 0 /* desktop-direct */\n0 0 /* desktop-direct */\n{replies} 0 /* late-tunnel-return */\n{broad} 0 /* all-direct-forwards */"
 
                 def req(path):
@@ -229,7 +229,7 @@ class LifecycleCountersTests(unittest.TestCase):
                     patch.object(
                         traffic,
                         "wait_file",
-                        side_effect=[ready, {}, {"desktop": "new"}],
+                        side_effect=[ready, {}, {"container": "new"}],
                     ),
                     patch.object(traffic, "client", return_value=("", req)),
                     patch.object(

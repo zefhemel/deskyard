@@ -36,6 +36,6 @@ LABEL deskyard.kind="supervisor" \
 # DESKYARD_DATA_DIR has no default here: mount the data folder at the
 # same path as on the host and set it to that path (see compose.yaml).
 ENV DESKYARD_IN_CONTAINER=1 \
-    DESKYARD_LISTEN=0.0.0.0:8080
-EXPOSE 8080
+    DESKYARD_LISTEN=0.0.0.0:7343
+EXPOSE 7343
 ENTRYPOINT ["/usr/local/bin/deskyard-supervisor"]

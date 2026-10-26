@@ -7,7 +7,7 @@ import (
 )
 
 func TestRuntimeConfigUsesPinnedImagePrivateSecretsAndAuthenticatedControl(t *testing.T) {
-	cfg, err := buildRuntime(runtimeInput{DesktopID: strings.Repeat("a", 32), Name: "alice", Network: "alice-net", Connection: Connection{ID: strings.Repeat("b", 32), Provider: "nordvpn", Country: "Netherlands", Revision: 2}, Credentials: CredentialFiles{Username: "/private/user", Password: "/private/password"}, Directory: "/private/runtime", PublishLocal: true})
+	cfg, err := buildRuntime(runtimeInput{Environment: strings.Repeat("a", 32), Network: "alice-net", Connection: Connection{ID: strings.Repeat("b", 32), Provider: "nordvpn", Country: "Netherlands", Revision: 2}, Credentials: CredentialFiles{Username: "/private/user", Password: "/private/password"}, Directory: "/private/runtime", PublishLocal: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,14 +107,14 @@ func decide(rs []firewallRule, dst netip.Addr, iface, proto string, port uint16,
 }
 
 func TestRuntimeRejectsUnsupportedResolverPolicy(t *testing.T) {
-	_, err := buildRuntime(runtimeInput{DesktopID: strings.Repeat("a", 32), Network: "desktop", Resolver: resolverPolicy(99)})
+	_, err := buildRuntime(runtimeInput{Environment: strings.Repeat("a", 32), Network: "desktop", Resolver: resolverPolicy(99)})
 	if err == nil {
 		t.Fatal("unsupported resolver policy accepted")
 	}
 }
 
 func TestNordVPNUsesProviderDefaultPort(t *testing.T) {
-	cfg, err := buildRuntime(runtimeInput{DesktopID: strings.Repeat("a", 32), Network: "desktop", Connection: Connection{Provider: "nordvpn", Country: "Netherlands"}})
+	cfg, err := buildRuntime(runtimeInput{Environment: strings.Repeat("a", 32), Network: "desktop", Connection: Connection{Provider: "nordvpn", Country: "Netherlands"}})
 	if err != nil {
 		t.Fatal(err)
 	}

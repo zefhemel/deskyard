@@ -15,13 +15,14 @@ import (
 
 const SetupTimeout = 2 * time.Minute
 
-// Manager owns gateway containers only. The lifecycle caller holds its desktop
-// operation lock, stops/recreates namespace consumers, and never replaces a
+// Manager owns gateway containers only, one per environment, keyed by its
+// name. The lifecycle caller holds its environment operation lock, stops/recreates namespace consumers, and never replaces a
 // live dependency merely because Ensure reports a conflicting configuration.
 type Manager struct {
 	eng          engine.Engine
 	store        *Store
 	stateDir     string
+	instance     string // labels and scopes its runtimes, when set
 	mu           sync.Mutex
 	observations map[string]*observation
 	locks        map[string]chan struct{}
@@ -33,8 +34,16 @@ func NewManager(eng engine.Engine, store *Store, stateDir string) *Manager {
 	return &Manager{eng: eng, store: store, stateDir: stateDir, setupTimeout: SetupTimeout}
 }
 
-// A slow gateway must not prevent five-second observations of other desktops.
-func (m *Manager) lockDesktop(ctx context.Context, id string) (func(), error) {
+// ForInstance scopes m to the runtimes of supervisor instance: those it makes
+// carry its label, and only those are found, so another supervisor's runtime
+// for an environment of the same name is never touched.
+func (m *Manager) ForInstance(instance string) *Manager {
+	m.instance = instance
+	return m
+}
+
+// A slow gateway must not prevent five-second observations of other environments.
+func (m *Manager) lockEnvironment(ctx context.Context, id string) (func(), error) {
 	m.mu.Lock()
 	if m.locks == nil {
 		m.locks = map[string]chan struct{}{}
@@ -72,19 +81,23 @@ func (m *Manager) SetReservedNetworks(prefixes []netip.Prefix) error {
 }
 
 func (m *Manager) directory(id string) string {
-	return filepath.Join(m.stateDir, "vpn", "runtimes", id)
+	return filepath.Join(m.stateDir, "vpn", "runtime", id)
 }
-func runtimeLabels(id string) map[string]string {
-	return map[string]string{LabelRole: runtimeRole, LabelDesktopID: id}
+func (m *Manager) runtimeLabels(id string) map[string]string {
+	labels := map[string]string{LabelRole: runtimeRole, LabelEnvironment: id}
+	if m.instance != "" {
+		labels[LabelInstance] = m.instance
+	}
+	return labels
 }
 
-func (m *Manager) Ensure(ctx context.Context, desktopID, name, network, connectionID string, exceptions []Exception, publishLocal bool) (result engine.Container, resultErr error) {
+func (m *Manager) Ensure(ctx context.Context, environment, network, connectionID string, exceptions []Exception, publishLocal bool) (result engine.Container, resultErr error) {
 	ctx, cancel := context.WithTimeout(ctx, m.setupTimeout)
 	defer cancel()
-	if !validID(desktopID) {
-		return engine.Container{}, invalid("desktopID", "invalid identity")
+	if !validRuntime(environment) {
+		return engine.Container{}, invalid("environment", "invalid identity")
 	}
-	unlock, lockErr := m.lockDesktop(ctx, desktopID)
+	unlock, lockErr := m.lockEnvironment(ctx, environment)
 	if lockErr != nil {
 		return engine.Container{}, lockErr
 	}
@@ -129,17 +142,17 @@ func (m *Manager) Ensure(ctx context.Context, desktopID, name, network, connecti
 		}
 	}
 	if !found {
-		return engine.Container{}, errors.New("VPN desktop network is unavailable")
+		return engine.Container{}, errors.New("VPN environment network is unavailable")
 	}
 	reserved, err := effectiveNetworkReservations(configured, discovered, exceptions)
 	if err != nil {
 		return engine.Container{}, err
 	}
-	config, err := m.buildRuntime(runtimeInput{DesktopID: desktopID, Name: name, Network: network, Connection: connection, Credentials: credentials, Directory: m.directory(desktopID), Exceptions: exceptions, Reserved: reserved, PublishLocal: publishLocal})
+	config, err := m.buildRuntime(runtimeInput{Environment: environment, Instance: m.instance, Network: network, Connection: connection, Credentials: credentials, Directory: m.directory(environment), Exceptions: exceptions, Reserved: reserved, PublishLocal: publishLocal})
 	if err != nil {
 		return engine.Container{}, err
 	}
-	existing, err := m.eng.List(ctx, runtimeLabels(desktopID))
+	existing, err := m.eng.List(ctx, m.runtimeLabels(environment))
 	if err != nil {
 		return engine.Container{}, errors.New("VPN runtime discovery failed")
 	}
@@ -151,8 +164,13 @@ func (m *Manager) Ensure(ctx context.Context, desktopID, name, network, connecti
 		if c.Labels[labelPolicy] != config.Spec.Labels[labelPolicy] {
 			return engine.Container{}, fmt.Errorf("%w: VPN runtime configuration requires coordinated replacement", ErrConflict)
 		}
+		// A stopped runtime (a host or engine restart, or a crash) is
+		// started again rather than replaced; it is ready only once its
+		// firewall and control are verified, as a new one is.
 		if c.State != "running" {
-			return engine.Container{}, errors.New("VPN runtime is stopped; coordinated recovery is required")
+			if err = m.eng.Start(ctx, c.ID); err != nil {
+				return engine.Container{}, errors.New("VPN runtime start failed")
+			}
 		}
 		if err = m.ready(ctx, c.ID, config.Firewall); err != nil {
 			return engine.Container{}, err
@@ -172,7 +190,7 @@ func (m *Manager) Ensure(ctx context.Context, desktopID, name, network, connecti
 	if imageErr != nil {
 		return engine.Container{}, errors.New("VPN pinned runtime image could not be prepared")
 	}
-	if err = prepareRuntime(config, m.directory(desktopID)); err != nil {
+	if err = prepareRuntime(config, m.directory(environment)); err != nil {
 		return engine.Container{}, errors.New("VPN private runtime configuration could not be prepared")
 	}
 	attempt, err := newID()
@@ -187,7 +205,7 @@ func (m *Manager) Ensure(ctx context.Context, desktopID, name, network, connecti
 		if !success {
 			cleanup, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			if cleanupErr := m.removeRuntimeAttempt(cleanup, desktopID, config.Spec.Name, attempt); cleanupErr != nil {
+			if cleanupErr := m.removeRuntimeAttempt(cleanup, environment, config.Spec.Name, attempt); cleanupErr != nil {
 				result = engine.Container{}
 				resultErr = errors.Join(resultErr, errors.New("VPN runtime cleanup failed; reconciliation is required"))
 			}
@@ -211,16 +229,16 @@ func (m *Manager) Ensure(ctx context.Context, desktopID, name, network, connecti
 	return c, nil
 }
 
-func (m *Manager) Remove(ctx context.Context, desktopID string) error {
-	if !validID(desktopID) {
-		return invalid("desktopID", "invalid identity")
+func (m *Manager) Remove(ctx context.Context, environment string) error {
+	if !validRuntime(environment) {
+		return invalid("environment", "invalid identity")
 	}
-	unlock, lockErr := m.lockDesktop(ctx, desktopID)
+	unlock, lockErr := m.lockEnvironment(ctx, environment)
 	if lockErr != nil {
 		return lockErr
 	}
 	defer unlock()
-	cs, err := m.eng.List(ctx, runtimeLabels(desktopID))
+	cs, err := m.eng.List(ctx, m.runtimeLabels(environment))
 	if err != nil {
 		return errors.New("VPN runtime discovery failed")
 	}
@@ -230,9 +248,9 @@ func (m *Manager) Remove(ctx context.Context, desktopID string) error {
 		}
 	}
 	m.mu.Lock()
-	delete(m.observations, desktopID)
+	delete(m.observations, environment)
 	m.mu.Unlock()
-	if err = os.RemoveAll(m.directory(desktopID)); err != nil {
+	if err = os.RemoveAll(m.directory(environment)); err != nil {
 		return errors.New("VPN private runtime cleanup failed")
 	}
 	return nil

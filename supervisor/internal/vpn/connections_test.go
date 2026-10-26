@@ -16,7 +16,7 @@ func validInput() Input {
 func newTestStore(t *testing.T) (*Store, string) {
 	t.Helper()
 	dir := t.TempDir()
-	s, err := NewStore(dir)
+	s, err := NewStore(filepath.Join(dir, "networks.json"), filepath.Join(dir, "secret"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestConnectionsSecretsAndReload(t *testing.T) {
 	if updated.ID != c.ID || updated.Revision != 2 {
 		t.Fatalf("identity/revision: %+v", updated)
 	}
-	again, err := NewStore(dir)
+	again, err := NewStore(filepath.Join(dir, "networks.json"), filepath.Join(dir, "secret"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,11 +86,11 @@ func TestConnectionsSecretsAndReload(t *testing.T) {
 			t.Fatal("credentials or secret paths leaked")
 		}
 	}
-	metadata, err := os.ReadFile(filepath.Join(dir, "vpn", "connections.json"))
+	metadata, err := os.ReadFile(filepath.Join(dir, "networks.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Stat(filepath.Join(dir, "vpn", "connections.json"))
+	info, err := os.Stat(filepath.Join(dir, "networks.json"))
 	if err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("metadata permissions: %v %v", info, err)
 	}
@@ -163,9 +163,9 @@ func TestFailedMetadataCommitKeepsPreviousCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Secret versions can be prepared below secrets/, but the metadata's parent
-	// rejects CreateTemp. This forces failure after preparation, before commit.
-	vpnDir := filepath.Join(dir, "vpn")
+	// Secret versions can be prepared below secret/vpn/, but the metadata's
+	// parent rejects CreateTemp. This forces failure after preparation, before commit.
+	vpnDir := dir
 	if err := os.Chmod(vpnDir, 0o500); err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestFailedMetadataCommitKeepsPreviousCredentials(t *testing.T) {
 	if err := os.Chmod(vpnDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	reloaded, err := NewStore(dir)
+	reloaded, err := NewStore(filepath.Join(dir, "networks.json"), filepath.Join(dir, "secret"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestFailedMetadataCommitKeepsPreviousCredentials(t *testing.T) {
 	if err != nil || after != files {
 		t.Fatalf("lost credentials: %v", err)
 	}
-	entries, err := os.ReadDir(filepath.Join(dir, "vpn", "secrets", c.ID))
+	entries, err := os.ReadDir(filepath.Join(dir, "secret", "vpn", c.ID))
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("uncommitted secrets left: %v %d", err, len(entries))
 	}

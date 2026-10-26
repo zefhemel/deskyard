@@ -39,13 +39,13 @@ func TestFailedMutationKeepsPublishedAccounts(t *testing.T) {
 			case "create":
 				_, err = s.Create("bob", "password", false, nil)
 			case "update":
-				_, err = s.Update("anna", func(a *Account) { a.Admin = true; a.Desktops[0] = "changed" })
+				_, err = s.Update("anna", func(a *Account) { a.Admin = true; a.Environments[0] = "changed" })
 			case "delete":
 				err = s.Delete("anna")
 			case "access":
 				err = s.SetAccess("new", []string{"anna"})
 			case "forget":
-				err = s.Forget(func(string) bool { return true })
+				err = s.Forget("old")
 			case "login":
 				err = s.TouchLogin("anna")
 			}
@@ -63,5 +63,19 @@ func TestFailedMutationKeepsPublishedAccounts(t *testing.T) {
 				t.Error("disk changed")
 			}
 		})
+	}
+}
+
+func TestLoadRestrictsWideAccountsFile(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "accounts.json")
+	if err := os.WriteFile(p, []byte(`{"accounts":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(dir); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := os.Stat(p); st.Mode().Perm() != 0o600 {
+		t.Fatalf("mode %v", st.Mode())
 	}
 }

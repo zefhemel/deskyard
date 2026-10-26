@@ -9,9 +9,9 @@ import (
 )
 
 type terminalConnection struct {
-	claims    auth.SessionClaims
-	desktopID string
-	cancel    context.CancelFunc
+	claims      auth.SessionClaims
+	environment string
+	cancel      context.CancelFunc
 }
 
 // Registration and logout share a lock so logout also rejects in-flight joins.
@@ -42,7 +42,7 @@ func (t *terminalConnections) add(c *terminalConnection) bool {
 		if live.claims.Username == c.claims.Username {
 			users++
 		}
-		if live.desktopID == c.desktopID {
+		if live.environment == c.environment {
 			desktops++
 		}
 	}
@@ -86,5 +86,5 @@ func (t *terminalConnections) shutdown() {
 }
 func (s *Server) terminalAllowed(c *terminalConnection) bool {
 	a, ok := s.Accounts.Get(c.claims.Username)
-	return ok && a.SessionEpoch == c.claims.Epoch && auth.Can(a, auth.View, c.desktopID) && time.Now().Before(c.claims.Expires)
+	return ok && a.SessionEpoch == c.claims.Epoch && auth.Can(a, auth.View, c.environment) && time.Now().Before(c.claims.Expires)
 }

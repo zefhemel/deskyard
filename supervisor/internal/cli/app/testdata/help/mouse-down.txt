@@ -1,6 +1,6 @@
 deskyard mouse-down: press a mouse button
 
-Usage: deskyard [-d NAME] mouse-down [left|right|middle]
+Usage: deskyard [-e NAME] mouse-down [left|right|middle]
 
 Presses a mouse button at the current position and keeps it down (with move
 and mouse-up, for custom drags).
@@ -13,5 +13,5 @@ Prints: nothing
 Examples:
   deskyard move 100 100 && deskyard mouse-down && deskyard move 300 300 && deskyard mouse-up
 
-Where: inside a desktop it acts locally; elsewhere on the chosen remote (-d NAME)
+Where: inside an environment it acts locally; elsewhere on the chosen environment (-e NAME)
 Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop

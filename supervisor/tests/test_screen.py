@@ -96,7 +96,7 @@ def test_stream_shows_the_desktop_and_counts_as_viewing(admin, desktop, name):
     with Stream(admin, name) as s:
         assert wait_until(lambda: admin.desktop(name)["viewers"] == ["admin"])
         # Everyone watching the desktops hears of it.
-        assert read_events(admin, lambda es: any(k in ("viewers", "desktop") and d["name"] == name and d["viewers"] == ["admin"]
+        assert read_events(admin, lambda es: any(k in ("viewers", "environment") and d["name"] == name and d["viewers"] == ["admin"]
                                                  for k, d in es))
         assert wait_until(lambda: s.frames > 0, 15), "no picture from Selkies through the supervisor"
     assert wait_until(lambda: admin.desktop(name)["viewers"] == [])
@@ -173,16 +173,16 @@ def test_mic_badge_follows_the_stream(admin, desktop, name):
     tab = uuid.uuid4().hex[:12]
     assert admin.desktop(name)["mics"] == []
     for bad in ["", "a b", "x" * 65]:
-        assert admin.post(f"/api/desktops/{name}/mic", json={"on": True, "tab": bad}).status_code == 400, bad
+        assert admin.post(f"/api/environments/{name}/mic", json={"on": True, "tab": bad}).status_code == 400, bad
     with Stream(admin, name, tab):
         assert wait_until(lambda: admin.desktop(name)["viewers"] == ["admin"])
-        assert admin.post(f"/api/desktops/{name}/mic", json={"on": True, "tab": "not-this-one"}).status_code == 409
-        assert admin.post(f"/api/desktops/{name}/mic", json={"on": True, "tab": tab}).status_code == 204
+        assert admin.post(f"/api/environments/{name}/mic", json={"on": True, "tab": "not-this-one"}).status_code == 409
+        assert admin.post(f"/api/environments/{name}/mic", json={"on": True, "tab": tab}).status_code == 204
         assert admin.desktop(name)["mics"] == ["admin"]
-        assert read_events(admin, lambda es: any(k in ("viewers", "desktop") and d["name"] == name and d["mics"] == ["admin"]
+        assert read_events(admin, lambda es: any(k in ("viewers", "environment") and d["name"] == name and d["mics"] == ["admin"]
                                                  for k, d in es))
     assert wait_until(lambda: admin.desktop(name)["mics"] == [] and admin.desktop(name)["viewers"] == [])
-    assert admin.post(f"/api/desktops/{name}/mic", json={"on": True, "tab": tab}).status_code == 409
+    assert admin.post(f"/api/environments/{name}/mic", json={"on": True, "tab": tab}).status_code == 409
 
 
 
@@ -223,7 +223,7 @@ def test_client_additions_in_a_browser(supervisor, admin, desktop, name):
         # the desktop page reads it from the frame.
         tab = page.evaluate("document.querySelector('iframe').contentWindow.deskyardScreen.tab")
         assert tab == f.evaluate("window.deskyardScreen.tab")
-        r = page.evaluate("""async (tab) => (await fetch(location.pathname.replace(/\\/$/, '').replace(/^\\//, '/api/desktops/') + '/mic',
+        r = page.evaluate("""async (tab) => (await fetch(location.pathname.replace(/\\/$/, '').replace(/^\\//, '/api/environments/') + '/mic',
             {method: 'POST', body: JSON.stringify({on: true, tab})})).status""", tab)
         assert r == 204
         assert admin.desktop(name)["mics"] == ["admin"]

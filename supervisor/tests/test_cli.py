@@ -1,5 +1,6 @@
 """The deskyard command against a real supervisor, as an agent elsewhere uses it."""
 
+import json
 import socket
 import subprocess
 import time
@@ -13,18 +14,29 @@ from helpers import wait_until
 
 
 def test_status_and_exec(remote):
-    assert remote.name in remote("-d", remote.name, "status").stdout.decode()
-    r = remote("-d", remote.name, "exec", "--", "id", "-u")
+    assert remote.name in remote("-e", remote.name, "status").stdout.decode()
+    r = remote("-e", remote.name, "exec", "--", "id", "-u")
     assert r.stdout.strip() == b"1000"
-    r = remote("-d", remote.name, "exec", "--", "sh", "-c", "exit 5", check=False)
+    r = remote("-e", remote.name, "exec", "--", "sh", "-c", "exit 5", check=False)
     assert r.returncode == 5
+
+
+def test_environment_flag_and_saved_remote(cli, remote, tmp_path):
+    """-e names the environment; the old -d is an unknown option."""
+    assert remote.name in remote("--environment", remote.name, "status").stdout.decode()
+    assert remote.name in remote(f"-e={remote.name}", "status").stdout.decode()
+    r = remote("-d", remote.name, "status", check=False)
+    assert r.returncode == 2 and r.stderr.decode().startswith("deskyard:"), r.stderr
+    saved = json.loads((tmp_path / "config" / "deskyard" / "remotes.json").read_text())
+    entry = saved["remotes"][remote.name]
+    assert entry["environment"] == remote.name and "desktop" not in entry, saved
 
 
 def test_cp_round_trip(remote, tmp_path):
     src = tmp_path / "hello.txt"
     src.write_bytes(b"hello from the host\n")
     remote("cp", str(src), f"{remote.name}:/workspace/hello.txt")
-    assert remote("-d", remote.name, "exec", "--", "stat", "-c", "%u", "/workspace/hello.txt").stdout.strip() == b"1000"
+    assert remote("-e", remote.name, "exec", "--", "stat", "-c", "%u", "/workspace/hello.txt").stdout.strip() == b"1000"
     back = tmp_path / "back.txt"
     remote("cp", f"{remote.name}:/workspace/hello.txt", str(back))
     assert back.read_bytes() == src.read_bytes()
@@ -32,16 +44,16 @@ def test_cp_round_trip(remote, tmp_path):
 
 def test_screenshot(remote, tmp_path):
     out = tmp_path / "s.png"
-    remote("-d", remote.name, "screenshot", str(out))
+    remote("-e", remote.name, "screenshot", str(out))
     assert out.read_bytes()[:4] == b"\x89PNG"
-    assert remote("-d", remote.name, "size").stdout.split() == [b"1280", b"800"]
+    assert remote("-e", remote.name, "size").stdout.split() == [b"1280", b"800"]
 
 
 def test_browser_connect(cli, remote):
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
-    p = subprocess.Popen([cli, "-d", remote.name, "browser", "connect", "--port", str(port)], env=remote.env,
+    p = subprocess.Popen([cli, "-e", remote.name, "browser", "connect", "--port", str(port)], env=remote.env,
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     def listening():
@@ -71,14 +83,14 @@ def test_self_description(cli):
 
 
 def desktop_curl(remote, port, name=None):
-    return remote("-d", name or remote.name, "exec", "--", "curl", "-s", "-m", "10", f"http://127.0.0.1:{port}/", check=False)
+    return remote("-e", name or remote.name, "exec", "--", "curl", "-s", "-m", "10", f"http://127.0.0.1:{port}/", check=False)
 
 
 def desktop_http_server(run, port, name):
     """Starts python3 -m http.server PORT in a desktop, in the background."""
-    run("-d", name, "exec", "--", "bash", "-lc", f"setsid -f python3 -m http.server {port} --bind 127.0.0.1 >/dev/null 2>&1")
+    run("-e", name, "exec", "--", "bash", "-lc", f"setsid -f python3 -m http.server {port} --bind 127.0.0.1 >/dev/null 2>&1")
     for _ in range(50):
-        if run("-d", name, "exec", "--", "curl", "-sf", f"http://127.0.0.1:{port}/", check=False).returncode == 0:
+        if run("-e", name, "exec", "--", "curl", "-sf", f"http://127.0.0.1:{port}/", check=False).returncode == 0:
             return
         time.sleep(0.2)
     raise AssertionError(f"http.server {port} didn't start in {name}")
@@ -140,7 +152,7 @@ def test_forward_survives_restart(cli, remote, forwards, local_http, admin):
     f = forwards(cli, remote, str(p))
     f.wait_for(f"in {p} {p}")
     assert desktop_curl(remote, p).stdout == local_http.body
-    assert admin.post(f"/api/desktops/{remote.name}/restart").status_code == 204
+    assert admin.post(f"/api/environments/{remote.name}/restart").status_code == 204
     deadline = time.time() + 60
     while time.time() < deadline:
         if desktop_curl(remote, p).stdout == local_http.body:
@@ -156,7 +168,7 @@ def test_forward_other_desktop_refused(cli, remote, forwards, admin):
     other = remote.name + "b"
     admin.create(other)
     try:
-        t = admin.post(f"/api/desktops/{other}/tokens", json={"name": "other", "expires": None}).json()
+        t = admin.post(f"/api/environments/{other}/tokens", json={"name": "other", "expires": None}).json()
         env = {**remote.env, "DESKYARD_URL": f"{admin.base}/{other}", "DESKYARD_TOKEN": t["token"]}
 
         def run_other(*args, check=True):
@@ -171,4 +183,4 @@ def test_forward_other_desktop_refused(cli, remote, forwards, admin):
         with pytest.raises(requests.exceptions.ConnectionError):
             requests.get(f"http://127.0.0.1:{q}/", timeout=20)
     finally:
-        admin.delete(f"/api/desktops/{other}?files=1")
+        admin.delete(f"/api/environments/{other}?files=1")

@@ -21,9 +21,10 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
-	"github.com/zefhemel/deskyard/supervisor/internal/desktops"
+	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine/docker"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/integration"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 	"github.com/zefhemel/deskyard/supervisor/internal/web"
@@ -83,12 +84,18 @@ func TestVPNEndToEnd(t *testing.T) {
 			t.Error("cannot save private OUTPUT diagnostics")
 		}
 	}
-	state := filepath.Join(dir, "data", ".deskyard")
-	if err = os.MkdirAll(state, 0700); err != nil {
+	layout := config.NewLayout(filepath.Join(dir, "data"))
+	state := layout.State
+	if err = layout.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	// Like the supervisor, the services below own only this instance's resources.
+	instance, err := config.InstanceID(layout)
+	if err != nil {
 		t.Fatal(err)
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	store, err := vpn.NewStore(state)
+	store, err := vpn.NewStore(filepath.Join(layout.Data, "networks.json"), layout.Secret)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,21 +135,26 @@ func TestVPNEndToEnd(t *testing.T) {
 		}
 		return vpn.FixturePeer{Endpoint: addr, PublicKey: cfg.PublicKey, PrivateKeyFile: cfg.Keys[n], Address: fmt.Sprintf("10.77.0.%d/32", n+2)}, nil
 	}
-	makeService := func() *desktops.Service {
-		ds := desktops.New(e, desktops.Config{DataDir: filepath.Join(dir, "data"), Subnet: "10.219.0.0/16", InContainer: cfg.SelfID != "", SelfID: cfg.SelfID}, log)
+	makeService := func() *environments.Service {
+		// Open reads the saved definitions, so a fresh service recovers from them.
+		ds, err := environments.Open(e, environments.Config{DataDir: layout.Data, Subnet: "10.219.0.0/16", InContainer: cfg.SelfID != "", SelfID: cfg.SelfID}, instance, log)
+		if err != nil {
+			t.Fatal(err)
+		}
 		manager := vpn.NewManager(e, store, state)
 		if !cfg.Production {
 			var release func()
 			manager, release = vpn.NewFixtureManager(e, store, state, resolver)
 			t.Cleanup(release)
 		}
+		manager.ForInstance(instance)
 		if err := ds.ConfigureNetworking(store, e2eObservedRuntime{VPNRuntime: manager, t: t}, state); err != nil {
 			t.Fatal(err)
 		}
 		return ds
 	}
 	ds := makeService()
-	accts, err := accounts.Load(state)
+	accts, err := accounts.Load(layout.Data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +166,7 @@ func TestVPNEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	ui, _ := fs.Sub(web.Dist, "dist")
-	s, err := New(Options{Log: log, Eng: e, Desktops: ds, Accounts: accts, StateDir: state, UI: ui, DefaultImage: os.Getenv("CC_TEST_IMAGE")})
+	s, err := New(Options{Log: log, Eng: e, Environments: ds, Accounts: accts, Layout: layout, UI: ui, DefaultImage: os.Getenv("CC_TEST_IMAGE")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,10 +210,10 @@ func TestVPNEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var dsList []desktops.Desktop
+	var dsList []environments.Environment
 	for _, suffix := range []string{"a", "b"} {
 		name := "vpe-" + cfg.Scope[:6] + "-" + suffix
-		d, err := ds.Create(ctx, name, desktops.Settings{Image: os.Getenv("CC_TEST_IMAGE"), VPNConnectionID: conn.ID}, func(msg string, _ float64) { t.Log(msg) })
+		d, err := ds.Create(ctx, name, environments.Settings{Image: os.Getenv("CC_TEST_IMAGE"), VPNConnectionID: conn.ID}, func(msg string, _ float64) { t.Log(msg) })
 		if err != nil {
 			t.Fatal("initial create", err)
 		}
@@ -210,8 +222,8 @@ func TestVPNEndToEnd(t *testing.T) {
 	if dsList[0].Container.NetworkContainer == dsList[1].Container.NetworkContainer {
 		t.Fatal("shared namespace")
 	}
-	write("ready.json", map[string]any{"listen": listener.Addr().String(), "names": []string{dsList[0].Name, dsList[1].Name}, "desktops": []string{dsList[0].Container.ID, dsList[1].Container.ID}, "gateways": []string{dsList[0].Container.NetworkContainer, dsList[1].Container.NetworkContainer}})
-	t.Log("READY: two real Selkies desktops with independent controlled VPN namespaces")
+	write("ready.json", map[string]any{"listen": listener.Addr().String(), "names": []string{dsList[0].Name, dsList[1].Name}, "containers": []string{dsList[0].Container.ID, dsList[1].Container.ID}, "gateways": []string{dsList[0].Container.NetworkContainer, dsList[1].Container.NetworkContainer}})
+	t.Log("READY: two real Selkies environments with independent controlled VPN namespaces")
 	waitFile("continue")
 	stopBackground()
 	// Application restart/idle/start preserve the runtime; its loss requires a new
@@ -252,13 +264,13 @@ func TestVPNEndToEnd(t *testing.T) {
 			t.Fatal("retry from persisted failure", err)
 		}
 	}
-	s.Desktops = fresh
+	s.Environments = fresh
 	ds = fresh
 	current, err = ds.Get(ctx, d.Name)
-	if err != nil || current.ID != d.ID || current.Container.Env[desktops.TokenEnv] != d.Container.Env[desktops.TokenEnv] || current.Container.NetworkContainer == gateway {
+	if err != nil || current.ID != d.ID || current.Container.Env[environments.TokenEnv] != d.Container.Env[environments.TokenEnv] || current.Container.NetworkContainer == gateway {
 		t.Fatal("replacement identity/namespace", err)
 	}
-	write("recovered.json", map[string]string{"desktop": current.Container.ID, "gateway": current.Container.NetworkContainer})
+	write("recovered.json", map[string]string{"container": current.Container.ID, "gateway": current.Container.NetworkContainer})
 	waitFile("finish")
 	// Same-image upgrade exercises the real recreate path and retained workspace.
 	if _, err = ds.Recreate(ctx, d.Name, current.Settings, func(string, float64) {}); err != nil {
@@ -273,19 +285,19 @@ func TestVPNEndToEnd(t *testing.T) {
 		}
 	}
 	if cs, err := ds.List(ctx); err != nil || len(cs) != 0 {
-		t.Fatal("desktop removal inventory", err)
+		t.Fatal("environment removal inventory", err)
 	}
 	t.Log("PASS idle/start/restart, gateway stop, persisted supervisor recovery, same-image recreate and pair removal")
 }
 
 // Preserve a safe manager boundary if an intermittent recovery failure recurs.
 type e2eObservedRuntime struct {
-	desktops.VPNRuntime
+	environments.VPNRuntime
 	t *testing.T
 }
 
-func (r e2eObservedRuntime) Ensure(ctx context.Context, id, name, network, connection string, exceptions []vpn.Exception, publish bool) (engine.Container, error) {
-	c, err := r.VPNRuntime.Ensure(ctx, id, name, network, connection, exceptions, publish)
+func (r e2eObservedRuntime) Ensure(ctx context.Context, name, network, connection string, exceptions []vpn.Exception, publish bool) (engine.Container, error) {
+	c, err := r.VPNRuntime.Ensure(ctx, name, network, connection, exceptions, publish)
 	if err != nil {
 		phase := "unclassified failure (private cause withheld)"
 		switch err.Error() {
