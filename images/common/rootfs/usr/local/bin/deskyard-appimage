@@ -1,0 +1,220 @@
+#!/usr/bin/python3
+"""Put AppImages in the applications menu.
+
+  deskyard-appimage add FILE...   move AppImages into ~/Applications and add them
+  deskyard-appimage sync          add launchers for ~/Applications, drop stale ones
+  deskyard-appimage watch         sync, then again whenever ~/Applications changes
+
+Launchers go to ~/.local/share/applications as appimage-<name>.desktop, built
+from the AppImage's own .desktop file and icon. Nothing is mounted: the runtime
+extracts just those files (--appimage-extract), and launches run with
+APPIMAGE_EXTRACT_AND_RUN=1 from the image environment.
+"""
+
+import os
+import re
+import select
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+HOME = Path.home()
+APPS = HOME / "Applications"
+LAUNCHERS = HOME / ".local/share/applications"
+ICONS = HOME / ".local/share/deskyard/appimage-icons"
+PREFIX = "appimage-"
+KEY = "X-Deskyard-AppImage"
+
+
+def log(msg):
+    print(f"deskyard-appimage: {msg}", file=sys.stderr, flush=True)
+
+
+def is_appimage(path):
+    """A type 2 AppImage: ELF with the AppImage magic. Anything else is not run."""
+    # A line break in the path would add lines to the launcher.
+    if not path.name.lower().endswith(".appimage") or "\n" in str(path) or "\r" in str(path) \
+            or not path.is_file():
+        return False
+    with path.open("rb") as f:
+        head = f.read(11)
+    return head[:4] == b"\x7fELF" and head[8:11] == b"AI\x02"
+
+
+def launcher_id(path):
+    stem = re.sub(r"(?i)\.appimage$", "", path.name)
+    return PREFIX + (re.sub(r"[^A-Za-z0-9._-]+", "-", stem).strip("-") or "app")
+
+
+def extract(appimage, pattern, root):
+    subprocess.run([str(appimage), "--appimage-extract", pattern], cwd=root,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
+
+
+def extracted(appimage, rel, work):
+    """Extract one path from the AppImage, following symlinks inside it."""
+    root = work / "squashfs-root"
+    for _ in range(5):
+        extract(appimage, rel, work)
+        p = root / rel
+        if not p.is_symlink():
+            return p if p.is_file() else None
+        target = os.path.normpath(os.path.join(os.path.dirname(rel), os.readlink(p)))
+        if target.startswith(".."):
+            return None
+        rel = target
+    return None
+
+
+def exec_quote(path):
+    """PATH as the program of a desktop-entry Exec value."""
+    quoted = '"' + re.sub(r'(["`$\\])', r"\\\1", str(path)) + '"'
+    return quoted.replace("\\", "\\\\").replace("%", "%%")
+
+
+def rewrite_exec(value, appimage):
+    """Replace the program (usually AppRun) and keep its arguments."""
+    m = re.match(r'\s*("(?:[^"\\]|\\.)*"|\S+)(.*)', value)
+    return exec_quote(appimage) + (m.group(2) if m else " %U")
+
+
+def entry_lines(desktop, appimage, icon):
+    if desktop is None:
+        name = re.sub(r"(?i)\.appimage$", "", appimage.name)
+        desktop = f"[Desktop Entry]\nType=Application\nName={name}\nExec=AppRun %U\n"
+    out, section = [], None
+    for line in desktop.splitlines():
+        if line.startswith("["):
+            section = line.strip()
+            out.append(line)
+            if section == "[Desktop Entry]":
+                out += [f"Icon={icon}", f"{KEY}={appimage}"]
+            continue
+        key = line.split("=", 1)[0].strip()
+        if key == "TryExec" or (section == "[Desktop Entry]" and key in ("Icon", KEY)):
+            continue
+        if key == "Exec":
+            line = "Exec=" + rewrite_exec(line.split("=", 1)[1], appimage)
+        out.append(line)
+    return out
+
+
+def integrate(appimage):
+    lid = launcher_id(appimage)
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp)
+        extract(appimage, "*.desktop", work)
+        found = sorted((work / "squashfs-root").glob("*.desktop"))
+        desktop = found[0].read_text(errors="replace") if found else None
+        if desktop is not None and "[Desktop Entry]" not in desktop:
+            desktop = None
+        icon = "application-x-executable"
+        src = extracted(appimage, ".DirIcon", work)
+        if src is None and desktop:
+            name = re.search(r"^Icon=(.+)$", desktop, re.M)
+            for ext in (".png", ".svg"):
+                if name and (src := extracted(appimage, name.group(1).strip() + ext, work)):
+                    break
+        if src is not None:
+            data = src.read_bytes()
+            ext = ".svg" if b"<svg" in data[:4096] else ".png"
+            ICONS.mkdir(parents=True, exist_ok=True)
+            for old in ICONS.glob(lid + ".*"):
+                old.unlink()
+            icon = str(ICONS / (lid + ext))
+            Path(icon).write_bytes(data)
+    LAUNCHERS.mkdir(parents=True, exist_ok=True)
+    tmp = LAUNCHERS / f".{lid}.desktop.tmp"
+    tmp.write_text("\n".join(entry_lines(desktop, appimage, icon)) + "\n")
+    tmp.replace(LAUNCHERS / f"{lid}.desktop")
+    log(f"added {appimage.name} to the applications menu")
+
+
+def ours():
+    """Launchers this tool wrote, with the AppImage each one runs."""
+    for launcher in LAUNCHERS.glob(PREFIX + "*.desktop"):
+        m = re.search(rf"^{KEY}=(.+)$", launcher.read_text(errors="replace"), re.M)
+        if m:
+            yield launcher, Path(m.group(1))
+
+
+def remove(launcher):
+    launcher.unlink(missing_ok=True)
+    for icon in ICONS.glob(launcher.stem + ".*"):
+        icon.unlink()
+
+
+def sync():
+    APPS.mkdir(exist_ok=True)
+    current = {}
+    for launcher, target in ours():
+        if not target.exists():
+            remove(launcher)
+            log(f"removed {launcher.name}: {target} is gone")
+        else:
+            current[target] = launcher
+    for path in sorted(APPS.iterdir()):
+        try:
+            if not is_appimage(path):
+                continue
+            if not os.access(path, os.X_OK):
+                path.chmod(path.stat().st_mode | 0o111)
+            launcher = current.get(path)
+            if launcher and launcher.stat().st_mtime >= path.stat().st_mtime:
+                continue
+            integrate(path)
+        except (OSError, subprocess.SubprocessError) as e:
+            # Often a file still being written: its next change retries it.
+            log(f"skipped {path.name}: {e}")
+
+
+def add(files):
+    APPS.mkdir(exist_ok=True)
+    status = 0
+    for name in files:
+        path = Path(name).absolute()
+        if not is_appimage(path):
+            log(f"not an AppImage: {path}")
+            status = 1
+            continue
+        dest = APPS / path.name
+        if path.parent != APPS:
+            if dest.exists():
+                log(f"{dest} already exists")
+                status = 1
+                continue
+            shutil.move(path, dest)
+    sync()
+    return status
+
+
+def watch():
+    sync()
+    proc = subprocess.Popen(
+        ["inotifywait", "-m", "-q", "-e", "close_write,moved_to,moved_from,delete,attrib",
+         str(APPS)], stdout=subprocess.PIPE)
+    fd = proc.stdout.fileno()
+    while os.read(fd, 65536):
+        # Settle a burst of events (a copy, a rename) into one sync.
+        while select.select([fd], [], [], 1)[0] and os.read(fd, 65536):
+            pass
+        sync()
+    return proc.wait() or 1  # ~/Applications went away: supervisord restarts us
+
+
+def main(argv):
+    if len(argv) >= 2 and argv[1] == "add" and argv[2:]:
+        return add(argv[2:])
+    if argv[1:] == ["sync"]:
+        sync()
+        return 0
+    if argv[1:] == ["watch"]:
+        return watch()
+    print(__doc__.strip(), file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

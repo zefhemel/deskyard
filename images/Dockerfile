@@ -116,7 +116,7 @@ COPY --from=flatpak /out/source/ /usr/share/doc/flatpak/deskyard-source/
 RUN --mount=type=bind,from=flatpak,source=/out/debs,target=/tmp/flatpak-debs \
     apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl procps supervisor dbus dbus-x11 \
-        x11-utils xdg-utils fonts-dejavu-core \
+        x11-utils xdg-utils inotify-tools fonts-dejavu-core \
         chromium socat xdotool xclip maim flatpak git openssh-client tmux /tmp/flatpak-debs/*.deb \
         pipewire pipewire-pulse wireplumber pulseaudio-utils \
     && rm -rf /var/lib/apt/lists/* \
@@ -204,6 +204,8 @@ ENV HOME=/workspace \
     NO_AT_BRIDGE=1 \
     MISE_DATA_DIR=/workspace/.local/share/mise \
     NPM_CONFIG_PREFIX=/workspace/.npm-global \
+    # No /dev/fuse in an unprivileged desktop: AppImages unpack to /tmp and run.
+    APPIMAGE_EXTRACT_AND_RUN=1 \
     XDG_DATA_DIRS=/workspace/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/usr/local/share:/usr/share \
     PATH=/workspace/.local/bin:/workspace/.npm-global/bin:/workspace/.local/share/mise/shims:/opt/deskyard/bin:/opt/runtimes/node/bin:/opt/runtimes/python/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 

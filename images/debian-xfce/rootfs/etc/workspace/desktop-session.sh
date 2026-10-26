@@ -3,6 +3,7 @@ session_configure() {
     xfconf-query -c xfce4-session -p /general/SaveOnExit >/dev/null 2>&1 \
         || xfconf-query -c xfce4-session -p /general/SaveOnExit -n -t bool -s true
     /usr/local/bin/workspace-migrate-panel
+    /usr/local/bin/workspace-migrate-thunar
 }
 session_start() { startxfce4; }
 session_logout() { xfce4-session-logout --logout; }

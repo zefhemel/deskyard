@@ -549,6 +549,24 @@ AppArmor (`kernel.apparmor_restrict_unprivileged_userns`); this hasn't been
 tested yet. If bubblewrap fails there, try
 `sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0`.
 
+### AppImages
+
+AppImages normally mount themselves with FUSE, which an unprivileged desktop
+does not have. Desktop images set `APPIMAGE_EXTRACT_AND_RUN=1`, so an AppImage
+unpacks itself to `/tmp` and runs from there instead. Each launch unpacks it
+again, so large AppImages start more slowly; Flatpak is the better choice when
+the app is available there.
+
+Every home has an `~/Applications` folder, with a short `README.txt` the first
+time it is created. To put an AppImage in the applications menu, save or move
+it into `~/Applications`, or right-click it in the file manager and choose
+**Add to Applications Menu**, which moves it there. A launcher with the app's
+own name and icon appears within seconds; from the menu you can pin it to the
+dock. Deleting the AppImage removes its launcher. `deskyard-appimage` does the
+work (`add FILE`, `sync`); a background watcher runs it whenever
+`~/Applications` changes. Launchers keep the app's MIME types, so an AppImage
+can become the handler for the files it declares.
+
 ### MATE
 
 The MATE image includes a fix to Debian's libmate-desktop that stops its

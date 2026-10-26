@@ -1,0 +1,21 @@
+#!/usr/bin/python3
+"""Once per home: Thunar reads ~/.config/Thunar/uca.xml instead of the image's
+/etc/xdg copy once a home has one, so add the image's AppImage action to it.
+Removing the action afterwards sticks."""
+
+import re
+from pathlib import Path
+
+home = Path.home()
+marker = home / ".config/workspace/thunar-appimage-action"
+saved = home / ".config/Thunar/uca.xml"
+
+if not marker.exists():
+    if saved.is_file():
+        text = saved.read_text()
+        if "deskyard-appimage-add" not in text and "</actions>" in text:
+            action = re.search(r"  <!-- Deskyard:.*?</action>\n",
+                               Path("/etc/xdg/Thunar/uca.xml").read_text(), re.S).group(0)
+            saved.write_text(text.replace("</actions>", action + "</actions>", 1))
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()

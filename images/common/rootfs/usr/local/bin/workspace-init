@@ -86,6 +86,17 @@ for dir in .claude/skills .codex/skills .agents/skills .gemini/skills; do
     done
 done
 
+# --- AppImages: ~/Applications (deskyard-appimage), and the launcher folder,
+# made before the desktop starts so its menu watches it from the start. The
+# README comes only with a new folder, so a deleted one stays deleted.
+if [ ! -e /workspace/Applications ] && [ ! -L /workspace/Applications ]; then
+    runuser -u user -- mkdir /workspace/Applications \
+        && runuser -u user -- cp /etc/workspace/applications-README.txt /workspace/Applications/README.txt \
+        || log "warning: could not create ~/Applications"
+fi
+runuser -u user -- mkdir -p /workspace/.local/share/applications \
+    || log "warning: could not create ~/.local/share/applications"
+
 # --- runtime dir (fixed path so `docker exec` sees the same env) ------------
 rm -rf "$XDG_RUNTIME_DIR"
 install -d -m 700 -o 1000 -g 1000 "$XDG_RUNTIME_DIR"
