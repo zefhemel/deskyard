@@ -1,4 +1,4 @@
-import type { Environment, Settings, Tool } from "../api.ts";
+import type { Environment, Settings } from "../api.ts";
 
 const GB = 1024 ** 3;
 
@@ -157,24 +157,6 @@ export function names(list: string[]): string {
 
 export function plural(n: number, word: string, many = `${word}s`): string {
   return `${n} ${n === 1 ? word : many}`;
-}
-
-/** mise tools as "node 24.22 (this environment) · 24.30 in the image, cowsay 1.6 (image)". */
-export function toolsLine(tools: Tool[]): string {
-  const byTool = new Map<string, { own: string[]; image: string[] }>();
-  for (const t of tools) {
-    const e = byTool.get(t.tool) ?? { own: [], image: [] };
-    byTool.set(t.tool, e);
-    e[t.source === "image" ? "image" : "own"].push(t.version);
-  }
-  return [...byTool]
-    .map(([name, { own, image }]) => {
-      const d = own.join(", ");
-      const i = image.join(", ");
-      if (d && i) return `${name} ${d} (this environment) · ${i} in the image`;
-      return `${name} ${d || i} (${d ? "this environment" : "image"})`;
-    })
-    .join(", ");
 }
 
 /** "12 s", "4 min", "1 h 30 min" (for commands and browser sessions). */

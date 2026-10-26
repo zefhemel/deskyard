@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Environment } from "../api.ts";
-import { notice, toolsLine } from "./format.ts";
+import { notice } from "./format.ts";
 
 type Seen = Pick<Environment, "state" | "revision" | "appliedRevision" | "error" | "conflict">;
 const applied: Seen = { state: "running", revision: 3, appliedRevision: 3, error: "", conflict: "" };
@@ -38,15 +38,4 @@ test("a conflict wins, and busy environments wait for their job", () => {
   });
   assert.equal(notice({ ...applied, state: "upgrading", revision: 4 }), null);
   assert.equal(notice({ ...applied, state: "creating", revision: 1, appliedRevision: 0, error: "x" }), null);
-});
-
-test("tools installed in the environment and in the image", () => {
-  assert.equal(
-    toolsLine([
-      { tool: "node", version: "24.22", source: "environment" },
-      { tool: "node", version: "24.30", source: "image" },
-      { tool: "cowsay", version: "1.6", source: "image" },
-    ]),
-    "node 24.22 (this environment) · 24.30 in the image, cowsay 1.6 (image)",
-  );
 });

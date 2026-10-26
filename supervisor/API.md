@@ -68,7 +68,6 @@ An environment is identified by its name everywhere; there is no separate ID. `E
 | `PUT /api/environments/{name}/access` (admin) | `{"usernames":[…]}` | 204 |
 | `GET /api/environments/{name}/screen.png` | `?full=1` for full size | PNG, 480 px wide by default; 409 when stopped |
 | `GET /api/environments/{name}/processes` | | `{"titles":[…],"rows":[[…]]}` (columns PID, USER, %CPU, RSS (KiB), ELAPSED, COMMAND) |
-| `GET /api/environments/{name}/tools` | | `[{"tool","version","source":"environment"\|"image"}]`: mise tools of a running environment; `environment` when its user installed them, `image` when installed under `/opt/mise`. `[]` when stopped, without mise, or unreadable |
 | `GET /api/environments/{name}/stats` | | `{"history":[{"t":"…","cpuPercent":n,"memBytes":n}], "memLimit":n}` (15 min at 5 s) |
 | `GET /api/environments/{name}/folder` | | `{"path","bytes","complete"}`; `complete` is false when some directories couldn't be read, so `bytes` is a lower bound |
 | `GET /api/environments/{name}/activity` | | `Activity` (below) |

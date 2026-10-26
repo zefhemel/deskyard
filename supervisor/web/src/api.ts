@@ -144,12 +144,6 @@ export interface Processes {
   rows: (string | number)[][];
 }
 
-export interface Tool {
-  tool: string;
-  version: string;
-  source: "environment" | "image";
-}
-
 export interface StatsPoint {
   t: string;
   cpuPercent: number;
@@ -406,7 +400,6 @@ export const api = {
     request<JobRef>("PATCH", c(name), body),
   setAccess: (name: string, usernames: string[]) => request<void>("PUT", `${c(name)}/access`, { usernames }),
   processes: (name: string) => request<Processes>("GET", `${c(name)}/processes`),
-  tools: (name: string) => request<Tool[]>("GET", `${c(name)}/tools`),
   activity: (name: string) => request<ActivityEvent>("GET", `${c(name)}/activity`),
   stats: (name: string) => request<StatsHistory>("GET", `${c(name)}/stats`),
   folder: (name: string) => request<FolderSize>("GET", `${c(name)}/folder`),

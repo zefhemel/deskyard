@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useState } from "preact/hooks";
 import { useLocation, useRoute } from "preact-iso";
 import { api, type AgentPresence, type Environment, type Forward } from "../api.ts";
 import { agentLabel } from "../lib/activity-format.ts";
@@ -14,7 +14,7 @@ import { Page } from "../components/topbar.tsx";
 import { btnClass, Button, cx, Status, Tag } from "../components/ui.tsx";
 import { UpgradeDialog } from "../dialogs/upgrade.tsx";
 import { useEnvironment, useLive, useNow } from "../live.tsx";
-import { day, limits, names, statusKind, statusLine, toolsLine } from "../lib/format.ts";
+import { day, limits, names, statusKind, statusLine } from "../lib/format.ts";
 import { AccessTab } from "./details/access-tab.tsx";
 import { AgentsTab } from "./details/agents-tab.tsx";
 import { ProcessesTab } from "./details/processes-tab.tsx";
@@ -189,24 +189,6 @@ function ViewersPanel({
   );
 }
 
-/** The environment's mise tools as one line, or "" when it isn't running, has none, or can't say. */
-function useTools(name: string, running: boolean): string {
-  const [line, setLine] = useState("");
-  useEffect(() => {
-    setLine("");
-    if (!running) return;
-    let live = true;
-    api.tools(name).then(
-      (t) => live && setLine(Array.isArray(t) ? toolsLine(t) : ""),
-      () => undefined,
-    );
-    return () => {
-      live = false;
-    };
-  }, [name, running]);
-  return line;
-}
-
 function Facts({
   environment: c,
   admin,
@@ -217,7 +199,6 @@ function Facts({
   onTab: (t: Tab) => void;
 }) {
   const [upgrading, setUpgrading] = useState(false);
-  const tools = useTools(c.name, c.state === "running");
   const link =
     "cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-accent hover:underline";
   return (
@@ -247,12 +228,6 @@ function Facts({
             </>
           )}
         </dd>
-        {tools && (
-          <>
-            <dt class="text-muted">Tools</dt>
-            <dd class="m-0 min-w-0 [overflow-wrap:anywhere]">{tools}</dd>
-          </>
-        )}
         {admin && (
           <>
             <dt class="text-muted">Access</dt>
@@ -267,17 +242,6 @@ function Facts({
               >
                 Change
               </button>
-            </dd>
-          </>
-        )}
-        {c.revision > 0 && (
-          <>
-            <dt class="text-muted">Revision</dt>
-            <dd class="m-0">
-              {c.revision}
-              {c.appliedRevision === 0
-                ? " (no container yet)"
-                : c.appliedRevision !== c.revision && ` (container built from ${c.appliedRevision})`}
             </dd>
           </>
         )}

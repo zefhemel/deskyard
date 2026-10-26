@@ -47,7 +47,6 @@ func (s *Server) routes() {
 	h("GET /api/environments/{name}/processes", s.handleProcesses)
 	h("GET /api/environments/{name}/stats", s.handleStats)
 	h("GET /api/environments/{name}/folder", s.handleFolder)
-	h("GET /api/environments/{name}/tools", s.handleTools)
 	h("GET /api/environments/{name}/activity", s.handleActivity)
 	h("GET /api/environments/{name}/screen-events", s.handleScreenEvents)
 	h("GET /api/environments/{name}/files", s.handleFiles)

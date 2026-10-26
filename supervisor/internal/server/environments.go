@@ -2,11 +2,8 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
-	"path"
-	"sort"
 	"strings"
 	"time"
 
@@ -593,108 +590,4 @@ func (s *Server) handleProcesses(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"titles": titles, "rows": rows})
-}
-
-// Tool is one mise tool installed in an environment: by its user
-// ("environment") or in its image under /opt/mise ("image").
-type Tool struct {
-	Tool    string `json:"tool"`
-	Version string `json:"version"`
-	Source  string `json:"source"`
-}
-
-const (
-	maxToolsOutput = 1 << 20 // mise's output comes from the environment: bound it
-	maxTools       = 500
-	maxToolText    = 100
-	imageMiseDir   = "/opt/mise"
-)
-
-// handleTools lists the mise tools of a running environment and where each one is
-// installed. An environment that is stopped, has no mise, or answers with anything
-// odd has no tools to show: that is an empty list, not an error.
-func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
-	c, _, ok := s.environmentFor(w, r, auth.View)
-	if !ok {
-		return
-	}
-	tools := []Tool{}
-	if c.Running() {
-		ctx, cancel := timeout(r, 10*time.Second)
-		defer cancel()
-		if t, err := s.miseTools(ctx, c); err == nil {
-			tools = t
-		}
-	}
-	writeJSON(w, http.StatusOK, tools)
-}
-
-func (s *Server) miseTools(ctx context.Context, c environments.Environment) ([]Tool, error) {
-	// The image's tools live in /opt/mise, apart from the environment's own
-	// MISE_DATA_DIR; mise lists them as well when told to look there.
-	env := append(append([]string{}, execEnv...), "MISE_SHARED_INSTALL_DIRS="+imageMiseDir+"/installs")
-	result, err := engine.Run(ctx, s.Eng, c.Container.ID, engine.ExecSpec{
-		Cmd:  []string{"timeout", "-k", "1", "8", "mise", "ls", "--json"},
-		User: "user", WorkDir: "/workspace", Env: env,
-	}, engine.RunOptions{StdoutLimit: maxToolsOutput, StderrLimit: 4096})
-	if errors.Is(err, engine.ErrOutputLimit) {
-		return nil, errors.New("mise output too large")
-	}
-	if err != nil {
-		return nil, err
-	}
-	if result.Code != 0 {
-		return nil, errors.New("mise failed")
-	}
-	return parseMiseTools(result.Stdout)
-}
-
-// parseMiseTools reads `mise ls --json`: an object of tool name to the list of
-// its installed versions. Entries that don't look right are skipped.
-func parseMiseTools(out []byte) ([]Tool, error) {
-	var all map[string]json.RawMessage
-	if err := json.Unmarshal(out, &all); err != nil {
-		return nil, err
-	}
-	names := make([]string, 0, len(all))
-	for n := range all {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	tools := []Tool{}
-	for _, n := range names {
-		var entries []json.RawMessage
-		if json.Unmarshal(all[n], &entries) != nil {
-			continue
-		}
-		for _, raw := range entries {
-			var v struct {
-				Version     string `json:"version"`
-				InstallPath string `json:"install_path"`
-				Installed   *bool  `json:"installed"`
-			}
-			if json.Unmarshal(raw, &v) != nil {
-				continue
-			}
-			if v.Version == "" || v.InstallPath == "" || (v.Installed != nil && !*v.Installed) {
-				continue
-			}
-			source := "environment"
-			if p := path.Clean(v.InstallPath); p == imageMiseDir || strings.HasPrefix(p, imageMiseDir+"/") {
-				source = "image"
-			}
-			tools = append(tools, Tool{clip(n), clip(v.Version), source})
-			if len(tools) >= maxTools {
-				return tools, nil
-			}
-		}
-	}
-	return tools, nil
-}
-
-func clip(s string) string {
-	if len(s) > maxToolText {
-		return strings.ToValidUTF8(s[:maxToolText], "")
-	}
-	return s
 }
