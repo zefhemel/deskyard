@@ -247,9 +247,9 @@ PY''')
 
 def test_emulator_shared_defaults_tabs_cwd_and_explicit_commands(sandbox):
     """Exercise installed defaults, Debian alternatives, new tabs and explicit commands."""
-    from sandbox import DESKTOP, wait_until
+    from sandbox import wait_until
     import shlex
-    terminal = {'xfce': 'xfce4-terminal', 'mate': 'mate-terminal'}[DESKTOP]
+    terminal = 'xfce4-terminal'
     cwd_flag = '--working-directory'
     socket = '/run/workspace/deskyard-terminal/tmux.sock'
     def names():
@@ -258,16 +258,10 @@ def test_emulator_shared_defaults_tabs_cwd_and_explicit_commands(sandbox):
         sandbox.exec('setsid -f ' + cmd + ' >/dev/null 2>&1')
     # Simulate existing preferences before any emulator starts. Migration must
     # replace old unshared commands while retaining unrelated appearance.
-    if DESKTOP == 'xfce':
-        sandbox.exec("printf '[Configuration]\\nRunCustomCommand=FALSE\\nFontName=Monospace 17\\nColorBackground=#123456\\n' > ~/.config/xfce4/terminal/terminalrc; printf 'TerminalEmulator=nonexistent-old-choice\\n' > ~/.config/xfce4/helpers.rc")
-    else:
-        sandbox.exec("gsettings set org.mate.terminal.profile:/org/mate/terminal/profiles/default/ use-custom-command false; gsettings set org.mate.terminal.profile:/org/mate/terminal/profiles/default/ font 'Monospace 17'")
+    sandbox.exec("printf '[Configuration]\\nRunCustomCommand=FALSE\\nFontName=Monospace 17\\nColorBackground=#123456\\n' > ~/.config/xfce4/terminal/terminalrc; printf 'TerminalEmulator=nonexistent-old-choice\\n' > ~/.config/xfce4/helpers.rc")
     sandbox.exec('deskyard-terminal-configure')
-    if DESKTOP == 'xfce':
-        profile = sandbox.exec('cat ~/.config/xfce4/terminal/terminalrc').stdout
-        assert 'FontName=Monospace 17' in profile and 'ColorBackground=#123456' in profile
-    else:
-        assert 'Monospace 17' in sandbox.exec('gsettings get org.mate.terminal.profile:/org/mate/terminal/profiles/default/ font').stdout
+    profile = sandbox.exec('cat ~/.config/xfce4/terminal/terminalrc').stdout
+    assert 'FontName=Monospace 17' in profile and 'ColorBackground=#123456' in profile
     sandbox.exec('mkdir -p /workspace/terminal-project')
     assert names() == set()
     launch(f'{terminal} {cwd_flag}=/workspace/terminal-project')
@@ -280,26 +274,21 @@ def test_emulator_shared_defaults_tabs_cwd_and_explicit_commands(sandbox):
     assert wait_until(lambda: len(names()) == 2, 15), names()
     launch('x-terminal-emulator')
     assert wait_until(lambda: len(names()) == 3, 15), names()
-    menu = {'xfce': 'xfce4-terminal', 'mate': 'mate-terminal'}[DESKTOP]
-    if DESKTOP == 'xfce':
-        # XFCE intentionally lacks the gio CLI; use its actual application menu.
-        launch('xfce4-appfinder --disable-server')
-        finder = wait_until(lambda: sandbox.exec('xdotool search --onlyvisible --class xfce4-appfinder', check=False).stdout.strip(), 10)
-        assert finder
-        sandbox.exec(f'xdotool windowactivate --sync {finder.splitlines()[-1]} key ctrl+a')
-        sandbox.exec("xdotool type --clearmodifiers 'Xfce Terminal'; xdotool key Return")
-    else:
-        launch(f'gio launch /usr/share/applications/{menu}.desktop')
+    # XFCE intentionally lacks the gio CLI; use its actual application menu.
+    launch('xfce4-appfinder --disable-server')
+    finder = wait_until(lambda: sandbox.exec('xdotool search --onlyvisible --class xfce4-appfinder', check=False).stdout.strip(), 10)
+    assert finder
+    sandbox.exec(f'xdotool windowactivate --sync {finder.splitlines()[-1]} key ctrl+a')
+    sandbox.exec("xdotool type --clearmodifiers 'Xfce Terminal'; xdotool key Return")
     assert wait_until(lambda: len(names()) == 4, 15), names()
     sandbox.exec('xdotool key ctrl+alt+t')
     assert wait_until(lambda: len(names()) == 5, 15), names()
-    if DESKTOP == 'xfce':
-        before_here = names()
-        # Exact installed Thunar Open Terminal Here action, with %f expanded.
-        launch('exo-open --working-directory /workspace/terminal-project --launch TerminalEmulator')
-        assert wait_until(lambda: len(names()) == 6, 15), names()
-        here = next(iter(names() - before_here))
-        assert sandbox.exec(f"tmux -S {socket} display-message -p -t ={here}: '#{{pane_current_path}}'").stdout.strip() == '/workspace/terminal-project'
+    before_here = names()
+    # Exact installed Thunar Open Terminal Here action, with %f expanded.
+    launch('exo-open --working-directory /workspace/terminal-project --launch TerminalEmulator')
+    assert wait_until(lambda: len(names()) == 6, 15), names()
+    here = next(iter(names() - before_here))
+    assert sandbox.exec(f"tmux -S {socket} display-message -p -t ={here}: '#{{pane_current_path}}'").stdout.strip() == '/workspace/terminal-project'
 
     before = names()
     arg = '-x'
@@ -313,7 +302,7 @@ def test_native_chooser_and_named_title(sandbox):
     """Native chooser hides lease internals and switches only its initiating client."""
     sandbox.exec("python3 - <<'PY'\n" + r'''
 import os, pty, select, subprocess, time
-terminal={'xfce':'xfce4-terminal','mate':'mate-terminal'}[os.environ['WORKSPACE_DESKTOP']]
+terminal='xfce4-terminal'
 socket='/run/workspace/deskyard-terminal/tmux.sock'
 def tmux(*args):
     return subprocess.check_output(['tmux','-S',socket,*args],text=True).strip()

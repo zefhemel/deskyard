@@ -1,5 +1,4 @@
 import json
-import os
 import subprocess
 import time
 
@@ -43,8 +42,6 @@ def test_three_instances_fit(image, artifacts_dir):
         (artifacts_dir / "desktop.png").write_bytes(boxes[0].exec_bytes("deskyard screenshot"))
         mem = {s["Name"]: parse_mem(s["MemUsage"]) for s in stats}
         print({k: f"{v / GIB:.2f} GiB" for k, v in mem.items()})
-        if os.environ.get("AC_DESKTOP", "xfce") != "xfce":
-            return  # New variants record stats; only XFCE has an established budget.
         assert all(m <= 1.2 * GIB for m in mem.values()), mem
         assert sum(mem.values()) <= 3.6 * GIB, mem
     finally:

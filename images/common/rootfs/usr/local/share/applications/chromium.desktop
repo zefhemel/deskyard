@@ -8,5 +8,5 @@ Terminal=false
 Icon=chromium
 Type=Application
 Categories=Network;WebBrowser;
-MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
+MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;video/mp4;video/webm;video/ogg;video/x-matroska;audio/mpeg;audio/mp4;audio/ogg;audio/flac;audio/x-wav;audio/webm;
 StartupWMClass=chromium

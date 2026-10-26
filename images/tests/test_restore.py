@@ -2,9 +2,9 @@
 (That a new desktop opens nothing: test_desktop.test_nothing_opens_at_start.)"""
 
 import time
-from sandbox import DESKTOP, PANELS
+from sandbox import PANEL
 
-TERMINAL = {"xfce": "xfce4-terminal", "mate": "mate-terminal"}[DESKTOP]
+TERMINAL = "xfce4-terminal"
 
 import pytest
 
@@ -43,7 +43,7 @@ def terminal_cwds(sandbox):
 def test_terminals_restored_with_their_folders(sandbox, artifacts_dir):
     # Like a person opening it from the panel: inside the desktop session, so the
     # session manager knows and authenticates it.
-    sandbox.exec(f"mkdir -p ~/project && export $(tr '\\0' '\\n' < /proc/$(pgrep -o -x {PANELS[DESKTOP]})/environ | grep -E '^(SESSION_MANAGER|ICEAUTHORITY)=')"
+    sandbox.exec(f"mkdir -p ~/project && export $(tr '\\0' '\\n' < /proc/$(pgrep -o -x {PANEL})/environ | grep -E '^(SESSION_MANAGER|ICEAUTHORITY)=')"
                  f" && setsid -f {TERMINAL} --working-directory=/workspace/project >/dev/null 2>&1")
     before = wait_until(lambda: terminal_cwds(sandbox) if "/workspace/project" in terminal_cwds(sandbox) else None, 15)
     assert before, terminal_cwds(sandbox)

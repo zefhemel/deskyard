@@ -14,7 +14,7 @@ fi
 # Hardware/accounts/time management belongs to the host, not a desktop.
 # Don't let desktop queries activate newly installed root services on D-Bus.
 for service in org.freedesktop.Accounts org.freedesktop.UDisks2 org.freedesktop.UPower \
-    org.freedesktop.PackageKit org.mate.SettingsDaemon.DateTimeMechanism; do
+    org.freedesktop.PackageKit; do
     rm -f "/usr/share/dbus-1/system-services/$service.service"
 done
 

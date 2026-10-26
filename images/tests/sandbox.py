@@ -16,8 +16,7 @@ import requests
 REPO = Path(__file__).resolve().parent  # images/tests
 ROOT = REPO.parent.parent
 SECCOMP = ROOT / "supervisor" / "internal" / "engine" / "docker" / "flatpak-seccomp.json"
-DESKTOP = os.environ.get("AC_DESKTOP", "xfce")
-PANELS = {"xfce": "xfce4-panel", "mate": "mate-panel"}
+PANEL = "xfce4-panel"
 TOKEN = "test-token"
 DEFAULT_ENV = {"WORKSPACE_PROXY_TOKEN": TOKEN}
 TOKEN_HEADER = {"X-Deskyard-Token": TOKEN}

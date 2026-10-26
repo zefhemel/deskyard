@@ -3,11 +3,12 @@ session_configure() {
     xfconf-query -c xfce4-session -p /general/SaveOnExit >/dev/null 2>&1 \
         || xfconf-query -c xfce4-session -p /general/SaveOnExit -n -t bool -s true
     /usr/local/bin/workspace-migrate-panel
+    /usr/local/bin/workspace-migrate-appearance
     /usr/local/bin/workspace-migrate-thunar
 }
 session_start() { startxfce4; }
 session_logout() { xfce4-session-logout --logout; }
 session_ready() {
     pgrep -u 1000 -x xfce4-panel >/dev/null \
-        && xfconf-query -c xfce4-panel -p /panels/panel-2/position >/dev/null
+        && xfconf-query -c xfce4-panel -p /panels/panel-1/position >/dev/null
 }

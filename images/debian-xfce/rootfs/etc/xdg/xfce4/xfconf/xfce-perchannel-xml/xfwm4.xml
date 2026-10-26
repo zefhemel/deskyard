@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Window borders matching the Arc Dark look (xsettings.xml). xfwm4 takes
+     everything else from its own defaults. -->
+
+<channel name="xfwm4" version="1.0">
+  <property name="general" type="empty">
+    <property name="theme" type="string" value="Arc-Dark"/>
+  </property>
+</channel>

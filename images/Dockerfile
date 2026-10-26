@@ -93,21 +93,6 @@ COPY images/tests/native/flatpak-openat2.c /tmp/flatpak-openat2-test.c
 COPY images/common/build-flatpak.sh /tmp/build-flatpak.sh
 RUN sh /tmp/build-flatpak.sh
 
-# libmate-desktop 1.26.2 draws the root background under a server grab whose
-# ungrab it leaves unsent. Rebuild Debian's source with the ungrab flushed, for
-# the MATE desktop only (patches/README.md, "MATE root-background ungrab").
-FROM debian:trixie-slim AS mate-desktop
-ARG DEBIAN_FRONTEND=noninteractive
-RUN sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends dpkg-dev git \
-    && apt-get build-dep -y --no-install-recommends mate-desktop
-WORKDIR /src
-RUN apt-get source mate-desktop && mv mate-desktop-*/ source
-COPY images/common/patches/mate-desktop-ungrab-flush.diff /tmp/mate-desktop-ungrab-flush.diff
-COPY images/common/build-mate-desktop.sh /tmp/build-mate-desktop.sh
-RUN sh /tmp/build-mate-desktop.sh
-
 FROM debian:trixie-slim AS runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -116,9 +101,12 @@ COPY --from=flatpak /out/source/ /usr/share/doc/flatpak/deskyard-source/
 RUN --mount=type=bind,from=flatpak,source=/out/debs,target=/tmp/flatpak-debs \
     apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl procps supervisor dbus dbus-x11 \
-        x11-utils xdg-utils inotify-tools fonts-dejavu-core \
+        x11-utils xdg-utils inotify-tools fonts-dejavu-core fonts-noto-color-emoji fonts-liberation2 \
         chromium socat xdotool xclip maim flatpak git openssh-client tmux /tmp/flatpak-debs/*.deb \
         pipewire pipewire-pulse wireplumber pulseaudio-utils \
+        # Everyday command-line basics -slim leaves out.
+        vim nano less file htop wget rsync jq bash-completion lsof \
+        zip unzip xz-utils bzip2 7zip iputils-ping dnsutils netcat-openbsd \
     && rm -rf /var/lib/apt/lists/* \
     # rootfs/usr/bin/flatpak wraps the real binary.
     && dpkg-divert --local --rename --divert /usr/bin/flatpak.real --add /usr/bin/flatpak
@@ -232,27 +220,6 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
 WORKDIR /workspace
 ENTRYPOINT ["/usr/local/bin/workspace-init"]
 
-# Desktop layers branch from the same runtime. Keep XFCE last so an ordinary
-# docker build without --target retains the original default.
-FROM runtime AS debian-mate
-COPY --from=mate-desktop /out/source/ /usr/share/doc/mate-desktop/deskyard-source/
-RUN --mount=type=bind,from=mate-desktop,source=/out/debs,target=/tmp/mate-desktop-debs \
-    apt-get update && apt-get install -y --no-install-recommends \
-        mate-desktop-environment-core /tmp/mate-desktop-debs/*.deb \
-    && rm -rf /var/lib/apt/lists/* \
-    && ! command -v sudo
-ENV WORKSPACE_DESKTOP=mate XDG_CURRENT_DESKTOP=MATE DESKTOP_SESSION=mate
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        gnome-software-plugin-flatpak gnome-software iso-codes librsvg2-common xdg-desktop-portal-gtk \
-        arc-theme papirus-icon-theme fonts-noto-core \
-    && rm -rf /var/lib/apt/lists/*
-COPY images/common/rootfs/ /
-COPY images/debian-mate/rootfs/ /
-RUN --mount=type=bind,source=images/common/finalize.sh,target=/tmp/finalize.sh bash /tmp/finalize.sh
-RUN glib-compile-schemas /usr/share/glib-2.0/schemas
-LABEL org.opencontainers.image.title="Debian MATE" \
-      org.opencontainers.image.description="Debian trixie with MATE, Chromium, Flatpak, mise and uv"
-
 FROM runtime AS debian-xfce
 RUN apt-get update && apt-get install -y --no-install-recommends xfce4 xfce4-terminal \
     && rm -rf /var/lib/apt/lists/* \
@@ -260,9 +227,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends xfce4 xfce4-ter
 ENV WORKSPACE_DESKTOP=xfce XDG_CURRENT_DESKTOP=XFCE DESKTOP_SESSION=xfce
 RUN apt-get update && apt-get install -y --no-install-recommends \
         gnome-software-plugin-flatpak gnome-software iso-codes librsvg2-common xdg-desktop-portal-gtk \
-    && rm -rf /var/lib/apt/lists/*
+        # Everyday apps: image viewer, editor, PDF viewer, archives, calculator,
+        # screenshots, task manager and file thumbnails.
+        ristretto mousepad evince xarchiver thunar-archive-plugin galculator \
+        xfce4-screenshooter xfce4-taskmanager tumbler \
+        # Thunar's Trash, and fonts for scripts beyond DejaVu's.
+        gvfs fonts-noto-core \
+        # The Arc Dark look (xfconf defaults in the overlay), with Greybird to
+        # switch to in Settings. Papirus keeps only its plain and dark variants.
+        arc-theme greybird-gtk-theme papirus-icon-theme \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /usr/share/icons/ePapirus /usr/share/icons/ePapirus-Dark /usr/share/icons/Papirus-Light \
+    && test -d /usr/share/icons/Papirus-Dark && test -d /usr/share/themes/Arc-Dark/xfwm4
 COPY images/common/rootfs/ /
 COPY images/debian-xfce/rootfs/ /
 RUN --mount=type=bind,source=images/common/finalize.sh,target=/tmp/finalize.sh bash /tmp/finalize.sh
 LABEL org.opencontainers.image.title="Debian XFCE" \
-      org.opencontainers.image.description="Debian trixie with XFCE, Chromium, Flatpak, mise and uv"
+      org.opencontainers.image.description="Debian trixie with XFCE, everyday apps, Chromium, Flatpak, mise and uv"

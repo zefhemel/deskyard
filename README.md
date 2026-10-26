@@ -319,8 +319,8 @@ the image version.
 When an environment stops (stop, restart, upgrades), its native session manager
 logs out and saves the session; Chromium saves its tabs independently.
 Native session restoration applies to applications that support that
-desktop's session protocol. XFCE uses Settings > Session and Startup;
-MATE uses their own session settings. Most Electron and
+desktop's session protocol (XFCE: Settings > Session and Startup).
+Most Electron and
 Flatpak apps do not restore their windows through this protocol.
 
 Switching desktop images keeps your files, installed Flatpak apps, tools
@@ -435,14 +435,10 @@ configuration change.
 ### Images and upgrades
 
 The **Images** page holds the catalog of images environments can be created
-from. XFCE and MATE are built-in choices, visible before download.
-They share one Debian runtime; XFCE remains the default on first start:
-
-
-| Desktop | Image | Graphical app installer |
-| --- | --- | --- |
-| XFCE (default) | `ghcr.io/zefhemel/deskyard-debian-xfce:latest` | Software |
-| MATE | `ghcr.io/zefhemel/deskyard-debian-mate:latest` | Software |
+from. The built-in choice, visible before download and the default on first
+start, is Debian XFCE: `ghcr.io/zefhemel/deskyard-debian-xfce:latest`. The
+MATE image is retired: it is no longer offered or rebuilt, though environments
+that already use it keep running on the copy they downloaded.
 
 Choose **Install** on an available image to download it, or select it when
 creating an environment to download it on first use. Browsing does not download
@@ -451,9 +447,18 @@ custom images remain alongside the built-in choices. Official choices stay
 in the catalog and cannot be removed. Other contract-compatible references
 can still be added with **Add image**.
 
-MATE uses Arc, Papirus icons, Noto fonts and a blue wallpaper, with a single
-dark bottom panel containing Files, Chromium and Software shortcuts. Saved user appearance and panel settings
-take precedence over the image defaults.
+The desktop comes with everyday apps that open their files by default:
+Ristretto for images, Mousepad for text, Evince for PDFs, Xarchiver for
+archives, and Chromium for video and audio. Galculator, a screenshot tool, a
+task manager and a Trash in the file manager complete it. Fonts cover emoji,
+most scripts (Noto) and Arial/Times-compatible layouts (Liberation); Chinese,
+Japanese and Korean fonts are not included. One full-width taskbar at the
+bottom holds the app menu, launchers, open windows, tray and clock. The look is
+Arc Dark with Papirus icons; Greybird (Xubuntu's theme) can be chosen in
+Settings › Appearance. Existing environments move to the taskbar and the new
+look once, unless their owner has already changed those settings. Command-line basics are there too:
+`vim`, `nano`, `less`, `htop`, `wget`, `rsync`, `jq`, `file`, `lsof`,
+zip/xz/bzip2/7-Zip, `ping`, `dig` and `nc`.
 
 Open **Software** from the desktop application menu to find
 and install Flatpak apps such as LibreOffice. Flathub is configured for the
@@ -468,14 +473,12 @@ the container configuration does not expose the FUSE device needed by the
 document portal.
 
 In local ARM64 samples, idle memory without a viewer was about 213 MiB for
-XFCE and 258 MiB for MATE. The project space's *Testing/Desktop variants
-2026-10-23* page has the conditions,
-viewer/browser measurements and screenshots. Those samples predate MATE's
-theme refresh. New registry tags become
-available after the image workflow publishes from `main`; local Bake
-builds use `deskyard-debian-<desktop>:dev`.
+XFCE. The project space's *Testing/Desktop variants 2026-10-23* page has the
+conditions, viewer/browser measurements and screenshots. New registry tags
+become available after the image workflow publishes from `main`; local Bake
+builds use `deskyard-debian-xfce:dev`.
 
-CI rebuilds both weekly (Debian security updates) and on every change, tagged `latest` and with the date
+CI rebuilds it weekly (Debian security updates) and on every change, tagged `latest` and with the date
 (`2026.10.22`). The supervisor checks downloaded images for newer versions daily (or on "Check
 now"); available images stay undownloaded. The catalog shows **Available**,
 **Installed** or **Update available** when environments are behind.
@@ -566,14 +569,6 @@ dock. Deleting the AppImage removes its launcher. `deskyard-appimage` does the
 work (`add FILE`, `sync`); a background watcher runs it whenever
 `~/Applications` changes. Launchers keep the app's MIME types, so an AppImage
 can become the handler for the files it declares.
-
-### MATE
-
-The MATE image includes a fix to Debian's libmate-desktop that stops its
-settings daemon from freezing the X display for about a minute when a HiDPI
-browser opens a freshly started desktop. Existing MATE desktops receive it
-through an image upgrade. The rebuilt packages' corresponding source is
-included at `/usr/share/doc/mate-desktop/deskyard-source/`.
 
 ## Sharing
 
@@ -796,10 +791,9 @@ supervisor/
   Dockerfile        node build -> go build -> alpine
   compose.yaml      the supervisor in a container
 images/
-  Dockerfile       common build stages and two final desktop targets
+  Dockerfile       build stages and the XFCE desktop target
   common/          shared rootfs and streaming patches
   debian-xfce/     XFCE rootfs overlay
-  debian-mate/     MATE rootfs overlay
   tests/           shared desktop image tests
 docs/               local copy of the SilverBullet project space (ignored by git)
 ```
@@ -857,12 +851,6 @@ or run pytest in the suite's folder (`uv run pytest test_ui_audio.py`).
 `MARKS="-m ''"` lifts the default selection; markers: `slow`, `network`,
 `build`, `perf`, `webkit` (left out by default) and `serial`.
 
-The Tests workflow also runs a five-test runtime smoke selection on each of
-XFCE and MATE. Each job builds its desktop target from the image cache and
-checks readiness, desktop identity, the default browser, native shared-terminal
-defaults and home persistence across restart/recreation. The full supervisor
-and browser suites continue to use XFCE.
-
 Both suites run under pytest-xdist (`WORKERS`, default 4), then run the
 timing-sensitive tests, marked `serial`, on their own (`pytest --only-serial`).
 Each test gets a new environment, taken from a few started ahead of it. The
@@ -886,27 +874,18 @@ insecure document origin and native screen connections. Other browsers use their
 native transport throughout.
 
 ```bash
-docker buildx bake --load     # all desktop targets, shared stages built once
+docker buildx bake --load     # the desktop image
 cd images/tests
 uv run playwright install chromium   # once
 uv run pytest -m "not slow"
 uv run pytest                        # also: memory budget, Flatpak app, CLIs
 ```
 
-Screenshots and stats land in `images/tests/artifacts/<desktop>/`.
-`AC_DESKTOP=mate` selects another target (default: `xfce`);
-`AC_IMAGE=<tag>` skips the build and should match `AC_DESKTOP`. The root Makefile
-also accepts `make test-image AC_DESKTOP=mate` and builds the matching
-target. The supervisor integration suite still uses XFCE-specific terminal and
-panel assertions, so full `make test` requires `AC_DESKTOP=xfce`. For example:
+Screenshots and stats land in `images/tests/artifacts/`. `AC_IMAGE=<tag>`
+skips the build and tests that image instead, for example:
 
 ```bash
-AC_DESKTOP=mate AC_IMAGE=deskyard-debian-mate:dev uv run pytest -m "not slow and not network"
+AC_IMAGE=deskyard-debian-xfce:dev uv run pytest -m "not slow and not network"
 ```
-
-To build only one image from the repository root:
-`docker build --target debian-mate -f images/Dockerfile -t deskyard-debian-mate:dev .`.
-XFCE panel/layout tests run only for XFCE; shared boot, security, stream,
-Flatpak and persistence checks apply to each variant.
 
 For shared-engine VPN verification, use the [scoped VPN test guide](supervisor/tests/VPN.md). Its `vpnintegration` test binary protects existing resources with a unique ownership label. Do not start an ordinary production supervisor or the full-main Python fixture against a Docker engine holding unrelated environments.

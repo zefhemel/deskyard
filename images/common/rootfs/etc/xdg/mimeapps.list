@@ -2,3 +2,14 @@
 text/html=chromium.desktop
 x-scheme-handler/http=chromium.desktop
 x-scheme-handler/https=chromium.desktop
+# Chromium plays common video and audio formats; no separate media player.
+video/mp4=chromium.desktop
+video/webm=chromium.desktop
+video/ogg=chromium.desktop
+video/x-matroska=chromium.desktop
+audio/mpeg=chromium.desktop
+audio/mp4=chromium.desktop
+audio/ogg=chromium.desktop
+audio/flac=chromium.desktop
+audio/x-wav=chromium.desktop
+audio/webm=chromium.desktop

@@ -1,0 +1,17 @@
+#!/bin/bash
+# Once per home: homes saved by images before the Arc look still hold XFCE's
+# stock theme, icons and window borders. Switch those that are still at the
+# stock values; anything the user picked stays.
+marker="$HOME/.config/workspace/arc-look"
+[ -e "$marker" ] && exit 0
+
+# set CHANNEL PROPERTY OLD NEW: replace OLD, the stock value, with NEW.
+set_from() {
+    [ "$(xfconf-query -c "$1" -p "$2" 2>/dev/null)" = "$3" ] || return 0
+    xfconf-query -c "$1" -p "$2" -s "$4"
+}
+
+set_from xsettings /Net/ThemeName Xfce Arc-Dark
+set_from xsettings /Net/IconThemeName Tango Papirus-Dark
+set_from xfwm4 /general/theme Default Arc-Dark
+mkdir -p "${marker%/*}" && touch "$marker"

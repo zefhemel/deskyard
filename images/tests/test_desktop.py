@@ -1,15 +1,22 @@
 import time
-import os
-import pytest
-
-pytestmark = pytest.mark.skipif(os.environ.get("AC_DESKTOP", "xfce") != "xfce", reason="XFCE panel/layout behavior")
-
-from sandbox import docker
 
 
-def test_dock_always_visible(sandbox):
-    """The bottom panel (dock) must not autohide behind the maximized Chromium."""
-    assert sandbox.exec("xfconf-query -c xfce4-panel -p /panels/panel-2/autohide-behavior").stdout.strip() == "0"
+from sandbox import REPO, docker
+
+PANEL = "xfconf-query -c xfce4-panel -p /panels/panel-1"
+TWO_PANEL_LAYOUT = REPO / "fixtures" / "two-panel-layout.xml"
+SAVED_PANEL = "/workspace/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml"
+
+
+def test_single_full_width_taskbar_at_bottom(sandbox):
+    """One always-visible taskbar across the bottom holds the menu, launchers and windows."""
+    assert sandbox.exec("xfconf-query -c xfce4-panel -p /panels | grep -E '^[0-9]+$'").stdout.split() == ["1"]
+    assert sandbox.exec(f"{PANEL}/position").stdout.strip() == "p=8;x=0;y=0"
+    assert sandbox.exec(f"{PANEL}/length").stdout.strip() == "100"
+    assert sandbox.exec(f"{PANEL}/autohide-behavior").stdout.strip() == "0"
+    types = sandbox.exec(PANEL_TYPES).stdout.split()
+    assert types[0] == "applicationsmenu" and types[-1] == "showdesktop", types
+    assert types.index("launcher") < types.index("tasklist"), types
 
 
 def test_terminal_opens_in_home(sandbox):
@@ -32,22 +39,28 @@ def test_terminal_launched_from_panel_starts_in_home(sandbox):
     raise AssertionError("terminal shell did not start")
 
 
-def test_existing_home_gets_dock_migration_once(make_sandbox, volumes, image):
+def test_existing_two_panel_home_becomes_single_taskbar_once(make_sandbox, volumes, image):
     a = make_sandbox()
-    # Simulate a home created by an older image: panel config saved with autohide on, no marker.
-    a.exec("xfconf-query -c xfce4-panel -p /panels/panel-2/autohide-behavior -s 1")
-    a.stop()  # xfconfd writes settings to disk on shutdown
+    a.stop()
     a.remove()
-    docker("run", "--rm", "-v", f"{volumes.home}:/workspace", "--entrypoint", "rm", image,
-           "-f", "/workspace/.config/workspace/migrated-dock-visible")
+    # A home saved by an older image: top panel plus autohiding dock, no markers.
+    docker("run", "--rm", "-u", "0", "-v", f"{volumes.home}:/workspace",
+           "-v", f"{TWO_PANEL_LAYOUT}:/tmp/old.xml:ro", "--entrypoint", "sh", image, "-c",
+           f"cp /tmp/old.xml {SAVED_PANEL} && chown 1000:1000 {SAVED_PANEL}"
+           " && rm -rf /workspace/.config/workspace")
     b = make_sandbox()
-    assert b.exec("xfconf-query -c xfce4-panel -p /panels/panel-2/autohide-behavior").stdout.strip() == "0"
-    # A later choice by the user sticks.
-    b.exec("xfconf-query -c xfce4-panel -p /panels/panel-2/autohide-behavior -s 2")
+    assert b.exec("xfconf-query -c xfce4-panel -p /panels | grep -E '^[0-9]+$'").stdout.split() == ["1"]
+    assert b.exec(f"{PANEL}/position").stdout.strip() == "p=8;x=0;y=0"
+    types = b.exec(PANEL_TYPES).stdout.split()
+    assert types[0] == "applicationsmenu" and types[-1] == "showdesktop", types
+    assert types.count("launcher") == 4 and "directorymenu" not in types and "actions" not in types, types
+    assert {"tasklist", "systray", "clock"} <= set(types) and "pager" not in types, types
+    # A later choice by the user sticks: a smaller taskbar.
+    b.exec(f"{PANEL}/size -s 30")
     b.stop()
     b.remove()
     c = make_sandbox()
-    assert c.exec("xfconf-query -c xfce4-panel -p /panels/panel-2/autohide-behavior").stdout.strip() == "2"
+    assert c.exec(f"{PANEL}/size").stdout.strip() == "30"
 
 
 def test_exec_starts_in_home(sandbox):
@@ -64,18 +77,19 @@ def test_nothing_opens_at_start(sandbox):
     assert sandbox.exec("pgrep -x xfce4-terminal", check=False).returncode != 0, "a terminal runs"
 
 
-CHROMIUM_FRAME_TOP = r"""
+# Chromium's frame bottom, the work area's bottom and the screen height.
+CHROMIUM_FRAME_BOTTOM = r"""
 w=$(xdotool search --onlyvisible --class chromium | head -1)
 eval "$(xdotool getwindowgeometry --shell "$w")"
-top=$(xprop -id "$w" _NET_FRAME_EXTENTS | sed -E 's/.*= *[0-9]+, *[0-9]+, *([0-9]+),.*/\1/')
-area=$(xprop -root _NET_WORKAREA | sed -E 's/.*= *[0-9]+, *([0-9]+),.*/\1/')
-echo $((Y - top)) $area
+bottom=$(xprop -id "$w" _NET_FRAME_EXTENTS | sed -E 's/.*= *[0-9]+, *[0-9]+, *[0-9]+, *([0-9]+).*/\1/')
+area=$(xprop -root _NET_WORKAREA | sed -E 's/.*= *[0-9]+, *([0-9]+), *[0-9]+, *([0-9]+).*/\1 \2/')
+echo $((Y + HEIGHT + bottom)) $((${area% *} + ${area#* })) $(xdotool getdisplaygeometry | cut -d' ' -f2)
 """
 
 
-def test_chromium_title_bar_below_panel_at_boot(sandbox):
+def test_chromium_stays_above_taskbar_at_boot(sandbox):
     """At boot Chromium (open when the desktop stopped, so it comes back) must not
-    maximize before the top panel reserves its space."""
+    maximize before the taskbar reserves its space."""
     sandbox.exec("curl -fs --max-time 60 -o /dev/null http://127.0.0.1:9221/json/version")
     for boot in range(3):
         sandbox.restart()
@@ -84,9 +98,9 @@ def test_chromium_title_bar_below_panel_at_boot(sandbox):
             assert time.time() < deadline, "no Chromium window"
             time.sleep(1)
         time.sleep(2)  # where the window manager leaves it
-        frame_top, workarea_top = map(int, sandbox.exec(CHROMIUM_FRAME_TOP).stdout.split())
-        assert workarea_top > 0, "panel reserved no space"
-        assert frame_top >= workarea_top, f"boot {boot}: title bar at y={frame_top}, panel ends at {workarea_top}"
+        frame_bottom, workarea_bottom, screen = map(int, sandbox.exec(CHROMIUM_FRAME_BOTTOM).stdout.split())
+        assert workarea_bottom < screen, "taskbar reserved no space"
+        assert frame_bottom <= workarea_bottom, f"boot {boot}: window ends at y={frame_bottom}, taskbar starts at {workarea_bottom}"
 
 
 def test_dock_web_browser_opens_shared_chromium_without_asking(sandbox):
@@ -104,18 +118,18 @@ def test_links_from_apps_open_in_chromium(sandbox):
         assert sandbox.exec(f"xdg-mime query default {mime}").stdout.strip() == "chromium.desktop", mime
 
 
-TOP_PANEL_TYPES = r"""
+PANEL_TYPES = r"""
 for id in $(xfconf-query -c xfce4-panel -p /panels/panel-1/plugin-ids | grep -E '^[0-9]+$'); do
   xfconf-query -c xfce4-panel -p /plugins/plugin-$id
 done
 """
 
 
-def test_top_panel_has_switcher_and_clock(sandbox, artifacts_dir):
-    types = sandbox.exec(TOP_PANEL_TYPES).stdout.split()
+def test_taskbar_has_clock_and_no_switcher(sandbox, artifacts_dir):
+    types = sandbox.exec(PANEL_TYPES).stdout.split()
     assert "actions" not in types, types
-    assert {"applicationsmenu", "tasklist", "pager", "clock"} <= set(types), types
-    (artifacts_dir / "top-panel.png").write_bytes(sandbox.exec_bytes("deskyard zoom 0 0 1280 40"))
+    assert {"applicationsmenu", "tasklist", "clock"} <= set(types) and "pager" not in types, types
+    (artifacts_dir / "taskbar.png").write_bytes(sandbox.exec_bytes("deskyard zoom 0 760 1280 800"))
 
 
 def set_top_panel(box, kinds):
@@ -137,7 +151,7 @@ def test_existing_home_gets_top_panel_trimmed_once(make_sandbox, volumes, image)
            "-f", "/workspace/.config/workspace/migrated-top-panel",
            "/workspace/.config/workspace/restored-top-panel")
     b = make_sandbox()
-    types = b.exec(TOP_PANEL_TYPES).stdout.split()
+    types = b.exec(PANEL_TYPES).stdout.split()
     assert "actions" not in types and "pager" in types and "clock" in types, types
     # A later choice sticks: drop the pager.
     b.exec("xfconf-query -c xfce4-panel -p /panels/panel-1/plugin-ids --force-array "
@@ -145,11 +159,11 @@ def test_existing_home_gets_top_panel_trimmed_once(make_sandbox, volumes, image)
     b.stop()
     b.remove()
     c = make_sandbox()
-    types = c.exec(TOP_PANEL_TYPES).stdout.split()
+    types = c.exec(PANEL_TYPES).stdout.split()
     assert "pager" not in types and "clock" in types, types
 
 
-def test_home_trimmed_by_older_image_gets_switcher_and_clock_back(make_sandbox, volumes, image):
+def test_home_trimmed_by_older_image_gets_clock_back(make_sandbox, volumes, image):
     a = make_sandbox()
     # Trimmed by an older image: ids 1,2,3,6 only; trim marker present, restore marker absent.
     a.exec("xfconf-query -c xfce4-panel -p /panels/panel-1/plugin-ids --force-array "
@@ -160,8 +174,8 @@ def test_home_trimmed_by_older_image_gets_switcher_and_clock_back(make_sandbox, 
            "mkdir -p /workspace/.config/workspace && touch /workspace/.config/workspace/migrated-top-panel"
            " && rm -f /workspace/.config/workspace/restored-top-panel")
     b = make_sandbox()
-    types = b.exec(TOP_PANEL_TYPES).stdout.split()
-    assert "pager" in types and "clock" in types and "actions" not in types, types
+    types = b.exec(PANEL_TYPES).stdout.split()
+    assert "clock" in types and "actions" not in types, types
     # The user removes the clock; it stays removed.
     ids = b.exec("xfconf-query -c xfce4-panel -p /panels/panel-1/plugin-ids | grep -E '^[0-9]+$'").stdout.split()
     keep = [i for i in ids if b.exec(f"xfconf-query -c xfce4-panel -p /plugins/plugin-{i}").stdout.strip() != "clock"]
@@ -170,8 +184,8 @@ def test_home_trimmed_by_older_image_gets_switcher_and_clock_back(make_sandbox, 
     b.stop()
     b.remove()
     c = make_sandbox()
-    types = c.exec(TOP_PANEL_TYPES).stdout.split()
-    assert "clock" not in types and "pager" in types, types
+    types = c.exec(PANEL_TYPES).stdout.split()
+    assert "clock" not in types, types
 
 
 # The first file with a given name wins (XDG_DATA_DIRS order); later ones are shadowed.
@@ -192,3 +206,24 @@ done
 def test_no_mail_reader_in_menu(sandbox):
     names = sandbox.exec(VISIBLE_MENU_NAMES).stdout.splitlines()
     assert "Name=Mail Reader" not in names, [n for n in names if "Mail" in n]
+
+
+def test_existing_home_at_stock_look_gets_arc_once(make_sandbox, volumes, image):
+    a = make_sandbox()
+    # A home from an image before the Arc look: XFCE's stock values saved, no marker.
+    a.exec("xfconf-query -c xsettings -p /Net/ThemeName -s Xfce"
+           " && xfconf-query -c xsettings -p /Net/IconThemeName -s Tango"
+           " && xfconf-query -c xfwm4 -p /general/theme -n -t string -s Default")
+    a.stop()
+    a.remove()
+    docker("run", "--rm", "-v", f"{volumes.home}:/workspace", "--entrypoint", "rm", image,
+           "-f", "/workspace/.config/workspace/arc-look")
+    b = make_sandbox()
+    look = "xfconf-query -c xsettings -p /Net/ThemeName; xfconf-query -c xsettings -p /Net/IconThemeName; xfconf-query -c xfwm4 -p /general/theme"
+    assert b.exec(look).stdout.split() == ["Arc-Dark", "Papirus-Dark", "Arc-Dark"]
+    # A later choice by the user sticks.
+    b.exec("xfconf-query -c xsettings -p /Net/ThemeName -s Greybird")
+    b.stop()
+    b.remove()
+    c = make_sandbox()
+    assert c.exec("xfconf-query -c xsettings -p /Net/ThemeName").stdout.strip() == "Greybird"

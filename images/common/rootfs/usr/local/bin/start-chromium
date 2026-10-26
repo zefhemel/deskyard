@@ -10,15 +10,17 @@ for _ in $(seq 100); do
     [ -S /tmp/.X11-unix/X1 ] && break
     sleep 0.1
 done
-# Wait for a window manager and a panel work area, regardless of panel edge.
+# Wait for a window manager and a panel that has reserved its space, on any
+# edge: the work area is then smaller than the screen. (--start-maximized
+# before that would cover the panel.)
+panel_reserved() {
+    local area screen
+    area=$(xprop -root _NET_WORKAREA 2>/dev/null | sed -nE 's/.*= *([0-9]+), *([0-9]+), *([0-9]+), *([0-9]+).*/\1 \2 \3 \4/p')
+    screen=$(xdotool getdisplaygeometry 2>/dev/null)
+    [ -n "$area" ] && [ -n "$screen" ] && [ "$area" != "0 0 $screen" ]
+}
 for _ in $(seq 200); do
-    if /usr/local/bin/desktop-ready; then
-        if [ "$WORKSPACE_DESKTOP" = xfce ]; then
-            xprop -root _NET_WORKAREA 2>/dev/null | grep -Eq '= *[0-9]+, *[1-9]' && break
-        else
-            xprop -root _NET_WORKAREA 2>/dev/null | grep -q '= ' && break
-        fi
-    fi
+    /usr/local/bin/desktop-ready && panel_reserved && break
     sleep 0.1
 done
 

@@ -18,7 +18,7 @@ import pytest
 
 from sandbox import REPO, docker, start_sandbox
 
-ARTIFACTS = REPO / "artifacts" / os.environ.get("AC_DESKTOP", "xfce")
+ARTIFACTS = REPO / "artifacts"
 
 # Desktops booting ahead in each test process; AC_POOL=0 turns the pool off.
 POOL_SIZE = int(os.environ.get("AC_POOL", "1"))
@@ -33,11 +33,8 @@ def pytest_configure(config):
     # Once, in the main process: xdist's workers inherit AC_IMAGE.
     if os.environ.get("PYTEST_XDIST_WORKER") or os.environ.get("AC_IMAGE") or config.option.collectonly:
         return
-    desktop = os.environ.get("AC_DESKTOP", "xfce")
-    if desktop not in {"xfce", "mate"}:
-        raise ValueError("AC_DESKTOP must be xfce or mate")
-    tag = f"deskyard-debian-{desktop}:test"
-    subprocess.run(["docker", "build", "-q", "-t", tag, "-f", str(REPO.parent / "Dockerfile"), "--target", f"debian-{desktop}", str(REPO.parent.parent)], check=True,
+    tag = "deskyard-debian-xfce:test"
+    subprocess.run(["docker", "build", "-q", "-t", tag, "-f", str(REPO.parent / "Dockerfile"), "--target", "debian-xfce", str(REPO.parent.parent)], check=True,
                    stdout=subprocess.DEVNULL)
     os.environ["AC_IMAGE"] = tag
 

@@ -56,40 +56,69 @@ new_plugin() { # TYPE -> prints the new id
     echo "$id"
 }
 
-# Homes trimmed by an older image lost the workspace switcher and the clock.
+# Homes trimmed by an older image lost the clock. (The workspace switcher it
+# also lost is left out of the taskbar now.)
 restore_top_panel() {
-    local ids id kind has_pager= has_clock= out=() sep pager clock
+    local ids id sep clock
     ids=$(panel -p /panels/panel-1/plugin-ids | grep -E '^[0-9]+$') || return
     for id in $ids; do
-        case $(panel -p "/plugins/plugin-$id") in
-            pager) has_pager=1 ;;
-            clock) has_clock=1 ;;
+        [ "$(panel -p "/plugins/plugin-$id")" = clock ] && return 0
+    done
+    sep=$(new_plugin separator) || return
+    clock=$(new_plugin clock) || return
+    panel -p "/plugins/plugin-$clock/digital-layout" -n -t uint -s 3
+    # shellcheck disable=SC2086
+    set_top_panel $ids "$sep" "$clock"
+}
+
+ids_of() { panel -p "/panels/panel-$1/plugin-ids" | grep -E '^[0-9]+$'; }
+
+# Older images had a top panel and a narrow centred dock (panel-2). Fold the
+# dock's launchers into the top panel after the applications menu, with
+# show-desktop last and no workspace switcher, and move that panel to the
+# bottom as one taskbar. Only the
+# image's own two-panel layout is changed; panels the user rearranged stay.
+single_taskbar() {
+    local panels top dock id kind menu=() launchers=() rest=() end=()
+    panels=$(panel -p /panels | grep -E '^[0-9]+$' | tr '\n' ' ') || return
+    [ "$panels" = "1 2 " ] || return 0
+    [ "$(panel -p /panels/panel-2/position)" = "p=10;x=0;y=0" ] || return 0
+    top=$(ids_of 1) || return
+    dock=$(ids_of 2) || return
+    for id in $top; do
+        kind=$(panel -p "/plugins/plugin-$id")
+        if [ "$kind" = applicationsmenu ] && [ ${#menu[@]} = 0 ]; then
+            menu+=("$id")
+        elif [ "$kind" = pager ]; then
+            panel -p "/plugins/plugin-$id" -r -R
+        else
+            rest+=("$id")
+        fi
+    done
+    for id in $dock; do
+        kind=$(panel -p "/plugins/plugin-$id")
+        case $kind in
+            showdesktop) end+=("$id") ;;
+            directorymenu) panel -p "/plugins/plugin-$id" -r -R ;;
+            *) launchers+=("$id") ;;
         esac
     done
-    if [ -z "$has_pager" ]; then
-        pager=$(new_plugin pager) || return
-        panel -p "/plugins/plugin-$pager/rows" -n -t uint -s 1
-        sep=$(new_plugin separator) || return
-        local done_=
-        for id in $ids; do
-            out+=("$id")
-            if [ -z "$done_" ] && [ "$(panel -p "/plugins/plugin-$id")" = separator ] \
-                && [ "$(panel -p "/plugins/plugin-$id/expand")" = true ]; then
-                out+=("$pager" "$sep")
-                done_=1
-            fi
-        done
-        [ -n "$done_" ] || out+=("$pager" "$sep")
-        ids="${out[*]}"
-    fi
-    if [ -z "$has_clock" ]; then
-        sep=$(new_plugin separator) || return
-        clock=$(new_plugin clock) || return
-        panel -p "/plugins/plugin-$clock/digital-layout" -n -t uint -s 3
-        ids="$ids $sep $clock"
-    fi
-    # shellcheck disable=SC2086
-    set_top_panel $ids
+    # The dock's separator before its directory menu now divides the launchers
+    # from the window list.
+    set_top_panel "${menu[@]}" "${launchers[@]}" "${rest[@]}" "${end[@]}" || return
+    # Plain gaps instead of dotted handles between groups.
+    for id in "${launchers[@]}" "${rest[@]}"; do
+        case $(panel -p "/plugins/plugin-$id") in
+            separator) [ "$(panel -p "/plugins/plugin-$id/expand")" = true ] \
+                || panel -p "/plugins/plugin-$id/style" -n -t uint -s 0 ;;
+            tasklist) panel -p "/plugins/plugin-$id/show-handle" -n -t bool -s false ;;
+        esac
+    done
+    panel -p /panels/panel-1/position -s "p=8;x=0;y=0" || return
+    panel -p /panels/panel-1/size -s 40
+    panel -p /panels/panel-1/icon-size -n -t uint -s 24
+    panel -p /panels/panel-2 -r -R
+    panel -p /panels --force-array -t int -s 1
 }
 
 # once MARKER STEP: run STEP unless done before. A home without saved panel
@@ -105,3 +134,4 @@ once() {
 once migrated-dock-visible dock_visible
 once migrated-top-panel trim_top_panel
 once restored-top-panel restore_top_panel
+once single-taskbar single_taskbar

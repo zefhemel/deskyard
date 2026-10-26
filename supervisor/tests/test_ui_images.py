@@ -112,7 +112,7 @@ def test_settings_save_brings_pending_progress_into_view(mock_ui):
         pending = []
         page.route("**/api/environments/alice", lambda route: pending.append(route)
                    if route.request.method == "PATCH" else route.continue_())
-        page.get_by_role("radio", name="Debian MATE", exact=False).check()
+        page.get_by_role("radio", name="Python lab", exact=False).check()
         page.locator('form button[type="submit"]').click()
         panel = page.get_by_role("region", name="Environment operation", exact=True)
         expect(panel).to_contain_text("Starting")

@@ -2,7 +2,7 @@
 agent-reachable or internet-facing process may run as (or become) root."""
 
 import time
-from sandbox import DESKTOP, PANELS
+from sandbox import PANEL
 
 
 def test_no_sudo(sandbox):
@@ -23,7 +23,7 @@ def test_desktop_does_not_start_extra_root_services(sandbox):
 def test_token_not_visible_to_the_user(sandbox):
     """The desktop's processes don't carry the supervisor's token, and its file is Caddy's alone.
     (The engine's exec gets the container's environment; the supervisor overrides it there.)"""
-    panel = sandbox.exec(f"pgrep -o -x {PANELS[DESKTOP]}").stdout.strip()
+    panel = sandbox.exec(f"pgrep -o -x {PANEL}").stdout.strip()
     assert "test-token" not in sandbox.exec(f"tr '\\0' '\\n' < /proc/{panel}/environ").stdout
     assert sandbox.exec("cat /run/caddy/token", check=False).returncode != 0
 

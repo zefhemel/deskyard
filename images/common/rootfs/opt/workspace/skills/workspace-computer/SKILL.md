@@ -6,7 +6,7 @@ description: "Use when working inside the workspace sandbox (HOME=/workspace) an
 # This desktop
 
 You are on a Debian Linux container that a human shares with you. The human
-reaches the same desktop (XFCE or MATE, display `:1`, sized to their browser window) through a browser and
+reaches the same desktop (XFCE, display `:1`, sized to their browser window) through a browser and
 looks over your shoulder: they see every window you open, and they may be
 using the mouse and keyboard at the same time as you.
 

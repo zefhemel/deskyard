@@ -239,7 +239,7 @@ Volume names follow the environment name rules (2–32 characters) and can't be 
 | `POST /api/images/check` | | 202 `{"job"}` (pull installed non-custom refs, recompute updates) |
 | `POST /api/images/upgrade` | `{"ref"}` | 202 `{"job"}` (upgrades every environment behind on it) |
 
-`GET /api/images` merges saved entries with built-in XFCE and MATE choices without pulling. `installed` means the reference exists locally; `official` identifies these built-in refs. Static titles/descriptions are supplied before download. Saved order and the configured default are preserved. Environment creation can pull available images on first use; successful use records the resolved local version. An unavailable registry or failed pull is reported through the job, leaving the choice available for retry.
+`GET /api/images` merges saved entries with the built-in XFCE choice without pulling. `installed` means the reference exists locally; `official` identifies built-in refs; retired KDE and MATE references remain only where saved. Static titles/descriptions are supplied before download. Saved order and the configured default are preserved. Environment creation can pull available images on first use; successful use records the resolved local version. An unavailable registry or failed pull is reported through the job, leaving the choice available for retry.
 
 Adding or installing an image validates the Deskyard contract even when the reference is already present locally. Local references, including `deskyard-custom/…`, can be added without contacting a registry. Missing references are pulled through the normal job flow. An incompatible local image fails validation instead of being replaced by a pull.
 

@@ -5,7 +5,7 @@ variable "VERSION" {
   default = "dev"
 }
 group "default" {
-  targets = ["debian-xfce", "debian-mate"]
+  targets = ["debian-xfce"]
 }
 target "_common" {
   context = "."
@@ -16,9 +16,4 @@ target "debian-xfce" {
   inherits = ["_common"]
   target = "debian-xfce"
   tags = ["${IMAGE_PREFIX}debian-xfce:${VERSION}"]
-}
-target "debian-mate" {
-  inherits = ["_common"]
-  target = "debian-mate"
-  tags = ["${IMAGE_PREFIX}debian-mate:${VERSION}"]
 }

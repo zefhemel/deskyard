@@ -9,8 +9,7 @@ type officialImage struct {
 }
 
 var officialImages = []officialImage{
-	{"ghcr.io/zefhemel/deskyard-debian-xfce:latest", "Debian XFCE", "A lightweight desktop with Chromium and Software for installing apps."},
-	{"ghcr.io/zefhemel/deskyard-debian-mate:latest", "Debian MATE", "MATE with Arc styling, Chromium and Software for installing apps."},
+	{"ghcr.io/zefhemel/deskyard-debian-xfce:latest", "Debian XFCE", "A lightweight desktop with everyday apps, Chromium and Software for installing more."},
 }
 
 func officialImageFor(ref string) (officialImage, bool) {

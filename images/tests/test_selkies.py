@@ -5,7 +5,7 @@ import asyncio
 import json
 import time
 from pathlib import Path
-from sandbox import DESKTOP, PANELS
+from sandbox import PANEL
 
 import pytest
 import requests
@@ -168,7 +168,7 @@ def test_session_apps_preload_gamepads(sandbox):
         return sandbox.exec(f"grep -oE 'selkies_input_interposer.so|fake-udev/libudev.so.1' /proc/$({pid_cmd})/maps"
                             " | sort -u", check=False).stdout
 
-    for pid_cmd in (f"pgrep -o -x {PANELS[DESKTOP]}", "pgrep -o -x chromium"):
+    for pid_cmd in (f"pgrep -o -x {PANEL}", "pgrep -o -x chromium"):
         assert loaded(pid_cmd).split() == ["fake-udev/libudev.so.1", "selkies_input_interposer.so"], pid_cmd
     assert loaded(SELKIES_PID) == ""
     sandbox.exec("test -d /dev/input")
