@@ -5,7 +5,7 @@
 Persistent Linux desktops you can access, share and control from anywhere—
 in your browser or terminal. One app, the **supervisor**, runs them in containers.
 
-![The desktop: Chromium on this project's GitHub page, and a terminal using node (installed with mise) and the deskyard command](docs/screenshot.png)
+![The desktop: Chromium on this project's GitHub page, and a terminal using node (installed with mise) and the deskyard command](assets/screenshot.png)
 
 The supervisor is one Go binary with its web UI built in. You sign in with
 your own account and create, open, start, stop, restart, upgrade and remove
@@ -213,7 +213,7 @@ itself (above).
 
 On a phone, the streamed desktop’s **More → Terminal** action opens the terminal page; the desktop wall also has a direct **Terminal** link. Wider desktop toolbars keep the direct Terminal shortcut.
 
-See the [create/join walkthrough and verification record](docs/Testing/Shared%20terminal%202026-10-23.md) for screenshots, native keyboard evidence and known limits.
+The create/join walkthrough, screenshots, native keyboard evidence and known limits are in the project space's *Testing/Shared terminal 2026-10-23* page (see [Project records](#project-records)).
 
 Choose **Terminal** beside **Desktop**, or open `http://host/alice/terminal/`, to join the shared shell from the browser using your current login. The **Sessions** picker lists running named shells, including detached shells with live jobs, and marks the current shell. Choose a name to join it, or enter a new name and choose **Create** for another shell. The list refreshes while open; `?session=build-2` opens a shell directly. The page reconnects after brief network interruptions without replaying disconnected input; a closed shell has an explicit **Reopen terminal** action. Restarting a desktop ends its shells and jobs.
 
@@ -402,8 +402,8 @@ the container configuration does not expose the FUSE device needed by the
 document portal.
 
 In local ARM64 samples, idle memory without a viewer was about 213 MiB for
-XFCE and 258 MiB for MATE. See the [desktop validation
-report](docs/Testing/Desktop%20variants%202026-10-23.md) for conditions,
+XFCE and 258 MiB for MATE. The project space's *Testing/Desktop variants
+2026-10-23* page has the conditions,
 viewer/browser measurements and screenshots. Those samples predate MATE's
 theme refresh. New registry tags become
 available after the image workflow publishes from `main`; local Bake
@@ -426,7 +426,7 @@ keep working across Debian versions; if one breaks, reinstall it.
 
 Any image can be added to the catalog if it follows the image contract
 (label `deskyard.contract=3`, user `user` with home `/workspace`,
-Selkies behind Caddy on 8080); see the design in `docs/`.
+Selkies behind Caddy on 8080); see Custom images below.
 
 Images this project builds carry the label `deskyard.kind`: `desktop` for
 the desktop image and `supervisor` for the supervisor. List them with
@@ -445,9 +445,9 @@ Its account and catalog JSON storage is unchanged; old recipe/source files remai
 on disk but are no longer read or migrated. Images can still install tools in
 `/opt/mise` with executables linked into `/opt/deskyard/bin`, install system
 Flatpak apps, and seed empty workspaces through `/opt/deskyard/home-template`.
-What an image must provide is specified in the
-[desktop image protocol](docs/superpowers/specs/2026-10-26-desktop-image-protocol.md);
-building `FROM` an official Deskyard image is the supported way to meet it.
+What an image must provide is specified by the *Desktop image protocol* spec
+in the project space; building `FROM` an official Deskyard image is the
+supported way to meet it.
 
 For a standalone Dockerfile you can copy and build separately, see the
 [RetroArch example](examples/retroarch/README.md). It installs RetroArch and
@@ -569,7 +569,7 @@ This installs Hermes into `/workspace`, uses its local terminal backend,
 and makes the desktop's three skills available to it. The optional Hermes
 browser and computer-use downloads are skipped; the desktop's shared
 browser and `deskyard` command remain available through those skills.
-See the [Hermes trial](docs/superpowers/spikes/2026-10-24-hermes.md) for
+The project space's Hermes Agent trial spike records the
 verified versions, startup checks and limitations. A model conversation
 still needs provider credentials.
 
@@ -665,7 +665,7 @@ images/
   debian-xfce/     XFCE rootfs overlay
   debian-mate/     MATE rootfs overlay
   tests/           shared desktop image tests
-docs/               design notes (a SilverBullet space)
+docs/               local copy of the SilverBullet project space (ignored by git)
 ```
 
 CI: `.github/workflows/images.yml` builds all `docker-bake.hcl` targets together for
@@ -694,11 +694,13 @@ make image          # the supervisor's container image
 
 ### Project records
 
-The [project operations manual](docs/Operations%20manual.md) describes how the owner and agents plan, work, review feedback, verify outcomes and maintain the records. The [owner dashboard](docs/index.md) shows requests, current capabilities and unscheduled loose ends through live SilverBullet views. No baked sections are used. The documentation space tracks features, outcome-based milestones, design specs, implementation plans, components, spikes and verification evidence. [The documentation manual](docs/AGENTS.md) defines their fields and lifecycle; `docs/CONFIG.md` registers native SilverBullet schemas. Use SilverBullet comments addressed to `@agent` for contextual feedback; the [Agent inbox](docs/Agent%20inbox.md) collects open requests for agents to check during work. Invoke `$sb-inbox` to process that queue explicitly; its repository skill lives in `.agents/skills/sb-inbox/`. Milestones have no target dates. Completed implementation plans are purged after durable decisions and evidence are retained; design specs stay while they describe the current system or agreed future work. Git preserves the history. From the repository root, with SilverBullet Desktop available, check metadata and relationships using `sb --space "Container Computer" script --file scripts/check-docs.lua --json`; run `sb` outside an agent sandbox so it can reach Desktop.
+Project documentation lives in the SilverBullet space "Container Computer", which is synced and versioned outside this repository. A local copy sits in `docs/`, which git ignores; edit pages there or in SilverBullet and let sync carry them, rather than committing them. Links from this README name pages in that space instead of linking files.
+
+The space's *Operations manual* describes how the owner and agents plan, work, review feedback, verify outcomes and maintain the records. Its *index* page is the owner dashboard: requests, current capabilities and unscheduled loose ends through live SilverBullet views. No baked sections are used. The space tracks features, outcome-based milestones, design specs, implementation plans, components, spikes and verification evidence. Its *AGENTS* page (the documentation manual) defines their fields and lifecycle; its *CONFIG* page registers native SilverBullet schemas. Use SilverBullet comments addressed to `@agent` for contextual feedback; the *Agent inbox* page collects open requests for agents to check during work. Invoke `$sb-inbox` to process that queue explicitly; its repository skill lives in `.agents/skills/sb-inbox/`. Milestones have no target dates. Completed implementation plans are purged after durable decisions and evidence are retained; design specs stay while they describe the current system or agreed future work. The space's remote versioning preserves the history. From the repository root, with SilverBullet Desktop available, check metadata and relationships using `sb --space "Container Computer" script --file scripts/check-docs.lua --json`; run `sb` outside an agent sandbox so it can reach Desktop.
 
 ### Terminal access prototype
 
-The historical [terminal access experiment](docs/superpowers/spikes/2026-10-23-terminal-access.md)
+The historical terminal access experiment (a spike in the project space)
 used a separate local demo. Shared terminal access above supersedes that experiment in the normal desktop image.
 
 ### Tests
