@@ -50,7 +50,7 @@ def test_desktop_page_shows_stream(supervisor, desktop, name, browser_name, tmp_
         assert visible == []
         expect(page.get_by_role("link", name="Environments", exact=True)).to_have_attribute("href", "/")
         xs = []
-        for n in ("Audio", "Display", "Clipboard", "Keys", "Terminal", "Download", "More"):
+        for n in ("Audio", "Display", "Clipboard", "Keys", "Download", "More"):
             b = page.get_by_role("button", name=n, exact=True)
             expect(b).to_be_visible()
             xs.append(b.bounding_box()["x"])
@@ -179,7 +179,7 @@ def test_phone_bar(supervisor, desktop, name, viewport):
         open_desktop(page, supervisor.base, name, status=False)
         # Below 640 wide these move into More; from 640 they stay in the bar.
         compact = viewport["width"] < 640
-        moved = ("Display", "Keys", "Terminal", "Download")
+        moved = ("Display", "Keys", "Download")
         for n in moved:
             b = page.get_by_role("button", name=n, exact=True)
             expect(b).to_be_hidden() if compact else expect(b).to_be_visible()
@@ -197,12 +197,12 @@ def test_phone_bar(supervisor, desktop, name, viewport):
         page.set_viewport_size({"width": viewport["width"], "height": 400})
         assert wait_until(menu_fits, 5), menu.bounding_box()
         if compact:
-            for n in ("Lock size", "Send Esc", "Quality: Low", "Download…", "Terminal"):
+            for n in ("Lock size", "Send Esc", "Quality: Low", "Download…"):
                 expect(menu.get_by_text(n, exact=True)).to_be_visible()
             # The last action stays reachable even on a short landscape screen.
             menu.get_by_role("menuitem", name="Download…", exact=True).click()
         else:
-            for n in ("Lock size", "Send Esc", "Quality: Low", "Download…", "Terminal"):
+            for n in ("Lock size", "Send Esc", "Quality: Low", "Download…"):
                 expect(menu.get_by_text(n, exact=True)).to_be_hidden()
             page.keyboard.press("Escape")
             page.get_by_role("button", name="Download", exact=True).click()
@@ -238,37 +238,31 @@ def test_touch_clipboard_survives_window_blur(supervisor, desktop, name, browser
         browser.close()
 
 
-def test_phone_toolbar_keeps_terminal_and_controls_reachable(supervisor, desktop, name):
+def test_phone_toolbar_keeps_tabs_and_controls_reachable(supervisor, desktop, name):
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base)
         try:
-            # Preserve the document's native loopback address space for the
-            # subsequent SPA-to-WebSocket navigation. Bootstrap API routing
-            # stays enabled; fulfilling the document makes Chromium block WS.
-            page.route(f"{supervisor.base}/{name}/", lambda route: route.continue_())
             open_desktop(page, supervisor.base, name)
-            # Wide: the bar's Terminal menu offers the running sessions and a new one.
-            terminal = page.get_by_role("button", name="Terminal", exact=True)
-            terminal.click()
-            expect(page.get_by_role("menu").get_by_role("menuitem", name=re.compile("^(Open terminal|New session…)$"))).to_be_visible()
-            page.keyboard.press("Escape")
+            # Wide: the tabs sit in the bar, Desktop first, then + for a new terminal.
+            desktop_tab = page.get_by_role("tab", name="Desktop")
+            plus = page.get_by_role("button", name="New terminal", exact=True)
+            expect(desktop_tab).to_have_attribute("aria-selected", "true")
+            assert abs(desktop_tab.bounding_box()["y"] - plus.bounding_box()["y"]) < 8
             more = page.get_by_role("button", name="More", exact=True)
             for width in (320, 375):
                 page.set_viewport_size({"width": width, "height": 750})
-                # The bar's right-hand group doesn't overflow.
+                # The bar's right-hand group doesn't overflow, nor does the page.
                 geometry = more.evaluate("el => { const g = el.parentElement.parentElement; return {width: g.clientWidth, scroll: g.scrollWidth}; }")
                 assert geometry["scroll"] <= geometry["width"], geometry
-                expect(terminal).not_to_be_visible()
+                assert page.evaluate("document.documentElement.scrollWidth") <= width
                 expect(more).to_be_visible()
                 assert more.bounding_box()["x"] + more.bounding_box()["width"] <= width
-                more.click()
-                action = page.get_by_role("menuitem", name="Terminal", exact=True)
-                expect(action).to_be_visible()
-                if width == 320:
-                    page.keyboard.press("Escape")
-                else:
-                    action.click()
-                    expect(page.locator('[data-terminal-state="connected"]')).to_be_attached(timeout=20000)
-                    assert page.url.endswith(f"/{name}/terminal/")
+                # The tabs move to a row of their own, below the bar's controls.
+                assert desktop_tab.bounding_box()["y"] >= more.bounding_box()["y"] + more.bounding_box()["height"] - 1
+                box = plus.bounding_box()
+                assert box["x"] >= 0 and box["x"] + box["width"] <= width, box
+            plus.click()
+            expect(page.locator("[data-terminal-pane]:not([hidden]) [data-terminal-state=connected]")).to_be_attached(timeout=20000)
+            assert re.search(r"/\?terminal=terminal-\d+$", page.url), page.url
         finally:
             browser.close()

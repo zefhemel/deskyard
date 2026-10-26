@@ -1,4 +1,3 @@
-import { lazy, Suspense } from "preact/compat";
 import { useEffect, useState } from "preact/hooks";
 import { LocationProvider, Route, Router, useLocation } from "preact-iso";
 import { api, type Me } from "./api.ts";
@@ -7,18 +6,16 @@ import { LiveProvider } from "./live.tsx";
 import { AccountsPage } from "./pages/accounts.tsx";
 import { DetailsPage } from "./pages/details.tsx";
 import { EnvironmentsPage } from "./pages/environments.tsx";
-import { DesktopPage } from "./desktop/desktop.tsx";
+import { EnvironmentPage } from "./desktop/desktop.tsx";
 import { VPNPage } from "./pages/vpn.tsx";
 import { ImagesPage } from "./pages/images.tsx";
 import { VolumesPage } from "./pages/volumes.tsx";
 import { LoginPage } from "./pages/login.tsx";
 import { NotFound } from "./pages/not-found.tsx";
 
-const TerminalPage = lazy(() => import("./terminal/terminal.tsx").then((m) => ({ default: m.TerminalPage })));
-
 /**
- * `/<name>/` (one segment with a trailing slash) is an environment's desktop page;
- * the UI's own pages have no trailing slash.
+ * `/<name>/` (one segment with a trailing slash) is an environment's page, with
+ * its desktop and terminal tabs; the UI's own pages have no trailing slash.
  */
 export function desktopName(path: string): string | null {
   const m = /^\/([a-z][a-z0-9-]*)\/$/.exec(path);
@@ -50,16 +47,11 @@ function SignedIn() {
   }, []);
   if (!me) return null;
 
-  const terminal = /^\/([a-z][a-z0-9-]*)\/terminal\/$/.exec(url.split("?")[0] ?? "")?.[1];
   const desktop = desktopName(url.split("?")[0] ?? "");
   return (
     <LiveProvider me={me}>
-      {terminal ? (
-        <Suspense fallback={<p>Loading terminal…</p>}>
-          <TerminalPage key={terminal} name={terminal} />
-        </Suspense>
-      ) : desktop ? (
-        <DesktopPage key={desktop} name={desktop} />
+      {desktop ? (
+        <EnvironmentPage key={desktop} name={desktop} />
       ) : (
         <Router>
           <Route path="/" component={EnvironmentsPage} />

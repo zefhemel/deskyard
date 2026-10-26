@@ -279,3 +279,94 @@ test("ready resends current viewport size after startup and reconnect resize", a
   );
   c.stop();
 });
+function joining(options: { create?: boolean; alive?: () => boolean } = {}) {
+  const wires: (Wire & { url: string })[] = [];
+  const timers: (() => void)[] = [];
+  const states: [string, string | undefined][] = [];
+  const c = new TerminalConnection({
+    url: "ws://test/api/environments/a/terminal?session=main",
+    create: options.create,
+    alive: options.alive,
+    size: () => [80, 24],
+    socket: (url) => {
+      const w = Object.assign(new Wire(), { url });
+      wires.push(w);
+      return w;
+    },
+    preflight: async () => {},
+    write: (_data, done) => done(),
+    state: (s, m) => states.push([s, m]),
+    warning: () => {},
+    schedule: (f, ms) => {
+      if (ms !== 10000) timers.push(f);
+      return () => {};
+    },
+  });
+  return { c, wires, timers, states };
+}
+const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+test("an ended session stops reconnection", async () => {
+  const t = joining();
+  await t.c.start();
+  const w = t.wires[0]!;
+  w.onopen?.();
+  w.message(JSON.stringify({ ready: true, generation: "g" }));
+  w.message(JSON.stringify({ ended: true }));
+  w.onclose?.({ code: 1000 });
+  assert.equal(t.states.at(-1)?.[0], "ended");
+  assert.equal(t.timers.length, 0);
+  t.c.resume();
+  await flush();
+  assert.equal(t.wires.length, 1);
+});
+
+test("a join to a missing session ends without retrying", async () => {
+  const t = joining();
+  await t.c.start();
+  t.wires[0]!.onopen?.();
+  t.wires[0]!.message(JSON.stringify({ ended: true }));
+  t.wires[0]!.onclose?.({ code: 1000 });
+  assert.deepEqual(t.states.map((s) => s[0]), ["connecting", "ended"]);
+  assert.equal(t.timers.length, 0);
+});
+
+test("only the first attach asks to create; reconnects only join", async () => {
+  const t = joining({ create: true });
+  await t.c.start();
+  assert.match(t.wires[0]!.url, /[?&]create=1/);
+  assert.match(t.wires[0]!.url, /session=main/);
+  t.wires[0]!.onopen?.();
+  t.wires[0]!.message(JSON.stringify({ ready: true, generation: "g" }));
+  t.wires[0]!.onclose?.({ code: 1006 });
+  t.timers.shift()!();
+  await flush();
+  assert.equal(t.wires.length, 2);
+  assert.doesNotMatch(t.wires[1]!.url, /create/);
+  const j = joining();
+  await j.c.start();
+  assert.doesNotMatch(j.wires[0]!.url, /create/);
+});
+
+test("a reconnect checks the latest session list first", async () => {
+  let alive = true;
+  const t = joining({ alive: () => alive });
+  await t.c.start();
+  t.wires[0]!.onopen?.();
+  t.wires[0]!.message(JSON.stringify({ ready: true, generation: "g" }));
+  t.wires[0]!.onclose?.({ code: 1006 });
+  assert.equal(t.states.at(-1)?.[0], "retrying");
+  alive = false;
+  t.timers.shift()!();
+  await flush();
+  assert.equal(t.wires.length, 1, "no new socket for a session that is gone");
+  assert.equal(t.states.at(-1)?.[0], "ended");
+  // Gone already when the connection drops: no retry at all.
+  const u = joining({ alive: () => false });
+  await u.c.start();
+  u.wires[0]!.onopen?.();
+  u.wires[0]!.message(JSON.stringify({ ready: true, generation: "g" }));
+  u.wires[0]!.onclose?.({ code: 1006 });
+  assert.equal(u.states.at(-1)?.[0], "ended");
+  assert.equal(u.timers.length, 0);
+});

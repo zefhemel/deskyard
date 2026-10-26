@@ -1,6 +1,7 @@
 import type { Modifiers } from "./keys.ts";
 
-const keys = [
+/** The helper keys: [key, text, label]; a label starting "Ctrl+" is sent with Ctrl. */
+export const terminalKeys = [
   ["c", "Ctrl+C", "Ctrl+C"],
   ["Escape", "Esc", "Escape"],
   ["Tab", "Tab", "Tab"],
@@ -65,7 +66,7 @@ export function KeyBar({
         <span class="terminal-keyhint">History: PgUp/PgDn · Esc to return</span>
       </div>
       <div class="terminal-shortcuts">
-        {keys.map(([key, text, label]) => (
+        {terminalKeys.map(([key, text, label]) => (
           <button
             type="button"
             key={key}

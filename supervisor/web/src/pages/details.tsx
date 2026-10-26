@@ -90,7 +90,7 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
               <a href={`/${c.name}/`} class={btnClass("primary")}>
                 Desktop
               </a>
-              <a href={`/${c.name}/terminal/`} class={btnClass()}>Terminal</a>
+              <a href={`/${c.name}/?terminal=main${c.terminals.some((t) => t.name === "main") ? "" : "&create=1"}`} class={btnClass()}>Terminal</a>
               <Button onClick={() => power(c.name, "restart")}>Restart</Button>
               <Button onClick={() => power(c.name, "stop")}>Stop</Button>
               {me.admin && <ReclaimMemoryButton name={c.name} disabled={!!c.job} />}

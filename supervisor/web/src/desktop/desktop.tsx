@@ -1,24 +1,30 @@
-// The desktop page at /<name>/: a thin bar of ours above Selkies' web client
-// in a frame. How we drive the client is described in selkies.ts.
+// The environment page at /<name>/: a thin bar of ours with tabs for the
+// desktop and the environment's shared terminal sessions. The Desktop tab is
+// Selkies' web client in a frame (how we drive it is described in
+// selkies.ts); terminal tabs are xterm panes (terminal/terminal.tsx).
 import type { ComponentChildren } from "preact";
-import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { createPortal, lazy, Suspense } from "preact/compat";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-import { api, type Environment } from "../api.ts";
+import { api, ApiError, type Environment } from "../api.ts";
 import { Avatar, Avatars } from "../components/avatar.tsx";
 import { power } from "../components/environment-menu.tsx";
 import { Menu, type MenuItem } from "../components/menu.tsx";
 import { ViewersPopover } from "../components/viewers-popover.tsx";
 import { notify, notifyError } from "../components/toast.tsx";
-import { Button, cx } from "../components/ui.tsx";
+import { Button, cx, Dialog, MORE } from "../components/ui.tsx";
 import { DownloadDialog } from "../dialogs/download.tsx";
 import { useEnvironment, useLive } from "../live.tsx";
 import { agentTitle } from "../lib/activity-format.ts";
+import { leftNeighbour, loadOrder, orderTabs, saveOrder, vanished } from "../lib/tab-order.ts";
 import { vpnPresentation } from "../lib/vpn-form.ts";
 import { names, notice } from "../lib/format.ts";
+import { isShell, needsConfirm, others } from "../terminal/sessions.ts";
 import { TouchControls, useVisibleViewport } from "./touch-controls.tsx";
 import { ZoomViewport } from "./zoom-viewport.tsx";
 import { AudioControl } from "./audio-panel.tsx";
-import { ClipboardIcon, DisplayIcon, FolderIcon, KeyboardIcon, ShieldIcon, TerminalIcon } from "./bar-icons.tsx";
+import { ClipboardIcon, DisplayIcon, FolderIcon, KeyboardIcon, ShieldIcon } from "./bar-icons.tsx";
+import { barButton, type BarSlots, ConnDot, EnvironmentTabs, panelId, pressed, tabId, useTabHooks } from "./tabs.tsx";
 import { avSyncWanted, startAvSync } from "./avsync.ts";
 import { ClipboardPopover } from "./clipboard.tsx";
 import { ActivityOverlay } from "./overlay.tsx";
@@ -91,21 +97,14 @@ function parseSize(v: string): Size | null {
   }
 }
 
-const connLabels: Record<ConnectionState, string> = {
-  connecting: "Connecting",
-  connected: "Connected",
-  disconnected: "Disconnected",
-};
+// The xterm code loads with the first terminal tab.
+const TerminalPane = lazy(() => import("../terminal/terminal.tsx").then((m) => ({ default: m.TerminalPane })));
 
-const barButton =
-  "inline-flex cursor-pointer items-center gap-1.5 rounded-[7px] border-0 bg-transparent px-2.5 py-[7px] text-[13.5px] font-semibold whitespace-nowrap text-bar-text no-underline hover:bg-bar-hover hover:text-white";
+const validSession = (s: string) => /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(s);
 
-export function DesktopPage({ name }: { name: string }) {
+export function EnvironmentPage({ name }: { name: string }) {
   const c = useEnvironment(name);
   const viewport = useVisibleViewport();
-  useEffect(() => {
-    document.title = name;
-  }, [name]);
   return (
     // data-desktop-page: no scrollbar gutter on this page (index.css).
     <div data-desktop-page data-software-keyboard={String(viewport?.keyboard ?? false)} class="fixed inset-0 flex flex-col bg-glass" style={viewport ? { top: `${viewport.top}px`, bottom: "auto", height: `${viewport.height}px` } : undefined}>
@@ -117,7 +116,7 @@ export function DesktopPage({ name }: { name: string }) {
           </a>
         </Centered>
       ) : (
-        <Desktop environment={c} />
+        <EnvironmentView environment={c} />
       )}
     </div>
   );
@@ -127,9 +126,403 @@ function Centered({ children }: { children: ComponentChildren }) {
   return <div class="flex flex-1 flex-col items-center justify-center gap-3.5 px-6 text-center text-[15px] text-[#c5cdd8]">{children}</div>;
 }
 
-function Desktop({ environment: c }: { environment: Environment }) {
+/**
+ * The page under the fixed root: the bar (identity, tabs, the active tab's
+ * controls, viewers, ⋯) and the active tab. Desktop is mounted only while
+ * shown; a terminal pane stays mounted, hidden, from its first showing until
+ * its tab closes, so switching keeps its connection and scrollback.
+ */
+function EnvironmentView({ environment: c }: { environment: Environment }) {
   const { me } = useLive();
-  const { route } = useLocation();
+  const { query, route } = useLocation();
+  const running = c.state === "running";
+  const listed = running ? (c.terminals ?? []).map((t) => t.name) : [];
+  const listKey = listed.join("\n");
+
+  // Sessions opened here that the list doesn't show yet (session → create on first attach).
+  const [pending, setPending] = useState<Record<string, boolean>>(() => {
+    const s = query.terminal;
+    if (!s || !validSession(s)) return {};
+    if (query.create === "1") return { [s]: true };
+    return listed.includes(s) ? {} : { [s]: false };
+  });
+  // Ended from here while the list still shows them.
+  const [gone, setGone] = useState<string[]>([]);
+  const [opened, setOpened] = useState<string[]>([]);
+  const [order, setOrder] = useState(() => loadOrder(c.name));
+  const [states, setStates] = useState<Record<string, string>>({});
+  const [confirm, setConfirm] = useState<{ session: string; others: number; command: string } | null>(null);
+  const [viewersOpen, setViewersOpen] = useState(false);
+  const seen = useRef(new Set<string>());
+  const ending = useRef(new Set<string>());
+  // A deep link's session the list hasn't shown: if it turns out ended, Desktop shows.
+  const linked = useRef(new Set<string>(query.terminal && validSession(query.terminal) && query.create !== "1" && !listed.includes(query.terminal) ? [query.terminal] : []));
+  // × and + in flight, so a double click asks or acts once.
+  const busy = useRef(new Set<string>());
+  const deleting = useRef(new Set<string>());
+  const adding = useRef(false);
+
+  const shown = [...listed, ...Object.keys(pending).filter((s) => !listed.includes(s))].filter((s) => !gone.includes(s));
+  const tabs = orderTabs(shown, order);
+  const tabsKey = tabs.join("\n");
+  const active = query.terminal && tabs.includes(query.terminal) ? query.terminal : null;
+
+  // What callbacks from panes and requests need, current.
+  const latest = useRef({ tabs, shownTab: query.terminal, listed, pending, states, route });
+  latest.current = { tabs, shownTab: query.terminal, listed, pending, states, route };
+  // The tabs as last rendered, to find a closing tab's left neighbour.
+  const rendered = useRef(tabs);
+  // The tab being closed: its URL is about to change, so it isn't a bad link.
+  const closing = useRef<string | null>(null);
+
+  const [dot, setDot] = useState<HTMLElement | null>(null);
+  const [controls, setControls] = useState<HTMLElement | null>(null);
+  // The active tab sets this as it renders and clears it when it goes away.
+  const tabHooks = useRef<BarSlots["active"]["current"]>(null);
+  const slots = useMemo<BarSlots>(() => ({ dot, controls, active: tabHooks }), [dot, controls]);
+
+  const tabUrl = (s: string | null) => (s ? `/${c.name}/?terminal=${encodeURIComponent(s)}` : `/${c.name}/`);
+  const show = (s: string | null) => latest.current.route(tabUrl(s), true);
+
+  /** Closes a session's tab; when it was the active one, moves left (or to Desktop) and maybe says so. */
+  const closeTab = (s: string, say: boolean, toDesktop = false) => {
+    const now = latest.current;
+    setOpened((o) => o.filter((x) => x !== s));
+    setPending((p) => {
+      if (!(s in p)) return p;
+      const { [s]: _, ...rest } = p;
+      return rest;
+    });
+    if (now.listed.includes(s)) setGone((g) => (g.includes(s) ? g : [...g, s]));
+    setStates(({ [s]: _, ...rest }) => rest);
+    const wasLinked = linked.current.delete(s);
+    if (now.shownTab === s) {
+      // Its left neighbour among the tabs still there, or Desktop.
+      const before = rendered.current.includes(s) ? rendered.current.slice(0, rendered.current.indexOf(s) + 1) : [s];
+      const left = before.filter((t) => t === s || now.tabs.includes(t));
+      closing.current = s;
+      show(toDesktop || wasLinked ? null : leftNeighbour(left, s));
+      if (say) notify(`Session ${s} ended`);
+    }
+  };
+
+  // On load: drop ?create=1 (an explicit open, e.g. an environment card's +),
+  // and check that a deep-linked session exists; a link never creates one.
+  useEffect(() => {
+    const s = query.terminal;
+    if (!s) return;
+    if (!validSession(s)) {
+      show(null);
+      return;
+    }
+    if (query.create === "1") {
+      show(s);
+      return;
+    }
+    if (listed.includes(s) || !running) return;
+    api.terminalSessions(c.name).then(
+      (r) => {
+        if (!r.sessions.some((t) => t.name === s)) closeTab(s, true, true);
+      },
+      () => undefined, // the pane's join says whether it exists
+    );
+  }, []);
+
+  // Follow the session list: newly listed sessions stop being pending, and a
+  // session that disappears (ended elsewhere, or its shell exited) closes.
+  useEffect(() => {
+    if (Object.keys(pending).some((s) => listed.includes(s))) setPending((p) => Object.fromEntries(Object.entries(p).filter(([s]) => !listed.includes(s))));
+    if (gone.some((s) => !listed.includes(s))) setGone((g) => g.filter((s) => listed.includes(s)));
+    for (const s of listed) {
+      seen.current.add(s);
+      linked.current.delete(s);
+    }
+    for (const s of vanished(seen.current, listed, Object.keys(pending))) {
+      seen.current.delete(s);
+      closeTab(s, running && !ending.current.has(s));
+    }
+  }, [listKey, running]);
+
+  // A stopped environment has no terminal tabs.
+  useEffect(() => {
+    if (running) return;
+    setPending({});
+    setOpened([]);
+    setGone([]);
+  }, [running]);
+
+  // A link to a tab that isn't there (any more) shows Desktop.
+  useEffect(() => {
+    if (query.terminal === closing.current) return;
+    closing.current = null;
+    if (query.terminal && !active && !(query.terminal in pending)) show(null);
+  }, [query.terminal, active, tabsKey]);
+
+  // Panes mount on first showing.
+  useEffect(() => {
+    if (active && !opened.includes(active)) setOpened((o) => [...o, active]);
+  }, [active]);
+
+  // The viewer's order: new sessions go at the end of it from now on.
+  useEffect(() => {
+    if (!tabs.length) return;
+    setOrder(tabs);
+    saveOrder(c.name, tabs);
+  }, [tabsKey]);
+
+  useEffect(() => {
+    document.title = active ? `${c.name} · ${active}` : c.name;
+  }, [c.name, active]);
+
+  useEffect(() => {
+    rendered.current = tabs;
+  });
+
+  useJoinToasts(c.viewers, me.username);
+
+  /** A session + just created: it exists, so its pane only joins. */
+  const openCreated = (s: string) => {
+    ending.current.delete(s);
+    seen.current.delete(s); // a reused name: a late list without it isn't about this one
+    setGone((g) => g.filter((x) => x !== s));
+    setPending((p) => ({ ...p, [s]: false }));
+    show(s);
+  };
+  const add = () => {
+    if (adding.current) return;
+    adding.current = true;
+    api
+      .createTerminal(c.name)
+      .then(({ name: s }) => openCreated(s), notifyError)
+      .finally(() => {
+        adding.current = false;
+      });
+  };
+
+  const end = (s: string) => {
+    if (deleting.current.has(s)) return;
+    deleting.current.add(s);
+    ending.current.add(s);
+    busy.current.add(s);
+    api
+      .endTerminal(c.name, s)
+      .finally(() => {
+        deleting.current.delete(s);
+        busy.current.delete(s);
+      })
+      .then(
+      () => {
+        closeTab(s, false);
+        notify(`Ended ${s}`);
+      },
+      (e: unknown) => {
+        if (e instanceof ApiError && e.status === 404) {
+          closeTab(s, false);
+          notify(`${s} had already ended`);
+        } else {
+          ending.current.delete(s);
+          notifyError(e);
+        }
+      },
+    );
+  };
+  /** ×: ends at once for an idle shell only this page uses; asks first otherwise. */
+  const requestEnd = async (s: string) => {
+    if (busy.current.has(s)) return;
+    busy.current.add(s);
+    // Once askEnd hands over, the dialog or end()'s request releases it.
+    let handedOver = false;
+    try {
+      handedOver = await askEnd(s);
+    } finally {
+      if (!handedOver) busy.current.delete(s);
+    }
+  };
+  /** Whether it handed the session over to the dialog or to end(). */
+  const askEnd = async (s: string): Promise<boolean> => {
+    let session = (c.terminals ?? []).find((t) => t.name === s);
+    try {
+      // The freshest details: a program may have started since the last poll.
+      const r = await api.terminalSessions(c.name);
+      session = r.sessions.find((t) => t.name === s);
+      if (!session) {
+        closeTab(s, false);
+        notify(`${s} had already ended`);
+        return false;
+      }
+    } catch {
+      // the list we have
+    }
+    const attached = latest.current.states[s] === "connected";
+    const details = session ?? { clients: attached ? 1 : 0, command: "" };
+    if (needsConfirm(details, attached)) {
+      setConfirm({ session: s, others: others(details, attached), command: details.command });
+    } else end(s);
+    return true;
+  };
+
+  const onPaneEnded = useCallback((s: string, how: "ended" | "exited") => {
+    if (how === "ended") {
+      closeTab(s, !ending.current.has(s));
+      return;
+    }
+    // The shell exited: the tab closes if that ended the session.
+    api.terminalSessions(c.name).then(
+      (r) => {
+        if (!r.sessions.some((t) => t.name === s)) closeTab(s, true);
+      },
+      () => undefined,
+    );
+  }, []);
+  const onPaneState = useCallback((s: string, state: string) => setStates((m) => (m[s] === state ? m : { ...m, [s]: state })), []);
+
+  const closeViewers = useCallback(() => {
+    setViewersOpen(false);
+    tabHooks.current?.refocus();
+  }, []);
+  const envItems: MenuItem[] = [
+    ...(running
+      ? [
+          { label: "Restart", onSelect: () => power(c.name, "restart") },
+          { label: "Stop", onSelect: () => power(c.name, "stop") },
+        ]
+      : []),
+    { label: "Details", onSelect: () => route(`/environments/${c.name}`), separated: running },
+    ...(me.admin ? [{ label: "Settings", onSelect: () => route(`/environments/${c.name}?tab=settings`) }] : []),
+  ];
+  const present = c.viewers.length > 0 || c.forwards.length > 0 || c.agents.length > 0;
+
+  return (
+    <>
+      <div data-environment-bar class="relative flex flex-none flex-wrap items-center gap-x-1.5 bg-bar px-2.5 text-sm text-[#e6ebf1] max-sm:min-h-[46px] sm:h-[46px] sm:flex-nowrap">
+        <a href="/" class={cx(barButton, "px-2")} title="Environments" aria-label="Environments">
+          ‹
+        </a>
+        <span class="min-w-0 shrink-0 truncate text-[15px] font-bold text-white max-sm:hidden sm:max-w-[22vw]">{c.name}</span>
+        <span ref={setDot} class="contents" />
+        {c.vpn && c.vpn.state !== "disabled" && (
+          <a
+            href={`/environments/${c.name}?tab=settings&section=networking`}
+            class={cx(barButton, "px-1.5", c.vpn.state === "blocked" ? "text-[#ffb7ad]!" : c.vpn.state === "connected" ? "text-[#3ac08a]!" : "text-busy!")}
+            title={[vpnPresentation(c.vpn).label, vpnPresentation(c.vpn).detail].filter(Boolean).join(": ")}
+            aria-label={vpnPresentation(c.vpn).label}
+          >
+            <ShieldIcon />
+          </a>
+        )}
+        <EnvironmentTabs
+          tabs={tabs.map((s) => {
+            const t = (c.terminals ?? []).find((x) => x.name === s);
+            return { name: s, others: t ? others(t, states[s] === "connected") : 0 };
+          })}
+          active={active}
+          canAdd={running && c.terminal}
+          onSelect={show}
+          onClose={(s) => void requestEnd(s)}
+          onAdd={() => void add()}
+          onReorder={(next) => {
+            setOrder(next);
+            saveOrder(c.name, next);
+          }}
+        />
+        <div class="ml-auto flex h-[46px] shrink-0 items-center gap-0.5">
+          <span ref={setControls} class="contents" />
+          {present && (
+            <button
+              type="button"
+              data-viewers-toggle
+              aria-expanded={viewersOpen}
+              aria-label="Viewers and port mappings"
+              class={cx(
+                "ml-1 inline-flex min-w-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1.5 py-1 text-[13px] text-bar-muted hover:bg-bar-hover",
+                viewersOpen && "bg-bar-hover text-white",
+              )}
+              title={[...(c.viewers.length ? [names(c.viewers)] : []), ...c.agents.map(agentTitle)].join(", ")}
+              onClick={() => (viewersOpen ? closeViewers() : setViewersOpen(true))}
+            >
+              {(c.viewers.length > 0 || c.agents.length > 0) && <><span class="max-sm:hidden"><Avatars names={c.viewers} mics={c.mics} agents={c.agents} ring="var(--color-bar)" /></span><span class="sm:hidden">{c.viewers.length + c.agents.length}</span></>}
+              {c.forwards.length > 0 && <span class="whitespace-nowrap max-sm:hidden">⇄ {c.forwards.length}</span>}
+            </button>
+          )}
+          <Menu
+            items={() => [...envItems, ...(tabHooks.current?.menu() ?? [])]}
+            onClose={() => tabHooks.current?.refocus()}
+            trigger={({ toggle, open }) => (
+              <button type="button" aria-label="More" aria-haspopup="menu" aria-expanded={open} class={cx(barButton, open && pressed)} onClick={toggle}>
+                {MORE}
+              </button>
+            )}
+          />
+        </div>
+        {viewersOpen && present && <ViewersPopover name={c.name} viewers={c.viewers} mics={c.mics} forwards={c.forwards} agents={c.agents} onClose={closeViewers} />}
+      </div>
+      <div class="relative flex min-h-0 flex-1 flex-col">
+        <div role="tabpanel" id={panelId(null)} aria-labelledby={tabId(null)} hidden={active !== null} class={cx("relative min-h-0 flex-1 flex-col", active === null ? "flex" : "hidden")}>
+          {active === null && <Desktop environment={c} slots={slots} />}
+        </div>
+        {opened
+          .filter((s) => tabs.includes(s))
+          .map((s) => (
+            <Suspense key={s} fallback={s === active ? <Centered>Loading terminal…</Centered> : null}>
+              <TerminalPane
+                name={c.name}
+                session={s}
+                active={s === active}
+                create={pending[s] === true}
+                slots={slots}
+                alive={() => latest.current.listed.includes(s) || s in latest.current.pending}
+                onState={onPaneState}
+                onEnded={onPaneEnded}
+              />
+            </Suspense>
+          ))}
+      </div>
+      {confirm && (
+        <EndSessionDialog
+          {...confirm}
+          onClose={() => {
+            busy.current.delete(confirm.session);
+            setConfirm(null);
+            tabHooks.current?.refocus();
+          }}
+          onEnd={() => {
+            end(confirm.session);
+            setConfirm(null);
+            tabHooks.current?.refocus();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function EndSessionDialog({ session, others: n, command, onEnd, onClose }: { session: string; others: number; command: string; onEnd: () => void; onClose: () => void }) {
+  const program = !isShell(command);
+  return (
+    <Dialog
+      title={`End ${session} for everyone?`}
+      onClose={onClose}
+      onSubmit={onEnd}
+      footer={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="danger">
+            End session
+          </Button>
+        </>
+      }
+    >
+      <ul class="m-0 list-disc space-y-1 pl-5">
+        {program && <li>{command ? <><code>{command}</code> is running in it.</> : "A program may be running in it."}</li>}
+        {n > 0 && <li>{n === 1 ? "Someone else is attached" : `${n} others are attached`}: their terminals close too.</li>}
+      </ul>
+      <p class="mt-2 text-muted">Its shell and every program in it stop.</p>
+    </Dialog>
+  );
+}
+
+/** The Desktop tab: mounted only while it's shown, so a hidden desktop doesn't stream. */
+function Desktop({ environment: c, slots }: { environment: Environment; slots: BarSlots }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [trackpad, setTrackpad] = useState(() => stored("deskyard.trackpad", (v) => v === "true", false));
   const trackpadRef = useRef(trackpad);
@@ -148,14 +541,7 @@ function Desktop({ environment: c }: { environment: Environment }) {
   const [frameKey, setFrameKey] = useState(0);
   const [remoteClip, setRemoteClip] = useState<string | null>(null);
   const [clipOpen, setClipOpen] = useState(false);
-  const [viewersOpen, setViewersOpen] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
-  // Running terminal sessions, fetched when the Terminal menu opens.
-  const [sessions, setSessions] = useState<string[] | null>(null);
-  const refreshSessions = () => {
-    setSessions(null);
-    api.terminalSessions(c.name).then((r) => setSessions(r.sessions.map((t) => t.name)), () => setSessions([]));
-  };
   const [quality, setQuality] = useState(() => stored(QUALITY_KEY, parseQuality, defaultQuality));
   const [locked, setLocked] = useState(() => stored<Size | null>(LOCK_SIZE_KEY, parseSize, null));
   // Whether this page owns the display (null until known), and the preset the
@@ -241,8 +627,6 @@ function Desktop({ environment: c }: { environment: Environment }) {
     wasRunning.current = running;
   }, [running]);
 
-  useJoinToasts(c.viewers, me.username);
-
   function reconnect() {
     setZoom(1);
     setConn("connecting");
@@ -275,10 +659,6 @@ function Desktop({ environment: c }: { environment: Environment }) {
       if (size) chooseResolution(size);
     }
   };
-  const closeViewers = useCallback(() => {
-    setViewersOpen(false);
-    refocus();
-  }, [refocus]);
   const closeClip = useCallback(() => {
     setClipOpen(false);
     refocus();
@@ -320,27 +700,10 @@ function Desktop({ environment: c }: { environment: Environment }) {
       separated: i === 0,
     })),
   ];
-  const openTerminal = (session?: string) => {
-    location.href = `/${c.name}/terminal/${session ? `?session=${encodeURIComponent(session)}` : ""}`;
-  };
-  const terminalItems: MenuItem[] = [
-    ...(sessions ?? []).map((t) => ({ label: t, onSelect: () => openTerminal(t) })),
-    ...(sessions === null ? [{ label: "Loading sessions…", disabled: true, onSelect: () => {} }] : []),
-    { label: sessions?.length ? "New session…" : "Open terminal", onSelect: () => openTerminal(sessions?.length ? undefined : "main"), separated: (sessions?.length ?? 0) > 0 },
-  ];
   const compactOnly = "sm:hidden";
   const showing = running;
+  // Phones and narrow tablets need these actions in ⋯.
   const moreItems: MenuItem[] = [
-    ...(running
-      ? [
-          { label: "Restart", onSelect: () => power(c.name, "restart") },
-          { label: "Stop", onSelect: () => power(c.name, "stop") },
-        ]
-      : []),
-    { label: "Details", onSelect: () => route(`/environments/${c.name}`), separated: running },
-    { label: "Terminal", onSelect: () => route(`/${c.name}/terminal/`), class: "sm:hidden" },
-    ...(me.admin ? [{ label: "Settings", onSelect: () => route(`/environments/${c.name}?tab=settings`) }] : []),
-    // Phones and narrow tablets need these actions in More.
     ...(showing
       ? [
           ...(owner ? [
@@ -362,60 +725,20 @@ function Desktop({ environment: c }: { environment: Environment }) {
       : []),
     ...(running ? [{ label: "Download…", onSelect: () => setDownloadOpen(true), separated: true, class: compactOnly }] : []),
   ];
+  useTabHooks(slots, true, { menu: () => moreItems, refocus });
 
-  const dot = conn === "connected" ? "bg-[#3ac08a]" : conn === "disconnected" ? "bg-[#e0685b]" : "bg-busy animate-pulse";
-  const pressed = "bg-bar-hover text-white";
 
   return (
     <>
-      <div class="relative flex h-[46px] flex-none items-center gap-1.5 bg-bar px-2.5 text-sm text-[#e6ebf1]">
-        <a href="/" class={cx(barButton, "px-2")} title="Environments" aria-label="Environments">
-          ‹
-        </a>
-        <span class="min-w-0 truncate text-[15px] font-bold text-white max-sm:hidden">{c.name}</span>
-        {showing ? (
-          <span class="inline-flex items-center px-1" title={connLabels[conn]} role="status" aria-label={connLabels[conn]}>
-            <span class={cx("h-2 w-2 rounded-full", dot)} />
-          </span>
-        ) : null}
-        {c.vpn && c.vpn.state !== "disabled" && (
-          <a
-            href={`/environments/${c.name}?tab=settings&section=networking`}
-            class={cx(barButton, "px-1.5", c.vpn.state === "blocked" ? "text-[#ffb7ad]!" : c.vpn.state === "connected" ? "text-[#3ac08a]!" : "text-busy!")}
-            title={[vpnPresentation(c.vpn).label, vpnPresentation(c.vpn).detail].filter(Boolean).join(": ")}
-            aria-label={vpnPresentation(c.vpn).label}
-          >
-            <ShieldIcon />
-          </a>
-        )}
-        {showing && insecureContext && <NotSecure />}
-        {showing && conn === "disconnected" && (
-          <button type="button" class={barButton} onClick={reconnect}>
-            Reconnect
-          </button>
-        )}
-        {(c.viewers.length > 0 || c.forwards.length > 0 || c.agents.length > 0) && (
-          <>
-            <span class="mx-1.5 h-[22px] w-px bg-[#2e3d52] max-sm:hidden" />
-            <button
-              type="button"
-              data-viewers-toggle
-              aria-expanded={viewersOpen}
-              aria-label="Viewers and port mappings"
-              class={cx(
-                "inline-flex min-w-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1.5 py-1 text-[13px] text-bar-muted hover:bg-bar-hover",
-                viewersOpen && "bg-bar-hover text-white",
-              )}
-              title={[...(c.viewers.length ? [names(c.viewers)] : []), ...c.agents.map(agentTitle)].join(", ")}
-              onClick={() => (viewersOpen ? closeViewers() : setViewersOpen(true))}
-            >
-              {(c.viewers.length > 0 || c.agents.length > 0) && <><span class="max-sm:hidden"><Avatars names={c.viewers} mics={c.mics} agents={c.agents} ring="var(--color-bar)" /></span><span class="sm:hidden">{c.viewers.length + c.agents.length}</span></>}
-              {c.viewers.length > 0 && <span class="truncate max-md:hidden">{names(c.viewers)}</span>}
-              {c.forwards.length > 0 && <span class="whitespace-nowrap max-sm:hidden">⇄ {c.forwards.length}</span>}
+      {showing && slots.dot && createPortal(<ConnDot state={conn} />, slots.dot)}
+      {slots.controls && createPortal(
+        <>
+          {showing && insecureContext && <NotSecure />}
+          {showing && conn === "disconnected" && (
+            <button type="button" class={barButton} onClick={reconnect}>
+              Reconnect
             </button>
-          </>
-        )}
-        <div class="ml-auto flex shrink-0 items-center gap-0.5">
+          )}
           {showing && (
             <>
               <AudioControl name={c.name} screen={screen} connected={conn === "connected"} />
@@ -452,64 +775,27 @@ function Desktop({ environment: c }: { environment: Environment }) {
                   </button>
                 )}
               />
+              <button type="button" aria-haspopup="dialog" aria-label="Download" title="Download files" class={cx(barButton, "px-2 max-sm:hidden", downloadOpen && pressed)} onClick={() => setDownloadOpen(true)}>
+                <FolderIcon />
+              </button>
             </>
           )}
-          {running && (
-            <Menu
-              class="max-sm:hidden"
-              items={terminalItems}
-              onClose={refocus}
-              trigger={({ toggle, open }) => (
-                <button
-                  type="button"
-                  aria-label="Terminal"
-                  aria-haspopup="menu"
-                  aria-expanded={open}
-                  title="Terminal"
-                  class={cx(barButton, "px-2", open && pressed)}
-                  onClick={() => {
-                    if (!open) refreshSessions();
-                    toggle();
-                  }}
-                >
-                  <TerminalIcon />
-                  <span aria-hidden="true" class="text-[10px]">▾</span>
-                </button>
-              )}
+          {clipOpen && showing && (
+            <ClipboardPopover
+              name={c.name}
+              frame={frame.current}
+              remote={remoteClip}
+              onClose={closeClip}
+              onSend={(text) => {
+                sendClipboard(frame.current, text);
+                notify(`On ${c.name}'s clipboard now`);
+                closeClip();
+              }}
             />
           )}
-          {running && (
-            <button type="button" aria-haspopup="dialog" aria-label="Download" title="Download files" class={cx(barButton, "px-2 max-sm:hidden", downloadOpen && pressed)} onClick={() => setDownloadOpen(true)}>
-              <FolderIcon />
-            </button>
-          )}
-          <Menu
-            items={moreItems}
-            onClose={refocus}
-            trigger={({ toggle, open }) => (
-              <button type="button" aria-label="More" aria-haspopup="menu" aria-expanded={open} class={cx(barButton, open && pressed)} onClick={toggle}>
-                ⋯
-              </button>
-            )}
-          />
-        </div>
-        {viewersOpen && (c.viewers.length > 0 || c.forwards.length > 0 || c.agents.length > 0) && (
-          <ViewersPopover name={c.name} viewers={c.viewers} mics={c.mics} forwards={c.forwards} agents={c.agents} onClose={closeViewers} />
-        )}
-        {clipOpen && showing && (
-          <ClipboardPopover
-            name={c.name}
-            frame={frame.current}
-            remote={remoteClip}
-            onClose={closeClip}
-            onSend={(text) => {
-              sendClipboard(frame.current, text);
-              notify(`On ${c.name}'s clipboard now`);
-              closeClip();
-            }}
-          />
-        )}
-      </div>
+        </>,
+        slots.controls,
+      )}
       {showing && touchControls && <TouchControls keyboard={keyboard} trackpad={trackpad} zoom={zoom}
         onKeyboard={toggleKeyboard} onMode={chooseTouchMode} onFit={() => setZoom(1)} onKey={sendKeys} />}
       {!running ? (

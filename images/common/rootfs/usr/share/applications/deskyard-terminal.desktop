@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
 Name=Deskyard Terminal
-Comment=Open a new shared terminal
-Exec=deskyard terminal-new
+Comment=Join a shared terminal session or open a new one
+Exec=deskyard terminal-pick
 Icon=utilities-terminal
 Terminal=true
 Categories=System;TerminalEmulator;

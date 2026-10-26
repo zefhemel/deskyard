@@ -32,8 +32,8 @@
     scrollbar-gutter: stable;
     background: var(--color-ground);
   }
-  /* Desktop and terminal pages own their viewports; no application scrollbar gutter. */
-  html:has([data-desktop-page], [data-terminal-page]) {
+  /* The environment page owns its viewport; no application scrollbar gutter. */
+  html:has([data-desktop-page]) {
     scrollbar-gutter: auto;
   }
   body {

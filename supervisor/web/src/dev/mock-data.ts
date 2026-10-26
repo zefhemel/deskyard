@@ -50,6 +50,7 @@ function environment(c: Partial<Environment> & { name: string }): Environment {
     viewers: [],
     mics: [],
     terminal: true,
+    terminals: [],
     forwards: [],
     agents: [],
     tokens: 0,
@@ -72,6 +73,7 @@ export const environments: Environment[] = [
       { token: "My laptop", direction: "out", port: 5173 },
     ],
     agents: [agent("My laptop", "zef", false, 2), agent("a terminal", "", true, 4), agent("Work laptop", "anna", false, 270)],
+    terminals: [{ name: "main", clients: 1, command: "bash" }, { name: "terminal-1", clients: 0, command: "htop" }, { name: "build", clients: 2, command: "zsh" }],
     tokens: 2,
     stats: { cpuPercent: 34, memBytes: 1.4 * GB, memLimit: 2 * GB },
   }),
@@ -81,6 +83,7 @@ export const environments: Environment[] = [
     settings: { dockerAccess: false, memoryBytes: 0, nanoCpus: 0, vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: [{ name: "photos", readOnly: true }] },
     access: ["anna", "sam"],
     viewers: ["anna"],
+    terminals: [{ name: "main", clients: 0, command: "bash" }],
     stats: { cpuPercent: 8, memBytes: 0.9 * GB, memLimit: 16 * GB },
   }),
   environment({

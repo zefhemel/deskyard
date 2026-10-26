@@ -1,10 +1,15 @@
+import { createPortal } from "preact/compat";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import "./terminal.css";
 import { api } from "../api.ts";
-import { useEnvironment } from "../live.tsx";
+import { Menu, type MenuItem } from "../components/menu.tsx";
+import { notify } from "../components/toast.tsx";
+import { cx } from "../components/ui.tsx";
+import { ClipboardIcon, KeyboardIcon, TextSizeIcon } from "../desktop/bar-icons.tsx";
+import { barButton, type BarSlots, type Conn, ConnDot, panelId, pressed as pressedClass, tabId, useTabHooks } from "../desktop/tabs.tsx";
 import { TerminalConnection, type Socket } from "./connection.ts";
 import {
   binaryBytes,
@@ -12,106 +17,57 @@ import {
   OneShotModifiers,
   type Modifiers,
 } from "./keys.ts";
-import { KeyBar } from "./key-bar.tsx";
-import { SessionPicker } from "./session-picker.tsx";
+import { KeyBar, terminalKeys } from "./key-bar.tsx";
 import { terminalLayout } from "./viewport.ts";
 
-export function TerminalPage({ name }: { name: string }) {
-  const environment = useEnvironment(name);
-  const initial = new URLSearchParams(location.search).get("session") ?? "main";
-  const [session, setSession] = useState(initial);
-  const [revision, setRevision] = useState(0);
-  const shell = useRef<HTMLDivElement>(null);
-  const insets = useRef<HTMLDivElement>(null);
-  const generation = useRef("");
-  useEffect(() => {
-    document.title = `${name} · Terminal`;
-    const viewport = window.visualViewport;
-    const size = () => {
-      const element = shell.current;
-      if (!element) return;
-      const height = viewport?.height ?? window.innerHeight;
-      element.style.height = `${height}px`;
-      const safeArea = insets.current && getComputedStyle(insets.current);
-      const layout = terminalLayout(height,
-        parseFloat(safeArea?.paddingTop ?? "0"),
-        parseFloat(safeArea?.paddingBottom ?? "0"));
-      element.dataset.compact = String(layout !== "full");
-      element.dataset.layout = layout;
-      element.style.top = `${viewport?.offsetTop ?? 0}px`;
-    };
-    size();
-    viewport?.addEventListener("resize", size);
-    viewport?.addEventListener("scroll", size);
-    window.addEventListener("resize", size);
-    return () => {
-      viewport?.removeEventListener("resize", size);
-      viewport?.removeEventListener("scroll", size);
-      window.removeEventListener("resize", size);
-    };
-  }, [name]);
-  const valid = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(session);
-  return (
-    <div ref={shell} data-terminal-page class="terminal-page">
-      <div ref={insets} class="terminal-insets" aria-hidden="true" />
-      <div class="terminal-too-short" role="status">Rotate to portrait or dismiss the keyboard to use the terminal.</div>
-      <header class="terminal-header">
-        <a href="/" aria-label="Environments">
-          ‹
-        </a>
-        <strong>{name}</strong>
-        <a href={`/${name}/`}>Desktop</a>
-        <SessionPicker key={name} name={name} session={session} onSelect={value => {
-          history.replaceState(null, "", `/${name}/terminal/?session=${encodeURIComponent(value)}`);
-          setSession(value);
-          setRevision(0);
-        }} />
-      </header>
-      {!valid ? (
-        <p class="terminal-notice">
-          Invalid session. Use 1–64 letters, digits, underscores or hyphens,
-          starting with a letter or digit.
-        </p>
-      ) : environment === undefined ? (
-        <p class="terminal-notice">Loading environment…</p>
-      ) : !environment ? (
-        <p class="terminal-notice">
-          Environment not found, or you no longer have access.
-        </p>
-      ) : !environment.terminal ? (
-        <p class="terminal-notice">
-          Upgrade this environment's image to use shared terminals.{" "}
-          <a href={`/environments/${name}`}>Environment settings</a>
-        </p>
-      ) : environment.state !== "running" ? (
-        <p class="terminal-notice">
-          Environment is {environment.state}.{" "}
-          <a href={`/environments/${name}`}>Open environment details</a>
-        </p>
-      ) : (
-        <TerminalPane
-          key={`${name}:${session}:${revision}`}
-          name={name}
-          generation={generation}
-          session={session}
-          reopen={() => setRevision((n) => n + 1)}
-        />
-      )}
-    </div>
-  );
+// Text size, remembered per browser and shared by every open terminal tab.
+const FONT_KEY = "deskyard.terminal.fontSize";
+const FONT_EVENT = "deskyard-terminal-font";
+const fontSizes = [12, 14, 16, 18, 20];
+function loadFontSize(): number {
+  try {
+    const v = Number(localStorage.getItem(FONT_KEY));
+    return fontSizes.includes(v) ? v : 16;
+  } catch {
+    return 16;
+  }
+}
+function chooseFontSize(size: number) {
+  try {
+    localStorage.setItem(FONT_KEY, String(size));
+  } catch {
+    // not remembered
+  }
+  window.dispatchEvent(new CustomEvent(FONT_EVENT, { detail: size }));
 }
 
-function TerminalPane({
-  name,
-  session,
-  generation,
-  reopen,
-}: {
+const finePointer = () => !matchMedia("(pointer: coarse)").matches;
+
+const connOf = (state: string): Conn => (state === "connected" ? "connected" : state === "connecting" || state === "retrying" ? "connecting" : "disconnected");
+
+export interface TerminalPaneProps {
   name: string;
   session: string;
-  generation: { current: string };
-  reopen: () => void;
-}) {
+  /** The shown tab; hidden panes stay mounted and connected. */
+  active: boolean;
+  /** An explicit open: the first attach may create the session. */
+  create: boolean;
+  slots: BarSlots;
+  /** Whether the session is still listed, checked before reconnecting. */
+  alive: () => boolean;
+  onState: (session: string, state: string) => void;
+  /** The session ended ("ended"), or this attachment's shell exited ("exited"). */
+  onEnded: (session: string, how: "ended" | "exited") => void;
+}
+
+/** One terminal tab: an xterm attached to a shared session, with its own bar controls. */
+export function TerminalPane({ name, session, active, create, slots, alive, onState, onEnded }: TerminalPaneProps) {
+  const pane = useRef<HTMLDivElement>(null);
+  const insets = useRef<HTMLDivElement>(null);
+  const generation = useRef("");
+  const [revision, setRevision] = useState(0);
+  const callbacks = useRef({ alive, onState, onEnded });
+  callbacks.current = { alive, onState, onEnded };
   const host = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal | null>(null);
   const connection = useRef<TerminalConnection | null>(null);
@@ -120,11 +76,54 @@ function TerminalPane({
   const [state, setState] = useState("connecting");
   const [message, setMessage] = useState("");
   const [warning, setWarning] = useState("");
+  const [fontSize, setFontSize] = useState(loadFontSize);
+  const measureRef = useRef<() => void>(() => {});
+
+  // The layout tier follows the visible page's height, bar included: below the
+  // compact budget ("ultra") the bar moves beside the key row and below the
+  // minimum it is covered (terminal.css), so the pane's own height would depend
+  // on the tier it picks.
+  useEffect(() => {
+    const element = pane.current;
+    if (!element) return;
+    const page = element.closest<HTMLElement>("[data-desktop-page]");
+    const size = () => {
+      if (element.hidden) return;
+      const safeArea = insets.current && getComputedStyle(insets.current);
+      const layout = terminalLayout(page?.clientHeight ?? element.clientHeight + 46,
+        parseFloat(safeArea?.paddingTop ?? "0"),
+        parseFloat(safeArea?.paddingBottom ?? "0"));
+      element.dataset.compact = String(layout !== "full");
+      element.dataset.layout = layout;
+    };
+    size();
+    const observer = new ResizeObserver(size);
+    observer.observe(element);
+    if (page) observer.observe(page);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const change = (e: Event) => setFontSize((e as CustomEvent<number>).detail);
+    window.addEventListener(FONT_EVENT, change);
+    return () => window.removeEventListener(FONT_EVENT, change);
+  }, []);
+  useEffect(() => {
+    const term = terminal.current;
+    if (!term || term.options.fontSize === fontSize) return;
+    term.options.fontSize = fontSize;
+    measureRef.current();
+  }, [fontSize]);
+
+  useEffect(() => {
+    if (active && finePointer()) requestAnimationFrame(() => terminal.current?.focus());
+  }, [active]);
+
   useEffect(() => {
     if (!host.current) return;
     const term = new Terminal({
       fontFamily: '"IBM Plex Mono", monospace',
-      fontSize: 16,
+      fontSize: loadFontSize(),
       cursorBlink: true,
       theme: {
         background: "#101822",
@@ -178,6 +177,7 @@ function TerminalPane({
         }
       });
     };
+    measureRef.current = measure;
     // Initial fit precedes the first WebSocket dimensions; later fitting is observer driven.
     const proposed = fit.proposeDimensions();
     if (proposed)
@@ -193,6 +193,9 @@ function TerminalPane({
     endpoint.searchParams.set("session", session);
     const transport = new TerminalConnection({
       url: endpoint.href,
+      // Reopening only joins: the session may have ended meanwhile.
+      create: create && revision === 0,
+      alive: () => callbacks.current.alive(),
       initialGeneration: generation.current,
       generation: (value) => {
         generation.current = value;
@@ -221,6 +224,8 @@ function TerminalPane({
         if (disposed) return;
         setState(next);
         setMessage(text ?? "");
+        callbacks.current.onState(session, next);
+        if (next === "ended" || next === "exited") callbacks.current.onEnded(session, next);
         if (next !== "connected") {
           modifiers.current.reset();
           setPressed(modifiers.current.value);
@@ -265,9 +270,87 @@ function TerminalPane({
       terminal.current = null;
       connection.current = null;
     };
-  }, [name, session]);
+  }, [name, session, revision]);
+
+  const sendKey = (key: string, ctrl?: boolean) => {
+    let text: string;
+    if (key === "History") {
+      modifiers.current.reset();
+      text = encodeKey(key);
+    } else if (ctrl) {
+      modifiers.current.reset();
+      text = encodeKey(key, { ctrl: true, alt: false });
+    } else
+      text = modifiers.current.key(
+        key,
+        terminal.current?.modes.applicationCursorKeysMode,
+      );
+    setPressed(modifiers.current.value);
+    connection.current?.input(new TextEncoder().encode(text));
+  };
+  const refocus = () => {
+    if (finePointer()) window.setTimeout(() => terminal.current?.focus(), 0);
+  };
+  const paste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) terminal.current?.paste(text);
+    } catch {
+      notify("Couldn't read the clipboard here. Paste with Ctrl+Shift+V (⌘V on a Mac) instead.", { error: true });
+    }
+    refocus();
+  };
+  const keyItems: MenuItem[] = terminalKeys.map(([key, , label]) => ({
+    label,
+    disabled: state !== "connected",
+    onSelect: () => sendKey(key, label.startsWith("Ctrl+")),
+  }));
+  const sizeItems: MenuItem[] = fontSizes.map((size) => ({
+    label: `Text size: ${size}px`,
+    checked: size === fontSize,
+    onSelect: () => chooseFontSize(size),
+  }));
+  // On phones Text size is in ⋯; the on-screen key bar has the keys.
+  useTabHooks(slots, active, {
+    menu: () => sizeItems.map((k, i) => ({ ...k, separated: i === 0, class: "sm:hidden" })),
+    refocus,
+  });
+
   return (
-    <>
+    <div ref={pane} role="tabpanel" id={panelId(session)} aria-labelledby={tabId(session)} data-terminal-pane={session} class="terminal-pane" hidden={!active}>
+      {active && slots.dot && createPortal(<ConnDot state={connOf(state)} />, slots.dot)}
+      {active && slots.controls && createPortal(
+        <>
+          <button type="button" aria-label="Paste" title="Paste the clipboard into the terminal" class={cx(barButton, "px-2")} disabled={state !== "connected"} onClick={() => void paste()}>
+            <ClipboardIcon />
+          </button>
+          <Menu
+            class="max-sm:hidden"
+            items={keyItems}
+            onClose={refocus}
+            trigger={({ toggle, open }) => (
+              <button type="button" aria-label="Keys" aria-haspopup="menu" aria-expanded={open} title="Send keys" class={cx(barButton, "px-2", open && pressedClass)} onClick={toggle}>
+                <KeyboardIcon />
+                <span aria-hidden="true" class="text-[10px]">▾</span>
+              </button>
+            )}
+          />
+          <Menu
+            class="max-sm:hidden"
+            items={sizeItems}
+            onClose={refocus}
+            trigger={({ toggle, open }) => (
+              <button type="button" aria-label="Text size" aria-haspopup="menu" aria-expanded={open} title="Text size" class={cx(barButton, "px-2", open && pressedClass)} onClick={toggle}>
+                <TextSizeIcon />
+                <span aria-hidden="true" class="text-[10px]">▾</span>
+              </button>
+            )}
+          />
+        </>,
+        slots.controls,
+      )}
+      <div ref={insets} class="terminal-insets" aria-hidden="true" />
+      <div class="terminal-too-short" role="status">Rotate to portrait or dismiss the keyboard to use the terminal.</div>
       <div class="terminal-status" role="status">
         <span data-terminal-state={state}>
           {state === "connected"
@@ -276,7 +359,7 @@ function TerminalPane({
               (state === "retrying" ? "Reconnecting…" : "Connecting…")}
         </span>
         {(state === "exited" || state === "error") && (
-          <button type="button" onClick={reopen}>
+          <button type="button" onClick={() => setRevision((n) => n + 1)}>
             Reopen terminal
           </button>
         )}
@@ -304,23 +387,8 @@ function TerminalPane({
           setPressed(modifiers.current.value);
         }}
         onFocus={() => terminal.current?.focus()}
-        onKey={(key, ctrl) => {
-          let text: string;
-          if (key === "History") {
-            modifiers.current.reset();
-            text = encodeKey(key);
-          } else if (ctrl) {
-            modifiers.current.reset();
-            text = encodeKey(key, { ctrl: true, alt: false });
-          } else
-            text = modifiers.current.key(
-              key,
-              terminal.current?.modes.applicationCursorKeysMode,
-            );
-          setPressed(modifiers.current.value);
-          connection.current?.input(new TextEncoder().encode(text));
-        }}
+        onKey={sendKey}
       />
-    </>
+    </div>
   );
 }

@@ -1,24 +1,22 @@
-.terminal-page {
-  position: fixed;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: 100dvh;
+.terminal-pane {
+  position: relative;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   background: #101822;
   color: #e6ebf1;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0
-    env(safe-area-inset-left);
+  padding: 0 env(safe-area-inset-right) 0 env(safe-area-inset-left);
 }
-.terminal-page button,
-.terminal-page a,
-.terminal-page input {
+.terminal-pane[hidden] {
+  display: none;
+}
+.terminal-pane button,
+.terminal-pane input {
   font: inherit;
 }
-.terminal-page button,
-.terminal-header a {
+.terminal-pane button {
   min-height: 44px;
   min-width: 44px;
   display: inline-flex;
@@ -28,55 +26,21 @@
   color: inherit;
   text-decoration: none;
   cursor: pointer;
-}
-.terminal-page button {
   border: 1px solid #3d4b5e;
   background: #1e2b3d;
   padding: 0 12px;
   flex-shrink: 0;
 }
-.terminal-page button:hover,
-.terminal-header a:hover {
+.terminal-pane button:hover {
   background: #30425c;
 }
-.terminal-page button:disabled {
+.terminal-pane button:disabled {
   opacity: 0.45;
   cursor: default;
 }
-.terminal-page :focus-visible {
+.terminal-pane :focus-visible {
   outline: 2px solid #9ec0ff;
   outline-offset: -2px;
-}
-.terminal-header {
-  display: flex;
-  flex: none;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  background: #1a2739;
-  padding: 3px 8px;
-  font-size: 14px;
-}
-.terminal-header strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 35vw;
-}
-.terminal-header form {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-}
-.terminal-header input {
-  width: 9ch;
-  min-height: 44px;
-  padding: 5px 7px;
-  background: #101822;
-  color: #e6ebf1;
-  border: 1px solid #3d4b5e;
-  border-radius: 7px;
-  font-size: 16px;
 }
 .terminal-status {
   flex: none;
@@ -88,9 +52,9 @@
   font-size: 13px;
   color: #bac8db;
 }
-.terminal-status [data-terminal-state="connected"]::before {
-  content: "● ";
-  color: #3ac08a;
+/* The bar's dot shows a connected terminal; the line only explains trouble. */
+.terminal-status:has([data-terminal-state="connected"]) {
+  display: none;
 }
 .terminal-warning {
   flex: none;
@@ -101,14 +65,6 @@
   background: #3b321e;
   padding-left: 10px;
   font-size: 13px;
-}
-.terminal-notice {
-  margin: auto;
-  padding: 24px;
-  max-width: 600px;
-}
-.terminal-notice a {
-  color: #9ec0ff;
 }
 .terminal-scroll {
   flex: 1;
@@ -132,6 +88,8 @@
 .terminal-keybar {
   flex: none;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
   background: #1a2739;
   padding: 4px 6px max(4px, env(safe-area-inset-bottom));
   font-size: 13px;
@@ -146,7 +104,11 @@
   scrollbar-width: thin;
   touch-action: pan-x;
 }
+.terminal-shortcuts {
+  order: 0;
+}
 .terminal-modifiers {
+  order: 1;
   margin-top: 4px;
 }
 .terminal-keybar button {
@@ -162,123 +124,99 @@
   font-size: 12px;
   padding-left: 6px;
 }
-@media (max-width: 480px) {
-  .terminal-header {
-    gap: 2px;
-  }
-  .terminal-header form {
-    width: 100%;
-    margin: 0;
-  }
-  .terminal-header input {
-    flex: 1;
-  }
-}
-.terminal-keybar {
-  display: flex;
-  flex-direction: column;
-}
-.terminal-shortcuts {
-  order: 0;
-}
-.terminal-modifiers {
-  order: 1;
-}
-.terminal-page[data-compact="true"] .terminal-keybar {
+.terminal-pane[data-compact="true"] .terminal-keybar {
   flex-direction: row;
   overflow-x: auto;
   gap: 4px;
   touch-action: pan-x;
 }
-.terminal-page[data-compact="true"] .terminal-modifiers,
-.terminal-page[data-compact="true"] .terminal-shortcuts {
+.terminal-pane[data-compact="true"] .terminal-modifiers,
+.terminal-pane[data-compact="true"] .terminal-shortcuts {
   display: contents;
 }
-.terminal-page[data-compact="true"] .terminal-keyhint {
+.terminal-pane[data-compact="true"] .terminal-keyhint {
   display: none;
 }
-.terminal-page[data-compact="true"]
-  .terminal-status:has([data-terminal-state="connected"]) {
-  display: none;
-}
-.terminal-page[data-compact="true"] .terminal-header {
-  flex-wrap: nowrap;
-}
-.terminal-page[data-compact="true"] .terminal-header strong {
-  max-width: 20vw;
-}
-.terminal-page[data-compact="true"] .terminal-header form {
-  width: min(350px, calc(100vw - 20px));
-}
-.terminal-page[data-compact="true"] .terminal-warning {
+.terminal-pane[data-compact="true"] .terminal-warning {
   position: absolute;
-  top: 50px;
+  top: 4px;
   right: 8px;
   left: 8px;
   z-index: 4;
   max-height: 80px;
   overflow: auto;
 }
-.terminal-session-picker { margin-left: auto; }
-.terminal-session-picker > button { max-width: 45vw; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.terminal-session-panel {
-  position: absolute; z-index: 6; top: 52px; right: 8px;
-  width: min(420px, calc(100% - 16px)); max-height: calc(100% - 60px);
-  display: flex; flex-direction: column; gap: 6px; padding: 8px;
-  border: 1px solid #3d4b5e; border-radius: 7px; background: #1a2739;
-  box-shadow: 0 6px 24px #0008; font-size: 14px;
+.terminal-too-short {
+  display: none;
 }
-.terminal-session-actions { display: flex; align-items: center; gap: 6px; flex: none; }
-.terminal-session-actions strong { flex: 1; max-width: none; }
-.terminal-session-feedback:empty { display: none; }
-.terminal-session-error { display: flex; align-items: center; gap: 6px; flex: none; }
-.terminal-session-list { min-height: 0; overflow: auto; overscroll-behavior: contain; list-style: none; margin: 0; padding: 0; }
-.terminal-session-list button { width: 100%; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
-.terminal-session-list button span:first-child { overflow-wrap: anywhere; }
-.terminal-session-list [aria-current="true"] { border-color: #9ec0ff; background: #30425c; }
-.terminal-session-panel .terminal-session-create { display: block; width: 100%; margin: 0; flex: none; }
-.terminal-session-create > div { display: flex; gap: 6px; }
-.terminal-session-create input { min-height: 44px; padding: 5px 7px; background: #101822; color: #e6ebf1; border: 1px solid #3d4b5e; border-radius: 7px; font-size: 16px; flex: 1; min-width: 0; width: 10ch; }
-.terminal-session-create label, .terminal-session-create small { display: block; margin: 3px 0; }
-.terminal-too-short { display: none; }
-/* With little height, all session actions share a single scrollable row. */
-.terminal-page[data-compact="true"] .terminal-session-panel {
-  top: 0; left: 0; right: 0; width: 100%; max-height: 100%; height: 100%;
-  flex-direction: row; align-items: center; gap: 8px; overflow-x: auto;
-  border-radius: 0; padding: 0; white-space: nowrap;
+.terminal-pane[data-layout="ultra"] .terminal-keybar {
+  height: 44px;
+  padding: 0;
+  gap: 4px;
 }
-.terminal-page[data-compact="true"] .terminal-session-actions,
-.terminal-page[data-compact="true"] .terminal-session-list,
-.terminal-page[data-compact="true"] .terminal-session-create,
-.terminal-page[data-compact="true"] .terminal-session-error { flex: none; }
-.terminal-page[data-compact="true"] .terminal-session-actions strong,
-.terminal-page[data-compact="true"] .terminal-session-create label,
-.terminal-page[data-compact="true"] .terminal-session-create small { display: none; }
-.terminal-page[data-compact="true"] .terminal-session-list { display: flex; overflow: visible; gap: 6px; }
-.terminal-page[data-compact="true"] .terminal-session-list button { margin: 0; }
-.terminal-page[data-compact="true"] .terminal-session-create { width: 320px; }
-.terminal-page[data-layout="ultra"] { padding-top: 0; }
-.terminal-page[data-layout="ultra"] .terminal-header {
-  position: absolute; bottom: 0; left: 0; z-index: 2; height: 44px;
-  max-width: min(50%, 300px); padding: 0; gap: 4px; overflow-x: auto;
+.terminal-pane[data-layout="ultra"] .terminal-scroll {
+  padding: 0;
 }
-.terminal-page[data-layout="ultra"] .terminal-header > strong { display: none; }
-.terminal-page[data-layout="ultra"] .terminal-header > a { flex: none; }
-.terminal-page[data-layout="ultra"] .terminal-session-panel { position: absolute; height: 44px; top: auto; bottom: 0; }
-.terminal-page[data-layout="ultra"] .terminal-keybar {
-  height: 44px; padding: 0 0 0 min(50%, 300px); gap: 4px;
+.terminal-pane[data-layout="ultra"] .terminal-status,
+.terminal-pane[data-layout="ultra"] .terminal-warning {
+  position: absolute;
+  bottom: 0;
+  top: auto;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  height: 44px;
+  padding: 0 6px;
+  background: #1a2739;
+  overflow-x: auto;
+  white-space: nowrap;
 }
-.terminal-page[data-layout="ultra"] .terminal-scroll { padding: 0; }
-.terminal-page[data-layout="ultra"] .terminal-status,
-.terminal-page[data-layout="ultra"] .terminal-warning {
-  position: absolute; bottom: 0; top: auto; left: min(50%, 300px); right: 0; z-index: 3;
-  height: 44px; padding: 0 6px; background: #1a2739; overflow-x: auto; white-space: nowrap;
+/* Below the compact budget the environment bar leaves the flow and shares the
+   bottom 44px row with the keys, as one sideways-scrolling strip on the left,
+   so the terminal keeps its readable row. Below the minimum the instruction
+   covers the whole page. */
+[data-desktop-page]:has(.terminal-pane[data-layout="ultra"]:not([hidden])) [data-environment-bar] {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  z-index: 5;
+  height: 44px;
+  min-height: 0;
+  max-width: min(50%, 300px);
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0;
+  gap: 0;
+}
+[data-desktop-page]:has(.terminal-pane[data-layout="ultra"]:not([hidden])) [data-environment-bar] > * {
+  flex: none;
+  order: 0;
+  flex-basis: auto;
+  height: 44px;
+}
+.terminal-pane[data-layout="ultra"] .terminal-keybar {
+  padding-left: min(50%, 300px);
+}
+.terminal-pane[data-layout="ultra"] .terminal-status,
+.terminal-pane[data-layout="ultra"] .terminal-warning {
+  left: min(50%, 300px);
+}
+[data-desktop-page]:has(.terminal-pane[data-layout="insufficient"]:not([hidden])) [data-environment-bar] {
+  display: none;
 }
 /* Keep xterm, transport and its focused textarea alive; cover and clip the
    impossible layout without hiding/blurring the native input on rotation. */
-.terminal-page[data-layout="insufficient"] .terminal-too-short {
-  display: flex; position: absolute; inset: 0; z-index: 20; align-items: center;
-  padding: 0 6px; background: #101822; font-size: 13px; line-height: 16px;
+.terminal-pane[data-layout="insufficient"] .terminal-too-short {
+  display: flex;
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  align-items: center;
+  padding: 0 6px;
+  background: #101822;
+  font-size: 13px;
+  line-height: 16px;
 }
 
 /* Resolve environment values independently of the chosen layout tier. */

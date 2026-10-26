@@ -21,6 +21,10 @@ interface Options {
   state: (state: string, message?: string) => void;
   warning: (message: string) => void;
   schedule?: (callback: () => void, ms: number) => () => void;
+  /** Ask to create the session: only an explicit open does, and only until the first attach. */
+  create?: boolean;
+  /** Whether the session is still listed; checked before every reconnect. */
+  alive?: () => boolean;
 }
 const backoff = [500, 1000, 2000, 4000, 8000];
 /** One page attachment: no pending input, and ACK ownership stays with its socket. */
@@ -31,6 +35,8 @@ export class TerminalConnection {
   private attempt = 0;
   private starting = false;
   private generation = "";
+  /** Attached at least once: later sockets are reconnects and only join. */
+  private attached = false;
   private cancelRetry: (() => void) | undefined;
   private cancelHandshake: (() => void) | undefined;
   private options: Options;
@@ -45,6 +51,7 @@ export class TerminalConnection {
   }
   async start() {
     if (this.stopped || this.starting || this.socket) return;
+    if (this.gone()) return;
     this.starting = true;
     this.options.state("connecting");
     try {
@@ -73,7 +80,7 @@ export class TerminalConnection {
     if (this.stopped) return;
     let socket: Socket;
     try {
-      socket = this.options.socket(this.options.url);
+      socket = this.options.socket(this.url());
     } catch {
       this.retry();
       return;
@@ -122,15 +129,18 @@ export class TerminalConnection {
           this.generation = message.generation;
           this.options.generation?.(this.generation);
           this.ready = true;
+          this.attached = true;
           // The viewport may have changed while the attachment was starting.
           this.resize();
           this.attempt = 0;
           this.cancelHandshake?.();
           this.options.state("connected");
-        } else if (Number.isInteger(message.exit))
+        } else if (message.ended === true)
+          this.finish("ended", "Session ended.");
+        else if (Number.isInteger(message.exit))
           this.finish(
             "exited",
-            `Shell exited (${message.exit}). Reopen to start a shell.`,
+            `Shell exited (${message.exit}).`,
           );
         else if (typeof message.error === "string")
           this.finish("error", message.error);
@@ -147,10 +157,23 @@ export class TerminalConnection {
       this.socket = null;
       this.ready = false;
       this.cancelHandshake?.();
+      if (this.gone()) return;
       if ([1000, 1002, 1003, 1007, 1008, 1009].includes(event.code))
         this.finish("error", "Terminal closed. Check your access or reopen.");
       else this.retry();
     };
+  }
+  private url(): string {
+    if (!this.options.create || this.attached) return this.options.url;
+    const url = new URL(this.options.url);
+    url.searchParams.set("create", "1");
+    return url.href;
+  }
+  /** A reconnect to a session that's no longer listed ends instead. */
+  private gone(): boolean {
+    if (!this.attached || this.options.alive?.() !== false) return false;
+    this.finish("ended", "Session ended.");
+    return true;
   }
   private retry() {
     this.ready = false;

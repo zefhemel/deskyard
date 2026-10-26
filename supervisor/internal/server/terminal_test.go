@@ -31,16 +31,28 @@ type terminalEngine struct {
 	outW      *io.PipeWriter
 	state     string
 	supported bool
+	// leases receives each lease argv; leaseOut is what the lease prints.
+	leases   chan []string
+	leaseOut string
 }
 
 func newTerminalEngine() *terminalEngine {
 	r, w := io.Pipe()
-	return &terminalEngine{spec: make(chan engine.ExecSpec, 1), input: make(chan string, 8), resize: make(chan [2]uint, 8), closed: make(chan struct{}), outR: r, outW: w, state: "running", supported: true}
+	return &terminalEngine{spec: make(chan engine.ExecSpec, 1), input: make(chan string, 8), resize: make(chan [2]uint, 8), closed: make(chan struct{}), outR: r, outW: w, state: "running", supported: true, leases: make(chan []string, 8), leaseOut: "prepared\nready\n"}
 }
 func (e *terminalEngine) Inspect(ctx context.Context, id string) (engine.Container, error) {
 	c, err := e.fakeEngine.Inspect(ctx, id)
 	c.State = e.state
 	return c, err
+}
+func (e *terminalEngine) List(ctx context.Context, l map[string]string) ([]engine.Container, error) {
+	cs, err := e.fakeEngine.List(ctx, l)
+	for i := range cs {
+		if cs[i].ID == alice.ID {
+			cs[i].State = e.state
+		}
+	}
+	return cs, err
 }
 func (e *terminalEngine) ImageInspect(context.Context, string) (engine.Image, error) {
 	labels := map[string]string{}
@@ -64,7 +76,14 @@ func (i terminalInput) Close() error { return nil }
 func (e *terminalEngine) Exec(ctx context.Context, _ string, s engine.ExecSpec) (*engine.Process, error) {
 	e.calls.Add(1)
 	if len(s.Cmd) > 1 && s.Cmd[1] == "terminal-lease" {
-		return &engine.Process{Stdin: terminalDiscardInput{}, Stdout: strings.NewReader("prepared\nready\n"), Wait: func() (int, error) { return 0, nil }, Close: func() {}}, nil
+		select {
+		case e.leases <- s.Cmd:
+		default:
+		}
+		return &engine.Process{Stdin: terminalDiscardInput{}, Stdout: strings.NewReader(e.leaseOut), Wait: func() (int, error) { return 0, nil }, Close: func() {}}, nil
+	}
+	if len(s.Cmd) > 1 && s.Cmd[1] == "terminal-list" { // the session cache's refreshes
+		return &engine.Process{Stdout: strings.NewReader(""), Stderr: strings.NewReader(""), Wait: func() (int, error) { return 0, nil }, Close: func() {}}, nil
 	}
 	e.spec <- s
 	var once sync.Once
@@ -80,9 +99,13 @@ func (e *terminalEngine) Exec(ctx context.Context, _ string, s engine.ExecSpec) 
 }
 func terminalDial(t *testing.T, ts *httptest.Server, c *http.Client) *websocket.Conn {
 	t.Helper()
+	return terminalDialQuery(t, ts, c, "session=main")
+}
+func terminalDialQuery(t *testing.T, ts *httptest.Server, c *http.Client, query string) *websocket.Conn {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	ws, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+"/api/environments/alice/terminal", &websocket.DialOptions{HTTPClient: c, HTTPHeader: http.Header{"Origin": []string{ts.URL}}})
+	ws, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+"/api/environments/alice/terminal?"+query, &websocket.DialOptions{HTTPClient: c, HTTPHeader: http.Header{"Origin": []string{ts.URL}}})
 	if err != nil {
 		t.Fatalf("dial %v %v", resp, err)
 	}
@@ -123,7 +146,7 @@ func TestTerminalHTTPGuards(t *testing.T) {
 		supported                          bool
 		want                               int
 	}{
-		{"anonymous", "", "same", "", "running", true, 401}, {"missing origin", "admin", "", "", "running", true, 403}, {"wrong origin", "admin", "http://elsewhere", "", "running", true, 403}, {"invalid scheme", "admin", "ftp", "", "running", true, 403}, {"path origin", "admin", "path", "", "running", true, 403}, {"no access", "anna", "same", "", "running", true, 404}, {"bad name", "admin", "same", "a.b", "running", true, 400}, {"stopped", "admin", "same", "", "exited", true, 409}, {"old image", "admin", "same", "", "running", false, 409},
+		{"anonymous", "", "same", "main", "running", true, 401}, {"missing origin", "admin", "", "main", "running", true, 403}, {"wrong origin", "admin", "http://elsewhere", "main", "running", true, 403}, {"invalid scheme", "admin", "ftp", "main", "running", true, 403}, {"path origin", "admin", "path", "main", "running", true, 403}, {"no access", "anna", "same", "main", "running", true, 404}, {"bad name", "admin", "same", "a.b", "running", true, 400}, {"no session", "admin", "same", "", "running", true, 400}, {"stopped", "admin", "same", "main", "exited", true, 409}, {"old image", "admin", "same", "main", "running", false, 409},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := newTerminalEngine()
@@ -439,7 +462,7 @@ func TestTerminalRefusesLifecycleJoin(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Environments.Done("alice")
-	if got := status(t, login(t, ts, "admin"), "GET", ts.URL+"/api/environments/alice/terminal", ts.URL); got != 409 {
+	if got := status(t, login(t, ts, "admin"), "GET", ts.URL+"/api/environments/alice/terminal?session=main", ts.URL); got != 409 {
 		t.Fatalf("join during stop got %d", got)
 	}
 	if e.calls.Load() != 0 {
@@ -488,5 +511,39 @@ func TestTerminalSessionRecognition(t *testing.T) {
 	}
 	if _, ok := terminalSession([]string{"deskyard", "terminal-helper", "main"}, false); ok {
 		t.Fatal("non-TTY generic exec hijacked")
+	}
+}
+
+// A terminal answers tmux's attach-time queries (device attributes, colours)
+// in a burst right after ready, while the shell's stdin may not be reading
+// yet: that burst must queue rather than close the connection.
+func TestTerminalAttachBurstFitsInputQueue(t *testing.T) {
+	e := newTerminalEngine()
+	e.input = make(chan string)
+	_, ts := newTestServerWith(t, e)
+	ws := terminalDial(t, ts, login(t, ts, "admin"))
+	terminalReady(t, ws)
+	replies := []string{"\x1b[?1;2c", "\x1b[>0;276;0c", "\x1b]10;rgb:e6e6/ebeb/f1f1\x1b\\", "\x1b]11;rgb:1010/1818/2222\x1b\\", "a", "b", "c", "d"}
+	for _, r := range replies {
+		terminalWrite(t, ws, websocket.MessageBinary, r)
+	}
+	terminalWrite(t, ws, websocket.MessageText, `{"resize":[81,24]}`)
+	for i, want := range replies {
+		select {
+		case got := <-e.input:
+			if got != want {
+				t.Fatalf("input %d = %q, want %q", i, got, want)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("input %d never arrived", i)
+		}
+	}
+	select {
+	case got := <-e.resize:
+		if got != [2]uint{81, 24} {
+			t.Fatalf("resize %v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("resize never arrived")
 	}
 }

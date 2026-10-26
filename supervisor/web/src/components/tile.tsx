@@ -1,7 +1,9 @@
 import { VPNStatus } from "./vpn.tsx";
-import type { Environment, Job } from "../api.ts";
+import { api, type Environment, type Job } from "../api.ts";
 import { limits, memoryOf, notice, statusKind, statusLine } from "../lib/format.ts";
 import { EnvironmentMenu } from "./environment-menu.tsx";
+import { notifyError } from "./toast.tsx";
+import { loadOrder, orderTabs } from "../lib/tab-order.ts";
 import { Monitor } from "./screen.tsx";
 import { cx, Meter, Status, Tag } from "./ui.tsx";
 
@@ -71,6 +73,49 @@ export function VolumesLine({ environment: c, admin }: { environment: Environmen
   );
 }
 
+/**
+ * A running environment's ways in: its desktop, each terminal session in this
+ * viewer's tab order (joining, never creating), and + to open a terminal.
+ */
+function SessionLinks({ environment: c }: { environment: Environment }) {
+  const sessions = c.terminals ?? [];
+  const order = orderTabs(sessions.map((t) => t.name), loadOrder(c.name));
+  const shown = order.length > 4 ? order.slice(0, 3) : order;
+  const clients = (name: string) => sessions.find((t) => t.name === name)?.clients ?? 0;
+  const hasMain = sessions.some((t) => t.name === "main");
+  // With main open, + makes a new session; the router mustn't see a link.
+  const openNew = async () => {
+    try {
+      const { name } = await api.createTerminal(c.name);
+      location.href = `/${c.name}/?terminal=${encodeURIComponent(name)}`;
+    } catch (err) {
+      notifyError(err);
+    }
+  };
+  return (
+    <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm" aria-label="Open">
+      <a href={`/${c.name}/`}>Desktop</a>
+      {shown.map((t) => (
+        <a key={t} href={`/${c.name}/?terminal=${encodeURIComponent(t)}`} class="inline-flex items-center gap-1" title={`Terminal ${t}`}>
+          {t}
+          {clients(t) > 0 && <span class="rounded-full bg-hairline px-1.5 text-[11px] text-muted" title={`${clients(t)} attached`}>{clients(t)}</span>}
+        </a>
+      ))}
+      {order.length > shown.length && <a href={`/${c.name}/`}>+{order.length - shown.length} more</a>}
+      {c.terminal &&
+        (hasMain ? (
+          <button type="button" class="cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-accent hover:underline" onClick={() => void openNew()} title="Open a new terminal session" aria-label="Open a new terminal session">
+            +
+          </button>
+        ) : (
+          <a href={`/${c.name}/?terminal=main&create=1`} title="Open a terminal" aria-label="Open a terminal">
+            {sessions.length ? "+" : "Terminal"}
+          </a>
+        ))}
+    </div>
+  );
+}
+
 export function Tile({ environment: c, job, now, admin }: { environment: Environment; job: Job | undefined; now: number; admin: boolean }) {
   const kind = statusKind(c);
   const busy = kind === "busy";
@@ -95,10 +140,7 @@ export function Tile({ environment: c, job, now, admin }: { environment: Environ
         </div>
         <NoticeLine environment={c} class="mt-2" />
         {c.state === "running" && (
-          <div class="mt-2 flex gap-3 text-sm">
-            <a href={`/${c.name}/`}>Desktop</a>
-            <a href={`/${c.name}/terminal/`}>Terminal</a>
-          </div>
+          <SessionLinks environment={c} />
         )}
         {c.state === "running" && <Meters environment={c} />}
         {c.state === "stopped" && <div class={cx("mt-2.5 text-[13px] text-muted")}>{limits(c.settings)}</div>}

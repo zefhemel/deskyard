@@ -159,7 +159,8 @@ func (s *Server) agentExec(w http.ResponseWriter, r *http.Request, c environment
 	s.Log.Info("agent exec", "environment", c.Name, "token", t.Name, "argv", activity.DisplayCommand(start.Argv), "tty", start.Tty)
 	var p *engine.Process
 	if session, shared := terminalSession(start.Argv, start.Tty); shared {
-		p, err = s.terminalProcess(ctx, c.Container.ID, session, start.Cols, start.Rows)
+		// `deskyard terminal NAME` is an explicit open: it creates the session.
+		p, err = s.terminalProcess(ctx, c.Container.ID, session, false, start.Cols, start.Rows)
 	} else {
 		p, err = s.Eng.Exec(ctx, c.Container.ID, engine.ExecSpec{
 			Cmd: start.Argv, User: "user", WorkDir: start.Cwd, Env: execEnvFor(start.Env),

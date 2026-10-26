@@ -30,7 +30,7 @@ func TestTerminalSessions(t *testing.T) {
 		supported                 bool
 		code, want                int
 	}{
-		{"list", "admin", "running", "zebra\nmain\n", true, 0, 200},
+		{"list", "admin", "running", "zebra\t0\tbash\nmain\t2\tvim\n", true, 0, 200},
 		{"empty", "admin", "running", "", true, 0, 200},
 		{"anonymous", "", "running", "", true, 0, 401},
 		{"no access", "anna", "running", "", true, 0, 404},
@@ -61,7 +61,7 @@ func TestTerminalSessions(t *testing.T) {
 			if tc.want < 500 && tc.want != 200 && e.calls.Load() != 0 {
 				t.Fatal("unauthorized exec")
 			}
-			if tc.name == "list" && strings.TrimSpace(string(b)) != `{"sessions":[{"name":"main"},{"name":"zebra"}]}` {
+			if tc.name == "list" && strings.TrimSpace(string(b)) != `{"sessions":[{"name":"main","clients":2,"command":"vim"},{"name":"zebra","clients":0,"command":"bash"}]}` {
 				t.Fatal(string(b))
 			}
 			if tc.name == "empty" && strings.TrimSpace(string(b)) != `{"sessions":[]}` {
@@ -94,7 +94,7 @@ func (e *terminalListPipeEngine) Exec(context.Context, string, engine.ExecSpec) 
 			if _, err := e.stderrW.Write([]byte(strings.Repeat("e", 2*65536))); err != nil {
 				return
 			}
-			e.stdoutW.Write([]byte("main\n"))
+			e.stdoutW.Write([]byte("main\t0\tbash\n"))
 		case "stdout":
 			e.stdoutW.Write([]byte(strings.Repeat("x", 2*65536)))
 		case "cancellation", "deadline":

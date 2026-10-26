@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"github.com/zefhemel/deskyard/supervisor/internal/cli/execws"
 	"github.com/zefhemel/deskyard/supervisor/internal/terminal"
 	"os"
@@ -53,14 +54,36 @@ func runTerminal(a *App, c *call) error {
 func runTerminalRuntime(a *App, c *call) error {
 	ctx, stop := signal.NotifyContext(c.ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if c.cmd.Name == "terminal-new" {
+	switch c.cmd.Name {
+	case "terminal-new":
 		return terminal.New(ctx, a.Stdin, a.Stdout, a.Stderr)
-	}
-	if c.cmd.Name == "terminal-list" {
+	case "terminal-pick":
+		return terminal.Pick(ctx, a.Stdin, a.Stdout, a.Stderr)
+	case "terminal-list":
 		return terminal.List(ctx, a.Stdout)
-	}
-	if c.cmd.Name == "terminal-lease" {
-		return terminal.Lease(ctx, c.args[0], c.args[1], a.Stdin, a.Stdout)
+	case "terminal-create":
+		return terminal.Create(ctx, a.Stdout)
+	case "terminal-kill":
+		if !terminal.ValidSession(c.args[0]) {
+			return usagef(c.cmd, "invalid session name")
+		}
+		return noSession(a, terminal.Kill(ctx, c.args[0]))
+	case "terminal-lease":
+		join := len(c.args) > 2
+		if join && c.args[2] != "join" {
+			return usagef(c.cmd, "the third argument must be join")
+		}
+		return noSession(a, terminal.Lease(ctx, c.args[0], c.args[1], join, a.Stdin, a.Stdout))
 	}
 	return terminal.AttachPrepared(ctx, c.args[0], a.Stdin, a.Stdout, a.Stderr)
+}
+
+// noSession gives a missing session its own exit code, so the supervisor can
+// tell it from a failure.
+func noSession(a *App, err error) error {
+	if errors.Is(err, terminal.ErrNoSession) {
+		fmt.Fprintf(a.Stderr, "deskyard: %v\n", err)
+		return exitCode(3)
+	}
+	return err
 }

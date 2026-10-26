@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
@@ -11,7 +13,75 @@ import (
 type terminalConnection struct {
 	claims      auth.SessionClaims
 	environment string
+	session     string
+	join        bool // a join-only attachment, which never creates its session
 	cancel      context.CancelFunc
+
+	// ending counts the requests ending this session that it is part of; end
+	// closes once one of them has ended it, and wake signals a withdrawal.
+	ending  atomic.Int32
+	end     chan struct{}
+	endOnce sync.Once
+	wake    chan struct{}
+}
+
+// waitEnding waits, while the connection's session is being ended, until that
+// finishes, and reports whether it ended.
+func (c *terminalConnection) waitEnding(ctx context.Context) bool {
+	limit := time.NewTimer(15 * time.Second)
+	defer limit.Stop()
+	for c.ending.Load() > 0 {
+		select {
+		case <-c.end:
+			return true
+		case <-c.wake:
+		case <-ctx.Done():
+			return isClosed(c.end)
+		case <-limit.C:
+			return isClosed(c.end)
+		}
+	}
+	return isClosed(c.end)
+}
+
+type terminalSessionKey struct{ environment, session string }
+
+// terminalEnding is one request ending a session. Its members are the
+// attachments to the session registered before it finished: those present
+// when it began, and joins made while the session was being ended. A
+// creating attachment registered meanwhile may start a new session of the
+// name, so it isn't a member.
+type terminalEnding struct {
+	t       *terminalConnections
+	key     terminalSessionKey
+	members []*terminalConnection
+}
+
+func (e *terminalEnding) mark(c *terminalConnection) {
+	c.ending.Add(1)
+	e.members = append(e.members, c)
+}
+
+// finish tells the members whether their session ended, and stops marking
+// new attachments.
+func (e *terminalEnding) finish(ended bool) {
+	t := e.t
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.endings[e.key] = slices.DeleteFunc(t.endings[e.key], func(o *terminalEnding) bool { return o == e })
+	if len(t.endings[e.key]) == 0 {
+		delete(t.endings, e.key)
+	}
+	for _, c := range e.members {
+		if ended {
+			c.endOnce.Do(func() { close(c.end) })
+		}
+		c.ending.Add(-1)
+		select {
+		case c.wake <- struct{}{}:
+		default:
+		}
+	}
 }
 
 // Registration and logout share a lock so logout also rejects in-flight joins.
@@ -21,10 +91,11 @@ type terminalConnections struct {
 	active  map[*terminalConnection]bool
 	revoked map[string]time.Time
 	stopped bool
+	endings map[terminalSessionKey][]*terminalEnding
 }
 
 func newTerminalConnections() *terminalConnections {
-	return &terminalConnections{active: map[*terminalConnection]bool{}, revoked: map[string]time.Time{}}
+	return &terminalConnections{active: map[*terminalConnection]bool{}, revoked: map[string]time.Time{}, endings: map[terminalSessionKey][]*terminalEnding{}}
 }
 func (t *terminalConnections) add(c *terminalConnection) bool {
 	t.mu.Lock()
@@ -49,8 +120,30 @@ func (t *terminalConnections) add(c *terminalConnection) bool {
 	if users >= 16 || desktops >= 32 {
 		return false
 	}
+	c.end = make(chan struct{})
+	c.wake = make(chan struct{}, 1)
 	t.active[c] = true
+	if c.join {
+		for _, e := range t.endings[terminalSessionKey{c.environment, c.session}] {
+			e.mark(c)
+		}
+	}
 	return true
+}
+
+// beginEnding marks the attachments to an environment's session as being
+// ended, until the returned ending finishes.
+func (t *terminalConnections) beginEnding(environment, session string) *terminalEnding {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	e := &terminalEnding{t: t, key: terminalSessionKey{environment, session}}
+	for c := range t.active {
+		if c.environment == environment && c.session == session {
+			e.mark(c)
+		}
+	}
+	t.endings[e.key] = append(t.endings[e.key], e)
+	return e
 }
 func (t *terminalConnections) remove(c *terminalConnection) {
 	t.mu.Lock()

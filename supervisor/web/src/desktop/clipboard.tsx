@@ -6,6 +6,10 @@ import { Button } from "../components/ui.tsx";
 import { NeedsHttps } from "./needs-https.tsx";
 import { insecureContext } from "./selkies.ts";
 
+// Unsent drafts per environment: they survive closing the popover and
+// switching to a terminal tab (which unmounts the desktop).
+const drafts = new Map<string, string>();
+
 export function ClipboardPopover({
   name,
   frame,
@@ -21,7 +25,11 @@ export function ClipboardPopover({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [text, setText] = useState("");
+  const [text, setTextState] = useState(() => drafts.get(name) ?? "");
+  const setText = (value: string) => {
+    drafts.set(name, value);
+    setTextState(value);
+  };
   const [copied, setCopied] = useState(false);
 
   useEffect(() => setCopied(false), [remote]);
@@ -67,6 +75,11 @@ export function ClipboardPopover({
     };
   }, [frame, onClose]);
 
+  const send = () => {
+    drafts.delete(name);
+    onSend(text);
+  };
+
   return (
     <div
       ref={ref}
@@ -94,11 +107,11 @@ export function ClipboardPopover({
         value={text}
         onInput={(e) => setText(e.currentTarget.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && text) onSend(text);
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && text) send();
         }}
       />
       <div class="mt-2 flex justify-end gap-2">
-        <Button variant="primary" class="h-[30px]! px-3! text-[13px]!" disabled={!text} onClick={() => onSend(text)}>
+        <Button variant="primary" class="h-[30px]! px-3! text-[13px]!" disabled={!text} onClick={send}>
           Paste into {name}
         </Button>
       </div>

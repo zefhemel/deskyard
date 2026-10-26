@@ -12,6 +12,7 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/terminal"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 )
 
@@ -35,6 +36,7 @@ type statsJSON struct {
 type environmentJSON struct {
 	VPN             environments.VPNStatus `json:"vpn"`
 	Terminal        bool                   `json:"terminal"`
+	Terminals       []terminal.Session     `json:"terminals"` // never null; empty unless running
 	MemoryReclaim   bool                   `json:"memoryReclaim"`
 	Name            string                 `json:"name"`
 	State           string                 `json:"state"`
@@ -63,7 +65,8 @@ type environmentJSON struct {
 
 func (s *Server) environmentJSON(ctx context.Context, c environments.Environment, a accounts.Account) environmentJSON {
 	j := environmentJSON{
-		Terminal:      c.ImageLabels["deskyard.terminal"] == "tmux-v1",
+		Terminal:      terminalCapable(c),
+		Terminals:     s.terminalSessions.forEnvironment(c),
 		MemoryReclaim: c.MemoryReclaim,
 		Name:          c.Name, State: c.State, Folder: c.Folder, Image: c.Image,
 		Revision: c.Revision, AppliedRevision: c.AppliedRevision, Power: c.Power, Error: c.Error, Conflict: c.Conflict,

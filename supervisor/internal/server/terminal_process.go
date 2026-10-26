@@ -17,7 +17,10 @@ import (
 // terminalProcess pairs a TTY attachment with a non-TTY lease. Docker preserves
 // TTY execs after socket disconnect, whereas non-TTY stdin EOF reaches the helper.
 // The lease removes only its random grouped session, preserving all shared panes.
-func (s *Server) terminalProcess(parent context.Context, containerID, session string, cols, rows uint) (*engine.Process, error) {
+//
+// A join lease never creates the session: when it is missing, terminalProcess
+// returns terminal.ErrNoSession.
+func (s *Server) terminalProcess(parent context.Context, containerID, session string, join bool, cols, rows uint) (*engine.Process, error) {
 	ctx, cancel := context.WithCancel(parent)
 	startup := time.AfterFunc(10*time.Second, cancel)
 	defer startup.Stop()
@@ -29,7 +32,11 @@ func (s *Server) terminalProcess(parent context.Context, containerID, session st
 	}()
 	id := randomID(32)
 	env := execEnvFor(map[string]string{"TERM": "xterm-256color"})
-	lease, err := s.Eng.Exec(ctx, containerID, engine.ExecSpec{Cmd: []string{"deskyard", "terminal-lease", session, id}, User: "user", WorkDir: "/workspace", Env: env, Stdin: true})
+	argv := []string{"deskyard", "terminal-lease", session, id}
+	if join {
+		argv = append(argv, "join")
+	}
+	lease, err := s.Eng.Exec(ctx, containerID, engine.ExecSpec{Cmd: argv, User: "user", WorkDir: "/workspace", Env: env, Stdin: true})
 	if err != nil {
 		return nil, err
 	}
@@ -46,6 +53,9 @@ func (s *Server) terminalProcess(parent context.Context, containerID, session st
 	}
 	control := bufio.NewReader(io.LimitReader(lease.Stdout, 64))
 	line, err := control.ReadString('\n')
+	if join && line == "ended\n" {
+		return nil, terminal.ErrNoSession
+	}
 	if err != nil || line != "prepared\n" {
 		return nil, fmt.Errorf("shared terminal lease did not prepare")
 	}

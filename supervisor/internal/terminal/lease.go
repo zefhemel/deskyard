@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -23,7 +24,10 @@ func tmuxCommand(ctx context.Context, args ...string) *exec.Cmd {
 // Lease owns one private grouped session. Docker closes non-TTY stdin when the
 // transport disappears; that EOF is the lifetime signal, even after supervisor
 // death. The base session retains the shared windows and their shell processes.
-func Lease(ctx context.Context, name, id string, stdin io.Reader, stdout io.Writer) error {
+// A join-only lease never creates the base session: when it is missing, the
+// lease writes "ended" and returns ErrNoSession, so a reconnect cannot revive a
+// session that someone ended.
+func Lease(ctx context.Context, name, id string, join bool, stdin io.Reader, stdout io.Writer) error {
 	if !ValidAttachment(id) || !ValidSession(name) {
 		return fmt.Errorf("invalid terminal lease identity")
 	}
@@ -38,10 +42,20 @@ func Lease(ctx context.Context, name, id string, stdin io.Reader, stdout io.Writ
 		defer done()
 		_ = tmuxCommand(cleanup, "kill-session", "-t", "="+group).Run()
 	}()
-	if _, err := ensureSession(ctx, name); err != nil {
+	ended := func() error {
+		if _, err := io.WriteString(stdout, "ended\n"); err != nil {
+			return err
+		}
+		return ErrNoSession
+	}
+	// A join resolves the existing base below and never starts a shell.
+	if join {
+		if _, err := runtimeArgs(ctx); err != nil {
+			return err
+		}
+	} else if _, err := ensureSession(ctx, name); err != nil {
 		return err
 	}
-	// -t takes a literal existing session/group name (not target-prefix syntax).
 	// Finish creation before cleanup even if EOF arrives mid-command. Otherwise
 	// killing the local tmux command could leave creation queued at its server.
 	prepare, done := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
@@ -49,10 +63,19 @@ func Lease(ctx context.Context, name, id string, stdin io.Reader, stdout io.Writ
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := tmuxCommand(prepare, "new-session", "-d", "-s", group, "-t", name).Run(); err != nil {
-		return fmt.Errorf("prepare shared attachment: %w", err)
+	if err := groupWith(prepare, name, group); err != nil {
+		if errors.Is(err, ErrNoSession) {
+			if join {
+				return ended()
+			}
+			return fmt.Errorf("prepare shared attachment: %w", err)
+		}
+		return err
 	}
 	if err := tmuxCommand(ctx, "set-option", "-t", "="+group+":", "detach-on-destroy", "on").Run(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return err
 	}
 	if _, err := io.WriteString(stdout, "prepared\n"); err != nil {
@@ -63,6 +86,9 @@ func Lease(ctx context.Context, name, id string, stdin io.Reader, stdout io.Writ
 	for {
 		b, err := tmuxCommand(ctx, "list-clients", "-t", "="+group, "-F", "#{client_pid}").Output()
 		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			return err
 		}
 		if strings.TrimSpace(string(b)) != "" {
@@ -79,6 +105,50 @@ func Lease(ctx context.Context, name, id string, stdin io.Reader, stdout io.Writ
 	}
 	<-ctx.Done()
 	return ctx.Err()
+}
+
+// groupWith creates the private group sharing exactly the windows of the base
+// session. new-session -t prefix-matches names and, when nothing matches,
+// silently starts a standalone session in a new group of that name. So group
+// against the base's immutable ID, then verify the result: the base still
+// exists under its name and the new session is in its group. Otherwise the
+// group is removed and the base counts as ended.
+func groupWith(ctx context.Context, name, group string) error {
+	base, err := tmuxCommand(ctx, "display-message", "-p", "-t", "="+name+":", "#{session_id}|#{session_group}").Output()
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return ErrNoSession
+	}
+	// display-message succeeds with empty fields when its target is missing.
+	id, _, _ := strings.Cut(strings.TrimSpace(string(base)), "|")
+	if !strings.HasPrefix(id, "$") {
+		return ErrNoSession
+	}
+	if err := tmuxCommand(ctx, "new-session", "-d", "-s", group, "-t", id).Run(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("prepare shared attachment: %w", err)
+	}
+	verify := func() bool {
+		b, err := tmuxCommand(ctx, "display-message", "-p", "-t", id+":", "#{session_name}|#{session_group}").Output()
+		if err != nil {
+			return false
+		}
+		g, err := tmuxCommand(ctx, "display-message", "-p", "-t", "="+group+":", "#{session_group}").Output()
+		baseName, baseGroup, _ := strings.Cut(strings.TrimSpace(string(b)), "|")
+		return err == nil && baseName == name && baseGroup != "" && strings.TrimSpace(string(g)) == baseGroup
+	}
+	if !verify() {
+		_ = tmuxCommand(ctx, "kill-session", "-t", "="+group).Run()
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return ErrNoSession
+	}
+	return nil
 }
 
 // AttachPrepared never creates a session: a canceled lease cannot be resurrected

@@ -10,7 +10,7 @@ from playwright.sync_api import sync_playwright
 
 from helpers import in_desktop, signed_in, wait_until
 from test_terminal_transport import eventually, shell
-from test_ui_terminal import command, connected, pane
+from test_ui_terminal import command, connected, pane, tab_name
 
 
 def test_browser_cli_and_native_launcher_share_shell(supervisor, name, desktop, cli, remote):
@@ -47,12 +47,11 @@ def test_browser_cli_and_native_launcher_share_shell(supervisor, name, desktop, 
                 assert wait_until(lambda: len(native_sessions()) == 1), 'Native session not discoverable'
                 session = native_sessions()[0]
                 assert session.startswith('terminal-')
-                page.goto(f'{supervisor.base}/{name}/terminal/')
+                # The native session is a tab; a link to it joins it.
+                page.goto(f'{supervisor.base}/{name}/')
+                page.get_by_role('tab', name=tab_name(session)).click()
                 connected(page)
-                page.get_by_role('button', name='Sessions: main', exact=True).click()
-                page.get_by_role('button', name=f'Join {session}', exact=True).click()
-                connected(page)
-                assert f'session={session}' in page.url
+                assert page.url.endswith(f'?terminal={session}')
                 command(page, f'export SHARED_PROOF={nonce}; printf "%s" "$$" > /workspace/shared-browser-pid')
                 eventually(lambda: shell(name, 'cat /workspace/shared-browser-pid 2>/dev/null || true').isdigit(), True)
                 pid = shell(name, 'cat /workspace/shared-browser-pid')
@@ -62,7 +61,7 @@ def test_browser_cli_and_native_launcher_share_shell(supervisor, name, desktop, 
                 slave = None
                 threading.Thread(target=read_output, daemon=True).start()
                 assert first_output.wait(20), 'CLI never rendered tmux output'
-                assert native_sessions() == ['main', session], 'Private browser/CLI groups leaked into discovery'
+                assert native_sessions() == [session], 'Private browser/CLI groups leaked into discovery'
                 os.write(master, b'printf "%s" "$SHARED_PROOF:$$" > /workspace/shared-cli-proof\r')
                 eventually(lambda: shell(name, 'cat /workspace/shared-cli-proof 2>/dev/null || true'), f'{nonce}:{pid}')
 

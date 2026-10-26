@@ -35,6 +35,8 @@ func (s *Server) routes() {
 	h("GET /api/validate-name", s.handleValidateName)
 	h("GET /api/environments/{name}/terminal", s.handleTerminal)
 	h("GET /api/environments/{name}/terminal/sessions", s.handleTerminalSessions)
+	h("POST /api/environments/{name}/terminal/sessions", s.handleCreateTerminalSession)
+	h("DELETE /api/environments/{name}/terminal/sessions/{session}", s.handleEndTerminalSession)
 	h("GET /api/environments/{name}", s.handleGetEnvironment)
 	h("PATCH /api/environments/{name}", s.handleUpdateEnvironment)
 	h("DELETE /api/environments/{name}", s.handleRemoveEnvironment)

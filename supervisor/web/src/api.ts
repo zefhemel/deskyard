@@ -81,9 +81,20 @@ export interface Settings extends EnvironmentVPNSettings {
   nanoCpus: number;
 }
 
+/** A shared terminal session (a tmux session) in a running environment. */
+export interface TerminalSession {
+  name: string;
+  /** Attached clients: native terminals, the CLI and browsers, this page included. */
+  clients: number;
+  /** The foreground command of its active pane, e.g. "bash" or "vim". */
+  command: string;
+}
+
 export interface Environment {
   /** Image supports named shared terminals. */
   terminal: boolean;
+  /** Its shared terminal sessions: empty when stopped or without terminal support. */
+  terminals: TerminalSession[];
   /** Reclaim memory automatically while nobody is viewing; saves without restarting. */
   memoryReclaim: boolean;
   /** The environment's identity everywhere: there is no separate ID. */
@@ -389,7 +400,11 @@ export const api = {
   environments: () => request<EnvironmentList>("GET", "/api/environments"),
   environment: (name: string) => request<Environment>("GET", c(name)),
   terminalSessions: (name: string, signal?: AbortSignal) =>
-    request<{ sessions: { name: string }[] }>("GET", `${c(name)}/terminal/sessions`, undefined, signal),
+    request<{ sessions: TerminalSession[] }>("GET", `${c(name)}/terminal/sessions`, undefined, signal),
+  /** Starts the next free terminal-N, detached; the tab then opens it. */
+  createTerminal: (name: string) => request<{ name: string }>("POST", `${c(name)}/terminal/sessions`),
+  /** Ends a session for everyone attached to it. */
+  endTerminal: (name: string, session: string) => request<void>("DELETE", `${c(name)}/terminal/sessions/${enc(session)}`),
   createEnvironment: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: string[]; dockerAccess: boolean; mounts?: HostMount[]; volumes?: VolumeGrant[] } & EnvironmentVPNSettings) =>
     request<JobRef>("POST", "/api/environments", body),
   power: (name: string, action: "start" | "stop" | "restart") => request<void>("POST", `${c(name)}/${action}`),

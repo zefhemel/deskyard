@@ -46,16 +46,8 @@ func (s *Server) serveDesktop(w http.ResponseWriter, r *http.Request, name, rest
 	switch {
 	case !strings.HasPrefix(r.URL.Path, "/"+name+"/"):
 		http.Redirect(w, r, "/"+name+"/", http.StatusFound)
-	case rest == "terminal":
-		target := "/" + name + "/terminal/"
-		if r.URL.RawQuery != "" {
-			target += "?" + r.URL.RawQuery
-		}
-		http.Redirect(w, r, target, http.StatusFound)
-	case rest == "terminal/":
-		s.writeIndex(w)
 	case rest == "":
-		s.writeIndex(w) // the UI's desktop page
+		s.writeIndex(w) // the UI's environment page, with its desktop and terminal tabs
 	case rest == "screen":
 		http.Redirect(w, r, "/"+name+"/screen/", http.StatusFound)
 	case strings.HasPrefix(rest, "screen/"):

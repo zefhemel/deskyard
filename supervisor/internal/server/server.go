@@ -38,21 +38,23 @@ type Server struct {
 	Layout       config.Layout
 	UI           fs.FS // the built web UI (index.html, assets/…)
 
-	vpnTests    vpnTester
-	jobs        *jobs
-	events      *hub
-	viewers     *viewers
-	terminals   *terminalConnections
-	forwards    *forwards
-	viewersPub  *throttle
-	streamDials *dialGates
-	clients     *clientFiles
-	stats       *statsCollector
-	inside      *insideReader
-	thumbs      *thumbnails
-	tokens      *tokenStore
-	images      *catalog
-	reconcile   chan struct{} // wakes the environments' reconcile loop
+	vpnTests  vpnTester
+	jobs      *jobs
+	events    *hub
+	viewers   *viewers
+	terminals *terminalConnections
+	// terminalSessions caches running environments' shared terminal sessions.
+	terminalSessions *terminalSessions
+	forwards         *forwards
+	viewersPub       *throttle
+	streamDials      *dialGates
+	clients          *clientFiles
+	stats            *statsCollector
+	inside           *insideReader
+	thumbs           *thumbnails
+	tokens           *tokenStore
+	images           *catalog
+	reconcile        chan struct{} // wakes the environments' reconcile loop
 
 	memoryReclaim engine.MemoryReclaimSupport
 
@@ -103,6 +105,7 @@ func New(o Options) (*Server, error) {
 		reconcile: make(chan struct{}, 1),
 	}
 	s.activity = s.newActivity(o.ActivityPresence)
+	s.terminalSessions = newTerminalSessions(s)
 	s.stats = newStatsCollector(s)
 	s.thumbs = newThumbnails(s)
 	if s.tokens, err = loadTokens(o.Layout.Data); err != nil {
@@ -149,6 +152,7 @@ func (s *Server) Run(ctx context.Context) {
 	go s.images.checkLoop(ctx, s)
 	go s.activityLoop(ctx)
 	go s.idleMemoryLoop(ctx)
+	go s.terminalSessions.run(ctx)
 }
 
 func sessionKey(secretDir string) ([]byte, error) {

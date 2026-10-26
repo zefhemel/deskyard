@@ -2,8 +2,10 @@
 // `apply: "serve"` keeps it out of `vite build`). It follows supervisor/API.md
 // closely enough to click through every page. Sign in as zef (admin) or anna
 // (regular) with any password; "wrong" fails.
+import { createHash } from "node:crypto";
 import { readFileSync, existsSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { Duplex } from "node:stream";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 import type { CreatedToken, Environment, Job } from "../api.ts";
@@ -41,6 +43,7 @@ function sse(res: ServerResponse): void {
 
 function broadcast(event: string, data: unknown): void {
   for (const s of streams) s.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  for (const send of eventSockets) send(event, data);
 }
 
 function me() {
@@ -71,6 +74,9 @@ function setState(c: Environment, state: Environment["state"], later?: Environme
     c.stats = null;
     c.viewers = [];
     c.mics = [];
+    // Sessions end with the container.
+    for (const t of c.terminals) endAttachments(c.name, t.name);
+    c.terminals = [];
   }
   changed(c);
   if (later) setTimeout(() => setState(c, later), 1500);
@@ -294,7 +300,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
       startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/home/${name}`, image: img.ref, imageTitle: img.title,
       memoryReclaim: true, imageVersion: img.version, updateAvailable: null, settings: { dockerAccess: b.dockerAccess === true, memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: (b.volumes as Environment["settings"]["volumes"]) ?? [] },
       vpn: {state:"disabled",changedAt:"0001-01-01T00:00:00Z",exitIpObservedAt:"0001-01-01T00:00:00Z",desiredRevision:0,appliedRevision:0,idle:false},
-      access: (b.access as string[]) ?? [], viewers: [], mics: [], terminal: true, forwards: [], agents: [], tokens: 0, stats: null,
+      access: (b.access as string[]) ?? [], viewers: [], mics: [], terminal: true, terminals: [], forwards: [], agents: [], tokens: 0, stats: null,
     };
     environments.push(c);
     changed(c);
@@ -400,7 +406,27 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
 
   if (sub === "terminal/sessions" && method === "GET") {
     if (c.state !== "running" || !c.terminal) return json(res, 409, { error: "Environment terminal unavailable" });
-    return json(res, 200, { sessions: [{ name: "main" }, { name: "terminal-1" }, { name: "terminal-2" }] });
+    return json(res, 200, { sessions: c.terminals });
+  }
+  if (sub === "terminal/sessions" && method === "POST") {
+    if (c.state !== "running" || !c.terminal) return json(res, 409, { error: "Environment terminal unavailable" });
+    let n = 1;
+    while (c.terminals.some((t) => t.name === `terminal-${n}`)) n++;
+    const name = `terminal-${n}`;
+    c.terminals = [...c.terminals, { name, clients: 0, command: "bash" }].sort((a, b) => a.name.localeCompare(b.name));
+    changed(c);
+    return json(res, 201, { name });
+  }
+  const ts = /^terminal\/sessions\/(.+)$/.exec(sub);
+  if (ts && method === "DELETE") {
+    const name = decodeURIComponent(ts[1]!);
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(name)) return json(res, 400, { error: "invalid session name" });
+    if (c.state !== "running" || !c.terminal) return json(res, 409, { error: "Environment terminal unavailable" });
+    if (!c.terminals.some((t) => t.name === name)) return json(res, 404, { error: "no such session" });
+    endAttachments(c.name, name);
+    c.terminals = c.terminals.filter((t) => t.name !== name);
+    changed(c);
+    return json(res, 204);
   }
   if (sub === "" && method === "GET") return json(res, 200, visible().find((x) => x.name === c.name));
   if (sub === "" && method === "DELETE") {
@@ -507,6 +533,117 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   return json(res, 404, { error: `mock: no route for ${method} ${path}` });
 }
 
+// A pretend shared terminal over a hand-rolled WebSocket (no dependency):
+// join-only unless ?create=1, {"ended":true} for a missing or ended session,
+// and an echoing prompt. Enough to click through the environment page's tabs.
+const attachments = new Map<string, Set<(ended: boolean) => void>>();
+
+function endAttachments(env: string, session: string): void {
+  for (const end of attachments.get(`${env}/${session}`) ?? []) end(true);
+}
+
+function frame(opcode: number, payload: Buffer): Buffer {
+  const n = payload.length;
+  const head = n < 126 ? Buffer.from([0x80 | opcode, n]) : n < 65536 ? Buffer.from([0x80 | opcode, 126, n >> 8, n & 255]) : Buffer.concat([Buffer.from([0x80 | opcode, 127, 0, 0, 0, 0]), Buffer.from([(n >>> 24) & 255, (n >> 16) & 255, (n >> 8) & 255, n & 255])]);
+  return Buffer.concat([head, payload]);
+}
+
+function accept(socket: Duplex, key: string): void {
+  const hash = createHash("sha1").update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest("base64");
+  socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${hash}\r\n\r\n`);
+}
+
+// The UI's live events (/api/events) as the supervisor sends them over a
+// WebSocket: {"type","data"} text frames. (Chromium queues a page's other
+// WebSockets behind one that never finishes its handshake.)
+const eventSockets = new Set<(type: string, data: unknown) => void>();
+function eventSocket(req: IncomingMessage, socket: Duplex): void {
+  const key = req.headers["sec-websocket-key"];
+  if (!key) return void socket.destroy();
+  accept(socket, key);
+  const send = (type: string, data: unknown) => socket.write(frame(1, Buffer.from(JSON.stringify({ type, data }))));
+  eventSockets.add(send);
+  const drop = () => eventSockets.delete(send);
+  socket.on("data", (chunk: Buffer) => {
+    if ((chunk[0]! & 15) === 8) socket.end(frame(8, Buffer.alloc(0)));
+  });
+  socket.on("close", drop);
+  socket.on("error", drop);
+}
+
+function mockTerminal(req: IncomingMessage, socket: Duplex): void {
+  const url = new URL(req.url ?? "/", "http://mock");
+  const m = /^\/api\/environments\/([^/]+)\/terminal$/.exec(url.pathname);
+  if (url.pathname === "/api/events") return eventSocket(req, socket);
+  if (!m) return; // Vite's own sockets
+  const key = req.headers["sec-websocket-key"];
+  const c = environments.find((x) => x.name === m[1]);
+  const session = url.searchParams.get("session") ?? "";
+  if (!key || !c) return void socket.destroy();
+  accept(socket, key);
+  const text = (v: unknown) => socket.write(frame(1, Buffer.from(JSON.stringify(v))));
+  const out = (s: string) => socket.write(frame(2, Buffer.from(s)));
+  const close = (code: number) => {
+    socket.end(frame(8, Buffer.from([code >> 8, code & 255])));
+  };
+  const id = `${c.name}/${session}`;
+  let attached = false;
+  const detach = () => {
+    if (!attached) return;
+    attached = false;
+    attachments.get(id)?.delete(end);
+    const t = c.terminals.find((x) => x.name === session);
+    if (t) {
+      t.clients = Math.max(0, t.clients - 1);
+      changed(c);
+    }
+  };
+  const end = (ended: boolean) => {
+    detach();
+    if (ended) text({ ended: true });
+    close(1000);
+  };
+  let buf = Buffer.alloc(0);
+  socket.on("data", (chunk: Buffer) => {
+    buf = Buffer.concat([buf, chunk]);
+    for (;;) {
+      if (buf.length < 2) return;
+      const opcode = buf[0]! & 15;
+      let len = buf[1]! & 127;
+      let at = 2;
+      if (len === 126) [len, at] = [buf.readUInt16BE(2), 4];
+      else if (len === 127) [len, at] = [Number(buf.readBigUInt64BE(2)), 10];
+      const masked = (buf[1]! & 128) !== 0;
+      const mask = masked ? buf.subarray(at, at + 4) : null;
+      if (masked) at += 4;
+      if (buf.length < at + len) return;
+      const data = Buffer.from(buf.subarray(at, at + len));
+      if (mask) for (let i = 0; i < data.length; i++) data[i]! ^= mask[i % 4]!;
+      buf = buf.subarray(at + len);
+      if (opcode === 8) return end(false);
+      if (opcode === 9) socket.write(frame(10, data));
+      if (opcode === 1 && !attached) {
+        // The first message is the size: attach now.
+        let t = c.terminals.find((x) => x.name === session);
+        if (!t && url.searchParams.get("create") === "1" && c.state === "running") {
+          t = { name: session, clients: 0, command: "bash" };
+          c.terminals = [...c.terminals, t].sort((a, b) => a.name.localeCompare(b.name));
+        }
+        if (!t || c.state !== "running") return end(true);
+        attached = true;
+        t.clients++;
+        (attachments.get(id) ?? attachments.set(id, new Set()).get(id)!).add(end);
+        changed(c);
+        text({ ready: true, generation: "mock" });
+        out(`\x1b[2mMock shell for ${c.name}, session ${session}. Typing echoes; there is no real shell here.\x1b[0m\r\n$ `);
+      }
+      if (opcode === 2 && attached) out(data.toString().replace(/\r/g, "\r\n$ "));
+    }
+  });
+  socket.on("close", detach);
+  socket.on("error", detach);
+}
+
 export function mockApi(): Plugin {
   return {
     name: "supervisor-mock-api",
@@ -514,6 +651,7 @@ export function mockApi(): Plugin {
     configureServer(server) {
       if (process.env.DESKYARD_API) return; // proxying to a real supervisor instead
       startTimers();
+      server.httpServer?.on("upgrade", mockTerminal);
       server.middlewares.use((req, res, next) => {
         handle(req, res, next).catch((e: unknown) => json(res, 500, { error: String(e) }));
       });

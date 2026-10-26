@@ -17,7 +17,8 @@ export interface MenuItem {
 }
 
 interface MenuProps {
-  items: MenuItem[];
+  /** The items, or a function giving them when the menu opens (the environment page's ⋯ adds the active tab's). */
+  items: MenuItem[] | (() => MenuItem[]);
   /** Renders the trigger; `open` tells whether the menu is showing. */
   trigger: (props: { open: boolean; toggle: () => void }) => ComponentChildren;
   align?: "left" | "right";
@@ -26,11 +27,12 @@ interface MenuProps {
   onClose?: () => void;
 }
 
-export function Menu({ items, trigger, align = "right", class: extra, onClose }: MenuProps) {
+export function Menu({ items: given, trigger, align = "right", class: extra, onClose }: MenuProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const [maxHeight, setMaxHeight] = useState<number>();
+  const items = open ? (typeof given === "function" ? given() : given) : [];
 
   useLayoutEffect(() => {
     if (!open) return;

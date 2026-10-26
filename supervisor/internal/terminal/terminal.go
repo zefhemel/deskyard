@@ -16,8 +16,9 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/cli/term"
 )
 
-const RuntimeDir = "/run/workspace/deskyard-terminal"
-const Config = "/etc/deskyard/tmux.conf"
+// RuntimeDir and Config are variables only so tests can run a private server.
+var RuntimeDir = "/run/workspace/deskyard-terminal"
+var Config = "/etc/deskyard/tmux.conf"
 
 var sessionName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
@@ -37,11 +38,34 @@ func New(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	name, err := createNext(ctx, cwd)
+	if err != nil {
+		return err
+	}
+	return attachAt(ctx, name, cwd, true, stdin, stdout, stderr)
+}
+
+// Create starts the next free native-style session detached in /workspace and
+// prints its name, for clients that attach separately.
+func Create(ctx context.Context, out io.Writer) error {
+	name, err := createNext(ctx, "/workspace")
+	if err != nil {
+		return err
+	}
+	// The session exists now; this only applies its public title.
+	if _, err := ensureSessionAt(ctx, name, "/workspace"); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(out, name)
+	return err
+}
+
+func createNext(ctx context.Context, cwd string) (string, error) {
 	startup, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	base, err := runtimeArgs(startup)
 	if err != nil {
-		return err
+		return "", err
 	}
 	// new-session is atomic in tmux. A competing native window that claims the
 	// same candidate makes us try the next number, never join its shell.
@@ -52,18 +76,16 @@ func New(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) error {
 		}
 		if err := run("new-session", "-d", "-s", name, "-c", cwd, "bash", "-l"); err != nil {
 			if startup.Err() != nil {
-				return startup.Err()
+				return "", startup.Err()
 			}
 			if run("has-session", "-t", "="+name) == nil {
 				continue
 			}
-			return fmt.Errorf("create native shared terminal: %w", err)
+			return "", fmt.Errorf("create native shared terminal: %w", err)
 		}
-
-		cancel()
-		return attachAt(ctx, name, cwd, true, stdin, stdout, stderr)
+		return name, nil
 	}
-	return fmt.Errorf("too many native terminal sessions")
+	return "", fmt.Errorf("too many native terminal sessions")
 }
 
 func attachAt(ctx context.Context, name, cwd string, native bool, stdin io.Reader, stdout, stderr io.Writer) error {

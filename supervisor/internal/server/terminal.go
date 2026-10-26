@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -46,10 +47,10 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Only explicit opens create a session; deep links and reconnects join,
+	// so that a reconnect can never revive a session someone ended.
 	session := r.URL.Query().Get("session")
-	if session == "" {
-		session = "main"
-	}
+	create := r.URL.Query().Get("create") == "1"
 	if !terminal.ValidSession(session) {
 		writeError(w, 400, "invalid terminal session name")
 		return
@@ -69,7 +70,7 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithDeadline(r.Context(), claims.Expires)
 	defer cancel()
-	live := &terminalConnection{claims: claims, environment: c.ID, cancel: cancel}
+	live := &terminalConnection{claims: claims, environment: c.ID, session: session, join: !create, cancel: cancel}
 	if !s.terminals.add(live) {
 		writeError(w, 429, "terminal login ended or connection limit reached")
 		return
@@ -106,6 +107,13 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 	}
 	control := func(v any) { b, _ := json.Marshal(v); _ = write(websocket.MessageText, b) }
 	fail := func(msg string) { control(map[string]string{"error": msg}) }
+	// The session no longer exists, so the page closes its tab rather than
+	// reconnecting.
+	ended := sync.OnceFunc(func() {
+		control(map[string]bool{"ended": true})
+		_ = ws.Close(websocket.StatusNormalClosure, "session ended")
+		cancel()
+	})
 	startCtx, startCancel := context.WithTimeout(ctx, 5*time.Second)
 	typ, b, err := ws.Read(startCtx)
 	startCancel()
@@ -120,7 +128,11 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 		fail("first message must contain valid cols (2–500) and rows (1–300)")
 		return
 	}
-	p, err := s.terminalProcess(ctx, c.Container.ID, session, size.Cols, size.Rows)
+	p, err := s.terminalProcess(ctx, c.Container.ID, session, !create, size.Cols, size.Rows)
+	if errors.Is(err, terminal.ErrNoSession) {
+		ended()
+		return
+	}
 	if err != nil {
 		fail("could not start shared terminal; upgrade the desktop image if its helper is unavailable")
 		return
@@ -130,6 +142,19 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 	stopProcess := context.AfterFunc(ctx, closeProcess)
 	defer stopProcess()
 	control(map[string]any{"ready": true, "generation": terminalGeneration(c)})
+	// Attaching adds a client and may have created the session; detaching
+	// removes the client.
+	s.terminalSessions.refreshLater(ctx, c)
+	defer s.terminalSessions.refreshLater(ctx, c)
+	endDone := make(chan struct{})
+	go func() {
+		defer close(endDone)
+		select {
+		case <-live.end:
+			ended()
+		case <-ctx.Done():
+		}
+	}()
 	flow := newTerminalFlow()
 	// Input and resize are pumped independently: blocked PTY writes never stop
 	// ACK handling. The bounded queue fails closed rather than accumulating input.
@@ -137,10 +162,19 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 		data   []byte
 		resize []uint
 	}
-	inputs := make(chan input, 4)
+	// Sixteen, not fewer: a terminal answers tmux's attach-time queries in a
+	// burst while the shell's stdin may not be reading yet.
+	inputs := make(chan input, 16)
 	readerDone := make(chan struct{})
 	pumpDone := make(chan struct{})
-	defer func() { cancel(); closeProcess(); ws.CloseNow(); <-readerDone; <-pumpDone }()
+	defer func() {
+		cancel()
+		closeProcess()
+		ws.CloseNow()
+		<-readerDone
+		<-pumpDone
+		<-endDone
+	}()
 	go func() {
 		defer close(pumpDone)
 		for {
@@ -224,6 +258,11 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	code, err := p.Wait()
+	// Its tmux client exits when someone ends the session.
+	if live.waitEnding(ctx) {
+		ended()
+		return
+	}
 	if ctx.Err() != nil {
 		return
 	}
@@ -232,4 +271,13 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	control(map[string]int{"exit": code})
+}
+
+func isClosed(c <-chan struct{}) bool {
+	select {
+	case <-c:
+		return true
+	default:
+		return false
+	}
 }
