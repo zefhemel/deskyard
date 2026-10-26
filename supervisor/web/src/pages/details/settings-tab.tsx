@@ -5,8 +5,7 @@ import { api, type Desktop, type Host } from "../../api.ts";
 import { DockerAccessField, cpuOptions, ImagePick, memoryOptions } from "../../components/desktop-fields.tsx";
 import { JobProgress, useJob } from "../../components/job.tsx";
 import { notify } from "../../components/toast.tsx";
-import { SecretImageNote } from "../../components/secret-access.tsx";
-import { Button, Check, Dialog, ErrorText, Field, Note, Seg } from "../../components/ui.tsx";
+import { Button, Check, ErrorText, Field, Note, Seg } from "../../components/ui.tsx";
 import { useLive } from "../../live.tsx";
 import { useFetch } from "../../lib/use-fetch.ts";
 import { HostMountFields } from "../../components/host-mounts.tsx";
@@ -37,20 +36,12 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
     if (saving) progressPanel.current?.scrollIntoView({ block: "nearest" });
   }, [saving]);
 
-  const [confirming, setConfirming] = useState(false);
   const draft = { image, dockerAccess, memoryBytes: memory, nanoCpus: cpus, camera, vpnConnectionId: vpnID, lan, mounts };
   const changed = desktopSettingsChanged(c, draft);
-  // Moving a desktop others use onto an image with secrets: ask first, as giving access does.
-  const picked = (images.data ?? []).find((i) => i.ref === image);
-  const askFirst = image !== c.image && !!picked?.secrets && c.access.length > 0;
   const save = () => {
-    setConfirming(false);
     try {
       setVPNError(null);
-      void saveDesktopSettings(c, draft, (body) => {
-        if (askFirst) body.confirmSecrets = true;
-        return run.start(() => api.updateSettings(c.name, body));
-      });
+      void saveDesktopSettings(c, draft, (body) => run.start(() => api.updateSettings(c.name, body)));
     } catch (e) {
       setVPNError(e instanceof Error ? e.message : String(e));
     }
@@ -59,7 +50,7 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
   const catalog = images.data ?? [];
   const list = catalog.some((i) => i.ref === c.image)
     ? catalog
-    : [{ ref: c.image, title: c.imageTitle, version: c.imageVersion, description: "Not in the catalog any more.", installed: true, official: false, desktops: [], behind: [], checked: null, secrets: false }, ...catalog];
+    : [{ ref: c.image, title: c.imageTitle, version: c.imageVersion, description: "Not in the catalog any more.", installed: true, official: false, desktops: [], behind: [], checked: null }, ...catalog];
 
   return (
     <>
@@ -67,8 +58,7 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
         class="max-w-[620px] px-5 py-5"
         onSubmit={(e) => {
           e.preventDefault();
-          if (askFirst) setConfirming(true);
-          else save();
+          save();
         }}
       >
         {saving && (
@@ -131,25 +121,6 @@ export function SettingsTab({ desktop: c }: { desktop: Desktop }) {
         </div>
       </form>
       <MemoryPolicy desktop={c} host={host} />
-      {confirming && picked && (
-        <Dialog
-          title={`Move ${c.name} onto ${picked.title || picked.ref}?`}
-          onClose={() => setConfirming(false)}
-          onSubmit={save}
-          footer={
-            <>
-              <Button variant="quiet" onClick={() => setConfirming(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" variant="danger">
-                Move {c.name}
-              </Button>
-            </>
-          }
-        >
-          <SecretImageNote image={picked.title || picked.ref} who={c.access} />
-        </Dialog>
-      )}
     </>
   );
 }

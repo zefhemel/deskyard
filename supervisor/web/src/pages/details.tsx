@@ -10,11 +10,10 @@ import { Monitor } from "../components/screen.tsx";
 import { ReclaimMemoryButton } from "../components/reclaim-memory.tsx";
 import { ForwardLines } from "../components/viewers-popover.tsx";
 import { Page } from "../components/topbar.tsx";
-import { btnClass, Button, cx, LockBadge, Status, Tag } from "../components/ui.tsx";
+import { btnClass, Button, cx, Status, Tag } from "../components/ui.tsx";
 import { UpgradeDialog } from "../dialogs/upgrade.tsx";
 import { useDesktop, useLive, useNow } from "../live.tsx";
 import { day, limits, names, statusKind, statusLine, toolsLine } from "../lib/format.ts";
-import { useFetch } from "../lib/use-fetch.ts";
 import { AccessTab } from "./details/access-tab.tsx";
 import { AgentsTab } from "./details/agents-tab.tsx";
 import { ProcessesTab } from "./details/processes-tab.tsx";
@@ -235,11 +234,6 @@ function Facts({
         <dt class="text-muted">Image</dt>
         <dd class="m-0 min-w-0 [overflow-wrap:anywhere]">
           {c.imageTitle || c.image} {c.imageVersion}{" "}
-          {c.imageSecrets && (
-            <>
-              <LockBadge />{" "}
-            </>
-          )}
           {admin && c.updateAvailable && (
             <>
               <Tag kind="update">{c.updateAvailable} available</Tag>{" "}
@@ -303,11 +297,8 @@ function Facts({
   );
 }
 
-/** Upgrades one desktop, asking about secrets when its image has them and others use the desktop. */
+/** Upgrades one desktop. */
 function UpgradeDesktop({ desktop: c, onClose }: { desktop: Desktop; onClose: () => void }) {
-  const images = useFetch(() => api.images(), "images");
-  if (!images.data && !images.error) return null;
-  const secrets = (images.data?.find((i) => i.ref === c.image)?.secrets ?? false) && c.access.length > 0;
   return (
     <UpgradeDialog
       title={`Upgrade ${c.name}?`}
@@ -318,8 +309,7 @@ function UpgradeDesktop({ desktop: c, onClose }: { desktop: Desktop; onClose: ()
         </>
       }
       action={`Upgrade ${c.name}`}
-      secrets={secrets ? { image: c.imageTitle || c.image, who: c.access } : undefined}
-      begin={() => api.upgrade(c.name, secrets)}
+      begin={() => api.upgrade(c.name)}
       onClose={onClose}
     />
   );

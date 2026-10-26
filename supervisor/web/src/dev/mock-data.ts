@@ -8,7 +8,7 @@ const now = Date.now();
 const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
 
 export const FOLDER = "/Users/zef/deskyard";
-const PLAIN = { installed: true, official: false, secrets: false } as const;
+const PLAIN = { installed: true, official: false } as const;
 const LATEST = "ghcr.io/zefhemel/deskyard-debian-xfce:latest";
 const BETA = "ghcr.io/zefhemel/deskyard-debian-xfce:beta";
 
@@ -38,7 +38,6 @@ function desktop(c: Partial<Desktop> & { name: string }): Desktop {
     image: LATEST,
     imageTitle: "Debian XFCE",
     imageVersion: "2026.10.22",
-    imageSecrets: false,
     autoReclaim: true,
     updateAvailable: null,
     vpn: {state:"disabled",changedAt:"0001-01-01T00:00:00Z",exitIpObservedAt:"0001-01-01T00:00:00Z",desiredRevision:0,appliedRevision:0,idle:false},
@@ -100,7 +99,6 @@ export const desktops: Desktop[] = [
     imageTitle: "Work, signed in",
     imageVersion: "2026-10-20 09:14",
     updateAvailable: "2026-10-22 08:30",
-    imageSecrets: true,
   }),
 ];
 
@@ -122,7 +120,6 @@ function customImage(slug: string, title: string, description: string, over: Par
     checked: null,
     installed: true,
     official: false,
-    secrets: false,
     ...over,
   };
 }
@@ -154,7 +151,7 @@ export const images: CatalogImage[] = [
     version: "", desktops: [], behind: [], checked: null, installed: false, official: true,
   })),
   customImage("python-lab", "Python lab", "Python 3.13, uv and JupyterLab", {}),
-  customImage("work-signed-in", "Work, signed in", "Chromium and the work apps, signed in to everything", { secrets: true }),
+  customImage("work-signed-in", "Work, signed in", "Chromium and the work apps, signed in to everything", {}),
   customImage("video-tools", "Video tools", "Kdenlive and ffmpeg", {}),
 ];
 

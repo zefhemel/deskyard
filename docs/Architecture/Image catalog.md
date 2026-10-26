@@ -6,7 +6,7 @@ uses:
   - "[[Architecture/Engine adapter]]"
 spec: "[[superpowers/specs/2026-10-21-supervisor-design|Supervisor design]]"
 ---
-The desktop images desktops can be made from (saved entries in `images.json` plus built-in choices in `supervisor/internal/server/official_images.go`), their versions from image labels, registry update checks and upgrades. Image authoring has been removed; custom images are built independently with Docker and added by reference. Existing locally built images and desktops remain usable. The `deskyard.secrets=true` label still drives the lock badge and secret-sharing confirmation.
+The desktop images desktops can be made from (saved entries in `images.json` plus built-in choices in `supervisor/internal/server/official_images.go`), their versions from image labels, registry update checks and upgrades. Image authoring has been removed; custom images are built independently with Docker and added by reference. Existing locally built images and desktops remain usable. Image labels carry no access semantics: sharing a desktop or moving it to another image never asks about the image's contents.
 
 XFCE remains the first-start default. The list merges saved entries with official XFCE and MATE metadata, deduplicating normalized references and preserving saved order and `DESKYARD_IMAGE`. Browsing neither persists these choices nor pulls them; titles and descriptions exist before download. `installed` reports local engine availability and `official` identifies a built-in reference. This is a static application catalog, not enumeration of the remote registry. Desktop choice and custom-image application sets are independent. See [[superpowers/specs/2026-10-23-desktop-variants-design|Desktop image variants design]].
 
@@ -14,4 +14,11 @@ Admins can install a catalog image through `POST /api/images/install`, add a loc
 
 Catalog additions, removals and version updates prepare a separate next list, persist it atomically, then publish it. Persistence failure leaves the current catalog unchanged. Install and update jobs report write failures; background local-image observations log them.
 
-The `deskyard.secrets=true` image label still requires confirmation when sharing or switching to an image marked with secrets. Removing image-authoring APIs did not remove that protection. Old authoring JSON and source folders are left untouched at startup, without migration; catalog removal preserves existing engine tags and saved files. Supervisor builds and releases contain no root scanner.
+Old authoring JSON and source folders are left untouched at startup, without migration; catalog removal preserves existing engine tags and saved files. Supervisor builds and releases contain no root scanner. The former `deskyard.secrets` label, lock badge and sharing confirmation were removed on 26 October 2026; an existing image still carrying the label is treated like any other.
+<!--
+> The `deskyard.secrets=true` image label
+
+I think this whole automatic tagging of “secrets” is unnecessary complexity at this point. Let’s remove that.
+
+Agent: Removed on 26 October 2026. The label lookup, the `secrets`/`imageSecrets` API fields, `confirmSecrets` and its 409 responses, the lock badges and the sharing/upgrade confirmation dialogs are gone from the supervisor and UI, with their browser tests. Images now carry no secrets semantics. Go tests, UI typecheck/tests, build and the docs check pass; the Playwright suites were not run.
+-->

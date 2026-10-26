@@ -57,7 +57,7 @@ export interface VPNStatus {
 export interface VPNRollout { connection: VPNConnection; desktops: (VPNReference & {error?: string})[] }
 export interface DesktopVPNSettings { vpnConnectionId: string | null; lanExceptions: LANException[] }
 export interface SettingsPatch extends Partial<DesktopVPNSettings> {
-  image?: string; memoryBytes?: number; nanoCpus?: number; camera?: string; dockerAccess?: boolean; confirmSecrets?: boolean; mounts?: HostMount[];
+  image?: string; memoryBytes?: number; nanoCpus?: number; camera?: string; dockerAccess?: boolean; mounts?: HostMount[];
 }
 
 export interface Settings extends DesktopVPNSettings {
@@ -84,8 +84,6 @@ export interface Desktop {
   image: string;
   imageTitle: string;
   imageVersion: string;
-  /** The image's starting home holds secrets: desktops made from it start signed in as whoever made it. */
-  imageSecrets: boolean;
   updateAvailable: string | null;
   settings: Settings;
   vpn: VPNStatus;
@@ -177,8 +175,6 @@ export interface CatalogImage {
   desktops: string[];
   behind: string[];
   checked: string | null;
-  /** Its starting home holds secrets: desktops made from it are signed in as whoever made it. */
-  secrets: boolean;
 }
 
 export interface FolderSize {
@@ -384,8 +380,7 @@ export const api = {
    */
   capture: (name: string, kind: "mic" | "cam", on: boolean, tab: string, seq: number) =>
     request<void>("POST", `${c(name)}/${kind}`, { on, tab, seq }),
-  /** `confirmSecrets`: the admin confirmed that the desktop's accounts may use the secrets of the image it moves onto. */
-  upgrade: (name: string, confirmSecrets = false) => request<JobRef>("POST", `${c(name)}/upgrade`, confirmSecrets ? { confirmSecrets } : undefined),
+  upgrade: (name: string) => request<JobRef>("POST", `${c(name)}/upgrade`),
   validateName: (name: string) => request<NameCheck>("GET", `/api/validate-name?name=${enc(name)}`),
   screenUrl: (name: string, opts: { full?: boolean; bust?: number } = {}) => {
     const q = new URLSearchParams();
@@ -418,7 +413,7 @@ export const api = {
   installImage: (ref: string) => request<JobRef>("POST", "/api/images/install", { ref }),
   removeImage: (ref: string) => request<void>("DELETE", `/api/images?ref=${enc(ref)}`),
   checkImages: () => request<JobRef>("POST", "/api/images/check"),
-  upgradeImage: (ref: string, confirmSecrets = false) => request<JobRef>("POST", "/api/images/upgrade", { ref, confirmSecrets }),
+  upgradeImage: (ref: string) => request<JobRef>("POST", "/api/images/upgrade", { ref }),
 
   cancelJob: (id: string) => request<void>("POST", `/api/jobs/${enc(id)}/cancel`),
 };

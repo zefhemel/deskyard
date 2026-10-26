@@ -3,7 +3,7 @@ import { api, type CatalogImage } from "../api.ts";
 import { JobProgress, useJob } from "../components/job.tsx";
 import { notify, notifyError } from "../components/toast.tsx";
 import { Page, PageHead } from "../components/topbar.tsx";
-import { Button, Dialog, ErrorText, Field, LockBadge, Tag } from "../components/ui.tsx";
+import { Button, Dialog, ErrorText, Field, Tag } from "../components/ui.tsx";
 import { UPGRADE_NOTE, UpgradeDialog } from "../dialogs/upgrade.tsx";
 import { useLive } from "../live.tsx";
 import { ago, plural } from "../lib/format.ts";
@@ -16,10 +16,6 @@ export function ImagesPage() {
   const images = useFetch(() => api.images(), "images");
   const [adding, setAdding] = useState(false);
   const [upgrading, setUpgrading] = useState<CatalogImage | null>(null);
-  const { desktops } = useLive();
-  // Accounts that can use the desktops an upgrade moves onto an image with secrets.
-  const secretWho = (img: CatalogImage) =>
-    img.secrets ? [...new Set((desktops ?? []).filter((c) => img.behind.includes(c.name)).flatMap((c) => c.access))].sort() : [];
   const reload = () => images.reload();
   const check = useJob(() => {
     images.reload();
@@ -85,8 +81,7 @@ export function ImagesPage() {
             </>
           }
           action={`Upgrade ${plural(upgrading.behind.length, "desktop")}`}
-          secrets={secretWho(upgrading).length ? { image: upgrading.title || upgrading.ref, who: secretWho(upgrading) } : undefined}
-          begin={() => api.upgradeImage(upgrading.ref, secretWho(upgrading).length > 0)}
+          begin={() => api.upgradeImage(upgrading.ref)}
           onClose={() => {
             setUpgrading(null);
             images.reload();
@@ -119,7 +114,6 @@ function ImageRow({
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold">
           {img.title || img.ref}
           {img.official && <Tag>Official</Tag>}
-          {img.secrets && <LockBadge />}
         </div>
         <div class="mt-0.5 text-[13px] text-muted">
           {img.description}

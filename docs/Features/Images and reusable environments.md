@@ -22,6 +22,8 @@ evidence:
 ---
 Current implementation is present in this checkout. This inventory records existing behavior; it is not a fresh end-to-end household acceptance result.
 
+At the owner's request, the `deskyard.secrets` image label, its lock badges and its sharing/upgrade confirmations were removed on 26 October 2026. Images have no secrets semantics; an image that bakes in someone's sign-ins shares them with everyone who can use desktops made from it.
+
 # Implementation
 - `supervisor/internal/server/images.go`
 - `supervisor/internal/server/official_images.go`

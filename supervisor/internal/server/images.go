@@ -34,8 +34,6 @@ type catalog struct {
 	list []catalogEntry
 }
 
-const labelSecrets = "deskyard.secrets"
-
 const checkInterval = 24 * time.Hour
 
 func loadCatalog(stateDir, defaultRef string) (*catalog, error) {
@@ -288,7 +286,6 @@ type catalogImageJSON struct {
 	Desktops    []string   `json:"desktops"`
 	Behind      []string   `json:"behind"`
 	Checked     *time.Time `json:"checked"`
-	Secrets     bool       `json:"secrets"`
 }
 
 func (s *Server) handleListImages(w http.ResponseWriter, r *http.Request) {
@@ -308,7 +305,6 @@ func (s *Server) handleListImages(w http.ResponseWriter, r *http.Request) {
 			if desc := img.Labels["org.opencontainers.image.description"]; desc != "" {
 				j.Description = desc
 			}
-			j.Secrets = img.Labels[labelSecrets] == "true"
 		}
 		for _, c := range list {
 			if sameRef(c.Image, e.Ref) {
@@ -430,8 +426,7 @@ func (s *Server) handleUpgradeImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Ref            string `json:"ref"`
-		ConfirmSecrets bool   `json:"confirmSecrets"`
+		Ref string `json:"ref"`
 	}
 	if err := readJSON(r, &req); err != nil || req.Ref == "" {
 		writeError(w, http.StatusBadRequest, "an image reference is required")
@@ -449,16 +444,6 @@ func (s *Server) handleUpgradeImage(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		return behind, nil
-	}
-	if !req.ConfirmSecrets {
-		behind, err := behindOn(r.Context())
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if !s.secretsConfirmed(w, r, req.Ref, behind, false) {
-			return
-		}
 	}
 	id := s.jobs.start(a.Username, "", func(ctx context.Context, progress func(string, float64)) error {
 		behind, err := behindOn(ctx)

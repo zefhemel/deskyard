@@ -5,7 +5,6 @@ import { useEffect, useState } from "preact/hooks";
 import { api, type NameCheck } from "../api.ts";
 import { AccessPicks, DockerAccessField, cpuOptions, ImagePick, memoryOptions } from "../components/desktop-fields.tsx";
 import { JobProgress, useJob } from "../components/job.tsx";
-import { SecretAccessDialog } from "../components/secret-access.tsx";
 import { Button, Dialog, ErrorText, Field, Seg } from "../components/ui.tsx";
 import { useLive } from "../live.tsx";
 import { useFetch } from "../lib/use-fetch.ts";
@@ -36,7 +35,6 @@ export function NewDesktopDialog({ onClose }: { onClose: () => void }) {
   const [cpus, setCpus] = useState(0);
   const [dockerAccess, setDockerAccess] = useState(false);
   const [access, setAccess] = useState<string[]>([]);
-  const [confirming, setConfirming] = useState(false);
   const run = useJob(() => onClose());
 
   // Default to the catalog's first image.
@@ -90,9 +88,7 @@ export function NewDesktopDialog({ onClose }: { onClose: () => void }) {
   }
 
   const ready = check?.ok === true && !!image && !run.running;
-  const picked = images.data?.find((i) => i.ref === image);
   const create = () => {
-    setConfirming(false);
     try {
       const lanExceptions = vpnID ? parseExceptions(lan) : [];
       setVPNError(null);
@@ -101,9 +97,7 @@ export function NewDesktopDialog({ onClose }: { onClose: () => void }) {
   };
   const submit = () => {
     if (!ready) return;
-    // Others given access to a desktop on an image with secrets: ask first.
-    if (picked?.secrets && access.length) setConfirming(true);
-    else create();
+    create();
   };
 
   return (
@@ -152,14 +146,6 @@ export function NewDesktopDialog({ onClose }: { onClose: () => void }) {
         <JobProgress job={run.job} />
         <ErrorText error={vpnError || run.error} />
       </Dialog>
-      {confirming && picked && (
-        <SecretAccessDialog
-          who={access}
-          desktops={[{ name, image: picked.title || picked.ref }]}
-          onCancel={() => setConfirming(false)}
-          onConfirm={create}
-        />
-      )}
     </>
   );
 }

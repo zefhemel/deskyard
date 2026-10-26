@@ -2,7 +2,6 @@ import { useEffect, useState } from "preact/hooks";
 import { api, type Desktop } from "../../api.ts";
 import { AccessPicks } from "../../components/desktop-fields.tsx";
 import { notify } from "../../components/toast.tsx";
-import { SecretAccessDialog } from "../../components/secret-access.tsx";
 import { Button, ErrorText, errorMessage } from "../../components/ui.tsx";
 import { useFetch } from "../../lib/use-fetch.ts";
 
@@ -13,7 +12,6 @@ export function AccessTab({ desktop: c }: { desktop: Desktop }) {
   const [value, setValue] = useState(c.access);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [confirming, setConfirming] = useState(false);
 
   // Follow changes made elsewhere while nothing is being edited here.
   const [saved, setSaved] = useState(c.access);
@@ -22,11 +20,7 @@ export function AccessTab({ desktop: c }: { desktop: Desktop }) {
     setSaved(c.access);
   }, [c.access.join(",")]);
 
-  const added = value.filter((u) => !saved.includes(u));
-  // Accounts given access to a desktop on an image with secrets use whoever made the image's sign-ins: ask first.
-  const askFirst = c.imageSecrets && added.length > 0;
   const save = async () => {
-    setConfirming(false);
     setBusy(true);
     setError(null);
     try {
@@ -54,18 +48,10 @@ export function AccessTab({ desktop: c }: { desktop: Desktop }) {
       )}
       <div class="mt-4">
         <ErrorText error={error} />
-        <Button variant="primary" disabled={busy || same(value, saved)} onClick={askFirst ? () => setConfirming(true) : save}>
+        <Button variant="primary" disabled={busy || same(value, saved)} onClick={save}>
           Save
         </Button>
       </div>
-      {confirming && (
-        <SecretAccessDialog
-          who={added}
-          desktops={[{ name: c.name, image: c.imageTitle || c.image }]}
-          onCancel={() => setConfirming(false)}
-          onConfirm={() => void save()}
-        />
-      )}
     </div>
   );
 }

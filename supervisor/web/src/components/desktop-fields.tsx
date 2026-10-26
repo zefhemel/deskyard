@@ -2,7 +2,7 @@
 // Settings and Access tabs.
 import type { Account, CatalogImage } from "../api.ts";
 import { gb, trim } from "../lib/format.ts";
-import { LockBadge, Pick, Picks, type SegOption, Tag, cx } from "./ui.tsx";
+import { Pick, Picks, type SegOption, Tag, cx } from "./ui.tsx";
 
 const GB = 1024 ** 3;
 
@@ -33,17 +33,10 @@ export function ImagePick({ images, value, onChange }: { images: CatalogImage[];
           <input type="radio" name="image" class="mt-[3px]" checked={img.ref === value} onChange={() => onChange(img.ref)} />
           <span class="min-w-0">
             <b class="font-semibold">{img.title || img.ref}</b> <span class="text-muted">{img.version}</span>
-            {img.secrets && (
-              <>
-                {" "}
-                <LockBadge />
-              </>
-            )}
             <p class="mt-0.5 text-[13px] text-muted">
               {img.description} <span class="mono [overflow-wrap:anywhere]">{img.ref}</span>
             </p>
             {!img.installed && <p class="mt-0.5 text-[13px] text-muted">Downloads on first use</p>}
-            {img.secrets && <p class="mt-0.5 text-[13px] text-danger">Desktops made from this start signed in as whoever made it</p>}
           </span>
         </label>
       ))}

@@ -1,8 +1,7 @@
 // New account and Edit account (password, admin, desktops).
 import { useState } from "preact/hooks";
 import { api, type Account } from "../api.ts";
-import { SecretAccessDialog } from "../components/secret-access.tsx";
-import { Button, Check, Dialog, ErrorText, errorMessage, Field, LockBadge, Pick, Picks } from "../components/ui.tsx";
+import { Button, Check, Dialog, ErrorText, errorMessage, Field, Pick, Picks } from "../components/ui.tsx";
 import { useLive } from "../live.tsx";
 
 const USERNAME = /^[a-z][a-z0-9._-]{0,31}$/;
@@ -16,23 +15,13 @@ export function AccountDialog({ account, onClose, onSaved }: { account: Account 
   const [picked, setPicked] = useState<string[]>(account?.desktops ?? []);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [confirming, setConfirming] = useState(false);
   const who = isNew ? username || "they" : account.username;
 
   const badName = isNew && username !== "" && !USERNAME.test(username);
   const ready = isNew ? USERNAME.test(username) && password !== "" : true;
 
-  // Desktops newly given whose image has secrets: ask first.
-  const secretOnes = admin
-    ? []
-    : (desktops ?? []).filter((c) => c.imageSecrets && picked.includes(c.name) && !(account?.desktops ?? []).includes(c.name));
-  const submit = () => {
-    if (!ready) return;
-    if (secretOnes.length) setConfirming(true);
-    else void save();
-  };
   const save = async () => {
-    setConfirming(false);
+    if (!ready) return;
     setBusy(true);
     setError(null);
     try {
@@ -56,13 +45,12 @@ export function AccountDialog({ account, onClose, onSaved }: { account: Account 
   for (const n of picked) if (!names.includes(n)) names.push(n);
   names.sort();
 
-  const secretNames = new Set((desktops ?? []).filter((c) => c.imageSecrets).map((c) => c.name));
   return (
     <>
       <Dialog
         title={isNew ? "New account" : `Edit ${account.username}`}
         onClose={onClose}
-        onSubmit={submit}
+        onSubmit={() => void save()}
         footer={
           <>
             <Button variant="quiet" onClick={onClose}>
@@ -116,7 +104,6 @@ export function AccountDialog({ account, onClose, onSaved }: { account: Account 
               {names.map((n) => (
                 <Pick key={n} checked={picked.includes(n)} onChange={(on) => setPicked(on ? [...picked, n] : picked.filter((x) => x !== n))}>
                   {n}
-                  {secretNames.has(n) && <LockBadge />}
                 </Pick>
               ))}
               {!names.length && <div class="px-3 py-2 text-sm text-muted">There are no desktops yet.</div>}
@@ -125,14 +112,6 @@ export function AccountDialog({ account, onClose, onSaved }: { account: Account 
         )}
         <ErrorText error={error} />
       </Dialog>
-      {confirming && (
-        <SecretAccessDialog
-          who={[isNew ? username : account.username]}
-          desktops={secretOnes.map((c) => ({ name: c.name, image: c.imageTitle || c.image }))}
-          onCancel={() => setConfirming(false)}
-          onConfirm={() => void save()}
-        />
-      )}
     </>
   );
 }
