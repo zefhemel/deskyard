@@ -101,7 +101,7 @@ COPY --from=flatpak /out/source/ /usr/share/doc/flatpak/deskyard-source/
 RUN --mount=type=bind,from=flatpak,source=/out/debs,target=/tmp/flatpak-debs \
     apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl procps supervisor dbus dbus-x11 \
-        x11-utils xdg-utils fonts-dejavu-core python3-gi gir1.2-wnck-3.0 \
+        x11-utils xdg-utils fonts-dejavu-core \
         chromium socat xdotool xclip maim flatpak git openssh-client tmux /tmp/flatpak-debs/*.deb \
         pipewire pipewire-pulse wireplumber pulseaudio-utils \
     && rm -rf /var/lib/apt/lists/* \

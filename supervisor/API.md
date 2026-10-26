@@ -301,19 +301,6 @@ The shared Chromium's DevTools protocol: `GET /api/agent/v1/cdp/json/version`, `
 
 The supervisor executes only `deskyard terminal-list` as `user` in `/workspace`, without a TTY or stdin. The request has a five-second deadline and 64 KiB output limit; the helper has its own four-second deadline. Anonymous requests return 401, missing/inaccessible desktops 404, stopped desktops and images without `tmux-v1` 409, and helper failures or invalid/oversized data 502, using the usual `{"error":"message"}` response. Existing terminal WebSocket and remote exec contracts are unchanged.
 
-## Experimental application/window bridge
-
-Requires the prototype desktop image. All routes require a signed-in account
-with access to the desktop; POST requires the existing same-origin check.
-
-- `GET /api/desktops/{name}/applications`: `{apps: [{id, name}], windows: [{id, title, app, parent, active, minimized, x, y, width, height}]}`. IDs are strings; `parent` is a transient parent window ID or null. `?windows=1` skips application enumeration and returns an empty `apps` array.
-- `POST /api/desktops/{name}/applications`: `{action: "launch" | "activate", id: string}`. Launch accepts a registered `.desktop` ID; activate accepts a decimal X11 window ID. Returns `{id: string | null}`; a null launch result means no matching window was found within six seconds, not that launch failed.
-- A stopped desktop returns 409; malformed action/ID 400; absent helper or invalid/oversized response 502. Helper output is capped at 1 MiB with a 12-second deadline.
-
-These operations share the existing session and its input focus. Window pixels
-are still delivered through the full desktop Selkies stream.
-
-
 ## Replacement recovery
 
 Settings changes and upgrades persist private recovery intent before stopping/removing the old container. Failure during create/start/readiness/final inspection restores the previous immutable image, logical update reference, identity, settings and workspace; a previously running desktop must become ready again before recovery completes. Interrupted replacements are rolled back at supervisor startup, after network reconnection. Records are mode 0600 under `.deskyard/recovery/`; failed recovery retains its record and operation reservations return conflict until startup can restore it. The filesystem and engine may still prevent restoration; the supervisor logs that failure rather than discarding recovery intent. These records contain the proxy token and belong in private supervisor-state backups.

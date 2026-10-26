@@ -57,28 +57,20 @@ Installation and native keyboard input were verified in the iOS 27 iPhone
 simulator, including on the plain HTTP LAN demo. HTTPS is still required
 for mic, camera and automatic clipboard synchronization; see Running on a LAN.
 
-## Mobile application prototype
-
-The desktop bar's **Apps** button lists running windows and installed applications.
-Choose a window or launch an application to focus its region in the existing
-stream. **Actual size** allows scrolling at one remote pixel per CSS pixel;
-**Fit window** scales it to the available space. In Actual size, **Pan view**
-lets you drag the picture; **Use window** returns touch input to the app. **Full desktop** returns to
-the complete screen.
+## Mobile controls
 
 **Resolution ▾** beside **Lock size** chooses a remote screen size and locks it.
 On phones, open **⋯ More** for **Resolution:** choices. Presets include
 800×600, 1024×768, 1280×720, 1280×800, 1920×1080, and portrait sizes
 600×900 and 900×1200. **Resolution: Auto fit** unlocks the size. The choice
 is remembered in your browser; the first viewer controls the shared screen.
-Return to **Full desktop** before changing resolution from a focused window.
 More explains when another viewer controls the shared resolution.
 
-Touch controls are available in both the full desktop and focused window,
-including landscape phones and tablets:
+Touch controls are available on touch devices, including landscape phones
+and tablets:
 
 - **Tap** clicks where your finger touches; **Trackpad** moves the pointer
-  relative to your finger. In a magnified or Actual size view, moving the
+  relative to your finger. In a magnified view, moving the
   pointer to an edge pans your view to follow it. The choice is remembered
   in your browser.
 - **Keyboard** shows or hides the phone's software keyboard. Esc, Tab,
@@ -90,17 +82,7 @@ including landscape phones and tablets:
 Magnification is local: it does not zoom the application or resize the shared
 remote screen. The controls remain outside the magnified picture. The page
 follows the visible viewport when the software keyboard opens. These touch
-controls are served by the supervisor and do not require rebuilding a
-Selkies desktop image; the application launcher below does.
-
-This experimental view requires a desktop image built from this branch
-(`python3-gi`, `gir1.2-wnck-3.0`, and the `deskyard-apps` helper).
-The crop is local to your browser; focus, pointer and keyboard remain shared.
-The full screen is still transmitted. Windows are followed about once a
-second, and known child dialogs are included; menus outside that region,
-windows beyond the screen edges, minimum application sizes, and phone
-keyboard behavior still need broader device testing. Use Full desktop when
-needed. CLI action marks are hidden while focused.
+controls are served by the supervisor and work with any Selkies desktop image.
 
 ## Install
 

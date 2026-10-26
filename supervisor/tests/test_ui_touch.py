@@ -1,131 +1,7 @@
-"""Mobile application prototype against the real helper, desktop and stream."""
+"""Touch, magnification and resolution controls against the real desktop and stream."""
 import time
 from playwright.sync_api import expect, sync_playwright
-import json
-from conftest import docker
 from helpers import signed_in, open_desktop, in_desktop, wait_until, video_settings_lines, sign_in
-
-
-def test_mobile_launch_focus_and_return(supervisor, desktop, name, tmp_path):
-    with sync_playwright() as p:
-        browser, page = signed_in(p, supervisor.base, viewport={"width": 390, "height": 760}, has_touch=True)
-        open_desktop(page, supervisor.base, name, status=False)
-        page.get_by_role("button", name="Apps", exact=True).click()
-        expect(page.get_by_role("dialog")).to_be_visible()
-        page.get_by_placeholder("Search applications and windows").fill("terminal")
-        page.get_by_role("button", name="Launch Xfce Terminal", exact=True).click()
-        expect(page.get_by_role("button", name="Full desktop", exact=True)).to_be_visible(timeout=20000)
-        expect(page.locator("[data-window-viewport]")).to_have_attribute("data-focused", "true")
-        page.screenshot(path=str(tmp_path / "mobile-terminal.png"))
-        # Input traverses the translated/scaled iframe and reaches the real terminal.
-        box = page.locator("[data-window-viewport]").bounding_box()
-        page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-        page.keyboard.type("printf focused > /tmp/mobile-focused")
-        page.keyboard.press("Enter")
-        assert wait_until(lambda: in_desktop(name, "cat", "/tmp/mobile-focused", check=False).strip() == "focused", 10)
-        page.get_by_role("button", name="Full desktop", exact=True).click()
-        expect(page.locator("[data-window-viewport]")).to_have_attribute("data-focused", "false")
-        # Chromium uses the shared-browser launcher registered by the image.
-        response = page.request.post(f"{supervisor.base}/api/desktops/{name}/applications",
-            data={"action": "launch", "id": "chromium.desktop"}, headers={"Origin": supervisor.base})
-        assert response.ok, response.text()
-        launched = response.json()["id"]
-        assert launched, response.text()
-        inventory = page.request.get(f"{supervisor.base}/api/desktops/{name}/applications?windows=1").json()
-        assert any(w["id"] == launched and "chromium" in w["app"].lower() for w in inventory["windows"])
-        browser.close()
-
-
-PROBE = r"""
-import gi
-gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk, GLib
-import json
-window = Gtk.Window(title="Mobile crop probe")
-window.set_default_size(560, 420)
-window.move(180, 120)
-fixed = Gtk.Fixed()
-window.add(fixed)
-hit = Gtk.Button(label="Hit target")
-hit.set_size_request(120, 60)
-hit.connect("clicked", lambda *_: open("/tmp/mobile-hit", "w").write("yes"))
-fixed.put(hit, 100, 100)
-def dialog(*_):
-    d = Gtk.Dialog(title="Mobile child dialog", transient_for=window, modal=True)
-    d.set_default_size(300, 180)
-    d.add_button("Done", Gtk.ResponseType.OK)
-    d.connect("response", lambda d, *_: d.destroy())
-    d.show_all()
-show = Gtk.Button(label="Open dialog")
-show.connect("clicked", dialog)
-fixed.put(show, 100, 220)
-window.show_all()
-def positions():
-    def center(widget):
-        a = widget.get_allocation()
-        return window.get_window().get_root_coords(a.x + a.width // 2, a.y + a.height // 2)
-    targets = {"hit": center(hit), "dialog": center(show)}
-    open("/tmp/mobile-targets.json", "w").write(json.dumps(targets))
-    return False
-window.connect("configure-event", lambda *_: GLib.idle_add(positions))
-GLib.idle_add(positions)
-Gtk.main()
-"""
-
-
-def test_shared_screen_crop_touch_and_dialog(supervisor, desktop, name, tmp_path):
-    in_desktop(name, "python3", "-c", "import sys; open('/tmp/mobile-probe.py','w').write(sys.argv[1])", PROBE)
-    with sync_playwright() as p:
-        laptop, large = signed_in(p, supervisor.base, viewport={"width": 1280, "height": 900})
-        open_desktop(large, supervisor.base, name)
-        phone, page = signed_in(p, supervisor.base, viewport={"width": 390, "height": 760}, has_touch=True)
-        open_desktop(page, supervisor.base, name, status=False)
-        page.get_by_role("button", name="More", exact=True).click()
-        expect(page.get_by_role("menuitem", name="Resolution: controlled by another viewer", exact=True)).to_be_disabled()
-        page.get_by_role("button", name="More", exact=True).click()
-        docker("exec", "-d", "-u", "user", f"deskyard-{name}", "/usr/bin/python3", "/tmp/mobile-probe.py")
-        page.get_by_role("button", name="Apps", exact=True).click()
-        page.get_by_role("button", name="Switch to Mobile crop probe", exact=True).click(timeout=15000)
-        expect(page.locator("[data-window-viewport]")).to_have_attribute("data-focused", "true")
-        page.wait_for_function("""() => {
-            const f=document.querySelector('iframe'), d=f.contentWindow.deskyardScreen.display();
-            const v=f.contentWindow.deskyardScreen.video()?.getBoundingClientRect();
-            return v && Math.abs(v.width-d.width)<3 && Math.abs(v.height-d.height)<3;
-        }""", timeout=10000)
-        inventory = page.request.get(f"{supervisor.base}/api/desktops/{name}/applications?windows=1").json()
-        selected = next(w for w in inventory["windows"] if w["title"] == "Mobile crop probe")
-        xid = selected["id"]
-        def tap_target(target):
-            # XFCE can configure/reparent the GTK window after its first idle.
-            targets = json.loads(in_desktop(name, "cat", "/tmp/mobile-targets.json"))
-            point = page.evaluate("""({x,y}) => {
-                const f=document.querySelector('iframe');
-                const picture=f.contentWindow.deskyardScreen.video();
-                const a=f.getBoundingClientRect(), b=picture.getBoundingClientRect();
-                const d=f.contentWindow.deskyardScreen.display();
-                const sx=a.width/f.clientWidth, sy=a.height/f.clientHeight;
-                return {x:a.left+(b.left+x*b.width/d.width)*sx,
-                        y:a.top+(b.top+y*b.height/d.height)*sy};
-            }""", {"x": targets[target][0], "y": targets[target][1]})
-            page.screenshot(path=str(tmp_path / "before-tap.png"))
-            page.touchscreen.tap(point["x"], point["y"])
-            page.screenshot(path=str(tmp_path / "after-tap.png"))
-        tap_target("hit")
-        assert wait_until(lambda: in_desktop(name, "cat", "/tmp/mobile-hit", check=False).strip() == "yes", 10)
-        tap_target("dialog")
-        assert wait_until(lambda: any(w["title"] == "Mobile child dialog" and w["parent"] == xid
-            for w in page.request.get(f"{supervisor.base}/api/desktops/{name}/applications?windows=1").json()["windows"]), 10)
-        page.screenshot(path=str(tmp_path / "mobile-dialog.png"))
-        # A second viewer changes the stream aspect ratio: focused input must stay aligned.
-        large.set_viewport_size({"width": 1100, "height": 720})
-        assert wait_until(lambda: page.evaluate("""() => {
-            const f=document.querySelector('iframe'),d=f.contentWindow.deskyardScreen.display();
-            return d.width > 0 && Math.abs(f.clientWidth/d.width-f.clientHeight/d.height)<0.01;
-        }"""), 10)
-        page.get_by_role("button", name="Full desktop", exact=True).click()
-        expect(page.locator("[data-window-viewport]")).to_have_attribute("data-focused", "false")
-        phone.close()
-        laptop.close()
 
 
 def test_general_desktop_touch_controls(supervisor, desktop, name):
@@ -160,22 +36,22 @@ def test_general_desktop_touch_controls(supervisor, desktop, name):
         for distance in (80,100,130):
             cdp.send("Input.dispatchTouchEvent", {"type":"touchMove", "touchPoints":[{"x":360-distance,"y":280,"id":1},{"x":360+distance,"y":280,"id":2}]})
             time.sleep(0.12)
-            magnifications.append(float(page.locator("[data-window-viewport]").get_attribute("data-zoom")))
+            magnifications.append(float(page.locator("[data-zoom-viewport]").get_attribute("data-zoom")))
         assert magnifications == sorted(magnifications), magnifications
         # Holding the same pinch distance must not oscillate after a render.
         cdp.send("Input.dispatchTouchEvent", {"type":"touchMove", "touchPoints":[{"x":230,"y":280,"id":1},{"x":490,"y":280,"id":2}]})
         time.sleep(0.12)
-        assert abs(float(page.locator("[data-window-viewport]").get_attribute("data-zoom"))-magnifications[-1]) < 0.02
+        assert abs(float(page.locator("[data-zoom-viewport]").get_attribute("data-zoom"))-magnifications[-1]) < 0.02
         cdp.send("Input.dispatchTouchEvent", {"type":"touchEnd", "touchPoints":[]})
-        page.wait_for_function("Number(document.querySelector('[data-window-viewport]').dataset.zoom) > 1.2")
+        page.wait_for_function("Number(document.querySelector('[data-zoom-viewport]').dataset.zoom) > 1.2")
         assert in_desktop(name, "xdotool", "getdisplaygeometry") == before_size
-        before_pan = page.locator("[data-window-viewport]").evaluate("e => e.scrollLeft")
+        before_pan = page.locator("[data-zoom-viewport]").evaluate("e => e.scrollLeft")
         cdp.send("Input.dispatchTouchEvent", {"type":"touchStart", "touchPoints":[{"x":300,"y":280,"id":1},{"x":420,"y":280,"id":2}]})
         for offset in (20,40,60):
             cdp.send("Input.dispatchTouchEvent", {"type":"touchMove", "touchPoints":[{"x":300-offset,"y":280,"id":1},{"x":420-offset,"y":280,"id":2}]})
             time.sleep(0.1)
         cdp.send("Input.dispatchTouchEvent", {"type":"touchEnd", "touchPoints":[]})
-        assert wait_until(lambda: page.locator("[data-window-viewport]").evaluate("e => e.scrollLeft") > before_pan + 50, 5)
+        assert wait_until(lambda: page.locator("[data-zoom-viewport]").evaluate("e => e.scrollLeft") > before_pan + 50, 5)
         sent = page.frames[1].evaluate("window.__touchSent")
         assert not any(message.startswith(("kd,65507", "kd,65508")) for message in sent), sent
         # Direct taps remain aligned after magnification and panning.
@@ -190,19 +66,19 @@ def test_general_desktop_touch_controls(supervisor, desktop, name):
             cdp.send("Input.dispatchTouchEvent", {"type":"touchMove", "touchPoints":[{"x":360-radius,"y":280,"id":1},{"x":360+radius,"y":280,"id":2}]})
             time.sleep(0.1)
         cdp.send("Input.dispatchTouchEvent", {"type":"touchEnd", "touchPoints":[]})
-        expect(page.locator("[data-window-viewport]")).to_have_attribute("data-zoom", "4.00")
+        expect(page.locator("[data-zoom-viewport]")).to_have_attribute("data-zoom", "4.00")
         cdp.send("Input.dispatchTouchEvent", {"type":"touchStart", "touchPoints":[{"x":300,"y":280,"id":1},{"x":420,"y":280,"id":2}]})
         cdp.send("Input.dispatchTouchEvent", {"type":"touchMove", "touchPoints":[{"x":270,"y":280,"id":1},{"x":390,"y":280,"id":2}]})
         cdp.send("Input.dispatchTouchEvent", {"type":"touchEnd", "touchPoints":[]})
-        scroll_at_limit = page.locator("[data-window-viewport]").evaluate("e => e.scrollLeft")
+        scroll_at_limit = page.locator("[data-zoom-viewport]").evaluate("e => e.scrollLeft")
         cdp.send("Input.dispatchTouchEvent", {"type":"touchStart", "touchPoints":[{"x":260,"y":280,"id":1},{"x":460,"y":280,"id":2}]})
         cdp.send("Input.dispatchTouchEvent", {"type":"touchMove", "touchPoints":[{"x":280,"y":280,"id":1},{"x":440,"y":280,"id":2}]})
         cdp.send("Input.dispatchTouchEvent", {"type":"touchEnd", "touchPoints":[]})
-        page.wait_for_function("Number(document.querySelector('[data-window-viewport]').dataset.zoom) < 4")
-        result = page.locator("[data-window-viewport]").evaluate("e => ({zoom:Number(e.dataset.zoom),scroll:e.scrollLeft})")
+        page.wait_for_function("Number(document.querySelector('[data-zoom-viewport]').dataset.zoom) < 4")
+        result = page.locator("[data-zoom-viewport]").evaluate("e => ({zoom:Number(e.dataset.zoom),scroll:e.scrollLeft})")
         assert abs(result["scroll"] - ((scroll_at_limit+360)*result["zoom"]/4-360)) < 4, (scroll_at_limit,result)
         page.get_by_role("button", name="Fit screen", exact=True).click()
-        expect(page.locator("[data-window-viewport]")).to_have_attribute("data-zoom", "1.00")
+        expect(page.locator("[data-zoom-viewport]")).to_have_attribute("data-zoom", "1.00")
         page.get_by_role("button", name="Trackpad", exact=True).click()
         page.reload()
         page.wait_for_function("document.querySelector('iframe')?.contentWindow?.webrtcInput?._trackpadMode === true")
@@ -267,8 +143,8 @@ def test_trackpad_follows_cursor_at_view_edges(supervisor, desktop, name):
             touch("touchMove", [(195-radius,320),(195+radius,320)])
             time.sleep(.1)
         touch("touchEnd", [])
-        view = page.locator("[data-window-viewport]")
-        page.wait_for_function("Number(document.querySelector('[data-window-viewport]').dataset.zoom)>1.5")
+        view = page.locator("[data-zoom-viewport]")
+        page.wait_for_function("Number(document.querySelector('[data-zoom-viewport]').dataset.zoom)>1.5")
         view.evaluate("e => { e.scrollLeft=0; e.scrollTop=0; }")
         page.get_by_role("button", name="Trackpad", exact=True).click()
         page.wait_for_function("document.querySelector('iframe').contentWindow.webrtcInput._echo !== null")

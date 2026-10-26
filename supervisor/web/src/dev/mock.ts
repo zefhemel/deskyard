@@ -406,13 +406,6 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
       setState(c, "running");
     }, c.name));
   }
-  if (sub === "applications") {
-    if (method === "POST") return json(res, 200, { id: "42" });
-    return json(res, 200, {
-      apps: url.searchParams.get("windows") === "1" ? [] : [{ id: "xfce4-terminal.desktop", name: "Xfce Terminal" }, { id: "chromium.desktop", name: "Chromium" }],
-      windows: [{ id: "42", title: "Terminal — workspace", app: "Xfce4-terminal", parent: null, active: true, minimized: false, x: 0, y: 24, width: 640, height: 480 }],
-    });
-  }
   if (sub === "keys") return json(res, 204);
   if ((sub === "mic" || sub === "cam") && method === "POST") {
     const on = (await readBody(req)).on === true;

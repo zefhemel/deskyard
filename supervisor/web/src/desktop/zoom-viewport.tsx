@@ -1,15 +1,10 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { AppWindow } from "../api.ts";
 import type { DeskyardScreen } from "./selkies.ts";
 import { zoomAt } from "./view-zoom.ts";
-import { windowRegion } from "./window-view.ts";
 
 /** Transform the whole client so its own screen/input coordinate mapping stays intact. */
-export function WindowViewport({ focus, windows, readable, children, screen, frame, zoom, onZoom }: {
-  focus: { id: string; width: number; height: number } | null;
-  windows: AppWindow[];
-  readable: boolean;
+export function ZoomViewport({ children, screen, frame, zoom, onZoom }: {
   children: ComponentChildren;
   screen: DeskyardScreen | null;
   frame: { current: HTMLIFrameElement | null };
@@ -69,33 +64,11 @@ export function WindowViewport({ focus, windows, readable, children, screen, fra
     } else if (zoom === 1) el.scrollTo(0, 0);
     screen?.setViewZoom?.(zoom);
   }, [zoom, screen]);
-  const [panning, setPanning] = useState(false);
-  const drag = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
-  const region = focus && windowRegion(windows, focus.id, focus.width, focus.height);
-  const scale = region ? (readable ? 1 : Math.min(size.width / region.width, size.height / region.height, 2)) * zoom : zoom;
-  return <div ref={ref} data-window-viewport data-focused={String(!!region)} data-zoom={zoom.toFixed(2)} class="relative min-h-0 min-w-0 flex-1 overflow-auto bg-[#101722]">
-    {region && readable && <button type="button" aria-pressed={panning} class="sticky top-2 left-2 z-20 min-h-11 cursor-pointer rounded-lg bg-bar px-4 text-sm text-white" onClick={() => setPanning(!panning)}>{panning ? "Use window" : "Pan view"}</button>}
-    <div style={region ? { position: "relative", overflow: "hidden", width: `${region.width * scale}px`, height: `${region.height * scale}px`,
-      margin: "0 auto" } : { position: "relative", width: zoom > 1 ? `${baseSize.current.width * zoom}px` : "100%", height: zoom > 1 ? `${baseSize.current.height * zoom}px` : "100%", overflow: "hidden" }}>
-      <div style={region && focus ? { position: "absolute", width: `${focus.width}px`, height: `${focus.height}px`,
-        transformOrigin: "0 0", transform: `translate(${-region.x * scale}px, ${-region.y * scale}px) scale(${scale})` } : { width: zoom > 1 ? `${baseSize.current.width}px` : "100%", height: zoom > 1 ? `${baseSize.current.height}px` : "100%", transformOrigin: "0 0", transform: `scale(${zoom})` }}>
+  return <div ref={ref} data-zoom-viewport data-zoom={zoom.toFixed(2)} class="relative min-h-0 min-w-0 flex-1 overflow-auto bg-[#101722]">
+    <div style={{ position: "relative", width: zoom > 1 ? `${baseSize.current.width * zoom}px` : "100%", height: zoom > 1 ? `${baseSize.current.height * zoom}px` : "100%", overflow: "hidden" }}>
+      <div style={{ width: zoom > 1 ? `${baseSize.current.width}px` : "100%", height: zoom > 1 ? `${baseSize.current.height}px` : "100%", transformOrigin: "0 0", transform: `scale(${zoom})` }}>
         {children}
       </div>
-      {region && readable && panning && <div aria-label="Drag to pan window" style={{ position: "absolute", inset: 0, touchAction: "none", cursor: "grab" }}
-        onPointerDown={(e) => {
-          const el = ref.current;
-          if (!el) return;
-          drag.current = { x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop };
-          e.currentTarget.setPointerCapture(e.pointerId);
-        }}
-        onPointerMove={(e) => {
-          const el = ref.current, start = drag.current;
-          if (!el || !start) return;
-          el.scrollLeft = start.left + start.x - e.clientX;
-          el.scrollTop = start.top + start.y - e.clientY;
-        }}
-        onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} />}
-
     </div>
   </div>;
 }

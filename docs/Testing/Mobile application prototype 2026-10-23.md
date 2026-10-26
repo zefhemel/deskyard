@@ -5,7 +5,7 @@ result: "partial"
 scope: "Historical focused-window, touch and resolution prototype checks with Chromium phone emulation and separately scoped native PWA follow-up."
 date: "2026-10-23"
 ---
-Evidence migrated from the completed execution plan. The addresses, image names and test counts below describe those historical runs, not the current deployment or a fresh test run. Physical-device and broad platform coverage remain limited. Current behavior is described in [[Features/Mobile access and application views]] and [[Architecture/Application bridge]].
+Evidence migrated from the completed execution plan. The addresses, image names and test counts below describe those historical runs, not the current deployment or a fresh test run. Physical-device and broad platform coverage remain limited. Current behavior is described in [[Features/Mobile access]]; the application picker, focused-window crop and their image helper were removed on 26 October 2026, so the launch/focus results below are historical only. The touch and resolution results still describe retained controls.
 
 # Results
 

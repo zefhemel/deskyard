@@ -3,7 +3,7 @@
 import type { ComponentChildren } from "preact";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-import { api, type AppWindow, type Desktop } from "../api.ts";
+import { api, type Desktop } from "../api.ts";
 import { Avatar, Avatars } from "../components/avatar.tsx";
 import { power } from "../components/desktop-menu.tsx";
 import { Menu, type MenuItem } from "../components/menu.tsx";
@@ -15,9 +15,8 @@ import { useDesktop, useLive } from "../live.tsx";
 import { agentTitle } from "../lib/activity-format.ts";
 import { vpnPresentation } from "../lib/vpn-form.ts";
 import { names } from "../lib/format.ts";
-import { Applications } from "./applications.tsx";
 import { TouchControls, useVisibleViewport } from "./touch-controls.tsx";
-import { WindowViewport } from "./window-viewport.tsx";
+import { ZoomViewport } from "./zoom-viewport.tsx";
 import { AudioControl } from "./audio-panel.tsx";
 import { avSyncWanted, startAvSync } from "./avsync.ts";
 import { ClipboardPopover } from "./clipboard.tsx";
@@ -131,11 +130,6 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
   const { me, host } = useLive();
   const { route } = useLocation();
   const frame = useRef<HTMLIFrameElement>(null);
-  const [focus, setFocus] = useState<{ id: string; width: number; height: number } | null>(null);
-  const focusRef = useRef(focus);
-  focusRef.current = focus;
-  const [windows, setWindows] = useState<AppWindow[]>([]);
-  const [readable, setReadable] = useState(false);
   const [trackpad, setTrackpad] = useState(() => stored("deskyard.trackpad", (v) => v === "true", false));
   const trackpadRef = useRef(trackpad);
   trackpadRef.current = trackpad;
@@ -206,16 +200,6 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
         sendQuality(frame.current, quality);
         setLive(quality);
       }
-      if (focusRef.current) {
-        if (d.width > 0 && d.height > 0) {
-          if (was.owner === null || was.width !== d.width || was.height !== d.height) {
-            lockSize(frame.current, { width: d.width, height: d.height });
-          }
-          setFocus((old) => old && (old.width !== d.width || old.height !== d.height) ? { ...old, width: d.width, height: d.height } : old);
-        }
-        was = d;
-        return;
-      }
       if (d.owner && !was.owner) {
         // The first page on the display: this browser's choices apply. (A
         // page handed the display later keeps the quality it streams with.)
@@ -253,35 +237,11 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
   useJoinToasts(c.viewers, me.username);
 
   function reconnect() {
-    setFocus(null);
     setZoom(1);
     setConn("connecting");
     setScreen(null);
     setFrameKey((k) => k + 1);
   }
-  const selectWindow = useCallback((id: string) => {
-    const size = remoteSize(frame.current);
-    if (!size) { notify("Wait for the desktop picture before focusing a window"); return; }
-    lockSize(frame.current, size);
-    setFocus({ id, ...size });
-    setZoom(1);
-    setReadable(false);
-    window.setTimeout(() => focusFrame(frame.current), 0);
-  }, []);
-  const fullDesktop = () => {
-    setFocus(null);
-    setZoom(1);
-    if (owner && !locked) unlockSize(frame.current);
-    else {
-      const size = owner ? locked : remoteSize(frame.current);
-      if (size) lockSize(frame.current, size);
-    }
-    refocus();
-  };
-  useEffect(() => {
-    if (focus && !windows.some((w) => w.id === focus.id)) fullDesktop();
-  }, [windows]);
-  useEffect(() => { if (!running) setFocus(null); }, [running]);
   const sendKeys = (keys: string) => {
     api.keys(c.name, keys).catch(notifyError);
     refocus();
@@ -293,7 +253,7 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
     sendQuality(frame.current, id);
   };
   const chooseResolution = (size: Size | null) => {
-    if (!owner || focus) return; // the display's owner sets its size
+    if (!owner) return; // the display's owner sets its size
     setLocked(size);
     store(LOCK_SIZE_KEY, size ? JSON.stringify(size) : null);
     setZoom(1);
@@ -362,11 +322,11 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
     // Phones and narrow tablets need these actions in More.
     ...(showing
       ? [
-          ...(!focus && owner ? [
+          ...(owner ? [
             { label: "Lock size", checked: locked !== null, onSelect: toggleLock, separated: true, class: compactOnly },
             ...resolutionItems.map((item) => ({ ...item, class: compactOnly })),
           ] : [{
-            label: focus ? "Resolution: use Full desktop" : owner === false ? "Resolution: controlled by another viewer" : "Resolution: connecting…",
+            label: owner === false ? "Resolution: controlled by another viewer" : "Resolution: connecting…",
             disabled: true, onSelect: () => {}, separated: true, class: compactOnly,
           }]),
           ...keyItems.map((k, i) => ({ ...k, label: <>Send {k.label}</>, separated: i === 0 && !owner, class: compactOnly })),
@@ -435,12 +395,11 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
         <div class="ml-auto flex shrink-0 items-center gap-0.5">
           {showing && (
             <>
-              <Applications name={c.name} selected={focus?.id ?? null} onSelect={selectWindow} onWindows={setWindows} />
               <AudioControl name={c.name} screen={screen} connected={conn === "connected"} webcam={c.webcam} host={host} admin={me.admin} />
               <button
                 type="button"
                 aria-pressed={owner === true && locked !== null}
-                disabled={owner !== true || !!focus}
+                disabled={owner !== true}
                 title={
                   owner === false
                     ? "The first viewer sets the screen size; yours is scaled to fit"
@@ -460,8 +419,8 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
                 onClose={refocus}
                 trigger={({ toggle, open }) => (
                   <button type="button" aria-label="Resolution" aria-haspopup="menu" aria-expanded={open}
-                    disabled={owner !== true || !!focus}
-                    title={owner === false ? "The first viewer sets the screen size" : focus ? "Return to Full desktop to change resolution" : "Choose and lock the remote screen resolution"}
+                    disabled={owner !== true}
+                    title={owner === false ? "The first viewer sets the screen size" : "Choose and lock the remote screen resolution"}
                     class={cx(barButton, "disabled:cursor-default disabled:opacity-50", open && pressed)} onClick={toggle}>
                     {locked ? `${locked.width} × ${locked.height}` : "Resolution"} ▾
                   </button>
@@ -530,17 +489,12 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
           />
         )}
       </div>
-      {focus && showing && <div class="flex min-h-11 flex-none items-center gap-2 bg-[#1b293c] px-3 text-sm text-white">
-        <button type="button" class="min-h-11 shrink-0 cursor-pointer font-semibold" onClick={fullDesktop}>Full desktop</button>
-        <span class="min-w-0 flex-1 truncate">{windows.find((w) => w.id === focus.id)?.title}</span>
-        <button type="button" aria-pressed={readable} class="min-h-11 shrink-0 cursor-pointer" onClick={() => setReadable(!readable)}>{readable ? "Fit window" : "Actual size"}</button>
-      </div>}
       {showing && touchControls && <TouchControls keyboard={keyboard} trackpad={trackpad} zoom={zoom}
         onKeyboard={toggleKeyboard} onMode={chooseTouchMode} onFit={() => setZoom(1)} onKey={sendKeys} />}
       {!running ? (
         <Stopped desktop={c} />
       ) : (
-        <WindowViewport focus={focus} windows={windows} readable={readable} screen={screen} frame={frame} zoom={zoom} onZoom={setZoom}>
+        <ZoomViewport screen={screen} frame={frame} zoom={zoom} onZoom={setZoom}>
         <iframe
           key={frameKey}
           ref={frame}
@@ -550,10 +504,10 @@ function Desktop({ desktop: c }: { desktop: Desktop }) {
           class="block h-full w-full border-0"
           onLoad={onFrameLoad}
         />
-        </WindowViewport>
+        </ZoomViewport>
       )}
       {running && <DropZone desktop={c.name} frame={frame} frameKey={frameKey} />}
-      {showing && !focus && zoom === 1 && <ActivityOverlay name={c.name} geometry={() => selkiesScreenGeometry(frame.current)} />}
+      {showing && zoom === 1 && <ActivityOverlay name={c.name} geometry={() => selkiesScreenGeometry(frame.current)} />}
       {downloadOpen && running && <DownloadDialog desktop={c} onClose={closeDownload} />}
     </>
   );

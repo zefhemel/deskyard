@@ -5,7 +5,7 @@ status: implemented
 date: "2026-10-22"
 features:
   - "[[Features/Shared desktop streaming]]"
-  - "[[Features/Mobile access and application views]]"
+  - "[[Features/Mobile access]]"
 ---
 Selkies streams the shared X11 desktop, sound, microphone, camera and gamepads over WebSocket through the supervisor. A supervisor-owned toolbar controls the embedded client. WebRTC/UDP, GPU encoding and separate per-viewer desktops are outside the current design.
 
