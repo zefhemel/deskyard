@@ -1,0 +1,26 @@
+diff --git a/libmate-desktop/mate-bg-crossfade.c b/libmate-desktop/mate-bg-crossfade.c
+--- a/libmate-desktop/mate-bg-crossfade.c
++++ b/libmate-desktop/mate-bg-crossfade.c
+@@ -445,8 +445,8 @@ draw_background (MateBGCrossfade *fade)
+         XGrabServer (xdisplay);
+         XClearWindow (xdisplay, GDK_WINDOW_XID (fade->priv->window));
+         send_root_property_change_notification (fade);
+-        XFlush (xdisplay);
+         XUngrabServer (xdisplay);
++        XFlush (xdisplay);
+         gdk_x11_display_error_trap_pop_ignored (display);
+     }
+ }
+diff --git a/libmate-desktop/mate-bg.c b/libmate-desktop/mate-bg.c
+--- a/libmate-desktop/mate-bg.c
++++ b/libmate-desktop/mate-bg.c
+@@ -1632,8 +1632,8 @@ mate_bg_set_surface_as_root (GdkScreen *screen, cairo_surface_t *surface)
+ 	XSetWindowBackgroundPixmap (display, xroot, pixmap_id);
+ 	XClearWindow (display, xroot);
+ 
+-	XFlush (display);
+ 	XUngrabServer (display);
++	XFlush (display);
+ }
+ 
+ /**

@@ -4,7 +4,7 @@
 #   make test-ci), the image suite and the supervisor suite run directly;
 # - main, nightly and by hand: everything (the suites of make test-all),
 #   including the supervisor suite with the supervisor in a container.
-# A separate five-test runtime smoke matrix covers XFCE and MATE.
+# A separate runtime smoke matrix covers XFCE and MATE.
 # Each job builds its desktop image once, from the images workflow's cache.
 name: Tests
 
@@ -157,5 +157,6 @@ jobs:
           uv run pytest -q
           test_variants.py
           test_selkies.py::test_input_recovers_after_x_connection_failure
+          test_mate_appearance.py::test_background_drawing_releases_x_server
           test_terminal.py::test_emulator_shared_defaults_tabs_cwd_and_explicit_commands
           test_persistence.py::test_skeleton_seeded_once_and_not_overwritten

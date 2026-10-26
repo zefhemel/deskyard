@@ -93,6 +93,21 @@ COPY images/tests/native/flatpak-openat2.c /tmp/flatpak-openat2-test.c
 COPY images/common/build-flatpak.sh /tmp/build-flatpak.sh
 RUN sh /tmp/build-flatpak.sh
 
+# libmate-desktop 1.26.2 draws the root background under a server grab whose
+# ungrab it leaves unsent. Rebuild Debian's source with the ungrab flushed, for
+# the MATE desktop only (patches/README.md, "MATE root-background ungrab").
+FROM debian:trixie-slim AS mate-desktop
+ARG DEBIAN_FRONTEND=noninteractive
+RUN sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends dpkg-dev git \
+    && apt-get build-dep -y --no-install-recommends mate-desktop
+WORKDIR /src
+RUN apt-get source mate-desktop && mv mate-desktop-*/ source
+COPY images/common/patches/mate-desktop-ungrab-flush.diff /tmp/mate-desktop-ungrab-flush.diff
+COPY images/common/build-mate-desktop.sh /tmp/build-mate-desktop.sh
+RUN sh /tmp/build-mate-desktop.sh
+
 FROM debian:trixie-slim AS runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -218,8 +233,10 @@ ENTRYPOINT ["/usr/local/bin/workspace-init"]
 # Desktop layers branch from the same runtime. Keep XFCE last so an ordinary
 # docker build without --target retains the original default.
 FROM runtime AS debian-mate
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        mate-desktop-environment-core \
+COPY --from=mate-desktop /out/source/ /usr/share/doc/mate-desktop/deskyard-source/
+RUN --mount=type=bind,from=mate-desktop,source=/out/debs,target=/tmp/mate-desktop-debs \
+    apt-get update && apt-get install -y --no-install-recommends \
+        mate-desktop-environment-core /tmp/mate-desktop-debs/*.deb \
     && rm -rf /var/lib/apt/lists/* \
     && ! command -v sudo
 ENV WORKSPACE_DESKTOP=mate XDG_CURRENT_DESKTOP=MATE DESKTOP_SESSION=mate

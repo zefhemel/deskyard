@@ -3,8 +3,11 @@
 import os
 import json
 import time
+from pathlib import Path
 
 import pytest
+
+from sandbox import docker
 
 pytestmark = pytest.mark.skipif(os.environ.get('AC_DESKTOP', 'xfce') != 'mate', reason='MATE appearance')
 
@@ -26,6 +29,15 @@ def test_mate_uses_selected_appearance(sandbox, artifacts_dir):
         time.sleep(0.5)
     sandbox.exec('xdotool mousemove 1260 700')
     (artifacts_dir / 'mate-defaults.png').write_bytes(sandbox.exec_bytes('deskyard screenshot'))
+
+
+def test_background_drawing_releases_x_server(sandbox):
+    """The settings daemon draws the wallpaper under a server grab. A leaked
+    grab froze X for about a minute when a viewer's DPI reached the daemon
+    during its startup crossfade (docs: MATE first stream stall 2026-10-26)."""
+    script = Path(__file__).parent / "native" / "mate-bg-ungrab.py"
+    docker("cp", str(script), f"{sandbox.name}:/tmp/mate-bg-ungrab.py")
+    sandbox.exec("/usr/bin/python3 /tmp/mate-bg-ungrab.py", timeout=40)
 
 
 def test_mate_preserves_user_appearance_on_restart(sandbox):

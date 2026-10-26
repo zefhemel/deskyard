@@ -512,6 +512,14 @@ AppArmor (`kernel.apparmor_restrict_unprivileged_userns`); this hasn't been
 tested yet. If bubblewrap fails there, try
 `sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0`.
 
+### MATE
+
+The MATE image includes a fix to Debian's libmate-desktop that stops its
+settings daemon from freezing the X display for about a minute when a HiDPI
+browser opens a freshly started desktop. Existing MATE desktops receive it
+through an image upgrade. The rebuilt packages' corresponding source is
+included at `/usr/share/doc/mate-desktop/deskyard-source/`.
+
 ## Sharing
 
 Accounts are a username and a password; there are no email resets or SSO.
