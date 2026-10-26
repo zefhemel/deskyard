@@ -445,6 +445,9 @@ Its account and catalog JSON storage is unchanged; old recipe/source files remai
 on disk but are no longer read or migrated. Images can still install tools in
 `/opt/mise` with executables linked into `/opt/deskyard/bin`, install system
 Flatpak apps, and seed empty workspaces through `/opt/deskyard/home-template`.
+What an image must provide is specified in the
+[desktop image protocol](docs/superpowers/specs/2026-10-26-desktop-image-protocol.md);
+building `FROM` an official Deskyard image is the supported way to meet it.
 
 For a standalone Dockerfile you can copy and build separately, see the
 [RetroArch example](examples/retroarch/README.md). It installs RetroArch and

@@ -17,7 +17,7 @@ Shared configuration is copied after desktop package installation so a startup-s
 
 A build-time finalizer disables optional host-management D-Bus helpers and any installed PackageKit daemon. No sudo command is available to the user.
 
-Contract 3, the Selkies client path, proxy boundary, UID/GID 1000, display `:1` and `/workspace` match the existing XFCE image. Shared tests live in `images/tests/`; XFCE panel migrations remain desktop-specific. Native ARM64 builds and runtime checks are recorded in [[Testing/Desktop variants 2026-10-23|Desktop variants testing — 23 October 2026]]; registry publication and amd64 runtime checks remain separate release checks.
+Contract 3, the Selkies client path, proxy boundary, UID/GID 1000, display `:1` and `/workspace` match the existing XFCE image. The complete set of requirements a desktop image must meet, core and per feature, is the [[superpowers/specs/2026-10-26-desktop-image-protocol|Desktop image protocol]]. Shared tests live in `images/tests/`; XFCE panel migrations remain desktop-specific. Native ARM64 builds and runtime checks are recorded in [[Testing/Desktop variants 2026-10-23|Desktop variants testing — 23 October 2026]]; registry publication and amd64 runtime checks remain separate release checks.
 
 MATE's overlay provides the selected Arc/Papirus/Noto appearance, original blue SVG wallpaper and native `deskyard.layout` single bottom panel. Compiled GSettings defaults apply without rewriting saved user values or panel layouts. Its user-mode session adapter seeds the scoped panel CSS only when `~/.config/gtk-3.0/gtk.css` does not already exist (including symlinks). See [[Testing/Theme previews 2026-10-23|Desktop theme previews — 23 October 2026]] for the selected visual direction.
 
