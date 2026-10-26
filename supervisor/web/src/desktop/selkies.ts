@@ -29,17 +29,18 @@
  * `display()` (from our additions) says which this page is, the stream's
  * size and the display's settings; "deskyard.display" on `on` gets changes.
  *
- * Sound, mic and webcam (the Audio panel, audio-panel.tsx):
+ * Sound and mic (the Audio panel, audio-panel.tsx):
  * - {type: "setVolume", value}: the playback volume, 0 to 1. It applies once
  *   the client has set its playback up, so the page sends it again when
  *   sound starts.
- * - {type: "pipelineControl", pipeline: "microphone" | "webcam", enabled}:
- *   starts or stops a capture. Our additions refuse the browser's mic or
- *   camera unless `allowCapture` allowed it on this connection, so the
- *   client can never turn either on by itself (it would after a reconnect).
+ * - {type: "pipelineControl", pipeline: "microphone", enabled}: starts or
+ *   stops the mic. Our additions refuse the browser's mic unless
+ *   `allowCapture` allowed it on this connection, so the client can never
+ *   turn it on by itself (it would after a reconnect), and refuse its camera
+ *   always.
  * - Sound on and off go through `setSound` (START_AUDIO / STOP_AUDIO on the
  *   stream; see selkies/adapter.ts for why not pipelineControl), devices
- *   through `setOutput`, `setMic` and `setCamera`.
+ *   through `setOutput` and `setMic`.
  * - `media()` (and "deskyard.media" on `on`) says what the client is doing,
  *   from its own status messages; "deskyard.alert" brings its capture errors.
  * - `watchSound(fn)` reports each block of sound as it reaches the speakers,
@@ -74,20 +75,19 @@ export interface Display {
   settings: Record<string, unknown> | null;
 }
 
-/** Sound, mic and webcam, as the frame's client has them. */
+/** Sound and mic, as the frame's client has them. */
 export interface Media {
   /** The desktop sends this page its sound. */
   sound: boolean;
   /** The mic is captured and sent into the desktop. */
   mic: boolean;
-  webcam: boolean;
   /** The playback is running (a browser holds it back until a click). */
   playing: boolean;
   /** When sound last arrived (performance.now() in the frame; 0 for never). */
   soundAt: number;
 }
 
-export type Capture = "microphone" | "webcam";
+export type Capture = "microphone";
 
 /** What our additions put on the frame's window. */
 export interface DeskyardScreen {
@@ -111,7 +111,6 @@ export interface DeskyardScreen {
   setSound(on: boolean): void;
   resumeSound(): void;
   allowCapture(kind: Capture, on: boolean): void;
-  setCamera(deviceId: string): void;
   setMic(deviceId: string): void;
   setOutput(deviceId: string): void;
   watchSound(fn: (at: number, rms: number) => void): () => void;
@@ -128,8 +127,8 @@ export function frameSrc(name: string): string {
 
 /**
  * Whether this page is an insecure context: reached over plain http on an
- * address other than localhost. The browser then has no AudioWorklet, mic,
- * camera or async clipboard, and Chromium and Firefox no WebCodecs: Selkies'
+ * address other than localhost. The browser then has no AudioWorklet, mic
+ * or async clipboard, and Chromium and Firefox no WebCodecs: Selkies'
  * client streams JPEG and decodes sound in WASM (the adapter permits playback fallback).
  */
 export const insecureContext = typeof window !== "undefined" && window.isSecureContext === false;
@@ -161,7 +160,7 @@ export function setVolume(screen: DeskyardScreen, volume: number): void {
   screen.post({ type: "setVolume", value: volume });
 }
 
-/** Starts or stops the mic or the webcam (allowed first, refused after). */
+/** Starts or stops the mic (allowed first, refused after). */
 export function setCapture(screen: DeskyardScreen, kind: Capture, on: boolean): void {
   if (on) screen.allowCapture(kind, true);
   screen.post({ type: "pipelineControl", pipeline: kind, enabled: on });

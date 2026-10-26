@@ -18,13 +18,15 @@ What's in an environment:
 
 - **XFCE desktop in the browser**, streamed with
   [Selkies](https://github.com/selkies-project/selkies): picture, sound,
-  your mic, gamepads, and your webcam where the host has a virtual camera.
-  It resizes to fit your browser window (or keeps a locked size), and the
-  bar above it has the clipboard, keys the browser would otherwise take
-  (Ctrl+Alt+Del, Alt+Tab, ...), quality presets, sound and mic, and a
-  Download button. Drop files on the screen to copy them into the environment.
-  Badges show who has their mic or camera on. On phones and narrow tablets,
-  Lock size, resolution presets, Keys, Quality and Download are in the scrollable More menu.
+  your mic and gamepads.
+  It resizes to fit your browser window (or keeps a locked size). The
+  bar above it shows the connection as a dot and the VPN as a shield, and
+  has icon buttons (with tooltips) for sound and mic, Display (lock size,
+  resolution and quality), the clipboard, keys the browser would otherwise take
+  (Ctrl+Alt+Del, Alt+Tab, ...), the environment's terminal sessions and a
+  file download browser. Drop files on the screen to copy them into the environment.
+  Badges show who has their mic on. On phones, Display, Keys, Terminal and
+  Download are in the scrollable More menu.
 - **One shared Chromium** with one profile: your tabs and sign-ins stay
   with the environment. It starts when you open it or connect through browser tools.
 - **Remote access and control**: use the `deskyard` command from your terminal
@@ -56,12 +58,13 @@ top-edge blur away from toolbar text. It needs the running supervisor and
 a network connection; remote desktop sessions are not cached for offline use.
 Installation and native keyboard input were verified in the iOS 27 iPhone
 simulator, including on the plain HTTP LAN demo. HTTPS is still required
-for mic, camera and automatic clipboard synchronization; see Running on a LAN.
+for the mic and automatic clipboard synchronization; see Running on a LAN.
 
 ## Mobile controls
 
-**Resolution ▾** beside **Lock size** chooses a remote screen size and locks it.
-On phones, open **⋯ More** for **Resolution:** choices. Presets include
+The **Display** menu has **Lock size** and **Resolution:** choices that pick
+a remote screen size and lock it, plus the quality presets.
+On phones, open **⋯ More** for the same choices. Presets include
 800×600, 1024×768, 1280×720, 1280×800, 1920×1080, and portrait sizes
 600×900 and 900×1200. **Resolution: Auto fit** unlocks the size. The choice
 is remembered in your browser; the first viewer controls the shared screen.
@@ -189,8 +192,8 @@ keyboard and mouse, sound, the Clipboard button's text box (both ways),
 Lock size, Quality, upload, download and the CLI activity overlay. Gamepads
 should too in Chromium and Safari, which keep the Gamepad API over http. What doesn't:
 
-- **Mic and camera**: the browser has no `getUserMedia`. The Audio panel
-  shows them off, with "Needs https".
+- **Mic**: the browser has no `getUserMedia`. The Audio panel shows it off,
+  with "Needs https".
 - **Automatic clipboard sync**: copy and paste go through the Clipboard
   button instead.
 - **H.264 in Chrome and Firefox**: without WebCodecs the picture is JPEG.
@@ -212,7 +215,7 @@ itself (above).
 
 ## Shared terminal
 
-On a phone, the streamed desktop’s **More → Terminal** action opens the terminal page; each environment tile also has a direct **Terminal** link. Wider desktop toolbars keep the direct Terminal shortcut.
+The streamed desktop's terminal button lists the environment's running terminal sessions and opens a new one; on a phone it's **More → Terminal**. Each environment tile also has a direct **Terminal** link.
 
 The create/join walkthrough, screenshots, native keyboard evidence and known limits are in the project space's *Testing/Shared terminal 2026-10-23* page (see [Project records](#project-records)).
 
@@ -232,7 +235,7 @@ environment runs as a container `deskyard-<name>` on its own network
 `deskyard-<name>`, so environments can't reach each other.
 
 The supervisor keeps each environment's definition (image, limits, network,
-host folders, volume grants, Docker access, camera, memory preference and whether it should
+host folders, volume grants, Docker access, memory preference and whether it should
 run) in `environments.json`, not on its container. The container is
 disposable: if it is lost, the supervisor recreates it from the definition
 with the same name, home folder, access grants, tokens and settings. A stopped
@@ -327,7 +330,7 @@ are not migrated between different desktop environments.
 ### Host folders
 
 Admins can mount existing host folders into an individual environment under
-**Settings → Host folders**. Choose **Add host folder**, enter the absolute
+**Settings → Volumes**, under Host folders. Choose **Add host folder**, enter the absolute
 host path and a path in the environment such as `/mnt/photos`, and choose read-only
 or read-write access. New entries default to read-only. **Save and restart**
 recreates a running environment's container; a stopped environment stays stopped.
@@ -853,7 +856,7 @@ suites build and test (default `deskyard-debian-xfce:test`); outside make,
 `AC_IMAGE` (image suite) and `CC_TEST_IMAGE` (supervisor suite) name it.
 Firefox is skipped where Playwright's Firefox can't start (on some Macs).
 On Linux, tests write workspace fixtures through the desktop as UID 1000,
-since the runner may not own the workspace. In Chromium, loopback bootstrap API GETs, UI assets, login and mic/camera badge POSTs use
+since the runner may not own the workspace. In Chromium, loopback bootstrap API GETs, UI assets, login and mic badge POSTs use
 Playwright's request transport to avoid Chromium's `ERR_NETWORK_CHANGED` when
 Docker changes network interfaces. Each request is sent once, including login
 POSTs; other mutations, downloads, live streams and Selkies' client use the browser. Documents stay on the native browser transport to preserve their network address space for event WebSockets. Navigation

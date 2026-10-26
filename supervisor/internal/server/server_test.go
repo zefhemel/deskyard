@@ -128,11 +128,6 @@ func defineEnvironments(t *testing.T, s *Server) {
 		if c.Running() {
 			def.Power = environments.PowerRunning
 		}
-		for _, d := range c.Devices {
-			if strings.HasPrefix(d, "/dev/video") {
-				def.Camera = d
-			}
-		}
 		if conn := c.Labels[vpn.LabelConnection]; conn != "" {
 			def.Network = environments.Network{Kind: environments.NetworkVPN, Connection: conn}
 		}

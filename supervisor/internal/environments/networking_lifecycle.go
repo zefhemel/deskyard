@@ -212,13 +212,6 @@ func (n *Networking) apply(ctx context.Context, r networkTransition, progress fu
 	if !ok {
 		return n.fail(r, phaseDefinition)
 	}
-	if def.Camera != "" && s.cameraGone(def.Camera) {
-		s.dropCamera(r.Name, def.Camera)
-		r.Repair = false // a new revision: a change, not a repair
-		if def, ok = s.Defs.Get(r.Name); !ok {
-			return n.fail(r, phaseDefinition)
-		}
-	}
 	r.ConnectionRevision = 0
 	if def.Network.Kind == NetworkVPN {
 		c, err := n.Connections.Get(def.Network.Connection)

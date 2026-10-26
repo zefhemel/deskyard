@@ -13,16 +13,6 @@ export interface Host {
   running: number;
   total: number;
   memUsed: number;
-  /** The host's virtual cameras; null when the engine isn't on this machine. */
-  cameras: HostCamera[] | null;
-}
-
-/** A host's virtual camera (v4l2loopback) and the environment that has it, if any. */
-export interface HostCamera {
-  device: string;
-  taken: boolean;
-  /** Named only when this account can see that environment. */
-  environment?: string;
 }
 
 export type EnvironmentState = "running" | "stopped" | "starting" | "creating" | "upgrading" | "removing";
@@ -52,6 +42,14 @@ export interface Volume {
   folder: string;
   environments: VolumeGrant[];
 }
+/** The size of a volume's files, and the disk holding it (absent when unknown). */
+export interface VolumeUsage {
+  bytes: number;
+  /** False when some folders couldn't be read, so bytes is a lower bound. */
+  complete: boolean;
+  diskFree?: number;
+  diskSize?: number;
+}
 
 export interface VPNReference { id: string; name: string }
 export interface VPNConnection {
@@ -72,7 +70,7 @@ export interface VPNStatus {
 export interface VPNRollout { connection: VPNConnection; environments: (VPNReference & {error?: string})[] }
 export interface EnvironmentVPNSettings { vpnConnectionId: string | null; lanExceptions: LANException[] }
 export interface SettingsPatch extends Partial<EnvironmentVPNSettings> {
-  image?: string; memoryBytes?: number; nanoCpus?: number; camera?: string; dockerAccess?: boolean; mounts?: HostMount[]; volumes?: VolumeGrant[];
+  image?: string; memoryBytes?: number; nanoCpus?: number; dockerAccess?: boolean; mounts?: HostMount[]; volumes?: VolumeGrant[];
 }
 
 export interface Settings extends EnvironmentVPNSettings {
@@ -81,8 +79,6 @@ export interface Settings extends EnvironmentVPNSettings {
   volumes: VolumeGrant[];
   memoryBytes: number;
   nanoCpus: number;
-  /** The host's virtual camera this environment has to itself; "" for none. */
-  camera: string;
 }
 
 export interface Environment {
@@ -118,10 +114,6 @@ export interface Environment {
   viewers: string[];
   /** Viewers with a mic on (per stream; gone when the stream closes). */
   mics: string[];
-  /** Viewers with a camera on (per stream, as mics). */
-  cams: string[];
-  /** Whether the running environment has its virtual camera (settings.camera). */
-  webcam: boolean;
   /** Port mappings agents have set up with `deskyard forward`; port is the environment's. */
   forwards: Forward[];
   /** Agents at work in the environment: from outside (a token) or inside (a program). */
@@ -219,6 +211,10 @@ export interface CatalogImage {
   environments: string[];
   behind: string[];
   checked: string | null;
+  /** Bytes on disk, once downloaded. */
+  size?: number;
+  /** When the image was built, once downloaded. */
+  built?: string;
 }
 
 export interface FolderSize {
@@ -268,7 +264,6 @@ export interface ViewersEvent {
   name: string;
   viewers: string[];
   mics: string[];
-  cams: string[];
   forwards: Forward[];
   agents: AgentPresence[];
 }
@@ -420,10 +415,10 @@ export const api = {
   downloadUrl: (name: string, path: string) => `${c(name)}/download?path=${enc(path)}`,
   keys: (name: string, keys: string) => request<void>("POST", `${c(name)}/keys`, { keys }),
   /**
-   * This page's mic or camera badge: tab is the frame's tab id, as on its
-   * stream; seq numbers the page's reports, so a late one never undoes a newer.
+   * This page's mic badge: tab is the frame's tab id, as on its stream; seq
+   * numbers the page's reports, so a late one never undoes a newer.
    */
-  capture: (name: string, kind: "mic" | "cam", on: boolean, tab: string, seq: number) =>
+  capture: (name: string, kind: "mic", on: boolean, tab: string, seq: number) =>
     request<void>("POST", `${c(name)}/${kind}`, { on, tab, seq }),
   upgrade: (name: string) => request<JobRef>("POST", `${c(name)}/upgrade`),
   validateName: (name: string) => request<NameCheck>("GET", `/api/validate-name?name=${enc(name)}`),
@@ -462,6 +457,7 @@ export const api = {
 
   volumes: () => request<{ volumes: Volume[] }>("GET", "/api/volumes"),
   createVolume: (name: string) => request<{ volume: Volume; adopted: boolean }>("POST", "/api/volumes", { name }),
+  volumeUsage: (name: string) => request<VolumeUsage>("GET", `/api/volumes/${enc(name)}/usage`),
   deleteVolume: (name: string, deleteFiles: boolean) => request<void>("DELETE", `/api/volumes/${enc(name)}?deleteFiles=${deleteFiles}`),
 
   cancelJob: (id: string) => request<void>("POST", `/api/jobs/${enc(id)}/cancel`),

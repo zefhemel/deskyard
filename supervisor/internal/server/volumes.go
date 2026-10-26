@@ -146,3 +146,24 @@ func (s *Server) checkVolumeGrants(w http.ResponseWriter, cur, grants []environm
 	}
 	return true
 }
+
+// handleVolumeUsage reports the size of a volume's files, which takes a walk
+// of its folder, and the space on the disk holding it. Free and size are
+// omitted when the disk can't be read.
+func (s *Server) handleVolumeUsage(w http.ResponseWriter, r *http.Request) {
+	a, _ := s.account(r)
+	if !requireAdmin(w, a) {
+		return
+	}
+	name := r.PathValue("name")
+	if _, ok := s.Environments.Vols.Get(name); !ok {
+		writeError(w, http.StatusNotFound, "no such volume")
+		return
+	}
+	bytes, complete := s.Environments.VolumeSize(name)
+	out := map[string]any{"bytes": bytes, "complete": complete}
+	if free, size, ok := environments.DiskSpace(s.Environments.Layout.VolumeOf(name)); ok {
+		out["diskFree"], out["diskSize"] = free, size
+	}
+	writeJSON(w, http.StatusOK, out)
+}

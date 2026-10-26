@@ -69,7 +69,6 @@ let display: Display = { owner: null, width: 0, height: 0, settings: null };
 let media: Media = {
   sound: false,
   mic: false,
-  webcam: false,
   playing: false,
   soundAt: 0,
 };
@@ -95,8 +94,7 @@ let requestedTouchMode: boolean | null = null;
 let zoom = 1;
 let playback: AudioContext | null = null;
 let playbackOutput: AudioNode | null = null;
-let camera = "",
-  microphone = "";
+let microphone = "";
 let microphoneStream: MediaStream | null = null;
 let pendingFocus: { element: HTMLElement; options?: FocusOptions } | null =
   null;
@@ -237,8 +235,6 @@ window.__deskyardHooks = {
     setDisplay({ owner: null, width: 0, height: 0, settings: null });
     if (media.mic)
       post({ type: "pipelineControl", pipeline: "microphone", enabled: false });
-    if (media.webcam)
-      post({ type: "pipelineControl", pipeline: "webcam", enabled: false });
     setState(value.readyState === WebSocket.OPEN ? "connected" : "connecting");
     value.addEventListener("open", () => {
       if (transport === value) setState("connected");
@@ -263,13 +259,6 @@ window.__deskyardHooks = {
   },
   async capture(constraints) {
     const selected = { ...constraints };
-    if (selected.video) {
-      selected.video = {
-        ...(typeof selected.video === "object" ? selected.video : {}),
-      };
-      if (camera) selected.video.deviceId = { exact: camera };
-      else delete selected.video.deviceId;
-    }
     if (selected.audio) {
       selected.audio = {
         ...(typeof selected.audio === "object" ? selected.audio : {}),
@@ -348,12 +337,8 @@ window.__deskyardHooks = {
     media.soundAt = performance.now();
   },
   alert(text) {
-    const kind = text.startsWith("Microphone")
-      ? "microphone"
-      : text.startsWith("Webcam")
-        ? "webcam"
-        : null;
-    if (kind && gate.allowed(kind)) emit("deskyard.alert", { kind, text });
+    if (text.startsWith("Microphone") && gate.allowed("microphone"))
+      emit("deskyard.alert", { kind: "microphone", text });
   },
 };
 
@@ -380,7 +365,6 @@ window.addEventListener("message", (event) => {
     const next: Partial<Media> = {};
     if (typeof message.audio === "boolean") next.sound = message.audio;
     if (typeof message.microphone === "boolean") next.mic = message.microphone;
-    if (typeof message.webcam === "boolean") next.webcam = message.webcam;
     setMedia(next);
   }
   if (typeof message.type === "string") emit(message.type, message);
@@ -464,9 +448,6 @@ window.deskyardScreen = {
   resumeSound,
   allowCapture(kind: Capture, value) {
     gate.allow(kind, value && transport?.readyState === WebSocket.OPEN);
-  },
-  setCamera(value) {
-    camera = value;
   },
   setMic(value) {
     microphone = value;

@@ -4,7 +4,7 @@ import { Button, Check, Field } from "./ui.tsx";
 export function HostMountFields({ mounts, onChange }: { mounts: HostMount[]; onChange: (mounts: HostMount[]) => void }) {
   const update = (index: number, change: Partial<HostMount>) => onChange(mounts.map((mount, i) => i === index ? { ...mount, ...change } : mount));
   return (
-    <section class="mt-6 border-t border-line pt-5" aria-label="Host folders">
+    <section class="mt-6 border-t border-line pt-5 first:mt-0 first:border-t-0 first:pt-0" aria-label="Host folders">
       <h2 class="mb-1 text-base font-semibold">Host folders</h2>
       <p class="mb-4 text-sm text-muted">
         Mount an existing folder from the machine running your container engine. Everyone who can use this environment can access it. Changes apply when you save, which recreates its container.

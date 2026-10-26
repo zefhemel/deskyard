@@ -1,5 +1,5 @@
 """The Audio panel: the desktop's sound per viewer, viewers' mics into the
-desktop with everyone seeing whose is on, and camera badges."""
+desktop with everyone seeing whose is on."""
 
 import array
 import math
@@ -141,7 +141,7 @@ def test_sound_age_uses_stream_clock():
         page.set_content("<iframe srcdoc='<body></body>'></iframe>")
         page.frames[1].wait_for_load_state()
         page.frames[1].evaluate("""() => {
-            const media = {sound: true, mic: false, webcam: false, playing: true, soundAt: performance.now()};
+            const media = {sound: true, mic: false, playing: true, soundAt: performance.now()};
             window.deskyardScreen = {media: () => media};
         }""")
         assert 0 <= quiet(page) < 1.5
@@ -299,7 +299,7 @@ def test_mic_badge_on_a_slow_network(supervisor, admin, desktop, name, tmp_path)
         page.wait_for_function(f"{MEDIA}.mic", timeout=15000)
         settle_audio(page, 1)
         page.evaluate("""() => { const f = window.fetch; window.fetch = async (u, o) => {
-            if (/\\/(mic|cam)$/.test(String(u))) await new Promise((r) => setTimeout(r, 400)); return f(u, o); }; }""")
+            if (/\\/mic$/.test(String(u))) await new Promise((r) => setTimeout(r, 400)); return f(u, o); }; }""")
         page.evaluate(BADGE_WATCH, name)
         mic.click()
         page.wait_for_function(f"!{MEDIA}.mic", timeout=5000)
@@ -311,25 +311,6 @@ def test_mic_badge_on_a_slow_network(supervisor, admin, desktop, name, tmp_path)
         violations, checks = page.evaluate("[window.__viol, window.__n]")
         assert checks > 30 and violations == [], (violations, checks)
         assert page.evaluate(f"{MEDIA}.mic") is True and admin.desktop(name)["mics"] == ["admin"]
-        browser.close()
-
-
-def test_cam_badge(supervisor, admin, desktop, name):
-    # Whose camera is on shows like the mic, from the page's report on its
-    # stream. (Numbered past the page's own reports, which come first.)
-    with sync_playwright() as p:
-        browser, page = signed_in(p, supervisor.base)
-        open_desktop(page, supervisor.base, name)
-        tab = page.evaluate(f"{SCREEN}.tab")
-        r = page.evaluate("""async (tab) => (await fetch(location.pathname.replace(/\\/$/, '').replace(/^\\//, '/api/environments/') + '/cam',
-            {method: 'POST', body: JSON.stringify({on: true, tab, seq: 1e9})})).status""", tab)
-        assert r == 204
-        expect(page.locator('[data-avatar="admin"] [data-cam-badge]')).to_be_visible(timeout=10000)
-        assert admin.desktop(name)["cams"] == ["admin"]
-        page.reload()
-        open_desktop(page, supervisor.base, name)
-        expect(page.locator('[data-avatar="admin"] [data-cam-badge]')).to_have_count(0, timeout=10000)
-        assert admin.desktop(name)["cams"] == []
         browser.close()
 
 

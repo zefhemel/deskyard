@@ -1,7 +1,7 @@
 """Touch, magnification and resolution controls against the real desktop and stream."""
 import time
 from playwright.sync_api import expect, sync_playwright
-from helpers import signed_in, open_desktop, in_desktop, wait_until, video_settings_lines, sign_in
+from helpers import signed_in, open_desktop, open_display_menu, in_desktop, wait_until, video_settings_lines, sign_in
 
 
 def test_general_desktop_touch_controls(supervisor, desktop, name):
@@ -116,15 +116,17 @@ def test_mobile_remote_resolution_presets(supervisor, desktop, name, tmp_path):
         assert screen_size(name) == (1280,720)
         page.reload()
         open_desktop(page, supervisor.base, name, status=False)
-        page.get_by_role("button", name="More", exact=True).click()
+        # Landscape, at least 640 wide: the bar's Display menu holds the presets.
+        expect(page.get_by_role("button", name="Display", exact=True)).to_be_visible()
+        open_display_menu(page)
         expect(page.get_by_role("menuitemcheckbox", name="Resolution: 1280 × 720", exact=True)).to_have_attribute("aria-checked", "true")
         page.get_by_role("menuitemcheckbox", name="Resolution: 600 × 900 (portrait)", exact=True).click()
         assert wait_until(lambda: screen_size(name) == (600,900), 10)
-        page.get_by_role("button", name="More", exact=True).click()
+        open_display_menu(page)
         page.get_by_role("menuitemcheckbox", name="Resolution: Auto fit", exact=True).click()
         assert wait_until(lambda: screen_size(name) != (600,900), 10)
         page.set_viewport_size({"width":1280,"height":900})
-        page.get_by_role("button", name="Resolution", exact=True).click()
+        open_display_menu(page)
         page.get_by_role("menuitemcheckbox", name="Resolution: 1920 × 1080", exact=True).click()
         assert wait_until(lambda: screen_size(name) == (1920,1080), 10)
         browser.close()

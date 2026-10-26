@@ -21,12 +21,12 @@
 // - Follows the display: whether this page owns it (Selkies' first page sets
 //   the screen size and keeps its encoding; later pages join beside it), the
 //   size it streams at, and the settings it streams with.
-// - Lets Selkies capture the mic or the webcam only while the desktop page
-//   has asked for it, on the current connection: Selkies' client turns them
-//   on by itself in places (it restores them after a reconnect, and on a
-//   desktop app's demand), and a mic must never go live unseen.
-// - Follows sound, mic and webcam (media()), and turns Selkies' alert()s
-//   about them into messages for the page.
+// - Lets Selkies capture the mic only while the desktop page has asked for
+//   it, on the current connection: Selkies' client turns it on by itself in
+//   places (it restores it after a reconnect, and on a desktop app's
+//   demand), and a mic must never go live unseen. It never captures video.
+// - Follows sound and mic (media()), and turns Selkies' alert()s about the
+//   mic into messages for the page.
 // - Lets the desktop page's ?avsync=1 readout hear the sound as it reaches
 //   the speakers (watchSound()).
 // - Keeps Selkies from taking the focus out of the desktop page: it focuses
@@ -40,7 +40,7 @@
 
   // --- plain http ---------------------------------------------------------------
   // Reached over plain http on a LAN address, the page isn't a secure context:
-  // the browser has no AudioWorklet, mic, camera or async clipboard, and no
+  // the browser has no AudioWorklet, mic or async clipboard, and no
   // WebCodecs either in Chromium and Firefox (WebKit keeps them).
   // Selkies' client then refuses to start ("requires a secure connection"),
   // although it has a fallback for each of the first two: with no
@@ -208,19 +208,19 @@
     }
   };
 
-  // --- sound, mic and webcam --------------------------------------------------
+  // --- sound and mic ------------------------------------------------------------
   // What Selkies' client is doing, from its own status messages (posted on
-  // this window): sound is its audio pipeline for this page, mic and webcam
-  // its captures. playing: its playback AudioContext is running (a browser
+  // this window): sound is its audio pipeline for this page, mic its
+  // capture. playing: its playback AudioContext is running (a browser
   // holds it back until the user clicks). soundAt: when the stream last
   // brought this page sound (performance.now(); 0 for never), from the
   // stream's worker, which passes sound straight to the decoder and tells
   // the page about once a second.
-  let media = { sound: false, mic: false, webcam: false, playing: false, soundAt: 0 };
+  let media = { sound: false, mic: false, playing: false, soundAt: 0 };
   const mediaListeners = new Set();
   const setMedia = (m) => {
     const next = { ...media, ...m };
-    if (next.sound === media.sound && next.mic === media.mic && next.webcam === media.webcam && next.playing === media.playing) {
+    if (next.sound === media.sound && next.mic === media.mic && next.playing === media.playing) {
       media = next;
       return;
     }
@@ -234,7 +234,6 @@
       const d = {};
       if (typeof m.audio === "boolean") d.sound = m.audio;
       if (typeof m.microphone === "boolean") d.mic = m.microphone;
-      if (typeof m.webcam === "boolean") d.webcam = m.webcam;
       setMedia(d);
     }
   });
@@ -324,9 +323,8 @@
     return r;
   };
 
-  // Captures: only what the page allowed, on this connection.
-  const allowed = { microphone: false, webcam: false };
-  let camera = "";
+  // Captures: only the mic, when the page allowed it, on this connection.
+  const allowed = { microphone: false };
   let micDevice = "";
   let micStream = null;
   const md = navigator.mediaDevices;
@@ -334,13 +332,8 @@
     const getUserMedia = md.getUserMedia.bind(md);
     md.getUserMedia = async (constraints = {}) => {
       const c = { ...constraints };
-      if ((c.audio && !allowed.microphone) || (c.video && !allowed.webcam)) {
+      if (c.video || (c.audio && !allowed.microphone)) {
         throw new DOMException("The desktop page hasn't turned this on", "NotAllowedError");
-      }
-      if (c.video) {
-        c.video = { ...(typeof c.video === "object" ? c.video : {}) };
-        if (camera) c.video.deviceId = { exact: camera };
-        else delete c.video.deviceId;
       }
       if (c.audio) {
         // Selkies asks with echo cancellation and noise suppression on; kept.
@@ -355,7 +348,6 @@
   }
   const forbid = () => {
     allowed.microphone = false;
-    allowed.webcam = false;
   };
 
   // Selkies tells capture failures with alert(); the page gets them as
@@ -364,7 +356,7 @@
   window.alert = (text) => {
     text = String(text);
     console.warn("Selkies:", text);
-    const kind = /^Microphone/.test(text) ? "microphone" : /^Webcam/.test(text) ? "webcam" : null;
+    const kind = /^Microphone/.test(text) ? "microphone" : null;
     if (!kind || !allowed[kind]) return;
     for (const fn of alerts) try { fn({ kind, text }); } catch {}
   };
@@ -487,11 +479,9 @@
       sendOwn = (data) => send.call(t, data);
       setDisplay({ owner: null, width: 0, height: 0, settings: null });
       forbid();
-      // A capture still live from the last connection stops: this one's
-      // page hasn't asked for it, and the last stream took its badge.
-      for (const [kind, live] of [["microphone", media.mic], ["webcam", media.webcam]]) {
-        if (live) window.postMessage({ type: "pipelineControl", pipeline: kind, enabled: false }, location.origin);
-      }
+      // A mic still live from the last connection stops: this one's page
+      // hasn't asked for it, and the last stream took its badge.
+      if (media.mic) window.postMessage({ type: "pipelineControl", pipeline: "microphone", enabled: false }, location.origin);
       setState(t.readyState === PageWebSocket.OPEN ? "connected" : "connecting");
       t.addEventListener("open", () => transport === t && setState("connected"));
       t.addEventListener("close", () => {
@@ -624,8 +614,8 @@
       reportKeyboard();
     },
     /**
-     * Whether the page is an insecure context (plain http): no mic, camera
-     * or clipboard access, and a JPEG stream where there's no WebCodecs.
+     * Whether the page is an insecure context (plain http): no mic or
+     * clipboard access, and a JPEG stream where there's no WebCodecs.
      */
     insecure,
     /** Sends a message to Selkies' client (e.g. {type: "pipelineControl", …}). */
@@ -637,7 +627,7 @@
      * function that stops it. The type "deskyard.state" gets each new state(),
      * "deskyard.display" each new display(), "deskyard.media" each new
      * media() and "deskyard.alert" Selkies' capture errors as {kind, text}
-     * (kind "microphone" or "webcam").
+     * (kind "microphone").
      */
     on(type, fn) {
       if (type === "deskyard.gesture") {
@@ -678,7 +668,7 @@
      */
     display: () => display,
     /**
-     * Sound, mic and webcam: {sound, mic, webcam, playing, soundAt}
+     * Sound and mic: {sound, mic, playing, soundAt}
      * (see above). The type "deskyard.media" on on() gets each change.
      */
     media: () => media,
@@ -701,20 +691,13 @@
       if (c && c.state === "suspended") c.resume().then(notePlaying, () => {});
     },
     /**
-     * Lets Selkies capture the mic ("microphone") or the camera ("webcam"),
-     * until the page says otherwise or the connection ends.
+     * Lets Selkies capture the mic ("microphone"), until the page says
+     * otherwise or the connection ends.
      */
     allowCapture(kind, on) {
       if (!(kind in allowed)) return;
       // Only on an open stream: the page's badge is on that stream.
       allowed[kind] = !!on && !!transport && transport.readyState === PageWebSocket.OPEN;
-    },
-    /**
-     * The camera the webcam captures from ("" for the browser's default), from
-     * its next start.
-     */
-    setCamera(deviceId) {
-      camera = String(deviceId || "");
     },
     /**
      * The mic to capture ("" for the browser's default). A live mic moves to

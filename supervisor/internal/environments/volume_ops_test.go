@@ -75,7 +75,7 @@ func (e *helperEngine) ran() []engine.ContainerSpec {
 
 func volumeService(t *testing.T) (*Service, *helperEngine) {
 	t.Helper()
-	eng := &helperEngine{fakeEngine: newFakeEngine(t.TempDir())}
+	eng := &helperEngine{fakeEngine: newFakeEngine()}
 	s, err := Open(eng, Config{DataDir: t.TempDir()}, "test", slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
 	if err != nil {
 		t.Fatal(err)

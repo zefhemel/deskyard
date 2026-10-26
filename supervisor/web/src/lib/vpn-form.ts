@@ -130,7 +130,6 @@ export interface EnvironmentSettingsDraft {
   image: string;
   memoryBytes: number;
   nanoCpus: number;
-  camera: string;
   vpnConnectionId: string;
   lan: ExceptionRow[];
   mounts?: HostMount[];
@@ -147,7 +146,6 @@ function environmentSettingsPatch(saved: SavedEnvironmentSettings, draft: Enviro
   if (draft.memoryBytes !== saved.settings.memoryBytes) patch.memoryBytes = draft.memoryBytes;
   if (draft.nanoCpus !== saved.settings.nanoCpus) patch.nanoCpus = draft.nanoCpus;
   if (draft.dockerAccess !== undefined && draft.dockerAccess !== (saved.settings.dockerAccess ?? false)) patch.dockerAccess = draft.dockerAccess;
-  if (draft.camera !== saved.settings.camera) patch.camera = draft.camera;
   if (draft.mounts !== undefined && JSON.stringify(draft.mounts) !== JSON.stringify(saved.settings.mounts ?? [])) patch.mounts = draft.mounts;
   if (draft.volumes !== undefined && JSON.stringify(draft.volumes) !== JSON.stringify(saved.settings.volumes ?? [])) patch.volumes = draft.volumes;
   return patch;

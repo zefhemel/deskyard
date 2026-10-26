@@ -41,8 +41,7 @@ func (s *Server) routes() {
 	h("POST /api/environments/{name}/reclaim-memory", s.handleReclaimMemory)
 	h("PUT /api/environments/{name}/memory-policy", s.handleMemoryPolicy)
 	h("POST /api/environments/{name}/{action}", s.handlePower) // start, stop, restart, upgrade, keys
-	h("POST /api/environments/{name}/mic", s.handleCapture(captureMic))
-	h("POST /api/environments/{name}/cam", s.handleCapture(captureCam))
+	h("POST /api/environments/{name}/mic", s.handleMic)
 	h("PUT /api/environments/{name}/access", s.handleSetAccess)
 	h("GET /api/environments/{name}/screen.png", s.handleScreen)
 	h("GET /api/environments/{name}/processes", s.handleProcesses)
@@ -73,6 +72,7 @@ func (s *Server) routes() {
 	h("GET /api/volumes", s.handleListVolumes)
 	h("POST /api/volumes", s.handleCreateVolume)
 	h("DELETE /api/volumes/{name}", s.handleDeleteVolume)
+	h("GET /api/volumes/{name}/usage", s.handleVolumeUsage)
 
 	m.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such API route")
@@ -207,7 +207,7 @@ func errorStatus(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, environments.ErrExists), errors.Is(err, accounts.ErrExists),
 		errors.Is(err, environments.ErrBusy), errors.Is(err, accounts.ErrLastAdmin), errors.Is(err, environments.ErrStopped),
-		errors.Is(err, environments.ErrCameraTaken), errors.Is(err, environments.ErrConflict):
+		errors.Is(err, environments.ErrConflict):
 		return http.StatusConflict
 	default:
 		return http.StatusBadRequest

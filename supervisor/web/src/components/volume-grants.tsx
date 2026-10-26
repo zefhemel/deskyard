@@ -15,7 +15,7 @@ export function VolumeGrantFields({
   creating?: boolean;
 }) {
   return (
-    <section class="mt-6 border-t border-line pt-5" aria-label="Volumes">
+    <section class="mt-6 border-t border-line pt-5 first:mt-0 first:border-t-0 first:pt-0" aria-label="Volumes">
       <h2 class="mb-1 text-base font-semibold">Volumes</h2>
       <p class="mb-4 text-sm text-muted">
         Share a volume with this environment at <span class="mono">/share/&lt;volume&gt;</span>.{!creating && " Changes apply when you save, which recreates its container."}

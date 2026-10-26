@@ -101,14 +101,6 @@ install -d -m 1777 /tmp/.X11-unix /tmp/.ICE-unix
 # Gamepads: the Input Interposer serves its devices under /dev/input, which
 # must exist (/etc/workspace/gamepads.sh).
 mkdir -pm1777 /dev/input
-# Webcam: the host's virtual camera (v4l2loopback) an admin gave this desktop,
-# which only this desktop has, is fed by Selkies as the user (start-selkies).
-# Inside the container the device node is our own.
-for dev in /dev/video*; do
-    if [ -c "$dev" ] && [ -e "/sys/devices/virtual/video4linux/${dev#/dev/}" ]; then
-        chown user "$dev"
-    fi
-done
 # Chromium locks its profile to a hostname; a recreated container has a new one.
 rm -f /workspace/.config/chromium-shared/Singleton{Lock,Socket,Cookie}
 

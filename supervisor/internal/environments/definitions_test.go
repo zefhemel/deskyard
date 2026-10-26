@@ -24,7 +24,6 @@ func testDefinition(name string) Definition {
 		Network:       Network{Kind: NetworkIsolated},
 		Mounts:        []HostMount{{Source: "/srv/photos", Target: "/mnt/photos", ReadOnly: true}},
 		Volumes:       []VolumeGrant{},
-		Camera:        "/dev/video10",
 		MemoryReclaim: true,
 		Power:         PowerRunning,
 	}
@@ -70,12 +69,12 @@ func TestDefinitionsRoundTripSpecKeys(t *testing.T) {
 	if first["name"] != "alice" {
 		t.Fatalf("environments are saved sorted by name, got %v first", first["name"])
 	}
-	for _, key := range []string{"name", "created", "revision", "image", "limits", "network", "mounts", "volumes", "dockerAccess", "camera", "memoryReclaim", "power"} {
+	for _, key := range []string{"name", "created", "revision", "image", "limits", "network", "mounts", "volumes", "dockerAccess", "memoryReclaim", "power"} {
 		if _, ok := first[key]; !ok {
 			t.Errorf("missing key %q in %s", key, b)
 		}
 	}
-	if len(first) != 12 {
+	if len(first) != 11 {
 		t.Errorf("unexpected keys in %v", first)
 	}
 	if img := first["image"].(map[string]any); img["ref"] != alice.Image.Ref || img["id"] != "sha256:abc" {
@@ -90,7 +89,7 @@ func TestDefinitionsRoundTripSpecKeys(t *testing.T) {
 	if m := first["mounts"].([]any)[0].(map[string]any); m["source"] != "/srv/photos" || m["target"] != "/mnt/photos" || m["readOnly"] != true {
 		t.Errorf("mounts = %v", m)
 	}
-	if first["created"] != "2026-10-26T10:00:00Z" || first["power"] != "running" || first["camera"] != "/dev/video10" {
+	if first["created"] != "2026-10-26T10:00:00Z" || first["power"] != "running" {
 		t.Errorf("entry = %v", first)
 	}
 	if n := envs[1].(map[string]any)["network"].(map[string]any); n["kind"] != "vpn" || n["connection"] != "conn-1" || n["lanExceptions"] == nil {
@@ -127,7 +126,6 @@ func TestDefinitionsSpecExampleLoads(t *testing.T) {
       "network": {"kind": "isolated"},
       "mounts": [{"source": "/srv/photos", "target": "/mnt/photos", "readOnly": true}],
       "dockerAccess": false,
-      "camera": "",
       "memoryReclaim": true,
       "power": "running"
     }
@@ -143,6 +141,50 @@ func TestDefinitionsSpecExampleLoads(t *testing.T) {
 	d, ok := defs.Get("alice")
 	if !ok || d.Revision != 4 || !d.MemoryReclaim || d.Power != PowerRunning || len(d.Mounts) != 1 || !d.Mounts[0].ReadOnly {
 		t.Fatalf("alice = %+v, %v", d, ok)
+	}
+}
+
+// Files written before camera support was removed carry a "camera" field:
+// it loads, and the next save leaves it out. Other unknown fields still fail.
+func TestDefinitionsLoadDropsLegacyCamera(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "environments.json")
+	legacy := `{"version": 1, "environments": [
+    {"name": "alice", "created": "2026-10-26T10:00:00Z", "revision": 4,
+     "image": {"ref": "ghcr.io/x/deskyard-xfce:latest", "id": "sha256:1"},
+     "limits": {"memoryBytes": 0, "nanoCPUs": 0}, "network": {"kind": "isolated"},
+     "mounts": [], "volumes": [], "dockerAccess": false, "camera": "/dev/video10",
+     "memoryReclaim": false, "power": "running"},
+    {"name": "bob", "created": "2026-10-26T10:00:00Z", "revision": 1,
+     "image": {"ref": "ghcr.io/x/deskyard-xfce:latest", "id": "sha256:1"},
+     "limits": {"memoryBytes": 0, "nanoCPUs": 0}, "network": {"kind": "isolated"},
+     "mounts": [], "volumes": [], "dockerAccess": false, "camera": "",
+     "memoryReclaim": false, "power": "stopped"}
+  ]}`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	defs, err := LoadDefinitions(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a, ok := defs.Get("alice"); !ok || a.Revision != 4 || a.Power != PowerRunning {
+		t.Fatalf("alice = %+v, %v", a, ok)
+	}
+	if _, err := defs.Update("bob", func(d *Definition) error { d.MemoryReclaim = true; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "camera") {
+		t.Fatalf("the camera field was written back: %s", b)
+	}
+	if err := os.WriteFile(path, []byte(strings.Replace(legacy, `"camera"`, `"webcam"`, 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadDefinitions(path); err == nil || !strings.Contains(err.Error(), "webcam") {
+		t.Fatalf("an unknown field loaded: %v", err)
 	}
 }
 
@@ -187,7 +229,6 @@ func TestDefinitionsLoadRejectsMalformedEntries(t *testing.T) {
 			d.Network = Network{Kind: NetworkVPN, Connection: "c", LANExceptions: []vpn.Exception{{Destination: "8.8.8.8", Protocol: "tcp", Ports: []vpn.PortRange{{Start: 53}}}}}
 		},
 		"bad mount":     func(d *Definition) { d.Mounts = []HostMount{{Source: "relative", Target: "/mnt/x"}} },
-		"bad camera":    func(d *Definition) { d.Camera = "/dev/sda" },
 		"unknown power": func(d *Definition) { d.Power = "paused" },
 	}
 	for name, mutate := range cases {
@@ -351,7 +392,6 @@ func TestDefinitionContainerAffecting(t *testing.T) {
 		"mounts":        func(d *Definition) { d.Mounts = nil },
 		"mount mode":    func(d *Definition) { d.Mounts = []HostMount{{Source: "/srv/photos", Target: "/mnt/photos"}} },
 		"docker access": func(d *Definition) { d.DockerAccess = true },
-		"camera":        func(d *Definition) { d.Camera = "" },
 	}
 	for name, mutate := range affecting {
 		d := base
@@ -390,7 +430,7 @@ func TestDefinitionSettings(t *testing.T) {
 	d.Network = Network{Kind: NetworkVPN, Connection: "conn-1", LANExceptions: []vpn.Exception{{Destination: "10.0.0.1/32", Protocol: "tcp", Ports: []vpn.PortRange{{Start: 22, End: 22}}}}}
 	d.DockerAccess = true
 	s := d.Settings()
-	want := Settings{Image: d.Image.Ref, MemoryBytes: 1 << 30, NanoCPUs: 2e9, Camera: "/dev/video10", VPNConnectionID: "conn-1", LANExceptions: d.Network.LANExceptions, Mounts: d.Mounts, Volumes: d.Volumes, DockerAccess: true}
+	want := Settings{Image: d.Image.Ref, MemoryBytes: 1 << 30, NanoCPUs: 2e9, VPNConnectionID: "conn-1", LANExceptions: d.Network.LANExceptions, Mounts: d.Mounts, Volumes: d.Volumes, DockerAccess: true}
 	if !reflect.DeepEqual(s, want) {
 		t.Fatalf("Settings() = %+v", s)
 	}

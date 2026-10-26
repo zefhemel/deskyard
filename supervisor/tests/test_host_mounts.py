@@ -26,7 +26,7 @@ def test_host_folders_ui(supervisor, admin, desktop, name, tmp_path):
     source = source_folder(tmp_path)
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base, viewport={"width": 390, "height": 844})
-        page.goto(f"{supervisor.base}/environments/{name}?tab=settings")
+        page.goto(f"{supervisor.base}/environments/{name}?tab=settings&section=volumes")
         page.get_by_role("button", name="Add host folder").click()
         page.get_by_label("Host folder", exact=True).fill(str(source))
         page.get_by_label("Path in the environment", exact=True).fill("/mnt/external")

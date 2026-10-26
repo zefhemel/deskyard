@@ -7,7 +7,7 @@ import time
 from playwright.sync_api import expect, sync_playwright
 
 from conftest import docker, free_port
-from helpers import PICTURE, SCREEN, SHOWING, open_desktop, signed_in, to_page
+from helpers import PICTURE, SCREEN, SHOWING, connected, open_desktop, open_display_menu, signed_in, to_page
 
 
 def test_forwards_shown(cli, remote, forwards, supervisor, name):
@@ -92,9 +92,9 @@ def test_open_popover_stays_open_when_the_stream_connects(cli, remote, superviso
             chip.click()
             agents = page.get_by_role("heading", name="CLI activity")
             expect(agents).to_be_visible()
-            expect(page.get_by_text("Connected", exact=True)).to_be_hidden()
+            expect(connected(page)).to_be_hidden()
             docker("exec", f"deskyard-{name}", "supervisorctl", "start", "selkies")
-            expect(page.get_by_text("Connected", exact=True)).to_be_visible(timeout=30000)
+            expect(connected(page)).to_be_visible(timeout=30000)
             page.wait_for_function(SHOWING, timeout=30000)
             time.sleep(0.5)
             expect(agents).to_be_visible()
@@ -121,7 +121,7 @@ def test_overlay_marks(cli, remote, supervisor, name):
         assert abs(box["y"] + box["height"] / 2 - want[1]) <= 3, (box, want)
 
         # Locked and scaled down, the marks still land on the spot.
-        page.get_by_role("button", name="Lock size", exact=True).click()
+        open_display_menu(page).get_by_role("menuitemcheckbox", name="Lock size", exact=True).click()
         page.set_viewport_size({"width": 800, "height": 700})
         page.wait_for_function(f"(() => {{ const f = document.querySelector('iframe'); "
                                f"return {SCREEN}.video().getBoundingClientRect().width <= f.clientWidth + 1; }})()")

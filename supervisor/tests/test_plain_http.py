@@ -2,7 +2,7 @@
 
 Browsers treat only localhost as secure over http, so Chromium reaches the
 test supervisor as http://deskyard.test:<port>/, mapped to 127.0.0.1. There
-the browser has no WebCodecs, AudioWorklet, mic, camera or async clipboard:
+the browser has no WebCodecs, AudioWorklet, mic or async clipboard:
 Selkies' client streams JPEG and decodes sound in WASM, and the page says
 which features need https.
 """
@@ -17,7 +17,8 @@ from playwright.sync_api import expect, sync_playwright
 
 import netchange
 from conftest import ADMIN_PASSWORD
-from helpers import MEDIA, PICTURE, SCREEN, SHOWING, fits, in_desktop, put, screen_size, to_page, wait_loaded, wait_until
+from helpers import (MEDIA, PICTURE, SCREEN, SHOWING, connected, fits, in_desktop, open_display_menu, put, screen_size, to_page,
+                     wait_loaded, wait_until)
 from test_ui_audio import play_tone, quiet
 from test_ui_pointer_and_drop import DRAG
 
@@ -48,7 +49,7 @@ def open_desktop(page, base, name):
     seen = netchange.failures(page)
     page.goto(f"{base}/{name}/")
     wait_loaded(page, f"{SHOWING} && {SCREEN}.display()?.width > 0 && {SCREEN}.display()?.height > 0", seen)
-    expect(page.get_by_text("Connected", exact=True)).to_be_visible(timeout=30000)
+    expect(connected(page)).to_be_visible(timeout=30000)
 
 
 def has_picture(page) -> bool:
@@ -124,13 +125,12 @@ def test_plain_http_screen(supervisor, desktop, name, remote):
         expect(page.get_by_text("from-the-desktop-9")).to_be_visible(timeout=15000)
         page.keyboard.press("Escape")
 
-        # Mic and camera are off, and say why.
+        # The mic is off, and says why.
         page.get_by_role("button", name="Audio", exact=True).click()
         panel = page.get_by_role("dialog", name="Audio")
         expect(panel.get_by_role("switch", name="Desktop sound")).to_be_enabled()
         expect(panel.get_by_role("switch", name="My mic")).to_be_disabled()
-        expect(panel.get_by_role("switch", name="My camera")).to_be_disabled()
-        expect(panel.get_by_text(NEEDS_HTTPS)).to_have_count(2)
+        expect(panel.get_by_text(NEEDS_HTTPS)).to_have_count(1)
         page.keyboard.press("Escape")
 
         # The agent overlay marks an agent's click where it lands.
@@ -143,7 +143,7 @@ def test_plain_http_screen(supervisor, desktop, name, remote):
 
         # Lock size: the remote screen keeps its size, scaled to fit.
         size = screen_size(name)
-        page.get_by_role("button", name="Lock size", exact=True).click()
+        open_display_menu(page).get_by_role("menuitemcheckbox", name="Lock size", exact=True).click()
         page.set_viewport_size({"width": 900, "height": 700})
         page.wait_for_function(f"{SCREEN}.video().getBoundingClientRect().width <= document.querySelector('iframe').clientWidth + 1")
         time.sleep(1)
@@ -206,14 +206,12 @@ def test_plain_http_sound_and_quality(supervisor, desktop, name):
         page.keyboard.press("Escape")
 
         # Quality: the presets are a JPEG quality and frame rate here.
-        page.get_by_role("button", name="Quality", exact=True).click()
-        page.get_by_role("menuitemcheckbox", name=re.compile("^Low")).click()
+        open_display_menu(page).get_by_role("menuitemcheckbox", name=re.compile("^Quality: Low")).click()
         beside = sign_in(browser, base)
         open_desktop(beside, base, name)
         beside.wait_for_function(f"{SCREEN}.display().settings?.framerate === 15", timeout=15000)
         s = beside.evaluate(f"{SCREEN}.display().settings")
         assert (s["encoder"], s["jpeg_quality"], s["framerate"]) == ("jpeg", 30, 15), s
-        beside.get_by_role("button", name="Quality", exact=True).click()
-        expect(beside.get_by_role("menuitemcheckbox", name=re.compile("^Low"))).to_have_attribute("aria-checked", "true")
+        expect(open_display_menu(beside).get_by_role("menuitemcheckbox", name=re.compile("^Quality: Low"))).to_have_attribute("aria-checked", "true")
         browser.close()
     in_desktop(name, "pkill", "paplay", check=False)

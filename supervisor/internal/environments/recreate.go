@@ -95,7 +95,7 @@ func (s *Service) Recreate(ctx context.Context, name string, set Settings, progr
 }
 
 // Apply validates and preflights next's container-affecting settings (image,
-// limits, network, mounts, volume grants, Docker access, camera), saves them
+// limits, network, mounts, volume grants, Docker access), saves them
 // as name's definition, a new revision when they differ, and replaces its
 // container (if it has one) to match. The old container is parked until the new one is
 // up; if that fails, the old one comes back and the definition stays ahead of
@@ -150,18 +150,9 @@ func (s *Service) applyDirect(ctx context.Context, name string, next Definition,
 			return err
 		}
 	}
-	if next.Camera != "" && next.Camera != c.Settings.Camera {
-		if err := s.CheckCamera(ctx, name, next.Camera); err != nil {
-			return err
-		}
-	}
 	img, err := s.EnsureImage(ctx, next.Image.Ref, progress)
 	if err != nil {
 		return err
-	}
-	if next.Camera != "" && next.Camera == c.Settings.Camera && s.cameraGone(next.Camera) {
-		s.Log.Warn("camera gone from the host; recreating the environment without it", "environment", name, "camera", next.Camera)
-		next.Camera = ""
 	}
 	// A replacement still being recovered must finish first.
 	if err := s.noPendingReplacement(name); err != nil {
@@ -172,7 +163,7 @@ func (s *Service) applyDirect(ctx context.Context, name string, next Definition,
 		d.Image = ImageRef{Ref: next.Image.Ref, ID: img.ID}
 		d.Limits, d.Network = next.Limits, next.Network
 		d.Mounts, d.Volumes = next.Mounts, next.Volumes
-		d.DockerAccess, d.Camera = next.DockerAccess, next.Camera
+		d.DockerAccess = next.DockerAccess
 		*d = d.clone()
 		if ContainerAffecting(prev, *d) {
 			d.Revision = prev.Revision + 1
@@ -214,7 +205,7 @@ func (s *Service) revertSettings(name string, prev Definition) error {
 	_, err := s.Defs.Update(name, func(d *Definition) error {
 		d.Image, d.Limits, d.Network = prev.Image, prev.Limits, prev.Network
 		d.Mounts, d.Volumes = prev.Mounts, prev.Volumes
-		d.DockerAccess, d.Camera = prev.DockerAccess, prev.Camera
+		d.DockerAccess = prev.DockerAccess
 		d.Revision = prev.Revision
 		*d = d.clone()
 		return nil
@@ -223,19 +214,14 @@ func (s *Service) revertSettings(name string, prev Definition) error {
 }
 
 // applyDefinition replaces c's container, built from an older revision, with
-// one built from its current definition. A camera gone from the host is
-// dropped from the definition first, and a pinned image gone from the engine
-// pulled again by its reference, each as a new revision.
+// one built from its current definition. A pinned image gone from the engine
+// is first pulled again by its reference, as a new revision.
 func (s *Service) applyDefinition(ctx context.Context, c Environment, progress func(string, float64)) error {
 	if err := s.checkFolders(c.Name); err != nil {
 		return err
 	}
 	if err := s.checkHostSources(ctx, c.Settings.Mounts, c.Settings.DockerAccess); err != nil {
 		return s.applied(c.Name, err)
-	}
-	if c.Settings.Camera != "" && s.cameraGone(c.Settings.Camera) {
-		s.Log.Warn("camera gone from the host; recreating the environment without it", "environment", c.Name, "camera", c.Settings.Camera)
-		s.dropCamera(c.Name, c.Settings.Camera)
 	}
 	def, err := s.repin(ctx, c.Name)
 	if err != nil {
@@ -484,19 +470,4 @@ func (s *Service) recoverReplacements(ctx context.Context) error {
 		}
 	}
 	return errors.Join(errs...)
-}
-
-// dropCamera clears camera, gone from the host, from name's definition, as a
-// new revision.
-func (s *Service) dropCamera(name, camera string) {
-	_, err := s.Defs.Update(name, func(d *Definition) error {
-		if d.Camera == camera {
-			d.Camera = ""
-			d.Revision++
-		}
-		return nil
-	})
-	if err != nil {
-		s.Log.Warn("dropping a gone camera from the definition", "environment", name, "err", err)
-	}
 }

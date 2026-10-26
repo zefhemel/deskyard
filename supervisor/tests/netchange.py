@@ -11,7 +11,7 @@ OrbStack keep the networks in their VM, so a Mac never sees this.)
 So, for every test (conftest imports this): Page.goto and Page.reload load
 the page again when it or something it loaded failed so, and every browser
 context counts and logs such failures (pytest shows the log with a failed
-test). In Chromium, loopback bootstrap API GETs, UI assets, login and mic/camera badge POSTs use Playwright's request transport,
+test). In Chromium, loopback bootstrap API GETs, UI assets, login and mic badge POSTs use Playwright's request transport,
 which is independent of Chromium's network-change detector. Each request
 is sent once; other mutations, downloads, live streams and Selkies' client
 stay on the browser's transport. Documents remain native to preserve their network
@@ -86,7 +86,7 @@ _failures: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 # also needs Python callbacks, so broader matching would pause native traffic
 # during the audio tests' recording sleeps.
 BOOTSTRAP_API = r"api/(?:me|host|environments|images|login)"
-CAPTURE_API = r"api/environments/[a-z][a-z0-9-]*/(?:mic|cam)"
+CAPTURE_API = r"api/environments/[a-z][a-z0-9-]*/mic"
 LOOPBACK = re.compile(
     r"^https?://(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?/"
     rf"(?:{BOOTSTRAP_API}|{CAPTURE_API}"

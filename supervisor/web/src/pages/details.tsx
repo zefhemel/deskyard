@@ -136,7 +136,7 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
         <div class="grid grid-cols-[minmax(0,1.55fr)_minmax(320px,1fr)] items-start gap-8 max-[900px]:grid-cols-1">
           <Monitor environment={c} job={jobs[c.name]} now={now} big />
           <div class="flex flex-col gap-4">
-            <ViewersPanel viewers={c.viewers} mics={c.mics} cams={c.cams} forwards={c.forwards} agents={c.agents} />
+            <ViewersPanel viewers={c.viewers} mics={c.mics} forwards={c.forwards} agents={c.agents} />
             <div class="rounded-[10px] border border-line bg-surface px-5 py-[18px]"><VPNStatus vpn={c.vpn} /></div>
             <ChartsPanel environment={c} />
             <Facts environment={c} admin={me.admin} onTab={setTab} />
@@ -157,19 +157,17 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
 function ViewersPanel({
   viewers,
   mics,
-  cams,
   forwards,
   agents,
 }: {
   viewers: string[];
   mics: string[];
-  cams: string[];
   forwards: Forward[];
   agents: AgentPresence[];
 }) {
   return (
     <div class="flex items-center gap-2.5 rounded-[10px] border border-line bg-surface px-5 py-[18px] text-sm">
-      {(viewers.length > 0 || agents.length > 0) && <Avatars names={viewers} mics={mics} cams={cams} agents={agents} />}
+      {(viewers.length > 0 || agents.length > 0) && <Avatars names={viewers} mics={mics} agents={agents} />}
       <div>
         <b class="font-semibold">
           {viewers.length

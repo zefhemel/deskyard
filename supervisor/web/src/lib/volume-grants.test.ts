@@ -42,9 +42,9 @@ test("updating a grant changes only that grant", () => {
 });
 
 test("volume grant edits are a settings change sent as the complete list", async () => {
-  const saved = { image: "img", settings: { dockerAccess: false, memoryBytes: 0, nanoCpus: 0, camera: "", vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: [] } };
+  const saved = { image: "img", settings: { dockerAccess: false, memoryBytes: 0, nanoCpus: 0, vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: [] } };
   const grants = [{ name: "photos", readOnly: true }];
-  const draft = { image: "img", memoryBytes: 0, nanoCpus: 0, camera: "", vpnConnectionId: "", lan: [], volumes: grants };
+  const draft = { image: "img", memoryBytes: 0, nanoCpus: 0, vpnConnectionId: "", lan: [], volumes: grants };
   assert.equal(environmentSettingsChanged(saved, draft), true);
   assert.deepEqual(await saveEnvironmentSettings(saved, draft, async (body) => body), { volumes: grants });
   const updated = { ...saved, settings: { ...saved.settings, volumes: grants } };

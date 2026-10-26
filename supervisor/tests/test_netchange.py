@@ -31,13 +31,11 @@ def dispatch(route):
 
 class CaptureTransportTests(unittest.TestCase):
     def test_capture_reports_use_request_transport_once(self):
-        for kind in ("mic", "cam"):
-            with self.subTest(kind=kind):
-                route = loopback_route(f"/api/environments/desktop-1/{kind}")
-                dispatch(route)
-                route.fetch.assert_called_once_with(max_redirects=0, max_retries=0)
-                route.fulfill.assert_called_once_with(response=route.fetch.return_value)
-                route.fallback.assert_not_called()
+        route = loopback_route("/api/environments/desktop-1/mic")
+        dispatch(route)
+        route.fetch.assert_called_once_with(max_redirects=0, max_retries=0)
+        route.fulfill.assert_called_once_with(response=route.fetch.return_value)
+        route.fallback.assert_not_called()
 
     def test_failed_capture_is_aborted_without_replaying_it(self):
         route = loopback_route("/api/environments/desktop-1/mic")

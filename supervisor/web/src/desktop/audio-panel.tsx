@@ -1,25 +1,23 @@
 // The desktop bar's Audio button and its panel, layout B of the audio mockup
 // (docs/superpowers/specs/2026-10-22-audio-and-ports-design/audio-bar.html):
-// the desktop's sound here, my mic into the desktop, and my camera into it.
-// Selkies does the work in the frame (selkies.ts); this is the UI, this
-// browser's choices, and the mic and camera badges everyone sees
-// (badges.ts).
+// the desktop's sound here, and my mic into the desktop. Selkies does the
+// work in the frame (selkies.ts); this is the UI, this browser's choices, and
+// the mic badge everyone sees (badges.ts).
 import type { ComponentChildren } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { api, type Host } from "../api.ts";
-import { CamIcon, MicIcon } from "../components/avatar.tsx";
+import { api } from "../api.ts";
+import { MicIcon } from "../components/avatar.tsx";
 import { notifyError } from "../components/toast.tsx";
 import { cx } from "../components/ui.tsx";
-import { type Badge, Badges } from "./badges.ts";
+import { Badges } from "./badges.ts";
 import { NeedsHttps } from "./needs-https.tsx";
 import { canChooseOutput, type Capture, type DeskyardScreen, insecureContext, type Media, setCapture, setVolume } from "./selkies.ts";
 
 // Remembered per browser. Sound is off on the first visit (sound may only
-// start with a click); the mic and the webcam are never remembered: they're
-// off on every load and connection.
+// start with a click); the mic is never remembered: it's off on every load
+// and connection.
 const SOUND_KEY = "deskyard.sound"; // {on, volume, output}
 const MIC_INPUT_KEY = "deskyard.mic.input";
-const CAM_INPUT_KEY = "deskyard.cam.input";
 
 interface Sound {
   on: boolean;
@@ -56,18 +54,13 @@ function save(key: string, value: string) {
   }
 }
 
-const noMedia: Media = { sound: false, mic: false, webcam: false, playing: false, soundAt: 0 };
+const noMedia: Media = { sound: false, mic: false, playing: false, soundAt: 0 };
 
 /**
- * How long a live mic or webcam may be off before the page takes it as
- * stopped: Selkies restarts the capture to change devices.
+ * How long a live mic may be off before the page takes it as stopped:
+ * Selkies restarts the capture to change devices.
  */
 const GAP_MS = 3000;
-/** How long a camera may take to start before the page gives up on it. */
-const CAM_START_MS = 30000;
-
-const badgeOf: Record<Capture, Badge> = { microphone: "mic", webcam: "cam" };
-const liveIn = (m: Media, kind: Capture) => (kind === "microphone" ? m.mic : m.webcam);
 
 /** Where the page is: the frame's client, its connection and the badges. */
 interface Here {
@@ -79,39 +72,38 @@ interface Here {
 }
 
 /**
- * One capture (the mic or the webcam) of this page. The badge is up whenever
- * the user wants the capture or it is live, so it is never live unseen:
+ * This page's mic. The badge is up whenever the user wants the mic or it is
+ * live, so it is never live unseen:
  * - on: the badge goes up (and the supervisor has it) before the capture is
  *   allowed;
  * - off: the capture stops, and the badge comes down once it isn't live.
  * The badge's reports are serialised and numbered (badges.ts), so turning it
  * off and on quickly never leaves a stale "off" last.
  */
-function useCapture(kind: Capture, here: { current: Here }, prepare: (s: DeskyardScreen) => void, startMs?: number) {
+function useMic(here: { current: Here }, prepare: (s: DeskyardScreen) => void) {
   const [on, setOn] = useState(false);
-  const st = useRef({ intent: false, live: false, wasLive: false, gap: 0, startTimer: 0 });
+  const st = useRef({ intent: false, live: false, wasLive: false, gap: 0 });
 
   const reconcile = useCallback(() => {
     const b = here.current.badges;
     const want = st.current.intent || st.current.live;
-    if (b && here.current.connected && b.wants(badgeOf[kind]) !== want) b.set(badgeOf[kind], want).catch(() => {});
-  }, [kind, here]);
+    if (b && here.current.connected && b.wants("mic") !== want) b.set("mic", want).catch(() => {});
+  }, [here]);
 
-  const clearTimers = () => {
+  const clearGap = () => {
     window.clearTimeout(st.current.gap);
-    window.clearTimeout(st.current.startTimer);
-    st.current.gap = st.current.startTimer = 0;
+    st.current.gap = 0;
   };
 
   const stop = useCallback(() => {
     const c = st.current;
-    clearTimers();
+    clearGap();
     c.intent = false;
     setOn(false);
     const s = here.current.screen;
-    if (s) setCapture(s, kind, false);
+    if (s) setCapture(s, "microphone", false);
     reconcile();
-  }, [kind, here, reconcile]);
+  }, [here, reconcile]);
 
   const start = useCallback(async () => {
     const { screen: s, connected, badges, conn } = here.current;
@@ -123,8 +115,8 @@ function useCapture(kind: Capture, here: { current: Here }, prepare: (s: Deskyar
     try {
       // Until the supervisor has the newest report: an "on" replaced by
       // later clicks settles as they do, and only an "on" it has counts.
-      await badges.set(badgeOf[kind], true);
-      await badges.settled(badgeOf[kind]);
+      await badges.set("mic", true);
+      await badges.settled("mic");
     } catch (e) {
       if (here.current.conn === conn && c.intent) {
         c.intent = false;
@@ -134,27 +126,19 @@ function useCapture(kind: Capture, here: { current: Here }, prepare: (s: Deskyar
       return;
     }
     // Turned off, or a new connection, meanwhile: the badge follows (reconcile).
-    if (here.current.conn !== conn || !c.intent || !badges.wants(badgeOf[kind])) return;
+    if (here.current.conn !== conn || !c.intent || !badges.wants("mic")) return;
     prepare(s);
-    setCapture(s, kind, true);
-    if (startMs) {
-      c.startTimer = window.setTimeout(() => {
-        if (c.intent && !c.live) {
-          notifyError(`Your ${kind === "webcam" ? "camera" : "mic"} didn't start`);
-          stop();
-        }
-      }, startMs);
-    }
-  }, [kind, here, prepare, startMs, stop]);
+    setCapture(s, "microphone", true);
+  }, [here, prepare]);
 
-  // Selkies' state for this capture.
+  // Selkies' state for the mic.
   const follow = useCallback(
     (m: Media) => {
       const c = st.current;
-      c.live = liveIn(m, kind);
+      c.live = m.mic;
       if (c.live) {
         c.wasLive = true;
-        clearTimers();
+        clearGap();
       } else if (c.intent && c.wasLive && !c.gap) {
         // Off and staying off (an error, the desktop refusing it) is off; a
         // restart for a new device comes back within GAP_MS.
@@ -162,19 +146,19 @@ function useCapture(kind: Capture, here: { current: Here }, prepare: (s: Deskyar
       }
       reconcile();
     },
-    [kind, reconcile, stop],
+    [reconcile, stop],
   );
 
-  // A new connection (or none): the capture is off, and so is the badge on
-  // the new stream. The "off" goes after any report still on its way from
-  // the last connection, so none of those lingers.
+  // A new connection (or none): the mic is off, and so is the badge on the
+  // new stream. The "off" goes after any report still on its way from the
+  // last connection, so none of those lingers.
   const reset = useCallback(() => {
-    clearTimers();
-    st.current = { intent: false, live: false, wasLive: false, gap: 0, startTimer: 0 };
+    clearGap();
+    st.current = { intent: false, live: false, wasLive: false, gap: 0 };
     setOn(false);
     const { badges, connected } = here.current;
-    if (badges && connected) badges.set(badgeOf[kind], false).catch(() => {});
-  }, [kind, here]);
+    if (badges && connected) badges.set("mic", false).catch(() => {});
+  }, [here]);
 
   return { on, start, stop, follow, reset };
 }
@@ -182,40 +166,17 @@ function useCapture(kind: Capture, here: { current: Here }, prepare: (s: Deskyar
 const barButton =
   "inline-flex cursor-pointer items-center gap-1.5 rounded-[7px] border-0 bg-transparent px-2.5 py-[7px] text-[13.5px] font-semibold whitespace-nowrap text-bar-text hover:bg-bar-hover hover:text-white";
 
-/** Why a desktop's camera switch is off-limits, or null when it may be used. */
-function noCamera(name: string, webcam: boolean, host: Host | null, admin: boolean): string | null {
-  if (webcam) return null;
-  if (host && host.cameras === null) return "Cameras aren't available here: the container engine isn't on this machine";
-  if (!host || host.cameras?.length === 0) return "This machine has no virtual camera for environments";
-  return admin ? `${name} has no camera yet; give it one in its Settings` : `${name} has no camera yet; an admin can give it one`;
-}
-
 /**
  * screen is the frame's client (null until it loads), connected whether its
- * stream is up; webcam whether the desktop has its camera.
+ * stream is up.
  */
-export function AudioControl({
-  name,
-  screen,
-  connected,
-  webcam,
-  host,
-  admin,
-}: {
-  name: string;
-  screen: DeskyardScreen | null;
-  connected: boolean;
-  webcam: boolean;
-  host: Host | null;
-  admin: boolean;
-}) {
+export function AudioControl({ name, screen, connected }: { name: string; screen: DeskyardScreen | null; connected: boolean }) {
   const [sound, setSoundPrefs] = useState(loadSound);
   const soundRef = useRef(sound);
   soundRef.current = sound;
   const [input, setInput] = useState(() => load(MIC_INPUT_KEY));
-  const [camera, setCameraPref] = useState(() => load(CAM_INPUT_KEY));
-  const devices = useRef({ input, camera });
-  devices.current = { input, camera };
+  const inputRef = useRef(input);
+  inputRef.current = input;
   const [open, setOpen] = useState(false);
   const [media, setMedia] = useState<Media>(noMedia);
 
@@ -227,16 +188,9 @@ export function AudioControl({
   const here = useRef<Here>({ screen, connected, badges, conn: 0 });
   here.current = { ...here.current, screen, connected, badges };
 
-  const mic = useCapture(
-    "microphone",
+  const mic = useMic(
     here,
-    useCallback((s: DeskyardScreen) => s.setMic(devices.current.input), []),
-  );
-  const cam = useCapture(
-    "webcam",
-    here,
-    useCallback((s: DeskyardScreen) => s.setCamera(devices.current.camera), []),
-    CAM_START_MS,
+    useCallback((s: DeskyardScreen) => s.setMic(inputRef.current), []),
   );
 
   const updateSound = (patch: Partial<Sound>) => {
@@ -253,27 +207,25 @@ export function AudioControl({
     const onMedia = (m: Media) => {
       setMedia({ ...m });
       mic.follow(m);
-      cam.follow(m);
       // The volume applies once Selkies has its playback set up.
       if (m.sound) setVolume(screen, soundRef.current.volume);
     };
     const onAlert = (a: { kind: Capture; text: string }) => {
       notifyError(a.text);
-      (a.kind === "microphone" ? mic : cam).stop();
+      mic.stop();
     };
     const offs = [screen.on("deskyard.media", onMedia), screen.on("deskyard.alert", onAlert)];
     return () => {
       for (const f of offs) f();
     };
-  }, [screen, mic.follow, mic.stop, cam.follow, cam.stop]);
+  }, [screen, mic.follow, mic.stop]);
 
-  // Each connection: this browser's sound; the mic and webcam start off (the
-  // last stream took their badges, and our additions refuse a capture the
-  // page didn't ask for on this connection).
+  // Each connection: this browser's sound; the mic starts off (the last
+  // stream took its badge, and our additions refuse a capture the page
+  // didn't ask for on this connection).
   useEffect(() => {
     here.current.conn++;
     mic.reset();
-    cam.reset();
     if (!screen || !connected) return;
     const p = soundRef.current;
     screen.setSound(p.on);
@@ -312,25 +264,11 @@ export function AudioControl({
     save(MIC_INPUT_KEY, id);
     screen?.setMic(id);
   };
-  const changeCamera = (id: string) => {
-    setCameraPref(id);
-    save(CAM_INPUT_KEY, id);
-    const s = screen;
-    if (!s) return;
-    s.setCamera(id);
-    if (cam.on) {
-      // A restart on the new camera; the gap timer allows for it.
-      setCapture(s, "webcam", false);
-      setCapture(s, "webcam", true);
-    }
-  };
 
   const close = useCallback(() => setOpen(false), []);
-  const camNote = noCamera(name, webcam, host, admin);
   const label = [
     blocked ? "Audio: click to play the desktop's sound" : sound.on ? "Audio: desktop sound on" : "Audio: desktop sound off",
     ...(mic.on ? ["your mic is on"] : []),
-    ...(cam.on ? ["your camera is on"] : []),
   ].join("; ");
 
   return (
@@ -349,9 +287,8 @@ export function AudioControl({
         }}
       >
         <SpeakerIcon on={sound.on} />
-        <span class="max-sm:hidden">Audio</span>
+        <span class="sr-only">Audio</span>
         {mic.on && <MicIcon class="text-[#ff8b8f]" />}
-        {cam.on && <CamIcon class="text-[#ff8b8f]" />}
         {blocked && <span class="h-1.5 w-1.5 rounded-full bg-busy" />}
         <span aria-hidden="true" class="text-[10px]">
           ▾
@@ -394,26 +331,6 @@ export function AudioControl({
                 {mic.on && !media.mic && <Hint>Starting your mic…</Hint>}
                 <Hint>Everyone on {name} sees when your mic is on</Hint>
               </>
-            )}
-          </Section>
-          <hr class="my-3 border-0 border-t border-hairline" />
-          <Section
-            title={`My camera into ${name}`}
-            label="My camera"
-            checked={cam.on}
-            disabled={!connected || camNote !== null || insecureContext}
-            onChange={(on) => (on ? void cam.start() : cam.stop())}
-          >
-            {insecureContext ? (
-              <NeedsHttps />
-            ) : camNote === null ? (
-              <>
-                <DevicePicker kind="videoinput" label="Camera" value={camera} onChange={changeCamera} />
-                {cam.on && !media.webcam && <Hint>Starting your camera…</Hint>}
-                <Hint>Everyone on {name} sees when your camera is on</Hint>
-              </>
-            ) : (
-              <Hint>{camNote}</Hint>
             )}
           </Section>
         </Panel>
@@ -489,9 +406,9 @@ function Hint({ children }: { children: ComponentChildren }) {
 /**
  * The browser's devices of a kind, without its "default" and
  * "communications" aliases. Labels (and so the list) may only come once the
- * site may use the mic or camera; until then only the default is offered.
+ * site may use the mic; until then only the default is offered.
  */
-function DevicePicker({ kind, label, value, onChange }: { kind: MediaDeviceKind; label: string; value: string; onChange: (id: string) => void }) {
+function DevicePicker({ kind, label, value, onChange }: { kind: "audioinput" | "audiooutput"; label: string; value: string; onChange: (id: string) => void }) {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   useEffect(() => {
     const md = navigator.mediaDevices;
@@ -506,7 +423,7 @@ function DevicePicker({ kind, label, value, onChange }: { kind: MediaDeviceKind;
     return () => md.removeEventListener("devicechange", load);
   }, [kind]);
   if (devices.length === 0) return null;
-  const unit = { audiooutput: "Speaker", audioinput: "Microphone", videoinput: "Camera" }[kind];
+  const unit = { audiooutput: "Speaker", audioinput: "Microphone" }[kind];
   return (
     <select aria-label={label} class="mt-2.5 h-[32px]! text-[13px]" value={value} onChange={(e) => onChange(e.currentTarget.value)}>
       <option value="">System default</option>

@@ -26,13 +26,14 @@ test("reports go one at a time, numbered in order", async () => {
   const r = recorder();
   const b = new Badges(r.send);
   void b.set("mic", true);
-  void b.set("cam", true);
+  await new Promise((r) => setTimeout(r, 0));
+  void b.set("mic", false);
   await new Promise((r) => setTimeout(r, 0));
   assert.equal(r.sent.length, 1); // the second waits for the first
   await r.flush();
   assert.deepEqual(r.sent, [
     ["mic", true, 1],
-    ["cam", true, 2],
+    ["mic", false, 2],
   ]);
 });
 
@@ -97,11 +98,11 @@ test("a replaced report rejects when its replacement is refused", async () => {
     if (n === 1) return new Promise<void>((r) => (release = r));
     return Promise.reject(new Error("no stream from that tab"));
   });
-  void b.set("cam", false); // in flight
+  void b.set("mic", false); // in flight
   await new Promise((r) => setTimeout(r, 0));
-  const replaced = b.set("cam", true);
-  b.set("cam", false).catch(() => {}); // replaced too, and settles as the last
-  const last = b.set("cam", true);
+  const replaced = b.set("mic", true);
+  b.set("mic", false).catch(() => {}); // replaced too, and settles as the last
+  const last = b.set("mic", true);
   await new Promise((r) => setTimeout(r, 0));
   release();
   await assert.rejects(last, /no stream/);

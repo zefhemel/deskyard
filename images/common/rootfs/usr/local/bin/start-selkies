@@ -23,16 +23,6 @@ if ! desktop_ready; then
     exit 1
 fi
 
-# The webcam needs a v4l2loopback device the user can write to; without one
-# it stays off (and Selkies' page offers none).
-webcam='false|locked' webcam_device=false
-for dev in /dev/video*; do
-    if [ -c "$dev" ] && [ -w "$dev" ] && [ -e "/sys/devices/virtual/video4linux/${dev#/dev/}" ]; then
-        webcam=true webcam_device=$dev
-        break
-    fi
-done
-
 # Viewers' mics reach apps through Selkies' virtual mic, made when the sound
 # server starts (/etc/pipewire/pipewire-pulse.conf.d/deskyard-mic.conf). It
 # must be there before Selkies: if Selkies makes it, the first viewer's
@@ -92,9 +82,7 @@ export SELKIES_ENABLE_BASIC_AUTH=false \
     SELKIES_GAMEPAD_ENABLED=true \
     SELKIES_JS_SOCKET_PATH="$XDG_RUNTIME_DIR" \
     SELKIES_UINPUT_GAMEPAD=false \
-    SELKIES_WEBCAM_ENABLED="$webcam" \
-    SELKIES_WEBCAM_DEVICE="$webcam_device" \
-    SELKIES_WEBCAM_ON_START=false \
+    SELKIES_WEBCAM_ENABLED='false|locked' \
     SELKIES_FILE_TRANSFERS=none \
     SELKIES_PRINTING_ENABLED='false|locked' \
     SELKIES_ENABLE_SHARED='false|locked' \

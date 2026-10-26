@@ -17,13 +17,11 @@ export function thumbBust(now: number): number {
 export function ViewersBadge({
   viewers,
   mics = [],
-  cams = [],
   agents = [],
   long,
 }: {
   viewers: string[];
   mics?: string[];
-  cams?: string[];
   agents?: AgentPresence[];
   long?: boolean;
 }) {
@@ -31,7 +29,7 @@ export function ViewersBadge({
   const label = badgeLabel(viewers, agents, long);
   return (
     <span class="absolute top-2.5 left-2.5 inline-flex items-center gap-1.5 rounded-full bg-[rgba(15,21,29,.78)] py-[3px] pr-[9px] pl-1 text-[12.5px] font-semibold text-white">
-      <Avatars names={viewers} mics={mics} cams={cams} agents={agents} ring={glassRing} size={22} />
+      <Avatars names={viewers} mics={mics} agents={agents} ring={glassRing} size={22} />
       {label}
     </span>
   );
@@ -42,9 +40,11 @@ interface MonitorProps {
   job?: Job | undefined;
   now: number;
   big?: boolean;
+  /** Where clicking the screen goes; the desktop when unset. The Open desktop button always opens the desktop. */
+  href?: string;
 }
 
-export function Monitor({ environment: c, job, now, big }: MonitorProps) {
+export function Monitor({ environment: c, job, now, big, href }: MonitorProps) {
   const [startError, setStartError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [broken, setBroken] = useState(false);
@@ -67,25 +67,35 @@ export function Monitor({ environment: c, job, now, big }: MonitorProps) {
           onError={() => setBroken(true)}
           onLoad={() => setBroken(false)}
         />
-        <ViewersBadge viewers={c.viewers} mics={c.mics} cams={c.cams} agents={c.agents} long={big} />
-        <span
-          class={cx(
-            "absolute rounded-[7px] bg-accent font-semibold text-white shadow-[0_6px_16px_-6px_rgba(10,16,24,.6)] transition-opacity",
-            big ? "right-3.5 bottom-3.5 px-4 py-[9px] text-[15px]" : "right-2.5 bottom-2.5 px-3 py-[7px] text-sm opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 max-sm:opacity-100",
-          )}
-        >
-          Open desktop
-        </span>
+        <ViewersBadge viewers={c.viewers} mics={c.mics} agents={c.agents} long={big} />
       </>
     );
+    const desktop = `/${c.name}/`;
+    const button = cx(
+      "absolute rounded-[7px] bg-accent font-semibold text-white no-underline shadow-[0_6px_16px_-6px_rgba(10,16,24,.6)] transition-opacity",
+      big ? "right-3.5 bottom-3.5 px-4 py-[9px] text-[15px]" : "right-2.5 bottom-2.5 px-3 py-[7px] text-sm opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100",
+    );
+    const outline = "hover:outline-3 hover:outline-offset-2 hover:outline-accent focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-accent";
+    if (!href || href === desktop) {
+      return (
+        <a href={desktop} title={`Open ${c.name}'s desktop`} class={cx(bezel, "group", outline)}>
+          <div class={glass}>
+            {inner}
+            <span class={button}>Open desktop</span>
+          </div>
+        </a>
+      );
+    }
+    // The screen and the button are separate links: links can't nest.
     return (
-      <a
-        href={`/${c.name}/`}
-        title={`Open ${c.name}'s desktop`}
-        class={cx(bezel, "group hover:outline-3 hover:outline-offset-2 hover:outline-accent focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-accent")}
-      >
-        <div class={glass}>{inner}</div>
-      </a>
+      <div class="group relative">
+        <a href={href} title={`${c.name}'s overview`} class={cx(bezel, outline)}>
+          <div class={glass}>{inner}</div>
+        </a>
+        <a href={desktop} title={`Open ${c.name}'s desktop`} class={cx(button, "hover:brightness-110 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-white", big ? "" : "mr-[7px] mb-[7px]")}>
+          Open desktop
+        </a>
+      </div>
     );
   }
 

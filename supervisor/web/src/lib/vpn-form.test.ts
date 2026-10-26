@@ -117,13 +117,12 @@ test("invalid retest keeps the prior candidate success hidden and makes no secon
 test("accepted canonical LAN settings clear dirty state and repeated saves make no request or job", async () => {
   let saved = {
     image: "img",
-    settings: { dockerAccess: false, mounts: [] as import("../api.ts").HostMount[], volumes: [], memoryBytes: 0, nanoCpus: 0, camera: "", vpnConnectionId: "v1", lanExceptions: [] as import("../api.ts").LANException[] },
+    settings: { dockerAccess: false, mounts: [] as import("../api.ts").HostMount[], volumes: [], memoryBytes: 0, nanoCpus: 0, vpnConnectionId: "v1", lanExceptions: [] as import("../api.ts").LANException[] },
   };
   const draft = {
     image: "img",
     memoryBytes: 0,
     nanoCpus: 0,
-    camera: "",
     vpnConnectionId: "v1",
     lan: [{ destination: "192.168.1.20", protocol: "tcp", ports: "8000-8002,443" }],
   };
@@ -138,7 +137,6 @@ test("accepted canonical LAN settings clear dirty state and repeated saves make 
         mounts: [] as import("../api.ts").HostMount[], volumes: [],
         memoryBytes: 0,
         nanoCpus: 0,
-        camera: "",
         vpnConnectionId: "v1",
         lanExceptions: [
           {
@@ -174,13 +172,12 @@ test("No VPN ignores hidden LAN drafts without discarding them and omits saved r
       volumes: [],
       memoryBytes: 0,
       nanoCpus: 0,
-      camera: "",
       vpnConnectionId: "v1",
       lanExceptions: [{ destination: "192.168.1.20/32", protocol: "tcp" as const, ports: [{ start: 443, end: 443 }] }],
     },
   };
   const hiddenRows = [{ destination: "unfinished", protocol: "tcp", ports: "" }];
-  const draft = { image: "img", memoryBytes: 0, nanoCpus: 0, camera: "", vpnConnectionId: "", lan: hiddenRows };
+  const draft = { image: "img", memoryBytes: 0, nanoCpus: 0, vpnConnectionId: "", lan: hiddenRows };
   let requests = 0;
   await saveEnvironmentSettings(saved, draft, async (body) => {
     requests++;
@@ -201,9 +198,9 @@ test("pending explicit No VPN describes the network transition without asking fo
 });
 
  test("host folder-only edits and VPN edits share one settings payload", async () => {
- const saved = {image:"img",settings:{dockerAccess:false,memoryBytes:0,nanoCpus:0,camera:"",vpnConnectionId:"v1",lanExceptions:[],mounts:[],volumes:[]}};
+ const saved = {image:"img",settings:{dockerAccess:false,memoryBytes:0,nanoCpus:0,vpnConnectionId:"v1",lanExceptions:[],mounts:[],volumes:[]}};
  const mounts=[{source:"/srv/photos",target:"/mnt/photos",readOnly:true}];
- const draft={image:"img",memoryBytes:0,nanoCpus:0,camera:"",vpnConnectionId:"v1",lan:[],mounts};
+ const draft={image:"img",memoryBytes:0,nanoCpus:0,vpnConnectionId:"v1",lan:[],mounts};
  assert.equal(environmentSettingsChanged(saved,draft),true);
  const body=await saveEnvironmentSettings(saved,draft,async body=>body);
  assert.deepEqual(body,{mounts});
@@ -214,8 +211,8 @@ test("pending explicit No VPN describes the network transition without asking fo
  });
 
 test("Docker permission-only changes save once and can be revoked", async () => {
-  const saved = { image: "img", settings: { dockerAccess: false, memoryBytes: 0, nanoCpus: 0, camera: "", vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: [] } };
-  const draft = { image: "img", dockerAccess: true, memoryBytes: 0, nanoCpus: 0, camera: "", vpnConnectionId: "", lan: [] };
+  const saved = { image: "img", settings: { dockerAccess: false, memoryBytes: 0, nanoCpus: 0, vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: [] } };
+  const draft = { image: "img", dockerAccess: true, memoryBytes: 0, nanoCpus: 0, vpnConnectionId: "", lan: [] };
   assert.equal(environmentSettingsChanged(saved, draft), true);
   assert.deepEqual(await saveEnvironmentSettings(saved, draft, async (body) => body), { dockerAccess: true });
   const updated = { ...saved, settings: { ...saved.settings, dockerAccess: true } };

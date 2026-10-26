@@ -109,11 +109,7 @@ function streamJob(res: ServerResponse, id: string): void {
 function host() {
   const list = visible();
   const running = list.filter((c) => c.state === "running");
-  const cameras = ["/dev/video0", "/dev/video1"].map((device) => {
-    const owner = list.find((c) => c.settings.camera === device);
-    return { device, taken: !!owner, ...(owner ? { environment: owner.name } : {}) };
-  });
-  return { cpus: 8, memBytes: 16 * GB, running: running.length, total: list.length, memUsed: running.reduce((s, c) => s + (c.stats?.memBytes ?? 0), 0), cameras, memoryReclaim: { enabled: true } };
+  return { cpus: 8, memBytes: 16 * GB, running: running.length, total: list.length, memUsed: running.reduce((s, c) => s + (c.stats?.memBytes ?? 0), 0), memoryReclaim: { enabled: true } };
 }
 
 function volumeJSON(v: (typeof volumes)[number]) {
@@ -147,7 +143,7 @@ setInterval(() => {
   const alice = environments.find((c) => c.name === "alice");
   if (!alice || alice.state !== "running") return;
   alice.viewers = alice.viewers.includes("sam") ? alice.viewers.filter((v) => v !== "sam") : [...alice.viewers, "sam"];
-  broadcast("viewers", { name: "alice", viewers: alice.viewers, mics: alice.mics, cams: alice.cams, forwards: alice.forwards, agents: alice.agents });
+  broadcast("viewers", { name: "alice", viewers: alice.viewers, mics: alice.mics, forwards: alice.forwards, agents: alice.agents });
 }, 20000);
 // The agents' summaries move on, as they would from the supervisor (once a second at most).
 setInterval(() => {
@@ -199,16 +195,15 @@ window.deskyardScreen = {
   setSound(on) { setMedia({ sound: on, playing: on }); },
   resumeSound() {},
   allowCapture(kind, on) { allowed[kind] = on; },
-  setCamera() {},
   setMic() {},
   setOutput() {},
   watchSound() { return () => {}; },
   micLevel: () => (media.mic ? 0.2 + Math.random() * 0.4 : 0),
   video: () => document.getElementById("videoStream"),
 };
-// Sound, mic and webcam: pipelineControl turns a capture on where allowed.
-let media = { sound: false, mic: false, webcam: false, playing: false, soundAt: 0 };
-const allowed = { microphone: false, webcam: false };
+// Sound and mic: pipelineControl turns the mic on where allowed.
+let media = { sound: false, mic: false, playing: false, soundAt: 0 };
+const allowed = { microphone: false };
 const mediaListeners = new Set();
 function setMedia(m) { media = { ...media, ...m }; for (const fn of mediaListeners) fn(media); }
 const on = window.deskyardScreen.on;
@@ -221,7 +216,7 @@ const post = window.deskyardScreen.post;
 window.deskyardScreen.post = (msg) => {
   post(msg);
   if (msg.type === "pipelineControl" && msg.pipeline in allowed) {
-    setTimeout(() => setMedia({ [msg.pipeline === "microphone" ? "mic" : "webcam"]: msg.enabled && allowed[msg.pipeline] }), 300);
+    setTimeout(() => setMedia({ mic: msg.enabled && allowed[msg.pipeline] }), 300);
   }
 };
 setTimeout(() => {
@@ -297,9 +292,9 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const c: Environment = {
       name, state: "creating", power: "running", revision: 1, appliedRevision: 0, error: "", conflict: "",
       startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/home/${name}`, image: img.ref, imageTitle: img.title,
-      memoryReclaim: true, imageVersion: img.version, updateAvailable: null, settings: { dockerAccess: b.dockerAccess === true, memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), camera: "", vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: (b.volumes as Environment["settings"]["volumes"]) ?? [] },
+      memoryReclaim: true, imageVersion: img.version, updateAvailable: null, settings: { dockerAccess: b.dockerAccess === true, memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: (b.volumes as Environment["settings"]["volumes"]) ?? [] },
       vpn: {state:"disabled",changedAt:"0001-01-01T00:00:00Z",exitIpObservedAt:"0001-01-01T00:00:00Z",desiredRevision:0,appliedRevision:0,idle:false},
-      access: (b.access as string[]) ?? [], viewers: [], mics: [], cams: [], webcam: false, terminal: true, forwards: [], agents: [], tokens: 0, stats: null,
+      access: (b.access as string[]) ?? [], viewers: [], mics: [], terminal: true, forwards: [], agents: [], tokens: 0, stats: null,
     };
     environments.push(c);
     changed(c);
@@ -318,6 +313,11 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     volumes.push(v);
     // "old-photos" stands in for a folder kept by an earlier delete.
     return json(res, 201, { volume: volumeJSON(v), adopted: name === "old-photos" });
+  }
+  const usage = /^\/api\/volumes\/([^/]+)\/usage$/.exec(path);
+  if (usage?.[1] && method === "GET") {
+    if (!volumes.some((x) => x.name === usage[1])) return json(res, 404, { error: "no such volume" });
+    return json(res, 200, { bytes: usage[1] === "photos" ? 18.6 * 1024 ** 3 : 0, complete: true, diskFree: 212 * 1024 ** 3, diskSize: 460 * 1024 ** 3 });
   }
   const vol = /^\/api\/volumes\/([^/]+)$/.exec(path);
   if (vol?.[1] && method === "DELETE") {
@@ -356,7 +356,8 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   }
   if (path === "/api/images" && method === "GET") {
     refreshImages();
-    return json(res, 200, images);
+    // Downloaded images have a size and build date, as the engine reports.
+    return json(res, 200, images.map((i) => (i.installed ? { size: 1.9 * 1024 ** 3, built: "2026-10-22T06:12:00Z", ...i } : i)));
   }
   if (path === "/api/images" && method === "POST") {
     const b = await readBody(req);
@@ -422,10 +423,6 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
       if (Array.isArray(b.mounts)) c.settings.mounts = b.mounts as Environment["settings"]["mounts"];
       if (Array.isArray(b.volumes)) c.settings.volumes = b.volumes as Environment["settings"]["volumes"];
       if (typeof b.image === "string") c.image = b.image;
-      if (typeof b.camera === "string") {
-        c.settings.camera = b.camera;
-        c.webcam = b.camera !== "" && c.state === "running";
-      }
       changed(c);
     }, c.name));
   }
@@ -460,11 +457,10 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     }, c.name));
   }
   if (sub === "keys") return json(res, 204);
-  if ((sub === "mic" || sub === "cam") && method === "POST") {
+  if (sub === "mic" && method === "POST") {
     const on = (await readBody(req)).on === true;
     const me = "zef";
-    const key = sub === "mic" ? "mics" : "cams";
-    c[key] = on ? [...new Set([...c[key], me])] : c[key].filter((m) => m !== me);
+    c.mics = on ? [...new Set([...c.mics, me])] : c.mics.filter((m) => m !== me);
     if (on && !c.viewers.includes(me)) c.viewers = [...c.viewers, me];
     changed(c);
     return json(res, 204);

@@ -43,7 +43,7 @@ type ContainerSpec struct {
 	Flatpak bool
 	Restart string // "unless-stopped", "no"
 	Cmd     []string
-	// Devices are host devices passed in at the same path (e.g. /dev/video0).
+	// Devices are host devices passed in at the same path (e.g. /dev/net/tun).
 	Devices []string
 	// Entrypoint replaces the image's entrypoint when set.
 	Entrypoint []string
@@ -119,6 +119,10 @@ type Image struct {
 	Labels map[string]string
 	User   string // the image's USER, "" for root
 	Arch   string // e.g. amd64, arm64
+	// Size is its size on disk in bytes; Created when it was built (zero
+	// when the engine doesn't say).
+	Size    int64
+	Created time.Time
 }
 
 type PullProgress struct {

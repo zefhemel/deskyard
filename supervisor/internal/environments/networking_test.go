@@ -11,7 +11,6 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -118,7 +117,7 @@ func (r *pairRuntime) Status(context.Context, string) (vpn.Status, error) {
 }
 func pairSetup(t *testing.T) (*Service, *pairEngine, *pairRuntime, vpn.Connection) {
 	t.Helper()
-	e := &pairEngine{fakeEngine: newFakeEngine(t.TempDir())}
+	e := &pairEngine{fakeEngine: newFakeEngine()}
 	dir := t.TempDir()
 	s := New(e, Config{DataDir: dir, Subnet: "10.213.0.0/16"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	st, err := vpn.NewStore(filepath.Join(dir, "networks.json"), s.Layout.Secret)
@@ -558,33 +557,6 @@ func TestVPNGatewayEventsWakeCentralObserverOnlyForOwnedRecords(t *testing.T) {
 	case <-n.wake:
 	default:
 		t.Fatal("owned gateway event ignored")
-	}
-}
-func TestVPNGoneCameraRecoversWithoutLosingNamespacePolicy(t *testing.T) {
-	s, e, _, conn := pairSetup(t)
-	s.Cfg.LocalEngine = true
-	s.Cfg.SysDir = e.sys
-	addCamera(t, e.sys, "video0")
-	ctx := context.Background()
-	d, err := s.Create(ctx, "alice", Settings{Image: "img", VPNConnectionID: conn.ID, Camera: "/dev/video0"}, noProgress)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !d.Webcam() {
-		t.Fatal("camera not preserved")
-	}
-	if err = s.Stop(ctx, "alice"); err != nil {
-		t.Fatal(err)
-	}
-	if err = os.RemoveAll(filepath.Join(e.sys, "devices", "virtual", "video4linux", "video0")); err != nil {
-		t.Fatal(err)
-	}
-	if err = s.Start(ctx, "alice"); err != nil {
-		t.Fatal(err)
-	}
-	d, _ = s.Get(ctx, "alice")
-	if d.Settings.Camera != "" || d.Settings.VPNConnectionID != conn.ID || d.Container.NetworkContainer == "" {
-		t.Fatalf("camera fallback lost policy: %+v", d)
 	}
 }
 func TestVPNStoppedStateChangesTimestamp(t *testing.T) {

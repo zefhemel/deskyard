@@ -67,7 +67,7 @@ func (e *replacementEngine) Rename(ctx context.Context, id, name string) error {
 }
 
 func replacementService(t *testing.T, running bool) (*Service, *replacementEngine) {
-	s, base, _, _ := newCameraService(t, true)
+	s, base := newFakeService(t)
 	state := "exited"
 	if running {
 		state = "running"
@@ -464,7 +464,7 @@ func TestRecoveryStartFailureClearsIntent(t *testing.T) {
 }
 
 func TestReservationReleaseCannotClearNewOperation(t *testing.T) {
-	s, _, _, _ := newCameraService(t, true)
+	s, _ := newFakeService(t)
 	first, err := s.Reserve("alice", "")
 	if err != nil {
 		t.Fatal(err)

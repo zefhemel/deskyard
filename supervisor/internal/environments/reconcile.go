@@ -73,9 +73,7 @@ func (r Report) Err() error { return errors.Join(r.Errors...) }
 // Reconcile runs at startup. In a container, it reconnects the supervisor to
 // each of its own environments' networks (e.g. after the supervisor's
 // container was recreated). Interrupted replacements and network transitions
-// are recovered, and an environment whose camera has gone from the host (a
-// reboot without the module) is recreated without it, which is logged, and
-// started when its power is running. Conflicts are found first, so a duplicate blocks these
+// are recovered. Conflicts are found first, so a duplicate blocks these
 // steps as any other. Then a first ReconcileOnce pass runs.
 func (s *Service) Reconcile(ctx context.Context) error {
 	var errs []error
@@ -118,17 +116,6 @@ func (s *Service) Reconcile(ctx context.Context) error {
 			_ = s.Eng.UpdateRestartPolicy(ctx, c.Container.ID, "no")
 			_ = s.Eng.Stop(ctx, c.Container.ID, stopTimeout)
 			errs = append(errs, fmt.Errorf("%s: %w", c.Name, errVPNUnavailable))
-			continue
-		}
-		if s.Networking != nil && s.Networking.selected(c.Name) {
-			continue
-		}
-		if c.Settings.Camera == "" || !s.cameraGone(c.Settings.Camera) {
-			continue
-		}
-		if err := s.withoutCamera(ctx, c, c.Power == PowerRunning); err != nil {
-			s.Log.Warn("recreating an environment without its gone camera", "environment", c.Name, "err", err)
-			errs = append(errs, err)
 		}
 	}
 	if err := s.ReconcileOnce(ctx).Err(); err != nil {

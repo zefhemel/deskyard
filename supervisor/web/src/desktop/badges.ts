@@ -1,21 +1,21 @@
-// A page's mic and camera badges: what it tells the supervisor, for everyone
-// on the desktop to see whose mic or camera is on.
+// A page's mic badge: what it tells the supervisor, for everyone on the
+// desktop to see whose mic is on.
 //
 // One tab's reports go one at a time, numbered, so the supervisor takes them
 // in the order they were made (it ignores one numbered lower than the last it
 // applied). A report still waiting when a newer one for the same capture is
 // made is dropped: the latest intent wins.
 
-export type Badge = "mic" | "cam";
+export type Badge = "mic";
 
 export type SendBadge = (kind: Badge, on: boolean, seq: number) => Promise<void>;
 
 export class Badges {
   private seq = 0;
   private chain: Promise<unknown> = Promise.resolve();
-  private want: Record<Badge, boolean> = { mic: false, cam: false };
-  private latest: Record<Badge, number> = { mic: 0, cam: 0 };
-  private results: Record<Badge, Promise<void>> = { mic: Promise.resolve(), cam: Promise.resolve() };
+  private want: Record<Badge, boolean> = { mic: false };
+  private latest: Record<Badge, number> = { mic: 0 };
+  private results: Record<Badge, Promise<void>> = { mic: Promise.resolve() };
   private readonly send: SendBadge;
 
   constructor(send: SendBadge) {

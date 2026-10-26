@@ -20,7 +20,7 @@ def test_catalog_only_imports_prebuilt_images(mock_ui):
         page.get_by_role("button", name="Add image", exact=True).click()
         page.get_by_label("Image reference", exact=True).fill("example.test/desktop:ready")
         page.get_by_role("dialog").get_by_role("button", name="Add image", exact=True).click()
-        expect(page.get_by_role("row").filter(has_text="example.test/desktop:ready")).to_be_visible(timeout=15000)
+        expect(page.get_by_role("article").filter(has_text="example.test/desktop:ready")).to_be_visible(timeout=15000)
         browser.close()
 
 

@@ -53,12 +53,30 @@ export function NoticeLine({ environment: c, class: extra }: { environment: Envi
   );
 }
 
+/** The volumes an environment is granted, linked to the Volumes page for admins. */
+export function VolumesLine({ environment: c, admin }: { environment: Environment; admin: boolean }) {
+  const grants = c.settings.volumes ?? [];
+  if (!grants.length) return null;
+  return (
+    <div class="mt-1 text-sm text-muted" aria-label="Volumes">
+      {grants.length === 1 ? "Volume " : "Volumes "}
+      {grants.map((g, i) => (
+        <span key={g.name}>
+          {i > 0 && ", "}
+          {admin ? <a href={`/volumes#volume-${g.name}`}>{g.name}</a> : <span class="text-ink">{g.name}</span>}
+          {g.readOnly && " (read only)"}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function Tile({ environment: c, job, now, admin }: { environment: Environment; job: Job | undefined; now: number; admin: boolean }) {
   const kind = statusKind(c);
   const busy = kind === "busy";
   return (
     <article class="relative">
-      <Monitor environment={c} job={job} now={now} />
+      <Monitor environment={c} job={job} now={now} href={`/environments/${c.name}`} />
       <div class="px-0.5 pt-3">
         <div class="flex items-center gap-2.5">
           <div class="flex min-w-0 flex-col gap-0.5">
@@ -85,6 +103,7 @@ export function Tile({ environment: c, job, now, admin }: { environment: Environ
         {c.state === "running" && <Meters environment={c} />}
         {c.state === "stopped" && <div class={cx("mt-2.5 text-[13px] text-muted")}>{limits(c.settings)}</div>}
         <div class="mt-2"><VPNStatus vpn={c.vpn} compact /></div>
+        <VolumesLine environment={c} admin={admin} />
         {!busy && <ImageLine environment={c} admin={admin} />}
       </div>
     </article>

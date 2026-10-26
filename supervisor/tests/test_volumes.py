@@ -174,7 +174,7 @@ def test_volumes_ui(supervisor, admin, desktop, name):
             assert sent.value.status == 201
             expect(page.get_by_role("heading", name=vol, exact=True)).to_be_visible()
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-            page.goto(f"{supervisor.base}/environments/{name}?tab=settings")
+            page.goto(f"{supervisor.base}/environments/{name}?tab=settings&section=volumes")
             section = page.get_by_role("region", name="Volumes", exact=True)
             section.get_by_role("button", name="Add volume").click()
             section.get_by_label("Volume", exact=True).select_option(vol)

@@ -8,9 +8,8 @@ import time
 import pytest
 from playwright.sync_api import expect, sync_playwright
 
-from conftest import docker
-from helpers import (BROWSERS, PICTURE, SCREEN, SHOWING, audio_switch, fits, frame_size, in_desktop, open_desktop,
-                     screen_size, signed_in, video_settings_lines, wait_until)
+from helpers import (BROWSERS, PICTURE, SCREEN, SHOWING, connected, fits, frame_size, in_desktop, open_desktop,
+                     open_display_menu, screen_size, signed_in, video_settings_lines, wait_until)
 
 
 def test_sign_in_and_see_the_wall(supervisor, desktop, name, tmp_path):
@@ -49,8 +48,9 @@ def test_desktop_page_shows_stream(supervisor, desktop, name, browser_name, tmp_
             .filter(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'; })
             .map(e => String(e.className))""")
         assert visible == []
+        expect(page.get_by_role("link", name="Environments", exact=True)).to_have_attribute("href", "/")
         xs = []
-        for n in ("Audio", "Lock size", "Clipboard", "Keys", "Quality", "Download", "More"):
+        for n in ("Audio", "Display", "Clipboard", "Keys", "Terminal", "Download", "More"):
             b = page.get_by_role("button", name=n, exact=True)
             expect(b).to_be_visible()
             xs.append(b.bounding_box()["x"])
@@ -85,13 +85,16 @@ def test_lock_size(supervisor, desktop, name, browser_name):
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base, browser=browser_name)
         open_desktop(page, supervisor.base, name)
-        lock = page.get_by_role("button", name="Lock size", exact=True)
-        expect(lock).to_have_attribute("aria-pressed", "false")
+        lock = open_display_menu(page).get_by_role("menuitemcheckbox", name="Lock size", exact=True)
+        expect(lock).to_have_attribute("aria-checked", "false")
         size = screen_size(name)
 
         lock.click()
-        expect(lock).to_have_attribute("aria-pressed", "true")
-        page.set_viewport_size({"width": 900, "height": 700})
+        open_display_menu(page)
+        expect(lock).to_have_attribute("aria-checked", "true")
+        page.keyboard.press("Escape")
+        # Narrower than 640: the compact toolbar.
+        page.set_viewport_size({"width": 600, "height": 700})
         # The picture is scaled to fit the frame; the remote screen keeps its size.
         assert wait_until(lambda: fits(page.evaluate(PICTURE))), page.evaluate(PICTURE)
         time.sleep(1)  # an unlocked page would have asked for its frame's size by now
@@ -99,7 +102,7 @@ def test_lock_size(supervisor, desktop, name, browser_name):
 
         # Remembered in this browser.
         page.reload()
-        expect(page.get_by_text("Connected", exact=True)).to_be_visible(timeout=30000)
+        expect(connected(page)).to_be_visible(timeout=30000)
         page.get_by_role("button", name="More", exact=True).click()
         lock = page.get_by_role("menuitemcheckbox", name="Lock size", exact=True)
         expect(lock).to_have_attribute("aria-checked", "true")
@@ -145,7 +148,7 @@ def test_stopped_desktop_page(supervisor, admin, desktop, name, browser_name):
         expect(page.get_by_text("is stopped")).to_be_visible(timeout=15000)
         expect(page.locator("iframe")).to_have_count(0)
         page.get_by_role("button", name="Start").click()
-        expect(page.get_by_text("Connected", exact=True)).to_be_visible(timeout=90000)
+        expect(connected(page)).to_be_visible(timeout=90000)
         page.wait_for_function(SHOWING, timeout=30000)
         browser.close()
 
@@ -161,8 +164,7 @@ def test_no_webcodecs_streams_jpeg(supervisor, desktop, name):
         # Secure here: none of the plain-http notes.
         expect(page.get_by_text("Not secure: some features off")).to_have_count(0)
         before = len(video_settings_lines(name))
-        page.get_by_role("button", name="Quality", exact=True).click()
-        page.get_by_role("menuitemcheckbox", name=re.compile("^Low")).click()
+        open_display_menu(page).get_by_role("menuitemcheckbox", name=re.compile("^Quality: Low")).click()
         applied = lambda: any("Applying video settings" in line for line in video_settings_lines(name)[before:])  # noqa: E731
         assert wait_until(applied), video_settings_lines(name)[before:]
         assert any(" jpeg " in line for line in video_settings_lines(name)), video_settings_lines(name)[-3:]
@@ -175,10 +177,14 @@ def test_phone_bar(supervisor, desktop, name, viewport):
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base, viewport=viewport, has_touch=True)
         open_desktop(page, supervisor.base, name, status=False)
-        for n in ("Lock size", "Keys", "Quality", "Download"):
-            expect(page.get_by_role("button", name=n, exact=True)).to_be_hidden()
+        # Below 640 wide these move into More; from 640 they stay in the bar.
+        compact = viewport["width"] < 640
+        moved = ("Display", "Keys", "Terminal", "Download")
+        for n in moved:
+            b = page.get_by_role("button", name=n, exact=True)
+            expect(b).to_be_hidden() if compact else expect(b).to_be_visible()
         expect(page.get_by_role("button", name="Clipboard", exact=True)).to_be_visible()
-        for label in ("Audio", "Clipboard", "More"):
+        for label in ("Audio", "Clipboard", "More", *(() if compact else moved)):
             box = page.get_by_role("button", name=label, exact=True).bounding_box()
             assert box and box["x"] >= 0 and box["x"] + box["width"] <= viewport["width"], (label, box)
         page.get_by_role("button", name="More", exact=True).click()
@@ -190,28 +196,17 @@ def test_phone_bar(supervisor, desktop, name, viewport):
         # Rotation/browser chrome can shrink an already-open menu's space.
         page.set_viewport_size({"width": viewport["width"], "height": 400})
         assert wait_until(menu_fits, 5), menu.bounding_box()
-        for n in ("Lock size", "Send Esc", "Quality: Low", "Download…"):
-            expect(menu.get_by_text(n, exact=True)).to_be_visible()
-        # The last action stays reachable even on a short landscape screen.
-        menu.get_by_role("menuitem", name="Download…", exact=True).click()
+        if compact:
+            for n in ("Lock size", "Send Esc", "Quality: Low", "Download…", "Terminal"):
+                expect(menu.get_by_text(n, exact=True)).to_be_visible()
+            # The last action stays reachable even on a short landscape screen.
+            menu.get_by_role("menuitem", name="Download…", exact=True).click()
+        else:
+            for n in ("Lock size", "Send Esc", "Quality: Low", "Download…", "Terminal"):
+                expect(menu.get_by_text(n, exact=True)).to_be_hidden()
+            page.keyboard.press("Escape")
+            page.get_by_role("button", name="Download", exact=True).click()
         expect(page.get_by_role("dialog")).to_be_visible()
-        browser.close()
-
-
-@pytest.mark.parametrize("browser_name", BROWSERS)
-def test_webcam_disabled_without_device(supervisor, admin, desktop, name, browser_name):
-    # This machine has no v4l2loopback device, so desktops get no camera.
-    assert admin.desktop(name)["webcam"] is False
-    assert docker("inspect", "-f", "{{json .HostConfig.Devices}}", f"deskyard-{name}").stdout.strip() in ("null", "[]")
-    with sync_playwright() as p:
-        browser, page = signed_in(p, supervisor.base, browser=browser_name)
-        open_desktop(page, supervisor.base, name)
-        camera = audio_switch(page, "My camera")
-        expect(camera).to_be_disabled()
-        expect(page.get_by_role("dialog", name="Audio").get_by_text("This machine has no virtual camera for environments")).to_be_visible()
-        # An admin can't give it one either.
-        page.goto(f"{supervisor.base}/environments/{name}?tab=settings")
-        expect(page.get_by_text("This machine has no virtual camera for environments (v4l2loopback).")).to_be_visible(timeout=15000)
         browser.close()
 
 
@@ -252,13 +247,18 @@ def test_phone_toolbar_keeps_terminal_and_controls_reachable(supervisor, desktop
             # stays enabled; fulfilling the document makes Chromium block WS.
             page.route(f"{supervisor.base}/{name}/", lambda route: route.continue_())
             open_desktop(page, supervisor.base, name)
-            terminal = page.locator(f'a[href="/{name}/terminal/"]')
+            # Wide: the bar's Terminal menu offers the running sessions and a new one.
+            terminal = page.get_by_role("button", name="Terminal", exact=True)
+            terminal.click()
+            expect(page.get_by_role("menu").get_by_role("menuitem", name=re.compile("^(Open terminal|New session…)$"))).to_be_visible()
+            page.keyboard.press("Escape")
+            more = page.get_by_role("button", name="More", exact=True)
             for width in (320, 375):
                 page.set_viewport_size({"width": width, "height": 750})
-                geometry = terminal.evaluate("el => ({width: el.parentElement.clientWidth, scroll: el.parentElement.scrollWidth})")
+                # The bar's right-hand group doesn't overflow.
+                geometry = more.evaluate("el => { const g = el.parentElement.parentElement; return {width: g.clientWidth, scroll: g.scrollWidth}; }")
                 assert geometry["scroll"] <= geometry["width"], geometry
                 expect(terminal).not_to_be_visible()
-                more = page.get_by_role("button", name="More", exact=True)
                 expect(more).to_be_visible()
                 assert more.bounding_box()["x"] + more.bounding_box()["width"] <= width
                 more.click()

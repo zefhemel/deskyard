@@ -226,3 +226,50 @@ def test_desktop_list_ignores_failures_from_replaced_refreshes(mock_ui):
         assert len(attempts) == 3
         browser.close()
 
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_tile_screen_opens_overview_and_button_opens_desktop(mock_ui, width):
+    with sync_playwright() as p:
+        browser, page = mock_page(p, mock_ui, "/")
+        page.set_viewport_size({"width": width, "height": 900})
+        page.get_by_title("alice's overview").click()
+        page.wait_for_url(mock_ui + "/environments/alice")
+        page.go_back()
+        page.get_by_title("Open alice's desktop").click()
+        page.wait_for_url(mock_ui + "/alice/")
+        browser.close()
+
+
+def test_volumes_page_shows_size_and_tiles_link_volumes(mock_ui):
+    with sync_playwright() as p:
+        browser, page = mock_page(p, mock_ui, "/volumes")
+        card = page.locator("#volume-photos")
+        expect(card.get_by_label("Size")).to_contain_text("19 GB")
+        expect(card.get_by_label("Size")).to_contain_text("212 GB free of 460 GB")
+        users = card.get_by_role("list", name="Environments using photos")
+        expect(users.get_by_role("link", name="alice Read & write")).to_have_attribute("href", "/environments/alice?tab=settings&section=volumes")
+        expect(users.get_by_role("link", name="research Read only")).to_be_visible()
+        page.goto(mock_ui + "/")
+        page.get_by_role("article").filter(has_text="alice").get_by_label("Volumes").get_by_role("link", name="photos").click()
+        page.wait_for_url(mock_ui + "/volumes#volume-photos")
+        browser.close()
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_settings_sections_keep_unsaved_changes(mock_ui, width):
+    with sync_playwright() as p:
+        browser, page = mock_page(p, mock_ui, "/environments/alice?tab=settings")
+        page.set_viewport_size({"width": width, "height": 900})
+        nav = page.get_by_role("navigation", name="Settings sections")
+        expect(nav.get_by_role("button", name="General")).to_have_attribute("aria-current", "page")
+        nav.get_by_role("button", name="Volumes").click()
+        page.wait_for_url("**/environments/alice?tab=settings&section=volumes")
+        page.get_by_role("button", name="Add host folder").click()
+        page.get_by_label("Host folder", exact=True).fill("/srv/photos")
+        nav.get_by_role("button", name="General").click()
+        expect(nav.get_by_role("button", name="Volumes").get_by_title("Unsaved changes")).to_be_visible()
+        nav.get_by_role("button", name="Volumes").click()
+        expect(page.get_by_label("Host folder", exact=True)).to_have_value("/srv/photos")
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        browser.close()

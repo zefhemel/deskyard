@@ -41,3 +41,12 @@ test("capture consent belongs to the current connection, including pending permi
     { name: "NotAllowedError" },
   );
 });
+
+test("video is never captured, even with the mic allowed", async () => {
+  const gate = captureGate();
+  gate.allow("microphone", true);
+  const stream = { getTracks: () => [] } as unknown as MediaStream;
+  await assert.rejects(gate.capture({ video: true }, async () => stream), { name: "NotAllowedError" });
+  await assert.rejects(gate.capture({ audio: true, video: true }, async () => stream), { name: "NotAllowedError" });
+  assert.equal(await gate.capture({ audio: true }, async () => stream), stream);
+});

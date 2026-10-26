@@ -72,11 +72,10 @@ type Definition struct {
 	Network  Network       `json:"network"`
 	Mounts   []HostMount   `json:"mounts"`
 	Volumes  []VolumeGrant `json:"volumes"`
-	// DockerAccess and Camera are as in Settings.
-	DockerAccess  bool   `json:"dockerAccess"`
-	Camera        string `json:"camera"`
-	MemoryReclaim bool   `json:"memoryReclaim"`
-	Power         Power  `json:"power"`
+	// DockerAccess is as in Settings.
+	DockerAccess  bool  `json:"dockerAccess"`
+	MemoryReclaim bool  `json:"memoryReclaim"`
+	Power         Power `json:"power"`
 }
 
 // Settings returns the definition's container settings, for the create code.
@@ -86,7 +85,6 @@ func (d Definition) Settings() Settings {
 		Image:           d.Image.Ref,
 		MemoryBytes:     d.Limits.MemoryBytes,
 		NanoCPUs:        d.Limits.NanoCPUs,
-		Camera:          d.Camera,
 		VPNConnectionID: d.Network.Connection,
 		LANExceptions:   d.Network.LANExceptions,
 		Mounts:          d.Mounts,
@@ -97,12 +95,12 @@ func (d Definition) Settings() Settings {
 
 // ContainerAffecting reports whether a and b differ in anything their
 // container is built from: image, limits, network, mounts, volume grants,
-// Docker access or camera. Memory reclaim and power are applied without a new
+// Docker access. Memory reclaim and power are applied without a new
 // container.
 func ContainerAffecting(a, b Definition) bool {
 	return a.Image != b.Image || a.Limits != b.Limits || !sameNetwork(a.Network, b.Network) ||
 		!slices.Equal(a.Mounts, b.Mounts) || !slices.Equal(a.Volumes, b.Volumes) ||
-		a.DockerAccess != b.DockerAccess || a.Camera != b.Camera
+		a.DockerAccess != b.DockerAccess
 }
 
 func sameNetwork(a, b Network) bool {
@@ -147,8 +145,6 @@ func (d Definition) validate() error {
 		return errors.New("no image")
 	case d.Limits.MemoryBytes < 0 || d.Limits.NanoCPUs < 0:
 		return errors.New("negative limits")
-	case d.Camera != "" && !videoDevice.MatchString(strings.TrimPrefix(d.Camera, "/dev/")):
-		return fmt.Errorf("camera %q is not a /dev/videoN device", d.Camera)
 	case d.Power != PowerRunning && d.Power != PowerStopped:
 		return fmt.Errorf("unknown power %q", d.Power)
 	}
@@ -178,6 +174,14 @@ type definitionsFile struct {
 	Environments []Definition `json:"environments"`
 }
 
+// loadedDefinition is a Definition as read from environments.json. Files
+// written before camera support was removed carry a "camera" field, which is
+// accepted and dropped: the next save leaves it out.
+type loadedDefinition struct {
+	Definition
+	Camera json.RawMessage `json:"camera"`
+}
+
 // Definitions is the environments.json store. Every change is written
 // atomically before it replaces the in-memory copy, so a failed write leaves
 // both as they were.
@@ -205,7 +209,10 @@ func LoadDefinitions(path string) (*Definitions, error) {
 	if err != nil {
 		return nil, err
 	}
-	var f definitionsFile
+	var f struct {
+		Version      int                `json:"version"`
+		Environments []loadedDefinition `json:"environments"`
+	}
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&f); err != nil {
@@ -214,7 +221,8 @@ func LoadDefinitions(path string) (*Definitions, error) {
 	if f.Version != definitionsVersion {
 		return nil, fmt.Errorf("%s: unsupported version %d (want %d)", path, f.Version, definitionsVersion)
 	}
-	for _, def := range f.Environments {
+	for _, loaded := range f.Environments {
+		def := loaded.Definition
 		if IsReserved(def.Name) {
 			// A name an upgrade newly reserved (such as "volumes"): stop with
 			// the remedy rather than a bare validation error.

@@ -89,11 +89,6 @@ func (n *Networking) recover(ctx context.Context, r networkTransition, retry boo
 	}
 	replace := r.Pending || !exists || def.Revision != r.AppliedRevision ||
 		c.Labels[LabelRevision] != strconv.FormatUint(def.Revision, 10)
-	if def.Camera != "" && s.cameraGone(def.Camera) {
-		s.dropCamera(r.Name, def.Camera) // a new revision, applied below
-		replace = true
-		r.Repair = false
-	}
 	if def.Network.Kind == NetworkVPN {
 		if conn.Revision != r.AppliedConnectionRevision {
 			replace = true

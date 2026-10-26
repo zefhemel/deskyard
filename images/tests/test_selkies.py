@@ -210,7 +210,7 @@ def test_screen_runs_as_user(sandbox):
 
 def test_selkies_settings(sandbox):
     env = sandbox.exec(f"tr '\\0' '\\n' < /proc/$({SELKIES_PID})/environ").stdout.splitlines()
-    # No webcam without v4l2loopback.
+    # Deskyard has no camera support: Selkies' webcam stays off.
     assert "SELKIES_WEBCAM_ENABLED=false|locked" in env
     # Turbo encodes every frame: about a quarter of a core per idle viewer.
     assert "SELKIES_VIDEO_STREAMING_MODE=false|locked" in env

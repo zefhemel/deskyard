@@ -11,8 +11,8 @@ from playwright.sync_api import expect, sync_playwright
 
 import netchange
 from conftest import ADMIN_PASSWORD
-from helpers import (BROWSERS, PICTURE, SCREEN, SHOWING, fits, frame_size, in_desktop, mouse_location, open_desktop, screen_size,
-                     sign_in, signed_in, to_page, video_settings_lines, wait_loaded, wait_until)
+from helpers import (BROWSERS, PICTURE, SCREEN, SHOWING, connected, fits, frame_size, in_desktop, mouse_location, open_desktop,
+                     open_display_menu, screen_size, sign_in, signed_in, to_page, video_settings_lines, wait_loaded, wait_until)
 
 
 @pytest.mark.parametrize("browser_name", BROWSERS)
@@ -22,18 +22,17 @@ def test_quality_preset_applies(supervisor, desktop, name, browser_name):
         open_desktop(page, supervisor.base, name)
         time.sleep(1)
         before = len(video_settings_lines(name))
-        page.get_by_role("button", name="Quality", exact=True).click()
-        page.get_by_role("menuitemcheckbox", name=re.compile("^Low")).click()
+        open_display_menu(page).get_by_role("menuitemcheckbox", name=re.compile("^Quality: Low")).click()
         # The desktop's stream takes it live.
         applied = lambda: any("Applying video settings" in line for line in video_settings_lines(name)[before:])  # noqa: E731
         assert wait_until(applied), video_settings_lines(name)[before:]
         # A new load of the page streams at it too: Low is 2 Mbit/s at 30 frames a second.
         page.reload()
-        expect(page.get_by_text("Connected", exact=True)).to_be_visible(timeout=30000)
+        expect(connected(page)).to_be_visible(timeout=30000)
         latest = lambda: (video_settings_lines(name) or [""])[-1]  # noqa: E731
         assert wait_until(lambda: latest().endswith("2000 kbps, 30 fps.")), video_settings_lines(name)[-3:]
-        page.get_by_role("button", name="Quality", exact=True).click()
-        expect(page.get_by_role("menuitemcheckbox", name=re.compile("^Low"))).to_have_attribute("aria-checked", "true")
+        open_display_menu(page)
+        expect(page.get_by_role("menuitemcheckbox", name=re.compile("^Quality: Low"))).to_have_attribute("aria-checked", "true")
 
         # Lossless, live: full colour restarts the capture, and the stream
         # climbs to 64 Mbit/s with no reload. Selkies' congestion control
@@ -45,7 +44,7 @@ def test_quality_preset_applies(supervisor, desktop, name, browser_name):
                 if (typeof e.data === 'string' && e.data.startsWith('CC_RATE ')) window.__rates.push(Number(e.data.slice(8))); }}); }}""")
         in_desktop(name, "sh", "-c", "setsid xfce4-terminal --maximize -e \"sh -c 'while :; do ls -lR /usr; done'\" >/dev/null 2>&1 &")
         before = len(video_settings_lines(name))
-        page.get_by_role("menuitemcheckbox", name=re.compile("^Lossless")).click()
+        page.get_by_role("menuitemcheckbox", name=re.compile("^Quality: Lossless")).click()
         restarted = lambda: any("Video parameters changed" in line for line in video_settings_lines(name)[before:])  # noqa: E731
         assert wait_until(restarted), video_settings_lines(name)[before:]
         rates = lambda: page.evaluate("window.__rates")  # noqa: E731
@@ -63,8 +62,7 @@ def test_second_viewer(cli, remote, supervisor, name):
         browser, a = signed_in(p, supervisor.base)
         open_desktop(a, supervisor.base, name)
         a.wait_for_function(f"{SCREEN}.display().owner === true", timeout=15000)
-        a.get_by_role("button", name="Quality", exact=True).click()
-        a.get_by_role("menuitemcheckbox", name=re.compile("^High")).click()
+        open_display_menu(a).get_by_role("menuitemcheckbox", name=re.compile("^Quality: High")).click()
         size = screen_size(name)
         time.sleep(1)
         before = len(video_settings_lines(name))
@@ -86,21 +84,20 @@ def test_second_viewer(cli, remote, supervisor, name):
         assert screen_size(name) == size
         assert video_settings_lines(name)[before:] == []
         for page in (a, b):
-            # The 900px second viewer uses the compact toolbar.
+            menu = open_display_menu(page)
+            expect(menu.get_by_role("menuitemcheckbox", name="Quality: High", exact=True)).to_have_attribute("aria-checked", "true")
             if page is b:
-                page.get_by_role("button", name="More", exact=True).click()
-                quality = page.get_by_role("menuitemcheckbox", name="Quality: High", exact=True)
-                expect(page.get_by_role("menuitemcheckbox", name="Lock size", exact=True)).to_have_count(0)
-            else:
-                page.get_by_role("button", name="Quality", exact=True).click()
-                quality = page.get_by_role("menuitemcheckbox", name=re.compile("^High"))
-            expect(quality).to_have_attribute("aria-checked", "true")
+                # Beside the owner: no size controls, a disabled note instead.
+                expect(menu.get_by_role("menuitemcheckbox", name="Lock size", exact=True)).to_have_count(0)
+                expect(menu.get_by_role("menuitem", name="Screen size: set by the first viewer", exact=True)).to_be_disabled()
             page.keyboard.press("Escape")
-        # A wider second viewer shows the disabled direct control too.
-        b.set_viewport_size({"width": 1280, "height": 700})
-        lock = b.get_by_role("button", name="Lock size", exact=True)
-        expect(lock).to_be_disabled()
-        expect(lock).to_have_attribute("title", re.compile("first viewer sets the screen size"))
+        # A narrow second viewer uses the compact toolbar's More menu.
+        b.set_viewport_size({"width": 600, "height": 700})
+        b.get_by_role("button", name="More", exact=True).click()
+        expect(b.get_by_role("menuitemcheckbox", name="Quality: High", exact=True)).to_have_attribute("aria-checked", "true")
+        expect(b.get_by_role("menuitemcheckbox", name="Lock size", exact=True)).to_have_count(0)
+        expect(b.get_by_role("menuitem", name="Resolution: controlled by another viewer", exact=True)).to_be_disabled()
+        b.keyboard.press("Escape")
 
         # The second viewer's window changes; the picture still fits, unstretched.
         b.set_viewport_size({"width": 1000, "height": 650})
@@ -128,8 +125,7 @@ def test_second_viewer(cli, remote, supervisor, name):
         # browser's Lock size (640x480) applies; unlocked, the screen follows its window.
         a.close()
         b.wait_for_function(f"{SCREEN}.display().owner === true", timeout=15000)
-        b.get_by_role("button", name="More", exact=True).click()
-        lock = b.get_by_role("menuitemcheckbox", name="Lock size", exact=True)
+        lock = open_display_menu(b).get_by_role("menuitemcheckbox", name="Lock size", exact=True)
         expect(lock).to_be_enabled()
         expect(lock).to_have_attribute("aria-checked", "true")
         assert wait_until(lambda: screen_size(name) == (640, 480)), screen_size(name)
@@ -161,7 +157,7 @@ def test_four_viewers_do_not_exhaust_http_connections(supervisor, remote, name):
                 page.on("websocket", watch)
                 open_desktop(page, supervisor.base, name)
             for page in pages:
-                expect(page.get_by_text("Connected", exact=True)).to_be_visible(timeout=30000)
+                expect(connected(page)).to_be_visible(timeout=30000)
                 page.wait_for_function(SHOWING, timeout=30000)
             # A picture alone can hide failed event-feed handshakes. Require
             # desktop snapshots and a real screen event in every viewer too.

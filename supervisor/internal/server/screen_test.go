@@ -8,8 +8,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -309,12 +307,12 @@ func TestMicsPerStream(t *testing.T) {
 	if got := v.mics("d"); len(got) != 0 {
 		t.Fatalf("mics at start: %v", got)
 	}
-	if v.setCapture("d", "zef", "a1", captureMic, true, 0) {
+	if v.setMic("d", "zef", "a1", true, 0) {
 		t.Error("zef switched anna's tab")
 	}
-	if !v.setCapture("d", "anna", "a1", captureMic, true, 0) || !v.setCapture("d", "zef", "z1", captureMic, true, 0) ||
-		!v.setCapture("d", "anna", "a2", captureMic, true, 0) {
-		t.Fatal("setCapture refused a stream's own tab")
+	if !v.setMic("d", "anna", "a1", true, 0) || !v.setMic("d", "zef", "z1", true, 0) ||
+		!v.setMic("d", "anna", "a2", true, 0) {
+		t.Fatal("setMic refused a stream's own tab")
 	}
 	if got := v.mics("d"); !slices.Equal(got, []string{"anna", "zef"}) {
 		t.Errorf("mics: %v", got)
@@ -403,45 +401,24 @@ func TestDialGateFreesOnCancel(t *testing.T) {
 	other()
 }
 
-func TestDesktopReportsWebcam(t *testing.T) {
-	cam := runningEnvironment(t, "bob", &upstream{})
-	cam.Devices = []string{"/dev/video0"}
-	_, ts := newTestServerWith(t, fakeEngine{others: []engine.Container{cam, runningEnvironment(t, "carol", &upstream{})}})
-	admin := login(t, ts, "admin")
-	for name, want := range map[string]bool{"bob": true, "carol": false, "alice": false} {
-		_, body := get(t, admin, ts.URL+"/api/environments/"+name)
-		var d struct {
-			Webcam *bool `json:"webcam"`
-		}
-		if err := json.Unmarshal([]byte(body), &d); err != nil || d.Webcam == nil || *d.Webcam != want {
-			t.Errorf("%s: %s (want webcam %v)", name, body, want)
-		}
-	}
-}
-
-func TestCaptureReportsInOrder(t *testing.T) {
+func TestMicReportsInOrder(t *testing.T) {
 	v := newViewers()
 	v.add("d", &conn{username: "anna", tab: "a1", cancel: func() {}})
 	// A page turned its mic off (seq 1) then on (seq 2); the off arrives last.
-	v.setCapture("d", "anna", "a1", captureMic, true, 2)
-	if !v.setCapture("d", "anna", "a1", captureMic, false, 1) {
+	v.setMic("d", "anna", "a1", true, 2)
+	if !v.setMic("d", "anna", "a1", false, 1) {
 		t.Fatal("a late report is still the tab's")
 	}
 	if got := v.mics("d"); !slices.Equal(got, []string{"anna"}) {
 		t.Errorf("a late off undid a newer on: %v", got)
 	}
-	// The camera is its own badge, with its own order.
-	v.setCapture("d", "anna", "a1", captureCam, true, 1)
-	if got := v.cams("d"); !slices.Equal(got, []string{"anna"}) {
-		t.Errorf("cams: %v", got)
-	}
-	v.setCapture("d", "anna", "a1", captureMic, false, 3)
-	if got, cams := v.mics("d"), v.cams("d"); len(got) != 0 || !slices.Equal(cams, []string{"anna"}) {
-		t.Errorf("mic off: mics %v, cams %v", got, cams)
+	v.setMic("d", "anna", "a1", false, 3)
+	if got := v.mics("d"); len(got) != 0 {
+		t.Errorf("mic off: %v", got)
 	}
 }
 
-func TestCamBadgeEndpoint(t *testing.T) {
+func TestMicBadgeEndpoint(t *testing.T) {
 	up := &upstream{}
 	_, ts := newTestServerWith(t, fakeEngine{others: []engine.Container{runningEnvironment(t, "bob", up)}})
 	admin := login(t, ts, "admin")
@@ -466,77 +443,20 @@ func TestCamBadgeEndpoint(t *testing.T) {
 		resp.Body.Close()
 		return resp.StatusCode
 	}
-	if got := post("/cam", `{"on":true,"tab":"t1","seq":4}`); got != 204 {
-		t.Fatalf("cam on: %d", got)
+	if got := post("/mic", `{"on":true,"tab":"t1","seq":4}`); got != 204 {
+		t.Fatalf("mic on: %d", got)
 	}
-	if got := post("/cam", `{"on":false,"tab":"t1","seq":3}`); got != 204 {
-		t.Fatalf("late cam off: %d", got)
+	if got := post("/mic", `{"on":false,"tab":"t1","seq":3}`); got != 204 {
+		t.Fatalf("late mic off: %d", got)
 	}
-	if got := post("/cam", `{"on":true,"tab":"t1","seq":-1}`); got != 400 {
+	if got := post("/mic", `{"on":true,"tab":"t1","seq":-1}`); got != 400 {
 		t.Fatalf("negative seq: %d", got)
 	}
 	_, body := get(t, admin, api)
 	var d struct {
 		Mics []string `json:"mics"`
-		Cams []string `json:"cams"`
 	}
-	if err := json.Unmarshal([]byte(body), &d); err != nil || !slices.Equal(d.Cams, []string{"admin"}) || d.Mics == nil {
-		t.Errorf("%s", body)
-	}
-}
-
-func TestCamerasForAdmins(t *testing.T) {
-	sys := t.TempDir()
-	for _, n := range []string{"video0", "video1"} {
-		if err := os.MkdirAll(filepath.Join(sys, "devices", "virtual", "video4linux", n), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	bob := runningEnvironment(t, "bob", &upstream{})
-	bob.Devices = []string{"/dev/video0"}
-	e := fakeEngine{others: []engine.Container{bob, runningEnvironment(t, "carol", &upstream{})}}
-	_, ts := newTestServerCfg(t, e, environments.Config{SysDir: sys, LocalEngine: true})
-	admin := login(t, ts, "admin")
-
-	_, body := get(t, admin, ts.URL+"/api/host")
-	var host struct {
-		Cameras []struct {
-			Device      string `json:"device"`
-			Taken       bool   `json:"taken"`
-			Environment string `json:"environment"`
-		} `json:"cameras"`
-	}
-	if err := json.Unmarshal([]byte(body), &host); err != nil || len(host.Cameras) != 2 ||
-		host.Cameras[0].Device != "/dev/video0" || !host.Cameras[0].Taken || host.Cameras[0].Environment != "bob" || host.Cameras[1].Taken {
-		t.Fatalf("%s", body)
-	}
-	_, body = get(t, admin, ts.URL+"/api/environments/bob")
-	if !strings.Contains(body, `"camera":"/dev/video0"`) || !strings.Contains(body, `"webcam":true`) {
-		t.Errorf("bob: %s", body)
-	}
-
-	patch := func(name, body string) int {
-		req, _ := http.NewRequest("PATCH", ts.URL+"/api/environments/"+name, strings.NewReader(body))
-		req.Header.Set("Origin", ts.URL)
-		resp, err := admin.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		resp.Body.Close()
-		return resp.StatusCode
-	}
-	if got := patch("carol", `{"camera":"/dev/video0"}`); got != 409 {
-		t.Errorf("carol taking bob's camera: %d", got)
-	}
-	if got := patch("carol", `{"camera":"/dev/video9"}`); got != 400 {
-		t.Errorf("a camera the host hasn't: %d", got)
-	}
-}
-
-func TestNoCamerasFromARemoteEngine(t *testing.T) {
-	_, ts := newTestServer(t)
-	admin := login(t, ts, "admin")
-	if _, body := get(t, admin, ts.URL+"/api/host"); !strings.Contains(body, `"cameras":null`) {
+	if err := json.Unmarshal([]byte(body), &d); err != nil || !slices.Equal(d.Mics, []string{"admin"}) {
 		t.Errorf("%s", body)
 	}
 }

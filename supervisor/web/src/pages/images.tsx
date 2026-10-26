@@ -2,15 +2,13 @@ import { useState } from "preact/hooks";
 import { api, type CatalogImage } from "../api.ts";
 import { JobProgress, useJob } from "../components/job.tsx";
 import { notify, notifyError } from "../components/toast.tsx";
+import { EnvironmentChip } from "../components/environment-chip.tsx";
 import { Page, PageHead } from "../components/topbar.tsx";
 import { Button, Dialog, ErrorText, Field, Tag } from "../components/ui.tsx";
 import { UPGRADE_NOTE, UpgradeDialog } from "../dialogs/upgrade.tsx";
 import { useLive } from "../live.tsx";
-import { ago, plural } from "../lib/format.ts";
+import { ago, bytes, day, plural } from "../lib/format.ts";
 import { useFetch } from "../lib/use-fetch.ts";
-
-const th = "border-b border-line px-4 py-[11px] text-left text-[13px] font-semibold text-muted";
-const td = "border-b border-hairline px-4 py-[13px] align-middle";
 
 export function ImagesPage() {
   const images = useFetch(() => api.images(), "images");
@@ -35,32 +33,16 @@ export function ImagesPage() {
         <Button onClick={() => setAdding(true)}>Add image</Button>
       </PageHead>
       <ErrorText error={images.error ?? check.error} />
-      {images.data && (
-        <div class="overflow-x-auto rounded-[10px] border border-line bg-surface">
-          <table class="w-full border-collapse text-sm">
-            <thead>
-              <tr>
-                <th class={th}>Image</th>
-                <th class={th}>Status / version</th>
-                <th class={th}>Environments</th>
-                <th class={th} />
-              </tr>
-            </thead>
-            <tbody>
-              {images.data.map((img) => (
-                <ImageRow key={img.ref} image={img} onUpgrade={() => setUpgrading(img)} onRemoved={reload} />
-              ))}
-              {!images.data.length && (
-                <tr>
-                  <td class={`${td} text-muted`} colSpan={4}>
-                    The catalog is empty: add an image to create environments from.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {images.data &&
+        (images.data.length ? (
+          <div class="grid gap-3">
+            {images.data.map((img) => (
+              <ImageCard key={img.ref} image={img} onUpgrade={() => setUpgrading(img)} onRemoved={reload} />
+            ))}
+          </div>
+        ) : (
+          <p class="text-muted">The catalog is empty: add an image to create environments from.</p>
+        ))}
       <p class="mt-4 text-sm text-muted">Upgrading recreates an environment's container on the newest version and restarts it if it's running. {UPGRADE_NOTE}</p>
       {adding && (
         <AddImageDialog
@@ -92,7 +74,7 @@ export function ImagesPage() {
   );
 }
 
-function ImageRow({
+function ImageCard({
   image: img,
   onUpgrade,
   onRemoved,
@@ -102,72 +84,78 @@ function ImageRow({
   onRemoved: () => void;
 }) {
   const { environments } = useLive();
-  const version = (name: string) => environments?.find((c) => c.name === name)?.imageVersion;
-  const current = img.environments.filter((n) => !img.behind.includes(n));
+  const env = (name: string) => environments?.find((c) => c.name === name);
   const install = useJob(onRemoved);
   const remove = () => {
     api.removeImage(img.ref).then(onRemoved, notifyError);
   };
+  const behind = img.installed && img.behind.length > 0;
+  const small = "h-[30px]! px-[11px]!";
   return (
-    <tr class="last:[&>td]:border-b-0">
-      <td class={td}>
-        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold">
-          {img.title || img.ref}
-          {img.official && <Tag>Official</Tag>}
+    <article class="rounded-[10px] border border-line bg-surface p-5" aria-label={img.title || img.ref}>
+      <div class="flex flex-wrap items-start gap-x-4 gap-y-2">
+        <div class="mr-auto min-w-0">
+          <h2 class="flex flex-wrap items-center gap-x-2 gap-y-1 text-lg font-semibold">
+            {img.title || img.ref}
+            {img.official && <Tag>Official</Tag>}
+            <Tag kind={behind ? "update" : img.installed ? "ok" : undefined}>{!img.installed ? "Not downloaded" : behind ? "Update available" : "Installed"}</Tag>
+          </h2>
+          {img.description && <p class="mt-0.5 text-sm text-muted">{img.description}</p>}
         </div>
-        <div class="mt-0.5 text-[13px] text-muted">
-          {img.description}
-          {img.description && " · "}
-          <span class="mono break-all">{img.ref}</span>
-        </div>
-      </td>
-      <td class={`${td} whitespace-nowrap`}>
-        <Tag kind={img.installed && img.behind.length > 0 ? "update" : undefined}>
-          {!img.installed ? "Available" : img.behind.length > 0 ? "Update available" : "Installed"}
-        </Tag>
-        {img.version && <div class="mt-1 text-[13px]">{img.version}</div>}
-        {!img.installed && <div class="mt-1 text-[13px] text-muted">Not downloaded</div>}
-        {img.checked && <div class="mt-0.5 text-[13px] text-muted">pulled {ago(img.checked).toLowerCase()}</div>}
-        <JobProgress job={install.job} />
-        <ErrorText error={install.error} />
-      </td>
-      <td class={td}>
-        {img.environments.length ? (
-          <div class="flex flex-wrap gap-[5px]">
-            {current.map((n) => (
-              <Tag key={n}>{n}</Tag>
-            ))}
-            {img.behind.map((n) => (
-              <Tag key={n} kind="update">
-                {n}
-                {version(n) ? ` · ${version(n)}` : ""}
-              </Tag>
-            ))}
-          </div>
-        ) : (
-          <span class="text-muted">None</span>
-        )}
-      </td>
-      <td class={`${td} text-right whitespace-nowrap`}>
-        {!img.installed && (
-          <Button variant="primary" class="mr-2 h-[30px]! px-[11px]!" disabled={install.running}
-            onClick={() => void install.start(() => api.installImage(img.ref))}>
-            {install.running ? "Installing…" : "Install"}
-          </Button>
-        )}
-        {img.installed && img.behind.length > 0 ? (
-          <Button variant="primary" class="h-[30px]! px-[11px]!" onClick={onUpgrade}>
-            Upgrade {plural(img.behind.length, "environment")}…
-          </Button>
-        ) : (
-          img.environments.length === 0 && !img.official && (
-            <Button class="h-[30px]! px-[11px]!" onClick={remove}>
-              {"Remove from catalog"}
+        <div class="flex flex-wrap gap-2">
+          {!img.installed && (
+            <Button variant="primary" class={small} disabled={install.running} onClick={() => void install.start(() => api.installImage(img.ref))}>
+              {install.running ? "Installing…" : "Install"}
             </Button>
-          )
-        )}
-      </td>
-    </tr>
+          )}
+          {behind && (
+            <Button variant="primary" class={small} onClick={onUpgrade}>
+              Upgrade {plural(img.behind.length, "environment")}…
+            </Button>
+          )}
+          {img.environments.length === 0 && !img.official && (
+            <Button class={small} onClick={remove}>
+              Remove from catalog
+            </Button>
+          )}
+        </div>
+      </div>
+      <JobProgress job={install.job} />
+      <ErrorText error={install.error} />
+      <dl class="mt-4 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[7.5rem_1fr] sm:gap-y-3">
+        <dt class="text-muted">Version</dt>
+        <dd class="min-w-0">
+          {img.version ? <span class="font-semibold">{img.version}</span> : <span class="text-muted">{img.installed ? "Unknown" : "Not downloaded yet"}</span>}
+          {img.built && <span class="text-muted"> · built {day(img.built)}</span>}
+        </dd>
+        <dt class="mt-2 text-muted sm:mt-0">Size</dt>
+        <dd class="min-w-0">{img.size ? bytes(img.size) : <span class="text-muted">–</span>}</dd>
+        <dt class="mt-2 text-muted sm:mt-0">Reference</dt>
+        <dd class="mono min-w-0 break-all">{img.ref}</dd>
+        <dt class="mt-2 text-muted sm:mt-0">Checked</dt>
+        <dd class="min-w-0">{img.checked ? `Pulled ${ago(img.checked).toLowerCase()}` : <span class="text-muted">Not yet</span>}</dd>
+        <dt class="mt-2 text-muted sm:mt-0">Environments</dt>
+        <dd class="min-w-0">
+          {img.environments.length ? (
+            <ul class="m-0 flex list-none flex-wrap gap-2 p-0" aria-label={`Environments using ${img.title || img.ref}`}>
+              {img.environments.map((n) => {
+                const late = img.behind.includes(n);
+                const c = env(n);
+                return (
+                  <li key={n}>
+                    <EnvironmentChip name={n} environment={c} href={`/environments/${n}?tab=settings`}>
+                      <Tag kind={late ? "update" : "ok"}>{late ? `Behind${c?.imageVersion ? ` · ${c.imageVersion}` : ""}` : "Up to date"}</Tag>
+                    </EnvironmentChip>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <span class="text-muted">No environment uses it.</span>
+          )}
+        </dd>
+      </dl>
+    </article>
   );
 }
 

@@ -198,7 +198,7 @@ BROWSERS = ["chromium", "firefox", pytest.param("webkit", marks=pytest.mark.webk
 # The frame's hooks (supervisor/internal/server/screen_additions.js).
 SCREEN = "document.querySelector('iframe')?.contentWindow?.deskyardScreen"
 SHOWING = f"{SCREEN}?.state() === 'connected' && {SCREEN}.video() !== null"
-# Selkies' sound, mic and webcam in the frame, from our additions.
+# Selkies' sound and mic in the frame, from our additions.
 MEDIA = f"{SCREEN}?.media()"
 FAKE_MEDIA = ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"]
 
@@ -238,6 +238,17 @@ def wait_loaded(page, expression: str, since: int, timeout=30000):
             page.reload()
 
 
+def connected(page):
+    """The bar's connection dot, when it says Connected."""
+    return page.get_by_role("status", name="Connected", exact=True)
+
+
+def open_display_menu(page):
+    """Opens the bar's Display menu (screen size and quality): its menu."""
+    page.get_by_role("button", name="Display", exact=True).click()
+    return page.get_by_role("menu")
+
+
 def open_desktop(page, base, name, status=True):
     """The desktop page, showing the picture (status: and saying so; a phone doesn't).
     Opened again if Chromium failed one of its loads (netchange.py): the screen's
@@ -247,7 +258,7 @@ def open_desktop(page, base, name, status=True):
         page.goto(f"{base}/{name}/")
         try:
             if status:
-                expect(page.get_by_text("Connected", exact=True)).to_be_visible(timeout=30000)
+                expect(connected(page)).to_be_visible(timeout=30000)
             page.wait_for_function(SHOWING, timeout=30000)
             # And the remote screen's size is known (PICTURE scales by it).
             page.wait_for_function(f"{SCREEN}.display()?.width > 0 && {SCREEN}.display()?.height > 0", timeout=30000)

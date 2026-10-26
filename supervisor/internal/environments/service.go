@@ -20,7 +20,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -59,12 +58,9 @@ var (
 )
 
 type Settings struct {
-	Image       string
-	MemoryBytes int64 // 0: no limit
-	NanoCPUs    int64 // 0: no limit
-	// Camera is the host's virtual camera (a v4l2loopback /dev/videoN) the
-	// environment has to itself, which viewers' webcams feed; "" for none.
-	Camera          string
+	Image           string
+	MemoryBytes     int64 // 0: no limit
+	NanoCPUs        int64 // 0: no limit
 	VPNConnectionID string
 	LANExceptions   []vpn.Exception
 	Mounts          []HostMount
@@ -106,10 +102,6 @@ type Config struct {
 	Subnet      string // DESKYARD_SUBNET
 	InContainer bool
 	SelfID      string // the supervisor's own container, when InContainer
-	SysDir      string // the host's /sys, for its virtual cameras ("" is /sys)
-	// LocalEngine: the engine runs on this machine (a unix socket), so the
-	// host's cameras are the ones in SysDir. Elsewhere there are none to give.
-	LocalEngine bool
 }
 
 type Service struct {
@@ -146,7 +138,6 @@ type Service struct {
 	conflicts  []Conflict        // found by the latest reconcile pass
 	repins     []Repin           // since the latest reconcile pass
 	imgInfo    map[string]engine.Image
-	camMu      sync.Mutex // held while a camera is checked and given
 	// volMu serialises creating and deleting volumes, folders included. Lock
 	// order: volMu, then Defs.mu, then Vols.mu.
 	volMu sync.Mutex
@@ -562,7 +553,7 @@ func withSettings(def Definition, set Settings, image string) Definition {
 		next.Network = Network{Kind: NetworkVPN, Connection: set.VPNConnectionID, LANExceptions: set.LANExceptions}
 	}
 	next.Mounts, next.Volumes = set.Mounts, set.Volumes
-	next.DockerAccess, next.Camera = set.DockerAccess, set.Camera
+	next.DockerAccess = set.DockerAccess
 	next = next.clone()
 	if ContainerAffecting(def, next) {
 		next.Revision++
@@ -832,14 +823,6 @@ func (s *Service) createContainer(ctx context.Context, name string, revision uin
 	for _, g := range set.Volumes {
 		spec.Mounts = append(spec.Mounts, engine.Mount{Source: s.Layout.VolumeOf(g.Name), Target: path.Join(ShareRoot, g.Name), ReadOnly: g.ReadOnly, MustExist: true})
 	}
-	if set.Camera != "" {
-		s.camMu.Lock()
-		defer s.camMu.Unlock()
-		if err := s.cameraFree(ctx, name, set.Camera); err != nil {
-			return err
-		}
-		spec.Devices = []string{set.Camera}
-	}
 	if runtimeID != "" {
 		spec.NetworkContainer = runtimeID
 		spec.Network = ""
@@ -892,9 +875,7 @@ func (s *Service) setPower(name string, p Power) error {
 
 // Start starts an environment, saving that it should run. Without a
 // container, or with one built from an older revision, its container is
-// created from the definition first. One whose camera has gone from the host
-// (the module unloaded, a reboot without it) can't start with it, so it is
-// recreated without the camera, which is logged, and started.
+// created from the definition first.
 // The caller reserves the environment with Begin, as for Recreate.
 func (s *Service) Start(ctx context.Context, name string) error {
 	return s.power(ctx, name, "start")
@@ -971,36 +952,25 @@ func (s *Service) power(ctx context.Context, name, action string) error {
 	} else {
 		err = s.Eng.Start(ctx, containerName(name))
 	}
-	if err == nil {
-		// A container that didn't become ready after a network change is
-		// what this start retries; an error of a failed change stays.
-		s.clearError(name, errNotReady)
-		return nil
-	}
-	// A camera gone from the host is dropped from the definition as a new
-	// revision, which is applied, by a resume too.
-	if c.Settings.Camera == "" || !s.cameraGone(c.Settings.Camera) {
+	if err != nil {
 		return err
 	}
-	return s.withoutCameraReserved(ctx, c, true)
+	// A container that didn't become ready after a network change is
+	// what this start retries; an error of a failed change stays.
+	s.clearError(name, errNotReady)
+	return nil
 }
 
 // build creates the container of an environment that has none, from its
-// definition. A camera gone from the host is first dropped from the
-// definition, as is a pinned image gone from the engine replaced, each as a
+// definition. A pinned image gone from the engine is first replaced, as a
 // new revision. A missing home or volume folder is an error: only creation
 // makes a home, and only CreateVolume a volume folder.
 func (s *Service) build(ctx context.Context, name string) error {
-	def, ok := s.Defs.Get(name)
-	if !ok {
+	if _, ok := s.Defs.Get(name); !ok {
 		return ErrNotFound
 	}
 	if err := s.checkFolders(name); err != nil {
 		return err
-	}
-	if def.Camera != "" && s.cameraGone(def.Camera) {
-		s.Log.Warn("camera gone from the host; creating the environment without it", "environment", name, "camera", def.Camera)
-		s.dropCamera(name, def.Camera)
 	}
 	def, err := s.repin(ctx, name)
 	if err != nil {
@@ -1017,47 +987,6 @@ func (s *Service) build(ctx context.Context, name string) error {
 	}
 	s.setError(name, "")
 	return nil
-}
-
-// cameraGone reports whether an environment's camera has gone from the host.
-// Only a local engine's host can be looked at; elsewhere none is given.
-func (s *Service) cameraGone(camera string) bool {
-	return s.Cfg.LocalEngine && !slices.Contains(s.HostCameras(), camera)
-}
-
-// withoutCamera recreates an environment whose camera is gone, without it, and
-// logs it; start starts it afterwards. It marks the environment busy, and isn't
-// cut short by the caller's deadline: a recreate stopped halfway loses the
-// container.
-func (s *Service) withoutCamera(ctx context.Context, c Environment, start bool) error {
-	release, err := s.Reserve(c.Name, "starting")
-	if err != nil {
-		return err
-	}
-	defer release()
-	return s.withoutCameraReserved(ctx, c, start)
-}
-
-// withoutCameraReserved is also used by power requests that already hold the
-// environment reservation. Startup reconciliation uses the reserving wrapper above.
-func (s *Service) withoutCameraReserved(ctx context.Context, c Environment, start bool) error {
-	ctx = context.WithoutCancel(ctx)
-	s.Log.Warn("camera gone from the host; recreating the environment without it", "environment", c.Name, "camera", c.Settings.Camera)
-	def, ok := s.Defs.Get(c.Name)
-	if !ok {
-		return ErrNotFound
-	}
-	def.Camera = ""
-	if err := s.applyDirect(ctx, c.Name, def, func(string, float64) {}); err != nil {
-		return err
-	}
-	if !start {
-		return nil
-	}
-	if d, err := s.Get(ctx, c.Name); err == nil && d.Container.Running() {
-		return nil
-	}
-	return s.Eng.Start(ctx, containerName(c.Name))
 }
 
 // Stop stops an environment and saves that it should stay stopped. Its
@@ -1158,9 +1087,18 @@ func (s *Service) removeNetwork(ctx context.Context, name string) error {
 // FolderSize adds up the sizes of the files in an environment's folder. complete
 // is false when some directories couldn't be read (files belong to UID 1000).
 func (s *Service) FolderSize(name string) (bytes int64, complete bool) {
+	return treeSize(s.Layout.HomeOf(name))
+}
+
+// VolumeSize is FolderSize for the folder of the volume name.
+func (s *Service) VolumeSize(name string) (bytes int64, complete bool) {
+	return treeSize(s.Layout.VolumeOf(name))
+}
+
+func treeSize(dir string) (bytes int64, complete bool) {
 	complete = true
 	// Through an os.Root: an environment's links never lead the walk outside.
-	root, err := os.OpenRoot(s.Layout.HomeOf(name))
+	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return 0, !errors.Is(err, fs.ErrPermission)
 	}

@@ -521,6 +521,10 @@ func (d *Docker) ImageInspect(ctx context.Context, ref string) (engine.Image, er
 		img.User = res.Config.User
 	}
 	img.Arch = res.Architecture
+	img.Size = res.Size
+	if t, err := time.Parse(time.RFC3339Nano, res.Created); err == nil {
+		img.Created = t
+	}
 	return img, nil
 }
 

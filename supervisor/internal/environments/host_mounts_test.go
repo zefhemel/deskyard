@@ -84,7 +84,7 @@ func (e *mountEngine) Exec(_ context.Context, id string, _ engine.ExecSpec) (*en
 	return &engine.Process{Stdout: bytes.NewReader(nil), Stderr: bytes.NewReader(nil), Wait: func() (int, error) { return code, nil }, Close: func() {}}, nil
 }
 func mountService(t *testing.T) (*Service, *mountEngine) {
-	s, base, _, _ := newCameraService(t, true)
+	s, base := newFakeService(t)
 	eng := &mountEngine{fakeEngine: base, specs: map[string]engine.ContainerSpec{}}
 	s.Eng = eng
 	return s, eng

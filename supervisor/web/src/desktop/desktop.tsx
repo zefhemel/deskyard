@@ -18,6 +18,7 @@ import { names, notice } from "../lib/format.ts";
 import { TouchControls, useVisibleViewport } from "./touch-controls.tsx";
 import { ZoomViewport } from "./zoom-viewport.tsx";
 import { AudioControl } from "./audio-panel.tsx";
+import { ClipboardIcon, DisplayIcon, FolderIcon, KeyboardIcon, ShieldIcon, TerminalIcon } from "./bar-icons.tsx";
 import { avSyncWanted, startAvSync } from "./avsync.ts";
 import { ClipboardPopover } from "./clipboard.tsx";
 import { ActivityOverlay } from "./overlay.tsx";
@@ -127,7 +128,7 @@ function Centered({ children }: { children: ComponentChildren }) {
 }
 
 function Desktop({ environment: c }: { environment: Environment }) {
-  const { me, host } = useLive();
+  const { me } = useLive();
   const { route } = useLocation();
   const frame = useRef<HTMLIFrameElement>(null);
   const [trackpad, setTrackpad] = useState(() => stored("deskyard.trackpad", (v) => v === "true", false));
@@ -149,6 +150,12 @@ function Desktop({ environment: c }: { environment: Environment }) {
   const [clipOpen, setClipOpen] = useState(false);
   const [viewersOpen, setViewersOpen] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
+  // Running terminal sessions, fetched when the Terminal menu opens.
+  const [sessions, setSessions] = useState<string[] | null>(null);
+  const refreshSessions = () => {
+    setSessions(null);
+    api.terminalSessions(c.name).then((r) => setSessions(r.sessions.map((t) => t.name)), () => setSessions([]));
+  };
   const [quality, setQuality] = useState(() => stored(QUALITY_KEY, parseQuality, defaultQuality));
   const [locked, setLocked] = useState(() => stored<Size | null>(LOCK_SIZE_KEY, parseSize, null));
   // Whether this page owns the display (null until known), and the preset the
@@ -289,16 +296,6 @@ function Desktop({ environment: c }: { environment: Environment }) {
     refocus();
   };
   const keyItems: MenuItem[] = keyCombos.map((k) => ({ label: k.label, onSelect: () => sendKeys(k.keys) }));
-  const qualityItems: MenuItem[] = qualities.map((q) => ({
-    label: (
-      <>
-        {q.label}
-        {q.hint && <span class="text-muted">, {q.hint}</span>}
-      </>
-    ),
-    checked: q.id === live,
-    onSelect: () => chooseQuality(q.id),
-  }));
   const resolutionItems: MenuItem[] = [
     { label: "Resolution: Auto fit", checked: locked === null, onSelect: () => chooseResolution(null) },
     ...resolutions.map((size) => ({
@@ -307,7 +304,31 @@ function Desktop({ environment: c }: { environment: Environment }) {
       onSelect: () => chooseResolution(size),
     })),
   ];
-  const compactOnly = "lg:hidden";
+  const displayItems: MenuItem[] = [
+    ...(owner
+      ? [{ label: "Lock size", checked: locked !== null, onSelect: toggleLock }, ...resolutionItems]
+      : [{ label: owner === false ? "Screen size: set by the first viewer" : "Screen size: connecting…", disabled: true, onSelect: () => {} }]),
+    ...qualities.map((q, i) => ({
+      label: (
+        <>
+          Quality: {q.label}
+          {q.hint && <span class="text-muted">, {q.hint}</span>}
+        </>
+      ),
+      checked: q.id === live,
+      onSelect: () => chooseQuality(q.id),
+      separated: i === 0,
+    })),
+  ];
+  const openTerminal = (session?: string) => {
+    location.href = `/${c.name}/terminal/${session ? `?session=${encodeURIComponent(session)}` : ""}`;
+  };
+  const terminalItems: MenuItem[] = [
+    ...(sessions ?? []).map((t) => ({ label: t, onSelect: () => openTerminal(t) })),
+    ...(sessions === null ? [{ label: "Loading sessions…", disabled: true, onSelect: () => {} }] : []),
+    { label: sessions?.length ? "New session…" : "Open terminal", onSelect: () => openTerminal(sessions?.length ? undefined : "main"), separated: (sessions?.length ?? 0) > 0 },
+  ];
+  const compactOnly = "sm:hidden";
   const showing = running;
   const moreItems: MenuItem[] = [
     ...(running
@@ -348,21 +369,23 @@ function Desktop({ environment: c }: { environment: Environment }) {
   return (
     <>
       <div class="relative flex h-[46px] flex-none items-center gap-1.5 bg-bar px-2.5 text-sm text-[#e6ebf1]">
-        <a href="/" class={barButton} title="Environments">
-          ‹ <span class="max-sm:hidden">Environments</span>
+        <a href="/" class={cx(barButton, "px-2")} title="Environments" aria-label="Environments">
+          ‹
         </a>
-        <span class="mx-1.5 h-[22px] w-px bg-[#2e3d52] max-sm:mx-0.5" />
-        <a href={`/${c.name}/terminal/`} class={cx(barButton, "max-sm:hidden")}>Terminal</a>
-        <span class="mx-0.5 min-w-0 truncate text-[15px] font-bold text-white max-sm:hidden">{c.name}</span>
+        <span class="min-w-0 truncate text-[15px] font-bold text-white max-sm:hidden">{c.name}</span>
         {showing ? (
-          <span class="inline-flex items-center gap-1.5 text-[13px] whitespace-nowrap text-bar-muted">
+          <span class="inline-flex items-center px-1" title={connLabels[conn]} role="status" aria-label={connLabels[conn]}>
             <span class={cx("h-2 w-2 rounded-full", dot)} />
-            <span class="max-sm:hidden">{connLabels[conn]}</span>
           </span>
         ) : null}
         {c.vpn && c.vpn.state !== "disabled" && (
-          <a href={`/environments/${c.name}`} class={cx(barButton, c.vpn.state === "blocked" && "text-[#ffb7ad]!")} title={vpnPresentation(c.vpn).detail || "VPN status is separate from the desktop stream connection"}>
-            {vpnPresentation(c.vpn).label}
+          <a
+            href={`/environments/${c.name}?tab=settings&section=networking`}
+            class={cx(barButton, "px-1.5", c.vpn.state === "blocked" ? "text-[#ffb7ad]!" : c.vpn.state === "connected" ? "text-[#3ac08a]!" : "text-busy!")}
+            title={[vpnPresentation(c.vpn).label, vpnPresentation(c.vpn).detail].filter(Boolean).join(": ")}
+            aria-label={vpnPresentation(c.vpn).label}
+          >
+            <ShieldIcon />
           </a>
         )}
         {showing && insecureContext && <NotSecure />}
@@ -386,7 +409,7 @@ function Desktop({ environment: c }: { environment: Environment }) {
               title={[...(c.viewers.length ? [names(c.viewers)] : []), ...c.agents.map(agentTitle)].join(", ")}
               onClick={() => (viewersOpen ? closeViewers() : setViewersOpen(true))}
             >
-              {(c.viewers.length > 0 || c.agents.length > 0) && <><span class="max-sm:hidden"><Avatars names={c.viewers} mics={c.mics} cams={c.cams} agents={c.agents} ring="var(--color-bar)" /></span><span class="sm:hidden">{c.viewers.length + c.agents.length}</span></>}
+              {(c.viewers.length > 0 || c.agents.length > 0) && <><span class="max-sm:hidden"><Avatars names={c.viewers} mics={c.mics} agents={c.agents} ring="var(--color-bar)" /></span><span class="sm:hidden">{c.viewers.length + c.agents.length}</span></>}
               {c.viewers.length > 0 && <span class="truncate max-md:hidden">{names(c.viewers)}</span>}
               {c.forwards.length > 0 && <span class="whitespace-nowrap max-sm:hidden">⇄ {c.forwards.length}</span>}
             </button>
@@ -395,34 +418,15 @@ function Desktop({ environment: c }: { environment: Environment }) {
         <div class="ml-auto flex shrink-0 items-center gap-0.5">
           {showing && (
             <>
-              <AudioControl name={c.name} screen={screen} connected={conn === "connected"} webcam={c.webcam} host={host} admin={me.admin} />
-              <button
-                type="button"
-                aria-pressed={owner === true && locked !== null}
-                disabled={owner !== true}
-                title={
-                  owner === false
-                    ? "The first viewer sets the screen size; yours is scaled to fit"
-                    : "Keep the desktop's screen size and scale it to fit"
-                }
-                class={cx(barButton, "max-lg:hidden disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent", owner && locked && pressed)}
-                onClick={toggleLock}
-              >
-                <span aria-hidden="true" class="text-[12px]">
-                  {owner && locked ? "☑" : "☐"}
-                </span>
-                Lock size
-              </button>
+              <AudioControl name={c.name} screen={screen} connected={conn === "connected"} />
               <Menu
-                items={resolutionItems}
-                class="max-lg:hidden"
+                class="max-sm:hidden"
+                items={displayItems}
                 onClose={refocus}
                 trigger={({ toggle, open }) => (
-                  <button type="button" aria-label="Resolution" aria-haspopup="menu" aria-expanded={open}
-                    disabled={owner !== true}
-                    title={owner === false ? "The first viewer sets the screen size" : "Choose and lock the remote screen resolution"}
-                    class={cx(barButton, "disabled:cursor-default disabled:opacity-50", open && pressed)} onClick={toggle}>
-                    {locked ? `${locked.width} × ${locked.height}` : "Resolution"} ▾
+                  <button type="button" aria-label="Display" aria-haspopup="menu" aria-expanded={open} title="Display: screen size and quality" class={cx(barButton, "px-2", open && pressed)} onClick={toggle}>
+                    <DisplayIcon />
+                    <span aria-hidden="true" class="text-[10px]">▾</span>
                   </button>
                 )}
               />
@@ -430,36 +434,53 @@ function Desktop({ environment: c }: { environment: Environment }) {
                 type="button"
                 data-clipboard-toggle
                 aria-expanded={clipOpen}
-                class={cx(barButton, clipOpen && pressed)}
+                aria-label="Clipboard"
+                title="Clipboard"
+                class={cx(barButton, "px-2", clipOpen && pressed)}
                 onClick={() => (clipOpen ? closeClip() : setClipOpen(true))}
               >
-                Clipboard
+                <ClipboardIcon />
               </button>
               <Menu
-                class="max-lg:hidden"
+                class="max-sm:hidden"
                 items={keyItems}
                 onClose={refocus}
                 trigger={({ toggle, open }) => (
-                  <button type="button" aria-haspopup="menu" aria-expanded={open} class={cx(barButton, open && pressed)} onClick={toggle}>
-                    Keys <span aria-hidden="true" class="text-[10px]">▾</span>
-                  </button>
-                )}
-              />
-              <Menu
-                class="max-lg:hidden"
-                items={qualityItems}
-                onClose={refocus}
-                trigger={({ toggle, open }) => (
-                  <button type="button" aria-haspopup="menu" aria-expanded={open} class={cx(barButton, open && pressed)} onClick={toggle}>
-                    Quality <span aria-hidden="true" class="text-[10px]">▾</span>
+                  <button type="button" aria-label="Keys" aria-haspopup="menu" aria-expanded={open} title="Send keys" class={cx(barButton, "px-2", open && pressed)} onClick={toggle}>
+                    <KeyboardIcon />
+                    <span aria-hidden="true" class="text-[10px]">▾</span>
                   </button>
                 )}
               />
             </>
           )}
           {running && (
-            <button type="button" aria-haspopup="dialog" class={cx(barButton, "max-lg:hidden", downloadOpen && pressed)} onClick={() => setDownloadOpen(true)}>
-              Download
+            <Menu
+              class="max-sm:hidden"
+              items={terminalItems}
+              onClose={refocus}
+              trigger={({ toggle, open }) => (
+                <button
+                  type="button"
+                  aria-label="Terminal"
+                  aria-haspopup="menu"
+                  aria-expanded={open}
+                  title="Terminal"
+                  class={cx(barButton, "px-2", open && pressed)}
+                  onClick={() => {
+                    if (!open) refreshSessions();
+                    toggle();
+                  }}
+                >
+                  <TerminalIcon />
+                  <span aria-hidden="true" class="text-[10px]">▾</span>
+                </button>
+              )}
+            />
+          )}
+          {running && (
+            <button type="button" aria-haspopup="dialog" aria-label="Download" title="Download files" class={cx(barButton, "px-2 max-sm:hidden", downloadOpen && pressed)} onClick={() => setDownloadOpen(true)}>
+              <FolderIcon />
             </button>
           )}
           <Menu
@@ -473,7 +494,7 @@ function Desktop({ environment: c }: { environment: Environment }) {
           />
         </div>
         {viewersOpen && (c.viewers.length > 0 || c.forwards.length > 0 || c.agents.length > 0) && (
-          <ViewersPopover name={c.name} viewers={c.viewers} mics={c.mics} cams={c.cams} forwards={c.forwards} agents={c.agents} onClose={closeViewers} />
+          <ViewersPopover name={c.name} viewers={c.viewers} mics={c.mics} forwards={c.forwards} agents={c.agents} onClose={closeViewers} />
         )}
         {clipOpen && showing && (
           <ClipboardPopover
@@ -500,7 +521,7 @@ function Desktop({ environment: c }: { environment: Environment }) {
           ref={frame}
           src={frameSrc(c.name)}
           title={`${c.name}'s desktop`}
-          allow="clipboard-read; clipboard-write; autoplay; microphone; camera; speaker-selection"
+          allow="clipboard-read; clipboard-write; autoplay; microphone; speaker-selection"
           class="block h-full w-full border-0"
           onLoad={onFrameLoad}
         />
@@ -515,7 +536,7 @@ function Desktop({ environment: c }: { environment: Environment }) {
 
 /**
  * The bar's note over plain http: the page isn't a secure context, so the
- * mic, camera and clipboard sync are off, and the picture may be JPEG.
+ * mic and clipboard sync are off, and the picture may be JPEG.
  */
 function NotSecure() {
   return (
@@ -526,7 +547,7 @@ function NotSecure() {
       data-not-secure
       aria-label="Not secure: some features off"
       class="ml-1 inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[12.5px] whitespace-nowrap text-bar-muted no-underline hover:bg-bar-hover hover:text-white"
-      title="Plain http: this connection isn't secure, so the browser turns features off. Mic, camera and automatic clipboard sync need https, and a browser without WebCodecs over http (Chrome, Firefox) gets a JPEG picture, which takes more bandwidth."
+      title="Plain http: this connection isn't secure, so the browser turns features off. The mic and automatic clipboard sync need https, and a browser without WebCodecs over http (Chrome, Firefox) gets a JPEG picture, which takes more bandwidth."
     >
       <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
         <rect x="3" y="7" width="10" height="7" rx="1.5" />

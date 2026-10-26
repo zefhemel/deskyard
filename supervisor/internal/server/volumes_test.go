@@ -97,6 +97,7 @@ func TestVolumesAdminOnly(t *testing.T) {
 		{"GET", "/api/volumes", ""},
 		{"POST", "/api/volumes", `{"name":"photos"}`},
 		{"DELETE", "/api/volumes/photos", ""},
+		{"GET", "/api/volumes/photos/usage", ""},
 	} {
 		if code, b := send(anna, r.method, r.path, r.body); code != 403 {
 			t.Errorf("%s %s: %d %s", r.method, r.path, code, b)
@@ -371,5 +372,36 @@ func TestCreateVolumeFileInTheWay409(t *testing.T) {
 	code, b := send(admin, "POST", "/api/volumes", `{"name":"photos"}`)
 	if code != 409 || !strings.Contains(string(b), "isn't a folder") {
 		t.Fatalf("file in the way: %d %s", code, b)
+	}
+}
+
+func TestVolumeUsage(t *testing.T) {
+	s, ts, send := newVolumeServer(t)
+	admin := login(t, ts, "admin")
+	if code, b := send(admin, "GET", "/api/volumes/photos/usage", ""); code != 404 {
+		t.Fatalf("unknown volume: %d %s", code, b)
+	}
+	if code, b := send(admin, "POST", "/api/volumes", `{"name":"photos"}`); code != 201 {
+		t.Fatalf("create: %d %s", code, b)
+	}
+	folder := s.Environments.Layout.VolumeOf("photos")
+	if err := os.MkdirAll(filepath.Join(folder, "trip"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(folder, "trip", "a.jpg"), make([]byte, 3000), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, b := send(admin, "GET", "/api/volumes/photos/usage", "")
+	var usage struct {
+		Bytes    int64  `json:"bytes"`
+		Complete bool   `json:"complete"`
+		DiskFree uint64 `json:"diskFree"`
+		DiskSize uint64 `json:"diskSize"`
+	}
+	if err := json.Unmarshal(b, &usage); code != 200 || err != nil {
+		t.Fatalf("usage: %d %s", code, b)
+	}
+	if usage.Bytes != 3000 || !usage.Complete || usage.DiskSize == 0 || usage.DiskFree > usage.DiskSize {
+		t.Fatalf("usage: %s", b)
 	}
 }

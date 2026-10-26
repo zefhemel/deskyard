@@ -89,7 +89,7 @@ def test_reclaim_button_disabled_for_unsupported_host(supervisor, desktop, name)
         browser, page = signed_in(pw, supervisor.base)
         page.route("**/api/host", lambda route: route.fulfill(json={
             "cpus": 4, "memBytes": 8 * 1024**3, "memUsed": 0, "running": 1,
-            "total": 1, "cameras": None,
+            "total": 1,
             "memoryReclaim": {"enabled": False, "reason": "The Linux host has no swap."},
         }))
         page.goto(f"{supervisor.base}/environments/{name}")

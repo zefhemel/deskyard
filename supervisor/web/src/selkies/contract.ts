@@ -7,12 +7,15 @@ export function shouldSend(data: unknown): boolean {
   );
 }
 
-/** Consent is revoked on reconnect and while a browser permission prompt is open. */
+/**
+ * Consent is revoked on reconnect and while a browser permission prompt is
+ * open. Video is never captured.
+ */
 export function captureGate() {
-  const allowed = { microphone: false, webcam: false };
+  const allowed = { microphone: false };
   let generation = 0;
   const permitted = (c: MediaStreamConstraints) =>
-    (!c.audio || allowed.microphone) && (!c.video || allowed.webcam);
+    !c.video && (!c.audio || allowed.microphone);
   const denied = () =>
     new DOMException(
       "Turn capture on in the desktop's Audio panel",
@@ -27,7 +30,7 @@ export function captureGate() {
       if (!on) generation++;
     },
     reset() {
-      allowed.microphone = allowed.webcam = false;
+      allowed.microphone = false;
       generation++;
     },
     async capture(

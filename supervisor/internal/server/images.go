@@ -286,6 +286,9 @@ type catalogImageJSON struct {
 	Environments []string   `json:"environments"`
 	Behind       []string   `json:"behind"`
 	Checked      *time.Time `json:"checked"`
+	// Size and Built describe the downloaded image; omitted until it is.
+	Size  int64      `json:"size,omitempty"`
+	Built *time.Time `json:"built,omitempty"`
 }
 
 func (s *Server) handleListImages(w http.ResponseWriter, r *http.Request) {
@@ -298,6 +301,11 @@ func (s *Server) handleListImages(w http.ResponseWriter, r *http.Request) {
 		}
 		if img, err := s.Eng.ImageInspect(r.Context(), e.Ref); err == nil {
 			j.Installed = true
+			j.Size = img.Size
+			if !img.Created.IsZero() {
+				built := img.Created
+				j.Built = &built
+			}
 			if title := img.Labels["org.opencontainers.image.title"]; title != "" {
 				j.Title = title
 			}
