@@ -1,3 +1,0 @@
-Retained design contracts, constraints and rationale for the current system and explicitly agreed future work. Obsolete workspace, custom-audio and removed image-authoring designs have been pruned; current component pages and feature records link the relevant designs. Temporary [[Plans]] are purged after execution. See [[Operations manual#Retention and current truth|Retention rules]].
-
-${query[[from p = index.contentPages "spec" where p.status ~= "superseded" and p.status ~= "cancelled" order by p.name select {Design="[[" .. p.name .. "|" .. p.displayName .. "]]", Status=p.status, Features=p.features}]]}

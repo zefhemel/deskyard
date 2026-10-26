@@ -4,3 +4,6 @@ __pycache__/
 .venv/
 .env
 /workspace/
+
+# The SilverBullet space, synced and versioned outside this repository.
+/docs/

@@ -1,3 +1,0 @@
-Temporary execution instructions for an approved change. Completed, cancelled and superseded plans are purged after useful decisions, evidence and genuine remaining work have moved into the current records. Git retains their history. [[Features]], [[Loose ends]] and retained [[Specs]] carry durable project knowledge. See [[Operations manual#Retention and current truth|Retention rules]].
-
-${docs.orMessage(query[[from p = index.contentPages "plan" where p.status == "draft" or p.status == "active" order by p.name select {Plan="[[" .. p.name .. "|" .. p.displayName .. "]]", Stage=p.status, Spec=p.spec}]], "No active implementation plans. Start one when a concrete approved task needs execution steps.")}

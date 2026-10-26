@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Shared Terminal (prototype)
-Comment=Attach to the same terminal workspace as the browser and deskyard CLI
-Exec=xfce4-terminal --disable-server --title="Shared Terminal" --command="shared-terminal main"
-Icon=utilities-terminal
-Categories=System;TerminalEmulator;
-Terminal=false
