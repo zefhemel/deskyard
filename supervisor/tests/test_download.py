@@ -8,7 +8,7 @@ import zipfile
 import requests
 
 from conftest import docker
-from helpers import make_token, put, user_sh, wait_until
+from helpers import bearer, make_credential, put, user_sh, wait_until
 
 
 def test_browse_and_download(admin, desktop, name):
@@ -58,12 +58,16 @@ def test_paths_outside_workspace_refused(admin, desktop, name):
     assert admin.get(f"/api/environments/{name}/download", params={"path": "nope"}).status_code == 404
 
 
-def test_access_and_tokens(admin, desktop, name, supervisor):
+def test_access_and_credentials(admin, desktop, name, supervisor):
     put(name, "f.txt", b"hi")
     user = "u" + uuid.uuid4().hex[:6]
     for who, desktops_ in [(user, []), (user + "v", [name])]:
-        r = admin.post("/api/accounts", json={"username": who, "password": "pw-" + who, "admin": False, "environments": desktops_})
+        grants = [{"environment": e, "level": "full"} for e in desktops_]
+        r = admin.post("/api/accounts", json={"username": who, "password": "pw-" + who, "admin": False, "grants": grants})
         assert r.status_code == 201, r.text
+    # A client credential whose account has no grant of the desktop.
+    t = make_credential(admin, name)
+    assert admin.patch(f"/api/accounts/{t['username']}", json={"grants": []}).status_code == 200
     try:
         stranger = supervisor.client().login(user, "pw-" + user)
         viewer = supervisor.client().login(user + "v", "pw-" + user + "v")
@@ -71,9 +75,7 @@ def test_access_and_tokens(admin, desktop, name, supervisor):
             assert stranger.get(route).status_code == 404
             assert viewer.get(route).status_code == 200
             assert requests.get(supervisor.base + route, timeout=10).status_code == 401
-            tok = make_token(admin, name)["token"]
-            r = requests.get(supervisor.base + route, headers={"Authorization": f"Bearer {tok}"}, timeout=10)
-            assert r.status_code == 401
+            assert requests.get(supervisor.base + route, headers=bearer(t), timeout=10).status_code == 404
     finally:
         for who in (user, user + "v"):
             admin.delete(f"/api/accounts/{who}")

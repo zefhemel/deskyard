@@ -401,10 +401,18 @@ def cli() -> str:
 @pytest.fixture
 def remote(cli, admin, desktop, name, tmp_path):
     """Runs the deskyard command against the test's desktop, as an agent elsewhere:
-    remote(*args) with a remote added for it (token "cli test")."""
-    t = admin.post(f"/api/environments/{name}/tokens", json={"name": "cli test", "expires": None}).json()
+    remote(*args), signed in (`deskyard auth`) to the supervisor as a token account
+    (remote.username) with full access to the desktop, which is the server's
+    default environment. remote.client names its credential, as the desktop's
+    agents and forwards list it."""
+    from helpers import login_link
+
+    user = "c" + uuid.uuid4().hex[:5]
+    r = admin.post("/api/accounts", json={"username": user, "grants": [{"environment": name, "level": "full"}]})
+    assert r.status_code == 201, r.text
     env = {**os.environ, "XDG_CONFIG_HOME": str(tmp_path / "config"), "HOME": str(tmp_path)}
-    env.pop("DESKYARD_REMOTE", None)
+    for k in ("DESKYARD_URL", "DESKYARD_CREDENTIAL", "DESKYARD_ENVIRONMENT"):
+        env.pop(k, None)
 
     def run(*args, input=None, check=True):
         r = subprocess.run([cli, *args], capture_output=True, env=env, input=input, timeout=120)
@@ -412,10 +420,13 @@ def remote(cli, admin, desktop, name, tmp_path):
             raise AssertionError(f"deskyard {args} failed ({r.returncode}): {r.stderr.decode()}")
         return r
 
-    run("remote", "add", name, f"{admin.base}/{name}", "--token", t["token"])
+    run("auth", login_link(admin, user), "--name", "test")
     run.name = name
     run.env = env
-    return run
+    run.username = user
+    run.client = admin.get(f"/api/accounts/{user}/credentials").json()[0]["name"]
+    yield run
+    admin.delete(f"/api/accounts/{user}")
 
 
 @pytest.fixture

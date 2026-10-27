@@ -6,7 +6,7 @@ import pytest
 import requests
 from playwright.sync_api import expect, sync_playwright
 
-from helpers import make_account, make_token, signed_in
+from helpers import bearer, make_account, make_credential, signed_in
 
 
 def test_reclaim_button_preserves_browser_state(admin, supervisor, desktop, name, tmp_path):
@@ -22,9 +22,8 @@ def test_reclaim_button_preserves_browser_state(admin, supervisor, desktop, name
         assert admin.post(f"/api/environments/{name}/reclaim-memory").status_code == 501
         pytest.skip("boot probe disabled reclamation: " + support["reason"])
     assert "memory reclamation enabled" in supervisor.logs()
-    token = make_token(admin, name)
-    headers = {"Authorization": f"Bearer {token['token']}"}
-    version = requests.get(admin.base + "/api/agent/v1/cdp/json/version", headers=headers, timeout=90).json()
+    headers = bearer(make_credential(admin, name))
+    version = requests.get(f"{admin.base}/api/environments/{name}/cdp/json/version", headers=headers, timeout=90).json()
     nonce = uuid.uuid4().hex
     with sync_playwright() as pw:
         remote = pw.chromium.connect_over_cdp(version["webSocketDebuggerUrl"], headers=headers)

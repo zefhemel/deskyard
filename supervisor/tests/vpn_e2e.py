@@ -309,14 +309,18 @@ def check(d):
     url, req = client(d)
     evidence = {}
     for name in ready["names"]:
-        token = json.loads(
+        # A token account with full access, signed in as `deskyard auth` does.
+        user = "e2e" + secrets.token_hex(4)
+        req("/api/accounts", {"username": user, "grants": [{"environment": name, "level": "full"}]})
+        link = json.loads(req("/api/accounts/" + user + "/link", {}))["link"]
+        credential = json.loads(
             req(
-                "/api/environments/" + name + "/tokens",
-                {"name": "VPN end-to-end verification"},
+                "/api/links/redeem",
+                {"link": link.split("#", 1)[1], "client": "cli", "name": "VPN end-to-end verification"},
             )
-        )["token"]
+        )["credential"]
         env = os.environ.copy()
-        env.update(DESKYARD_URL=url + "/" + name, DESKYARD_TOKEN=token)
+        env.update(DESKYARD_URL=url + "/" + name, DESKYARD_CREDENTIAL=credential)
         cli = str(ROOT / "bin/deskyard")
         result = run(
             cli,

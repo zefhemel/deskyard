@@ -7,7 +7,7 @@ import uuid
 import requests
 
 from conftest import ADMIN_PASSWORD, docker
-from helpers import in_desktop, make_account, make_token, put, wait_until, ws_handshake
+from helpers import bearer, in_desktop, make_account, make_credential, put, wait_until, ws_handshake
 
 SELKIES_WEB = "/opt/selkies/lib/python3.13/site-packages/selkies/selkies_web"
 
@@ -74,7 +74,7 @@ def test_remove_keeps_or_deletes_files(admin, name, supervisor):
 
 def test_regular_account_sees_only_its_desktops(admin, desktop, name, supervisor):
     user = "u" + uuid.uuid4().hex[:5]
-    assert admin.post("/api/accounts", json={"username": user, "password": "pw1", "admin": False, "environments": []}).status_code == 201
+    assert admin.post("/api/accounts", json={"username": user, "password": "pw1", "admin": False, "grants": []}).status_code == 201
     anna = supervisor.client().login(user, "pw1")
     assert anna.get("/api/environments").json() == {"environments": [], "conflicts": []}
     assert anna.get(f"/api/environments/{name}").status_code == 404
@@ -83,7 +83,7 @@ def test_regular_account_sees_only_its_desktops(admin, desktop, name, supervisor
     assert ws_handshake(anna.base, f"/{name}/screen/api/websockets", anna.cookies, origin=anna.base) == 404
     assert anna.post("/api/environments", json={"name": "nope"}).status_code == 403
     # Grant access: power yes, manage no.
-    assert admin.put(f"/api/environments/{name}/access", json={"usernames": [user]}).status_code == 204
+    assert admin.put(f"/api/environments/{name}/access", json={"grants": [{"username": user, "level": "full"}]}).status_code == 204
     assert [c["name"] for c in anna.get("/api/environments").json()["environments"]] == [name]
     assert anna.post(f"/api/environments/{name}/restart").status_code == 204
     assert anna.delete(f"/api/environments/{name}").status_code == 403
@@ -108,7 +108,7 @@ def test_revoking_access_closes_the_desktop(admin, desktop, name, supervisor):
                                       subprotocols=["binary"]) as ws:
             await asyncio.sleep(1)
             assert user in admin.desktop(name)["viewers"]
-            admin.put(f"/api/environments/{name}/access", json={"usernames": []})
+            admin.put(f"/api/environments/{name}/access", json={"grants": []})
             try:
                 await asyncio.wait_for(ws.wait_closed(), 10)
             except asyncio.TimeoutError:
@@ -217,7 +217,7 @@ def test_visible_data_layout_and_labels(admin, desktop, name, supervisor):
 def test_restart_recreates_a_lost_container(supervisor, admin, desktop, name):
     """The definition outlives its container: the supervisor builds it again."""
     put(name, "kept.txt", b"still here")
-    token = make_token(admin, name)
+    t = make_credential(admin, name)
     supervisor.stop()
     docker("rm", "-f", f"deskyard-{name}")
     supervisor.start()
@@ -227,22 +227,20 @@ def test_restart_recreates_a_lost_container(supervisor, admin, desktop, name):
     assert d, c.desktop(name)
     assert d["created"] == desktop["created"] and d["revision"] == d["appliedRevision"] == desktop["revision"]
     assert in_desktop(name, "cat", "/workspace/kept.txt") == "still here"
-    h = {"Authorization": f"Bearer {token['token']}"}
-    assert requests.get(c.base + "/api/agent/v1", headers=h, timeout=10).status_code == 200
+    assert requests.get(f"{c.base}/api/environments/{name}/status", headers=bearer(t), timeout=10).status_code == 200
 
 
-def test_recreated_name_does_not_revive_grants_or_tokens(admin, name, supervisor):
+def test_recreated_name_does_not_revive_grants(admin, name, supervisor):
     admin.create(name)
     user = make_account(admin, [name])
-    token = make_token(admin, name)
+    t = make_credential(admin, name)
     assert admin.delete(f"/api/environments/{name}?files=1").status_code == 204
     admin.create(name)
     try:
         assert admin.desktop(name)["access"] == []
         anna = supervisor.client().login(user, "pw")
         assert anna.get(f"/api/environments/{name}").status_code == 404
-        h = {"Authorization": f"Bearer {token['token']}"}
-        assert requests.get(admin.base + "/api/agent/v1", headers=h, timeout=10).status_code == 401
+        assert requests.get(f"{admin.base}/api/environments/{name}/status", headers=bearer(t), timeout=10).status_code == 404
     finally:
         admin.delete(f"/api/environments/{name}?files=1")
         admin.delete(f"/api/accounts/{user}")

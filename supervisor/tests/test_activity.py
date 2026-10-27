@@ -11,7 +11,7 @@ import pytest
 import requests
 
 from conftest import free_port
-from helpers import exec_ws, make_account, make_token, wait_until
+from helpers import bearer, exec_ws, make_account, make_credential, wait_until
 
 
 def test_activity_api_shape(admin, desktop, name):
@@ -27,11 +27,12 @@ def test_activity_api_access(admin, desktop, name, supervisor):
         other = supervisor.client().login(user, "pw")
         for path in ("activity", "screen-events"):
             assert other.get(f"/api/environments/{name}/{path}", timeout=10).status_code == 404, path
-        t = make_token(admin, name)
+        # A credential whose account lost its grant reaches neither.
+        t = make_credential(admin, name)
+        assert admin.patch(f"/api/accounts/{t['username']}", json={"grants": []}).status_code == 200
         for path in ("activity", "screen-events"):
-            r = requests.get(f"{supervisor.base}/api/environments/{name}/{path}",
-                             headers={"Authorization": f"Bearer {t['token']}"}, timeout=10)
-            assert r.status_code == 401, (path, r.status_code)
+            r = requests.get(f"{supervisor.base}/api/environments/{name}/{path}", headers=bearer(t), timeout=10)
+            assert r.status_code == 404, (path, r.status_code)
     finally:
         admin.delete(f"/api/accounts/{user}")
 
@@ -55,7 +56,7 @@ def test_screen_events_stop_after_revoke(admin, desktop, name, supervisor):
         assert opened.wait(10), "stream didn't open"
         time.sleep(0.5)
         assert not ended.is_set()
-        assert admin.put(f"/api/environments/{name}/access", json={"usernames": []}).status_code == 204
+        assert admin.put(f"/api/environments/{name}/access", json={"grants": []}).status_code == 204
         assert ended.wait(5), "screen-events stream still open after revoking access"
     finally:
         admin.delete(f"/api/accounts/{user}")
@@ -64,14 +65,14 @@ def test_screen_events_stop_after_revoke(admin, desktop, name, supervisor):
 # ---- outside agents are recorded
 
 
-def run(admin, token, argv, **kw):
-    return asyncio.run(exec_ws(admin.base, token["token"], argv, **kw))
+def run(admin, name, t, argv, **kw):
+    return asyncio.run(exec_ws(admin.base, name, t["credential"], argv, **kw))
 
 
-def summary(admin, name, token_id=None):
+def summary(admin, name, credential_id=None):
     agents = admin.get(f"/api/environments/{name}/activity").json()["agents"]
-    if token_id:
-        agents = [a for a in agents if a["id"] == token_id]
+    if credential_id:
+        agents = [a for a in agents if a["id"] == credential_id]
     assert len(agents) == 1, agents
     return agents[0]
 
@@ -81,7 +82,7 @@ def has_recent(sum_, **want):
 
 
 def test_outside_exec_click_type(admin, desktop, name):
-    t = admin.post(f"/api/environments/{name}/tokens", json={"name": "deploy-bot", "expires": None}).json()
+    t = make_credential(admin, name, client="deploy-bot")
     stream, opened = [], threading.Event()
 
     def watch():
@@ -93,16 +94,16 @@ def test_outside_exec_click_type(admin, desktop, name):
     threading.Thread(target=watch, daemon=True).start()
     assert opened.wait(10)
     time.sleep(0.5)
-    _, _, code = run(admin, t, ["sh", "-c", "exit 3"])
+    _, _, code = run(admin, name, t, ["sh", "-c", "exit 3"])
     assert code == 3
-    run(admin, t, ["deskyard", "click", "100", "120"])
-    run(admin, t, ["deskyard", "type", "hunter2-typed"])
+    run(admin, name, t, ["deskyard", "click", "100", "120"])
+    run(admin, name, t, ["deskyard", "type", "hunter2-typed"])
     time.sleep(1)
 
     agents = admin.desktop(name)["agents"]
     assert len(agents) == 1
     a = agents[0]
-    assert {k: a[k] for k in ("id", "name", "owner", "inside")} == {"id": t["id"], "name": "deploy-bot", "owner": "admin", "inside": False}
+    assert {k: a[k] for k in ("id", "name", "owner", "inside")} == {"id": t["id"], "name": "deploy-bot", "owner": t["username"], "inside": False}
     raw = admin.get(f"/api/environments/{name}/activity").text
     s = json.loads(raw)["agents"][0]
     assert has_recent(s, kind="command", text="sh -c 'exit 3'", exit=3), s
@@ -118,18 +119,18 @@ def test_outside_exec_click_type(admin, desktop, name):
 
 
 def test_token_on_command_line_is_masked(admin, desktop, name):
-    t = make_token(admin, name)
-    run(admin, t, ["echo", "--token", "abc123"])
+    t = make_credential(admin, name)
+    run(admin, name, t, ["echo", "--token", "abc123"])
     raw = admin.get(f"/api/environments/{name}/activity").text
     assert "abc123" not in raw
     assert has_recent(summary(admin, name, t["id"]), text="echo --token •••")
 
 
 def test_disconnected_command(admin, desktop, name):
-    t = make_token(admin, name)
+    t = make_credential(admin, name)
 
     async def go():
-        task = asyncio.create_task(exec_ws(admin.base, t["token"], ["sleep", "30"]))
+        task = asyncio.create_task(exec_ws(admin.base, name, t["credential"], ["sleep", "30"]))
         for _ in range(40):
             agents = admin.get(f"/api/environments/{name}/activity").json()["agents"]
             if agents and any(i["kind"] == "command" and i["text"] == "sleep 30" for i in agents[0]["now"]):
@@ -148,14 +149,14 @@ def test_disconnected_command(admin, desktop, name):
 
 
 def test_agent_cannot_turn_inside_recording_on(admin, desktop, name):
-    t = make_token(admin, name)
-    out, _, _ = run(admin, t, ["sh", "-c", "echo $DESKYARD_ACTIVITY"], env={"DESKYARD_ACTIVITY": "on"})
+    t = make_credential(admin, name)
+    out, _, _ = run(admin, name, t, ["sh", "-c", "echo $DESKYARD_ACTIVITY"], env={"DESKYARD_ACTIVITY": "on"})
     assert out.decode().strip() == "off"
 
 
 def test_browser_presence(admin, desktop, name):
-    t = make_token(admin, name)
-    r = requests.get(admin.base + "/api/agent/v1/cdp/json/version", headers={"Authorization": f"Bearer {t['token']}"}, timeout=20)
+    t = make_credential(admin, name)
+    r = requests.get(f"{admin.base}/api/environments/{name}/cdp/json/version", headers=bearer(t), timeout=20)
     assert r.status_code == 200, r.text
     s = summary(admin, name, t["id"])
     assert any(i["kind"] == "browser" for i in s["now"]), s
@@ -183,17 +184,17 @@ def test_forward_in_now(cli, remote, forwards, admin, name):
 
 
 def test_revoke_removes_presence(admin, desktop, name):
-    t = make_token(admin, name)
-    run(admin, t, ["true"])
+    t = make_credential(admin, name)
+    run(admin, name, t, ["true"])
     assert len(admin.desktop(name)["agents"]) == 1
-    assert admin.delete(f"/api/environments/{name}/tokens/{t['id']}").status_code == 204
+    assert admin.delete(f"/api/accounts/{t['username']}/credentials/{t['id']}").status_code == 204
     assert admin.desktop(name)["agents"] == []
 
 
 @pytest.mark.serial  # 8 s and 20 s around a 12 s expiry
 def test_presence_expires(admin, desktop, name):
-    t = make_token(admin, name)
-    run(admin, t, ["true"])
+    t = make_credential(admin, name)
+    run(admin, name, t, ["true"])
     start = time.time()
     assert len(admin.desktop(name)["agents"]) == 1
     while time.time() - start < 8:
@@ -258,9 +259,9 @@ def test_inside_click_is_a_terminal(admin, desktop, name):
 
 
 def test_nested_deskyard_not_counted_inside(admin, desktop, name, supervisor):
-    t = make_token(admin, name)
+    t = make_credential(admin, name)
     with events_open(admin):
-        asyncio.run(exec_ws(supervisor.base, t["token"], ["sh", "-c", "deskyard click 5 5"]))
+        asyncio.run(exec_ws(supervisor.base, name, t["credential"], ["sh", "-c", "deskyard click 5 5"]))
         time.sleep(5)
         agents = admin.desktop(name)["agents"]
         assert [a["id"] for a in agents] == [t["id"]], agents
@@ -271,11 +272,11 @@ def test_nested_deskyard_not_counted_inside(admin, desktop, name, supervisor):
 
 
 def test_housekeeping_not_counted(admin, desktop, name, supervisor):
-    t = make_token(admin, name)
+    t = make_credential(admin, name)
     with events_open(admin):
         assert admin.get(f"/api/environments/{name}/screen.png", timeout=60).status_code == 200
         assert admin.post(f"/api/environments/{name}/keys", json={"keys": "Escape"}).status_code < 300
-        r = requests.get(f"{supervisor.base}/api/agent/v1", headers={"Authorization": f"Bearer {t['token']}"}, timeout=30)
+        r = requests.get(f"{supervisor.base}/api/environments/{name}/status", headers=bearer(t), timeout=30)
         assert r.status_code == 200, r.text
         time.sleep(5)
         assert inside_agents(admin, name) == []

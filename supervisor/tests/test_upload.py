@@ -10,7 +10,7 @@ from urllib.parse import quote, urlparse
 
 import requests
 
-from helpers import exec_ws, make_token
+from helpers import bearer, exec_ws, make_credential
 
 
 def up(client, name, fname, data, **kw):
@@ -32,8 +32,8 @@ def test_two_files_land_owned_by_user_and_a_clash_gets_a_number(admin, desktop, 
     assert r.json()["path"] == "/workspace/Desktop/two (2).txt"
     assert up(admin, name, "two.txt", b"x").json()["path"] == "/workspace/Desktop/two (3).txt"
     assert (desk(desktop) / "two (2).txt").read_bytes() == b"again"
-    tok = make_token(admin, name)["token"]
-    out, _, _ = asyncio.run(exec_ws(admin.base, tok, ["sh", "-c", "stat -c '%u:%g' ~/Desktop/one.bin ~/Desktop/'two (2).txt'; ls -A ~/Desktop"]))
+    t = make_credential(admin, name)
+    out, _, _ = asyncio.run(exec_ws(admin.base, name, t["credential"], ["sh", "-c", "stat -c '%u:%g' ~/Desktop/one.bin ~/Desktop/'two (2).txt'; ls -A ~/Desktop"]))
     lines = out.decode().split("\n")
     assert lines[:2] == ["1000:1000", "1000:1000"]
     assert not any(n.endswith(".part") for n in lines[2:])
@@ -76,20 +76,23 @@ def test_upload_limits(admin, desktop, name):
     assert left() == ["seed.txt"]  # dot files too: no .part left behind
 
 
-def test_access_and_tokens(admin, desktop, name, supervisor):
+def test_access_and_credentials(admin, desktop, name, supervisor):
     user = "u" + uuid.uuid4().hex[:6]
     for who, ds in [(user, []), (user + "v", [name])]:
-        assert admin.post("/api/accounts", json={"username": who, "password": "pw-" + who, "admin": False, "environments": ds}).status_code == 201
+        grants = [{"environment": e, "level": "full"} for e in ds]
+        assert admin.post("/api/accounts", json={"username": who, "password": "pw-" + who, "admin": False, "grants": grants}).status_code == 201
+    # A client credential whose account has no grant of the desktop.
+    t = make_credential(admin, name)
+    assert admin.patch(f"/api/accounts/{t['username']}", json={"grants": []}).status_code == 200
     try:
         stranger = supervisor.client().login(user, "pw-" + user)
         viewer = supervisor.client().login(user + "v", "pw-" + user + "v")
         assert up(stranger, name, "n.txt", b"x").status_code == 404
         assert up(viewer, name, "v.txt", b"x").status_code == 200
         assert requests.post(f"{supervisor.base}/api/environments/{name}/upload?name=a", data=b"x", headers={"Origin": supervisor.base}, timeout=10).status_code == 401
-        tok = make_token(admin, name)["token"]
         r = requests.post(f"{supervisor.base}/api/environments/{name}/upload?name=a", data=b"x",
-                          headers={"Authorization": f"Bearer {tok}", "Origin": supervisor.base}, timeout=10)
-        assert r.status_code == 401
+                          headers={**bearer(t), "Origin": supervisor.base}, timeout=10)
+        assert r.status_code == 404
         assert requests.post(f"{supervisor.base}/api/environments/{name}/upload?name=a", data=b"x", cookies=admin.cookies,
                              headers={"Origin": "https://evil.example"}, timeout=10).status_code == 403
         assert sorted(p.name for p in desk(desktop).iterdir()) == ["v.txt"]

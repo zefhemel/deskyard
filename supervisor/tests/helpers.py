@@ -1,5 +1,5 @@
 """Helpers shared by the supervisor's tests: waiting, the desktop's insides,
-agent tokens and exec, events, and the web UI in a browser."""
+client credentials and exec, events, and the web UI in a browser."""
 
 from __future__ import annotations
 
@@ -79,25 +79,47 @@ def video_settings_lines(name) -> list[str]:
             or "settings applied for 'primary'" in line]
 
 
-# --- accounts, agent tokens, exec ------------------------------------------------------------
+# --- accounts, client credentials, exec ------------------------------------------------------
 
 def make_account(admin, environments, password="pw") -> str:
+    """A password account with full access to the environments."""
     user = "u" + uuid.uuid4().hex[:5]
-    r = admin.post("/api/accounts", json={"username": user, "password": password, "admin": False, "environments": environments})
+    grants = [{"environment": e, "level": "full"} for e in environments]
+    r = admin.post("/api/accounts", json={"username": user, "password": password, "admin": False, "grants": grants})
     assert r.status_code == 201, r.text
     return user
 
 
-def make_token(client, name, **kw) -> dict:
-    r = client.post(f"/api/environments/{name}/tokens", json={"name": "test", "expires": None, **kw})
+def login_link(admin, user) -> str:
+    """A new login link of the token account."""
+    r = admin.post(f"/api/accounts/{user}/link")
+    assert r.status_code == 200, r.text
+    return r.json()["link"]
+
+
+def make_credential(admin, name, client="test", expires=None) -> dict:
+    """A client credential, as `deskyard auth` gets one, of a new token account
+    with full access to the environment: {"credential", "id", "username"}. The
+    credential is named client; activity lists it as an agent with that name."""
+    user = "c" + uuid.uuid4().hex[:5]
+    r = admin.post("/api/accounts", json={"username": user, "grants": [{"environment": name, "level": "full"}], "expires": expires})
     assert r.status_code == 201, r.text
-    return r.json()
+    code = login_link(admin, user).split("#", 1)[1]
+    r = requests.post(admin.base + "/api/links/redeem", json={"link": code, "client": "cli", "name": client}, timeout=10)
+    assert r.status_code == 200, r.text
+    cred = r.json()["credential"]
+    return {"credential": cred, "id": cred.split("_")[1], "username": user}
 
 
-async def exec_ws(base, token, argv, stdin=b"", tty=False, env=None):
-    url = base.replace("http", "ws") + "/api/agent/v1/exec"
+def bearer(t) -> dict:
+    """The Authorization header of a make_credential credential."""
+    return {"Authorization": f"Bearer {t['credential']}"}
+
+
+async def exec_ws(base, name, credential, argv, stdin=b"", tty=False, env=None):
+    url = base.replace("http", "ws") + f"/api/environments/{name}/exec"
     out, err, code = b"", b"", None
-    async with websockets.connect(url, additional_headers={"Authorization": f"Bearer {token}"}, max_size=None) as ws:
+    async with websockets.connect(url, additional_headers={"Authorization": f"Bearer {credential}"}, max_size=None) as ws:
         await ws.send(json.dumps({"argv": argv, "tty": tty, **({"env": env} if env else {})}))
         if stdin:
             await ws.send(b"\x00" + stdin)

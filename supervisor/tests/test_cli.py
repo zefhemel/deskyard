@@ -10,7 +10,7 @@ import requests
 from playwright.sync_api import sync_playwright
 
 from conftest import free_port
-from helpers import wait_until
+from helpers import make_credential, wait_until
 
 
 def test_status_and_exec(remote):
@@ -21,15 +21,16 @@ def test_status_and_exec(remote):
     assert r.returncode == 5
 
 
-def test_environment_flag_and_saved_remote(cli, remote, tmp_path):
+def test_environment_flag_and_saved_server(cli, remote, tmp_path):
     """-e names the environment; the old -d is an unknown option."""
     assert remote.name in remote("--environment", remote.name, "status").stdout.decode()
     assert remote.name in remote(f"-e={remote.name}", "status").stdout.decode()
     r = remote("-d", remote.name, "status", check=False)
     assert r.returncode == 2 and r.stderr.decode().startswith("deskyard:"), r.stderr
-    saved = json.loads((tmp_path / "config" / "deskyard" / "remotes.json").read_text())
-    entry = saved["remotes"][remote.name]
-    assert entry["environment"] == remote.name and "desktop" not in entry, saved
+    saved = json.loads((tmp_path / "config" / "deskyard" / "servers.json").read_text())
+    entry = saved["servers"][saved["default"]]
+    assert entry["environment"] == remote.name and entry["username"] == remote.username, saved
+    assert entry["credential"].startswith("dyc_") and "desktop" not in entry, saved
 
 
 def test_cp_round_trip(remote, tmp_path):
@@ -120,7 +121,7 @@ def test_forward_listed(cli, remote, forwards, local_http, admin):
     f = forwards(cli, remote, str(p), "-R", f"8765:{q}")
     f.wait_for(f"in {p} {p}")
     f.wait_for(f"out 8765 127.0.0.1:{q}")
-    want = [{"token": "cli test", "direction": "in", "port": p}, {"token": "cli test", "direction": "out", "port": 8765}]
+    want = [{"token": remote.client, "direction": "in", "port": p}, {"token": remote.client, "direction": "out", "port": 8765}]
     assert admin.desktop(remote.name)["forwards"] == want
     assert f.stop() == 0
     deadline = time.time() + 2
@@ -168,8 +169,8 @@ def test_forward_other_desktop_refused(cli, remote, forwards, admin):
     other = remote.name + "b"
     admin.create(other)
     try:
-        t = admin.post(f"/api/environments/{other}/tokens", json={"name": "other", "expires": None}).json()
-        env = {**remote.env, "DESKYARD_URL": f"{admin.base}/{other}", "DESKYARD_TOKEN": t["token"]}
+        t = make_credential(admin, other, client="other")
+        env = {**remote.env, "DESKYARD_URL": f"{admin.base}/{other}", "DESKYARD_CREDENTIAL": t["credential"]}
 
         def run_other(*args, check=True):
             r = subprocess.run([cli, *args], capture_output=True, env=env, timeout=120)

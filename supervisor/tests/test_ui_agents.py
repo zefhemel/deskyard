@@ -20,10 +20,10 @@ def test_forwards_shown(cli, remote, forwards, supervisor, name):
         chip = page.get_by_role("button", name="Viewers and port mappings")
         expect(chip).to_be_visible(timeout=30000)
         chip.click()
-        expect(page.get_by_text(f"cli test: {p} in")).to_be_visible()
+        expect(page.get_by_text(f"{remote.client}: {p} in")).to_be_visible()
 
         page.goto(f"{supervisor.base}/environments/{name}")
-        expect(page.get_by_text(f"cli test: {p} in")).to_be_visible(timeout=15000)
+        expect(page.get_by_text(f"{remote.client}: {p} in")).to_be_visible(timeout=15000)
 
         page.goto(f"{supervisor.base}/{name}/")
         expect(chip).to_be_visible(timeout=30000)
@@ -43,14 +43,13 @@ def test_agent_presence_and_summary(cli, remote, supervisor, name):
     busy = subprocess.Popen([cli, "-e", name, "exec", "--", "sleep", "600"], env=remote.env,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
-        check_agent_presence_and_summary(supervisor.base, name)
+        check_agent_presence_and_summary(supervisor.base, name, f"{remote.client} · {remote.username}'s CLI")
     finally:
         busy.terminate()
         busy.wait(10)
 
 
-def check_agent_presence_and_summary(base, name):
-    title = "cli test · admin's CLI"
+def check_agent_presence_and_summary(base, name, title):
     with sync_playwright() as pw:
         browser, page = signed_in(pw, base)
         page.goto(f"{base}/{name}/")
@@ -114,7 +113,7 @@ def test_overlay_marks(cli, remote, supervisor, name):
         remote("-e", name, "click", "200", "150")
         click = page.locator('[data-mark="click"]')
         expect(click).to_be_visible(timeout=5000)
-        expect(click).to_contain_text("cli test")
+        expect(click).to_contain_text(remote.client)
         box = click.bounding_box()
         want = to_page(page.evaluate(PICTURE), 200, 150)
         assert abs(box["x"] + box["width"] / 2 - want[0]) <= 3, (box, want)
@@ -138,7 +137,7 @@ def test_overlay_marks(cli, remote, supervisor, name):
 
         remote("-e", name, "type", "secret-text")
         typing = page.locator('[data-mark="typing"]')
-        expect(typing).to_have_text("cli test is typing…", timeout=5000)
+        expect(typing).to_have_text(f"{remote.client} is typing…", timeout=5000)
         expect(typing).to_have_count(0, timeout=3000)
 
         remote("-e", name, "key", "ctrl+l")
