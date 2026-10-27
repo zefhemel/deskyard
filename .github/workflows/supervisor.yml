@@ -4,8 +4,9 @@
 #     ghcr.io/<owner>/deskyard
 #   tags latest (main), sha-<commit>, and 1.2.3 / 1.2 for release tags v1.2.3;
 #   pull requests build it without pushing;
-# - binaries: deskyard-supervisor for Linux and macOS and deskyard for Linux,
-#   macOS and Windows (amd64 and arm64), plus SHA256SUMS, from make release;
+# - binaries: the deskyard command for Linux, macOS and Windows (amd64 and
+#   arm64), plus SHA256SUMS, from make release (the supervisor itself is
+#   released only as the image);
 # - edge (main): those binaries in the pre-release "edge", whose tag follows
 #   main and whose files are replaced each time, version edge-<commit>;
 # - release (tags v*): those binaries attached to the GitHub release.

@@ -5,8 +5,18 @@
 #   make test-engine   the tests that need a running Docker engine
 #                      (builds the desktop image unless CC_TEST_IMAGE names one)
 # (All of Deskyard's tests: the Makefile one folder up.)
-#   make release VERSION=v1.2.3   cross-compiled binaries into dist/
+#   make linux         the supervisor for the engine's Linux architecture,
+#                      into bin/deskyard-supervisor-linux
+#   make dev           make linux, then (re)start a container from the base
+#                      image with that binary mounted over the image's:
+#                      /data is DEV_DATA, on 127.0.0.1:DEV_PORT. The same
+#                      command after every edit; the image is rebuilt only
+#                      when the Dockerfile changes. See also compose.yaml.
+#   make release VERSION=v1.2.3   cross-compiled deskyard binaries into dist/
 #   make image         the supervisor's container image
+#
+# The supervisor runs only in a container, with any host folder mounted at
+# /data. The deskyard command is the only binary that is released.
 
 VERSION ?= dev
 IMAGE   ?= deskyard:$(VERSION)
@@ -15,11 +25,19 @@ GO       ?= go
 LDFLAGS  := -s -w -X main.version=$(VERSION)
 GOFLAGS_RELEASE := -trimpath -ldflags "$(LDFLAGS)"
 
-# supervisor: Linux and macOS. deskyard: also Windows, for agents there.
-SUPERVISOR_PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
-DESKYARD_PLATFORMS   := $(SUPERVISOR_PLATFORMS) windows/amd64 windows/arm64
+# The deskyard command, for agents on Linux, macOS and Windows.
+DESKYARD_PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
-.PHONY: all web build test test-engine typecheck vet release image clean
+# Development: the container's data folder, port and name. Override them to
+# run a second instance (a scratch folder, another port and name).
+DEV_DATA ?= $(abspath ../test-instance)
+DEV_PORT ?= 7343
+DEV_NAME ?= deskyard-dev
+
+# The Docker engine's architecture, which is the desktop of the container.
+ENGINE_ARCH := $(shell docker info -f '{{.Architecture}}' 2>/dev/null | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+
+.PHONY: all web build linux dev test test-engine typecheck vet release image clean
 
 all: build
 
@@ -30,6 +48,25 @@ web:
 build: web
 	$(GO) build -ldflags "-X main.version=$(VERSION)" -o bin/deskyard-supervisor ./cmd/deskyard-supervisor
 	$(GO) build -ldflags "-X main.version=$(VERSION)" -o bin/deskyard ./cmd/deskyard
+
+# The supervisor for the Docker engine's Linux, to run in a container. The
+# UI is rebuilt only when its sources are newer than the last build.
+WEB_SOURCES := $(shell find web/src web/index.html web/package.json web/package-lock.json web/vite.config.* -type f 2>/dev/null)
+internal/web/dist/index.html: $(WEB_SOURCES)
+	$(MAKE) web
+
+linux: internal/web/dist/index.html
+	@test -n "$(ENGINE_ARCH)" || { echo "cannot read the engine's architecture: is Docker running?"; exit 1; }
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(ENGINE_ARCH) $(GO) build -o bin/deskyard-supervisor-linux ./cmd/deskyard-supervisor
+
+dev: linux
+	docker build -q --target base -t deskyard:base .
+	-docker rm -f $(DEV_NAME)
+	docker run -d --name $(DEV_NAME) \
+		-v /var/run/docker.sock:/var/run/docker.sock \
+		-v $(DEV_DATA):/data \
+		-v $(CURDIR)/bin/deskyard-supervisor-linux:/usr/local/bin/deskyard-supervisor:ro \
+		-p 127.0.0.1:$(DEV_PORT):7343 deskyard:base
 
 test:
 	$(GO) test -race ./...
@@ -56,12 +93,6 @@ typecheck:
 release: web
 	rm -rf dist
 	mkdir -p dist
-	@set -e; for p in $(SUPERVISOR_PLATFORMS); do \
-		os=$${p%/*}; arch=$${p#*/}; \
-		echo "supervisor $$os/$$arch"; \
-		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build $(GOFLAGS_RELEASE) \
-			-o dist/deskyard-supervisor-$$os-$$arch ./cmd/deskyard-supervisor; \
-	done
 	@set -e; for p in $(DESKYARD_PLATFORMS); do \
 		os=$${p%/*}; arch=$${p#*/}; ext=; [ $$os = windows ] && ext=.exe; \
 		echo "deskyard $$os/$$arch"; \

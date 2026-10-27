@@ -1,18 +1,19 @@
 # Deskyard in production: the published supervisor image.
 #
-#   DESKYARD_DATA_DIR=/srv/deskyard docker compose up -d
+#   docker compose up -d
 #   docker compose logs supervisor     # first start: the generated admin password
 #
-# then open http://localhost:7343. Put DESKYARD_DATA_DIR (and optionally
-# DESKYARD_ADMIN_PASSWORD, DESKYARD_DOMAIN) in a .env file next to this one to
-# avoid typing them. To run a checkout's own code, use supervisor/compose.yaml.
+# then open http://localhost:7343. The data folder is /srv/deskyard on the
+# host; change the left side of the mount below to use another folder (on a
+# Mac, for example ~/deskyard). Put DESKYARD_ADMIN_PASSWORD and
+# DESKYARD_DOMAIN in a .env file next to this one to avoid typing them. To run
+# a checkout's own code, use supervisor/compose.yaml.
 
 services:
   supervisor:
     image: ghcr.io/zefhemel/deskyard:latest
     restart: unless-stopped
     environment:
-      DESKYARD_DATA_DIR: ${DESKYARD_DATA_DIR:?set DESKYARD_DATA_DIR to an absolute host path}
       # First start only: the admin's password. Leave it unset and one is
       # generated and printed once in the log.
       DESKYARD_ADMIN_PASSWORD: ${DESKYARD_ADMIN_PASSWORD:-}
@@ -24,12 +25,11 @@ services:
       # supervisor is the most privileged thing here: keep it updated and
       # don't expose it without HTTPS.
       - /var/run/docker.sock:/var/run/docker.sock
-      # The data folder (definitions, state/, secret/ and home/) must be
-      # mounted at the SAME path inside as on the host: the supervisor hands
-      # these paths to the engine as bind mounts for desktops, and the engine
-      # resolves them on the host. The supervisor checks this on startup and
-      # refuses to run if the paths don't match.
-      - ${DESKYARD_DATA_DIR:?set DESKYARD_DATA_DIR to an absolute host path}:${DESKYARD_DATA_DIR:?set DESKYARD_DATA_DIR to an absolute host path}
+      # The data folder (definitions, state/, secret/ and home/): any host
+      # folder, mounted at /data. It must be a bind mount, not a named volume.
+      # The supervisor looks up the host path from its own container to give
+      # it to desktops.
+      - /srv/deskyard:/data
     ports:
       # Only this machine can reach it. To reach it from elsewhere, put your
       # own HTTPS proxy or Tailscale in front, or set DESKYARD_DOMAIN and

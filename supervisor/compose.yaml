@@ -1,25 +1,32 @@
 # Deskyard for development: the supervisor built from this checkout. From
 # this folder:
 #
-#   DESKYARD_DATA_DIR=$HOME/deskyard-dev docker compose up -d --build
-#   docker compose logs supervisor     # first start: the generated admin password
+#   make linux                          # the binary for the engine's Linux
+#   docker compose up -d --build
+#   docker compose logs supervisor      # first start: the generated admin password
 #
-# then open http://localhost:7343. Rerun the first command after a change.
+# then open http://localhost:7343. After a change, run make linux and
+# docker compose restart (or just make dev, which does the same without
+# Compose). Only the base image is built, from the Dockerfile; the binary is
+# mounted over it, so a code change needs no image build. The data folder is
+# DESKYARD_DEV_DATA (default ../test-instance), mounted at /data.
 # Production uses the published image instead: see deploy/compose.yaml.
 
 services:
   supervisor:
-    image: deskyard:dev
-    build: .
+    image: deskyard:base
+    build:
+      context: .
+      target: base
     restart: unless-stopped
     environment:
-      DESKYARD_DATA_DIR: ${DESKYARD_DATA_DIR:?set DESKYARD_DATA_DIR to an absolute host path}
       # First start only: the admin's password. Leave it unset and one is
       # generated and printed once in the log.
       DESKYARD_ADMIN_PASSWORD: ${DESKYARD_ADMIN_PASSWORD:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      # Mounted at the same path inside as on the host, as in production.
-      - ${DESKYARD_DATA_DIR:?set DESKYARD_DATA_DIR to an absolute host path}:${DESKYARD_DATA_DIR:?set DESKYARD_DATA_DIR to an absolute host path}
+      # Any host folder, at /data: the supervisor finds its host path itself.
+      - ${DESKYARD_DEV_DATA:-../test-instance}:/data
+      - ./bin/deskyard-supervisor-linux:/usr/local/bin/deskyard-supervisor:ro
     ports:
       - "127.0.0.1:7343:7343"
