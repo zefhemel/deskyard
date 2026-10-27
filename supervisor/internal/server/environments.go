@@ -41,6 +41,7 @@ type environmentJSON struct {
 	Terminal        bool                   `json:"terminal"`
 	Terminals       []terminal.Session     `json:"terminals"` // never null; empty unless running
 	MemoryReclaim   bool                   `json:"memoryReclaim"`
+	WebDAV          bool                   `json:"webdav"`
 	Name            string                 `json:"name"`
 	State           string                 `json:"state"`
 	Revision        uint64                 `json:"revision"`
@@ -72,6 +73,7 @@ func (s *Server) environmentJSON(ctx context.Context, c environments.Environment
 		Terminal:      terminalCapable(c),
 		Terminals:     s.terminalSessions.forEnvironment(c),
 		MemoryReclaim: c.MemoryReclaim,
+		WebDAV:        c.WebDAV,
 		Name:          c.Name, State: c.State, Folder: c.Folder, Image: c.Image,
 		Revision: c.Revision, AppliedRevision: c.AppliedRevision, Power: c.Power, Error: c.Error, Conflict: c.Conflict,
 		ImageTitle: c.ImageLabels["org.opencontainers.image.title"], ImageVersion: c.ImageLabels["org.opencontainers.image.version"],
@@ -121,7 +123,7 @@ func (s *Server) environmentJSON(ctx context.Context, c environments.Environment
 // observed blanks what an observer may not see: the environment's
 // configuration and what full users do in it.
 func (j *environmentJSON) observed() {
-	j.Folder, j.MemoryReclaim, j.Job = "", false, nil
+	j.Folder, j.MemoryReclaim, j.WebDAV, j.Job = "", false, false, nil
 	j.Settings = settingsJSON{LANExceptions: []vpn.Exception{}, Volumes: []environments.VolumeGrant{}}
 	j.VPN = environments.VPNStatus{Status: vpn.Status{State: "disabled"}}
 	j.Access, j.Terminals, j.Forwards, j.Agents = []accessGrant{}, []terminal.Session{}, []forwardJSON{}, []activity.Presence{}
@@ -416,6 +418,7 @@ func (s *Server) environmentRemoved(name string) error {
 	}
 	s.sweep() // the environment's shares end with it
 	s.activity.ForgetDesktop(name)
+	s.davLocks.forget(name)
 	s.events.publish(event{kind: "removed", environment: name, data: map[string]string{"name": name}})
 	return err
 }

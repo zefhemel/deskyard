@@ -1,15 +1,18 @@
 // The signed-in account's page (/account): its signed-in devices (the CLI
-// clients holding one of its credentials) and signing out everywhere. Admins
+// clients holding one of its credentials, and its WebDAV password), its
+// WebDAV drives and signing out everywhere. Admins
 // see another account's devices on the Accounts page through DeviceList.
 import { useState } from "preact/hooks";
 import { api, type Credential } from "../api.ts";
 import { Page, PageHead } from "../components/topbar.tsx";
 import { notify, notifyError } from "../components/toast.tsx";
-import { Button, ErrorText, Tag } from "../components/ui.tsx";
+import { Button, ErrorText, Note, Tag } from "../components/ui.tsx";
 import { SignOutEverywhereDialog } from "../dialogs/sign-out-everywhere.tsx";
 import { useLive } from "../live.tsx";
 import { ago, day } from "../lib/format.ts";
 import { useFetch } from "../lib/use-fetch.ts";
+import { copyText } from "../lib/clipboard.ts";
+import { davAddress, davInTheClear } from "../lib/webdav.ts";
 
 const th = "border-b border-line px-4 py-[11px] text-left text-[13px] font-semibold text-muted";
 const td = "border-b border-hairline px-4 py-[13px] align-middle";
@@ -25,10 +28,11 @@ export function DevicesPage() {
         <h2 class="mb-1 text-lg font-semibold">Signed-in devices</h2>
         <p class="mb-3.5 text-sm text-muted">
           The <span class="mono">deskyard</span> command on each machine where you ran <span class="mono">deskyard login</span> or{" "}
-          <span class="mono">deskyard auth</span>. Signing one out ends its open shells and connections at once.
+          <span class="mono">deskyard auth</span>, and your WebDAV password. Signing one out ends its open shells and connections at once.
         </p>
         <DeviceList devices={devices.data} error={devices.error} revoke={(id) => api.revokeCredential(id)} onChanged={devices.reload} />
       </section>
+      {me.kind === "password" && !me.share && <WebDAVSection devices={devices.data} onChanged={devices.reload} />}
       <section>
         <h2 class="mb-1 text-lg font-semibold">Browsers</h2>
         <p class="mb-3.5 text-sm text-muted">
@@ -104,5 +108,84 @@ function DeviceRow({ device: d, revoke, onChanged }: { device: Credential; revok
         </Button>
       </td>
     </tr>
+  );
+}
+
+/** The account's WebDAV drives and its WebDAV password. */
+function WebDAVSection({ devices, onChanged }: { devices: Credential[] | undefined; onChanged: () => void }) {
+  const { me, environments } = useLive();
+  const [password, setPassword] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const drives = (environments ?? []).filter((c) => c.webdav && c.level === "full").map((c) => c.name);
+  const has = devices?.some((d) => d.kind === "webdav") ?? false;
+  const change = async (make: boolean) => {
+    setBusy(true);
+    try {
+      if (make) {
+        setPassword((await api.createWebDAVPassword()).password);
+      } else {
+        await api.removeWebDAVPassword();
+        setPassword(null);
+        notify("Removed the WebDAV password");
+      }
+      onChanged();
+    } catch (e) {
+      notifyError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const copy = async (text: string, what: string) =>
+    (await copyText(text)) ? notify(`Copied the ${what}`) : notify("Couldn't copy; select it and copy it instead", { error: true });
+  return (
+    <section class="mb-8">
+      <h2 class="mb-1 text-lg font-semibold">WebDAV</h2>
+      <p class="mb-3.5 text-sm text-muted">
+        Mount an environment as a drive: in Finder, Go → Connect to Server; on an iPhone or iPad, a WebDAV app such as Owlfiles. Sign in as{" "}
+        <span class="mono">{me.username}</span> with your password, or with a WebDAV password if you make one. It shows the home folder and the local volumes,
+        also while the environment is stopped.
+      </p>
+      {drives.length ? (
+        <ul class="mb-3.5 space-y-1.5 text-sm">
+          {drives.map((name) => (
+            <li key={name} class="flex flex-wrap items-center gap-2">
+              <span class="mono min-w-0 break-all">{davAddress(name)}</span>
+              <Button class="h-[30px]! px-[11px]!" onClick={() => void copy(davAddress(name), "address")}>
+                Copy
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p class="mb-3.5 text-sm text-muted">None of your environments has WebDAV switched on. An admin switches it on in an environment&apos;s settings.</p>
+      )}
+      {davInTheClear() && <Note danger>This page is on plain HTTP, so a password given to a WebDAV client crosses the network readable. Windows refuses to connect this way.</Note>}
+      {password && (
+        <div class="mb-3.5 rounded-lg border border-line bg-surface p-3.5">
+          <div class="flex flex-wrap items-center gap-2">
+            <code class="mono min-w-0 flex-1 break-all text-sm" aria-label="WebDAV password">
+              {password}
+            </code>
+            <Button onClick={() => void copy(password, "WebDAV password")}>Copy</Button>
+          </div>
+          <p class="mt-2 text-[13px] text-muted">Shown only now. Keep it in your WebDAV client or a password manager.</p>
+        </div>
+      )}
+      <div class="flex flex-wrap gap-2">
+        <Button disabled={busy} onClick={() => void change(true)}>
+          {has ? "Replace the WebDAV password" : "Make a WebDAV password"}
+        </Button>
+        {has && (
+          <Button disabled={busy} onClick={() => void change(false)}>
+            Remove it
+          </Button>
+        )}
+      </div>
+      <p class="mt-2 text-[13px] text-muted">
+        {has
+          ? "WebDAV takes only the WebDAV password, not your account password. Replacing it disconnects the clients using the old one."
+          : "A WebDAV password replaces your account password for WebDAV only, so your account password isn't stored in WebDAV clients."}
+      </p>
+    </section>
   );
 }

@@ -82,6 +82,8 @@ type Environment struct {
 	Settings    Settings
 	// MemoryReclaim lets the supervisor reclaim memory while it is idle.
 	MemoryReclaim bool
+	// WebDAV serves the environment's files at /<name>/dav/.
+	WebDAV bool
 	// Revision is the definition's; AppliedRevision the one its container was
 	// built from (0 without a container). Revision ahead of AppliedRevision is
 	// a change that is applied on the next start.
@@ -305,7 +307,7 @@ func (s *Service) fromDefinition(ctx context.Context, def Definition, c engine.C
 	env := Environment{
 		ID: def.Name, Name: def.Name, State: "stopped", Image: def.Image.Ref, ImageID: def.Image.ID,
 		Created: def.Created, Folder: s.Layout.HomeOf(def.Name), Settings: def.Settings(),
-		MemoryReclaim: def.MemoryReclaim, Revision: def.Revision, Power: def.Power,
+		MemoryReclaim: def.MemoryReclaim, WebDAV: def.WebDAV, Revision: def.Revision, Power: def.Power,
 		Error: s.errorOf(def.Name), Conflict: s.duplicate(def.Name), Container: c,
 	}
 	if c.ID != "" {
@@ -888,6 +890,16 @@ func (s *Service) createContainer(ctx context.Context, name string, revision uin
 func (s *Service) SetMemoryReclaim(name string, on bool) error {
 	_, err := s.Defs.Update(name, func(d *Definition) error {
 		d.MemoryReclaim = on
+		return nil
+	})
+	return err
+}
+
+// SetWebDAV saves whether name's files are served over WebDAV. Its
+// container is not affected, so the revision stays.
+func (s *Service) SetWebDAV(name string, on bool) error {
+	_, err := s.Defs.Update(name, func(d *Definition) error {
+		d.WebDAV = on
 		return nil
 	})
 	return err
