@@ -38,9 +38,11 @@ machine.
 ## Run it
 
 You need Docker (or OrbStack, or Docker Desktop) on Linux or macOS. The
-supervisor runs in a container (`ghcr.io/zefhemel/deskyard`, amd64 and arm64) and needs two things mounted: the Docker
-socket, and a data folder **at the same path** as on the host, because it
-hands paths in that folder to the engine for the desktops' bind mounts.
+supervisor runs only in a container (`ghcr.io/zefhemel/deskyard`, amd64 and
+arm64) and needs two things mounted: the Docker socket, and a folder of your
+choice **at `/data`**, where it keeps everything. It finds that folder's path
+on the host itself. Nothing else is needed: no `user:` or `group_add`, and no
+hostname setting.
 
 There are no versioned releases yet: images and binaries are built from `main`
 on every change and tagged `latest` and
@@ -53,7 +55,7 @@ With `docker run`:
 ```bash
 docker run -d --name deskyard --restart unless-stopped \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  -v /srv/deskyard:/srv/deskyard -e DESKYARD_DATA_DIR=/srv/deskyard \
+  -v /srv/deskyard:/data \
   -p 127.0.0.1:7343:7343 \
   ghcr.io/zefhemel/deskyard:latest
 ```
@@ -65,11 +67,9 @@ services:
   supervisor:
     image: ghcr.io/zefhemel/deskyard:latest
     restart: unless-stopped
-    environment:
-      DESKYARD_DATA_DIR: /srv/deskyard
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /srv/deskyard:/srv/deskyard
+      - /srv/deskyard:/data
     ports:
       - "127.0.0.1:7343:7343"
 ```
@@ -91,30 +91,25 @@ HTTPS proxy, see [Running Deskyard](guide/running.md).
 
 ### Development
 
-From a checkout, build the supervisor image and run it the same way. With
-`docker run`:
+From a checkout, in `supervisor/` (needs Go, Node 24 and Docker):
 
 ```bash
-docker build -t deskyard:dev supervisor
-docker run -d --name deskyard-dev \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v $HOME/deskyard-dev:$HOME/deskyard-dev -e DESKYARD_DATA_DIR=$HOME/deskyard-dev \
-  -p 127.0.0.1:7343:7343 \
-  deskyard:dev
+make dev
 ```
 
-Or with Compose, using [`supervisor/compose.yaml`](supervisor/compose.yaml),
-which builds from the checkout:
+This cross-compiles the supervisor, builds the supervisor's base image once
+and (re)starts a container from it with the binary mounted over the image's,
+on <http://localhost:7343>, with the data folder `test-instance/` next to
+`supervisor/`. Run it again after every edit: it takes a few seconds and needs
+no image build. `DEV_DATA`, `DEV_PORT` and `DEV_NAME` choose another data
+folder, port and container name, for a second instance. Compose users run
+`make linux` and then `docker compose up -d` with
+[`supervisor/compose.yaml`](supervisor/compose.yaml).
 
-```bash
-cd supervisor
-DESKYARD_DATA_DIR=$HOME/deskyard-dev docker compose up -d --build
-```
-
-Rerun it after a change. To build a desktop image from the checkout, run
-`docker buildx bake --load` in the top folder; it is tagged
-`deskyard-debian-xfce:dev`, which you can add on the **Images** page. Tests and
-the rest of the workflow: [Development](guide/development.md).
+To build a desktop image from the checkout, run `docker buildx bake --load` in
+the top folder; it is tagged `deskyard-debian-xfce:dev`, which you can add on
+the **Images** page. Tests and the rest of the workflow:
+[Development](guide/development.md).
 
 ## The `deskyard` command
 
@@ -134,7 +129,6 @@ Environment variables of the supervisor:
 
 | Variable | Default | |
 |---|---|---|
-| `DESKYARD_DATA_DIR` | required | environment definitions, home folders and the supervisor's own state ([the data folder](guide/storage.md#the-data-folder)) |
 | `DESKYARD_LISTEN` | `0.0.0.0:7343` | address for plain HTTP inside the container |
 | `DESKYARD_DOMAIN` | | serve HTTPS for this domain on 80/443, with an automatic certificate |
 | `DESKYARD_ENGINE_HOST` | `DOCKER_HOST`, else the default socket | the engine to drive |
@@ -143,7 +137,8 @@ Environment variables of the supervisor:
 | `DESKYARD_ADMIN_PASSWORD` | generated, printed once | first start only: its password |
 | `DESKYARD_IMAGE` | `ghcr.io/zefhemel/deskyard-debian-xfce:latest` | the catalog's first image |
 
-Back up the whole data folder; its `cache/` can be left out.
+Back up the whole data folder (the host folder mounted at `/data`; see
+[the data folder](guide/storage.md#the-data-folder)); its `cache/` can be left out.
 
 ## Guides
 

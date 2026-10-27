@@ -144,7 +144,9 @@ environment's are under `/deskyard/environment/<name>/` (`home/` and
 
 ## The data folder
 
-`DESKYARD_DATA_DIR` keeps everything in plain view; there is no hidden folder:
+The data folder is `/data` inside the supervisor's container: any host
+folder, bind-mounted there (`-v /srv/deskyard:/data`). It keeps everything in
+plain view; there is no hidden folder:
 
 ```
 <data>/
@@ -161,7 +163,7 @@ environment's are under `/deskyard/environment/<name>/` (`home/` and
                       VPN service credentials (vpn/<connection-id>/), TLS certificates (certmagic/),
                       storage remote credentials and rclone.conf (remotes/<name>/),
                       backup recovery keys (backups/<repository>/)
-  state/              this supervisor's instance ID, replacement records (recovery/<name>.json),
+  state/              this supervisor's instance ID, the ownership marker (owner), replacement records (recovery/<name>.json),
                       VPN network transitions (network/transitions.json), VPN runtime scratch (vpn/),
                       backup run state (backups.json)
   cache/              Selkies web clients extracted from images, restic's cache and binary; safe to delete
@@ -203,10 +205,14 @@ recoverable without falling back to direct networking.
 Data folders from before environment definitions are not migrated. The
 supervisor refuses to start, and says what to remove, when the data folder holds
 a `.deskyard/` folder or when Deskyard containers without an instance label
-mount it. Remove those (or point `DESKYARD_DATA_DIR` at a fresh folder); this
+mount it. Remove those (or mount a fresh folder at `/data`); this
 mostly affects development checkouts.
 
-In a container, the data folder must be mounted **at the same path** as on
-the host (`-v /srv/deskyard:/srv/deskyard`), because the supervisor hands
-those paths to the engine as bind mounts for environments. It checks this on
-startup and refuses to run, with an explanation, if they don't match.
+The folder must be a bind mount, not a named volume. The supervisor finds its
+host path by inspecting its own container and translates the paths it hands the
+engine for environments' bind mounts, so the host path and `/data` can differ.
+`home/` and `volume/` folders it creates are owned by UID 1000; on first start
+with a data folder from an older version it re-owns the supervisor's files to
+1000:1000 once (marked by `state/owner`). A `DESKYARD_DATA_DIR` set to anything
+but `/data` is refused at start with the mount to use instead; see
+[Running Deskyard](running.md#the-container).

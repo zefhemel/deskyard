@@ -1,18 +1,33 @@
 # Development
 
-The supervisor needs Go and Node 24:
+The supervisor needs Go, Node 24 and Docker, and runs only in a container:
 
 ```bash
 cd supervisor
-make build          # the UI, then bin/deskyard-supervisor and bin/deskyard
+make dev            # cross-compile, then (re)start a container with the binary
+                    # mounted; about 4 s after an edit
 make test           # Go unit tests, with the race detector
 make test-engine    # the tests that drive a real Docker engine (builds the
                     # desktop image first, unless CC_TEST_IMAGE names one)
 make typecheck      # the UI's TypeScript and tests
 make vet            # Go static checks
-make release VERSION=v1.2.3   # cross-compiled binaries in dist/
+make build          # the UI, then bin/deskyard-supervisor and bin/deskyard
+make linux          # the supervisor for the engine's Linux, bin/deskyard-supervisor-linux
+make release VERSION=v1.2.3   # cross-compiled deskyard binaries in dist/
 make image          # the supervisor's container image
 ```
+
+`make dev` builds the supervisor's base image (Alpine, without the binary)
+when its Dockerfile changes, and starts `deskyard-dev` from it with the Docker
+socket, `DEV_DATA` (default `test-instance/` in the top folder) at `/data`, and
+`bin/deskyard-supervisor-linux` bind-mounted over the image's binary, on
+`127.0.0.1:DEV_PORT` (default 7343). The same command after every edit rebuilds
+the UI only when its sources changed. Run a second instance beside it with
+`make dev DEV_DATA=/tmp/scratch DEV_PORT=7344 DEV_NAME=deskyard-dev2`. With
+Compose, run `make linux` and `docker compose up -d` using
+`supervisor/compose.yaml`. The supervisor refuses to run outside a container;
+the `deskyard` command released from `make release` is the only binary
+distributed.
 
 ## Repository layout
 
@@ -26,7 +41,7 @@ supervisor/
   web/              the UI: Preact + TypeScript + Tailwind, built with Vite
   tests/            integration tests against a real engine
   Dockerfile        node build -> go build -> alpine
-  compose.yaml      the supervisor built from this checkout, for development
+  compose.yaml      the supervisor's base image with the checkout's binary mounted, for development
 deploy/
   compose.yaml      the supervisor's published image, for production
 images/
@@ -40,7 +55,7 @@ docs/               local copy of the SilverBullet project space (ignored by git
 CI: `.github/workflows/images.yml` builds all `docker-bake.hcl` targets together for
 amd64 and arm64 on native runners, weekly and on change;
 `.github/workflows/supervisor.yml` tests the supervisor, publishes its image,
-builds the `deskyard-supervisor` and `deskyard` binaries and puts them in the
+builds the `deskyard` command binaries (the supervisor is released only as the image) and puts them in the
 `edge` pre-release (main) or the GitHub release (tags `v*`);
 `.github/workflows/tests.yml` runs the integration suites (see [Tests](#tests)).
 `install.sh` installs `deskyard` from a release.
@@ -61,13 +76,19 @@ and, once, `uv run playwright install chromium` in each of
 |---|---|---|
 | `make test` | Go (vet, race) and engine tests, the UI's, and both pytest suites without what's slow, needs the internet, builds images, measures timing, or runs WebKit. About 7 minutes on a quiet Mac, 10 under load. | Before every commit. |
 | `make test-ci` | `make test` plus WebKit and Firefox: what CI runs on a pull request. | To check a browser difference. |
-| `make test-all` | Everything, the supervisor suite also with the supervisor in a container. About 25 minutes; needs the internet. | Before a release, or after changing desktop Dockerfiles, image runtime behavior, audio timing, or how the supervisor runs in a container. CI runs it on main and nightly. |
-| `make test-image`, `test-supervisor`, `test-container`, `test-go`, `test-web`, `test-engine` | One part. | While working on it. |
+| `make test-all` | Everything, including what is slow or needs the internet (`MARKS="-m ''"`). About 25 minutes. | Before a release, or after changing desktop Dockerfiles, image runtime behavior or audio timing. CI runs it on main and nightly. |
+| `make test-image`, `test-supervisor`, `test-go`, `test-web`, `test-engine` | One part. | While working on it. |
 
 While working on one area, narrow a suite: `make test-supervisor PYTEST_ARGS="-k drop"`,
 or run pytest in the suite's folder (`uv run pytest test_ui_audio.py`).
 `MARKS="-m ''"` lifts the default selection; markers: `slow`, `network`,
 `build`, `perf`, `webkit` (left out by default) and `serial`.
+
+The supervisor suite always runs the supervisor in a container: each worker
+starts one from the base image with its data folder at `/data` and the
+cross-compiled binary mounted, as `make dev` does, so a code change needs no
+image build. Go engine tests that reach desktops by IP skip on macOS when
+OrbStack can't route to the custom bridge networks; Linux CI runs them.
 
 Both suites run under pytest-xdist (`WORKERS`, default 4), then run the
 timing-sensitive tests, marked `serial`, on their own (`pytest --only-serial`).

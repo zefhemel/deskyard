@@ -12,16 +12,43 @@ HTTPS. Publish `80:80` and `443:443` instead of `127.0.0.1:7343:7343`. Without
 a domain, keep the default localhost binding and put your own HTTPS proxy or
 Tailscale in front (see [On a LAN](#on-a-lan)).
 
-## The binary without a container
+## The container
 
-The edge release also has `deskyard-supervisor-<os>-<arch>` binaries
-(`linux-amd64`, `linux-arm64`, `darwin-amd64`, `darwin-arm64`). Run directly,
-the supervisor finds the engine at `DESKYARD_ENGINE_HOST`, else `DOCKER_HOST`,
-else the platform's default socket, keeps everything in `~/deskyard` and
-listens on `127.0.0.1:7343`; its user must be able to use the Docker socket.
-To serve a domain on Linux, let it bind low ports with
-`sudo setcap cap_net_bind_service=+ep ./deskyard-supervisor`. This mode is
-being retired: the supervisor will run only in a container.
+The supervisor runs only in a container, with the Docker socket and a host
+folder mounted at `/data`:
+
+```bash
+docker run -d --name deskyard --restart unless-stopped \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /srv/deskyard:/data \
+  -p 127.0.0.1:7343:7343 \
+  ghcr.io/zefhemel/deskyard:latest
+```
+
+Any host folder will do on the left of `:/data`, but it has to be a bind mount:
+a named volume is refused at start, because the supervisor must know the
+folder's path on the host to hand it to desktops. It looks that path up by
+inspecting its own container (the container ID is the hostname, so don't set
+`--hostname`).
+
+The image starts the supervisor as root for one reason: to take ownership of
+the supervisor's files in a data folder from an older version (once, recorded
+in `state/owner`), and to read which group owns the Docker socket. It then
+drops to UID 1000 with that group before it opens the engine, the stores or
+the listener, and never serves as root. So you don't set `user:` or
+`group_add`; the socket may be owned by any group (or be world-accessible, or
+a TCP address in `DESKYARD_ENGINE_HOST`). The desktops' home and volume
+folders are owned by UID 1000 too.
+
+**Upgrading an old Compose file or `docker run` command.** Earlier versions
+mounted the data folder at its host path and named it in `DESKYARD_DATA_DIR`
+(`-v /srv/deskyard:/srv/deskyard -e DESKYARD_DATA_DIR=/srv/deskyard`). The
+supervisor now exits at start, with the instructions, if `DESKYARD_DATA_DIR`
+is set to anything but `/data`. Replace the mount with
+`-v /srv/deskyard:/data` and delete the variable; existing environments, homes
+and volume grants carry over. The `deskyard-supervisor` binaries that used to
+run without a container are no longer released (the `deskyard` command still
+is).
 
 ## On a LAN
 
@@ -60,9 +87,8 @@ itself ([With a domain](#with-a-domain)).
 ## Security
 
 - **The engine socket is root on the host.** Whoever can use it owns the
-  machine, so the supervisor is the most privileged thing there. Run
-  directly on Linux, its user needs the `docker` group, which is
-  root-equivalent; in a container, mounting the socket is the same.
+  machine, so the supervisor is the most privileged thing there. Mounting
+  the socket into its container is the same.
 - Every route but the login, link and CLI-login pages needs a signed-in
   account: a browser session, or a CLI's client credential sent as a bearer
   token (which never sets cookies and needs no `Origin`). Login links carry
@@ -74,8 +100,7 @@ itself ([With a domain](#with-a-domain)).
   desktop.
 - Environments have no password and nothing else of their own facing the
   network: only Caddy on 8080, which wants a per-environment token that only
-  the supervisor has. With the supervisor in a container, environments publish
-  no ports; run directly, each publishes only 8080 on host `127.0.0.1`.
+  the supervisor has. Environments publish no ports to the host.
 - The supervisor never serves pages from an environment: it serves the desktop
   client itself (taken from the environment's image) and proxies only the
   desktop's WebSocket and, for CLI clients, the browser's CDP.
