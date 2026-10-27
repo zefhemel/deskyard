@@ -156,7 +156,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
   const [states, setStates] = useState<Record<string, string>>({});
   const [confirm, setConfirm] = useState<{ session: string; others: number; command: string } | null>(null);
   const [viewersOpen, setViewersOpen] = useState(false);
-  // Share, as on the environment's Sharing tab: full access, but not a share itself.
+  // Share, as under Shares on the environment's Access tab: full access, but not a share itself.
   const canShare = !observing && !me.share;
   const [sharing, setSharing] = useState(false);
   const [shared, setShared] = useState<{ username: string; link: string } | null>(null);

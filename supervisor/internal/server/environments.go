@@ -537,7 +537,7 @@ func (s *Server) handleSetAccess(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
-	access, ok := s.accessLevels(w, req.Grants, "change it on the Sharing tab")
+	access, ok := s.accessLevels(w, req.Grants, "change it under Shares on the Access tab")
 	if !ok {
 		return
 	}

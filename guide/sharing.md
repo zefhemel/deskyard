@@ -27,19 +27,20 @@ Everyone can change their own password (password accounts), see their
 **Signed-in devices** and sign each out, and **Sign out everywhere**, which
 ends every browser login of the account (from the account menu).
 
-**Share** in the bar above an environment's desktop, on its **Sharing** tab,
-or `deskyard share create` makes a token account with one grant, full or
-observe-only, with an optional time limit, and shows a link such as `https://host/link#dyl_…` to send through
-a chat app. The link works once: opening it shows who it signs in as and a
-**Sign in** button, so link previews and scanners can't use it up. A used,
-replaced or revoked link answers "This link was already used or replaced".
-Unused links don't expire; **New link** replaces the previous one. **Revoke**
-(on the Sharing tab, or next to the share in the desktop bar's viewers panel)
-ends a share at once, closing its desktop streams, terminals and CLI
-connections. Its maker and admins can revoke it. A share also ends when the person who made it loses full access
-to the environment or is deleted. Shares can't share further. Admins make
-login links for other token accounts with **Login link** on the Accounts page
-(`deskyard account link USER`).
+**Share** in the bar above an environment's desktop, under Shares on its
+**Access** tab, or `deskyard share create` makes a token account with one
+grant, full or observe-only, with an optional time limit, and shows a link
+such as `https://host/link#dyl_…` to send through a chat app. The link works
+once: opening it shows who it signs in as and a **Sign in** button, so link
+previews and scanners can't use it up. A used, replaced or revoked link
+answers "This link was already used or replaced". Unused links don't expire;
+**New link** replaces the previous one. **Revoke** (under Shares on the Access
+tab, or next to the share in the desktop bar's viewers panel) ends a share at
+once, closing its desktop streams, terminals and CLI connections. Its maker
+and admins can revoke it. A share also ends when the person who made it loses
+full access to the environment or is deleted. Shares can't share further.
+Admins make login links for other token accounts with **Login link** on the
+Accounts page (`deskyard account link USER`).
 
 Everyone with access to an environment opens the **same desktop**: one screen,
 one mouse, one keyboard, like two people at one desk. The desktop follows

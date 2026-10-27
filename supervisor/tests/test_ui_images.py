@@ -304,3 +304,15 @@ def test_viewers_panel_revokes_a_share(mock_ui):
         panel.get_by_role("button", name="Revoke now").click()
         expect(page.get_by_text("Revoked sanne")).to_be_visible()
         browser.close()
+
+
+def test_access_tab_has_accounts_and_shares(mock_ui):
+    with sync_playwright() as p:
+        # An old Sharing link opens Access, which now holds both.
+        browser, page = mock_page(p, mock_ui, "/environments/alice?tab=sharing")
+        expect(page.get_by_role("heading", name="Accounts")).to_be_visible()
+        expect(page.get_by_role("heading", name="Shares")).to_be_visible()
+        expect(page.get_by_role("button", name="Share", exact=True)).to_be_visible()
+        expect(page.get_by_role("button", name="Sharing", exact=True)).to_have_count(0)
+        expect(page.get_by_role("tab", name="Sharing", exact=True)).to_have_count(0)
+        browser.close()

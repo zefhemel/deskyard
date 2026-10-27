@@ -104,7 +104,7 @@ export function LevelPicks({
 /**
  * Which accounts may use an environment, and how. Admins are listed checked
  * and disabled: they can use every environment. Shares are left out: they are
- * managed on the Sharing tab.
+ * managed under Shares on the Access tab.
  */
 export function AccessPicks({
   accounts,
