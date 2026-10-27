@@ -45,6 +45,20 @@ def command(page, text):
     page.keyboard.press('Enter')
 
 
+def after_interrupt(page, name):
+    """Wait until the shell takes input again. The tty discards input that
+    arrives while an interrupt lands, so a command typed straight after Ctrl+C
+    can vanish; repeat a marker command until one runs."""
+    for n in range(10):
+        marker = f'/workspace/ui-after-interrupt-{n}'
+        # Enter first: it runs, and so clears, whatever part of a lost command was kept.
+        page.keyboard.press('Enter')
+        command(page, f'printf ready > {marker}')
+        if wait_until(lambda: shell(name, f'cat {marker} 2>/dev/null || true') == 'ready', 3):
+            return
+    raise AssertionError('the shell took no input after Ctrl+C')
+
+
 def connected(page):
     expect(page.locator(f'{ACTIVE} [data-terminal-state=connected]')).to_be_attached(timeout=15000)
 
@@ -113,8 +127,7 @@ def test_owned_terminal_shared_shell_keys_history_and_reconnect(supervisor, desk
         command(first, 'sleep 60; printf interrupted > /workspace/ui-interrupt')
         first.get_by_role('button', name='Ctrl+C', exact=True).click()
         expect(first.get_by_role('textbox', name='Terminal input')).to_be_focused()
-        command(first, 'printf ready > /workspace/ui-after-interrupt')
-        eventually(lambda: shell(name, 'cat /workspace/ui-after-interrupt 2>/dev/null || true'), 'ready')
+        after_interrupt(first, name)
         assert shell(name, 'test -e /workspace/ui-interrupt && echo bad || echo good') == 'good'
         shell(name, 'printf tab-proof > /workspace/ui-completion-proof')
         first.get_by_role('textbox', name='Terminal input').focus()
@@ -152,6 +165,7 @@ def test_owned_terminal_shared_shell_keys_history_and_reconnect(supervisor, desk
         first.keyboard.insert_text('日')
         expect(first.get_by_role('button', name='Alt', exact=True)).to_have_attribute('aria-pressed', 'false')
         first.get_by_role('button', name='Ctrl+C', exact=True).click()
+        after_interrupt(first, name)
 
         # History is tmux copy-mode, not xterm's alternate-screen scrollback.
         command(first, "printf 'history-line-%04d\\n' {1..200}")
