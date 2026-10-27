@@ -34,8 +34,9 @@ a chat app. The link works once: opening it shows who it signs in as and a
 **Sign in** button, so link previews and scanners can't use it up. A used,
 replaced or revoked link answers "This link was already used or replaced".
 Unused links don't expire; **New link** replaces the previous one. **Revoke**
+(on the Sharing tab, or next to the share in the desktop bar's viewers panel)
 ends a share at once, closing its desktop streams, terminals and CLI
-connections. A share also ends when the person who made it loses full access
+connections. Its maker and admins can revoke it. A share also ends when the person who made it loses full access
 to the environment or is deleted. Shares can't share further. Admins make
 login links for other token accounts with **Login link** on the Accounts page
 (`deskyard account link USER`).

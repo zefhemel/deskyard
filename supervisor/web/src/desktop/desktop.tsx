@@ -475,7 +475,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
             )}
           />
         </div>
-        {viewersOpen && present && <ViewersPopover name={c.name} viewers={c.viewers} observers={c.observers} mics={c.mics} forwards={c.forwards} agents={c.agents} onClose={closeViewers} />}
+        {viewersOpen && present && <ViewersPopover name={c.name} viewers={c.viewers} observers={c.observers} mics={c.mics} forwards={c.forwards} agents={c.agents} canShare={canShare} onClose={closeViewers} />}
       </div>
       {sharing && (
         <ShareDialog

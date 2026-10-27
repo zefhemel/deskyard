@@ -286,3 +286,21 @@ def test_environment_bar_shares(mock_ui):
         link = page.get_by_role("dialog").filter(has=page.get_by_role("heading", name="alice is shared with guest"))
         expect(link.get_by_role("button", name="Copy link")).to_be_visible()
         browser.close()
+
+
+def test_viewers_panel_revokes_a_share(mock_ui):
+    with sync_playwright() as p:
+        browser, page = mock_page(p, mock_ui, "/alice/")
+        toggle = page.locator("[data-viewers-toggle]")
+        toggle.click()
+        panel = page.locator("h3", has_text="Viewing").locator("..")
+        expect(panel).to_be_visible()
+        # The panel opens under its button, at the bar's right.
+        box, at = panel.bounding_box(), toggle.bounding_box()
+        assert box["x"] + box["width"] >= at["x"] + at["width"] - 20, (box, at)
+        # anna has full access through a grant, not a share: nothing to revoke.
+        expect(panel.get_by_role("button", name="Revoke anna")).to_have_count(0)
+        panel.get_by_role("button", name="Revoke sanne").click()
+        panel.get_by_role("button", name="Revoke now").click()
+        expect(page.get_by_text("Revoked sanne")).to_be_visible()
+        browser.close()

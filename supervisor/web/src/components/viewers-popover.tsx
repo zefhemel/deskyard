@@ -2,11 +2,13 @@
 // `deskyard forward`. The popover is the desktop bar's; ForwardLines is also
 // the details page's "viewing" card.
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { AgentPresence, Forward } from "../api.ts";
+import { api, type AgentPresence, type Forward } from "../api.ts";
+import { useLive } from "../live.tsx";
 import { agentTitle } from "../lib/activity-format.ts";
 import { AgentAvatar } from "./agent-avatar.tsx";
 import { AgentSummary, useActivity } from "./agent-summary.tsx";
 import { Avatar } from "./avatar.tsx";
+import { notify, notifyError } from "./toast.tsx";
 
 /** One line per token, "deploy-bot: 3000 in · 5173 out", in first-seen order. */
 export function forwardLines(forwards: Forward[]): { token: string; text: string }[] {
@@ -80,6 +82,7 @@ export function ViewersPopover({
   mics,
   forwards,
   agents,
+  canShare,
   onClose,
 }: {
   name: string;
@@ -89,9 +92,12 @@ export function ViewersPopover({
   mics: string[];
   forwards: Forward[];
   agents: AgentPresence[];
+  /** Whether the reader may see the environment's shares (full access, not a share). */
+  canShare?: boolean;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const revocable = useRevocableShares(name, canShare === true);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -126,11 +132,14 @@ export function ViewersPopover({
             <li key={v} class="flex items-center gap-2 py-1 text-sm">
               <Avatar name={v} size={22} mic={mics.includes(v)} />
               <span class="truncate">{v}</span>
-              {(mics.includes(v) || observers.includes(v)) && (
-                <span class="ml-auto flex-none text-[12px] text-muted" title={observers.includes(v) ? "Watching, without keyboard or mouse" : undefined}>
-                  {[...(observers.includes(v) ? ["observing"] : []), ...(mics.includes(v) ? ["mic on"] : [])].join(", ")}
-                </span>
-              )}
+              <span class="ml-auto flex flex-none items-center gap-1.5">
+                {(mics.includes(v) || observers.includes(v)) && (
+                  <span class="text-[12px] text-muted" title={observers.includes(v) ? "Watching, without keyboard or mouse" : undefined}>
+                    {[...(observers.includes(v) ? ["observing"] : []), ...(mics.includes(v) ? ["mic on"] : [])].join(", ")}
+                  </span>
+                )}
+                {revocable.has(v) && <RevokeShare username={v} />}
+              </span>
             </li>
           ))}
         </ul>
@@ -150,5 +159,55 @@ export function ViewersPopover({
         </>
       )}
     </div>
+  );
+}
+
+
+/** The shares of the environment the reader may revoke: an admin all of them, others their own. */
+function useRevocableShares(name: string, enabled: boolean): Set<string> {
+  const { me } = useLive();
+  const [names, setNames] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!enabled) return;
+    let live = true;
+    api.shares(name).then(
+      (shares) => live && setNames(new Set(shares.filter((s) => me.admin || s.sharedBy.username === me.username).map((s) => s.username))),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [name, enabled, me.admin, me.username]);
+  return names;
+}
+
+/** Revoke, then Revoke now: ends the share and cuts it off at once. */
+function RevokeShare({ username }: { username: string }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const button = "flex-none cursor-pointer rounded-md border-0 px-2 py-0.5 text-[12px] font-semibold";
+  const revoke = async () => {
+    setBusy(true);
+    try {
+      await api.revokeShare(username);
+      notify(`Revoked ${username}`);
+    } catch (e) {
+      notifyError(e);
+      setBusy(false);
+    }
+  };
+  return confirming ? (
+    <span class="flex items-center gap-1">
+      <button type="button" class={`${button} bg-transparent text-muted hover:bg-hairline`} onClick={() => setConfirming(false)}>
+        Cancel
+      </button>
+      <button type="button" class={`${button} bg-danger text-white`} disabled={busy} onClick={() => void revoke()}>
+        Revoke now
+      </button>
+    </span>
+  ) : (
+    <button type="button" class={`${button} bg-transparent text-danger hover:bg-hairline`} aria-label={`Revoke ${username}`} title={`End ${username}'s share and cut them off`} onClick={() => setConfirming(true)}>
+      Revoke
+    </button>
   );
 }
