@@ -5,7 +5,7 @@
 Persistent Linux desktops you can access, share and control from anywhere—
 in your browser or terminal. One app, the **supervisor**, runs them in containers.
 
-![The desktop: Chromium on this project's GitHub page, and a terminal using node (installed with mise) and the deskyard command](assets/screenshot.png)
+![An environment's page: its desktop, with Chromium on this project's GitHub page, and a shared terminal session as a tab next to it](assets/screenshot.png)
 
 The supervisor is one Go binary with its web UI built in. You sign in with
 your own account and create, open, start, stop, upgrade and remove
@@ -34,6 +34,11 @@ it opens the same desktop, at the same time if they like.
 The desktop image is Debian 13, `linux/arm64` and `linux/amd64`. About 0.4 GB
 of RAM per running environment with Chromium open, so several fit on an 8 GB
 machine.
+
+<p>
+  <img src="assets/environments.png" width="49%" alt="The environments list: each environment's live screen, its terminal sessions, CPU and memory use, VPN and image">
+  <img src="assets/environment.png" width="49%" alt="An environment's overview: its screen, who's viewing, VPN, CPU and memory over the last 15 minutes, and its folder, disk, image and access">
+</p>
 
 ## Run it
 
