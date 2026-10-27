@@ -121,6 +121,18 @@ single_taskbar() {
     panel -p /panels --force-array -t int -s 1
 }
 
+# Older homes copied the plain terminal launcher (exo's TerminalEmulator) into
+# the taskbar. The Deskyard Terminal offers the shared sessions to join. A
+# launcher the user pointed elsewhere stays.
+deskyard_terminal() {
+    local f
+    for f in "$HOME"/.config/xfce4/panel/launcher-*/*.desktop; do
+        [ -f "$f" ] || continue
+        grep -q '^Exec=exo-open --launch TerminalEmulator' "$f" || continue
+        cp /usr/share/applications/deskyard-terminal.desktop "$f" || return
+    done
+}
+
 # once MARKER STEP: run STEP unless done before. A home without saved panel
 # settings starts from the current defaults, so it needs no step.
 once() {
@@ -135,3 +147,4 @@ once migrated-dock-visible dock_visible
 once migrated-top-panel trim_top_panel
 once restored-top-panel restore_top_panel
 once single-taskbar single_taskbar
+once deskyard-terminal-launcher deskyard_terminal

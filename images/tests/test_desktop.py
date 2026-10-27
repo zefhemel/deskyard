@@ -63,6 +63,22 @@ def test_existing_two_panel_home_becomes_single_taskbar_once(make_sandbox, volum
     assert c.exec(f"{PANEL}/size").stdout.strip() == "30"
 
 
+def test_existing_home_dock_terminal_becomes_deskyard_terminal(make_sandbox):
+    """A home whose taskbar kept the plain terminal launcher gets the Deskyard Terminal once."""
+    a = make_sandbox()
+    launcher = a.exec("grep -l '^Exec=deskyard terminal-pick' ~/.config/xfce4/panel/launcher-*/*.desktop").stdout.split()
+    assert len(launcher) == 1, launcher
+    # As an older image left it.
+    a.exec(f"sed -i 's|^Exec=.*|Exec=exo-open --launch TerminalEmulator|' {launcher[0]}"
+           " && rm -f ~/.config/workspace/deskyard-terminal-launcher")
+    a.restart()
+    assert a.exec(f"grep '^Exec=' {launcher[0]}").stdout.strip() == "Exec=deskyard terminal-pick"
+    # Once only: a launcher the user changes afterwards stays.
+    a.exec(f"sed -i 's|^Exec=.*|Exec=xterm|' {launcher[0]}")
+    a.restart()
+    assert a.exec(f"grep '^Exec=' {launcher[0]}").stdout.strip() == "Exec=xterm"
+
+
 def test_exec_starts_in_home(sandbox):
     assert sandbox.exec("pwd", login=False).stdout.strip() == "/workspace"
 
