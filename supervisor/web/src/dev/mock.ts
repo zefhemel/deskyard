@@ -93,7 +93,7 @@ function asSeenBy(c: Environment, a: MockAccount): Environment {
   if (level === "observe") {
     return {
       ...c, level, folder: "", memoryReclaim: false, access: [], terminals: [], forwards: [], agents: [], vpn: blankVPN,
-      settings: { memoryBytes: 0, nanoCpus: 0, dockerAccess: false, vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: [] },
+      settings: { memoryBytes: 0, nanoCpus: 0, dockerAccess: false, vpnConnectionId: null, lanExceptions: [], volumes: [] },
     };
   }
   return { ...c, level, access: a.admin ? accessOf(c.name) : [] };
@@ -508,7 +508,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const c: Environment = {
       name, state: "creating", power: "running", revision: 1, appliedRevision: 0, error: "", conflict: "",
       startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/home/${name}`, image: img.ref, imageTitle: img.title,
-      memoryReclaim: true, imageVersion: img.version, updateAvailable: null, settings: { dockerAccess: b.dockerAccess === true, memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: (b.volumes as Environment["settings"]["volumes"]) ?? [] },
+      memoryReclaim: true, imageVersion: img.version, updateAvailable: null, settings: { dockerAccess: b.dockerAccess === true, memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), vpnConnectionId: null, lanExceptions: [], volumes: (b.volumes as Environment["settings"]["volumes"]) ?? [] },
       vpn: blankVPN, level: "full", access: [], viewers: [], observers: [], mics: [], terminal: true, terminals: [], forwards: [], agents: [], stats: null,
     };
     for (const g of (b.access as AccessGrant[]) ?? []) accounts.find((a) => a.username === g.username)?.grants.push({ environment: name, level: g.level });
@@ -739,7 +739,6 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
       if (typeof b.memoryBytes === "number") c.settings.memoryBytes = b.memoryBytes;
       if (typeof b.nanoCpus === "number") c.settings.nanoCpus = b.nanoCpus;
       if (typeof b.dockerAccess === "boolean") c.settings.dockerAccess = b.dockerAccess;
-      if (Array.isArray(b.mounts)) c.settings.mounts = b.mounts as Environment["settings"]["mounts"];
       if (Array.isArray(b.volumes)) c.settings.volumes = b.volumes as Environment["settings"]["volumes"];
       if (typeof b.image === "string") c.image = b.image;
       changed(c);

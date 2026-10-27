@@ -117,7 +117,7 @@ test("invalid retest keeps the prior candidate success hidden and makes no secon
 test("accepted canonical LAN settings clear dirty state and repeated saves make no request or job", async () => {
   let saved = {
     image: "img",
-    settings: { dockerAccess: false, mounts: [] as import("../api.ts").HostMount[], volumes: [], memoryBytes: 0, nanoCpus: 0, vpnConnectionId: "v1", lanExceptions: [] as import("../api.ts").LANException[] },
+    settings: { dockerAccess: false, volumes: [], memoryBytes: 0, nanoCpus: 0, vpnConnectionId: "v1", lanExceptions: [] as import("../api.ts").LANException[] },
   };
   const draft = {
     image: "img",
@@ -134,7 +134,7 @@ test("accepted canonical LAN settings clear dirty state and repeated saves make 
       image: "img",
       settings: {
         dockerAccess: false,
-        mounts: [] as import("../api.ts").HostMount[], volumes: [],
+        volumes: [],
         memoryBytes: 0,
         nanoCpus: 0,
         vpnConnectionId: "v1",
@@ -168,7 +168,6 @@ test("No VPN ignores hidden LAN drafts without discarding them and omits saved r
     image: "img",
     settings: {
       dockerAccess: false,
-      mounts: [],
       volumes: [],
       memoryBytes: 0,
       nanoCpus: 0,
@@ -197,21 +196,8 @@ test("pending explicit No VPN describes the network transition without asking fo
   assert.match(vpnPresentation({ ...status, connectionId: "v1" }).notice ?? "", /until the VPN connects/);
 });
 
- test("host folder-only edits and VPN edits share one settings payload", async () => {
- const saved = {image:"img",settings:{dockerAccess:false,memoryBytes:0,nanoCpus:0,vpnConnectionId:"v1",lanExceptions:[],mounts:[],volumes:[]}};
- const mounts=[{source:"/srv/photos",target:"/mnt/photos",readOnly:true}];
- const draft={image:"img",memoryBytes:0,nanoCpus:0,vpnConnectionId:"v1",lan:[],mounts};
- assert.equal(environmentSettingsChanged(saved,draft),true);
- const body=await saveEnvironmentSettings(saved,draft,async body=>body);
- assert.deepEqual(body,{mounts});
- assert.deepEqual(await saveEnvironmentSettings(saved,{...draft,vpnConnectionId:""},async body=>body),{vpnConnectionId:null,mounts});
- const updated={...saved,settings:{...saved.settings,mounts}};
- assert.equal(environmentSettingsChanged(updated,draft),false);
- assert.equal(await saveEnvironmentSettings(updated,draft,async body=>body),null);
- });
-
 test("Docker permission-only changes save once and can be revoked", async () => {
-  const saved = { image: "img", settings: { dockerAccess: false, memoryBytes: 0, nanoCpus: 0, vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: [] } };
+  const saved = { image: "img", settings: { dockerAccess: false, memoryBytes: 0, nanoCpus: 0, vpnConnectionId: null, lanExceptions: [], volumes: [] } };
   const draft = { image: "img", dockerAccess: true, memoryBytes: 0, nanoCpus: 0, vpnConnectionId: "", lan: [] };
   assert.equal(environmentSettingsChanged(saved, draft), true);
   assert.deepEqual(await saveEnvironmentSettings(saved, draft, async (body) => body), { dockerAccess: true });

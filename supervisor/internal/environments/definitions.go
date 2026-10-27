@@ -47,10 +47,12 @@ type Limits struct {
 	NanoCPUs    int64 `json:"nanoCPUs"`    // 0: no limit
 }
 
-// VolumeGrant gives an environment a named volume, mounted at
-// /share/<name>. The definition is the only record of who has which volume.
+// VolumeGrant gives an environment a named volume, mounted at Path (by
+// default /share/<name>). The definition is the only record of who has which
+// volume.
 type VolumeGrant struct {
 	Name     string `json:"name"`
+	Path     string `json:"path"`
 	ReadOnly bool   `json:"readOnly"`
 }
 
@@ -70,7 +72,6 @@ type Definition struct {
 	Image    ImageRef      `json:"image"`
 	Limits   Limits        `json:"limits"`
 	Network  Network       `json:"network"`
-	Mounts   []HostMount   `json:"mounts"`
 	Volumes  []VolumeGrant `json:"volumes"`
 	// DockerAccess is as in Settings.
 	DockerAccess  bool  `json:"dockerAccess"`
@@ -87,19 +88,18 @@ func (d Definition) Settings() Settings {
 		NanoCPUs:        d.Limits.NanoCPUs,
 		VPNConnectionID: d.Network.Connection,
 		LANExceptions:   d.Network.LANExceptions,
-		Mounts:          d.Mounts,
 		Volumes:         d.Volumes,
 		DockerAccess:    d.DockerAccess,
 	})
 }
 
 // ContainerAffecting reports whether a and b differ in anything their
-// container is built from: image, limits, network, mounts, volume grants,
+// container is built from: image, limits, network, volume grants,
 // Docker access. Memory reclaim and power are applied without a new
 // container.
 func ContainerAffecting(a, b Definition) bool {
 	return a.Image != b.Image || a.Limits != b.Limits || !sameNetwork(a.Network, b.Network) ||
-		!slices.Equal(a.Mounts, b.Mounts) || !slices.Equal(a.Volumes, b.Volumes) ||
+		!slices.Equal(withGrantPaths(a.Volumes), withGrantPaths(b.Volumes)) ||
 		a.DockerAccess != b.DockerAccess
 }
 
@@ -111,7 +111,6 @@ func sameNetwork(a, b Network) bool {
 }
 
 func cloneSettings(s Settings) Settings {
-	s.Mounts = slices.Clone(s.Mounts)
 	s.Volumes = slices.Clone(s.Volumes)
 	s.LANExceptions = slices.Clone(s.LANExceptions)
 	for i := range s.LANExceptions {
@@ -121,14 +120,8 @@ func cloneSettings(s Settings) Settings {
 }
 
 func (d Definition) clone() Definition {
-	s := cloneSettings(Settings{Mounts: d.Mounts, Volumes: d.Volumes, LANExceptions: d.Network.LANExceptions})
-	d.Mounts, d.Volumes, d.Network.LANExceptions = s.Mounts, s.Volumes, s.LANExceptions
-	if d.Mounts == nil {
-		d.Mounts = []HostMount{}
-	}
-	if d.Volumes == nil {
-		d.Volumes = []VolumeGrant{}
-	}
+	s := cloneSettings(Settings{Volumes: d.Volumes, LANExceptions: d.Network.LANExceptions})
+	d.Volumes, d.Network.LANExceptions = withGrantPaths(s.Volumes), s.LANExceptions
 	return d
 }
 
@@ -163,9 +156,6 @@ func (d Definition) validate() error {
 	default:
 		return fmt.Errorf("unknown network kind %q", d.Network.Kind)
 	}
-	if err := ValidateHostMounts(d.Mounts); err != nil {
-		return err
-	}
 	return ValidateVolumeGrants(d.Volumes)
 }
 
@@ -176,10 +166,25 @@ type definitionsFile struct {
 
 // loadedDefinition is a Definition as read from environments.json. Files
 // written before camera support was removed carry a "camera" field, which is
-// accepted and dropped: the next save leaves it out.
+// accepted and dropped: the next save leaves it out. Files from before host
+// volumes carry "mounts", host folders, which load only when empty: they are
+// not migrated.
 type loadedDefinition struct {
 	Definition
 	Camera json.RawMessage `json:"camera"`
+	Mounts json.RawMessage `json:"mounts"`
+}
+
+// hasHostFolders reports whether a loaded "mounts" field lists any host folder.
+func (l loadedDefinition) hasHostFolders() bool {
+	if len(l.Mounts) == 0 {
+		return false
+	}
+	var mounts []json.RawMessage
+	if err := json.Unmarshal(l.Mounts, &mounts); err != nil {
+		return true
+	}
+	return len(mounts) > 0
 }
 
 // Definitions is the environments.json store. Every change is written
@@ -227,6 +232,9 @@ func LoadDefinitions(path string) (*Definitions, error) {
 			// A name an upgrade newly reserved (such as "volumes"): stop with
 			// the remedy rather than a bare validation error.
 			return nil, fmt.Errorf("%s: environment %q: the name is now reserved by the supervisor; delete that environment with the previous version, or remove its entry from this file, before upgrading", path, def.Name)
+		}
+		if loaded.hasHostFolders() {
+			return nil, fmt.Errorf("%s: environment %q has host folders, which this version replaced with host volumes; create a host volume for each folder and grant it instead, after removing the folders with the previous version or deleting the \"mounts\" entries from this file", path, def.Name)
 		}
 		if err := def.validate(); err != nil {
 			return nil, fmt.Errorf("%s: environment %q: %w", path, def.Name, err)

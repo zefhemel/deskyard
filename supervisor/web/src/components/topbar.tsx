@@ -14,7 +14,7 @@ import { cx, Meter } from "./ui.tsx";
 const nav = [
   { href: "/", label: "Environments", match: (p: string) => p === "/" || p.startsWith("/environments/") },
   { href: "/images", label: "Images", match: (p: string) => p === "/images" },
-  { href: "/volumes", label: "Volumes", match: (p: string) => p === "/volumes" },
+  { href: "/volumes", label: "Storage", match: (p: string) => p === "/volumes" || p.startsWith("/volumes/") },
   { href: "/_vpn", label: "VPN connections", match: (p: string) => p === "/_vpn" },
   { href: "/accounts", label: "Accounts", match: (p: string) => p === "/accounts" },
 ];

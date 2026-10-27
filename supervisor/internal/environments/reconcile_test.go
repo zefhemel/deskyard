@@ -110,7 +110,7 @@ func TestReconcileRecreatesLostContainer(t *testing.T) {
 	s, e, _ := definitionService(t)
 	ctx := context.Background()
 	source := t.TempDir()
-	created, err := s.Create(ctx, "alice", Settings{Image: "img", MemoryBytes: 1 << 30, Mounts: []HostMount{{Source: source, Target: "/mnt/data"}}}, noProgress)
+	created, err := s.Create(ctx, "alice", Settings{Image: "img", MemoryBytes: 1 << 30, Volumes: []VolumeGrant{hostVolume(t, s, "data", source, "/mnt/data", false)}}, noProgress)
 	if err != nil {
 		t.Fatal(err)
 	}

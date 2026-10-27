@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/storage"
 )
 
 // volumeUserJSON is an environment whose definition grants a volume.
@@ -22,12 +24,13 @@ type volumeJSON struct {
 	Name         string           `json:"name"`
 	Created      time.Time        `json:"created"`
 	Kind         string           `json:"kind"`
+	HostPath     string           `json:"hostPath,omitempty"`
 	Folder       string           `json:"folder"`
 	Environments []volumeUserJSON `json:"environments"`
 }
 
 func (s *Server) volumeJSON(v environments.Volume) volumeJSON {
-	j := volumeJSON{Name: v.Name, Created: v.Created, Kind: v.Kind, Folder: s.Environments.Layout.VolumeOf(v.Name), Environments: []volumeUserJSON{}}
+	j := volumeJSON{Name: v.Name, Created: v.Created, Kind: v.Kind, HostPath: v.HostPath, Folder: s.Environments.VolumeFolder(v), Environments: []volumeUserJSON{}}
 	for _, u := range s.Environments.VolumeUsers(v.Name) {
 		j.Environments = append(j.Environments, volumeUserJSON{Name: u.Environment, ReadOnly: u.ReadOnly})
 	}
@@ -52,7 +55,8 @@ func (s *Server) handleCreateVolume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Name string `json:"name"`
+		Name     string `json:"name"`
+		HostPath string `json:"hostPath"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad request")
@@ -62,9 +66,15 @@ func (s *Server) handleCreateVolume(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if req.HostPath != "" {
+		if err := environments.ValidHostPath(req.HostPath); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	ctx, cancel := timeout(r, 2*time.Minute)
 	defer cancel()
-	v, adopted, err := s.Environments.CreateVolume(ctx, req.Name)
+	v, adopted, err := s.Environments.CreateVolume(ctx, req.Name, req.HostPath)
 	switch {
 	case errors.Is(err, environments.ErrExists):
 		writeError(w, http.StatusConflict, "a volume with that name already exists")
@@ -72,11 +82,15 @@ func (s *Server) handleCreateVolume(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, environments.ErrConflict):
 		writeError(w, http.StatusConflict, err.Error())
 		return
+	case err != nil && req.HostPath != "":
+		// The folder check failed: the path is the administrator's to fix.
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	case err != nil:
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.Log.Info("created volume", "volume", v.Name, "adopted", adopted, "by", a.Username)
+	s.Log.Info("created volume", "volume", v.Name, "kind", v.Kind, "adopted", adopted, "by", a.Username)
 	writeJSON(w, http.StatusCreated, map[string]any{"volume": s.volumeJSON(v), "adopted": adopted})
 }
 
@@ -113,8 +127,9 @@ func (s *Server) handleDeleteVolume(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, environments.ErrNotFound):
 		writeError(w, http.StatusNotFound, "no such volume")
 		return
-	case errors.Is(err, environments.ErrConflict):
-		// A container still mounts it while its grant's removal is applied.
+	case errors.Is(err, environments.ErrConflict), errors.Is(err, storage.ErrBusy):
+		// A container still mounts it while its grant's removal is applied,
+		// or a backup or restore uses it.
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	case err != nil:
@@ -122,8 +137,22 @@ func (s *Server) handleDeleteVolume(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if err := s.storage.ItemGone(storage.Item{Kind: storage.KindVolume, Name: name}); err != nil {
+		s.Log.Error("dropping deleted volume's backup policy", "volume", name, "err", err)
+	}
 	s.Log.Info("deleted volume", "volume", name, "files", deleteFiles, "by", a.Username)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// refuseHostFolders writes 400 for a request that still has host folders
+// ("mounts"), which host volumes replaced; it reports whether there were none.
+func refuseHostFolders(w http.ResponseWriter, raw json.RawMessage) bool {
+	var mounts []json.RawMessage
+	if len(raw) == 0 || json.Unmarshal(raw, &mounts) == nil && len(mounts) == 0 {
+		return true
+	}
+	writeError(w, http.StatusBadRequest, "host folders were replaced by host volumes: create a host volume on the Storage page and grant it instead")
+	return false
 }
 
 // checkVolumeGrants validates an environment's grants, writing 400 unless
@@ -162,7 +191,8 @@ func (s *Server) handleVolumeUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	bytes, complete := s.Environments.VolumeSize(name)
 	out := map[string]any{"bytes": bytes, "complete": complete}
-	if free, size, ok := environments.DiskSpace(s.Environments.Layout.VolumeOf(name)); ok {
+	v, _ := s.Environments.Vols.Get(name)
+	if free, size, ok := environments.DiskSpace(s.Environments.VolumeFolder(v)); ok {
 		out["diskFree"], out["diskSize"] = free, size
 	}
 	writeJSON(w, http.StatusOK, out)

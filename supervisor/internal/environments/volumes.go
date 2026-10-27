@@ -20,16 +20,22 @@ import (
 // volumesVersion is the format version of volumes.json.
 const volumesVersion = 1
 
-// VolumeLocal is a volume kept as a plain folder in volume/<name>/, the only
-// kind there is. An entry without a kind is local.
-const VolumeLocal = "local"
+// Volume kinds. A local volume is a plain folder in volume/<name>/; an
+// entry without a kind is local. A host volume is an existing folder,
+// HostPath, on the machine running the container engine, which the supervisor
+// never creates, changes or deletes.
+const (
+	VolumeLocal = "local"
+	VolumeHost  = "host"
+)
 
 // Volume is a named piece of shared storage, kept in volumes.json. Which
 // environments may use it is recorded only in their definitions.
 type Volume struct {
-	Name    string    `json:"name"`
-	Created time.Time `json:"created"`
-	Kind    string    `json:"kind"`
+	Name     string    `json:"name"`
+	Created  time.Time `json:"created"`
+	Kind     string    `json:"kind"`
+	HostPath string    `json:"hostPath,omitempty"`
 }
 
 func (v Volume) validate() error {
@@ -39,8 +45,23 @@ func (v Volume) validate() error {
 	if v.Created.IsZero() {
 		return errors.New("no creation time")
 	}
-	if v.Kind != VolumeLocal {
+	switch v.Kind {
+	case VolumeLocal:
+		if v.HostPath != "" {
+			return errors.New("a local volume has no host path")
+		}
+	case VolumeHost:
+		return ValidHostPath(v.HostPath)
+	default:
 		return fmt.Errorf("unknown kind %q", v.Kind)
+	}
+	return nil
+}
+
+// ValidHostPath checks a host volume's folder: a clean absolute path.
+func ValidHostPath(p string) error {
+	if len(p) > 4096 || !filepath.IsAbs(p) || strings.ContainsRune(p, 0) || filepath.Clean(p) != p {
+		return fmt.Errorf("a host volume needs a clean absolute path on the engine host, not %q", p)
 	}
 	return nil
 }

@@ -207,7 +207,7 @@ func TestHostPreflightCombinesFoldersAndSocket(t *testing.T) {
 			p.fakeEngine.port = p.port
 			e := &dockerAccessEngine{mountEngine: &mountEngine{fakeEngine: p.fakeEngine, specs: map[string]engine.ContainerSpec{}}, socketAvailable: true}
 			s.Eng = &vpnDockerAccessEngine{dockerAccessEngine: e, network: p}
-			set := Settings{Image: "img", DockerAccess: true, Mounts: []HostMount{{Source: t.TempDir(), Target: "/mnt/data"}}}
+			set := Settings{Image: "img", DockerAccess: true, Volumes: []VolumeGrant{hostVolume(t, s, "data", t.TempDir(), "/mnt/data", false)}}
 			if managed {
 				set.VPNConnectionID = conn.ID
 			}

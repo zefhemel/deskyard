@@ -19,8 +19,9 @@ import { AccessTab } from "./details/access-tab.tsx";
 import { ProcessesTab } from "./details/processes-tab.tsx";
 import { SettingsTab } from "./details/settings-tab.tsx";
 import { SharingTab } from "./details/sharing-tab.tsx";
+import { BackupsPanel } from "../components/backups-panel.tsx";
 
-type Tab = "overview" | "processes" | "sharing" | "settings" | "access";
+type Tab = "overview" | "processes" | "sharing" | "settings" | "access" | "backups";
 
 export function DetailsPage() {
   const { params } = useRoute();
@@ -75,6 +76,7 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
       ? [
           { id: "settings" as const, label: "Settings" },
           { id: "access" as const, label: "Access" },
+          { id: "backups" as const, label: "Backups" },
         ]
       : []),
   ];
@@ -156,6 +158,8 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
             <Facts environment={c} admin={me.admin} full={full} onTab={setTab} />
           </div>
         </div>
+      ) : tab === "backups" ? (
+        <BackupsPanel kind="environment" name={c.name} stoppers={c.state === "running" ? [c.name] : []} />
       ) : (
         <div class="overflow-hidden rounded-[10px] border border-line bg-surface">
           {tab === "processes" && <ProcessesTab environment={c} />}

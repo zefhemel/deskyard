@@ -60,7 +60,7 @@ func TestObserverCanSeeButNotUse(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings := env["settings"].(map[string]any)
-	if env["level"] != "observe" || env["folder"] != "" || len(settings["mounts"].([]any)) != 0 ||
+	if env["level"] != "observe" || env["folder"] != "" ||
 		len(settings["volumes"].([]any)) != 0 || settings["vpnConnectionId"] != nil || env["memoryReclaim"] != false {
 		t.Errorf("observer's environment: %s", body)
 	}

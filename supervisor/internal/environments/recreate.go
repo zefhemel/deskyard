@@ -136,10 +136,11 @@ func (s *Service) applyDirect(ctx context.Context, name string, next Definition,
 	if c.Conflict != "" {
 		return fmt.Errorf("%w: %s", ErrConflict, c.Conflict)
 	}
-	if len(next.Mounts) > 0 {
-		progress("Checking host folders", -1)
+	hosts := s.hostSources(next.Volumes)
+	if len(hosts) > 0 {
+		progress("Checking host volumes", -1)
 	}
-	if err := s.checkHostSources(ctx, next.Mounts, next.DockerAccess); err != nil {
+	if err := s.checkHostSources(ctx, hosts, next.DockerAccess); err != nil {
 		return err
 	}
 	// A container can't be replaced without its folders, so that is refused
@@ -162,7 +163,7 @@ func (s *Service) applyDirect(ctx context.Context, name string, next Definition,
 		prev := *d
 		d.Image = ImageRef{Ref: next.Image.Ref, ID: img.ID}
 		d.Limits, d.Network = next.Limits, next.Network
-		d.Mounts, d.Volumes = next.Mounts, next.Volumes
+		d.Volumes = next.Volumes
 		d.DockerAccess = next.DockerAccess
 		*d = d.clone()
 		if ContainerAffecting(prev, *d) {
@@ -204,7 +205,7 @@ func (s *Service) applied(name string, err error) error {
 func (s *Service) revertSettings(name string, prev Definition) error {
 	_, err := s.Defs.Update(name, func(d *Definition) error {
 		d.Image, d.Limits, d.Network = prev.Image, prev.Limits, prev.Network
-		d.Mounts, d.Volumes = prev.Mounts, prev.Volumes
+		d.Volumes = prev.Volumes
 		d.DockerAccess = prev.DockerAccess
 		d.Revision = prev.Revision
 		*d = d.clone()
@@ -220,7 +221,7 @@ func (s *Service) applyDefinition(ctx context.Context, c Environment, progress f
 	if err := s.checkFolders(c.Name); err != nil {
 		return err
 	}
-	if err := s.checkHostSources(ctx, c.Settings.Mounts, c.Settings.DockerAccess); err != nil {
+	if err := s.checkHostSources(ctx, s.hostSources(c.Settings.Volumes), c.Settings.DockerAccess); err != nil {
 		return s.applied(c.Name, err)
 	}
 	def, err := s.repin(ctx, c.Name)

@@ -18,7 +18,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -63,8 +62,7 @@ type Settings struct {
 	NanoCPUs        int64 // 0: no limit
 	VPNConnectionID string
 	LANExceptions   []vpn.Exception
-	Mounts          []HostMount
-	Volumes         []VolumeGrant // mounted at ShareRoot/<volume>
+	Volumes         []VolumeGrant // each mounted at GrantPath
 	DockerAccess    bool
 }
 
@@ -129,6 +127,10 @@ type Service struct {
 	// removal, and even when deleting its files then failed. Its error is
 	// the removal's.
 	Removed func(name string) error
+	// ItemBusy, when set, refuses to remove an environment or delete a
+	// volume while a backup or restore uses it: kind is "environment" or
+	// "volume". nil means it isn't busy.
+	ItemBusy func(kind, name string) error
 
 	mu         sync.Mutex
 	busy       map[string]string // name → transient state
@@ -453,11 +455,17 @@ func (s *Service) missingHome(name string) error {
 }
 
 // missingVolume is the error of the first of grants, name's, whose volume
-// isn't in volumes.json or whose folder is missing; nil when there is none.
+// isn't in volumes.json or whose local folder is missing; nil when there is
+// none. A host volume's folder is on the engine host, which the supervisor
+// may not see: checkHostSources and the strict mount check that.
 func (s *Service) missingVolume(name string, grants []VolumeGrant) error {
 	for _, g := range grants {
-		if _, ok := s.Vols.Get(g.Name); !ok {
+		v, ok := s.Vols.Get(g.Name)
+		if !ok {
 			return fmt.Errorf("%s uses volume %s, which doesn't exist", name, g.Name)
+		}
+		if v.Kind == VolumeHost {
+			continue
 		}
 		folder := s.Layout.VolumeOf(g.Name)
 		if st, err := os.Stat(folder); err != nil || !st.IsDir() {
@@ -573,7 +581,7 @@ func withSettings(def Definition, set Settings, image string) Definition {
 	if set.VPNConnectionID != "" {
 		next.Network = Network{Kind: NetworkVPN, Connection: set.VPNConnectionID, LANExceptions: set.LANExceptions}
 	}
-	next.Mounts, next.Volumes = set.Mounts, set.Volumes
+	next.Volumes = set.Volumes
 	next.DockerAccess = set.DockerAccess
 	next = next.clone()
 	if ContainerAffecting(def, next) {
@@ -635,16 +643,17 @@ func (s *Service) Create(ctx context.Context, name string, set Settings, progres
 		sort.Strings(names)
 		return Environment{}, fmt.Errorf("%w: %s claims environment %s; remove it first", ErrConflict, strings.Join(names, ", "), name)
 	}
-	if len(set.Mounts) > 0 {
-		progress("Checking host folders", -1)
-	}
-	if err := s.checkHostSources(ctx, set.Mounts, set.DockerAccess); err != nil {
-		return Environment{}, err
-	}
 	if err := ValidateVolumeGrants(set.Volumes); err != nil {
 		return Environment{}, err
 	}
 	if err := s.missingVolume(name, set.Volumes); err != nil {
+		return Environment{}, err
+	}
+	hosts := s.hostSources(set.Volumes)
+	if len(hosts) > 0 {
+		progress("Checking host volumes", -1)
+	}
+	if err := s.checkHostSources(ctx, hosts, set.DockerAccess); err != nil {
 		return Environment{}, err
 	}
 	img, err := s.EnsureImage(ctx, set.Image, progress)
@@ -812,9 +821,6 @@ func (s *Service) createContainer(ctx context.Context, name string, revision uin
 	if set.VPNConnectionID != "" && runtimeID == "" {
 		return errors.New("VPN selection requires a prepared network namespace")
 	}
-	if err := ValidateHostMounts(set.Mounts); err != nil {
-		return err
-	}
 	if err := ValidateVolumeGrants(set.Volumes); err != nil {
 		return err
 	}
@@ -831,18 +837,19 @@ func (s *Service) createContainer(ctx context.Context, name string, revision uin
 		Mounts:  []engine.Mount{{Source: s.Layout.HomeOf(name), Target: "/workspace", MustExist: true}},
 		Network: containerName(name), Aliases: []string{containerName(name)},
 		MemoryBytes: set.MemoryBytes, NanoCPUs: set.NanoCPUs, ShmBytes: shmBytes,
-		Flatpak: true, Restart: "unless-stopped", NoNewPrivileges: len(set.Mounts) > 0 || len(set.Volumes) > 0,
+		Flatpak: true, Restart: "unless-stopped", NoNewPrivileges: len(set.Volumes) > 0,
 	}
 	if set.DockerAccess {
 		spec.Mounts = append(spec.Mounts, engine.Mount{Source: dockerSocket, Target: dockerSocket, MustExist: true})
 		spec.Env["DESKYARD_DOCKER_ACCESS"] = "1"
 	}
-	for _, m := range set.Mounts {
-		spec.Mounts = append(spec.Mounts, engine.Mount{Source: m.Source, Target: m.Target, ReadOnly: m.ReadOnly, MustExist: true})
-	}
 	// Strict too: a missing volume folder is an error, never made empty.
 	for _, g := range set.Volumes {
-		spec.Mounts = append(spec.Mounts, engine.Mount{Source: s.Layout.VolumeOf(g.Name), Target: path.Join(ShareRoot, g.Name), ReadOnly: g.ReadOnly, MustExist: true})
+		v, ok := s.Vols.Get(g.Name)
+		if !ok {
+			return fmt.Errorf("volume %s doesn't exist", g.Name)
+		}
+		spec.Mounts = append(spec.Mounts, engine.Mount{Source: s.VolumeFolder(v), Target: GrantPath(g), ReadOnly: g.ReadOnly, MustExist: true})
 	}
 	if runtimeID != "" {
 		spec.NetworkContainer = runtimeID
@@ -930,6 +937,9 @@ func (s *Service) power(ctx context.Context, name, action string) error {
 		if err := s.checkFolders(name); err != nil {
 			return err
 		}
+		if err := s.checkHostVolumes(ctx, name); err != nil {
+			return err
+		}
 		if err := s.setPower(name, PowerRunning); err != nil {
 			return err
 		}
@@ -948,6 +958,9 @@ func (s *Service) power(ctx context.Context, name, action string) error {
 		return fmt.Errorf("%w: %s", ErrConflict, c.Conflict)
 	}
 	if err := s.checkFolders(name); err != nil {
+		return err
+	}
+	if err := s.checkHostVolumes(ctx, name); err != nil {
 		return err
 	}
 	if err := s.setPower(name, PowerRunning); err != nil {
@@ -980,6 +993,17 @@ func (s *Service) power(ctx context.Context, name, action string) error {
 	// what this start retries; an error of a failed change stays.
 	s.clearError(name, errNotReady)
 	return nil
+}
+
+// checkHostVolumes checks the folders of name's host volumes on the engine
+// host before a start, so a missing one is named rather than left to the
+// engine's bind error. Without host volumes it does nothing.
+func (s *Service) checkHostVolumes(ctx context.Context, name string) error {
+	def, ok := s.Defs.Get(name)
+	if !ok {
+		return nil
+	}
+	return s.checkHostSources(ctx, s.hostSources(def.Volumes), false)
 }
 
 // build creates the container of an environment that has none, from its
@@ -1052,6 +1076,11 @@ func (s *Service) Remove(ctx context.Context, name string, deleteFiles bool) err
 	if err := s.blocked(name); err != nil {
 		return err
 	}
+	if s.ItemBusy != nil {
+		if err := s.ItemBusy("environment", name); err != nil {
+			return err
+		}
+	}
 	if s.Networking != nil && s.Networking.selected(name) {
 		return s.Networking.remove(ctx, name, deleteFiles)
 	}
@@ -1111,9 +1140,19 @@ func (s *Service) FolderSize(name string) (bytes int64, complete bool) {
 	return treeSize(s.Layout.HomeOf(name))
 }
 
-// VolumeSize is FolderSize for the folder of the volume name.
+// VolumeSize is FolderSize for the folder of the volume name: for a host
+// volume, when the supervisor can read that path itself (it runs on the
+// engine host); otherwise 0 and incomplete.
 func (s *Service) VolumeSize(name string) (bytes int64, complete bool) {
-	return treeSize(s.Layout.VolumeOf(name))
+	v, ok := s.Vols.Get(name)
+	if !ok {
+		return 0, false
+	}
+	folder := s.VolumeFolder(v)
+	if st, err := os.Stat(folder); v.Kind == VolumeHost && (err != nil || !st.IsDir()) {
+		return 0, false
+	}
+	return treeSize(folder)
 }
 
 func treeSize(dir string) (bytes int64, complete bool) {

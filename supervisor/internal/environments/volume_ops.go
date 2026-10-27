@@ -33,17 +33,34 @@ func (e *VolumeInUseError) Error() string {
 
 func (e *VolumeInUseError) Unwrap() error { return ErrConflict }
 
-// CreateVolume adds the volume name. A folder volume/<name>/ that already
-// exists, such as one kept when a volume of that name was deleted, is adopted
-// untouched; otherwise a new one is made for the desktop user.
-func (s *Service) CreateVolume(ctx context.Context, name string) (v Volume, adopted bool, err error) {
+// CreateVolume adds the volume name. With a hostPath it is a host volume of
+// that existing engine-host folder, which is checked through the engine and
+// never created. Otherwise a folder volume/<name>/ that already exists, such
+// as one kept when a volume of that name was deleted, is adopted untouched,
+// or a new one is made for the desktop user.
+func (s *Service) CreateVolume(ctx context.Context, name, hostPath string) (v Volume, adopted bool, err error) {
 	if err := ValidName(name); err != nil {
 		return Volume{}, false, fmt.Errorf("invalid volume name: %w", err)
+	}
+	if hostPath != "" {
+		if err := ValidHostPath(hostPath); err != nil {
+			return Volume{}, false, err
+		}
 	}
 	s.volMu.Lock()
 	defer s.volMu.Unlock()
 	if _, ok := s.Vols.Get(name); ok {
 		return Volume{}, false, fmt.Errorf("volume %q: %w", name, ErrExists)
+	}
+	if hostPath != "" {
+		v = Volume{Name: name, Created: time.Now().UTC(), Kind: VolumeHost, HostPath: hostPath}
+		if err := s.checkHostSources(ctx, []hostSource{{volume: name, path: hostPath}}, false); err != nil {
+			return Volume{}, false, err
+		}
+		if err := s.Vols.Add(v); err != nil {
+			return Volume{}, false, err
+		}
+		return v, false, nil
 	}
 	folder := s.Layout.VolumeOf(name)
 	st, err := os.Stat(folder)
@@ -75,10 +92,24 @@ func (s *Service) CreateVolume(ctx context.Context, name string) (v Volume, adop
 // supervisor still mounts it: a definition is saved before its container is
 // replaced, and a failed replacement keeps the old container. Its folder is
 // kept unless deleteFiles; an error deleting the files leaves the volume
-// deleted.
+// deleted. A host volume's folder is never deleted: deleteFiles is refused.
+// While ItemBusy reports the volume busy (a backup or restore), it is refused
+// with that error.
 func (s *Service) DeleteVolume(ctx context.Context, name string, deleteFiles bool) error {
 	s.volMu.Lock()
 	defer s.volMu.Unlock()
+	v, ok := s.Vols.Get(name)
+	if !ok {
+		return fmt.Errorf("volume %q: %w", name, ErrNotFound)
+	}
+	if deleteFiles && v.Kind == VolumeHost {
+		return fmt.Errorf("%w: %s is a host volume; Deskyard never deletes its folder %s", ErrConflict, name, v.HostPath)
+	}
+	if s.ItemBusy != nil {
+		if err := s.ItemBusy("volume", name); err != nil {
+			return err
+		}
+	}
 	// Under Defs' lock, so no grant of it can be saved in between.
 	err := s.Defs.Hold(func(defs []Definition) error {
 		if users := volumeUsers(defs, name); len(users) > 0 {
@@ -90,7 +121,7 @@ func (s *Service) DeleteVolume(ctx context.Context, name string, deleteFiles boo
 		}
 		// A container with the mount is made only from a definition granting
 		// it, so none can appear while Defs' lock is held.
-		mounters, err := s.volumeMounters(ctx, name)
+		mounters, err := s.volumeMounters(ctx, v)
 		if err != nil {
 			return err
 		}
@@ -107,13 +138,13 @@ func (s *Service) DeleteVolume(ctx context.Context, name string, deleteFiles boo
 }
 
 // volumeMounters returns the environments, sorted by name, with a container
-// of this supervisor that mounts the volume name, parked ones included.
-func (s *Service) volumeMounters(ctx context.Context, name string) ([]string, error) {
+// of this supervisor that mounts the volume v, parked ones included.
+func (s *Service) volumeMounters(ctx context.Context, v Volume) ([]string, error) {
 	cs, err := s.Eng.List(ctx, s.ownFilter())
 	if err != nil {
 		return nil, err
 	}
-	folders := []string{filepath.Clean(s.Layout.VolumeOf(name))}
+	folders := []string{filepath.Clean(s.VolumeFolder(v))}
 	if real, err := filepath.EvalSymlinks(folders[0]); err == nil && real != folders[0] {
 		folders = append(folders, real)
 	}
@@ -127,6 +158,15 @@ func (s *Service) volumeMounters(ctx context.Context, name string) ([]string, er
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// VolumeFolder is the folder holding v's files: its host path, or
+// volume/<name>/ in the data folder.
+func (s *Service) VolumeFolder(v Volume) string {
+	if v.Kind == VolumeHost {
+		return v.HostPath
+	}
+	return s.Layout.VolumeOf(v.Name)
 }
 
 // VolumeUsers returns the environments whose definitions grant the volume

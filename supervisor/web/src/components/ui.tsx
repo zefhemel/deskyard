@@ -129,19 +129,21 @@ export function Field({
 export function Check({
   id,
   checked,
+  disabled,
   onChange,
   title,
   children,
 }: {
   id: string;
   checked: boolean;
+  disabled?: boolean;
   onChange: (v: boolean) => void;
   title: ComponentChildren;
   children?: ComponentChildren;
 }) {
   return (
     <div class="mb-[18px] flex items-start gap-2.5">
-      <input type="checkbox" id={id} class="mt-[3px]" checked={checked} onChange={(e) => onChange(e.currentTarget.checked)} />
+      <input type="checkbox" id={id} class="mt-[3px]" checked={checked} disabled={disabled} onChange={(e) => onChange(e.currentTarget.checked)} />
       <label for={id}>
         <b class="font-semibold">{title}</b>
         {children && <p class="mt-0.5 text-[13px] text-muted">{children}</p>}
@@ -201,13 +203,14 @@ export function Pick({
   );
 }
 
-export type TagKind = "plain" | "admin" | "update" | "ok";
+export type TagKind = "plain" | "admin" | "update" | "ok" | "danger";
 
 const tagKinds: Record<TagKind, string> = {
   plain: "bg-hairline text-ink",
   admin: "bg-[#dfe8fb] text-accent",
   update: "bg-[#fbf0dc] text-[#8a5a12]",
   ok: "bg-[#dcf1e6] text-run",
+  danger: "bg-[#fbe3e1] text-danger",
 };
 
 export function Tag({ kind = "plain", children }: { kind?: TagKind; children: ComponentChildren }) {

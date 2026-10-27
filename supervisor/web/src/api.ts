@@ -45,22 +45,20 @@ export interface Stats {
   memLimit: number;
 }
 
-export interface HostMount {
-  source: string;
-  target: string;
-  readOnly: boolean;
-}
 
-/** A volume granted to an environment, mounted at /share/<name>. */
+/** A volume granted to an environment, mounted at path (by default /share/<name>). */
 export interface VolumeGrant {
   name: string;
+  path: string;
   readOnly: boolean;
 }
 /** A named volume; environments are those whose definitions grant it. */
 export interface Volume {
   name: string;
   created: string;
-  kind: "local";
+  kind: "local" | "host";
+  /** A host volume's folder on the engine host. */
+  hostPath?: string;
   folder: string;
   environments: VolumeGrant[];
 }
@@ -92,12 +90,11 @@ export interface VPNStatus {
 export interface VPNRollout { connection: VPNConnection; environments: (VPNReference & {error?: string})[] }
 export interface EnvironmentVPNSettings { vpnConnectionId: string | null; lanExceptions: LANException[] }
 export interface SettingsPatch extends Partial<EnvironmentVPNSettings> {
-  image?: string; memoryBytes?: number; nanoCpus?: number; dockerAccess?: boolean; mounts?: HostMount[]; volumes?: VolumeGrant[];
+  image?: string; memoryBytes?: number; nanoCpus?: number; dockerAccess?: boolean; volumes?: VolumeGrant[];
 }
 
 export interface Settings extends EnvironmentVPNSettings {
   dockerAccess: boolean;
-  mounts: HostMount[];
   volumes: VolumeGrant[];
   memoryBytes: number;
   nanoCpus: number;
@@ -206,7 +203,7 @@ export interface Job {
   progress: number | null;
   error?: string;
   environment?: string;
-  result?: VPNStatus | VPNRollout;
+  result?: VPNStatus | VPNRollout | RestoreResult;
 }
 
 export interface Account {
@@ -406,6 +403,8 @@ export class ApiError extends Error {
     message: string,
     /** The environments a VPN or volume conflict names. */
     readonly environments: VPNReference[] = [],
+    /** What a storage conflict is: needsKey, wrongKey, inUse or busy. */
+    readonly code = "",
   ) {
     super(message);
   }
@@ -439,16 +438,18 @@ async function request<T>(method: string, path: string, body?: unknown, signal?:
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
     let environments: VPNReference[] = [];
+    let code = "";
     try {
       const data: unknown = await res.json();
       if (data && typeof data === "object") {
         if ("error" in data && typeof data.error === "string") message = data.error;
         if ("environments" in data && Array.isArray(data.environments)) environments = data.environments as VPNReference[];
+        if ("code" in data && typeof data.code === "string") code = data.code;
       }
     } catch {
       // not JSON
     }
-    throw new ApiError(res.status, message, environments);
+    throw new ApiError(res.status, message, environments, code);
   }
   if (res.status === 204) return undefined as T;
   const text = await res.text();
@@ -466,6 +467,134 @@ export interface MemoryReclaim {
   swapAfterBytes: number;
   partial: boolean;
 }
+
+export type RemoteType = "s3" | "b2" | "sftp" | "webdav";
+
+/** A storage remote: an rclone connection, without its secrets. */
+export interface Remote {
+  name: string;
+  type: RemoteType;
+  created: string;
+  root?: string;
+  provider?: string;
+  endpoint?: string;
+  region?: string;
+  accessKeyId?: string;
+  keyId?: string;
+  host?: string;
+  port?: number;
+  user?: string;
+  hostKey?: string;
+  url?: string;
+  vendor?: string;
+  /** Which secrets are stored. */
+  secretsSet: string[];
+  /** The backup repositories on it. */
+  repositories: string[];
+}
+export type RemoteInput = Omit<Remote, "created" | "secretsSet" | "repositories">;
+/** Write-only: left out to keep the stored value. */
+export interface RemoteSecrets {
+  secretAccessKey?: string;
+  applicationKey?: string;
+  password?: string;
+  privateKey?: string;
+}
+export interface Repository {
+  name: string;
+  remote: string;
+  folder: string;
+  created: string;
+}
+export interface Schedule {
+  every: "hourly" | "daily" | "weekly";
+  at: string;
+  weekday: number;
+}
+export interface Retention {
+  last: number;
+  hourly: number;
+  daily: number;
+  weekly: number;
+  monthly: number;
+  yearly: number;
+}
+export interface PolicyInput {
+  repository: string;
+  enabled: boolean;
+  schedule: Schedule;
+  retention: Retention;
+}
+export interface Policy extends PolicyInput {
+  item: string;
+  updated: string;
+}
+export interface RunState {
+  lastAttempt: string;
+  lastSuccess: string;
+  snapshot?: string;
+  error?: string;
+  /** Files the last snapshot left out because they couldn't be read. */
+  warnings?: string[];
+}
+export type ItemKind = "environment" | "volume";
+/** An environment's or volume's backups: its policy (null without one), last run and what it's doing. */
+export interface BackupItem {
+  item: string;
+  policy: Policy | null;
+  state: RunState;
+  activity: string;
+  nextRun: string | null;
+}
+export interface Snapshot {
+  id: string;
+  short_id: string;
+  time: string;
+  hostname: string;
+  tags: string[];
+  summary?: { data_added: number; total_bytes_processed: number };
+  repository: string;
+  reason: string;
+}
+export interface SnapshotEntry {
+  name: string;
+  path: string;
+  type: string;
+  size: number;
+  mtime: string;
+}
+export interface CatalogItem {
+  repository: string;
+  host: string;
+  item: string;
+  snapshots: number;
+  latest: string;
+  latestId: string;
+  local: boolean;
+}
+export interface BackupsOverview {
+  repositories: Repository[];
+  items: BackupItem[];
+  host: string;
+  catalog?: CatalogItem[];
+  catalogErrors?: Record<string, string>;
+}
+export interface RestoreRequest {
+  snapshot: string;
+  repository?: string;
+  mode: "here" | "new" | "folder";
+  newName?: string;
+  newImage?: string;
+  backupFirst?: boolean;
+  paths?: string[];
+}
+export interface RestoreResult {
+  created?: string;
+  dropped?: string[];
+  folder?: string;
+}
+
+const b = (kind: ItemKind, name: string) => `/api/backups/${kind}/${enc(name)}`;
 
 export const api = {
   login: (username: string, password: string) => request<Me>("POST", "/api/login", { username, password }),
@@ -493,7 +622,7 @@ export const api = {
   createTerminal: (name: string) => request<{ name: string }>("POST", `${c(name)}/terminal/sessions`),
   /** Ends a session for everyone attached to it. */
   endTerminal: (name: string, session: string) => request<void>("DELETE", `${c(name)}/terminal/sessions/${enc(session)}`),
-  createEnvironment: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: AccessGrant[]; dockerAccess: boolean; mounts?: HostMount[]; volumes?: VolumeGrant[] } & EnvironmentVPNSettings) =>
+  createEnvironment: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: AccessGrant[]; dockerAccess: boolean; volumes?: VolumeGrant[] } & EnvironmentVPNSettings) =>
     request<JobRef>("POST", "/api/environments", body),
   power: (name: string, action: "start" | "stop" | "restart") => request<void>("POST", `${c(name)}/${action}`),
   setMemoryPolicy: (name: string, memoryReclaim: boolean) => request<void>("PUT", `${c(name)}/memory-policy`, { memoryReclaim }),
@@ -567,9 +696,31 @@ export const api = {
   upgradeImage: (ref: string) => request<JobRef>("POST", "/api/images/upgrade", { ref }),
 
   volumes: () => request<{ volumes: Volume[] }>("GET", "/api/volumes"),
-  createVolume: (name: string) => request<{ volume: Volume; adopted: boolean }>("POST", "/api/volumes", { name }),
+  createVolume: (name: string, hostPath?: string) => request<{ volume: Volume; adopted: boolean }>("POST", "/api/volumes", hostPath ? { name, hostPath } : { name }),
   volumeUsage: (name: string) => request<VolumeUsage>("GET", `/api/volumes/${enc(name)}/usage`),
   deleteVolume: (name: string, deleteFiles: boolean) => request<void>("DELETE", `/api/volumes/${enc(name)}?deleteFiles=${deleteFiles}`),
+
+  remotes: () => request<{ remotes: Remote[]; s3Providers: string[]; webdavVendors: string[] }>("GET", "/api/remotes"),
+  createRemote: (remote: RemoteInput, secrets: RemoteSecrets) => request<Remote>("POST", "/api/remotes", { remote, secrets }),
+  updateRemote: (name: string, remote: RemoteInput, secrets: RemoteSecrets) => request<Remote>("PUT", `/api/remotes/${enc(name)}`, { remote, secrets }),
+  deleteRemote: (name: string) => request<void>("DELETE", `/api/remotes/${enc(name)}`),
+  testRemote: (remote: RemoteInput, secrets: RemoteSecrets, saved?: string) =>
+    request<void>("POST", saved ? `/api/remotes/${enc(saved)}/test` : "/api/remotes/test", { remote, secrets }),
+  backups: (catalog = false) => request<BackupsOverview>("GET", `/api/backups${catalog ? "?catalog=1" : ""}`),
+  createRepository: (body: { name: string; remote: string; folder: string; recoveryKey?: string }) =>
+    request<{ repository: Repository; recoveryKey?: string }>("POST", "/api/backups/repositories", body),
+  removeRepository: (name: string) => request<void>("DELETE", `/api/backups/repositories/${enc(name)}`),
+  recoveryKey: (name: string) => request<{ recoveryKey: string }>("GET", `/api/backups/repositories/${enc(name)}/recovery-key`),
+  backup: (kind: ItemKind, name: string) => request<BackupItem>("GET", b(kind, name)),
+  putPolicy: (kind: ItemKind, name: string, policy: PolicyInput) => request<BackupItem>("PUT", b(kind, name), policy),
+  deletePolicy: (kind: ItemKind, name: string) => request<void>("DELETE", b(kind, name)),
+  runBackup: (kind: ItemKind, name: string) => request<JobRef>("POST", `${b(kind, name)}/run`),
+  snapshots: (kind: ItemKind, name: string) => request<{ snapshots: Snapshot[] }>("GET", `${b(kind, name)}/snapshots`),
+  snapshotFiles: (kind: ItemKind, name: string, repository: string, id: string, path: string) =>
+    request<{ entries: SnapshotEntry[] }>("GET", `${b(kind, name)}/snapshots/${enc(id)}/files?repository=${enc(repository)}&path=${enc(path)}`),
+  snapshotDownloadURL: (kind: ItemKind, name: string, repository: string, id: string, path: string, dir: boolean) =>
+    `${b(kind, name)}/snapshots/${enc(id)}/download?repository=${enc(repository)}&path=${enc(path)}${dir ? "&dir=1" : ""}`,
+  restore: (kind: ItemKind, name: string, body: RestoreRequest) => request<JobRef>("POST", `${b(kind, name)}/restore`, body),
 
   cancelJob: (id: string) => request<void>("POST", `/api/jobs/${enc(id)}/cancel`),
 };

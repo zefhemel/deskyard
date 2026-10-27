@@ -11,7 +11,8 @@ import { EnvironmentsPage } from "./pages/environments.tsx";
 import { EnvironmentPage } from "./desktop/desktop.tsx";
 import { VPNPage } from "./pages/vpn.tsx";
 import { ImagesPage } from "./pages/images.tsx";
-import { VolumesPage } from "./pages/volumes.tsx";
+import { StoragePage } from "./pages/volumes.tsx";
+import { VolumeDetailsPage } from "./pages/volume-details.tsx";
 import { LinkPage } from "./pages/link.tsx";
 import { LoginPage } from "./pages/login.tsx";
 import { NotFound } from "./pages/not-found.tsx";
@@ -68,7 +69,8 @@ function SignedIn() {
           <Route path="/account" component={DevicesPage} />
           <Route path="/_vpn" component={me.admin ? VPNPage : NotFound} />
           <Route path="/images" component={me.admin ? ImagesPage : NotFound} />
-          <Route path="/volumes" component={me.admin ? VolumesPage : NotFound} />
+          <Route path="/volumes" component={me.admin ? StoragePage : NotFound} />
+          <Route path="/volumes/:name" component={me.admin ? VolumeDetailsPage : NotFound} />
           <Route path="/accounts" component={me.admin ? AccountsPage : NotFound} />
           <Route default component={NotFound} />
         </Router>

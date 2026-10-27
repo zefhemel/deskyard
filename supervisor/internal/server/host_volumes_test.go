@@ -61,7 +61,7 @@ func (e *hostSettingsEngine) Exec(context.Context, string, engine.ExecSpec) (*en
 	return &engine.Process{Stdout: bytes.NewReader(nil), Stderr: bytes.NewReader(nil), Wait: func() (int, error) { return 0, nil }, Close: func() {}}, nil
 }
 
-func TestHostMountSettingsAPI(t *testing.T) {
+func TestHostVolumeSettingsAPI(t *testing.T) {
 	e := &hostSettingsEngine{current: alice}
 	e.current.Labels = maps.Clone(alice.Labels)
 	e.current.Image = "img"
@@ -85,17 +85,30 @@ func TestHostMountSettingsAPI(t *testing.T) {
 		_, _ = buf.ReadFrom(resp.Body)
 		return resp.StatusCode, buf.Bytes()
 	}
-	invalid := `{"mounts":[{"source":"/host/data","target":"/workspace","readOnly":true}]}`
-	if code, _ := send(admin, "PATCH", "/api/environments/alice", invalid); code != 400 {
-		t.Fatalf("unsafe target: %d", code)
+	// Host folders were replaced by host volumes: a request with any is refused.
+	for _, req := range []struct{ method, path, body string }{
+		{"PATCH", "/api/environments/alice", `{"mounts":[{"source":"/host/data","target":"/mnt/data","readOnly":true}]}`},
+		{"POST", "/api/environments", `{"name":"new-desktop","mounts":[{"source":"/host/data","target":"/mnt/data"}]}`},
+	} {
+		if code, b := send(admin, req.method, req.path, req.body); code != 400 || !strings.Contains(string(b), "host volume") {
+			t.Fatalf("%s %s with host folders: %d %s", req.method, req.path, code, b)
+		}
 	}
-	if code, _ := send(admin, "POST", "/api/environments", `{"name":"new-desktop","mounts":[{"source":"relative","target":"/mnt/data"}]}`); code != 400 {
-		t.Fatalf("invalid create mounts: %d", code)
+	source := t.TempDir()
+	if code, b := send(admin, "POST", "/api/volumes", `{"name":"photos","hostPath":"relative"}`); code != 400 {
+		t.Fatalf("relative host path: %d %s", code, b)
 	}
-	if code, _ := send(anna, "PATCH", "/api/environments/alice", `{"mounts":[]}`); code != 403 {
+	code, b := send(admin, "POST", "/api/volumes", `{"name":"photos","hostPath":"`+source+`"}`)
+	if code != 201 || !strings.Contains(string(b), `"kind":"host"`) || !strings.Contains(string(b), `"hostPath":"`+source+`"`) || !strings.Contains(string(b), `"folder":"`+source+`"`) {
+		t.Fatalf("create host volume: %d %s", code, b)
+	}
+	if code, b := send(admin, "PATCH", "/api/environments/alice", `{"volumes":[{"name":"photos","path":"/workspace/photos"}]}`); code != 400 {
+		t.Fatalf("unsafe grant path: %d %s", code, b)
+	}
+	if code, _ := send(anna, "PATCH", "/api/environments/alice", `{"volumes":[]}`); code != 403 {
 		t.Fatalf("non-admin: %d", code)
 	}
-	mounts := []environments.HostMount{{Source: t.TempDir(), Target: "/mnt/photos", ReadOnly: true}}
+	grants := []environments.VolumeGrant{{Name: "photos", Path: "/mnt/photos", ReadOnly: true}}
 	patch := func(body any) {
 		t.Helper()
 		raw, _ := json.Marshal(body)
@@ -117,30 +130,27 @@ func TestHostMountSettingsAPI(t *testing.T) {
 			t.Fatalf("job: %+v", st)
 		}
 	}
-	patch(map[string]any{"mounts": mounts})
-	code, b := send(admin, "GET", "/api/environments/alice", "")
+	patch(map[string]any{"volumes": grants})
+	code, b = send(admin, "GET", "/api/environments/alice", "")
 	if code != 200 {
 		t.Fatal(code)
 	}
 	var got struct {
-		Settings struct {
-			Mounts []environments.HostMount `json:"mounts"`
-		} `json:"settings"`
+		Settings map[string]json.RawMessage `json:"settings"`
 	}
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(got.Settings.Mounts, mounts) {
+	var gotGrants []environments.VolumeGrant
+	if err := json.Unmarshal(got.Settings["volumes"], &gotGrants); err != nil || !reflect.DeepEqual(gotGrants, grants) {
 		t.Fatalf("not exposed by API: %s", b)
+	}
+	if _, ok := got.Settings["mounts"]; ok {
+		t.Fatalf("settings still have mounts: %s", b)
 	}
 	patch(map[string]any{"nanoCpus": int64(1e9)})
 	c, _ := s.Environments.Get(context.Background(), "alice")
-	if !reflect.DeepEqual(c.Settings.Mounts, mounts) {
-		t.Fatal("omitting mounts lost them")
-	}
-	patch(map[string]any{"mounts": []environments.HostMount{}})
-	c, _ = s.Environments.Get(context.Background(), "alice")
-	if len(c.Settings.Mounts) != 0 {
-		t.Fatal("empty list did not detach")
+	if !reflect.DeepEqual(c.Settings.Volumes, grants) {
+		t.Fatal("omitting volumes lost them")
 	}
 }

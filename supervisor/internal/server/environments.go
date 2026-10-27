@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"maps"
 	"net/http"
@@ -14,18 +15,18 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/storage"
 	"github.com/zefhemel/deskyard/supervisor/internal/terminal"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 )
 
 type settingsJSON struct {
-	VPNConnectionID *string                  `json:"vpnConnectionId"`
-	LANExceptions   []vpn.Exception          `json:"lanExceptions"`
-	MemoryBytes     int64                    `json:"memoryBytes"`
-	NanoCPUs        int64                    `json:"nanoCpus"`
-	Mounts          []environments.HostMount `json:"mounts"`
-	DockerAccess    bool                     `json:"dockerAccess"`
-	// Volumes is never null, like LANExceptions and Mounts.
+	VPNConnectionID *string         `json:"vpnConnectionId"`
+	LANExceptions   []vpn.Exception `json:"lanExceptions"`
+	MemoryBytes     int64           `json:"memoryBytes"`
+	NanoCPUs        int64           `json:"nanoCpus"`
+	DockerAccess    bool            `json:"dockerAccess"`
+	// Volumes is never null, like LANExceptions.
 	Volumes []environments.VolumeGrant `json:"volumes"`
 }
 
@@ -75,7 +76,7 @@ func (s *Server) environmentJSON(ctx context.Context, c environments.Environment
 		Revision: c.Revision, AppliedRevision: c.AppliedRevision, Power: c.Power, Error: c.Error, Conflict: c.Conflict,
 		ImageTitle: c.ImageLabels["org.opencontainers.image.title"], ImageVersion: c.ImageLabels["org.opencontainers.image.version"],
 		VPN:      c.VPN,
-		Settings: settingsJSON{MemoryBytes: c.Settings.MemoryBytes, NanoCPUs: c.Settings.NanoCPUs, LANExceptions: c.Settings.LANExceptions, Mounts: c.Settings.Mounts, DockerAccess: c.Settings.DockerAccess, Volumes: c.Settings.Volumes},
+		Settings: settingsJSON{MemoryBytes: c.Settings.MemoryBytes, NanoCPUs: c.Settings.NanoCPUs, LANExceptions: c.Settings.LANExceptions, DockerAccess: c.Settings.DockerAccess, Volumes: c.Settings.Volumes},
 		Level:    a.Level(c.Name),
 		Access:   []accessGrant{}, Viewers: s.viewers.names(c.Name), Observers: s.viewers.observers(c.Name),
 		Mics: s.viewers.mics(c.Name), Forwards: s.forwards.list(c.Name), Agents: s.activity.Present(c.Name),
@@ -86,9 +87,6 @@ func (s *Server) environmentJSON(ctx context.Context, c environments.Environment
 	}
 	if j.Settings.LANExceptions == nil {
 		j.Settings.LANExceptions = []vpn.Exception{}
-	}
-	if j.Settings.Mounts == nil {
-		j.Settings.Mounts = []environments.HostMount{}
 	}
 	if j.Settings.Volumes == nil {
 		j.Settings.Volumes = []environments.VolumeGrant{}
@@ -124,7 +122,7 @@ func (s *Server) environmentJSON(ctx context.Context, c environments.Environment
 // configuration and what full users do in it.
 func (j *environmentJSON) observed() {
 	j.Folder, j.MemoryReclaim = "", false
-	j.Settings = settingsJSON{LANExceptions: []vpn.Exception{}, Mounts: []environments.HostMount{}, Volumes: []environments.VolumeGrant{}}
+	j.Settings = settingsJSON{LANExceptions: []vpn.Exception{}, Volumes: []environments.VolumeGrant{}}
 	j.VPN = environments.VPNStatus{Status: vpn.Status{State: "disabled"}}
 	j.Access, j.Terminals, j.Forwards, j.Agents = []accessGrant{}, []terminal.Session{}, []forwardJSON{}, []activity.Presence{}
 }
@@ -240,7 +238,7 @@ func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request)
 		MemoryBytes     int64                      `json:"memoryBytes"`
 		NanoCPUs        int64                      `json:"nanoCpus"`
 		Access          []accessGrant              `json:"access"`
-		Mounts          []environments.HostMount   `json:"mounts"`
+		Mounts          json.RawMessage            `json:"mounts"`
 		DockerAccess    bool                       `json:"dockerAccess"`
 		Volumes         []environments.VolumeGrant `json:"volumes"`
 	}
@@ -248,11 +246,7 @@ func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
-	if err := environments.ValidateHostMounts(req.Mounts); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if !s.checkVolumeGrants(w, nil, req.Volumes) {
+	if !refuseHostFolders(w, req.Mounts) || !s.checkVolumeGrants(w, nil, req.Volumes) {
 		return
 	}
 	if err := environments.ValidNewName(req.Name); err != nil {
@@ -274,7 +268,7 @@ func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	set, err := s.Environments.ValidateNetworkSettings(environments.Settings{Image: req.Image, MemoryBytes: req.MemoryBytes, NanoCPUs: req.NanoCPUs, VPNConnectionID: req.VPNConnectionID.ID, LANExceptions: req.LANExceptions, Mounts: req.Mounts, DockerAccess: req.DockerAccess, Volumes: req.Volumes})
+	set, err := s.Environments.ValidateNetworkSettings(environments.Settings{Image: req.Image, MemoryBytes: req.MemoryBytes, NanoCPUs: req.NanoCPUs, VPNConnectionID: req.VPNConnectionID.ID, LANExceptions: req.LANExceptions, DockerAccess: req.DockerAccess, Volumes: req.Volumes})
 	if err != nil {
 		vpnError(w, err)
 		return
@@ -333,7 +327,7 @@ func (s *Server) handleUpdateEnvironment(w http.ResponseWriter, r *http.Request)
 		Image           *string                     `json:"image"`
 		MemoryBytes     *int64                      `json:"memoryBytes"`
 		NanoCPUs        *int64                      `json:"nanoCpus"`
-		Mounts          *[]environments.HostMount   `json:"mounts"`
+		Mounts          json.RawMessage             `json:"mounts"`
 		DockerAccess    *bool                       `json:"dockerAccess"`
 		Volumes         *[]environments.VolumeGrant `json:"volumes"`
 	}
@@ -345,11 +339,7 @@ func (s *Server) handleUpdateEnvironment(w http.ResponseWriter, r *http.Request)
 	if req.DockerAccess != nil {
 		set.DockerAccess = *req.DockerAccess
 	}
-	if req.Mounts != nil {
-		set.Mounts = *req.Mounts
-	}
-	if err := environments.ValidateHostMounts(set.Mounts); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	if !refuseHostFolders(w, req.Mounts) {
 		return
 	}
 	if req.Volumes != nil {
@@ -413,6 +403,9 @@ func (s *Server) startRecreate(w http.ResponseWriter, a accounts.Account, name s
 // definition a removal deleted (Service.Removed): its grants (which closes
 // the connections they allowed) and activity, and tells clients it is gone.
 func (s *Server) environmentRemoved(name string) error {
+	if err := s.storage.ItemGone(storage.Item{Kind: storage.KindEnvironment, Name: name}); err != nil {
+		s.Log.Error("dropping removed environment's backup policy", "environment", name, "err", err)
+	}
 	err := s.forgetAccess(name)
 	if err != nil {
 		s.Log.Error("persisting removed environment access cleanup", "environment", name, "err", err)

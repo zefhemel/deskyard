@@ -51,7 +51,7 @@ def test_shared_volume_modes(admin, desktop, name):
     try:
         admin.create(a, volumes=[{"name": vol, "readOnly": False}])
         admin.create(b, volumes=[{"name": vol, "readOnly": True}])
-        assert admin.desktop(b)["settings"]["volumes"] == [{"name": vol, "readOnly": True}]
+        assert admin.desktop(b)["settings"]["volumes"] == [{"name": vol, "path": f"/share/{vol}", "readOnly": True}]
         listed = next(v for v in admin.get("/api/volumes").json()["volumes"] if v["name"] == vol)
         assert listed["environments"] == [{"name": x, "readOnly": x == b} for x in sorted([a, b])]
         assert in_desktop(a, "sh", "-c", f"echo from-a > /share/{vol}/a.txt") == ""
@@ -72,7 +72,7 @@ def test_grant_change_recreates(admin, desktop, name):
     try:
         before = container_id(name)
         granted = apply(admin, name, volumes=[{"name": vol, "readOnly": False}])
-        assert granted["settings"]["volumes"] == [{"name": vol, "readOnly": False}]
+        assert granted["settings"]["volumes"] == [{"name": vol, "path": f"/share/{vol}", "readOnly": False}]
         rw = container_id(name)
         assert rw != before
         assert in_desktop(name, "sh", "-c", f"echo rw > /share/{vol}/f.txt") == ""
@@ -98,7 +98,7 @@ def test_volume_survives_lost_container_and_restart(supervisor, admin, desktop, 
         admin.cookies.update(c.cookies)
         d = wait_until(lambda: (d := c.desktop(name))["state"] == "running" and d, 120, 1)
         assert d, c.desktop(name)
-        assert d["settings"]["volumes"] == [{"name": vol, "readOnly": False}]
+        assert d["settings"]["volumes"] == [{"name": vol, "path": f"/share/{vol}", "readOnly": False}]
         assert d["revision"] == d["appliedRevision"] == before["revision"]
         assert in_desktop(name, "cat", f"/share/{vol}/kept.txt") == "kept\n"
     finally:
@@ -186,7 +186,7 @@ def test_volumes_ui(supervisor, admin, desktop, name):
             assert sent.value.status == 202
             state = admin.wait_job(sent.value.json()["job"])
             assert state["status"] == "done", state
-            assert admin.desktop(name)["settings"]["volumes"] == [{"name": vol, "readOnly": False}]
+            assert admin.desktop(name)["settings"]["volumes"] == [{"name": vol, "path": f"/share/{vol}", "readOnly": False}]
             assert in_desktop(name, "test", "-d", f"/share/{vol}") == ""
             browser.close()
     finally:

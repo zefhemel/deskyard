@@ -98,7 +98,7 @@ func grantDefinition(t *testing.T, s *Service, name string, grants ...VolumeGran
 
 func TestCreateVolumeMakesFolder(t *testing.T) {
 	s, eng := volumeService(t)
-	v, adopted, err := s.CreateVolume(context.Background(), "photos")
+	v, adopted, err := s.CreateVolume(context.Background(), "photos", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestCreateVolumeAdoptsFolder(t *testing.T) {
 	if err := os.WriteFile(kept, []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, adopted, err := s.CreateVolume(context.Background(), "photos")
+	_, adopted, err := s.CreateVolume(context.Background(), "photos", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,14 +158,14 @@ func TestCreateVolumeAdoptsFolder(t *testing.T) {
 func TestCreateVolumeInvalidOrDuplicate(t *testing.T) {
 	s, eng := volumeService(t)
 	ctx := context.Background()
-	_, _, err := s.CreateVolume(ctx, "A")
+	_, _, err := s.CreateVolume(ctx, "A", "")
 	if err == nil || errors.Is(err, ErrExists) || errors.Is(err, ErrConflict) || errors.Is(err, ErrNotFound) {
 		t.Fatalf("invalid name: %v", err)
 	}
 	if _, err := os.Stat(s.Layout.VolumeOf("A")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("invalid name made a folder: %v", err)
 	}
-	if _, _, err := s.CreateVolume(ctx, "photos"); err != nil {
+	if _, _, err := s.CreateVolume(ctx, "photos", ""); err != nil {
 		t.Fatal(err)
 	}
 	marker := filepath.Join(s.Layout.VolumeOf("photos"), "data")
@@ -173,7 +173,7 @@ func TestCreateVolumeInvalidOrDuplicate(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := len(eng.ran())
-	if _, _, err := s.CreateVolume(ctx, "photos"); !errors.Is(err, ErrExists) {
+	if _, _, err := s.CreateVolume(ctx, "photos", ""); !errors.Is(err, ErrExists) {
 		t.Fatalf("duplicate: %v", err)
 	}
 	if len(eng.ran()) != before {
@@ -189,7 +189,7 @@ func TestCreateVolumeKeepsFolderWhenSyncFails(t *testing.T) {
 	s, _ := volumeService(t)
 	syncVolumesDir = func(string) error { return errors.New("sync failed") }
 	t.Cleanup(func() { syncVolumesDir = syncDirectory })
-	if _, _, err := s.CreateVolume(context.Background(), "photos"); err == nil {
+	if _, _, err := s.CreateVolume(context.Background(), "photos", ""); err == nil {
 		t.Fatal("the sync error was lost")
 	}
 	if _, ok := s.Vols.Get("photos"); !ok {
@@ -203,7 +203,7 @@ func TestCreateVolumeKeepsFolderWhenSyncFails(t *testing.T) {
 func TestDeleteVolumeInUse(t *testing.T) {
 	s, _ := volumeService(t)
 	ctx := context.Background()
-	if _, _, err := s.CreateVolume(ctx, "photos"); err != nil {
+	if _, _, err := s.CreateVolume(ctx, "photos", ""); err != nil {
 		t.Fatal(err)
 	}
 	grantDefinition(t, s, "alice", VolumeGrant{Name: "photos", ReadOnly: true})
@@ -230,7 +230,7 @@ func TestDeleteVolumeInUse(t *testing.T) {
 func TestDeleteVolumeMountedByContainer(t *testing.T) {
 	s, eng := volumeService(t)
 	ctx := context.Background()
-	if _, _, err := s.CreateVolume(ctx, "photos"); err != nil {
+	if _, _, err := s.CreateVolume(ctx, "photos", ""); err != nil {
 		t.Fatal(err)
 	}
 	grantDefinition(t, s, "alice") // the grant is already removed
@@ -278,7 +278,7 @@ func TestDeleteVolumeMountedByContainer(t *testing.T) {
 func TestDeleteVolumeKeepsFilesByDefault(t *testing.T) {
 	s, _ := volumeService(t)
 	ctx := context.Background()
-	if _, _, err := s.CreateVolume(ctx, "photos"); err != nil {
+	if _, _, err := s.CreateVolume(ctx, "photos", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.DeleteVolume(ctx, "photos", false); err != nil {
@@ -298,7 +298,7 @@ func TestDeleteVolumeKeepsFilesByDefault(t *testing.T) {
 func TestDeleteVolumeWithFiles(t *testing.T) {
 	s, _ := volumeService(t)
 	ctx := context.Background()
-	if _, _, err := s.CreateVolume(ctx, "photos"); err != nil {
+	if _, _, err := s.CreateVolume(ctx, "photos", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(s.Layout.VolumeOf("photos"), "a"), []byte("x"), 0o600); err != nil {
@@ -335,7 +335,7 @@ func TestDeleteVolumeRacesGrant(t *testing.T) {
 	ctx := context.Background()
 	grantDefinition(t, s, "alice")
 	for i := 0; i < 100; i++ {
-		if _, _, err := s.CreateVolume(ctx, "photos"); err != nil {
+		if _, _, err := s.CreateVolume(ctx, "photos", ""); err != nil {
 			t.Fatal(err)
 		}
 		var wg sync.WaitGroup
@@ -366,5 +366,104 @@ func TestDeleteVolumeRacesGrant(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+	}
+}
+
+func TestCreateHostVolumeChecksPath(t *testing.T) {
+	s, eng := mountService(t)
+	if err := s.Layout.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	source := t.TempDir()
+	v, adopted, err := s.CreateVolume(context.Background(), "photos", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adopted || v.Kind != VolumeHost || v.HostPath != source {
+		t.Fatalf("%+v adopted=%v", v, adopted)
+	}
+	if _, err := os.Stat(s.Layout.VolumeOf("photos")); !os.IsNotExist(err) {
+		t.Fatal("a host volume made a folder in the data folder")
+	}
+	checked := false
+	for _, spec := range eng.specs {
+		if strings.HasPrefix(spec.Name, "deskyard-mount-check-") && len(spec.Mounts) == 1 && spec.Mounts[0].Source == source && spec.Mounts[0].MustExist {
+			checked = true
+		}
+	}
+	if !checked {
+		t.Fatalf("no mount check of %s: %+v", source, eng.specs)
+	}
+	gone := filepath.Join(t.TempDir(), "gone")
+	if _, _, err := s.CreateVolume(context.Background(), "missing", gone); err == nil {
+		t.Fatal("created a host volume of a missing folder")
+	}
+	if _, ok := s.Vols.Get("missing"); ok {
+		t.Fatal("saved a host volume whose check failed")
+	}
+	if _, _, err := s.CreateVolume(context.Background(), "rel", "relative/path"); err == nil {
+		t.Fatal("accepted a relative host path")
+	}
+}
+
+func TestDeleteHostVolumeKeepsFolder(t *testing.T) {
+	s, _ := volumeService(t)
+	source := t.TempDir()
+	if err := os.WriteFile(filepath.Join(source, "keep"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hostVolume(t, s, "photos", source, "", false)
+	if err := s.DeleteVolume(context.Background(), "photos", true); err == nil {
+		t.Fatal("deleted the files of a host volume")
+	}
+	if _, ok := s.Vols.Get("photos"); !ok {
+		t.Fatal("a refused delete forgot the volume")
+	}
+	if err := s.DeleteVolume(context.Background(), "photos", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(source, "keep")); err != nil {
+		t.Fatal("forgetting a host volume touched its folder")
+	}
+}
+
+func TestDeleteVolumeRefusedWhileItemBusy(t *testing.T) {
+	s, _ := volumeService(t)
+	if _, _, err := s.CreateVolume(context.Background(), "photos", ""); err != nil {
+		t.Fatal(err)
+	}
+	busy := errors.New("a backup of volume photos is running")
+	s.ItemBusy = func(kind, name string) error {
+		if kind == "volume" && name == "photos" {
+			return busy
+		}
+		return nil
+	}
+	if err := s.DeleteVolume(context.Background(), "photos", true); !errors.Is(err, busy) {
+		t.Fatalf("got %v", err)
+	}
+	if _, ok := s.Vols.Get("photos"); !ok {
+		t.Fatal("deleted while busy")
+	}
+}
+
+func TestRemoveRefusedWhileItemBusy(t *testing.T) {
+	s, _ := mountService(t)
+	ctx := context.Background()
+	if err := s.seed(ctx, "alice", Settings{Image: "img"}); err != nil {
+		t.Fatal(err)
+	}
+	busy := errors.New("a backup of alice is running")
+	s.ItemBusy = func(kind, name string) error {
+		if kind == "environment" && name == "alice" {
+			return busy
+		}
+		return nil
+	}
+	if err := s.Remove(ctx, "alice", true); !errors.Is(err, busy) {
+		t.Fatalf("got %v", err)
+	}
+	if _, ok := s.Defs.Get("alice"); !ok {
+		t.Fatal("removed while busy")
 	}
 }
