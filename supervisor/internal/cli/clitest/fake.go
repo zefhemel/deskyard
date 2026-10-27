@@ -257,7 +257,7 @@ func (f *Fake) environment(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no such environment")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"name": name, "state": "running"})
+	writeJSON(w, http.StatusOK, map[string]any{"name": name, "state": "running", "level": f.level(name)})
 }
 
 // answer records the request and serves its canned answer.

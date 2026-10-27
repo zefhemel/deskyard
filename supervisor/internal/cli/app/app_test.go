@@ -472,6 +472,11 @@ func TestServerCommands(t *testing.T) {
 	if r = h.run("env", "use", "srv/work"); r.code != 0 || h.servers().Servers["srv"].Environment != "work" {
 		t.Errorf("env use srv/work: %+v", r)
 	}
+	// An environment the account can only observe is the browser's.
+	f.Grants = append(f.Grants, clitest.Grant{Name: "demo", Level: "observe"})
+	if r = h.run("env", "use", "srv/demo"); r.code != 1 || !strings.Contains(r.stderr, "observe") || h.servers().Servers["srv"].Environment != "work" {
+		t.Errorf("env use srv/demo: %+v", r)
+	}
 }
 
 func TestStatusRemote(t *testing.T) {

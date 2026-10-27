@@ -384,8 +384,14 @@ func runEnvUse(a *App, c *call) error {
 	}
 	cl := remote.FromServer(srv, env)
 	cl.HTTP = a.HTTP
-	if err := cl.JSON(c.ctx, http.MethodGet, "/environments/"+url.PathEscape(env), nil, nil); err != nil {
+	var got struct {
+		Level string `json:"level"`
+	}
+	if err := cl.JSON(c.ctx, http.MethodGet, "/environments/"+url.PathEscape(env), nil, &got); err != nil {
 		return err
+	}
+	if got.Level != "full" {
+		return fmt.Errorf("%s can only observe %s, in the browser: the CLI needs full access", srv.Username, env)
 	}
 	srv.Environment = env
 	if err := cfg.Save(path); err != nil {
