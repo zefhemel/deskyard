@@ -74,7 +74,10 @@ Removing it, or signing out everywhere, disconnects them.
 
 - **macOS:** in Finder, **Go → Connect to Server**, enter the address and
   sign in. Finder's `.DS_Store` and `._` files are accepted but not kept,
-  so Finder tags don't travel with files.
+  so Finder tags don't travel with files. WebDAV has no symlinks: Finder
+  gives up on a folder that contains one ("One or more items can't be
+  copied", and Skip copies nothing more of it). Remove the links first, or
+  copy in Terminal with `cp -R`, which skips them and copies the rest.
 - **iPhone and iPad:** the Files app's own Connect to Server speaks SMB
   only; use a WebDAV app such as Owlfiles, which adds the drive to Files.
 - **Windows:** **Map network drive** with the address. Windows refuses
