@@ -1,6 +1,6 @@
 deskyard terminal: join a shared terminal session
 
-Usage: deskyard [-e NAME] terminal [SESSION]
+Usage: deskyard [-e ENV] terminal [SESSION]
 
 Joins a shared Bash login shell in /workspace, default main. Browser, CLI and
 desktop clients share the same session. Inside an existing native shared
@@ -18,5 +18,5 @@ Examples:
   deskyard -e alice terminal
   deskyard terminal build-2
 
-Where: on the chosen environment (-e NAME); inside an environment without one chosen it acts locally
-Exit codes: the command's own exit code; 1 when it couldn't run (connection, token, stopped environment), 2 usage error
+Where: on the chosen environment (-e ENV); inside an environment without one chosen it acts locally
+Exit codes: the command's own exit code; 1 when it couldn't run (connection, credential, stopped environment), 2 usage error

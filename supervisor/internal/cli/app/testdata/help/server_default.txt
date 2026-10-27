@@ -1,0 +1,17 @@
+deskyard server default: set or show the default server
+
+Usage: deskyard [-e ENV] server default [NAME]
+
+Makes NAME the server used when -e names no server; without NAME prints the
+current default.
+
+Arguments:
+  NAME       string      optional  server name
+
+Prints: without NAME: the default's name, or nothing
+
+Examples:
+  deskyard server default work
+
+Where: on this machine (no server needed)
+Exit codes: 0 ok, 1 error, 2 usage error

@@ -1,6 +1,6 @@
 deskyard: use a Deskyard environment (a Linux desktop with a shared browser) from inside it or from anywhere else.
 
-Usage: deskyard [-e NAME] COMMAND [ARGS...]
+Usage: deskyard [-e ENV] COMMAND [ARGS...]
 
 New here? Run `deskyard guide` and `deskyard COMMAND --help`.
 
@@ -32,11 +32,13 @@ Shell and files:
 Browser:
   browser connect [--port N]           forward the environment's browser to a local CDP port
 
-Remotes:
-  remote add NAME URL --token dyt_…    save an environment as a remote
-  remote list [--json]                 list saved remotes
-  remote remove NAME                   forget a remote
-  remote default [NAME]                set or show the default remote
+Servers and sign-in:
+  login URL [OPTIONS]                  sign in to a server, approving in the browser
+  auth LINK [--name NAME]              sign in to a server with a login link
+  logout [SERVER]                      revoke this CLI's credential and forget the server
+  server list [--json]                 list the servers you are signed in to
+  server default [NAME]                set or show the default server
+  env use ENV|SERVER/ENV               set a server's default environment
 
 Information:
   status [--json]                      show the environment's name, state, image and screen
@@ -46,18 +48,21 @@ Information:
   version                              print the version
 
 Choosing an environment:
-  Inside an environment, commands act on it directly. Elsewhere they use a
-  remote: -e NAME (or --environment NAME, before the command), else
-  $DESKYARD_REMOTE, else $DESKYARD_URL + $DESKYARD_TOKEN, else the default
-  remote (`deskyard remote default`). After the command, -e is that
-  command's own flag (exec -e K=V sets an environment variable).
+  Sign in to a server first: `deskyard login https://host/ENV`. Commands then
+  use an environment on a server: -e ENV on the default server, or
+  -e SERVER/ENV (also --environment, before the command), else
+  $DESKYARD_ENVIRONMENT, else the default server's environment
+  (`deskyard env use ENV`). $DESKYARD_URL + $DESKYARD_CREDENTIAL replace the
+  default server. Inside an environment with none chosen, commands act on it
+  directly. After the command, -e is that command's own flag (exec -e K=V
+  sets an environment variable).
 
 Environment variables:
-  DESKYARD_REMOTE  remote (environment) to use when -e isn't given
-  DESKYARD_URL     environment URL (https://host/alice) to use without a remotes.json; needs DESKYARD_TOKEN
-  DESKYARD_TOKEN   access token for DESKYARD_URL, and the default for `remote add --token`
-  DESKYARD_SETTLE  seconds screenshot and zoom wait before capturing (default 0.3)
-  XDG_CONFIG_HOME  where remotes.json lives (default ~/.config)
+  DESKYARD_ENVIRONMENT environment to use when -e isn't given (ENV or SERVER/ENV)
+  DESKYARD_URL         server URL, optionally with an environment (https://host/alice), to use instead of the default server; needs DESKYARD_CREDENTIAL
+  DESKYARD_CREDENTIAL  client credential (dyc_…) for DESKYARD_URL
+  DESKYARD_SETTLE      seconds screenshot and zoom wait before capturing (default 0.3)
+  XDG_CONFIG_HOME      where servers.json lives (default ~/.config)
 
 Exit codes:
   0      ok

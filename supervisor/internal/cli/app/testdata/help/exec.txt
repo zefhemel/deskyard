@@ -1,6 +1,6 @@
 deskyard exec: run a command in the environment
 
-Usage: deskyard [-e NAME] exec [OPTIONS] -- CMD [ARG...]
+Usage: deskyard [-e ENV] exec [OPTIONS] -- CMD [ARG...]
 
 Runs one command as user (in /workspace unless --cwd) and streams its stdin,
 stdout and stderr; exits with the command's exit code. The command is run as
@@ -18,7 +18,7 @@ Options:
   --cwd DIR            working directory in the environment (default
                        /workspace)
   -e, --env K=V        after exec: set an environment variable for the command
-                       (repeatable); not the global -e NAME before exec, which
+                       (repeatable); not the global -e ENV before exec, which
                        chooses the environment
 
 Prints: the command's stdout and stderr as they arrive; with --json one object
@@ -32,5 +32,5 @@ Examples:
   deskyard exec --json -- bash -lc 'cd app && npm test'
   echo hi | deskyard exec -- tee /workspace/hi.txt
 
-Where: on the chosen environment (-e NAME); inside an environment without one chosen it acts locally
-Exit codes: the command's own exit code; 1 when it couldn't run (connection, token, stopped environment), 2 usage error
+Where: on the chosen environment (-e ENV); inside an environment without one chosen it acts locally
+Exit codes: the command's own exit code; 1 when it couldn't run (connection, credential, stopped environment), 2 usage error

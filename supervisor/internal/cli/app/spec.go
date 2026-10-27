@@ -33,7 +33,7 @@ type Output struct {
 
 // Command is one (sub)command.
 type Command struct {
-	Name     string   `json:"name"` // "click", "remote add"
+	Name     string   `json:"name"` // "click", "server list"
 	Group    string   `json:"group"`
 	Summary  string   `json:"summary"`
 	Usage    string   `json:"usage"` // after "deskyard "
@@ -54,12 +54,13 @@ type Command struct {
 }
 
 const (
-	whereBoth   = "inside an environment it acts locally; elsewhere on the chosen environment (-e NAME)"
-	whereLocal  = "on this machine (no remote needed)"
-	whereRemote = "on the chosen environment (-e NAME); inside an environment without one chosen it acts locally"
+	whereBoth   = "inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)"
+	whereLocal  = "on this machine (no server needed)"
+	whereServer = "on this machine, talking to the server"
+	whereRemote = "on the chosen environment (-e ENV); inside an environment without one chosen it acts locally"
 	exitStd     = "0 ok, 1 error, 2 usage error"
 	exitDesktop = "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
-	exitExec    = "the command's own exit code; 1 when it couldn't run (connection, token, stopped environment), 2 usage error"
+	exitExec    = "the command's own exit code; 1 when it couldn't run (connection, credential, stopped environment), 2 usage error"
 )
 
 var (
@@ -76,7 +77,7 @@ var groups = []struct{ Name, Title string }{
 	{"desktop", "Desktop (screen, mouse, keyboard)"},
 	{"shell", "Shell and files"},
 	{"browser", "Browser"},
-	{"remote", "Remotes"},
+	{"servers", "Servers and sign-in"},
 	{"info", "Information"},
 }
 
@@ -176,7 +177,7 @@ func init() {
 				{Name: "--json", Type: "boolean", Desc: `buffer the output and print one JSON object {"stdout","stderr","exit"} instead of streaming; exit 0 when the JSON was printed`},
 				{Name: "--tty", Short: "-t", Type: "boolean", Desc: "run in a terminal (for programs that need one); stdout and stderr are merged"},
 				{Name: "--cwd", Type: "string", Value: "DIR", Default: "/workspace", Desc: "working directory in the environment"},
-				{Name: "--env", Short: "-e", Type: "string[]", Value: "K=V", Desc: "after exec: set an environment variable for the command (repeatable); not the global -e NAME before exec, which chooses the environment"},
+				{Name: "--env", Short: "-e", Type: "string[]", Value: "K=V", Desc: "after exec: set an environment variable for the command (repeatable); not the global -e ENV before exec, which chooses the environment"},
 			},
 			Output: Output{Type: "stream", Desc: `the command's stdout and stderr as they arrive; with --json one object {"stdout":string,"stderr":string,"exit":int}, using "stdoutBase64"/"stderrBase64" (base64) instead when the output isn't UTF-8`,
 				Fields: map[string]string{"stdout": "standard output (UTF-8)", "stderr": "standard error (UTF-8)", "exit": "exit code", "stdoutBase64": "standard output, base64, when not UTF-8", "stderrBase64": "standard error, base64, when not UTF-8"}},
@@ -201,10 +202,10 @@ func init() {
 			Where:    whereRemote, Exit: "the shell's exit code; 1 when it couldn't start", run: runShell},
 		{Name: "cp", Group: "shell", Summary: "copy files to or from an environment",
 			Usage: "cp SRC DST",
-			Desc: "Copies a file or directory between this machine and an environment; write the environment side as NAME:/path (NAME is a remote; an empty NAME, as in :/path, means the chosen environment). " +
+			Desc: "Copies a file or directory between this machine and an environment; write the environment side as ENV:/path (ENV is an environment on the chosen server, -e SERVER/… or the default one; an empty ENV, as in :/path, means the chosen environment). " +
 				"A file lands at DST, or inside DST when it is an existing directory. A directory's contents land in DST, which is created (like `cp -r SRC/. DST`). " +
 				"SRC - reads stdin; DST - writes to stdout (a tar stream for a directory). Files land as user; inside an environment, two local paths are copied locally.",
-			Args:     []Arg{{Name: "src", Type: "path", Required: true, Desc: "local path, -, or NAME:/path"}, {Name: "dst", Type: "path", Required: true, Desc: "local path, -, or NAME:/path"}},
+			Args:     []Arg{{Name: "src", Type: "path", Required: true, Desc: "local path, -, or ENV:/path"}, {Name: "dst", Type: "path", Required: true, Desc: "local path, -, or ENV:/path"}},
 			Output:   Output{Type: "none", Desc: "nothing, unless DST is - (the file's bytes or a tar stream)"},
 			Examples: []string{"deskyard cp ./report.pdf alice:/workspace/", "deskyard cp ./site alice:/workspace/site", "deskyard cp alice:/workspace/out.csv ."},
 			Where:    whereRemote, Exit: exitStd, run: runCp},
@@ -216,13 +217,13 @@ func init() {
 				"-R PORT or -R ENV:LOCAL (reverse; one -R before each such mapping): the environment's localhost:ENV becomes 127.0.0.1:LOCAL here. " +
 				"Both ends listen on loopback only; the environment won't listen below 1024 (plain forward only; -R just dials, so -R 80:8080 works). A port in use on either side fails that mapping, which is retried, and the others carry on. " +
 				"When the connection drops (the environment stops or restarts, the network blips) it keeps its local listeners, closes open connections and reconnects with backoff (1 s up to 30 s). " +
-				"It exits only on Ctrl-C, or when the token is refused. Run it in the background. Inside an environment it needs -e too.",
+				"It exits only on Ctrl-C, or when the credential is refused. Run it in the background. Inside an environment it needs -e too.",
 			Args:  []Arg{{Name: "port", Type: "string", Required: true, Variadic: true, Desc: "a mapping: PORT or LOCAL:ENV; after -R, PORT or ENV:LOCAL"}},
 			Flags: []Flag{{Name: "--reverse", Short: "-R", Type: "boolean", Desc: "the next mapping is reverse: a port in the environment becomes a port here"}},
 			Output: Output{Type: "text", Desc: `one line per mapping each time it goes live: "in LOCAL ENV" or "out ENV 127.0.0.1:LOCAL"; on stderr one line per state change (linked, lost and retrying, port in use)`,
 				Fields: map[string]string{"in": "LOCAL ENV: this machine's port, reachable in the environment at localhost:ENV", "out": "ENV ADDR: the environment's port, reachable here at ADDR"}},
 			Examples: []string{"deskyard -e alice forward 3000 -R 5173", "deskyard -e alice forward 8080:3000 &", "deskyard -e alice forward -R 9229:19229"},
-			Where:    "on the chosen environment (-e NAME); inside an environment too, since it maps ports between two machines. Ports are LOCAL:ENV, or ENV:LOCAL after -R. The environment won't listen below 1024. \"Linked to ...\" and the out lines appear when the link is accepted, before the environment side is known to run", Exit: "0 after Ctrl-C, 1 when the token is refused (401) or no remote is set up, 2 usage error", rawArgs: true, run: runForward},
+			Where:    "on the chosen environment (-e ENV); inside an environment too, since it maps ports between two machines. Ports are LOCAL:ENV, or ENV:LOCAL after -R. The environment won't listen below 1024. \"Linked to ...\" and the out lines appear when the link is accepted, before the environment side is known to run", Exit: "0 after Ctrl-C, 1 when the credential is refused (401) or no environment is chosen, 2 usage error", rawArgs: true, run: runForward},
 
 		// Browser
 		{Name: "browser connect", Group: "browser", Summary: "forward the environment's browser to a local CDP port",
@@ -234,31 +235,48 @@ func init() {
 			Examples: []string{"deskyard -e alice browser connect &", "# then in Python: p.chromium.connect_over_cdp(\"http://127.0.0.1:9222\")"},
 			Where:    whereRemote, Exit: exitStd, run: runBrowserConnect},
 
-		// Remotes
-		{Name: "remote add", Group: "remote", Summary: "save an environment as a remote",
-			Usage: "remote add NAME URL --token dyt_…",
-			Desc:  "Checks the token against the environment's remote access API and saves the remote in remotes.json (" + "$XDG_CONFIG_HOME/deskyard, default ~/.config/deskyard; mode 0600). URL is the environment's address, like https://host/alice. Tokens come from the environment's Remote access tab. The first remote becomes the default.",
-			Args: []Arg{{Name: "name", Type: "string", Required: true, Desc: "local name for the remote, used with -e NAME (letters, digits, . _ -)"},
-				{Name: "url", Type: "string", Required: true, Desc: "the environment's URL, e.g. https://host/alice"}},
-			Flags:    []Flag{{Name: "--token", Type: "string", Value: "TOKEN", Desc: "access token (dyt_…); defaults to $DESKYARD_TOKEN"}},
-			Output:   Output{Type: "text", Desc: "a confirmation line"},
-			Examples: []string{"deskyard remote add alice https://deskyard.example.com/alice --token dyt_…"},
-			Where:    whereLocal, Exit: exitStd, run: runRemoteAdd},
-		{Name: "remote list", Group: "remote", Summary: "list saved remotes",
-			Usage: "remote list [--json]", Desc: "Lists the saved remotes; * marks the default.",
+		// Servers and sign-in
+		{Name: "login", Group: "servers", Summary: "sign in to a server, approving in the browser",
+			Usage: "login URL [OPTIONS]",
+			Desc: "Signs this CLI in to a Deskyard server: prints a code and an approval URL (on stderr) and opens it in your browser, where you check the code and approve while signed in to Deskyard. " +
+				"Then saves the server, your username and a client credential for this machine in servers.json ($XDG_CONFIG_HOME/deskyard, default ~/.config/deskyard; mode 0600). " +
+				"With an environment in the URL (https://host/alice) it becomes the server's default environment, once checked that you have full access to it; without one, your only environment does. The first server becomes the default. The request expires after 10 minutes.",
+			Args: []Arg{{Name: "url", Type: "string", Required: true, Desc: "the server's address, optionally with an environment: https://host or https://host/alice"}},
+			Flags: []Flag{{Name: "--name", Type: "string", Value: "NAME", Desc: "local name for the server, used with -e NAME/ENV (default: its host name)"},
+				{Name: "--no-browser", Type: "boolean", Desc: "only print the approval URL, don't open a browser"}},
+			Output:   Output{Type: "text", Desc: "a confirmation with the account and environment; the code and approval URL on stderr"},
+			Examples: []string{"deskyard login https://deskyard.example.com/alice", "deskyard login https://deskyard.example.com --name work --no-browser"},
+			Where:    whereServer, Exit: exitStd, run: runLogin},
+		{Name: "auth", Group: "servers", Summary: "sign in to a server with a login link",
+			Usage:    "auth LINK [--name NAME]",
+			Desc:     "Signs this CLI in with a login link (https://host/link#dyl_…), without a browser: the link is used up, and the server, your username and a client credential are saved in servers.json as for login. When the account has exactly one environment it becomes the default. Observe-only links work in a browser only.",
+			Args:     []Arg{{Name: "link", Type: "string", Required: true, Desc: "the whole login link, https://host/link#dyl_…"}},
+			Flags:    []Flag{{Name: "--name", Type: "string", Value: "NAME", Desc: "local name for the server, used with -e NAME/ENV (default: its host name)"}},
+			Output:   Output{Type: "text", Desc: "a confirmation with the account and environment"},
+			Examples: []string{"deskyard auth 'https://deskyard.example.com/link#dyl_…'"},
+			Where:    whereServer, Exit: exitStd, run: runAuth},
+		{Name: "logout", Group: "servers", Summary: "revoke this CLI's credential and forget the server",
+			Usage:  "logout [SERVER]",
+			Desc:   "Revokes this CLI's credential on the server (default: the default server), then forgets the server. A credential the server already refuses is forgotten too; when the server can't be reached, nothing is forgotten.",
+			Args:   []Arg{{Name: "server", Type: "string", Desc: "server name (see `deskyard server list`)"}},
+			Output: Output{Type: "text", Desc: "a confirmation line"}, Examples: []string{"deskyard logout", "deskyard logout work"},
+			Where: whereServer, Exit: exitStd, run: runLogout},
+		{Name: "server list", Group: "servers", Summary: "list the servers you are signed in to",
+			Usage: "server list [--json]", Desc: "Lists the saved servers with your username and default environment on each; * marks the default server.",
 			Flags: []Flag{flagJSON},
-			Output: Output{Type: "text", Desc: "a table NAME URL TOKEN (token ID only); with --json an array of {name,url,environment,default}",
-				Fields: map[string]string{"name": "remote name", "url": "environment URL", "environment": "environment name on the supervisor", "default": "whether it is the default"}},
-			Examples: []string{"deskyard remote list"}, Where: whereLocal, Exit: exitStd, run: runRemoteList},
-		{Name: "remote remove", Group: "remote", Summary: "forget a remote",
-			Usage: "remote remove NAME", Desc: "Removes a saved remote (the token itself stays valid until someone revokes it on the Remote access tab).",
-			Args:   []Arg{{Name: "name", Type: "string", Required: true, Desc: "remote name"}},
-			Output: noOutput, Examples: []string{"deskyard remote remove alice"}, Where: whereLocal, Exit: exitStd, run: runRemoteRemove},
-		{Name: "remote default", Group: "remote", Summary: "set or show the default remote",
-			Usage: "remote default [NAME]", Desc: "Makes NAME the remote used when no -e or DESKYARD_REMOTE is given; without NAME prints the current default.",
-			Args:   []Arg{{Name: "name", Type: "string", Desc: "remote name"}},
-			Output: Output{Type: "text", Desc: "without NAME: the default's name, or nothing"}, Examples: []string{"deskyard remote default alice"},
-			Where: whereLocal, Exit: exitStd, run: runRemoteDefault},
+			Output: Output{Type: "text", Desc: "a table NAME URL USER ENVIRONMENT CREDENTIAL (credential ID only); with --json an array of {name,url,username,environment,default}",
+				Fields: map[string]string{"name": "server name", "url": "server URL", "username": "account signed in", "environment": "default environment, or empty", "default": "whether it is the default server"}},
+			Examples: []string{"deskyard server list"}, Where: whereLocal, Exit: exitStd, run: runServerList},
+		{Name: "server default", Group: "servers", Summary: "set or show the default server",
+			Usage: "server default [NAME]", Desc: "Makes NAME the server used when -e names no server; without NAME prints the current default.",
+			Args:   []Arg{{Name: "name", Type: "string", Desc: "server name"}},
+			Output: Output{Type: "text", Desc: "without NAME: the default's name, or nothing"}, Examples: []string{"deskyard server default work"},
+			Where: whereLocal, Exit: exitStd, run: runServerDefault},
+		{Name: "env use", Group: "servers", Summary: "set a server's default environment",
+			Usage: "env use ENV|SERVER/ENV", Desc: "Checks that you can see the environment ENV on the default server (or SERVER), then makes it that server's default environment, used when -e isn't given.",
+			Args:   []Arg{{Name: "env", Type: "string", Required: true, Desc: "environment name, or SERVER/ENV"}},
+			Output: Output{Type: "text", Desc: "a confirmation line"}, Examples: []string{"deskyard env use alice", "deskyard env use work/bob"},
+			Where: whereServer, Exit: exitStd, run: runEnvUse},
 
 		// Info
 		{Name: "status", Group: "info", Summary: "show the environment's name, state, image and screen",
@@ -277,11 +295,11 @@ func init() {
 			Examples: []string{"deskyard describe --json"}, Where: whereLocal, Exit: exitStd, run: runDescribe},
 		{Name: "help", Group: "info", Summary: "help for a command",
 			Usage: "help [COMMAND...]", Desc: "Prints help for a command, or the overview. Same as COMMAND --help.",
-			Args:   []Arg{{Name: "command", Type: "string", Variadic: true, Desc: "command name, e.g. click or remote add"}},
+			Args:   []Arg{{Name: "command", Type: "string", Variadic: true, Desc: "command name, e.g. click or server list"}},
 			Output: Output{Type: "text", Desc: "help text"}, Examples: []string{"deskyard help cp"}, Where: whereLocal, Exit: exitStd, run: runHelp},
 		{Name: "forward-helper", Group: "shell", Hidden: true, Summary: "the environment side of deskyard forward",
 			Usage:    "forward-helper",
-			Desc:     "Serves the environment side of the forward protocol on stdin and stdout (frames with a u32 length prefix): listens on and dials 127.0.0.1 in the environment. The supervisor runs it as user for /api/agent/v1/forward.",
+			Desc:     "Serves the environment side of the forward protocol on stdin and stdout (frames with a u32 length prefix): listens on and dials 127.0.0.1 in the environment. The supervisor runs it as user for /api/environments/{name}/forward.",
 			Output:   Output{Type: "bytes", Desc: "protocol frames"},
 			Examples: []string{"deskyard forward-helper"},
 			Where:    "inside an environment", Exit: exitStd, run: runForwardHelper},
@@ -299,7 +317,7 @@ func init() {
 }
 
 var globalFlags = []Flag{
-	{Name: "--environment", Short: "-e", Type: "string", Value: "NAME", Desc: "the environment to use, by its remote name (see `deskyard remote list`); only before the command name: after it, as in `exec -e K=V`, -e is a command's own flag"},
+	{Name: "--environment", Short: "-e", Type: "string", Value: "ENV", Desc: "the environment to use: ENV on the default server, or SERVER/ENV (see `deskyard server list`); only before the command name: after it, as in `exec -e K=V`, -e is a command's own flag"},
 	{Name: "--help", Short: "-h", Type: "boolean", Desc: "help for the command"},
 }
 
@@ -307,11 +325,11 @@ var environment = []struct {
 	Name string `json:"name"`
 	Desc string `json:"description"`
 }{
-	{"DESKYARD_REMOTE", "remote (environment) to use when -e isn't given"},
-	{"DESKYARD_URL", "environment URL (https://host/alice) to use without a remotes.json; needs DESKYARD_TOKEN"},
-	{"DESKYARD_TOKEN", "access token for DESKYARD_URL, and the default for `remote add --token`"},
+	{"DESKYARD_ENVIRONMENT", "environment to use when -e isn't given (ENV or SERVER/ENV)"},
+	{"DESKYARD_URL", "server URL, optionally with an environment (https://host/alice), to use instead of the default server; needs DESKYARD_CREDENTIAL"},
+	{"DESKYARD_CREDENTIAL", "client credential (dyc_…) for DESKYARD_URL"},
 	{"DESKYARD_SETTLE", "seconds screenshot and zoom wait before capturing (default 0.3)"},
-	{"XDG_CONFIG_HOME", "where remotes.json lives (default ~/.config)"},
+	{"XDG_CONFIG_HOME", "where servers.json lives (default ~/.config)"},
 }
 
 var exitCodes = []struct {

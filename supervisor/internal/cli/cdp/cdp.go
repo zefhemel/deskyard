@@ -1,5 +1,5 @@
 // Package cdp forwards a local DevTools endpoint (127.0.0.1:PORT) to a
-// desktop's shared Chromium through the agent API, so Playwright's
+// desktop's shared Chromium through the remote access API, so Playwright's
 // connectOverCDP("http://127.0.0.1:9222") works as if the browser were local.
 package cdp
 
@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -23,7 +24,8 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/cli/remote"
 )
 
-// Forwarder is an http.Handler that proxies to {base}/api/agent/v1/cdp/….
+// Forwarder is an http.Handler that proxies to
+// {base}/api/environments/{name}/cdp/….
 type Forwarder struct {
 	Client *remote.Client
 	// Local is the host:port clients use to reach this forwarder
@@ -215,6 +217,8 @@ func rewriteValue(v any, local string) any {
 	return v
 }
 
+var cdpPathRE = regexp.MustCompile(`/api/environments/[^/]+/cdp/`)
+
 // devtoolsTail returns the part of a path from "/devtools/" on, or "".
 func devtoolsTail(p string) string {
 	if i := strings.Index(p, "/devtools/"); i >= 0 {
@@ -226,7 +230,8 @@ func devtoolsTail(p string) string {
 // RewriteURL points one DevTools URL at local:
 //   - ws(s)://any/…/devtools/X           -> ws://local/devtools/X
 //   - …?ws=host/…/devtools/X (or wss=)    -> …?ws=local/devtools/X, with the
-//     front end's own path made local when it went through the agent API.
+//     front end's own path made local when it went through the remote
+//     access API.
 //
 // Other strings are returned unchanged.
 func RewriteURL(s, local string) string {
@@ -266,10 +271,11 @@ func RewriteURL(s, local string) string {
 	}
 	q.Del(key)
 	q.Set("ws", local+tail)
-	// A front end served through the agent API (/api/agent/v1/cdp/devtools/…)
-	// is served by the forwarder at /devtools/….
-	if i := strings.Index(u.Path, remote.APIPath+"/cdp/"); i >= 0 {
-		u.Path = u.Path[i+len(remote.APIPath+"/cdp"):]
+	// A front end served through the remote access API
+	// (/api/environments/NAME/cdp/devtools/…) is served by the forwarder at
+	// /devtools/….
+	if loc := cdpPathRE.FindStringIndex(u.Path); loc != nil {
+		u.Path = u.Path[loc[1]-1:]
 		if u.IsAbs() {
 			u.Scheme, u.Host = "http", local
 		}
@@ -278,7 +284,7 @@ func RewriteURL(s, local string) string {
 	return u.String()
 }
 
-// Probe asks the desktop's CDP for /json/version, so problems (bad token,
+// Probe asks the desktop's CDP for /json/version, so problems (bad credential,
 // stopped desktop) show before anything listens. Chromium may need a few
 // seconds to start.
 func Probe(ctx context.Context, c *remote.Client) (map[string]any, error) {

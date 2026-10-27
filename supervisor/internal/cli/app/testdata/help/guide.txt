@@ -1,6 +1,6 @@
 deskyard guide: short manual for environment access and control
 
-Usage: deskyard [-e NAME] guide
+Usage: deskyard [-e ENV] guide
 
 Prints a short manual: how an environment is laid out, the three ways to work
 (shell, browser, desktop) and when to use which.
@@ -10,5 +10,5 @@ Prints: the guide
 Examples:
   deskyard guide
 
-Where: on this machine (no remote needed)
+Where: on this machine (no server needed)
 Exit codes: 0 ok, 1 error, 2 usage error

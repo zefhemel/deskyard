@@ -39,10 +39,35 @@ type harness struct {
 	stdin  string
 	// events collects what the App records (Record/Caller are faked).
 	events []activity.Event
+	// opened collects the URLs the App opened in a browser.
+	opened []string
 }
 
 func newHarness(t *testing.T) *harness {
-	return &harness{t: t, env: map[string]string{}, config: filepath.Join(t.TempDir(), "remotes.json")}
+	return &harness{t: t, env: map[string]string{}, config: filepath.Join(t.TempDir(), "servers.json")}
+}
+
+// save signs the harness in to f as the server name (the first is the
+// default), with the fake's credential and environment env.
+func (h *harness) save(name string, f *clitest.Fake, env string) {
+	h.t.Helper()
+	cfg, err := remote.Load(h.config)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	cfg.Add(&remote.Server{Name: name, URL: f.URL, Username: clitest.Username, Credential: clitest.Credential, Environment: env})
+	if err := cfg.Save(h.config); err != nil {
+		h.t.Fatal(err)
+	}
+}
+
+func (h *harness) servers() *remote.Config {
+	h.t.Helper()
+	cfg, err := remote.Load(h.config)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return cfg
 }
 
 func (h *harness) run(args ...string) result {
@@ -55,6 +80,10 @@ func (h *harness) run(args ...string) result {
 		Version:    "test",
 		Record:     func(e activity.Event) { h.events = append(h.events, e) },
 		Caller:     func() string { return "a terminal" },
+		OpenBrowser: func(u string) error {
+			h.opened = append(h.opened, u)
+			return nil
+		},
 	}
 	code := a.Run(context.Background(), args)
 	return result{code, out.String(), errb.String()}
@@ -98,8 +127,8 @@ func TestGoldenHelp(t *testing.T) {
 			t.Errorf("help %s differs from %s --help", c.Name, c.Name)
 		}
 	}
-	if r := h.run("remote", "--help"); r.code != 0 || !strings.Contains(r.stdout, "remote add") {
-		t.Errorf("remote --help: %+v", r)
+	if r := h.run("server", "--help"); r.code != 0 || !strings.Contains(r.stdout, "server list") {
+		t.Errorf("server --help: %+v", r)
 	}
 }
 
@@ -183,8 +212,8 @@ func TestSpecIsConsistent(t *testing.T) {
 func TestUsageErrors(t *testing.T) {
 	h := newHarness(t)
 	h.inside = true
-	for _, args := range [][]string{{}, {"bogus"}, {"click", "1"}, {"zoom", "50", "50", "10", "10"}, {"remote"}, {"remote", "bogus"},
-		{"exec"}, {"cp", "a"}, {"remote", "add", "x"}, {"--nope"}, {"-e"}, {"status", "--bogus"}, {"exec", "--cwd"}} {
+	for _, args := range [][]string{{}, {"bogus"}, {"click", "1"}, {"zoom", "50", "50", "10", "10"}, {"server"}, {"server", "bogus"},
+		{"exec"}, {"cp", "a"}, {"login"}, {"auth"}, {"auth", "https://h/notalink"}, {"login", "ftp://h"}, {"env", "use"}, {"-e", "a/"}, {"-e", "/x"}, {"--nope"}, {"-e"}, {"status", "--bogus"}, {"exec", "--cwd"}} {
 		r := h.run(args...)
 		if r.code != 2 {
 			t.Errorf("%v: exit %d, want 2 (stderr %q)", args, r.code, r.stderr)
@@ -195,20 +224,33 @@ func TestUsageErrors(t *testing.T) {
 	}
 }
 
-func TestNoRemoteChosen(t *testing.T) {
+func TestNoServerChosen(t *testing.T) {
 	h := newHarness(t)
 	r := h.run("screenshot")
-	if r.code != 1 || !strings.Contains(r.stderr, "no remote chosen: run `deskyard remote list`, then use -e NAME") {
+	if r.code != 1 || !strings.Contains(r.stderr, "not signed in to any server: run `deskyard login https://host/ENV`") {
 		t.Errorf("%+v", r)
 	}
-	r = h.run("-e", "nope", "size")
-	if r.code != 1 || !strings.Contains(r.stderr, `no remote named "nope"`) {
+	r = h.run("-e", "nope/x", "size")
+	if r.code != 1 || !strings.Contains(r.stderr, `no server named "nope"`) {
 		t.Errorf("%+v", r)
 	}
 	h.env["DESKYARD_URL"] = "https://h/alice"
 	r = h.run("size")
-	if r.code != 1 || !strings.Contains(r.stderr, "DESKYARD_TOKEN") {
+	if r.code != 1 || !strings.Contains(r.stderr, "DESKYARD_CREDENTIAL") {
 		t.Errorf("%+v", r)
+	}
+	delete(h.env, "DESKYARD_URL")
+
+	f := clitest.New(t, "alice")
+	h.save("srv", f, "")
+	r = h.run("size")
+	if r.code != 1 || !strings.Contains(r.stderr, "no environment chosen on srv: use -e ENV, or choose a default with `deskyard env use ENV`") {
+		t.Errorf("no environment: %+v", r)
+	}
+	// Inside an environment, no environment chosen means here.
+	h.inside = true
+	if r := h.run("browser", "connect"); r.code != 0 || r.stdout != "http://127.0.0.1:9221\n" {
+		t.Errorf("inside: %+v", r)
 	}
 }
 
@@ -218,69 +260,205 @@ func remoteHarness(t *testing.T) (*harness, *clitest.Fake) {
 	}
 	f := clitest.New(t, "alice")
 	h := newHarness(t)
-	if r := h.run("remote", "add", "al", f.EnvironmentURL(), "--token", clitest.Token); r.code != 0 {
-		t.Fatalf("remote add: %+v", r)
-	}
+	h.save("srv", f, "alice")
 	return h, f
 }
 
-func TestRemoteCommands(t *testing.T) {
+// fastLogin makes deskyard login poll without waiting.
+func fastLogin(t *testing.T) {
+	old := loginInterval
+	loginInterval = func(int) time.Duration { return time.Millisecond }
+	t.Cleanup(func() { loginInterval = old })
+}
+
+func TestLoginSavesCredentialAndEnvironment(t *testing.T) {
+	fastLogin(t)
+	f := clitest.New(t, "alice")
+	f.LoginPending = 2
+	h := newHarness(t)
+	r := h.run("login", f.EnvironmentURL())
+	if r.code != 0 {
+		t.Fatalf("login: %+v", r)
+	}
+	if !strings.Contains(r.stderr, "BCDF-GHJK") || !strings.Contains(r.stderr, f.URL+"/cli-login#req1") {
+		t.Errorf("no code or approval URL: %s", r.stderr)
+	}
+	if len(h.opened) != 1 || h.opened[0] != f.URL+"/cli-login#req1" {
+		t.Errorf("opened %v", h.opened)
+	}
+	if c := f.Clients(); len(c) != 1 || !strings.HasPrefix(c[0], "deskyard CLI on ") {
+		t.Errorf("client name %v", c)
+	}
+	if !strings.Contains(r.stdout, "Signed in to 127.0.0.1 as zef") || !strings.Contains(r.stdout, "alice") {
+		t.Errorf("stdout: %s", r.stdout)
+	}
+	cfg := h.servers()
+	s := cfg.Servers["127.0.0.1"]
+	if s == nil || cfg.Default != "127.0.0.1" || s.URL != f.URL || s.Username != clitest.Username || s.Environment != "alice" || !f.Valid(s.Credential) || s.Credential == clitest.Credential {
+		t.Fatalf("servers.json: %+v %+v", cfg, s)
+	}
+	if runtime.GOOS != "windows" {
+		if fi, err := os.Stat(h.config); err != nil || fi.Mode().Perm() != 0o600 {
+			t.Errorf("servers.json mode: %v %v", fi.Mode(), err)
+		}
+	}
+	if r := h.run("status", "--json"); r.code != 0 || !strings.Contains(r.stdout, `"name": "alice"`) {
+		t.Errorf("status after login: %+v", r)
+	}
+
+	// --no-browser doesn't open one; logging in again under the same name
+	// replaces the server and revokes its old credential.
+	h.opened = nil
+	r = h.run("login", f.URL, "--no-browser")
+	if r.code != 0 || len(h.opened) != 0 {
+		t.Fatalf("login --no-browser: %+v %v", r, h.opened)
+	}
+	s2 := h.servers().Servers["127.0.0.1"]
+	if s2.Credential == s.Credential || f.Valid(s.Credential) || s2.Environment != "alice" {
+		t.Errorf("relogin: %+v (old still valid: %v)", s2, f.Valid(s.Credential))
+	}
+
+	f.LoginDeny = true
+	if r := h.run("login", f.URL, "--name", "other", "--no-browser"); r.code != 1 || !strings.Contains(r.stderr, "denied") {
+		t.Errorf("denied: %+v", r)
+	}
+	if h.servers().Servers["other"] != nil {
+		t.Errorf("a denied login was saved")
+	}
+}
+
+func TestLoginRejectsUnknownEnvironment(t *testing.T) {
+	fastLogin(t)
+	f := clitest.New(t, "alice")
+	f.Grants = append(f.Grants, clitest.Grant{Name: "seen", Level: "observe"})
+	h := newHarness(t)
+	for _, env := range []string{"bob", "seen"} {
+		r := h.run("login", f.URL+"/"+env, "--no-browser")
+		if r.code != 1 || !strings.Contains(r.stderr, env) || !strings.Contains(r.stderr, "alice") {
+			t.Errorf("%s: %+v", env, r)
+		}
+	}
+	if cfg := h.servers(); len(cfg.Servers) != 0 {
+		t.Errorf("saved %+v", cfg.Servers)
+	}
+	if got := f.Revoked(); len(got) != 2 {
+		t.Errorf("the rejected credentials weren't revoked: %v", got)
+	}
+}
+
+func TestAuthLinkSavesServer(t *testing.T) {
 	f := clitest.New(t, "alice")
 	h := newHarness(t)
+	r := h.run("auth", f.LinkURL(), "--name", "work")
+	if r.code != 0 || !strings.Contains(r.stdout, "Signed in to work as zef") {
+		t.Fatalf("auth: %+v", r)
+	}
+	cfg := h.servers()
+	s := cfg.Servers["work"]
+	if s == nil || cfg.Default != "work" || s.URL != f.URL || s.Environment != "alice" || !f.Valid(s.Credential) {
+		t.Fatalf("servers.json: %+v %+v", cfg, s)
+	}
+	if c := f.Clients(); len(c) != 1 || !strings.HasPrefix(c[0], "deskyard CLI on ") {
+		t.Errorf("client name %v", c)
+	}
+	if r := h.run("auth", f.LinkURL(), "--name", "again"); r.code != 1 || !strings.Contains(r.stderr, "already used") {
+		t.Errorf("second use: %+v", r)
+	}
 
-	r := h.run("remote", "add", "al", f.EnvironmentURL(), "--token", "dyt_bad_token")
-	if r.code != 1 || !strings.Contains(r.stderr, "token rejected (401): ask someone with access to alice") {
-		t.Errorf("bad token: %+v", r)
+	// An observe-only share is for the browser.
+	g := clitest.New(t, "alice")
+	g.Grants = []clitest.Grant{{Name: "alice", Level: "observe"}}
+	if r := h.run("auth", g.LinkURL()); r.code != 1 || !strings.Contains(r.stderr, "observe-only access is for the browser") {
+		t.Errorf("observe: %+v", r)
 	}
-	r = h.run("remote", "add", "al", f.URL+"/bob", "--token", clitest.Token)
-	if r.code != 1 || !strings.Contains(r.stderr, `this token is for the environment "alice", not "bob"`) {
-		t.Errorf("wrong environment: %+v", r)
+
+	// Several environments: none is chosen.
+	k := clitest.New(t, "alice")
+	k.Grants = append(k.Grants, clitest.Grant{Name: "bob", Level: "full"})
+	if r := h.run("auth", k.LinkURL(), "--name", "multi"); r.code != 0 || !strings.Contains(r.stdout, "env use") {
+		t.Errorf("several: %+v", r)
 	}
-	r = h.run("remote", "add", "al", f.EnvironmentURL(), "--token", clitest.Token)
-	if r.code != 0 || !strings.Contains(r.stdout, "Added remote al") || !strings.Contains(r.stdout, "default") {
-		t.Errorf("add: %+v", r)
+	if s := h.servers().Servers["multi"]; s == nil || s.Environment != "" {
+		t.Errorf("several: %+v", s)
 	}
-	// A URL without the environment's name learns it from the token.
-	r = h.run("remote", "add", "two", f.URL, "--token", clitest.Token)
+}
+
+func TestLogoutRevokesThenForgets(t *testing.T) {
+	h, f := remoteHarness(t)
+	g := clitest.New(t, "bob")
+	h.save("gone", g, "bob")
+	r := h.run("logout")
 	if r.code != 0 {
-		t.Errorf("add two: %+v", r)
+		t.Fatalf("logout: %+v", r)
 	}
-	cfg, err := remote.Load(h.config)
-	if err != nil || cfg.Remotes["two"].Environment != "alice" || cfg.Default != "al" {
-		t.Errorf("config: %+v %v", cfg, err)
+	if got := f.Revoked(); len(got) != 1 || got[0] != remote.CredentialID(clitest.Credential) {
+		t.Errorf("revoked %v", got)
 	}
+	if cfg := h.servers(); cfg.Servers["srv"] != nil || cfg.Servers["gone"] == nil {
+		t.Errorf("servers: %+v", cfg.Servers)
+	}
+	if r := h.run("logout", "srv"); r.code != 1 || !strings.Contains(r.stderr, `no server named "srv"`) {
+		t.Errorf("again: %+v", r)
+	}
+	// A credential the server no longer accepts (401) is forgotten anyway.
+	cfg := h.servers()
+	cfg.Servers["gone"].Credential = "dyc_0000dead_revoked"
+	cfg.Save(h.config)
+	if r := h.run("logout", "gone"); r.code != 0 {
+		t.Errorf("401: %+v", r)
+	}
+	if cfg := h.servers(); len(cfg.Servers) != 0 {
+		t.Errorf("servers: %+v", cfg.Servers)
+	}
+}
 
-	r = h.run("remote", "list")
-	if r.code != 0 || !strings.Contains(r.stdout, "* al") || strings.Contains(r.stdout, "secret") {
+func TestRemoteCommandsRemoved(t *testing.T) {
+	h := newHarness(t)
+	for _, args := range [][]string{{"remote", "add", "x", "https://h/x"}, {"remote", "list"}, {"remote"}} {
+		r := h.run(args...)
+		if r.code != 2 || !strings.Contains(r.stderr, `unknown command "remote"`) || !strings.Contains(r.stderr, "deskyard login") {
+			t.Errorf("%v: %+v", args, r)
+		}
+	}
+}
+
+func TestServerCommands(t *testing.T) {
+	h, f := remoteHarness(t)
+	g := clitest.New(t, "bob")
+	h.save("two", g, "")
+
+	r := h.run("server", "list")
+	if r.code != 0 || !strings.Contains(r.stdout, "* srv") || !strings.Contains(r.stdout, "dyc_0a1b2c3d_…") || strings.Contains(r.stdout, "secret") {
 		t.Errorf("list: %+v", r)
 	}
-	r = h.run("remote", "list", "--json")
+	r = h.run("server", "list", "--json")
 	var rows []map[string]any
-	if json.Unmarshal([]byte(r.stdout), &rows); len(rows) != 2 || rows[0]["default"] != true {
+	if json.Unmarshal([]byte(r.stdout), &rows); len(rows) != 2 || rows[0]["default"] != true || rows[0]["environment"] != "alice" || rows[0]["username"] != "zef" || rows[0]["credential"] != nil {
 		t.Errorf("list --json: %s", r.stdout)
 	}
-	if r = h.run("remote", "default", "two"); r.code != 0 {
+	if r = h.run("server", "default", "two"); r.code != 0 {
 		t.Errorf("default: %+v", r)
 	}
-	if r = h.run("remote", "default"); strings.TrimSpace(r.stdout) != "two" {
+	if r = h.run("server", "default"); strings.TrimSpace(r.stdout) != "two" {
 		t.Errorf("default shows %q", r.stdout)
 	}
-	if r = h.run("remote", "remove", "two"); r.code != 0 {
-		t.Errorf("remove: %+v", r)
-	}
-	if r = h.run("remote", "remove", "two"); r.code != 1 {
-		t.Errorf("second remove: %+v", r)
+	if r = h.run("server", "default", "nope"); r.code != 1 {
+		t.Errorf("default nope: %+v", r)
 	}
 
-	// Stopped: the token works, so the remote is saved with a note.
-	f.Stopped = true
-	r = h.run("remote", "add", "st", f.EnvironmentURL(), "--token", clitest.Token)
-	if r.code != 0 || !strings.Contains(r.stdout, "alice is stopped") {
-		t.Errorf("add stopped: %+v", r)
+	// env use checks the environment, then saves it for the server.
+	if r = h.run("env", "use", "nope"); r.code != 1 || !strings.Contains(r.stderr, `no environment "nope"`) {
+		t.Errorf("env use nope: %+v", r)
 	}
-	r = h.run("-e", "st", "status")
-	if r.code != 1 || !strings.Contains(r.stderr, "alice is stopped; someone with access can start it") {
-		t.Errorf("status stopped: %+v", r)
+	if r = h.run("env", "use", "bob"); r.code != 0 || h.servers().Servers["two"].Environment != "bob" {
+		t.Errorf("env use: %+v", r)
+	}
+	if r := h.run("status", "--json"); !strings.Contains(r.stdout, `"name": "bob"`) || !strings.Contains(r.stdout, `"server": "two"`) {
+		t.Errorf("status: %+v", r)
+	}
+	f.Grants = append(f.Grants, clitest.Grant{Name: "work", Level: "full"})
+	if r = h.run("env", "use", "srv/work"); r.code != 0 || h.servers().Servers["srv"].Environment != "work" {
+		t.Errorf("env use srv/work: %+v", r)
 	}
 }
 
@@ -292,7 +470,7 @@ func TestStatusRemote(t *testing.T) {
 	}
 	r = h.run("status", "--json")
 	var st map[string]any
-	if err := json.Unmarshal([]byte(r.stdout), &st); err != nil || st["state"] != "running" || st["remote"] != "al" {
+	if err := json.Unmarshal([]byte(r.stdout), &st); err != nil || st["state"] != "running" || st["server"] != "srv" {
 		t.Errorf("%s %v", r.stdout, err)
 	}
 }
@@ -304,9 +482,18 @@ func TestEnvRemote(t *testing.T) {
 	f := clitest.New(t, "alice")
 	h := newHarness(t)
 	h.env["DESKYARD_URL"] = f.EnvironmentURL()
-	h.env["DESKYARD_TOKEN"] = clitest.Token
+	h.env["DESKYARD_CREDENTIAL"] = clitest.Credential
 	if r := h.run("size"); r.code != 0 || r.stdout != "1280 800\n" {
 		t.Errorf("%+v", r)
+	}
+	// DESKYARD_URL is the default server: -e ENV picks among its environments.
+	f.Grants = append(f.Grants, clitest.Grant{Name: "bob", Level: "full"})
+	if r := h.run("-e", "bob", "status", "--json"); !strings.Contains(r.stdout, `"name": "bob"`) {
+		t.Errorf("-e bob: %+v", r)
+	}
+	h.env["DESKYARD_URL"] = f.URL
+	if r := h.run("size"); r.code != 1 || !strings.Contains(r.stderr, "no environment chosen") {
+		t.Errorf("no environment: %+v", r)
 	}
 }
 
@@ -375,7 +562,7 @@ func TestCpRemote(t *testing.T) {
 	h, f := remoteHarness(t)
 	local := t.TempDir()
 	os.WriteFile(filepath.Join(local, "a.txt"), []byte("A"), 0o644)
-	if r := h.run("cp", filepath.Join(local, "a.txt"), "al:"+f.Dir+"/"); r.code != 0 {
+	if r := h.run("cp", filepath.Join(local, "a.txt"), "alice:"+f.Dir+"/"); r.code != 0 {
 		t.Fatalf("upload: %+v", r)
 	}
 	if b, _ := os.ReadFile(filepath.Join(f.Dir, "a.txt")); string(b) != "A" {
@@ -387,11 +574,20 @@ func TestCpRemote(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(local, "b.txt")); string(b) != "A" {
 		t.Errorf("downloaded %q", b)
 	}
-	if r := h.run("cp", "x", "y"); r.code != 2 || !strings.Contains(r.stderr, "NAME:/path") {
+	if r := h.run("cp", "x", "y"); r.code != 2 || !strings.Contains(r.stderr, "ENV:/path") {
 		t.Errorf("no remote side: %+v", r)
 	}
-	if r := h.run("cp", "al:/a", "al:/b"); r.code != 2 {
+	if r := h.run("cp", "alice:/a", "alice:/b"); r.code != 2 {
 		t.Errorf("two remotes: %+v", r)
+	}
+	// NAME: is an environment on -e's server.
+	g := clitest.New(t, "bob")
+	h.save("other", g, "")
+	if r := h.run("-e", "other/bob", "cp", filepath.Join(local, "a.txt"), "bob:"+g.Dir+"/"); r.code != 0 {
+		t.Fatalf("upload to other: %+v", r)
+	}
+	if reqs := g.Requests(); len(reqs) == 0 || reqs[len(reqs)-1].Environment != "bob" {
+		t.Errorf("went elsewhere: %+v", reqs)
 	}
 }
 
@@ -448,7 +644,7 @@ func TestForwardArgs(t *testing.T) {
 	}
 	h.inside = true
 	r := h.run("forward", "3000")
-	if r.code != 2 || !strings.Contains(r.stderr, "forward maps ports between this machine and an environment; choose one with -e NAME") {
+	if r.code != 2 || !strings.Contains(r.stderr, "forward maps ports between this machine and an environment; choose one with -e ENV") {
 		t.Errorf("inside: %+v", r)
 	}
 	if r := h.run("forward", "--help"); r.code != 0 || !strings.Contains(r.stdout, "-R") {
@@ -610,12 +806,12 @@ func TestForwardReconnects(t *testing.T) {
 		t.Errorf("in after reconnect: %q %v", got, err)
 	}
 
-	// A refused token ends it.
+	// A refused credential ends it.
 	f.AnswerForwards(http.StatusUnauthorized)
 	f.DropForwards()
 	select {
 	case c := <-code:
-		if c != 1 || !strings.Contains(stderr.String(), "token rejected (401)") {
+		if c != 1 || !strings.Contains(stderr.String(), "(401): run `deskyard login") {
 			t.Errorf("exit %d, stderr %s", c, stderr.String())
 		}
 	case <-time.After(5 * time.Second):
@@ -677,50 +873,66 @@ func TestForwardArgsCaps(t *testing.T) {
 	}
 }
 
-// twoEnvironments saves remotes alice (the default) and bob, each a fake.
+// twoEnvironments signs in to two servers: a (the default, environment
+// alice, also granting work) and b (environment bob), each a fake.
 func twoEnvironments(t *testing.T) (*harness, *clitest.Fake, *clitest.Fake) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the fake runs commands with sh")
 	}
 	alice, bob := clitest.New(t, "alice"), clitest.New(t, "bob")
+	alice.Grants = append(alice.Grants, clitest.Grant{Name: "work", Level: "full"})
 	h := newHarness(t)
-	for _, f := range []*clitest.Fake{alice, bob} {
-		if r := h.run("remote", "add", f.Name, f.EnvironmentURL(), "--token", clitest.Token); r.code != 0 {
-			t.Fatalf("remote add %s: %+v", f.Name, r)
-		}
-	}
+	h.save("a", alice, "alice")
+	h.save("b", bob, "bob")
 	return h, alice, bob
 }
 
-func TestEnvironmentFlag(t *testing.T) {
+func TestEnvironmentFlagServerSlashEnv(t *testing.T) {
 	h, alice, bob := twoEnvironments(t)
+	last := func(f *clitest.Fake) string {
+		reqs := f.Requests()
+		if len(reqs) == 0 {
+			return ""
+		}
+		return reqs[len(reqs)-1].Environment
+	}
 	for _, args := range [][]string{
-		{"-e", "bob", "screenshot"},
-		{"--environment", "bob", "screenshot"},
-		{"-e=bob", "screenshot"},
-		{"--environment=bob", "screenshot"},
+		{"-e", "b/bob", "screenshot"},
+		{"--environment", "b/bob", "screenshot"},
+		{"-e=b/bob", "screenshot"},
+		{"--environment=b/bob", "screenshot"},
 	} {
 		na, nb := len(alice.Requests()), len(bob.Requests())
 		r := h.run(args...)
 		if r.code != 0 || r.stdout != string(clitest.FakePNG) {
 			t.Errorf("%v: %+v", args, r)
 		}
-		if len(alice.Requests()) != na || len(bob.Requests()) != nb+1 {
+		if len(alice.Requests()) != na || len(bob.Requests()) != nb+1 || last(bob) != "bob" {
 			t.Errorf("%v: went to the wrong environment (alice %d→%d, bob %d→%d)", args, na, len(alice.Requests()), nb, len(bob.Requests()))
 		}
 	}
-	// Without -e the default (alice, the first remote) is used.
-	n := len(alice.Requests())
-	if r := h.run("screenshot"); r.code != 0 || len(alice.Requests()) != n+1 {
+	// -e ENV picks among the default server's environments.
+	if r := h.run("-e", "work", "screenshot"); r.code != 0 || last(alice) != "work" {
+		t.Errorf("-e work: %+v", r)
+	}
+	// Without -e the default server's environment is used.
+	if r := h.run("screenshot"); r.code != 0 || last(alice) != "alice" {
 		t.Errorf("default: %+v", r)
 	}
-	// DESKYARD_REMOTE still picks one; -e wins over it.
-	h.env["DESKYARD_REMOTE"] = "bob"
-	if r := h.run("status", "--json"); !strings.Contains(r.stdout, `"name": "bob"`) {
-		t.Errorf("DESKYARD_REMOTE: %+v", r)
+	if r := h.run("-e", "bob", "size"); r.code != 1 || !strings.Contains(r.stderr, `no environment "bob"`) {
+		t.Errorf("-e bob on a: %+v", r)
 	}
-	if r := h.run("-e", "alice", "status", "--json"); !strings.Contains(r.stdout, `"name": "alice"`) {
-		t.Errorf("-e over DESKYARD_REMOTE: %+v", r)
+	// DESKYARD_ENVIRONMENT picks one with the same syntax; -e wins over it.
+	h.env["DESKYARD_ENVIRONMENT"] = "b/bob"
+	if r := h.run("status", "--json"); !strings.Contains(r.stdout, `"name": "bob"`) {
+		t.Errorf("DESKYARD_ENVIRONMENT: %+v", r)
+	}
+	if r := h.run("-e", "a/alice", "status", "--json"); !strings.Contains(r.stdout, `"name": "alice"`) {
+		t.Errorf("-e over DESKYARD_ENVIRONMENT: %+v", r)
+	}
+	h.env["DESKYARD_ENVIRONMENT"] = "b/"
+	if r := h.run("status"); r.code != 1 || !strings.Contains(r.stderr, "DESKYARD_ENVIRONMENT") {
+		t.Errorf("bad DESKYARD_ENVIRONMENT: %+v", r)
 	}
 }
 
@@ -752,7 +964,7 @@ func TestOldTargetFlagsAreUnknown(t *testing.T) {
 
 func TestGlobalEnvironmentAndExecEnv(t *testing.T) {
 	h, alice, bob := twoEnvironments(t)
-	r := h.run("-e", "bob", "exec", "-e", "CI=1", "--", "true")
+	r := h.run("-e", "b/bob", "exec", "-e", "CI=1", "--", "true")
 	if r.code != 0 {
 		t.Fatalf("%+v", r)
 	}
@@ -765,37 +977,12 @@ func TestGlobalEnvironmentAndExecEnv(t *testing.T) {
 	}
 }
 
-func TestRemotesFileUsesEnvironment(t *testing.T) {
-	h, _, _ := twoEnvironments(t)
-	data, err := os.ReadFile(h.config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var raw struct {
-		Remotes map[string]map[string]any `json:"remotes"`
-	}
-	if err := json.Unmarshal(data, &raw); err != nil {
-		t.Fatal(err)
-	}
-	if raw.Remotes["bob"]["environment"] != "bob" {
-		t.Errorf("remotes.json: %s", data)
-	}
-	if _, ok := raw.Remotes["bob"]["desktop"]; ok {
-		t.Errorf("remotes.json still has desktop: %s", data)
-	}
-	r := h.run("remote", "list", "--json")
-	var rows []map[string]any
-	if err := json.Unmarshal([]byte(r.stdout), &rows); err != nil || len(rows) != 2 || rows[1]["environment"] != "bob" || rows[1]["desktop"] != nil {
-		t.Errorf("list --json: %s %v", r.stdout, err)
-	}
-}
-
 func TestErrorPrefix(t *testing.T) {
 	h := newHarness(t)
 	if r := h.run("bogus"); r.code != 2 || !strings.HasPrefix(r.stderr, "deskyard: ") {
 		t.Errorf("usage error: %q", r.stderr)
 	}
-	if r := h.run("screenshot"); r.code != 1 || !strings.HasPrefix(r.stderr, "deskyard: no remote chosen") {
+	if r := h.run("screenshot"); r.code != 1 || !strings.HasPrefix(r.stderr, "deskyard: not signed in") {
 		t.Errorf("error: %q", r.stderr)
 	}
 }
@@ -807,8 +994,8 @@ func TestHelpNamesEnvironment(t *testing.T) {
 		if strings.Contains(out, "-d NAME") || strings.Contains(out, "--desktop") {
 			t.Errorf("%v still mentions -d/--desktop", args)
 		}
-		if !strings.Contains(out, "-e NAME") {
-			t.Errorf("%v doesn't mention -e NAME", args)
+		if !strings.Contains(out, "-e ENV") {
+			t.Errorf("%v doesn't mention -e ENV", args)
 		}
 	}
 	var doc struct {

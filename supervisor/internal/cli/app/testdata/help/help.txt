@@ -1,16 +1,16 @@
 deskyard help: help for a command
 
-Usage: deskyard [-e NAME] help [COMMAND...]
+Usage: deskyard [-e ENV] help [COMMAND...]
 
 Prints help for a command, or the overview. Same as COMMAND --help.
 
 Arguments:
-  COMMAND    string...   optional  command name, e.g. click or remote add
+  COMMAND    string...   optional  command name, e.g. click or server list
 
 Prints: help text
 
 Examples:
   deskyard help cp
 
-Where: on this machine (no remote needed)
+Where: on this machine (no server needed)
 Exit codes: 0 ok, 1 error, 2 usage error

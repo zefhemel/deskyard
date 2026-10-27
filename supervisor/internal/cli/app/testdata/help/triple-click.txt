@@ -1,6 +1,6 @@
 deskyard triple-click: triple left-click at X Y
 
-Usage: deskyard [-e NAME] triple-click X Y
+Usage: deskyard [-e ENV] triple-click X Y
 
 Triple-clicks the left button at X Y (selects a line or paragraph).
 
@@ -13,5 +13,5 @@ Prints: nothing
 Examples:
   deskyard triple-click 200 300
 
-Where: inside an environment it acts locally; elsewhere on the chosen environment (-e NAME)
+Where: inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)
 Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop

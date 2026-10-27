@@ -1,18 +1,19 @@
 deskyard cp: copy files to or from an environment
 
-Usage: deskyard [-e NAME] cp SRC DST
+Usage: deskyard [-e ENV] cp SRC DST
 
 Copies a file or directory between this machine and an environment; write the
-environment side as NAME:/path (NAME is a remote; an empty NAME, as in :/path,
-means the chosen environment). A file lands at DST, or inside DST when it is
-an existing directory. A directory's contents land in DST, which is created
-(like `cp -r SRC/. DST`). SRC - reads stdin; DST - writes to stdout (a tar
-stream for a directory). Files land as user; inside an environment, two local
-paths are copied locally.
+environment side as ENV:/path (ENV is an environment on the chosen server, -e
+SERVER/… or the default one; an empty ENV, as in :/path, means the chosen
+environment). A file lands at DST, or inside DST when it is an existing
+directory. A directory's contents land in DST, which is created (like `cp -r
+SRC/. DST`). SRC - reads stdin; DST - writes to stdout (a tar stream for a
+directory). Files land as user; inside an environment, two local paths are
+copied locally.
 
 Arguments:
-  SRC        path        required  local path, -, or NAME:/path
-  DST        path        required  local path, -, or NAME:/path
+  SRC        path        required  local path, -, or ENV:/path
+  DST        path        required  local path, -, or ENV:/path
 
 Prints: nothing, unless DST is - (the file's bytes or a tar stream)
 
@@ -21,5 +22,5 @@ Examples:
   deskyard cp ./site alice:/workspace/site
   deskyard cp alice:/workspace/out.csv .
 
-Where: on the chosen environment (-e NAME); inside an environment without one chosen it acts locally
+Where: on the chosen environment (-e ENV); inside an environment without one chosen it acts locally
 Exit codes: 0 ok, 1 error, 2 usage error

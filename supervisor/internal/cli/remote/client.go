@@ -1,34 +1,34 @@
 package remote
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
 
-// APIPath is the remote access API's root path on a supervisor.
-const APIPath = "/api/agent/v1"
-
-// Client talks to one environment's remote access API.
+// Client talks to a supervisor's API, and to one environment's remote access
+// API, with a client credential.
 type Client struct {
-	Alias       string // remote name, for messages ("alice"); may equal Environment
+	Alias       string // server name, for messages ("deskyard.example.com")
 	Base        string
-	Environment string // expected environment name; may be empty
-	Token       string
+	Environment string // the environment URL and WSURL address; may be empty
+	Token       string // client credential (dyc_…); empty for unauthenticated calls
 	HTTP        *http.Client
 }
 
-// FromRemote builds a client for a saved remote.
-func FromRemote(r *Remote) *Client {
-	return &Client{Alias: r.Name, Base: r.Base, Environment: r.Environment, Token: r.Token}
+// FromServer builds a client for a saved server and one of its environments.
+func FromServer(s *Server, environment string) *Client {
+	return &Client{Alias: s.Name, Base: s.URL, Environment: environment, Token: s.Credential}
 }
 
-// Info is GET /api/agent/v1.
+// Info is GET /api/environments/{name}/status.
 type Info struct {
 	Name         string `json:"name"`
 	State        string `json:"state"`
@@ -53,8 +53,13 @@ func (c *Client) Label() string {
 	return "the environment"
 }
 
-// URL returns base + APIPath + p.
-func (c *Client) URL(p string) string { return c.Base + APIPath + p }
+// URL is the environment's remote access route p (/exec, /cdp/…).
+func (c *Client) URL(p string) string {
+	return c.Base + "/api/environments/" + url.PathEscape(c.Environment) + p
+}
+
+// API is the supervisor API route p (/me, /accounts).
+func (c *Client) API(p string) string { return c.Base + "/api" + p }
 
 // WSURL is URL with the scheme switched to ws/wss.
 func (c *Client) WSURL(p string) string {
@@ -68,7 +73,7 @@ func (c *Client) WSURL(p string) string {
 	return u
 }
 
-// Header returns the auth header for remote access API calls.
+// Header returns the auth header for API calls.
 func (c *Client) Header() http.Header {
 	h := http.Header{}
 	h.Set("Authorization", "Bearer "+c.Token)
@@ -82,9 +87,11 @@ func (c *Client) httpClient() *http.Client {
 	return http.DefaultClient
 }
 
-// Do sends an authenticated request to the remote access API.
+// Do sends a request with the credential, when there is one.
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
-	req.Header.Set("Authorization", "Bearer "+c.Token)
+	if c.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
 	resp, err := c.httpClient().Do(req)
 	if err != nil {
 		return nil, c.NetError(err)
@@ -92,12 +99,49 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
-// Info fetches the environment's description. A 409 (stopped) still proves the
-// token works; it comes back as an *APIError with Status 409.
+// JSON sends in (when not nil) as JSON to the API route path and decodes a
+// 2xx answer into out (when not nil). Other answers come back as *APIError.
+func (c *Client) JSON(ctx context.Context, method, path string, in, out any) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	var body io.Reader
+	if in != nil {
+		data, err := json.Marshal(in)
+		if err != nil {
+			return err
+		}
+		body = bytes.NewReader(data)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.API(path), body)
+	if err != nil {
+		return err
+	}
+	if in != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return c.ResponseError(resp)
+	}
+	if out == nil || resp.StatusCode == http.StatusNoContent {
+		return nil
+	}
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("%s answered with something that isn't the Deskyard API (%v): check the URL", c.Base, err)
+	}
+	return nil
+}
+
+// Info fetches the environment's description and state; it also checks the
+// credential and the environment's name.
 func (c *Client) Info(ctx context.Context) (*Info, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.URL(""), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.URL("/status"), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -111,12 +155,12 @@ func (c *Client) Info(ctx context.Context) (*Info, error) {
 	}
 	var info Info
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		return nil, fmt.Errorf("%s answered with something that isn't the remote access API (%v): check the URL", c.Base, err)
+		return nil, fmt.Errorf("%s answered with something that isn't the Deskyard API (%v): check the URL", c.Base, err)
 	}
 	return &info, nil
 }
 
-// APIError is an error answer from the remote access API, already phrased with what
+// APIError is an error answer from the supervisor's API, already phrased with what
 // to do next.
 type APIError struct {
 	Status int
@@ -153,20 +197,34 @@ func (c *Client) explain(status int, msg string) string {
 	name := c.Label()
 	switch status {
 	case http.StatusUnauthorized:
-		return fmt.Sprintf("token rejected (401): ask someone with access to %s for a new token (on its Remote access tab; this one is wrong, expired or revoked), then run `deskyard remote add %s %s --token dyt_…` again",
-			name, aliasOr(c.Alias, name), (&Target{Base: c.Base, Environment: c.Environment}).URL())
+		if msg == "" {
+			msg = "the credential was rejected"
+		}
+		login := (&Target{Base: c.Base, Environment: c.Environment}).URL()
+		if c.Alias != "" && c.Alias != DefaultName(c.Base) {
+			login += " --name " + c.Alias
+		}
+		return fmt.Sprintf("%s (401): run `deskyard login %s` again", msg, login)
 	case http.StatusConflict:
 		if msg == "" {
 			msg = name + " is not running; someone with access can start it"
 		}
 		return msg + " (409)"
 	case http.StatusNotFound:
-		return fmt.Sprintf("%s has no remote access API (404): check the URL (expected https://host/%s)", c.Base, name)
+		switch msg {
+		case "":
+			return fmt.Sprintf("%s has no such API (404): check the URL (expected https://host/%s)", c.Base, name)
+		case "no such environment":
+			if c.Environment != "" {
+				return fmt.Sprintf("%s has no environment %q you can use (404): check the name, or sign in as an account with access to it (deskyard login)", c.Base, c.Environment)
+			}
+		}
+		return msg + " (404)"
 	case http.StatusForbidden:
 		if msg == "" {
 			msg = "forbidden"
 		}
-		return fmt.Sprintf("%s (403): this token can't do that", msg)
+		return msg + " (403)"
 	}
 	if msg == "" {
 		msg = http.StatusText(status)
@@ -175,13 +233,6 @@ func (c *Client) explain(status int, msg string) string {
 		return fmt.Sprintf("the supervisor failed (%d): %s; try again, and if it keeps failing tell someone who runs the supervisor", status, msg)
 	}
 	return fmt.Sprintf("%s (%d)", msg, status)
-}
-
-func aliasOr(alias, name string) string {
-	if alias != "" {
-		return alias
-	}
-	return name
 }
 
 // NetError phrases a transport error.

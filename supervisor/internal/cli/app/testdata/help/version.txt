@@ -1,6 +1,6 @@
 deskyard version: print the version
 
-Usage: deskyard [-e NAME] version
+Usage: deskyard [-e ENV] version
 
 Prints the deskyard command's version.
 
@@ -9,5 +9,5 @@ Prints: the version
 Examples:
   deskyard version
 
-Where: on this machine (no remote needed)
+Where: on this machine (no server needed)
 Exit codes: 0 ok, 1 error, 2 usage error

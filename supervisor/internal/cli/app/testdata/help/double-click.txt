@@ -1,6 +1,6 @@
 deskyard double-click: double left-click at X Y
 
-Usage: deskyard [-e NAME] double-click X Y
+Usage: deskyard [-e ENV] double-click X Y
 
 Double-clicks the left button at X Y (selects a word, opens a file).
 
@@ -13,5 +13,5 @@ Prints: nothing
 Examples:
   deskyard double-click 200 300
 
-Where: inside an environment it acts locally; elsewhere on the chosen environment (-e NAME)
+Where: inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)
 Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop

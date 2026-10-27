@@ -1,7 +1,8 @@
-// Package clitest is a fake supervisor agent API for the deskyard command's
-// tests: it implements the exec WebSocket from supervisor/API.md by running
-// commands on the test machine, plus the status, CDP and forward endpoints
-// (the forward helper's side runs in the fake, on the test machine).
+// Package clitest is a fake supervisor for the deskyard command's tests: it
+// implements the remote access API from supervisor/API.md (status, exec by
+// running commands on the test machine, CDP and forward, whose helper side
+// runs in the fake), the CLI login and link redemption routes, and deleting
+// one's own client credential.
 package clitest
 
 import (
@@ -24,8 +25,20 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/forward"
 )
 
-// Token is the fake's valid token.
-const Token = "dyt_test1_secret"
+// Credential is a client credential the fake accepts from the start.
+const Credential = "dyc_0a1b2c3d_secret"
+
+// Link is the fake's single-use login link code.
+const Link = "dyl_9f8e7d6c_linksecret"
+
+// Username is the account every credential of the fake belongs to.
+const Username = "zef"
+
+// Grant is one of the account's environments, as login answers list them.
+type Grant struct {
+	Name  string `json:"name"`
+	Level string `json:"level"`
+}
 
 // ExecRequest mirrors the first exec message.
 type ExecRequest struct {
@@ -35,17 +48,27 @@ type ExecRequest struct {
 	TTY  bool              `json:"tty"`
 	Cols int               `json:"cols"`
 	Rows int               `json:"rows"`
+	// Environment is the environment the request was for (from the path).
+	Environment string `json:"-"`
 }
 
 // Fake is a running fake supervisor.
 type Fake struct {
 	*httptest.Server
-	Name    string
+	Name    string // the first environment
 	Dir     string // stands in for /workspace
 	Stopped bool
 	// Desktop handles argv[0] == "deskyard" (the command inside an environment);
 	// the default answers size and screenshot.
 	Desktop func(args []string, stdout, stderr io.Writer) int
+	// Grants are the account's environments (default: Name at full). The
+	// remote access routes serve the full ones, answer 403 for observed
+	// ones and 404 for the rest.
+	Grants []Grant
+	// LoginPending is how many polls of a CLI login answer pending before
+	// it is approved; LoginDeny denies it instead.
+	LoginPending int
+	LoginDeny    bool
 
 	mu    sync.Mutex
 	Execs []ExecRequest
@@ -54,23 +77,37 @@ type Fake struct {
 	ForwardStatus []int
 	forwardConns  map[*websocket.Conn]bool
 	forwardStarts []string
+	credentials   map[string]bool // valid credentials
+	issued        int
+	loginDone     bool
+	linkUsed      bool
+	clients       []string // CLI login client names and link redemption names
+	revoked       []string // credential IDs deleted through DELETE /api/me/credentials/{id}
 }
 
-// New starts a fake for an environment called name.
+// New starts a fake whose account has the full environment name.
 func New(t testing.TB, name string) *Fake {
-	f := &Fake{Name: name, Dir: t.TempDir()}
+	f := &Fake{Name: name, Dir: t.TempDir(), Grants: []Grant{{name, "full"}}, credentials: map[string]bool{Credential: true}}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/agent/v1", f.auth(f.info))
-	mux.HandleFunc("/api/agent/v1/exec", f.auth(f.exec))
-	mux.HandleFunc("/api/agent/v1/cdp/", f.auth(f.cdp))
-	mux.HandleFunc("/api/agent/v1/forward", f.auth(f.forward))
+	mux.HandleFunc("GET /api/environments/{name}", f.auth(f.environment))
+	mux.HandleFunc("GET /api/environments/{name}/status", f.auth(f.remote(f.info)))
+	mux.HandleFunc("/api/environments/{name}/exec", f.auth(f.remote(f.exec)))
+	mux.HandleFunc("/api/environments/{name}/cdp/", f.auth(f.remote(f.cdp)))
+	mux.HandleFunc("/api/environments/{name}/forward", f.auth(f.remote(f.forward)))
+	mux.HandleFunc("DELETE /api/me/credentials/{id}", f.auth(f.deleteCredential))
+	mux.HandleFunc("POST /api/cli-login", f.startLogin)
+	mux.HandleFunc("POST /api/cli-login/{id}/token", f.pollLogin)
+	mux.HandleFunc("POST /api/links/redeem", f.redeem)
 	f.Server = httptest.NewServer(mux)
 	t.Cleanup(f.Close)
 	return f
 }
 
-// EnvironmentURL is the environment's URL, as given to `remote add`.
+// EnvironmentURL is the environment's URL, as given to `deskyard login`.
 func (f *Fake) EnvironmentURL() string { return f.Server.URL + "/" + f.Name }
+
+// LinkURL is the login link as the web UI shows it.
+func (f *Fake) LinkURL() string { return f.Server.URL + "/link#" + Link }
 
 // Requests returns the exec requests so far.
 func (f *Fake) Requests() []ExecRequest {
@@ -79,29 +116,204 @@ func (f *Fake) Requests() []ExecRequest {
 	return append([]ExecRequest(nil), f.Execs...)
 }
 
+// Clients returns the client names CLI logins and link redemptions gave.
+func (f *Fake) Clients() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.clients...)
+}
+
+// Revoked returns the IDs of the credentials deleted so far.
+func (f *Fake) Revoked() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.revoked...)
+}
+
+// Valid reports whether the fake accepts cred.
+func (f *Fake) Valid(cred string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.credentials[cred]
+}
+
 func writeErr(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	json.NewEncoder(w).Encode(v)
+}
+
+// credentialID is the id part of dyc_<id>_<secret>.
+func credentialID(cred string) string {
+	rest, ok := strings.CutPrefix(cred, "dyc_")
+	if !ok {
+		return ""
+	}
+	id, _, _ := strings.Cut(rest, "_")
+	return id
 }
 
 func (f *Fake) auth(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer "+Token {
-			writeErr(w, http.StatusUnauthorized, "invalid token")
+		cred, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !ok {
+			writeErr(w, http.StatusUnauthorized, "sign in first")
 			return
 		}
-		if f.Stopped {
-			writeErr(w, http.StatusConflict, f.Name+" is stopped; someone with access can start it")
+		if !f.Valid(cred) {
+			writeErr(w, http.StatusUnauthorized, "the credential is unknown, revoked or expired")
 			return
 		}
 		h(w, r)
 	}
 }
 
+func (f *Fake) level(name string) string {
+	for _, g := range f.Grants {
+		if g.Name == name {
+			return g.Level
+		}
+	}
+	return ""
+}
+
+// remote checks the remote access API's access rules for {name}.
+func (f *Fake) remote(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		switch f.level(name) {
+		case "":
+			writeErr(w, http.StatusNotFound, "no such environment")
+			return
+		case "observe":
+			writeErr(w, http.StatusForbidden, "observe-only access can't do that")
+			return
+		}
+		if f.Stopped && !strings.HasSuffix(r.URL.Path, "/status") {
+			writeErr(w, http.StatusConflict, name+" is stopped; someone with access can start it")
+			return
+		}
+		h(w, r)
+	}
+}
+
+func (f *Fake) environment(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if f.level(name) == "" {
+		writeErr(w, http.StatusNotFound, "no such environment")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"name": name, "state": "running"})
+}
+
 func (f *Fake) info(w http.ResponseWriter, r *http.Request) {
+	state := "running"
+	if f.Stopped {
+		state = "stopped"
+	}
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"name":%q,"state":"running","image":"ghcr.io/x/cc:latest","imageTitle":"Debian XFCE","imageVersion":"2026.10.22","screen":{"width":1280,"height":800},"api":1}`, f.Name)
+	fmt.Fprintf(w, `{"name":%q,"state":%q,"image":"ghcr.io/x/cc:latest","imageTitle":"Debian XFCE","imageVersion":"2026.10.22","screen":{"width":1280,"height":800},"api":1}`, r.PathValue("name"), state)
+}
+
+func (f *Fake) deleteCredential(w http.ResponseWriter, r *http.Request) {
+	cred := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	id := r.PathValue("id")
+	if id != credentialID(cred) {
+		writeErr(w, http.StatusNotFound, "no such credential")
+		return
+	}
+	f.mu.Lock()
+	delete(f.credentials, cred)
+	f.revoked = append(f.revoked, id)
+	f.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// issueLocked makes a new credential and the answer login and redemption give.
+func (f *Fake) issueLocked() map[string]any {
+	f.issued++
+	cred := fmt.Sprintf("dyc_%08x_issued", f.issued)
+	f.credentials[cred] = true
+	return map[string]any{"credential": cred, "username": Username, "environments": f.Grants}
+}
+
+func (f *Fake) hasFull() bool {
+	for _, g := range f.Grants {
+		if g.Level == "full" {
+			return true
+		}
+	}
+	return false
+}
+
+const pollSecret = "poll-secret"
+
+func (f *Fake) startLogin(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Client string `json:"client"`
+	}
+	if json.NewDecoder(r.Body).Decode(&body) != nil || body.Client == "" || len(body.Client) > 100 {
+		writeErr(w, http.StatusBadRequest, "a client name is required")
+		return
+	}
+	f.mu.Lock()
+	f.clients = append(f.clients, body.Client)
+	f.loginDone = false
+	f.mu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]any{"id": "req1", "code": "BCDF-GHJK", "approveURL": f.URL + "/cli-login#req1",
+		"pollSecret": pollSecret, "interval": 2, "expiresIn": 600})
+}
+
+func (f *Fake) pollLogin(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		PollSecret string `json:"pollSecret"`
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	switch {
+	case r.PathValue("id") != "req1" || body.PollSecret != pollSecret || f.loginDone:
+		writeErr(w, http.StatusGone, "this login request expired or was already used; run deskyard login again")
+	case f.LoginPending > 0:
+		f.LoginPending--
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "pending"})
+	case f.LoginDeny:
+		f.loginDone = true
+		writeErr(w, http.StatusForbidden, "denied")
+	default:
+		f.loginDone = true
+		writeJSON(w, http.StatusOK, f.issueLocked())
+	}
+}
+
+func (f *Fake) redeem(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Link   string `json:"link"`
+		Client string `json:"client"`
+		Name   string `json:"name"`
+	}
+	if json.NewDecoder(r.Body).Decode(&body) != nil || (body.Client != "cli" && body.Client != "browser") || len(body.Name) > 100 {
+		writeErr(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	switch {
+	case body.Link != Link || f.linkUsed:
+		writeErr(w, http.StatusGone, "this link was already used or replaced")
+	case body.Client != "cli":
+		writeErr(w, http.StatusBadRequest, "the fake only redeems for the CLI")
+	case !f.hasFull():
+		writeErr(w, http.StatusForbidden, "observe-only access is for the browser")
+	default:
+		f.linkUsed = true
+		f.clients = append(f.clients, body.Name)
+		writeJSON(w, http.StatusOK, f.issueLocked())
+	}
 }
 
 // FakePNG is what the fake's `deskyard screenshot` prints.
@@ -157,6 +369,7 @@ func (f *Fake) exec(w http.ResponseWriter, r *http.Request) {
 		c.Close(websocket.StatusNormalClosure, "")
 		return
 	}
+	req.Environment = r.PathValue("name")
 	f.mu.Lock()
 	f.Execs = append(f.Execs, req)
 	f.mu.Unlock()
@@ -223,10 +436,11 @@ func (f *Fake) exec(w http.ResponseWriter, r *http.Request) {
 }
 
 // cdp fakes the proxied DevTools endpoint: /json/version and /json/list
-// with URLs pointing back through the agent API, and an echo WebSocket at
-// /devtools/….
+// with URLs pointing back through the remote access API, and an echo
+// WebSocket at /devtools/….
 func (f *Fake) cdp(w http.ResponseWriter, r *http.Request) {
-	rest := strings.TrimPrefix(r.URL.Path, "/api/agent/v1/cdp")
+	api := "/api/environments/" + r.PathValue("name") + "/cdp"
+	rest := strings.TrimPrefix(r.URL.Path, api)
 	host := r.Host
 	switch {
 	case strings.HasPrefix(rest, "/devtools/"):
@@ -244,10 +458,10 @@ func (f *Fake) cdp(w http.ResponseWriter, r *http.Request) {
 		}
 	case rest == "/json/version" || rest == "/json/version/":
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"Browser":"Chrome/141.0","Protocol-Version":"1.3","webSocketDebuggerUrl":"ws://%s/api/agent/v1/cdp/devtools/browser/b1"}`, host)
+		fmt.Fprintf(w, `{"Browser":"Chrome/141.0","Protocol-Version":"1.3","webSocketDebuggerUrl":"ws://%s%s/devtools/browser/b1"}`, host, api)
 	case rest == "/json/list" || rest == "/json" || rest == "/json/list/":
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `[{"id":"p1","type":"page","url":"about:blank","title":"t","devtoolsFrontendUrl":"/api/agent/v1/cdp/devtools/inspector.html?ws=%s/api/agent/v1/cdp/devtools/page/p1","webSocketDebuggerUrl":"ws://%s/api/agent/v1/cdp/devtools/page/p1"}]`, host, host)
+		fmt.Fprintf(w, `[{"id":"p1","type":"page","url":"about:blank","title":"t","devtoolsFrontendUrl":"%s/devtools/inspector.html?ws=%s%s/devtools/page/p1","webSocketDebuggerUrl":"ws://%s%s/devtools/page/p1"}]`, api, host, api, host, api)
 	default:
 		http.NotFound(w, r)
 	}
@@ -286,7 +500,7 @@ func (f *Fake) forward(w http.ResponseWriter, r *http.Request) {
 		st := f.ForwardStatus[0]
 		f.ForwardStatus = f.ForwardStatus[1:]
 		f.mu.Unlock()
-		msg := map[int]string{http.StatusConflict: f.Name + " is stopped; someone with access can start it", http.StatusUnauthorized: "the token is unknown, revoked or expired"}[st]
+		msg := map[int]string{http.StatusConflict: r.PathValue("name") + " is stopped; someone with access can start it", http.StatusUnauthorized: "the credential is unknown, revoked or expired"}[st]
 		writeErr(w, st, msg)
 		return
 	}

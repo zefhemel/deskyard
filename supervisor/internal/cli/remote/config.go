@@ -4,50 +4,52 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 )
 
-// Remote is one saved remote: a local alias for an environment reached through
-// a supervisor's agent API with a token.
-type Remote struct {
+// Server is one saved server: a supervisor the CLI signed in to, with the
+// client credential it got and the environment commands use by default.
+type Server struct {
 	Name        string `json:"-"`
-	URL         string `json:"url"`         // as given to `remote add`
-	Base        string `json:"base"`        // supervisor base URL
-	Environment string `json:"environment"` // the environment's name on the supervisor
-	Token       string `json:"token"`
+	URL         string `json:"url"` // supervisor base URL, no trailing slash
+	Username    string `json:"username"`
+	Credential  string `json:"credential"`            // dyc_…
+	Environment string `json:"environment,omitempty"` // default environment; may be empty
 }
 
-// Config is the content of remotes.json.
+// Config is the content of servers.json.
 type Config struct {
 	Default string             `json:"default,omitempty"`
-	Remotes map[string]*Remote `json:"remotes"`
+	Servers map[string]*Server `json:"servers"`
 }
 
 var nameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
 
-// ValidName reports whether name can be used as a remote name.
+// ValidName reports whether name can be used as a server name.
 func ValidName(name string) bool { return nameRE.MatchString(name) }
 
-// DefaultPath is $XDG_CONFIG_HOME/deskyard/remotes.json, falling
-// back to ~/.config/deskyard/remotes.json.
+// DefaultPath is $XDG_CONFIG_HOME/deskyard/servers.json, falling
+// back to ~/.config/deskyard/servers.json.
 func DefaultPath() (string, error) {
 	dir := os.Getenv("XDG_CONFIG_HOME")
 	if dir == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return "", fmt.Errorf("can't find the home directory to keep remotes in: %v (set XDG_CONFIG_HOME)", err)
+			return "", fmt.Errorf("can't find the home directory to keep servers in: %v (set XDG_CONFIG_HOME)", err)
 		}
 		dir = filepath.Join(home, ".config")
 	}
-	return filepath.Join(dir, "deskyard", "remotes.json"), nil
+	return filepath.Join(dir, "deskyard", "servers.json"), nil
 }
 
 // Load reads the config at path; a missing file is an empty config.
 func Load(path string) (*Config, error) {
-	c := &Config{Remotes: map[string]*Remote{}}
+	c := &Config{Servers: map[string]*Server{}}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return c, nil
@@ -58,15 +60,15 @@ func Load(path string) (*Config, error) {
 	if err := json.Unmarshal(data, c); err != nil {
 		return nil, fmt.Errorf("%s is not valid JSON (%v): fix or delete it", path, err)
 	}
-	if c.Remotes == nil {
-		c.Remotes = map[string]*Remote{}
+	if c.Servers == nil {
+		c.Servers = map[string]*Server{}
 	}
-	for name, r := range c.Remotes {
-		if r == nil {
-			delete(c.Remotes, name)
+	for name, s := range c.Servers {
+		if s == nil {
+			delete(c.Servers, name)
 			continue
 		}
-		r.Name = name
+		s.Name = name
 	}
 	return c, nil
 }
@@ -82,7 +84,7 @@ func (c *Config) Save(path string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, ".remotes-*.json")
+	tmp, err := os.CreateTemp(dir, ".servers-*.json")
 	if err != nil {
 		return err
 	}
@@ -105,49 +107,65 @@ func (c *Config) Save(path string) error {
 	return os.Rename(tmp.Name(), path)
 }
 
-// Sorted returns the remotes sorted by name.
-func (c *Config) Sorted() []*Remote {
-	out := make([]*Remote, 0, len(c.Remotes))
-	for _, r := range c.Remotes {
-		out = append(out, r)
+// Sorted returns the servers sorted by name.
+func (c *Config) Sorted() []*Server {
+	out := make([]*Server, 0, len(c.Servers))
+	for _, s := range c.Servers {
+		out = append(out, s)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
 }
 
-// Add stores r under r.Name, replacing any remote with that name. The first
-// remote becomes the default.
-func (c *Config) Add(r *Remote) {
-	c.Remotes[r.Name] = r
-	if c.Default == "" || c.Remotes[c.Default] == nil {
-		c.Default = r.Name
+// Add stores s under s.Name, replacing any server with that name. The first
+// server becomes the default.
+func (c *Config) Add(s *Server) {
+	c.Servers[s.Name] = s
+	if c.Default == "" || c.Servers[c.Default] == nil {
+		c.Default = s.Name
 	}
 }
 
-// Remove deletes a remote; it reports whether it existed.
+// Remove deletes a server; it reports whether it existed.
 func (c *Config) Remove(name string) bool {
-	if _, ok := c.Remotes[name]; !ok {
+	if _, ok := c.Servers[name]; !ok {
 		return false
 	}
-	delete(c.Remotes, name)
+	delete(c.Servers, name)
 	if c.Default == name {
 		c.Default = ""
 	}
 	return true
 }
 
-// MaskToken shows a token's ID part only: dyt_abc123_… .
-func MaskToken(tok string) string {
-	if len(tok) > 4 && tok[:4] == "dyt_" {
-		rest := tok[4:]
-		for i := 0; i < len(rest); i++ {
-			if rest[i] == '_' {
-				return tok[:4+i+1] + "…"
-			}
-		}
+// CredentialID is the id part of a client credential dyc_<id>_<secret>, or
+// "" when cred isn't one.
+func CredentialID(cred string) string {
+	rest, ok := strings.CutPrefix(cred, "dyc_")
+	if !ok {
+		return ""
 	}
-	if len(tok) > 8 {
-		return tok[:8] + "…"
+	id, secret, ok := strings.Cut(rest, "_")
+	if !ok || id == "" || secret == "" {
+		return ""
+	}
+	return id
+}
+
+// MaskCredential shows a credential's ID part only: dyc_0a1b2c3d_… .
+func MaskCredential(cred string) string {
+	if id := CredentialID(cred); id != "" {
+		return "dyc_" + id + "_…"
 	}
 	return "…"
+}
+
+// DefaultName is the server name `deskyard login` picks for a supervisor
+// base URL: its host without the port, or "" when that isn't a usable name.
+func DefaultName(base string) string {
+	u, err := url.Parse(base)
+	if err != nil || !ValidName(u.Hostname()) {
+		return ""
+	}
+	return u.Hostname()
 }

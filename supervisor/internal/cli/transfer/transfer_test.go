@@ -43,7 +43,7 @@ func setup(t *testing.T) (*clitest.Fake, Exec) {
 		t.Skip("the fake runs commands with sh and tar")
 	}
 	f := clitest.New(t, "alice")
-	c := &remote.Client{Alias: "alice", Base: f.URL, Environment: "alice", Token: clitest.Token}
+	c := &remote.Client{Alias: "alice", Base: f.URL, Environment: "alice", Token: clitest.Credential}
 	return f, func(ctx context.Context, req execws.Request, sio execws.IO) (int, error) {
 		return execws.Run(ctx, c, req, sio)
 	}

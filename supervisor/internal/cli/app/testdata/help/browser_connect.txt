@@ -1,6 +1,6 @@
 deskyard browser connect: forward the environment's browser to a local CDP port
 
-Usage: deskyard [-e NAME] browser connect [--port N]
+Usage: deskyard [-e ENV] browser connect [--port N]
 
 Listens on 127.0.0.1:PORT and forwards the Chrome DevTools Protocol to the
 environment's shared Chromium (the one on its desktop, with your signed-in
@@ -19,5 +19,5 @@ Examples:
   deskyard -e alice browser connect &
   # then in Python: p.chromium.connect_over_cdp("http://127.0.0.1:9222")
 
-Where: on the chosen environment (-e NAME); inside an environment without one chosen it acts locally
+Where: on the chosen environment (-e ENV); inside an environment without one chosen it acts locally
 Exit codes: 0 ok, 1 error, 2 usage error

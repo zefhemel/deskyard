@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -29,7 +28,7 @@ func runCp(a *App, c *call) error {
 	case src.IsRemote && dst.IsRemote:
 		return usagef(c.cmd, "both sides are on environments; copy to this machine first, then on")
 	case !src.IsRemote && !dst.IsRemote:
-		if a.remoteFlag == "" && a.Inside != nil && a.Inside() {
+		if a.envFlag == "" && a.Inside != nil && a.Inside() {
 			if src.Path == "-" || dst.Path == "-" {
 				return usagef(c.cmd, "- needs an environment on the other side")
 			}
@@ -38,7 +37,7 @@ func runCp(a *App, c *call) error {
 			end(0, err)
 			return err
 		}
-		return usagef(c.cmd, "neither side is in an environment: write the environment side as NAME:/path, e.g. deskyard cp ./file alice:/workspace/ (an empty NAME, :/path, means the chosen remote)")
+		return usagef(c.cmd, "neither side is in an environment: write the environment side as ENV:/path, e.g. deskyard cp ./file alice:/workspace/ (an empty ENV, :/path, means the chosen environment)")
 	}
 	rp := src
 	if dst.IsRemote {
@@ -49,7 +48,7 @@ func runCp(a *App, c *call) error {
 		return err
 	}
 	run := func(ctx context.Context, req execws.Request, sio execws.IO) (int, error) {
-		if cl == nil { // this environment, NAME: given while inside
+		if cl == nil { // this environment, :/path given while inside
 			code, err := a.localExec(req, sio.Stdin, orDiscard(sio.Stdout), orDiscard(sio.Stderr))
 			return code, err
 		}
@@ -61,15 +60,20 @@ func runCp(a *App, c *call) error {
 	return transfer.Download(c.ctx, run, src.Path, dst.Path, a.Stdout)
 }
 
-func (a *App) cpTarget(name string) (*remote.Client, error) {
-	if name == "" {
-		cl, err := a.target()
-		if err == nil && cl == nil {
-			return nil, nil
-		}
-		return cl, err
+// cpTarget is the client for cp's ENV:/path side: ENV on the chosen server
+// (-e SERVER/…, else the default one), or for :/path the chosen environment.
+func (a *App) cpTarget(env string) (*remote.Client, error) {
+	if env == "" {
+		return a.target()
 	}
-	return a.namedRemote(name)
+	sel, err := a.selector()
+	if err != nil {
+		return nil, err
+	}
+	if server, _, _ := splitSelector(sel); server != "" {
+		env = server + "/" + env
+	}
+	return a.resolve(env)
 }
 
 func orDiscard(w io.Writer) io.Writer {
@@ -117,133 +121,6 @@ func runBrowserConnect(a *App, c *call) error {
 	return nil
 }
 
-// ---- remotes
-
-func runRemoteAdd(a *App, c *call) error {
-	name, rawURL := c.args[0], c.args[1]
-	if !remote.ValidName(name) {
-		return usagef(c.cmd, "%q isn't a usable remote name: use letters, digits, '.', '_' and '-'", name)
-	}
-	tok := c.str("--token", a.Getenv("DESKYARD_TOKEN"))
-	if tok == "" {
-		return usagef(c.cmd, "no token: pass --token dyt_… (create one on the environment's Remote access tab)")
-	}
-	if !strings.HasPrefix(tok, "dyt_") {
-		return usagef(c.cmd, "that doesn't look like an access token (they start with dyt_): copy it from the environment's Remote access tab")
-	}
-	t, err := remote.ParseURL(rawURL)
-	if err != nil {
-		return usagef(c.cmd, "%v", err)
-	}
-	cl := &remote.Client{Alias: name, Base: t.Base, Environment: t.Environment, Token: tok, HTTP: a.HTTP}
-	info, err := cl.Info(c.ctx)
-	stopped := err
-	switch {
-	case err == nil:
-		if t.Environment != "" && info.Name != "" && info.Name != t.Environment {
-			return fmt.Errorf("this token is for the environment %q, not %q: use https://…/%s, or a token for %s", info.Name, t.Environment, info.Name, t.Environment)
-		}
-		if info.Name != "" {
-			t.Environment = info.Name
-		}
-	case remote.IsStatus(err, http.StatusConflict):
-		// The token works; the environment is just not running.
-	default:
-		return err
-	}
-	cfg, path, err := a.loadConfig()
-	if err != nil {
-		return err
-	}
-	_, replaced := cfg.Remotes[name]
-	cfg.Add(&remote.Remote{Name: name, URL: t.URL(), Base: t.Base, Environment: t.Environment, Token: tok})
-	if err := cfg.Save(path); err != nil {
-		return fmt.Errorf("saving %s: %v", path, err)
-	}
-	verb := "Added"
-	if replaced {
-		verb = "Updated"
-	}
-	switch {
-	case stopped != nil:
-		fmt.Fprintf(a.Stdout, "%s remote %s (%s). Note: %v\n", verb, name, t.URL(), stopped)
-	default:
-		fmt.Fprintf(a.Stdout, "%s remote %s (%s: %s, %s %s).\n", verb, name, t.URL(), info.State, info.ImageTitle, info.ImageVersion)
-	}
-	if cfg.Default == name {
-		fmt.Fprintf(a.Stdout, "It is the default remote; try `deskyard status`.\n")
-	} else {
-		fmt.Fprintf(a.Stdout, "Use it with `deskyard -e %s …`, or make it the default with `deskyard remote default %s`.\n", name, name)
-	}
-	return nil
-}
-
-func runRemoteList(a *App, c *call) error {
-	cfg, _, err := a.loadConfig()
-	if err != nil {
-		return err
-	}
-	if c.bool("--json") {
-		type row struct {
-			Name        string `json:"name"`
-			URL         string `json:"url"`
-			Environment string `json:"environment"`
-			Default     bool   `json:"default"`
-		}
-		rows := []row{}
-		for _, r := range cfg.Sorted() {
-			rows = append(rows, row{r.Name, r.URL, r.Environment, r.Name == cfg.Default})
-		}
-		enc := json.NewEncoder(a.Stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(rows)
-	}
-	if len(cfg.Remotes) == 0 {
-		fmt.Fprintln(a.Stdout, "No remotes. Get a token on an environment's Remote access tab, then: deskyard remote add NAME https://host/NAME --token dyt_…")
-		return nil
-	}
-	tw := tabwriter.NewWriter(a.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "  NAME\tURL\tTOKEN")
-	for _, r := range cfg.Sorted() {
-		mark := " "
-		if r.Name == cfg.Default {
-			mark = "*"
-		}
-		fmt.Fprintf(tw, "%s %s\t%s\t%s\n", mark, r.Name, r.URL, remote.MaskToken(r.Token))
-	}
-	return tw.Flush()
-}
-
-func runRemoteRemove(a *App, c *call) error {
-	cfg, path, err := a.loadConfig()
-	if err != nil {
-		return err
-	}
-	if !cfg.Remove(c.args[0]) {
-		return fmt.Errorf("no remote named %q: run `deskyard remote list`", c.args[0])
-	}
-	return cfg.Save(path)
-}
-
-func runRemoteDefault(a *App, c *call) error {
-	cfg, path, err := a.loadConfig()
-	if err != nil {
-		return err
-	}
-	if len(c.args) == 0 {
-		if cfg.Default != "" {
-			fmt.Fprintln(a.Stdout, cfg.Default)
-		}
-		return nil
-	}
-	name := c.args[0]
-	if cfg.Remotes[name] == nil {
-		return fmt.Errorf("no remote named %q: run `deskyard remote list`", name)
-	}
-	cfg.Default = name
-	return cfg.Save(path)
-}
-
 // ---- status
 
 func runStatus(a *App, c *call) error {
@@ -262,7 +139,7 @@ func runStatus(a *App, c *call) error {
 		ImageTitle   string `json:"imageTitle,omitempty"`
 		ImageVersion string `json:"imageVersion,omitempty"`
 		Screen       screen `json:"screen"`
-		Remote       string `json:"remote,omitempty"`
+		Server       string `json:"server,omitempty"`
 		URL          string `json:"url,omitempty"`
 		Local        bool   `json:"local,omitempty"`
 	}
@@ -283,7 +160,7 @@ func runStatus(a *App, c *call) error {
 			return err
 		}
 		st = status{Name: info.Name, State: info.State, Image: info.Image, ImageTitle: info.ImageTitle, ImageVersion: info.ImageVersion,
-			Screen: screen{info.Screen.Width, info.Screen.Height}, Remote: cl.Alias, URL: (&remote.Target{Base: cl.Base, Environment: info.Name}).URL()}
+			Screen: screen{info.Screen.Width, info.Screen.Height}, Server: cl.Alias, URL: (&remote.Target{Base: cl.Base, Environment: info.Name}).URL()}
 	}
 	if c.bool("--json") {
 		enc := json.NewEncoder(a.Stdout)
@@ -302,7 +179,7 @@ func runStatus(a *App, c *call) error {
 	if st.Local {
 		fmt.Fprintf(tw, "where:\tlocal (inside this environment)\n")
 	} else {
-		fmt.Fprintf(tw, "remote:\t%s\n", st.Remote)
+		fmt.Fprintf(tw, "server:\t%s\n", st.Server)
 		fmt.Fprintf(tw, "url:\t%s\n", st.URL)
 	}
 	return tw.Flush()

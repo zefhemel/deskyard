@@ -141,7 +141,7 @@ func runForward(a *App, c *call) error {
 		return err
 	}
 	if cl == nil {
-		return usagef(c.cmd, "forward maps ports between this machine and an environment; choose one with -e NAME")
+		return usagef(c.cmd, "forward maps ports between this machine and an environment; choose one with -e ENV")
 	}
 	ctx, stop := signal.NotifyContext(c.ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()

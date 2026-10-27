@@ -19,15 +19,18 @@ your terminal. Everyone with access shares the same screen and browser profile.
 
 WHERE YOU ARE
 - Inside an environment: every command acts on it directly. No setup.
-- Anywhere else: talk to it through a remote. A token comes from the
-  environment's Remote access tab; then:
-    deskyard remote add alice https://host/alice --token dyt_...
-    deskyard -e alice status
-  The first remote is the default; -e NAME (--environment NAME, before the
-  command) or DESKYARD_REMOTE picks another. DESKYARD_URL + DESKYARD_TOKEN
-  work without saving anything. A token reaches one environment's shell,
-  files, browser and desktop, nothing else. A stopped environment answers
-  "alice is stopped"; start it in the web UI with your account first.
+- Anywhere else: sign in to the server once, then talk to it:
+    deskyard login https://host/alice    approve in your browser
+    deskyard auth 'https://host/link#dyl_...'   or use a login link, no browser
+    deskyard status
+  The URL's environment (alice) becomes the default. -e ENV (before the
+  command) picks another on the same server, -e SERVER/ENV one on another
+  server; DESKYARD_ENVIRONMENT does the same. `deskyard env use ENV` changes
+  the default, `deskyard server list` shows where you are signed in, and
+  `deskyard logout` revokes this machine's credential. DESKYARD_URL +
+  DESKYARD_CREDENTIAL work without saving anything. The CLI can do what your
+  account can, in environments you have full access to. A stopped
+  environment answers "alice is stopped"; start it in the web UI first.
 
 THREE WAYS TO WORK
 
@@ -91,8 +94,8 @@ PORTS
   mappings come back in the environment once the link is back. It prints
   "in LOCAL ENV" / "out ENV 127.0.0.1:LOCAL" and "Linked to ..." when the
   link is accepted, a moment before the environment side is known to run.
-  Limits: 4 links per token, 64 plain and 256 mappings per command. The
-  viewers see which ports your token maps.
+  Limits: 4 links per credential, 64 plain and 256 mappings per command.
+  The viewers see which ports you map.
 
 SHARING AN ENVIRONMENT
 - Other viewers see every window you open. Coordinate mouse and keyboard use.

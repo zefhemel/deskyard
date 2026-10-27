@@ -19,15 +19,17 @@ import (
 func TestRewriteURL(t *testing.T) {
 	const local = "127.0.0.1:9222"
 	cases := []struct{ in, want string }{
-		{"wss://host/api/agent/v1/cdp/devtools/browser/abc", "ws://127.0.0.1:9222/devtools/browser/abc"},
-		{"ws://host:8080/pre/api/agent/v1/cdp/devtools/page/P1", "ws://127.0.0.1:9222/devtools/page/P1"},
+		{"wss://host/api/environments/alice/cdp/devtools/browser/abc", "ws://127.0.0.1:9222/devtools/browser/abc"},
+		{"ws://host:8080/pre/api/environments/alice/cdp/devtools/page/P1", "ws://127.0.0.1:9222/devtools/page/P1"},
 		{"ws://localhost:9221/devtools/page/P1", "ws://127.0.0.1:9222/devtools/page/P1"},
-		{"/api/agent/v1/cdp/devtools/inspector.html?ws=host/api/agent/v1/cdp/devtools/page/P1",
+		{"/api/environments/alice/cdp/devtools/inspector.html?ws=host/api/environments/alice/cdp/devtools/page/P1",
 			"/devtools/inspector.html?ws=127.0.0.1:9222/devtools/page/P1"},
-		{"/devtools/inspector.html?wss=host/api/agent/v1/cdp/devtools/page/P1",
+		{"/devtools/inspector.html?wss=host/api/environments/alice/cdp/devtools/page/P1",
 			"/devtools/inspector.html?ws=127.0.0.1:9222/devtools/page/P1"},
-		{"https://chrome-devtools-frontend.appspot.com/serve_rev/@abc/inspector.html?ws=host/api/agent/v1/cdp/devtools/page/P1",
+		{"https://chrome-devtools-frontend.appspot.com/serve_rev/@abc/inspector.html?ws=host/api/environments/alice/cdp/devtools/page/P1",
 			"https://chrome-devtools-frontend.appspot.com/serve_rev/@abc/inspector.html?ws=127.0.0.1:9222/devtools/page/P1"},
+		{"http://host/pre/api/environments/bob-2/cdp/devtools/inspector.html?ws=host/pre/api/environments/bob-2/cdp/devtools/page/P1",
+			"http://127.0.0.1:9222/devtools/inspector.html?ws=127.0.0.1:9222/devtools/page/P1"},
 		{"about:blank", "about:blank"},
 		{"https://example.com/?ws=1", "https://example.com/?ws=1"},
 		{"page", "page"},
@@ -40,7 +42,7 @@ func TestRewriteURL(t *testing.T) {
 }
 
 func TestRewriteJSON(t *testing.T) {
-	in := `[{"id":"P1","url":"https://example.com/","webSocketDebuggerUrl":"wss://h/api/agent/v1/cdp/devtools/page/P1","n":1.5}]`
+	in := `[{"id":"P1","url":"https://example.com/","webSocketDebuggerUrl":"wss://h/api/environments/alice/cdp/devtools/page/P1","n":1.5}]`
 	out := RewriteJSON([]byte(in), "127.0.0.1:9333")
 	var v []map[string]any
 	if err := json.Unmarshal(out, &v); err != nil {
@@ -56,7 +58,7 @@ func TestRewriteJSON(t *testing.T) {
 
 func forwarder(t *testing.T) (*clitest.Fake, *httptest.Server) {
 	f := clitest.New(t, "alice")
-	c := &remote.Client{Alias: "alice", Base: f.URL, Environment: "alice", Token: clitest.Token}
+	c := &remote.Client{Alias: "alice", Base: f.URL, Environment: "alice", Token: clitest.Credential}
 	fw := &Forwarder{Client: c}
 	srv := httptest.NewServer(fw)
 	fw.Local = strings.TrimPrefix(srv.URL, "http://")
@@ -145,7 +147,7 @@ func TestForwarderPassesErrors(t *testing.T) {
 
 func TestProbeAndServe(t *testing.T) {
 	f := clitest.New(t, "alice")
-	c := &remote.Client{Alias: "alice", Base: f.URL, Environment: "alice", Token: clitest.Token}
+	c := &remote.Client{Alias: "alice", Base: f.URL, Environment: "alice", Token: clitest.Credential}
 	ver, err := Probe(context.Background(), c)
 	if err != nil || ver["Browser"] != "Chrome/141.0" {
 		t.Fatalf("probe: %v %v", ver, err)

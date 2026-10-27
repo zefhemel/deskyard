@@ -1,6 +1,6 @@
 deskyard forward: map TCP ports between this machine and the environment
 
-Usage: deskyard [-e NAME] forward [-R] PORT[:PORT]...
+Usage: deskyard [-e ENV] forward [-R] PORT[:PORT]...
 
 Maps TCP ports both ways until Ctrl-C, over the remote access API (no port is
 opened anywhere else). Each argument is one mapping. PORT or LOCAL:ENV: this
@@ -13,8 +13,8 @@ environment won't listen below 1024 (plain forward only; -R just dials, so -R
 retried, and the others carry on. When the connection drops (the environment
 stops or restarts, the network blips) it keeps its local listeners, closes
 open connections and reconnects with backoff (1 s up to 30 s). It exits only
-on Ctrl-C, or when the token is refused. Run it in the background. Inside an
-environment it needs -e too.
+on Ctrl-C, or when the credential is refused. Run it in the background. Inside
+an environment it needs -e too.
 
 Arguments:
   PORT       string...   required  a mapping: PORT or LOCAL:ENV; after -R, PORT or ENV:LOCAL
@@ -32,5 +32,5 @@ Examples:
   deskyard -e alice forward 8080:3000 &
   deskyard -e alice forward -R 9229:19229
 
-Where: on the chosen environment (-e NAME); inside an environment too, since it maps ports between two machines. Ports are LOCAL:ENV, or ENV:LOCAL after -R. The environment won't listen below 1024. "Linked to ..." and the out lines appear when the link is accepted, before the environment side is known to run
-Exit codes: 0 after Ctrl-C, 1 when the token is refused (401) or no remote is set up, 2 usage error
+Where: on the chosen environment (-e ENV); inside an environment too, since it maps ports between two machines. Ports are LOCAL:ENV, or ENV:LOCAL after -R. The environment won't listen below 1024. "Linked to ..." and the out lines appear when the link is accepted, before the environment side is known to run
+Exit codes: 0 after Ctrl-C, 1 when the credential is refused (401) or no environment is chosen, 2 usage error

@@ -22,7 +22,7 @@ type App struct {
 	Stdin          io.Reader
 	Stdout, Stderr io.Writer
 	Getenv         func(string) string
-	// ConfigPath overrides remotes.json's location (tests).
+	// ConfigPath overrides servers.json's location (tests).
 	ConfigPath string
 	// Inside reports whether this process runs inside an environment, where
 	// commands act locally when no remote is chosen.
@@ -33,22 +33,26 @@ type App struct {
 	// the program running this command (default: from the process tree).
 	Record func(activity.Event)
 	Caller func() string
+	// OpenBrowser opens a URL in the user's web browser (deskyard login); an
+	// error means it couldn't, and the URL is only printed.
+	OpenBrowser func(url string) error
 
 	callerName string
 	callerSet  bool
 
-	remoteFlag string // -e/--environment
+	envFlag string // -e/--environment: ENV or SERVER/ENV
 }
 
 // New returns an App wired to the process.
 func New(version string) *App {
 	return &App{
 		Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr,
-		Getenv:  os.Getenv,
-		Inside:  insideEnvironment,
-		Version: version,
-		Record:  activity.Send,
-		Caller:  defaultCaller(os.Getenv),
+		Getenv:      os.Getenv,
+		Inside:      insideEnvironment,
+		Version:     version,
+		Record:      activity.Send,
+		Caller:      defaultCaller(os.Getenv),
+		OpenBrowser: openBrowser(os.Getenv),
 	}
 }
 
@@ -132,16 +136,22 @@ func (a *App) run(ctx context.Context, argv []string) error {
 		switch {
 		case arg == "-e" || arg == "--environment":
 			if len(argv) < 2 || argv[1] == "" {
-				return usagef(nil, "%s needs an environment name: deskyard -e NAME COMMAND (see `deskyard remote list`)", arg)
+				return usagef(nil, "%s needs an environment: deskyard -e ENV COMMAND, or -e SERVER/ENV (see `deskyard server list`)", arg)
 			}
-			a.remoteFlag, argv = argv[1], argv[2:]
+			if _, _, err := splitSelector(argv[1]); err != nil {
+				return usagef(nil, "%s: %v", arg, err)
+			}
+			a.envFlag, argv = argv[1], argv[2:]
 			continue
 		case strings.HasPrefix(arg, "-e="), strings.HasPrefix(arg, "--environment="):
 			flag, v, _ := strings.Cut(arg, "=")
 			if v == "" {
-				return usagef(nil, "%s needs an environment name: deskyard -e NAME COMMAND (see `deskyard remote list`)", flag)
+				return usagef(nil, "%s needs an environment: deskyard -e ENV COMMAND, or -e SERVER/ENV (see `deskyard server list`)", flag)
 			}
-			a.remoteFlag, argv = v, argv[1:]
+			if _, _, err := splitSelector(v); err != nil {
+				return usagef(nil, "%s: %v", flag, err)
+			}
+			a.envFlag, argv = v, argv[1:]
 			continue
 		case arg == "-h" || arg == "--help":
 			return a.printHelp(nil)
@@ -149,7 +159,7 @@ func (a *App) run(ctx context.Context, argv []string) error {
 			return runVersion(a, nil)
 		case arg == "-d" || arg == "--desktop" || strings.HasPrefix(arg, "--desktop="):
 			name, _, _ := strings.Cut(arg, "=")
-			return usagef(nil, "unknown option %q (choose an environment with -e NAME before the command)", name)
+			return usagef(nil, "unknown option %q (choose an environment with -e ENV before the command)", name)
 		case strings.HasPrefix(arg, "-") && arg != "-":
 			return usagef(nil, "unknown option %q (options for a command go after it, e.g. deskyard exec --json -- ls)", arg)
 		}
@@ -162,7 +172,10 @@ func (a *App) run(ctx context.Context, argv []string) error {
 
 	cmd, rest := lookup(argv)
 	if cmd == nil {
-		if argv[0] == "remote" || argv[0] == "browser" {
+		if argv[0] == "remote" {
+			return usagef(nil, "unknown command \"remote\": remotes were replaced by servers you sign in to; run `deskyard login https://host/ENV` (or `deskyard auth LINK`), then `deskyard server list`")
+		}
+		if argv[0] == "server" || argv[0] == "env" || argv[0] == "browser" {
 			if len(argv) == 1 {
 				return usagef(nil, "%s needs a subcommand: %s", argv[0], strings.Join(subcommands(argv[0]), ", "))
 			}
@@ -303,13 +316,13 @@ func parseFlags(c *call, argv []string) (help bool, err error) {
 	return false, nil
 }
 
-// configPath is where remotes.json lives.
+// configPath is where servers.json lives.
 func (a *App) configPath() (string, error) {
 	if a.ConfigPath != "" {
 		return a.ConfigPath, nil
 	}
 	if dir := a.Getenv("XDG_CONFIG_HOME"); dir != "" {
-		return dir + string(os.PathSeparator) + "deskyard" + string(os.PathSeparator) + "remotes.json", nil
+		return dir + string(os.PathSeparator) + "deskyard" + string(os.PathSeparator) + "servers.json", nil
 	}
 	return remote.DefaultPath()
 }
@@ -323,75 +336,129 @@ func (a *App) loadConfig() (*remote.Config, string, error) {
 	return cfg, p, err
 }
 
-const addHint = "No remotes yet? Get a token on the environment's Remote access tab, then run `deskyard remote add NAME https://host/NAME --token dyt_…`"
+const loginHint = "run `deskyard login https://host/ENV` (or `deskyard auth LINK` with a login link)"
 
-// target picks the remote to talk to. It returns nil, nil when the command
-// should act locally (inside an environment with no remote chosen).
+// splitSelector splits -e's ENV or SERVER/ENV.
+func splitSelector(sel string) (server, env string, err error) {
+	if sel == "" {
+		return "", "", nil
+	}
+	server, env, ok := strings.Cut(sel, "/")
+	if !ok {
+		return "", sel, nil
+	}
+	if server == "" || env == "" || strings.Contains(env, "/") {
+		return "", "", fmt.Errorf("%q isn't an environment: write ENV, or SERVER/ENV for another server", sel)
+	}
+	return server, env, nil
+}
+
+// selector is the environment chosen with -e, else DESKYARD_ENVIRONMENT.
+func (a *App) selector() (string, error) {
+	if a.envFlag != "" {
+		return a.envFlag, nil
+	}
+	sel := a.Getenv("DESKYARD_ENVIRONMENT")
+	if _, _, err := splitSelector(sel); err != nil {
+		return "", fmt.Errorf("DESKYARD_ENVIRONMENT: %v", err)
+	}
+	return sel, nil
+}
+
+// target picks the server and environment to talk to: -e, else
+// DESKYARD_ENVIRONMENT, else the default server's environment. It returns
+// nil, nil when the command should act locally (inside an environment with
+// no environment chosen).
 func (a *App) target() (*remote.Client, error) {
-	name := a.remoteFlag
-	if name == "" {
-		name = a.Getenv("DESKYARD_REMOTE")
-	}
-	if name != "" {
-		return a.namedRemote(name)
-	}
-	if u := a.Getenv("DESKYARD_URL"); u != "" {
-		return a.envRemote(u)
-	}
-	cfg, _, err := a.loadConfig()
+	sel, err := a.selector()
 	if err != nil {
 		return nil, err
 	}
-	if cfg.Default != "" && cfg.Remotes[cfg.Default] != nil {
-		return a.client(cfg.Remotes[cfg.Default]), nil
+	return a.resolve(sel)
+}
+
+// resolve finds the client for ENV or SERVER/ENV ("" = the default
+// server's environment).
+func (a *App) resolve(sel string) (*remote.Client, error) {
+	name, env, err := splitSelector(sel)
+	if err != nil {
+		return nil, err
 	}
-	if a.Inside != nil && a.Inside() {
+	srv, err := a.server(name)
+	if err != nil {
+		return nil, err
+	}
+	if env == "" && srv != nil {
+		env = srv.Environment
+	}
+	if sel == "" && env == "" && a.Inside != nil && a.Inside() {
 		return nil, nil
 	}
-	if len(cfg.Remotes) > 0 {
-		return nil, errors.New("no remote chosen: run `deskyard remote list`, then use -e NAME (or set DESKYARD_REMOTE=NAME, or `deskyard remote default NAME`)")
+	if srv == nil {
+		return nil, a.noServer()
 	}
-	return nil, errors.New("no remote chosen: run `deskyard remote list`, then use -e NAME. " + addHint)
+	if env == "" {
+		return nil, fmt.Errorf("no environment chosen on %s: use -e ENV, or choose a default with `deskyard env use ENV`", srv.Name)
+	}
+	c := remote.FromServer(srv, env)
+	c.HTTP = a.HTTP
+	return c, nil
 }
 
-func (a *App) namedRemote(name string) (*remote.Client, error) {
+// server returns the named server, or for "" the default one: the server
+// DESKYARD_URL names, else servers.json's default (nil when there is none).
+func (a *App) server(name string) (*remote.Server, error) {
+	if name == "" {
+		if srv, err := a.envServer(); srv != nil || err != nil {
+			return srv, err
+		}
+	}
 	cfg, _, err := a.loadConfig()
 	if err != nil {
 		return nil, err
 	}
-	if r := cfg.Remotes[name]; r != nil {
-		return a.client(r), nil
+	if name == "" {
+		return cfg.Servers[cfg.Default], nil
 	}
-	// DESKYARD_URL's environment can be named too (cp alice:/x).
-	if u := a.Getenv("DESKYARD_URL"); u != "" {
-		if c, err := a.envRemote(u); err == nil && c.Environment == name {
-			return c, nil
-		}
+	if srv := cfg.Servers[name]; srv != nil {
+		return srv, nil
 	}
-	if len(cfg.Remotes) == 0 {
-		return nil, fmt.Errorf("no remote named %q. %s", name, addHint)
+	if len(cfg.Servers) == 0 {
+		return nil, fmt.Errorf("no server named %q: you aren't signed in to any; %s", name, loginHint)
 	}
 	var names []string
-	for _, r := range cfg.Sorted() {
-		names = append(names, r.Name)
+	for _, s := range cfg.Sorted() {
+		names = append(names, s.Name)
 	}
-	return nil, fmt.Errorf("no remote named %q (there are: %s): run `deskyard remote list`, or add it with `deskyard remote add %s https://host/%s --token dyt_…`", name, strings.Join(names, ", "), name, name)
+	return nil, fmt.Errorf("no server named %q (there are: %s): run `deskyard server list`, or sign in with `deskyard login https://host/ENV --name %s`", name, strings.Join(names, ", "), name)
 }
 
-func (a *App) envRemote(u string) (*remote.Client, error) {
+// noServer explains why there is no default server.
+func (a *App) noServer() error {
+	cfg, _, err := a.loadConfig()
+	if err != nil {
+		return err
+	}
+	if len(cfg.Servers) > 0 {
+		return errors.New("no server chosen: run `deskyard server list`, then `deskyard server default NAME`, or use -e SERVER/ENV")
+	}
+	return errors.New("not signed in to any server: " + loginHint)
+}
+
+// envServer is the server DESKYARD_URL and DESKYARD_CREDENTIAL describe, or
+// nil when DESKYARD_URL isn't set.
+func (a *App) envServer() (*remote.Server, error) {
+	u := a.Getenv("DESKYARD_URL")
+	if u == "" {
+		return nil, nil
+	}
 	t, err := remote.ParseURL(u)
 	if err != nil {
 		return nil, fmt.Errorf("DESKYARD_URL: %v", err)
 	}
-	tok := a.Getenv("DESKYARD_TOKEN")
-	if tok == "" {
-		return nil, errors.New("DESKYARD_URL is set but DESKYARD_TOKEN isn't: set it to the access token (dyt_…) for that environment")
+	cred := a.Getenv("DESKYARD_CREDENTIAL")
+	if cred == "" {
+		return nil, errors.New("DESKYARD_URL is set but DESKYARD_CREDENTIAL isn't: set it to a client credential (dyc_…) from `deskyard login` or `deskyard auth`")
 	}
-	return &remote.Client{Alias: t.Environment, Base: t.Base, Environment: t.Environment, Token: tok, HTTP: a.HTTP}, nil
-}
-
-func (a *App) client(r *remote.Remote) *remote.Client {
-	c := remote.FromRemote(r)
-	c.HTTP = a.HTTP
-	return c
+	return &remote.Server{Name: remote.DefaultName(t.Base), URL: t.Base, Credential: cred, Environment: t.Environment}, nil
 }

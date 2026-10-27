@@ -18,7 +18,7 @@ func setup(t *testing.T) (*clitest.Fake, *remote.Client) {
 		t.Skip("the fake runs commands with sh")
 	}
 	f := clitest.New(t, "alice")
-	return f, &remote.Client{Alias: "alice", Base: f.URL, Environment: "alice", Token: clitest.Token}
+	return f, &remote.Client{Alias: "alice", Base: f.URL, Environment: "alice", Token: clitest.Credential}
 }
 
 func ctx(t *testing.T) context.Context {
@@ -92,7 +92,7 @@ func TestServerError(t *testing.T) {
 func TestAuthAndStopped(t *testing.T) {
 	f, c := setup(t)
 	bad := *c
-	bad.Token = "dyt_x_nope"
+	bad.Token = "dyc_0000dead_nope"
 	if _, err := Run(ctx(t), &bad, Request{Argv: []string{"true"}}, IO{}); !remote.IsStatus(err, 401) {
 		t.Errorf("want 401, got %v", err)
 	}
