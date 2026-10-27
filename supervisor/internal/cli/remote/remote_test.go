@@ -28,6 +28,9 @@ func TestParseURL(t *testing.T) {
 		{"https://host/cc/api/environments/alice/exec", "https://host/cc", "alice"},
 		{"https://host/cc/api/me", "https://host/cc", ""},
 		{" https://host/alice ", "https://host", "alice"},
+		// The web UI's page of an environment.
+		{"https://host/environments/alice", "https://host", "alice"},
+		{"https://host/cc/environments/alice/", "https://host/cc", "alice"},
 	}
 	for _, c := range cases {
 		got, err := ParseURL(c.in)

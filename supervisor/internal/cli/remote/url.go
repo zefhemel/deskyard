@@ -19,7 +19,8 @@ type Target struct {
 // http://127.0.0.1:8080/prefix/alice into the supervisor base URL and the
 // environment name (the last path segment). A URL without a path names only
 // the supervisor. A pasted API URL (…/api/environments/alice/exec) names the
-// supervisor before /api and the environment after environments/.
+// supervisor before /api and the environment after environments/, and so
+// does the web UI's page of an environment (…/environments/alice).
 func ParseURL(raw string) (Target, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
@@ -48,9 +49,12 @@ func ParseURL(raw string) (Target, error) {
 		return Target{Base: u.Scheme + "://" + u.Host}, nil
 	}
 	segs := strings.Split(path, "/")
-	name := segs[len(segs)-1]
+	name, base := segs[len(segs)-1], segs[:len(segs)-1]
+	if len(base) > 0 && base[len(base)-1] == "environments" {
+		base = base[:len(base)-1]
+	}
 	return Target{
-		Base:        u.Scheme + "://" + u.Host + prefix(strings.Join(segs[:len(segs)-1], "/")),
+		Base:        u.Scheme + "://" + u.Host + prefix(strings.Join(base, "/")),
 		Environment: name,
 	}, nil
 }

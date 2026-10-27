@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"runtime"
 	"strings"
 	"text/tabwriter"
@@ -106,6 +107,13 @@ func runLogin(a *App, c *call) error {
 	}
 	if envname.IsReserved(t.Environment) {
 		return usagef(c.cmd, "%s/%s is a page of Deskyard, it isn't an environment: run `deskyard login %s`, or add an environment's name to it", t.Base, t.Environment, t.Base)
+	}
+	// Below a page, such as a volume's (…/volumes/photos).
+	if u, err := url.Parse(t.Base); err == nil {
+		if dir, page := path.Split(u.Path); page != "" && envname.IsReserved(page) {
+			u.Path = strings.TrimSuffix(dir, "/")
+			return usagef(c.cmd, "%s is a page of Deskyard, it isn't an environment: run `deskyard login %s`, or add an environment's name to it", t.URL(), u)
+		}
 	}
 	name, err := serverName(c, t.Base)
 	if err != nil {

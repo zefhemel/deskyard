@@ -1055,7 +1055,7 @@ func TestLoginRefusesLinksAndPages(t *testing.T) {
 	if r.code != 2 || !strings.Contains(r.stderr, "deskyard auth") {
 		t.Errorf("login LINK: %+v", r)
 	}
-	for _, page := range []string{"accounts", "link", "volumes"} {
+	for _, page := range []string{"accounts", "link", "volumes", "volumes/photos"} {
 		r = h.run("login", f.URL+"/"+page, "--no-browser")
 		if r.code != 2 || !strings.Contains(r.stderr, "isn't an environment") {
 			t.Errorf("login %s: %+v", page, r)
