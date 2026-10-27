@@ -33,6 +33,13 @@ On phones, open **⋯ More** for the same choices. Presets include
 is remembered in your browser; the first viewer controls the shared screen.
 More explains when another viewer controls the shared resolution.
 
+On a phone, a desktop at the phone's own size is too small to use, so until
+you choose otherwise the screen starts locked at 1280×720 and touch starts in
+**Trackpad** mode. A phone here is a screen whose shorter side is under 640
+pixels, in either orientation; tablets and computers start with Auto fit and
+**Tap**. Choosing Auto fit, another size, or Tap replaces the default and is
+remembered.
+
 Touch controls are available on touch devices, including landscape phones
 and tablets:
 

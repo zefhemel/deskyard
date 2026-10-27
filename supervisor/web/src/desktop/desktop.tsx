@@ -55,10 +55,12 @@ import {
   type Size,
   unlockSize,
 } from "./selkies.ts";
+import { AUTO_FIT, initialLock, initialTrackpad, isPhone } from "./display-prefs.ts";
 
 // Remembered per browser.
 const QUALITY_KEY = "deskyard.quality";
 const LOCK_SIZE_KEY = "deskyard.lockSize";
+const TRACKPAD_KEY = "deskyard.trackpad";
 const resolutions: Size[] = [
   { width: 800, height: 600 },
   { width: 1024, height: 768 },
@@ -70,11 +72,15 @@ const resolutions: Size[] = [
 ];
 
 function stored<T>(key: string, parse: (v: string) => T | null, fallback: T): T {
+  const v = storedRaw(key);
+  return (v !== null && parse(v)) || fallback;
+}
+
+function storedRaw(key: string): string | null {
   try {
-    const v = localStorage.getItem(key);
-    return (v !== null && parse(v)) || fallback;
+    return localStorage.getItem(key);
   } catch {
-    return fallback;
+    return null;
   }
 }
 
@@ -88,15 +94,6 @@ function store(key: string, value: string | null): void {
 }
 
 const parseQuality = (v: string): QualityId | null => (isQualityId(v) ? v : null);
-
-function parseSize(v: string): Size | null {
-  try {
-    const s = JSON.parse(v) as Partial<Size>;
-    return typeof s.width === "number" && typeof s.height === "number" && s.width > 0 && s.height > 0 ? { width: s.width, height: s.height } : null;
-  } catch {
-    return null;
-  }
-}
 
 // The xterm code loads with the first terminal tab.
 const TerminalPane = lazy(() => import("../terminal/terminal.tsx").then((m) => ({ default: m.TerminalPane })));
@@ -578,7 +575,7 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
   const observingRef = useRef(observing);
   observingRef.current = observing;
   const frame = useRef<HTMLIFrameElement>(null);
-  const [trackpad, setTrackpad] = useState(() => stored("deskyard.trackpad", (v) => v === "true", false));
+  const [trackpad, setTrackpad] = useState(() => initialTrackpad(storedRaw(TRACKPAD_KEY), isPhone(window.screen)));
   const trackpadRef = useRef(trackpad);
   trackpadRef.current = trackpad;
   const [keyboard, setKeyboard] = useState(false);
@@ -596,7 +593,7 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
   const [remoteClip, setRemoteClip] = useState<string | null>(null);
   const [clipOpen, setClipOpen] = useState(false);
   const [quality, setQuality] = useState(() => stored(QUALITY_KEY, parseQuality, defaultQuality));
-  const [locked, setLocked] = useState(() => stored<Size | null>(LOCK_SIZE_KEY, parseSize, null));
+  const [locked, setLocked] = useState(() => initialLock(storedRaw(LOCK_SIZE_KEY), isPhone(window.screen)));
   // Whether this page owns the display (null until known), and the preset the
   // display streams with (null when unknown or none of ours).
   const [owner, setOwner] = useState<boolean | null>(null);
@@ -713,7 +710,7 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
   const chooseResolution = (size: Size | null) => {
     if (!owner) return; // the display's owner sets its size
     setLocked(size);
-    store(LOCK_SIZE_KEY, size ? JSON.stringify(size) : null);
+    store(LOCK_SIZE_KEY, size ? JSON.stringify(size) : AUTO_FIT);
     setZoom(1);
     if (size) lockSize(frame.current, size);
     else unlockSize(frame.current);
@@ -734,7 +731,7 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
   const toggleKeyboard = () => screen?.keyboard?.(!keyboard);
   const chooseTouchMode = (next: boolean) => {
     setTrackpad(next);
-    store("deskyard.trackpad", String(next));
+    store(TRACKPAD_KEY, String(next));
     screen?.setTouchMode?.(next);
     refocus();
   };

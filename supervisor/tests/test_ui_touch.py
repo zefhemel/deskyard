@@ -7,6 +7,8 @@ from helpers import signed_in, open_desktop, open_display_menu, in_desktop, wait
 def test_general_desktop_touch_controls(supervisor, desktop, name):
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base, viewport={"width": 820, "height": 600}, has_touch=True, is_mobile=True)
+        # The taps below land 1:1: Auto fit, not a phone's locked default.
+        page.evaluate("localStorage.setItem('deskyard.lockSize', 'auto')")
         open_desktop(page, supervisor.base, name, status=False)
         expect(page.get_by_role("button", name="Tap", exact=True)).to_be_visible()
         expect(page.get_by_role("button", name="Trackpad", exact=True)).to_be_visible()
@@ -93,11 +95,54 @@ def test_phone_without_webcodecs_uses_jpeg(supervisor, desktop, name):
         page = sign_in(browser, http_base, viewport={"width":390,"height":760}, has_touch=True)
         assert page.evaluate("isSecureContext") is False
         assert page.evaluate("typeof VideoDecoder") == "undefined"
+        # The tap below lands 1:1: Auto fit, not a phone's locked default.
+        page.evaluate("localStorage.setItem('deskyard.lockSize', 'auto')")
         open_desktop(page, http_base, name, status=False)
         assert wait_until(lambda: any("jpeg" in line.lower() for line in video_settings_lines(name)), 10)
-        expect(page.get_by_role("button", name="Tap", exact=True)).to_be_visible()
+        # A phone starts with the trackpad.
+        page.get_by_role("button", name="Tap", exact=True).click()
         page.touchscreen.tap(120,200)
         assert wait_until(lambda: "X=120" in in_desktop(name,"xdotool","getmouselocation","--shell"), 5)
+        browser.close()
+
+
+def test_phone_starts_locked_with_trackpad(supervisor, desktop, name, tmp_path):
+    from helpers import screen_size
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base, viewport={"width":390,"height":760}, has_touch=True)
+        open_desktop(page, supervisor.base, name, status=False)
+        page.wait_for_function("document.querySelector('iframe').contentWindow.deskyardScreen.display().owner === true")
+        # Too narrow for a desktop at its own size: locked at 1280 × 720, with the trackpad.
+        assert wait_until(lambda: screen_size(name) == (1280,720), 10), screen_size(name)
+        expect(page.get_by_role("button", name="Trackpad", exact=True)).to_have_attribute("aria-pressed", "true")
+        page.wait_for_function("document.querySelector('iframe')?.contentWindow?.webrtcInput?._trackpadMode === true")
+        page.screenshot(path=str(tmp_path / "phone-default.png"))
+        # Pinching the picture magnifies it, as at Auto fit.
+        picture = page.evaluate("""() => { const f=document.querySelector('iframe'),v=f.contentWindow.deskyardScreen.video().getBoundingClientRect(),a=f.getBoundingClientRect();
+            return {y:a.top+v.top+v.height/2}; }""")
+        y = picture["y"]
+        cdp = page.context.new_cdp_session(page)
+        cdp.send("Input.dispatchTouchEvent", {"type":"touchStart", "touchPoints":[{"x":145,"y":y,"id":1},{"x":245,"y":y,"id":2}]})
+        for radius in (70,90,110):
+            cdp.send("Input.dispatchTouchEvent", {"type":"touchMove", "touchPoints":[{"x":195-radius,"y":y,"id":1},{"x":195+radius,"y":y,"id":2}]})
+            time.sleep(.1)
+        cdp.send("Input.dispatchTouchEvent", {"type":"touchEnd", "touchPoints":[]})
+        page.wait_for_function("Number(document.querySelector('[data-zoom-viewport]').dataset.zoom) > 1.5")
+        page.get_by_role("button", name="Fit screen", exact=True).click()
+        page.get_by_role("button", name="More", exact=True).click()
+        expect(page.get_by_role("menuitemcheckbox", name="Resolution: 1280 × 720", exact=True)).to_have_attribute("aria-checked", "true")
+        # The viewer's own choices replace the defaults and are remembered.
+        page.get_by_role("menuitemcheckbox", name="Resolution: Auto fit", exact=True).click()
+        assert wait_until(lambda: screen_size(name) != (1280,720), 10)
+        page.get_by_role("button", name="Tap", exact=True).click()
+        page.reload()
+        open_desktop(page, supervisor.base, name, status=False)
+        page.wait_for_function("document.querySelector('iframe').contentWindow.deskyardScreen.display().owner === true")
+        expect(page.get_by_role("button", name="Tap", exact=True)).to_have_attribute("aria-pressed", "true")
+        page.get_by_role("button", name="More", exact=True).click()
+        expect(page.get_by_role("menuitemcheckbox", name="Resolution: Auto fit", exact=True)).to_have_attribute("aria-checked", "true")
+        time.sleep(1)  # a page that fell back to the default would have locked it by now
+        assert screen_size(name) != (1280,720)
         browser.close()
 
 
@@ -135,6 +180,8 @@ def test_mobile_remote_resolution_presets(supervisor, desktop, name, tmp_path):
 def test_trackpad_follows_cursor_at_view_edges(supervisor, desktop, name):
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base, viewport={"width":390,"height":760}, has_touch=True)
+        # The gestures below assume a picture filling the frame: Auto fit.
+        page.evaluate("localStorage.setItem('deskyard.lockSize', 'auto')")
         open_desktop(page, supervisor.base, name, status=False)
         in_desktop(name, "xdotool", "mousemove", "100", "150")
         cdp = page.context.new_cdp_session(page)
