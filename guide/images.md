@@ -52,9 +52,10 @@ After each check and each upgrade, the supervisor deletes old versions of
 desktop images that nothing uses any more: images it saw a newer pull or
 build of the same tag replace, that no tag names any more, that no container
 runs from, stopped ones included, and that no environment pins. Versions it
-never saw replaced, such as another supervisor's on the same Docker engine,
-and tagged images, such as local builds and custom images, are never
-deleted.
+never saw replaced and tagged images, such as local builds and custom images,
+are never deleted. Another supervisor on the same Docker engine can still
+delete a version it saw replaced while no container uses it; an environment
+pinned to that version then pulls its reference again at its next start.
 
 Upgrading an environment recreates its container on the new image with the same
 settings and folder; the Images page can upgrade all environments on an image

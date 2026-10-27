@@ -300,9 +300,11 @@ func (n *Networking) repin(ctx context.Context, r networkTransition) error {
 	} else if !errors.Is(err, engine.ErrNotFound) {
 		return n.fail(r, phaseImage)
 	}
-	if _, err := s.repin(ctx, r.Name); err == nil {
+	_, err := s.repin(ctx, r.Name)
+	if err == nil {
 		return nil
 	}
+	s.Log.Warn("pulling an environment's pinned image again", "environment", r.Name, "err", err)
 	r.Repair = false
 	return n.failWith(r, phaseImage, fmt.Sprintf("The image %s (%s) this environment is pinned to is gone from the engine and could not be pulled again; upgrade the environment or choose another image", def.Image.Ref, def.Image.ID))
 }
