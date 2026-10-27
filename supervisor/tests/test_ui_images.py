@@ -1,6 +1,7 @@
 """Image catalog and desktop settings on Vite's Docker-free mock API."""
 
 import os
+import re
 import subprocess
 import time
 
@@ -248,8 +249,8 @@ def test_volumes_page_shows_size_and_tiles_link_volumes(mock_ui):
         expect(card.get_by_label("Size")).to_contain_text("19 GB")
         expect(card.get_by_label("Size")).to_contain_text("212 GB free of 460 GB")
         users = card.get_by_role("list", name="Environments using photos")
-        expect(users.get_by_role("link", name="alice Read & write")).to_have_attribute("href", "/environments/alice?tab=settings&section=volumes")
-        expect(users.get_by_role("link", name="research Read only")).to_be_visible()
+        expect(users.get_by_role("link", name=re.compile(r"\balice.*share.photos.*Read & write"))).to_have_attribute("href", "/environments/alice?tab=settings&section=volumes")
+        expect(users.get_by_role("link", name=re.compile(r"\bresearch.*mnt.photos.*Read only"))).to_be_visible()
         page.goto(mock_ui + "/")
         page.get_by_role("article").filter(has_text="alice").get_by_label("Volumes").get_by_role("link", name="photos").click()
         page.wait_for_url(mock_ui + "/volumes#volume-photos")
