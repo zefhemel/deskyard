@@ -87,21 +87,22 @@ for _, batch in ipairs(validBatches) do
 end
 checks = checks + 1
 
--- Dashboard rows separate owner requests, current capabilities and loose ends.
+-- Dashboard rows separate owner requests and group features as done, in progress and not started.
 local records = {
   {name="Features/Built", displayName="Built", tags={"feature"}, status="implemented", availability="available", summary="Works in code", outcome="Useful", next="Check device coverage"},
   {name="Features/Idea", displayName="Idea", tags={"feature"}, status="discovery", availability="unavailable", outcome="Future outcome", next="Design scope", attention={kind="decision", request="Choose behavior", recommendation="Prefer explicit policy", blocking=true}},
   {name="Features/Parked", displayName="Parked", tags={"feature"}, status="parked", availability="unavailable", outcome="Deferred", next="Revisit later"},
   {name="Features/Active", displayName="Active", tags={"feature"}, status="building", availability="experimental", summary="Partial", outcome="Useful", next="Verify fix"},
+  {name="Features/Shipped", displayName="Shipped", tags={"feature"}, status="delivered", availability="available", summary="Verified", outcome="Useful"},
 }
 local attention = docs.attentionRows(records)
 assert(#attention == 1 and attention[1].Request == "Choose behavior" and attention[1].Blocking == "Yes", "Dashboard owner requests must expose the exact decision and blocking state")
-local capabilities = docs.capabilityRows(records)
-assert(#capabilities == 2, "Dashboard capabilities must exclude unavailable proposals")
-local work = docs.workRows(records)
-assert(#work == 1 and work[1].Next == "Verify fix", "Dashboard work must show actual execution, not all discovery")
-local loose = docs.looseEndRows(records)
-assert(#loose == 1 and loose[1].Next == "Design scope", "Dashboard loose ends must exclude delivered baseline and parked items")
+local done = docs.doneRows(records)
+assert(#done == 1 and done[1].Availability == "available", "Dashboard done group must hold only delivered features")
+local inProgress = docs.inProgressRows(records)
+assert(#inProgress == 2 and inProgress[1].Stage == "building" and inProgress[1].Next == "Verify fix" and inProgress[2].Stage == "implemented", "Dashboard in-progress group must hold building, then implemented features")
+local notStarted = docs.notStartedRows(records)
+assert(#notStarted == 1 and notStarted[1].Next == "Design scope", "Dashboard not-started group must exclude built, delivered and parked features")
 assert(#docs.attentionRows({}) == 0, "Empty owner inbox must not fabricate requests")
 checks = checks + 5
 
