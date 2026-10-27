@@ -150,7 +150,7 @@ Back up the whole data folder; its `cache/` can be left out.
 - [Running Deskyard](guide/running.md): domains, LANs and plain HTTP, Tailscale, security.
 - [Using the desktop](guide/desktop.md): display and touch controls, the iPhone Home Screen, shared terminals.
 - [Environments](guide/environments.md): lifecycle, Docker access, outbound VPN, what persists, reclaiming memory.
-- [Storage](guide/storage.md): volumes, backups and the data folder.
+- [Storage](guide/storage.md): volumes, WebDAV drives, backups and the data folder.
 - [Images](guide/images.md): the catalog, upgrades, custom images, Flatpak and AppImages.
 - [Accounts and sharing](guide/sharing.md): accounts, access levels and share links.
 - [The deskyard command](guide/cli.md): signing in, remote control, port mapping and agents.
