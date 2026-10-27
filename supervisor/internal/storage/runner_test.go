@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -121,5 +123,31 @@ func TestEngineRunnerRemovesHelperWhenExecFails(t *testing.T) {
 	}
 	if len(e.removed) != 1 {
 		t.Fatalf("helper left behind: %v", e.removed)
+	}
+}
+
+func TestEngineRunnerMountsCachedRestic(t *testing.T) {
+	e := &helperFakeEngine{}
+	bin := t.TempDir()
+	r := &EngineRunner{Eng: e, BinDir: bin}
+	for range 2 {
+		if _, err := r.Run(context.Background(), Call{Args: []string{"restic", "version"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(e.copied) != 0 {
+		t.Fatalf("copied restic into a container: %v", e.copied)
+	}
+	cached := filepath.Join(bin, "restic-0.19.1")
+	if b, err := os.ReadFile(cached); err != nil || string(b) != "ELF!" {
+		t.Fatalf("cached binary %q %v", b, err)
+	}
+	if st, _ := os.Stat(cached); st.Mode().Perm() != 0o755 {
+		t.Fatalf("mode %v", st.Mode())
+	}
+	for _, s := range e.specs {
+		if len(s.Mounts) != 1 || s.Mounts[0] != (engine.Mount{Source: cached, Target: "/usr/local/bin/restic", ReadOnly: true, MustExist: true}) {
+			t.Fatalf("mounts %+v", s.Mounts)
+		}
 	}
 }

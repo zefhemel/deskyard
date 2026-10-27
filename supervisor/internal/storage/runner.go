@@ -1,22 +1,26 @@
 package storage
 
 import (
+	"archive/tar"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 )
 
-// The helper's images, pinned. restic is copied out of its image into a
-// container of rclone's, so Deskyard publishes no image of its own.
+// The helper's images, pinned. restic is taken out of its image into
+// containers of rclone's, so Deskyard publishes no image of its own.
 const (
 	RcloneImage = "rclone/rclone:1.75.2"
 	ResticImage = "restic/restic:0.19.1"
@@ -44,11 +48,57 @@ type Runner interface {
 }
 
 // EngineRunner runs each Call in a new helper container of RcloneImage,
-// with restic copied in, removed when the call returns.
+// removed when the call returns. restic comes from ResticImage: extracted
+// once into BinDir (a host folder) and mounted read-only, or, without a
+// BinDir, copied into each container.
 type EngineRunner struct {
-	Eng engine.Engine
+	Eng    engine.Engine
+	BinDir string
 
 	pullMu sync.Mutex
+}
+
+// resticBinary is the restic binary extracted into BinDir, made on first use.
+func (r *EngineRunner) resticBinary(ctx context.Context) (string, error) {
+	path := filepath.Join(r.BinDir, "restic-"+strings.TrimPrefix(ResticImage, "restic/restic:"))
+	if st, err := os.Stat(path); err == nil && st.Mode().IsRegular() {
+		return path, nil
+	}
+	rc, err := r.Eng.CopyFromImage(ctx, ResticImage, resticPath)
+	if err != nil {
+		return "", err
+	}
+	defer rc.Close()
+	tr := tar.NewReader(rc)
+	for {
+		h, err := tr.Next()
+		if err != nil {
+			return "", fmt.Errorf("no restic in %s: %w", ResticImage, err)
+		}
+		if h.Typeflag != tar.TypeReg || filepath.Base(h.Name) != "restic" {
+			continue
+		}
+		if err := os.MkdirAll(r.BinDir, 0o755); err != nil {
+			return "", err
+		}
+		tmp, err := os.CreateTemp(r.BinDir, ".restic-*")
+		if err != nil {
+			return "", err
+		}
+		defer os.Remove(tmp.Name())
+		if _, err := io.Copy(tmp, io.LimitReader(tr, 256<<20)); err != nil {
+			tmp.Close()
+			return "", err
+		}
+		if err := tmp.Chmod(0o755); err != nil {
+			tmp.Close()
+			return "", err
+		}
+		if err := tmp.Close(); err != nil {
+			return "", err
+		}
+		return path, os.Rename(tmp.Name(), path)
+	}
 }
 
 func (r *EngineRunner) ensureImages(ctx context.Context) error {
@@ -70,12 +120,22 @@ func (r *EngineRunner) Run(ctx context.Context, c Call) (Result, error) {
 	if err := r.ensureImages(ctx); err != nil {
 		return Result{}, err
 	}
+	mounts := slices.Clone(c.Mounts)
+	if r.BinDir != "" {
+		r.pullMu.Lock()
+		bin, err := r.resticBinary(ctx)
+		r.pullMu.Unlock()
+		if err != nil {
+			return Result{}, fmt.Errorf("preparing restic: %w", err)
+		}
+		mounts = append(mounts, engine.Mount{Source: bin, Target: "/usr/local/bin/restic", ReadOnly: true, MustExist: true})
+	}
 	raw := make([]byte, 4)
 	_, _ = rand.Read(raw)
 	name := "deskyard-storage-" + hex.EncodeToString(raw)
 	if _, err := r.Eng.Create(ctx, engine.ContainerSpec{
 		Name: name, Image: RcloneImage, Entrypoint: []string{"sleep"}, Cmd: []string{"86400"},
-		Mounts: c.Mounts, NoHealthcheck: true, Restart: "no",
+		Mounts: mounts, NoHealthcheck: true, Restart: "no",
 	}); err != nil {
 		return Result{}, err
 	}
@@ -84,14 +144,16 @@ func (r *EngineRunner) Run(ctx context.Context, c Call) (Result, error) {
 		defer done()
 		_ = r.Eng.Remove(cleanup, name)
 	}()
-	bin, err := r.Eng.CopyFromImage(ctx, ResticImage, resticPath)
-	if err != nil {
-		return Result{}, fmt.Errorf("copying restic: %w", err)
-	}
-	err = r.Eng.CopyToContainer(ctx, name, "/usr/local/bin", bin)
-	bin.Close()
-	if err != nil {
-		return Result{}, fmt.Errorf("copying restic: %w", err)
+	if r.BinDir == "" {
+		bin, err := r.Eng.CopyFromImage(ctx, ResticImage, resticPath)
+		if err != nil {
+			return Result{}, fmt.Errorf("copying restic: %w", err)
+		}
+		err = r.Eng.CopyToContainer(ctx, name, "/usr/local/bin", bin)
+		bin.Close()
+		if err != nil {
+			return Result{}, fmt.Errorf("copying restic: %w", err)
+		}
 	}
 	if err := r.Eng.Start(ctx, name); err != nil {
 		return Result{}, err
