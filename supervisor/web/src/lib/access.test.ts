@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cliLoginId, expiresAt, grantsLine, levelLabel, parseLinkFragment, safeNext } from "./access.ts";
+import { cliLoginId, expiresAt, expiryChange, grantsLine, levelLabel, parseLinkFragment, safeNext } from "./access.ts";
 
 test("a link's code is the whole fragment when it is one", () => {
   assert.equal(parseLinkFragment("#dyl_ab_cd"), "dyl_ab_cd");
@@ -56,4 +56,17 @@ test("only paths on this origin are places to go next", () => {
   assert.equal(safeNext("//evil.example"), "/");
   assert.equal(safeNext("/\\evil.example"), "/");
   assert.equal(safeNext("https://evil.example/"), "/");
+});
+
+test("an account change carries the picked expiry when it changed", () => {
+  const when = new Date("2026-12-01T00:00:00Z");
+  assert.equal(expiryChange({ canExpire: true, changeExpiry: true, when, hadExpiry: false }), "2026-12-01T00:00:00.000Z");
+  assert.equal(expiryChange({ canExpire: true, changeExpiry: true, when: null, hadExpiry: true }), null);
+  assert.equal(expiryChange({ canExpire: true, changeExpiry: false, when, hadExpiry: true }), undefined);
+});
+
+test("an account that becomes an admin with a password loses its expiry", () => {
+  assert.equal(expiryChange({ canExpire: false, changeExpiry: true, when: new Date(), hadExpiry: true }), null);
+  assert.equal(expiryChange({ canExpire: false, changeExpiry: false, when: undefined, hadExpiry: true }), null);
+  assert.equal(expiryChange({ canExpire: false, changeExpiry: false, when: undefined, hadExpiry: false }), undefined);
 });

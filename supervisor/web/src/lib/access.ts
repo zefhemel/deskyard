@@ -56,6 +56,17 @@ export function expiresAt(limit: TimeLimit, date: string, now = Date.now()): Dat
   }
 }
 
+/**
+ * An account change's `expires`: the picked expiry once changed, while the
+ * account can expire; none (null) when it can't (an admin with a password)
+ * but had one, as when it becomes one; left out otherwise.
+ */
+export function expiryChange(o: { canExpire: boolean; changeExpiry: boolean; when: Date | null | undefined; hadExpiry: boolean }): string | null | undefined {
+  if (!o.canExpire) return o.hadExpiry ? null : undefined;
+  if (!o.changeExpiry || o.when === undefined) return undefined;
+  return o.when ? o.when.toISOString() : null;
+}
+
 /** A date input's value for a day. */
 export function isoDate(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");

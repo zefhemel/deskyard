@@ -6,7 +6,7 @@ import { LevelPicks } from "../components/environment-fields.tsx";
 import { notifyError } from "../components/toast.tsx";
 import { Button, Check, Dialog, ErrorText, errorMessage, Field, Seg } from "../components/ui.tsx";
 import { useLive } from "../live.tsx";
-import { expiresAt, levelLabel, type TimeLimit } from "../lib/access.ts";
+import { expiresAt, expiryChange, levelLabel, type TimeLimit } from "../lib/access.ts";
 import { Expiry, TimeLimitField, USERNAME, usernameHint } from "./share.tsx";
 
 type Kind = Account["kind"];
@@ -55,7 +55,8 @@ export function AccountDialog({ account, onClose, onSaved }: { account: Account 
         if (isNew || admin !== account.admin) body.admin = admin;
       }
       if (kind === "password" && password) body.password = password;
-      if (changeExpiry && canExpire) body.expires = when ? when.toISOString() : null;
+      const expires = expiryChange({ canExpire, changeExpiry, when, hadExpiry: !isNew && account.expires !== null });
+      if (expires !== undefined) body.expires = expires;
       if (isNew) {
         await api.createAccount({ username, ...body });
         if (kind !== "token") return onSaved();
