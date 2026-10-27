@@ -13,7 +13,7 @@ type Event struct {
 	Seq    uint64        `json:"seq"`
 	T      time.Time     `json:"t"`
 	Agent  string        `json:"agent"` // program name, inside only
-	Kind   string        `json:"kind"`  // "screen", "cmd-start", "cmd-end"
+	Kind   string        `json:"kind"`  // "screen", "cmd-start", "cmd-end", "terminals"
 	Screen *ScreenAction `json:"screen,omitempty"`
 	ID     string        `json:"id,omitempty"`  // pairs cmd-start and cmd-end
 	Cmd    string        `json:"cmd,omitempty"` // display form
@@ -59,6 +59,9 @@ func Sanitize(e Event) (Event, bool) {
 			x := *e.Exit
 			out.Exit = &x
 		}
+		return out, true
+	case "terminals":
+		// The shared terminal sessions changed; the event carries nothing else.
 		return out, true
 	}
 	return Event{}, false

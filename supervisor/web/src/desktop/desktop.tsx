@@ -200,7 +200,8 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
     if (now.listed.includes(s)) setGone((g) => (g.includes(s) ? g : [...g, s]));
     setStates(({ [s]: _, ...rest }) => rest);
     const wasLinked = linked.current.delete(s);
-    if (now.shownTab === s) {
+    // The list and the pane may both report the end before the page moves on.
+    if (now.shownTab === s && closing.current !== s) {
       // Its left neighbour among the tabs still there, or Desktop.
       const before = rendered.current.includes(s) ? rendered.current.slice(0, rendered.current.indexOf(s) + 1) : [s];
       const left = before.filter((t) => t === s || now.tabs.includes(t));

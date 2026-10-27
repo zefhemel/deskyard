@@ -492,3 +492,51 @@ func TestTerminalPageRouteRemoved(t *testing.T) {
 		t.Errorf("environment page: %d %s", resp.StatusCode, body)
 	}
 }
+
+// A desktop's change events each ask for a list; those arriving while one
+// runs fold into a single further list, which sees the latest sessions.
+func TestTerminalChangesCoalesce(t *testing.T) {
+	e := newTerminalSessionsEngine()
+	s, _ := newTestServerWith(t, e)
+	release := make(chan struct{})
+	entered := make(chan struct{}, 8)
+	e.listHook = func() {
+		entered <- struct{}{}
+		<-release
+	}
+	lists := func() int {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		n := 0
+		for _, c := range e.cmds {
+			if c[1] == "terminal-list" {
+				n++
+			}
+		}
+		return n
+	}
+	ctx := context.Background()
+	s.terminalSessions.changed(ctx, "alice")
+	<-entered
+	e.setList("main\t0\tbash\n")
+	for range 5 {
+		s.terminalSessions.changed(ctx, "alice")
+	}
+	close(release)
+	deadline := time.Now().Add(5 * time.Second)
+	for len(s.terminalSessions.get("alice")) != 1 {
+		if time.Now().After(deadline) {
+			t.Fatalf("change never listed: %d lists", lists())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(2 * terminalChangeGap)
+	if n := lists(); n != 2 {
+		t.Fatalf("%d lists for six changes", n)
+	}
+	s.terminalSessions.mu.Lock()
+	defer s.terminalSessions.mu.Unlock()
+	if len(s.terminalSessions.changing) != 0 {
+		t.Fatal("change refresh still marked running")
+	}
+}

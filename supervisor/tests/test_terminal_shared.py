@@ -6,7 +6,8 @@ import subprocess
 import threading
 import uuid
 
-from playwright.sync_api import sync_playwright
+import pytest
+from playwright.sync_api import expect, sync_playwright
 
 from helpers import in_desktop, signed_in, wait_until
 from test_terminal_transport import eventually, shell
@@ -91,3 +92,41 @@ def test_browser_cli_and_native_launcher_share_shell(supervisor, name, desktop, 
         if slave is not None:
             os.close(slave)
         os.close(master)
+
+
+def desktop_sessions(name):
+    """The public sessions as the desktop itself lists them, by name."""
+    lines = in_desktop(name, 'deskyard', 'terminal-list', check=False).splitlines()
+    return [line.split('\t')[0] for line in lines if line]
+
+
+@pytest.mark.serial  # a tab within seconds of the session
+def test_native_session_tab_follows_promptly(supervisor, name, desktop):
+    """The desktop's tmux hooks report changes: no waiting for the slow poll."""
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base)
+        try:
+            page.goto(f'{supervisor.base}/{name}/')
+            expect(page.get_by_role('tab', name='Desktop')).to_be_visible(timeout=15000)
+            page.wait_for_timeout(2000)  # the supervisor follows the desktop's stream once someone looks
+            subprocess.run(['docker', 'exec', '-d', '-u', 'user', '-e', 'DISPLAY=:1',
+                            f'deskyard-{name}', 'xfce4-appfinder', '--disable-server'], check=True)
+            assert wait_until(lambda: in_desktop(name, 'xdotool', 'search', '--onlyvisible',
+                                                 '--class', 'xfce4-appfinder', check=False).strip()), 'Application finder did not open'
+            in_desktop(name, 'xdotool', 'type', '--clearmodifiers', '--delay', '30', 'Deskyard Terminal')
+            in_desktop(name, 'xdotool', 'key', 'Return')
+            sessions = wait_until(lambda: desktop_sessions(name), every=0.05)
+            assert sessions, 'Deskyard Terminal launcher opened no session'
+            session = sessions[0]
+            tab = page.get_by_role('tab', name=tab_name(session))
+            # The old 10 s poll can't pass this; the hook-driven refresh takes well under a second.
+            expect(tab).to_be_visible(timeout=3000)
+
+            window = in_desktop(name, 'xdotool', 'search', '--onlyvisible', '--class', 'xfce4-terminal').split()[-1]
+            in_desktop(name, 'xdotool', 'windowactivate', '--sync', window)
+            in_desktop(name, 'xdotool', 'type', '--clearmodifiers', '--delay', '20', 'exit')
+            in_desktop(name, 'xdotool', 'key', 'Return')
+            assert wait_until(lambda: session not in desktop_sessions(name), every=0.05), 'exit did not end the session'
+            expect(tab).to_have_count(0, timeout=3000)
+        finally:
+            browser.close()

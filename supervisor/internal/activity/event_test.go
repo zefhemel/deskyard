@@ -44,6 +44,9 @@ func TestSanitize(t *testing.T) {
 	if e.Exit == nil || *e.Exit != 3 {
 		t.Errorf("exit lost")
 	}
+	if e = good(Event{Agent: "tmux", Kind: "terminals", ID: "x", Cmd: "secret"}); e.ID != "" || e.Cmd != "" {
+		t.Errorf("terminals kept %+v", e)
+	}
 
 	drop := []Event{
 		{Agent: "a", Kind: "nope"},

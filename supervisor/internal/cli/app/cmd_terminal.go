@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"github.com/zefhemel/deskyard/supervisor/internal/activity"
 	"github.com/zefhemel/deskyard/supervisor/internal/cli/execws"
 	"github.com/zefhemel/deskyard/supervisor/internal/terminal"
 	"os"
@@ -76,6 +77,13 @@ func runTerminalRuntime(a *App, c *call) error {
 		return noSession(a, terminal.Lease(ctx, c.args[0], c.args[1], join, a.Stdin, a.Stdout))
 	}
 	return terminal.AttachPrepared(ctx, c.args[0], a.Stdin, a.Stdout, a.Stderr)
+}
+
+// runTerminalChanged is the shared tmux server's hook for session and client
+// changes. The supervisor lists the sessions again when it sees the event.
+func runTerminalChanged(a *App, c *call) error {
+	activity.Send(activity.Event{Agent: "tmux", Kind: "terminals"})
+	return nil
 }
 
 // noSession gives a missing session its own exit code, so the supervisor can
