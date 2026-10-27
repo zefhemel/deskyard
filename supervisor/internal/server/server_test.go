@@ -226,6 +226,34 @@ func TestUnauthenticated(t *testing.T) {
 	}
 }
 
+// The link and CLI login pages open signed out: the recipient of a sharing
+// link has no session yet, and a redirect would lose the token fragment.
+func TestSignedOutPages(t *testing.T) {
+	_, ts := newTestServer(t)
+	anon := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	for _, p := range []string{"/link", "/cli-login"} {
+		resp, err := anon.Get(ts.URL + p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != 200 || string(b) != "<!doctype html>ui" {
+			t.Errorf("%s: %d %q", p, resp.StatusCode, b)
+		}
+	}
+	for _, p := range []string{"/account", "/linked", "/cli-login-x"} {
+		resp, err := anon.Get(ts.URL + p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 302 || !strings.HasPrefix(resp.Header.Get("Location"), "/login?next=") {
+			t.Errorf("%s: %d %s", p, resp.StatusCode, resp.Header.Get("Location"))
+		}
+	}
+}
+
 func TestOriginAndPermissions(t *testing.T) {
 	_, ts := newTestServer(t)
 	admin := login(t, ts, "admin")

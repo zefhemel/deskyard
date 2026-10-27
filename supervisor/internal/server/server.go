@@ -341,8 +341,9 @@ func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	// Every page but the login page needs a session.
-	if !strings.HasPrefix(r.URL.Path, "/login") {
+	// Every page but the login, link and CLI login pages needs a session: those
+	// open signed out, and a redirect would drop a link's token fragment.
+	if !strings.HasPrefix(r.URL.Path, "/login") && r.URL.Path != "/link" && r.URL.Path != "/cli-login" {
 		if _, ok := s.withSession(w, r); !ok {
 			http.Redirect(w, r, "/login?next="+url.QueryEscape(r.URL.RequestURI()), http.StatusFound)
 			return
