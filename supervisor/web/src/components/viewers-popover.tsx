@@ -117,7 +117,7 @@ export function ViewersPopover({
   return (
     <div
       ref={ref}
-      class="absolute top-[50px] left-2.5 z-40 w-[320px] max-w-[calc(100vw-20px)] max-h-[calc(100dvh-70px)] overflow-y-auto rounded-[10px] bg-surface p-3.5 text-ink shadow-[0_18px_40px_-12px_rgba(0,0,0,.6)]"
+      class="absolute top-[50px] right-2.5 z-40 w-[320px] max-w-[calc(100vw-20px)] max-h-[calc(100dvh-70px)] overflow-y-auto rounded-[10px] bg-surface p-3.5 text-ink shadow-[0_18px_40px_-12px_rgba(0,0,0,.6)]"
     >
       <h3 class="mb-1.5 text-[13px] font-semibold text-muted">Viewing</h3>
       {viewers.length ? (
