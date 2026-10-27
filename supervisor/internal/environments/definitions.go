@@ -74,9 +74,11 @@ type Definition struct {
 	Network  Network       `json:"network"`
 	Volumes  []VolumeGrant `json:"volumes"`
 	// DockerAccess is as in Settings.
-	DockerAccess  bool  `json:"dockerAccess"`
-	MemoryReclaim bool  `json:"memoryReclaim"`
-	Power         Power `json:"power"`
+	DockerAccess  bool `json:"dockerAccess"`
+	MemoryReclaim bool `json:"memoryReclaim"`
+	// WebDAV serves the home and local volumes at /<name>/dav/.
+	WebDAV bool  `json:"webdav"`
+	Power  Power `json:"power"`
 }
 
 // Settings returns the definition's container settings, for the create code.

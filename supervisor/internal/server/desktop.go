@@ -25,9 +25,14 @@ import (
 
 // serveDesktop handles /<name>/…: the desktop page (the UI), and under
 // /<name>/screen/ Selkies' web client taken from the desktop's image, our
-// additions to it, and the desktop's stream. Nothing else from a desktop is
-// ever served on this origin.
+// additions to it, and the desktop's stream; and under /<name>/dav/ the
+// environment's files over WebDAV, always as downloads. Nothing else from a
+// desktop is ever served on this origin, and nothing from it renders here.
 func (s *Server) serveDesktop(w http.ResponseWriter, r *http.Request, name, rest string) {
+	if rest == "dav" || strings.HasPrefix(rest, "dav/") {
+		s.serveDAV(w, r, name) // Basic auth, not the session
+		return
+	}
 	r, ok := s.withSession(w, r)
 	if !ok {
 		if strings.HasPrefix(rest, "screen/api/") {
