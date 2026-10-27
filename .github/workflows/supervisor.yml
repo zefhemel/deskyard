@@ -219,14 +219,30 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
+      # A newer push to main publishes edge itself. Moving the tag back to this
+      # commit would also be refused (HTTP 403) once main's workflow files
+      # differ from this commit's.
+      - name: Check that main hasn't moved on
+        id: head
+        run: |
+          main=$(gh api "repos/$GH_REPO/commits/main" --jq .sha)
+          if [ "$main" = "$GITHUB_SHA" ]; then
+            echo current=true >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::main is at ${main::7} now; leaving edge to that push"
+          fi
+
       - uses: actions/checkout@v5
+        if: steps.head.outputs.current
 
       - uses: actions/download-artifact@v4
+        if: steps.head.outputs.current
         with:
           name: binaries
           path: dist
 
       - name: Move the edge tag to this commit
+        if: steps.head.outputs.current
         run: |
           if gh api "repos/$GH_REPO/git/refs/tags/edge" > /dev/null 2>&1; then
             gh api -X PATCH "repos/$GH_REPO/git/refs/tags/edge" -f sha="$GITHUB_SHA" -F force=true > /dev/null
@@ -235,6 +251,7 @@ jobs:
           fi
 
       - name: Release notes
+        if: steps.head.outputs.current
         run: |
           {
             echo "Built from main at [\`${GITHUB_SHA::7}\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA) on $(date -u '+%Y-%m-%d %H:%M UTC'):"
@@ -252,6 +269,7 @@ jobs:
           cat notes.md
 
       - name: Create or update the edge release
+        if: steps.head.outputs.current
         run: |
           if gh release view edge > /dev/null 2>&1; then
             gh release edit edge --title Edge --prerelease --latest=false --notes-file notes.md
@@ -261,6 +279,7 @@ jobs:
 
       # Replace files of the same name, then delete any this build didn't make.
       - name: Replace the files
+        if: steps.head.outputs.current
         run: |
           gh release upload edge dist/* --clobber
           gh release view edge --json assets --jq '.assets[].name' | while read -r name; do
