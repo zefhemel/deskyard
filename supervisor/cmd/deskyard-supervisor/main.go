@@ -78,6 +78,11 @@ func run(log *slog.Logger) error {
 	if !cfg.InContainer {
 		return errors.New("the supervisor runs only in a container: see the README for the docker run command")
 	}
+	// Before anything is written, the root phase's re-own included: an older
+	// layout is refused, not adopted.
+	if err := config.CheckLegacy(cfg.DataDir); err != nil {
+		return err
+	}
 	// The root phase comes before the engine, the stores and the listener.
 	if os.Getuid() == 0 {
 		if err := rootPhase(cfg); err != nil {
@@ -88,10 +93,6 @@ func run(log *slog.Logger) error {
 		return fmt.Errorf("the supervisor must run as UID:GID %d:%d (or start as root to drop to it), not %d:%d", config.UID, config.GID, os.Getuid(), os.Getgid())
 	}
 	if err := checkSocketAccess(cfg.EngineHost); err != nil {
-		return err
-	}
-	// Before anything is written: an older layout is refused, not adopted.
-	if err := config.CheckLegacy(cfg.DataDir); err != nil {
 		return err
 	}
 	dockerEng, err := docker.New(cfg.EngineHost)
@@ -105,15 +106,16 @@ func run(log *slog.Logger) error {
 		return fmt.Errorf("can't reach the container engine (is Docker running, and may this user use its socket?): %w", err)
 	}
 	// The engine resolves mounts on the host, so find where /data lives there.
-	// The container ID is the hostname, which a user's --hostname would change:
-	// then the supervisor can't find itself and says so.
+	// The container ID is the hostname, which a user's --hostname or host
+	// networking would change: then the supervisor can't find itself and says
+	// so.
 	selfID, err := os.Hostname()
 	if err != nil {
 		return err
 	}
 	self, err := eng.Inspect(ctx, selfID)
 	if err != nil {
-		return fmt.Errorf("can't find the supervisor's own container %q (its hostname must be the container ID, so don't set --hostname): %w", selfID, err)
+		return fmt.Errorf("can't find the supervisor's own container %q (its hostname must be the container ID, so don't set --hostname or use --network host): %w", selfID, err)
 	}
 	host, err := dataHostPath(self)
 	if err != nil {
@@ -123,7 +125,7 @@ func run(log *slog.Logger) error {
 	hostLayout := cfg.Layout.WithHost(host)
 	eng = engine.WithHostPaths(eng, hostLayout.ToHost, hostLayout.FromHost)
 	// Nor are an older supervisor's containers that use this data folder.
-	if err := environments.New(eng, environments.Config{DataDir: cfg.DataDir}, log).CheckLegacyContainers(ctx); err != nil {
+	if err := environments.New(eng, environments.Config{DataDir: cfg.DataDir, DataHost: host}, log).CheckLegacyContainers(ctx); err != nil {
 		return err
 	}
 	if err := cfg.Layout.Prepare(); err != nil {
@@ -147,7 +149,7 @@ func run(log *slog.Logger) error {
 	}
 
 	comps, err := environments.Open(eng, environments.Config{
-		DataDir: cfg.DataDir, Subnet: cfg.Subnet.String(), SelfID: selfID,
+		DataDir: cfg.DataDir, DataHost: host, Subnet: cfg.Subnet.String(), SelfID: selfID,
 	}, instance, log)
 	if err != nil {
 		return err

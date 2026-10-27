@@ -38,7 +38,7 @@ type Volume struct {
 	HostPath string    `json:"hostPath,omitempty"`
 }
 
-func (v Volume) validate() error {
+func (v Volume) validate(l config.Layout) error {
 	if err := ValidName(v.Name); err != nil {
 		return err
 	}
@@ -51,23 +51,33 @@ func (v Volume) validate() error {
 			return errors.New("a local volume has no host path")
 		}
 	case VolumeHost:
-		return ValidHostPath(v.HostPath)
+		return ValidHostPath(l, v.HostPath)
 	default:
 		return fmt.Errorf("unknown kind %q", v.Kind)
 	}
 	return nil
 }
 
-// ValidHostPath checks a host volume's folder: a clean absolute path outside
-// the layout's entries in the supervisor's data mount.
-func ValidHostPath(p string) error {
+// ValidHostPath checks a host volume's folder against l, the supervisor's
+// layout: a clean absolute path outside the layout's entries, both in the
+// data mount and in the host folder behind it (which the engine would read
+// back as the data mount's).
+func ValidHostPath(l config.Layout, p string) error {
 	if len(p) > 4096 || !filepath.IsAbs(p) || strings.ContainsRune(p, 0) || filepath.Clean(p) != p {
 		return fmt.Errorf("a host volume needs a clean absolute path on the engine host, not %q", p)
 	}
-	if config.NewLayout(config.DataDir).Owns(p) {
-		return fmt.Errorf("%s is inside the supervisor's data folder mount; choose a folder outside /data/home, /data/volume, /data/secret, /data/state and /data/cache", p)
+	if l.Owns(p) {
+		return fmt.Errorf("%s is inside the supervisor's data folder mount; choose a folder outside %s", p, entriesOf(l.Data))
+	}
+	if l.FromHost(p) != p {
+		return fmt.Errorf("%s is inside the supervisor's data folder on the host; choose a folder outside %s", p, entriesOf(l.Host()))
 	}
 	return nil
+}
+
+// entriesOf names the layout's folders in data for an error message.
+func entriesOf(data string) string {
+	return fmt.Sprintf("%[1]s/home, %[1]s/volume, %[1]s/secret, %[1]s/state and %[1]s/cache", strings.TrimSuffix(data, "/"))
 }
 
 type volumesFile struct {
@@ -79,7 +89,8 @@ type volumesFile struct {
 // Like Definitions, every change is written atomically before it replaces the
 // in-memory copy.
 type Volumes struct {
-	path string
+	path   string
+	layout config.Layout // checks host volumes' paths
 
 	mu   sync.Mutex
 	vols map[string]Volume // never mutated; replaced on every change
@@ -88,9 +99,10 @@ type Volumes struct {
 func volumesPath(l config.Layout) string { return filepath.Join(l.Data, "volumes.json") }
 
 // LoadVolumes reads path; a missing file is an empty store. Any invalid entry
-// fails the whole load rather than dropping a volume.
-func LoadVolumes(path string) (*Volumes, error) {
-	v := &Volumes{path: path, vols: map[string]Volume{}}
+// fails the whole load rather than dropping a volume. Host volumes' paths are
+// checked against l.
+func LoadVolumes(path string, l config.Layout) (*Volumes, error) {
+	v := &Volumes{path: path, layout: l, vols: map[string]Volume{}}
 	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return v, nil
@@ -111,7 +123,7 @@ func LoadVolumes(path string) (*Volumes, error) {
 		if vol.Kind == "" {
 			vol.Kind = VolumeLocal
 		}
-		if err := vol.validate(); err != nil {
+		if err := vol.validate(l); err != nil {
 			return nil, fmt.Errorf("%s: volume %q: %w", path, vol.Name, err)
 		}
 		if _, dup := v.vols[vol.Name]; dup {
@@ -138,7 +150,7 @@ func (v *Volumes) List() []Volume {
 
 // Add validates and saves vol, or returns ErrExists for a name in use.
 func (v *Volumes) Add(vol Volume) error {
-	if err := vol.validate(); err != nil {
+	if err := vol.validate(v.layout); err != nil {
 		return fmt.Errorf("invalid volume: %w", err)
 	}
 	v.mu.Lock()

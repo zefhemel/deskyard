@@ -6,8 +6,33 @@ import "context"
 // boundary: Create maps every source from the supervisor's own path to the
 // host's through toHost, and Inspect and List map the sources they return
 // back through fromHost. All other methods pass through.
+//
+// The wrapper keeps the optional interfaces e implements (MemoryReclaimer,
+// ImagePruner), since callers find them by type assertion. Neither carries
+// mount sources, so they pass through untranslated.
 func WithHostPaths(e Engine, toHost, fromHost func(string) string) Engine {
-	return hostPaths{Engine: e, toHost: toHost, fromHost: fromHost}
+	h := hostPaths{Engine: e, toHost: toHost, fromHost: fromHost}
+	reclaimer, reclaims := e.(MemoryReclaimer)
+	pruner, prunes := e.(ImagePruner)
+	switch {
+	case reclaims && prunes:
+		return struct {
+			hostPaths
+			MemoryReclaimer
+			ImagePruner
+		}{h, reclaimer, pruner}
+	case reclaims:
+		return struct {
+			hostPaths
+			MemoryReclaimer
+		}{h, reclaimer}
+	case prunes:
+		return struct {
+			hostPaths
+			ImagePruner
+		}{h, pruner}
+	}
+	return h
 }
 
 type hostPaths struct {

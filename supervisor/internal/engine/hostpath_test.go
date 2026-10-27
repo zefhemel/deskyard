@@ -93,3 +93,78 @@ func TestWithHostPathsCopiesSpec(t *testing.T) {
 		t.Errorf("caller's mounts mutated: %q", spec.Mounts[0].Source)
 	}
 }
+
+// optionalEngine also implements the optional engine interfaces, as the Docker engine does.
+type optionalEngine struct {
+	recordingEngine
+	reclaimed, removed string
+}
+
+func (o *optionalEngine) ProbeMemoryReclaim(context.Context) error { return nil }
+
+func (o *optionalEngine) ReclaimMemory(_ context.Context, id string) (MemoryReclaim, error) {
+	o.reclaimed = id
+	return MemoryReclaim{AfterBytes: 1}, nil
+}
+
+func (o *optionalEngine) DanglingImages(context.Context, map[string]string) ([]Image, error) {
+	return []Image{{ID: "img"}}, nil
+}
+
+func (o *optionalEngine) RemoveImage(_ context.Context, id string) error {
+	o.removed = id
+	return nil
+}
+
+func TestWithHostPathsKeepsOptionalInterfaces(t *testing.T) {
+	inner := &optionalEngine{}
+	e := WithHostPaths(inner, testToHost, testFromHost)
+	reclaimer, ok := e.(MemoryReclaimer)
+	if !ok {
+		t.Fatal("wrapped engine lost MemoryReclaimer")
+	}
+	if got, err := reclaimer.ReclaimMemory(context.Background(), "c1"); err != nil || got.AfterBytes != 1 || inner.reclaimed != "c1" {
+		t.Errorf("ReclaimMemory = %+v, %v; inner saw %q", got, err, inner.reclaimed)
+	}
+	pruner, ok := e.(ImagePruner)
+	if !ok {
+		t.Fatal("wrapped engine lost ImagePruner")
+	}
+	if err := pruner.RemoveImage(context.Background(), "img"); err != nil || inner.removed != "img" {
+		t.Errorf("RemoveImage = %v; inner saw %q", err, inner.removed)
+	}
+	// Mount translation still applies on the combined wrapper.
+	if _, err := e.Create(context.Background(), ContainerSpec{Mounts: []Mount{{Source: "/data/home/a"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := inner.created.Mounts[0].Source; got != "/srv/d/home/a" {
+		t.Errorf("home source = %q", got)
+	}
+}
+
+// reclaimOnlyEngine implements only MemoryReclaimer.
+type reclaimOnlyEngine struct {
+	recordingEngine
+}
+
+func (reclaimOnlyEngine) ProbeMemoryReclaim(context.Context) error { return nil }
+func (reclaimOnlyEngine) ReclaimMemory(context.Context, string) (MemoryReclaim, error) {
+	return MemoryReclaim{}, nil
+}
+
+func TestWithHostPathsAddsNoOptionalInterfaces(t *testing.T) {
+	plain := WithHostPaths(&recordingEngine{}, testToHost, testFromHost)
+	if _, ok := plain.(MemoryReclaimer); ok {
+		t.Error("plain engine gained MemoryReclaimer")
+	}
+	if _, ok := plain.(ImagePruner); ok {
+		t.Error("plain engine gained ImagePruner")
+	}
+	partial := WithHostPaths(&reclaimOnlyEngine{}, testToHost, testFromHost)
+	if _, ok := partial.(MemoryReclaimer); !ok {
+		t.Error("reclaim-only engine lost MemoryReclaimer")
+	}
+	if _, ok := partial.(ImagePruner); ok {
+		t.Error("reclaim-only engine gained ImagePruner")
+	}
+}

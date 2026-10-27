@@ -111,7 +111,7 @@ func TestCreateVolumeMakesFolder(t *testing.T) {
 	if got, ok := s.Vols.Get("photos"); !ok || got != v {
 		t.Fatalf("not saved: %+v", got)
 	}
-	reloaded, err := LoadVolumes(volumesPath(s.Layout))
+	reloaded, err := LoadVolumes(volumesPath(s.Layout), s.Layout)
 	if err != nil || len(reloaded.List()) != 1 {
 		t.Fatalf("not on disk: %v %v", reloaded, err)
 	}
@@ -487,5 +487,24 @@ func TestRemoveRefusedWhileItemBusy(t *testing.T) {
 	}
 	if _, ok := s.Defs.Get("alice"); !ok {
 		t.Fatal("removed while busy")
+	}
+}
+
+// CreateVolume refuses a host path inside the host data folder's entries.
+func TestCreateHostVolumeRefusesHostDataEntries(t *testing.T) {
+	s, _ := mountService(t)
+	if err := s.Layout.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	host := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(host, "home", "bob"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s.Layout = s.Layout.WithHost(host)
+	if _, _, err := s.CreateVolume(context.Background(), "bob", filepath.Join(host, "home", "bob")); err == nil {
+		t.Fatal("created a host volume of another environment's home")
+	}
+	if _, _, err := s.CreateVolume(context.Background(), "top", filepath.Join(host, "home")); err == nil {
+		t.Fatal("created a host volume of the data folder's homes")
 	}
 }

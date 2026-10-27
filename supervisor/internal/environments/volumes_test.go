@@ -6,10 +6,12 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/zefhemel/deskyard/supervisor/internal/config"
 )
 
 func TestLoadVolumesMissingFileIsEmpty(t *testing.T) {
-	vols, err := LoadVolumes(filepath.Join(t.TempDir(), "volumes.json"))
+	vols, err := LoadVolumes(filepath.Join(t.TempDir(), "volumes.json"), dataLayout)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,7 +22,7 @@ func TestLoadVolumesMissingFileIsEmpty(t *testing.T) {
 
 func TestVolumesRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "volumes.json")
-	vols, err := LoadVolumes(path)
+	vols, err := LoadVolumes(path, dataLayout)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +32,7 @@ func TestVolumesRoundTrip(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	again, err := LoadVolumes(path)
+	again, err := LoadVolumes(path, dataLayout)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +54,7 @@ func TestVolumesRoundTrip(t *testing.T) {
 	if err := again.Delete("photos"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("second delete: %v", err)
 	}
-	if third, err := LoadVolumes(path); err != nil || len(third.List()) != 1 {
+	if third, err := LoadVolumes(path, dataLayout); err != nil || len(third.List()) != 1 {
 		t.Fatalf("after delete: %v %v", third, err)
 	}
 }
@@ -62,7 +64,7 @@ func TestLoadVolumesDefaultsKind(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"version":1,"volumes":[{"name":"photos","created":"2026-10-26T10:00:00Z"}]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	vols, err := LoadVolumes(path)
+	vols, err := LoadVolumes(path, dataLayout)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +78,7 @@ func TestLoadVolumesHost(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"version":1,"volumes":[{"name":"photos","created":"2026-10-26T10:00:00Z","kind":"host","hostPath":"/srv/photos"}]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	vols, err := LoadVolumes(path)
+	vols, err := LoadVolumes(path, dataLayout)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +104,7 @@ func TestLoadVolumesRejects(t *testing.T) {
 			if err := os.WriteFile(path, []byte(tc.file), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := LoadVolumes(path); err == nil {
+			if _, err := LoadVolumes(path, dataLayout); err == nil {
 				t.Fatal("loaded")
 			}
 		})
@@ -111,7 +113,7 @@ func TestLoadVolumesRejects(t *testing.T) {
 
 func TestVolumesAddDuplicate(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "volumes.json")
-	vols, err := LoadVolumes(path)
+	vols, err := LoadVolumes(path, dataLayout)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,12 +127,48 @@ func TestVolumesAddDuplicate(t *testing.T) {
 }
 
 func TestValidHostPathRefusesDataEntries(t *testing.T) {
-	if err := ValidHostPath("/data/home/x"); err == nil {
+	if err := ValidHostPath(dataLayout, "/data/home/x"); err == nil {
 		t.Error("/data/home/x must be refused")
 	}
 	for _, p := range []string{"/data/photos", "/srv/photos"} {
-		if err := ValidHostPath(p); err != nil {
+		if err := ValidHostPath(dataLayout, p); err != nil {
 			t.Errorf("%s: %v", p, err)
 		}
+	}
+}
+
+// dataLayout is the supervisor's layout at /data, without a host folder.
+var dataLayout = config.NewLayout(config.DataDir)
+
+// A host path inside the host data folder's own entries reads back as a
+// /data path through the engine, so it is refused too; other folders under
+// the host data folder are not the layout's and stay allowed.
+func TestValidHostPathRefusesHostDataEntries(t *testing.T) {
+	l := dataLayout.WithHost("/srv/deskyard")
+	for _, p := range []string{"/srv/deskyard", "/srv/deskyard/home/bob", "/srv/deskyard/volume/v", "/srv/deskyard/state", "/srv/deskyard/accounts.json"} {
+		if err := ValidHostPath(l, p); err == nil {
+			t.Errorf("%s must be refused", p)
+		}
+	}
+	for _, p := range []string{"/srv/deskyard/photos", "/srv/photos", "/srv/deskyard-other/home"} {
+		if err := ValidHostPath(l, p); err != nil {
+			t.Errorf("%s: %v", p, err)
+		}
+	}
+}
+
+// A stored host volume inside the host data folder's entries fails the load
+// rather than being read back as another environment's folder.
+func TestLoadVolumesRefusesHostDataEntries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "volumes.json")
+	file := `{"version":1,"volumes":[{"name":"bob","created":"2026-10-26T10:00:00Z","kind":"host","hostPath":"/srv/deskyard/home/bob"}]}`
+	if err := os.WriteFile(path, []byte(file), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadVolumes(path, dataLayout); err != nil {
+		t.Fatalf("without a host folder: %v", err)
+	}
+	if _, err := LoadVolumes(path, dataLayout.WithHost("/srv/deskyard")); err == nil {
+		t.Fatal("loaded")
 	}
 }

@@ -398,7 +398,9 @@ func (s *Service) repin(ctx context.Context, name string) (Definition, error) {
 // from before environment definitions, those without an instance label, that
 // mount this data folder. They are neither adopted nor removed. Helpers and
 // VPN candidate tests are ignored. Only Deskyard-labelled containers are
-// listed, not every container on the engine.
+// listed, not every container on the engine. Through the engine's host path
+// translation, sources outside the layout's entries keep their host paths,
+// so the host data folder is searched as well as Data.
 func (s *Service) CheckLegacyContainers(ctx context.Context) error {
 	var cs []engine.Container
 	seen := map[string]bool{}
@@ -417,6 +419,9 @@ func (s *Service) CheckLegacyContainers(ctx context.Context) error {
 	dirs := []string{filepath.Clean(s.Layout.Data)}
 	if real, err := filepath.EvalSymlinks(s.Layout.Data); err == nil && real != dirs[0] {
 		dirs = append(dirs, real)
+	}
+	if host := s.Layout.Host(); host != "" {
+		dirs = append(dirs, host)
 	}
 	var old []string
 	for _, c := range cs {

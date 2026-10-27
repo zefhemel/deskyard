@@ -101,6 +101,9 @@ type Config struct {
 	DataDir string // the supervisor's data folder (see config.Layout)
 	Subnet  string // DESKYARD_SUBNET
 	SelfID  string // the supervisor's own container; empty in Go tests, which have none
+	// DataHost is where the data folder lives on the engine host (see
+	// config.Layout.WithHost); empty in Go tests, which have no host folder.
+	DataHost string
 	// DesktopPort is the port the proxy dials on a desktop. Zero means 8080;
 	// only tests set it, to reach a fake desktop served on a local port.
 	DesktopPort int
@@ -153,10 +156,10 @@ type Service struct {
 // environments.json and volumes.json in the data folder once there are) and
 // no instance ID. Open loads them.
 func New(e engine.Engine, cfg Config, log *slog.Logger) *Service {
-	layout := config.NewLayout(cfg.DataDir)
+	layout := config.NewLayout(cfg.DataDir).WithHost(cfg.DataHost)
 	s := &Service{Eng: e, Cfg: cfg, Layout: layout, Log: log,
 		Defs: &Definitions{path: definitionsPath(layout), defs: map[string]Definition{}},
-		Vols: &Volumes{path: volumesPath(layout), vols: map[string]Volume{}},
+		Vols: &Volumes{path: volumesPath(layout), layout: layout, vols: map[string]Volume{}},
 		busy: map[string]string{}, errs: map[string]string{}, folderErrs: map[string]string{},
 		failed: map[string]bool{}, imgInfo: map[string]engine.Image{}}
 	s.Defs.checkGrants = s.checkGrants
@@ -171,7 +174,7 @@ func Open(e engine.Engine, cfg Config, instance string, log *slog.Logger) (*Serv
 	if err != nil {
 		return nil, err
 	}
-	vols, err := LoadVolumes(volumesPath(s.Layout))
+	vols, err := LoadVolumes(volumesPath(s.Layout), s.Layout)
 	if err != nil {
 		return nil, err
 	}

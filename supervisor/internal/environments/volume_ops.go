@@ -43,7 +43,7 @@ func (s *Service) CreateVolume(ctx context.Context, name, hostPath string) (v Vo
 		return Volume{}, false, fmt.Errorf("invalid volume name: %w", err)
 	}
 	if hostPath != "" {
-		if err := ValidHostPath(hostPath); err != nil {
+		if err := ValidHostPath(s.Layout, hostPath); err != nil {
 			return Volume{}, false, err
 		}
 	}

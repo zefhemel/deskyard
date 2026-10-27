@@ -354,6 +354,31 @@ func TestCheckLegacyContainers(t *testing.T) {
 	}
 }
 
+// Through the engine's host path translation, an older container's sources
+// are host paths: those under the host data folder are found too, whether
+// or not they are one of the layout's entries.
+func TestCheckLegacyContainersSeesHostPaths(t *testing.T) {
+	s, e, _ := definitionService(t)
+	ctx := context.Background()
+	host := "/srv/deskyard"
+	s.Layout = s.Layout.WithHost(host)
+	s.Eng = engine.WithHostPaths(s.Eng, s.Layout.ToHost, s.Layout.FromHost)
+	mount := func(src string) []engine.Mount { return []engine.Mount{{Source: src, Target: "/workspace"}} }
+	e.cs["deskyard-old"] = &engine.Container{ID: "deskyard-old", Name: "deskyard-old", State: "exited",
+		Labels: map[string]string{LabelManaged: "true", LabelName: "old"}, Mounts: mount(host + "/old")}
+	e.cs["deskyard-oldhome"] = &engine.Container{ID: "deskyard-oldhome", Name: "deskyard-oldhome", State: "exited",
+		Labels: map[string]string{LabelManaged: "true", LabelName: "oldhome"}, Mounts: mount(host + "/home/oldhome")}
+	e.cs["deskyard-elsewhere"] = &engine.Container{ID: "deskyard-elsewhere", Name: "deskyard-elsewhere",
+		Labels: map[string]string{LabelManaged: "true", LabelName: "elsewhere"}, Mounts: mount("/srv/deskyard-other/old")}
+	err := s.CheckLegacyContainers(ctx)
+	if !errors.Is(err, config.ErrLegacyLayout) || !strings.Contains(err.Error(), "deskyard-old,") || !strings.Contains(err.Error(), "deskyard-oldhome") {
+		t.Fatalf("legacy containers not refused: %v", err)
+	}
+	if strings.Contains(err.Error(), "deskyard-elsewhere") {
+		t.Fatalf("deskyard-elsewhere reported: %v", err)
+	}
+}
+
 // A container the engine lost is recreated whatever error the environment
 // has, unless its build failed.
 func TestReconcileRecreatesLostContainerWithAnError(t *testing.T) {

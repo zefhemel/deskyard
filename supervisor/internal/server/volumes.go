@@ -67,7 +67,7 @@ func (s *Server) handleCreateVolume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.HostPath != "" {
-		if err := environments.ValidHostPath(req.HostPath); err != nil {
+		if err := environments.ValidHostPath(s.Environments.Layout, req.HostPath); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}

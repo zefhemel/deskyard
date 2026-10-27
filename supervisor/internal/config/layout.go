@@ -52,6 +52,10 @@ func (l Layout) WithHost(host string) Layout {
 	return l
 }
 
+// Host is the host folder WithHost set: where Data lives on the engine host,
+// or "" when unknown.
+func (l Layout) Host() string { return l.host }
+
 // entry is the first path element of p below Data, and whether p is Data
 // itself or below it at all.
 func (l Layout) entry(p string) (first string, in bool) {
