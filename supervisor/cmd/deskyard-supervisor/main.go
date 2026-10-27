@@ -18,7 +18,6 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/config"
-	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine/docker"
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/server"
@@ -74,6 +73,18 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	if !cfg.InContainer {
+		return errors.New("the supervisor runs only in a container: see the README for the docker run command")
+	}
+	// The root phase comes before the engine, the stores and the listener.
+	if os.Getuid() == 0 {
+		if err := rootPhase(cfg); err != nil {
+			return err
+		}
+	}
+	if os.Getuid() != config.UID {
+		return fmt.Errorf("the supervisor must run as UID %d (or start as root to drop to it), not %d", config.UID, os.Getuid())
+	}
 	// Before anything is written: an older layout is refused, not adopted.
 	if err := config.CheckLegacy(cfg.DataDir); err != nil {
 		return err
@@ -99,14 +110,9 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	selfID := ""
-	if cfg.InContainer {
-		if selfID, err = os.Hostname(); err != nil {
-			return err
-		}
-		if err := checkSamePath(ctx, eng, cfg.Layout); err != nil {
-			return err
-		}
+	selfID, err := os.Hostname()
+	if err != nil {
+		return err
 	}
 
 	accts, err := accounts.Load(cfg.DataDir)
@@ -172,41 +178,29 @@ func run(log *slog.Logger) error {
 	return nil
 }
 
-// checkSamePath verifies that the data folder is mounted at the same path in
-// the supervisor's container as on the host (bind-mount paths given to the
-// engine are host paths): a helper container mounts that path and must see
-// a marker the supervisor just wrote in state/.
-func checkSamePath(ctx context.Context, eng engine.Engine, layout config.Layout) error {
-	dataDir := layout.Data
-	token := fmt.Sprintf("%d", time.Now().UnixNano())
-	marker := filepath.Join(layout.State, "same-path-check")
-	if err := os.WriteFile(marker, []byte(token), 0o600); err != nil {
+// checkDataDir requires the data folder to exist as a directory: a bind
+// mount at /data, which the engine creates on the host if need be.
+func checkDataDir(dir string) error {
+	fi, err := os.Stat(dir)
+	if err != nil || !fi.IsDir() {
+		return fmt.Errorf("%s is not a directory: mount the data folder with -v <host folder>:/data", dir)
+	}
+	return nil
+}
+
+// rootPhase runs while the supervisor is still root: it fixes the ownership
+// of a data folder an older, root supervisor made, finds the engine socket's
+// group, and drops to UID 1000 with that group.
+func rootPhase(cfg config.Config) error {
+	if err := checkDataDir(cfg.DataDir); err != nil {
 		return err
 	}
-	defer os.Remove(marker)
-	const img = "alpine:3.22"
-	if _, err := eng.ImageInspect(ctx, img); errors.Is(err, engine.ErrNotFound) {
-		if err := eng.Pull(ctx, img, nil); err != nil {
-			return err
-		}
+	if err := config.ReownOnce(cfg.Layout, os.Lchown); err != nil {
+		return fmt.Errorf("giving %s to UID %d: %w", cfg.DataDir, config.UID, err)
 	}
-	name := "deskyard-pathcheck-" + token[len(token)-6:]
-	if _, err := eng.Create(ctx, engine.ContainerSpec{
-		Name: name, Image: img, Cmd: []string{"sleep", "30"},
-		Mounts: []engine.Mount{{Source: dataDir, Target: "/check"}},
-	}); err != nil {
-		return err
-	}
-	defer func() { _ = eng.Remove(context.WithoutCancel(ctx), name) }()
-	if err := eng.Start(ctx, name); err != nil {
-		return err
-	}
-	out, _, _, err := engine.Output(ctx, eng, name, engine.ExecSpec{Cmd: []string{"cat", "/check/state/same-path-check"}})
+	gid, hasSocket, err := config.SocketGroup(cfg.EngineHost)
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(string(out)) != token {
-		return fmt.Errorf("DESKYARD_DATA_DIR (%s) must be mounted into the supervisor's container at the same path as on the host (-v %s:%s)", dataDir, dataDir, dataDir)
-	}
-	return nil
+	return dropPrivileges(gid, hasSocket)
 }
