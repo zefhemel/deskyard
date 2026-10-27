@@ -60,90 +60,6 @@ func TestCatalogFailedMutationKeepsPublishedState(t *testing.T) {
 		})
 	}
 }
-func TestTokenFailedRevokeKeepsConnectionsAndReloadState(t *testing.T) {
-	dir := t.TempDir()
-	ts, err := loadTokens(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tok, bearer, err := ts.create("agent", "desktop", "anna", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	canceled, notified := false, false
-	ts.track(tok.ID, func() { canceled = true })
-	ts.onGone = func(token) { notified = true }
-	original := ts.path
-	ts.path = blockedStatePath(t)
-	if err := ts.remove(func(token) bool { return true }); err == nil {
-		t.Error("revocation must report persistence failure")
-	}
-	if _, ok := ts.check(bearer); !ok {
-		t.Error("failed revocation removed live token")
-	}
-	if canceled || notified {
-		t.Error("failed revocation closed/notified connections")
-	}
-	reloaded, err := loadTokens(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := reloaded.check(bearer); !ok {
-		t.Error("failed revoke changed disk")
-	}
-	ts.path = original
-	if err := ts.remove(func(token) bool { return true }); err != nil {
-		t.Fatal(err)
-	}
-	if !canceled || !notified {
-		t.Error("successful revocation did not close/notify")
-	}
-	reloaded, err = loadTokens(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := reloaded.check(bearer); ok {
-		t.Error("revoked token resurrected")
-	}
-}
-
-func TestTokenFailedCreateDoesNotPublish(t *testing.T) {
-	ts, err := loadTokens(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	ts.path = blockedStatePath(t)
-	tok, secret, err := ts.create("agent", "desktop", "anna", nil)
-	if err == nil || secret != "" || tok.ID != "" {
-		t.Fatalf("failed creation exposed token: %+v %q %v", tok, secret, err)
-	}
-	if len(ts.forEnvironment("desktop")) != 0 {
-		t.Fatal("failed creation published token")
-	}
-}
-
-func TestDeleteTokenReportsPersistenceFailure(t *testing.T) {
-	bt := newCatalogTest(t)
-	withEnvironment(t, bt, aliceHome)
-	tok, bearer, err := bt.s.tokens.create("agent", "alice", "admin", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	canceled := false
-	bt.s.tokens.track(tok.ID, func() { canceled = true })
-	bt.s.tokens.path = blockedStatePath(t)
-	code, body := bt.do(bt.admin, "DELETE", "/api/environments/alice/tokens/"+tok.ID, nil)
-	if code != 500 {
-		t.Fatalf("delete: %d %s", code, body)
-	}
-	if canceled {
-		t.Fatal("failed delete closed connection")
-	}
-	if _, ok := bt.s.tokens.check(bearer); !ok {
-		t.Fatal("failed delete removed live token")
-	}
-}
-
 func TestServerUsesVisibleLayout(t *testing.T) {
 	s, _ := newTestServer(t)
 	l := s.Layout
@@ -167,19 +83,5 @@ func TestServerUsesVisibleLayout(t *testing.T) {
 	}
 	if got := s.Environments.Layout.HomeOf("alice"); got != filepath.Join(l.Data, "home", "alice") {
 		t.Errorf("home in %s", got)
-	}
-}
-
-func TestLoadTokensRestrictsWideFile(t *testing.T) {
-	dir := t.TempDir()
-	p := filepath.Join(dir, "tokens.json")
-	if err := os.WriteFile(p, []byte(`{"tokens":[]}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := loadTokens(dir); err != nil {
-		t.Fatal(err)
-	}
-	if st, _ := os.Stat(p); st.Mode().Perm() != 0o600 {
-		t.Fatalf("mode %v", st.Mode())
 	}
 }

@@ -55,9 +55,14 @@ func (s *Server) routes() {
 	h("GET /api/environments/{name}/files", s.handleFiles)
 	h("GET /api/environments/{name}/download", s.handleDownload)
 	h("POST /api/environments/{name}/upload", s.handleUpload)
-	h("GET /api/environments/{name}/tokens", s.handleListTokens)
-	h("POST /api/environments/{name}/tokens", s.handleCreateToken)
-	h("DELETE /api/environments/{name}/tokens/{id}", s.handleDeleteToken)
+
+	// Remote access: client credentials only.
+	remote := func(pattern string, fn remoteHandler) { m.Handle(pattern, s.remote(fn)) }
+	remote("GET /api/environments/{name}/status", s.handleRemoteStatus)
+	remote("GET /api/environments/{name}/exec", s.handleRemoteExec)
+	remote("GET /api/environments/{name}/forward", s.handleRemoteForward)
+	remote("GET /api/environments/{name}/cdp", s.handleRemoteCDPRoot)
+	remote("/api/environments/{name}/cdp/{rest...}", s.handleRemoteCDP)
 
 	h("GET /api/accounts", s.handleListAccounts)
 	h("POST /api/accounts", s.handleCreateAccount)

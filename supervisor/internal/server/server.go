@@ -52,7 +52,6 @@ type Server struct {
 	stats            *statsCollector
 	inside           *insideReader
 	thumbs           *thumbnails
-	tokens           *tokenStore
 	credentials      *credentialStore
 	links            *linkStore
 	images           *catalog
@@ -113,25 +112,19 @@ func New(o Options) (*Server, error) {
 	if err := s.removeTokensFile(); err != nil {
 		return nil, err
 	}
-	if s.tokens, err = loadTokens(o.Layout.Data); err != nil {
-		return nil, err
-	}
 	if s.credentials, err = loadCredentials(o.Layout.Data); err != nil {
 		return nil, err
 	}
 	if s.links, err = loadLinks(o.Layout.Data); err != nil {
 		return nil, err
 	}
-	// Grants and tokens of names without a definition are left over from a
+	// Grants of names without a definition are left over from a
 	// removal whose cleanup didn't persist; a later environment of the name
 	// must not inherit them.
 	if err := s.Accounts.Retain(func(name string) bool { _, ok := s.Environments.Defs.Get(name); return ok }); err != nil {
 		return nil, fmt.Errorf("dropping grants of removed environments: %w", err)
 	}
-	if err := s.tokens.bind(s.Accounts, s.environmentCreated); err != nil {
-		return nil, fmt.Errorf("reconciling agent tokens: %w", err)
-	}
-	s.tokens.onGone = func(t token) { s.activity.Forget(t.ID) }
+	s.credentials.onGone = func(c credential) { s.activity.Forget(c.ID) }
 	if s.images, err = loadCatalog(o.Layout.Data, o.DefaultImage); err != nil {
 		return nil, err
 	}
@@ -160,7 +153,6 @@ func (s *Server) Run(ctx context.Context) {
 	go s.Environments.Run(ctx, s.reconcile)
 	go s.stats.run(ctx)
 	go s.inside.run(ctx)
-	go s.tokens.expireLoop(ctx, s)
 	go s.expireLoop(ctx)
 	go s.images.checkLoop(ctx, s)
 	go s.activityLoop(ctx)
@@ -192,10 +184,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case path == "/healthz":
 		w.WriteHeader(http.StatusNoContent)
 	case first == "api":
-		if strings.HasPrefix(path, "/api/agent/") {
-			s.serveAgent(w, r)
-			return
-		}
 		s.api.ServeHTTP(w, r)
 	case first == "assets" || strings.Contains(first, "."):
 		s.serveStatic(w, r)
@@ -373,13 +361,6 @@ func (s *Server) writeIndex(w http.ResponseWriter) {
 	_, _ = w.Write([]byte("<!doctype html><title>Supervisor</title><p>The web UI isn't built: run <code>make -C supervisor web</code>."))
 }
 
-// environmentCreated is when the named environment was created; false when
-// it isn't defined.
-func (s *Server) environmentCreated(name string) (time.Time, bool) {
-	def, ok := s.Environments.Defs.Get(name)
-	return def.Created, ok
-}
-
 // accountsChanged closes the connections of accounts whose access or
 // sessions changed that their level no longer allows, sweeps the shares,
 // links and credentials that depended on them, and refreshes event streams.
@@ -391,9 +372,6 @@ func (s *Server) accountsChanged(usernames ...string) {
 		s.terminals.revalidate(s, u)
 		s.viewers.revoke(u, level)
 		s.screenWatchers.revoke(u, level)
-		if err := s.tokens.creatorChanged(s, u); err != nil {
-			s.Log.Error("revoking account agent tokens", "account", u, "err", err)
-		}
 	}
 	s.sweep()
 	s.events.refresh()

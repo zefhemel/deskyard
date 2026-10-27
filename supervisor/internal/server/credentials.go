@@ -43,6 +43,9 @@ type credentialStore struct {
 	all    []credential
 	open   map[string]map[int]credentialConn // credential ID → its live connections
 	nextID int
+
+	// onGone is called, with no lock held, for every credential deleted.
+	onGone func(credential)
 }
 
 func loadCredentials(dataDir string) (*credentialStore, error) {
@@ -131,7 +134,6 @@ func (cs *credentialStore) list(accountID string) []credential {
 func (cs *credentialStore) remove(fn func(credential) bool) error {
 	var gone, keep []credential
 	cs.mu.Lock()
-	defer cs.mu.Unlock()
 	for _, c := range cs.all {
 		if fn(c) {
 			gone = append(gone, c)
@@ -140,6 +142,7 @@ func (cs *credentialStore) remove(fn func(credential) bool) error {
 		}
 	}
 	if len(gone) == 0 {
+		cs.mu.Unlock()
 		return nil
 	}
 	err := cs.write(keep)
@@ -151,6 +154,12 @@ func (cs *credentialStore) remove(fn func(credential) bool) error {
 			conn.cancel()
 		}
 		delete(cs.open, c.ID)
+	}
+	cs.mu.Unlock()
+	if err == nil && cs.onGone != nil {
+		for _, c := range gone {
+			cs.onGone(c)
+		}
 	}
 	return err
 }

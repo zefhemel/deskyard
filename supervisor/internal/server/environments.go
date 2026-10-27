@@ -63,7 +63,6 @@ type environmentJSON struct {
 	Mics            []string               `json:"mics"`
 	Forwards        []forwardJSON          `json:"forwards"`
 	Agents          []activity.Presence    `json:"agents"`
-	Tokens          int                    `json:"tokens"`
 	Stats           *statsJSON             `json:"stats"`
 }
 
@@ -113,7 +112,6 @@ func (s *Server) environmentJSON(ctx context.Context, c environments.Environment
 		}
 	}
 	if c.Revision != 0 {
-		j.Tokens = s.tokens.activeCount(c.Name)
 		j.UpdateAvailable = s.images.updateFor(c)
 	}
 	if j.Level == auth.LevelObserve {
@@ -125,7 +123,7 @@ func (s *Server) environmentJSON(ctx context.Context, c environments.Environment
 // observed blanks what an observer may not see: the environment's
 // configuration and what full users do in it.
 func (j *environmentJSON) observed() {
-	j.Folder, j.MemoryReclaim, j.Tokens = "", false, 0
+	j.Folder, j.MemoryReclaim = "", false
 	j.Settings = settingsJSON{LANExceptions: []vpn.Exception{}, Mounts: []environments.HostMount{}, Volumes: []environments.VolumeGrant{}}
 	j.VPN = environments.VPNStatus{Status: vpn.Status{State: "disabled"}}
 	j.Access, j.Terminals, j.Forwards, j.Agents = []string{}, []terminal.Session{}, []forwardJSON{}, []activity.Presence{}
@@ -288,7 +286,7 @@ func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	// Grants and tokens a removal of this name failed to purge must not
+	// Grants a removal of this name failed to purge must not
 	// carry over to the new environment. Checked again under the
 	// reservation: one created meanwhile keeps its own.
 	if _, ok := s.Environments.Defs.Get(req.Name); ok {
@@ -414,8 +412,8 @@ func (s *Server) startRecreate(w http.ResponseWriter, a accounts.Account, name s
 }
 
 // environmentRemoved purges what the server keeps of an environment whose
-// definition a removal deleted (Service.Removed): its grants, agent tokens
-// and activity, and tells clients it is gone.
+// definition a removal deleted (Service.Removed): its grants (which closes
+// the connections they allowed) and activity, and tells clients it is gone.
 func (s *Server) environmentRemoved(name string) error {
 	err := s.forgetAccess(name)
 	if err != nil {
@@ -427,9 +425,9 @@ func (s *Server) environmentRemoved(name string) error {
 	return err
 }
 
-// forgetAccess purges the grants and agent tokens of the named environment.
+// forgetAccess purges the grants of the named environment.
 func (s *Server) forgetAccess(name string) error {
-	return errors.Join(s.Accounts.Forget(name), s.tokens.forget(name))
+	return s.Accounts.Forget(name)
 }
 
 func (s *Server) handleRemoveEnvironment(w http.ResponseWriter, r *http.Request) {

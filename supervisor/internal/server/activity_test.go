@@ -50,8 +50,7 @@ func TestAgentsInDesktopJSON(t *testing.T) {
 
 func TestActivityJSONAddsForwards(t *testing.T) {
 	s, _ := newTestServer(t)
-	lk := newForwardLink("deploy-bot", []int{5173})
-	lk.tokenID = "tok1"
+	lk := newForwardLink("deploy-bot", "tok1", []int{5173})
 	s.forwards.tryAdd("alice", lk)
 	done := s.activity.ForwardOpen(aliceRef, bot, "")
 	defer done()
@@ -85,7 +84,7 @@ func TestActivityJSONAddsForwards(t *testing.T) {
 		t.Errorf("tok2 = %#v", got)
 	}
 	// Links without an owner belong to no one.
-	s.forwards.tryAdd("alice", newForwardLink("old", []int{80}))
+	s.forwards.tryAdd("alice", newForwardLink("old", "old", []int{80}))
 	if got := s.forwards.listFor("alice", ""); len(got) != 0 {
 		t.Errorf("no owner = %#v", got)
 	}
@@ -283,36 +282,35 @@ func within(t *testing.T, what string, f func()) {
 	}
 }
 
-func TestTokenGoneForgetsAgent(t *testing.T) {
+func TestCredentialGoneForgetsAgent(t *testing.T) {
 	s, _ := newTestServer(t)
-	mk := func(name string, exp *time.Time) token {
-		tk, _, err := s.tokens.create(name, "alice", "admin", exp)
-		if err != nil {
-			t.Fatal(err)
-		}
-		s.activity.Screen(aliceRef, s.agentOf(tk), click)
-		return tk
+	mk := func(a accounts.Account) credential {
+		c, _ := issueCredential(t, s, a)
+		s.activity.Screen(aliceRef, s.agentOf(c), click)
+		return c
 	}
 	var gone []string
-	orig := s.tokens.onGone
-	s.tokens.onGone = func(tk token) { gone = append(gone, tk.ID); orig(tk) }
+	orig := s.credentials.onGone
+	s.credentials.onGone = func(c credential) { gone = append(gone, c.ID); orig(c) }
 
-	// A live forward link of the token: Forget publishes viewers, which reads
-	// the forwards; it must run with no lock held.
-	del := mk("one", nil)
-	lk := newForwardLink("one", []int{5173})
-	lk.tokenID = del.ID
-	s.forwards.tryAdd("alice", lk)
-	within(t, "remove", func() { s.tokens.remove(func(x token) bool { return x.ID == del.ID }) })
+	// A live forward link of the credential: Forget publishes viewers, which
+	// reads the forwards; it must run with no lock held.
+	del := mk(accountNamed(t, s, "admin"))
+	s.forwards.tryAdd("alice", newForwardLink(del.Name, del.ID, []int{5173}))
+	within(t, "remove", func() { s.credentials.remove(func(x credential) bool { return x.ID == del.ID }) })
 	if len(gone) != 1 || gone[0] != del.ID {
 		t.Fatalf("onGone after delete: %v", gone)
 	}
 
-	past := time.Now().Add(-time.Hour)
-	exp := mk("two", &past)
-	within(t, "expireNow", func() { s.tokens.expireNow(time.Now()); s.tokens.expireNow(time.Now()) })
-	if len(gone) != 2 || gone[1] != exp.ID {
-		t.Fatalf("onGone after expiry (once): %v", gone)
+	// Deleting the account deletes its credentials (the sweep).
+	ofAnna := mk(accountNamed(t, s, "anna"))
+	within(t, "account deletion", func() {
+		if err := s.Accounts.Delete("anna"); err != nil {
+			t.Error(err)
+		}
+	})
+	if len(gone) != 2 || gone[1] != ofAnna.ID {
+		t.Fatalf("onGone after the account's deletion: %v", gone)
 	}
 	if p := s.activity.Present("alice"); len(p) != 0 {
 		t.Fatalf("still present: %#v", p)
@@ -321,8 +319,7 @@ func TestTokenGoneForgetsAgent(t *testing.T) {
 
 func TestForwardOpenDoesNotHoldLocks(t *testing.T) {
 	s, _ := newTestServer(t)
-	lk := newForwardLink("deploy-bot", []int{5173})
-	lk.tokenID = bot.ID
+	lk := newForwardLink("deploy-bot", bot.ID, []int{5173})
 	s.forwards.tryAdd("alice", lk)
 	within(t, "ForwardOpen", func() {
 		done := s.activity.ForwardOpen(aliceRef, bot, "forward")

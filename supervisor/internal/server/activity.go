@@ -36,9 +36,9 @@ func (s *Server) newActivity(presence time.Duration) *activity.Tracker {
 	return t
 }
 
-// agentOf is the activity agent of an agent token.
-func (s *Server) agentOf(t token) activity.Agent {
-	return activity.Agent{ID: t.ID, Name: t.Name, Owner: t.CreatedBy}
+// agentOf is the activity agent of a client credential.
+func (s *Server) agentOf(c credential) activity.Agent {
+	return activity.Agent{ID: c.ID, Name: c.Name, Owner: c.Username}
 }
 
 func refOf(c environments.Environment) activity.Ref { return activity.Ref{Name: c.Name, ID: c.ID} }
@@ -49,7 +49,7 @@ type activityJSON struct {
 	Agents []activity.Summary `json:"agents"`
 }
 
-// activityJSON describes the agents on a desktop. A token's open forward
+// activityJSON describes the agents on a desktop. A credential's open forward
 // mappings are its forward item, as they are now ("3000 in · 5173 out").
 func (s *Server) activityJSON(name string) activityJSON {
 	sums := s.activity.Summary(name)

@@ -32,12 +32,12 @@ type forwardJSON struct {
 // active; the CLI's Mux never has more (forward's listener cap).
 const maxForwardListens = 64
 
-// forwardLink is one forward WebSocket: a token's mappings on a desktop.
-// The out ports are as declared; the in ports are the ones the helper
-// confirmed with Listening.
+// forwardLink is one forward WebSocket: a client credential's mappings on a
+// desktop. The out ports are as declared; the in ports are the ones the
+// helper confirmed with Listening.
 type forwardLink struct {
-	token   string
-	tokenID string // the token's id, for the token's activity summary
+	token   string // the credential's name, as Environment.forwards shows it
+	tokenID string // the credential's id: its cap and activity summary
 	out     []int
 
 	mu      sync.Mutex
@@ -45,8 +45,8 @@ type forwardLink struct {
 	in      map[uint32]int // listener id -> port, listening
 }
 
-func newForwardLink(token string, out []int) *forwardLink {
-	return &forwardLink{token: token, out: out, listens: map[uint32]int{}, in: map[uint32]int{}}
+func newForwardLink(token, tokenID string, out []int) *forwardLink {
+	return &forwardLink{token: token, tokenID: tokenID, out: out, listens: map[uint32]int{}, in: map[uint32]int{}}
 }
 
 // fromClient observes a frame on its way to the helper. It reports whether
@@ -123,20 +123,20 @@ type forwards struct {
 func newForwards() *forwards { return &forwards{byName: map[string]map[*forwardLink]bool{}} }
 
 // maxLinksPerToken bounds the forward links (each one a docker exec) one
-// token may hold open on a desktop.
+// credential may hold open on a desktop.
 const maxLinksPerToken = 4
 
-// maxListedPerToken bounds the mappings listed for one token. Mappings
+// maxListedPerToken bounds the mappings listed for one credential name. Mappings
 // beyond it still work; viewers just don't see them.
 const maxListedPerToken = 64
 
-// tryAdd registers a link unless its token already has maxLinksPerToken.
+// tryAdd registers a link unless its credential already has maxLinksPerToken.
 func (f *forwards) tryAdd(name string, l *forwardLink) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	n := 0
 	for o := range f.byName[name] {
-		if o.token == l.token {
+		if o.tokenID == l.tokenID {
 			n++
 		}
 	}
@@ -198,8 +198,8 @@ func (f *forwards) list(name string) []forwardJSON {
 	return capped
 }
 
-// listFor is the mappings of one token's links on a desktop, each once,
-// sorted by direction and port. Links with no token id belong to no one.
+// listFor is the mappings of one credential's links on a desktop, each
+// once, sorted by direction and port. Links with no id belong to no one.
 func (f *forwards) listFor(name, tokenID string) []forwardJSON {
 	if tokenID == "" {
 		return nil
@@ -269,7 +269,7 @@ func parseForwardStart(b []byte) ([]int, error) {
 // client's WebSocket and `deskyard forward-helper`, run in the desktop as
 // user. Frames are checked for size and type only; Listen and Listening are
 // observed so viewers see which ports are mapped.
-func (s *Server) agentForward(w http.ResponseWriter, r *http.Request, c environments.Environment, t token) {
+func (s *Server) remoteForward(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {
 		return
@@ -295,14 +295,13 @@ func (s *Server) agentForward(w http.ResponseWriter, r *http.Request, c environm
 		fail(err.Error())
 		return
 	}
-	lk := newForwardLink(t.Name, outs)
-	lk.tokenID = t.ID
+	lk := newForwardLink(cred.Name, cred.ID, outs)
 	if !s.forwards.tryAdd(c.Name, lk) {
-		fail(fmt.Sprintf("this token already has %d forward links open on this environment; close one first", maxLinksPerToken))
+		fail(fmt.Sprintf("this credential already has %d forward links open on this environment; close one first", maxLinksPerToken))
 		return
 	}
 	// The live mappings (listFor) replace this text in the activity API.
-	defer s.activity.ForwardOpen(refOf(c), s.agentOf(t), "forward")()
+	defer s.activity.ForwardOpen(refOf(c), s.agentOf(cred), "forward")()
 	defer func() {
 		s.forwards.remove(c.Name, lk)
 		s.publishViewers(c.Name, c.ID)
@@ -329,13 +328,13 @@ func (s *Server) agentForward(w http.ResponseWriter, r *http.Request, c environm
 		close(stderrDone)
 	}
 	s.publishViewers(c.Name, c.ID)
-	s.Log.Info("agent forward", "environment", c.Name, "token", t.Name, "out", outs)
+	s.Log.Info("remote forward", "environment", c.Name, "credential", cred.Name, "account", cred.Username, "out", outs)
 
 	go keepAlive(ctx, ws)
 	err = relayForward(ctx, ws, p.Stdin, p.Stdout, lk, func() { s.publishViewers(c.Name, c.ID) })
 	_ = p.Stdin.Close()
 	switch {
-	case ctx.Err() != nil: // the client left, or the token was revoked
+	case ctx.Err() != nil: // the client left, or its access was revoked
 	case errors.Is(err, errHelperEnded):
 		if cur, err := s.Environments.Get(ctx, c.Name); err != nil || !cur.Running() {
 			_ = ws.Close(websocket.StatusGoingAway, "environment stopped")
@@ -353,7 +352,7 @@ func (s *Server) agentForward(w http.ResponseWriter, r *http.Request, c environm
 		}
 		_ = ws.Close(websocket.StatusGoingAway, "the environment side closed")
 	case errors.Is(err, errBadFrame):
-		s.Log.Info("agent forward closed", "environment", c.Name, "token", t.Name, "err", err)
+		s.Log.Info("remote forward closed", "environment", c.Name, "credential", cred.Name, "err", err)
 		_ = ws.Close(websocket.StatusPolicyViolation, closeReason(err.Error()))
 	}
 }

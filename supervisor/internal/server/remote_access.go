@@ -17,64 +17,107 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/activity"
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/cli/transfer"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
-const agentPrefix = "/api/agent/v1"
+// remoteHandler serves a remote access route of an environment for a client
+// credential with full access to it.
+type remoteHandler func(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential)
 
-// serveAgent is the agent API: bearer tokens only, one environment per token.
-func (s *Server) serveAgent(w http.ResponseWriter, r *http.Request) {
-	bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+// remote authenticates a remote access route (exec, forward, CDP, status):
+// a client credential only, since a browser has no use for them. The
+// connection is registered under the credential before access is checked,
+// so a revocation at any point after the check closes it.
+func (s *Server) remote(next remoteHandler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bearer, ok := bearerOf(r)
+		if !ok {
+			if _, ok := s.withSession(w, r); ok {
+				writeError(w, http.StatusUnauthorized, "use a client credential (deskyard login)")
+			} else {
+				writeError(w, http.StatusUnauthorized, "sign in first")
+			}
+			return
+		}
+		id, _, ok := parseBearer(credentialPrefix, bearer)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "the credential is unknown, revoked or expired")
+			return
+		}
+		ctx, cancel := context.WithCancel(r.Context())
+		defer cancel()
+		defer s.credentials.track(id, r.PathValue("name"), cancel)()
+		rr, c, cred, ok := s.remoteTarget(w, r.WithContext(ctx), bearer)
+		if !ok {
+			return
+		}
+		if ctx.Err() != nil {
+			// Revoked while the environment was looked up: answer as the
+			// request would now.
+			if _, _, _, ok := s.remoteTarget(w, r, bearer); ok {
+				writeError(w, http.StatusUnauthorized, "the credential is unknown, revoked or expired")
+			}
+			return
+		}
+		next(w, rr, c, cred)
+	})
+}
+
+// remoteTarget checks the credential and its account's full access to the
+// environment, writing the error when either fails.
+func (s *Server) remoteTarget(w http.ResponseWriter, r *http.Request, bearer string) (*http.Request, environments.Environment, credential, bool) {
+	r, ok := s.withCredential(r, bearer)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "an access token is required (Authorization: Bearer dyt_…)")
-		return
+		writeError(w, http.StatusUnauthorized, "the credential is unknown, revoked or expired")
+		return r, environments.Environment{}, credential{}, false
 	}
-	t, ok := s.tokens.check(strings.TrimSpace(bearer))
-	if !ok || !s.tokenCreatorAllowed(t) {
-		writeError(w, http.StatusUnauthorized, "the token is unknown, revoked or expired")
-		return
-	}
-	c, err := s.Environments.Get(r.Context(), t.Environment)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "the token's environment no longer exists")
-		return
-	}
-	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
-	defer s.tokens.track(t.ID, cancel)()
-	if _, valid := s.tokens.check(strings.TrimSpace(bearer)); !valid || !s.tokenCreatorAllowed(t) || ctx.Err() != nil {
-		writeError(w, http.StatusUnauthorized, "the token is unknown, revoked or expired")
-		return
-	}
-	r = r.WithContext(ctx)
-	rest, ok := strings.CutPrefix(r.URL.Path, agentPrefix)
+	c, _, ok := s.environmentFor(w, r, auth.View)
 	if !ok {
-		writeError(w, http.StatusNotFound, "no such agent API route")
-		return
+		return r, c, credential{}, false
 	}
-	if rest == "" || rest == "/" {
-		s.agentStatus(w, r, c)
-		return
-	}
+	cred, _ := s.credentialOf(r)
+	return r, c, cred, true
+}
+
+// running writes 409 unless the environment runs.
+func running(w http.ResponseWriter, c environments.Environment) bool {
 	if !c.Running() {
 		writeError(w, http.StatusConflict, c.Name+" is stopped; someone with access can start it")
-		return
+		return false
 	}
-	switch {
-	case rest == "/exec":
-		s.agentExec(w, r, c, t)
-	case rest == "/forward":
-		s.agentForward(w, r, c, t)
-	case rest == "/cdp" || strings.HasPrefix(rest, "/cdp/"):
-		s.agentCDP(w, r, c, t, strings.TrimPrefix(rest, "/cdp"))
-	default:
-		writeError(w, http.StatusNotFound, "no such agent API route")
+	return true
+}
+
+func (s *Server) handleRemoteExec(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
+	if running(w, c) {
+		s.remoteExec(w, r, c, cred)
 	}
 }
 
-func (s *Server) agentStatus(w http.ResponseWriter, r *http.Request, c environments.Environment) {
+func (s *Server) handleRemoteForward(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
+	if running(w, c) {
+		s.remoteForward(w, r, c, cred)
+	}
+}
+
+// handleRemoteCDP serves /cdp/{rest...}, and handleRemoteCDPRoot /cdp
+// (Chromium's /json/version).
+func (s *Server) handleRemoteCDP(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
+	if running(w, c) {
+		s.remoteCDP(w, r, c, cred, "/"+r.PathValue("rest"))
+	}
+}
+
+func (s *Server) handleRemoteCDPRoot(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
+	if running(w, c) {
+		s.remoteCDP(w, r, c, cred, "")
+	}
+}
+
+func (s *Server) handleRemoteStatus(w http.ResponseWriter, r *http.Request, c environments.Environment, _ credential) {
 	res := map[string]any{
 		"name": c.Name, "state": c.State, "image": c.Image, "api": 1,
 		"imageTitle": c.ImageLabels["org.opencontainers.image.title"], "imageVersion": c.ImageLabels["org.opencontainers.image.version"],
@@ -95,13 +138,13 @@ func (s *Server) agentStatus(w http.ResponseWriter, r *http.Request, c environme
 }
 
 // execEnv overrides variables of the container's environment that a
-// command run for an agent must not see.
+// command run for a client must not see.
 // DESKYARD_ACTIVITY=off keeps the in-desktop CLI from recording what the
 // supervisor already records.
 var execEnv = []string{"WORKSPACE_PROXY_TOKEN=", "DESKYARD_ACTIVITY=off"}
 
-// execEnvFor is the environment of a command run for an agent: the agent's
-// variables, then execEnv, so that the agent can't override it.
+// execEnvFor is the environment of a command run for a client: the client's
+// variables, then execEnv, so that the client can't override it.
 func execEnvFor(agentEnv map[string]string) []string {
 	forced := map[string]bool{}
 	for _, kv := range execEnv {
@@ -131,7 +174,7 @@ type execControl struct {
 	EOF    bool   `json:"eof"`
 }
 
-func (s *Server) agentExec(w http.ResponseWriter, r *http.Request, c environments.Environment, t token) {
+func (s *Server) remoteExec(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {
 		return
@@ -156,7 +199,7 @@ func (s *Server) agentExec(w http.ResponseWriter, r *http.Request, c environment
 	if start.Cwd == "" {
 		start.Cwd = "/workspace"
 	}
-	s.Log.Info("agent exec", "environment", c.Name, "token", t.Name, "argv", activity.DisplayCommand(start.Argv), "tty", start.Tty)
+	s.Log.Info("remote exec", "environment", c.Name, "credential", cred.Name, "account", cred.Username, "argv", activity.DisplayCommand(start.Argv), "tty", start.Tty)
 	var p *engine.Process
 	if session, shared := terminalSession(start.Argv, start.Tty); shared {
 		// `deskyard terminal NAME` is an explicit open: it creates the session.
@@ -174,7 +217,7 @@ func (s *Server) agentExec(w http.ResponseWriter, r *http.Request, c environment
 	defer p.Close()
 
 	// The exec started: record it. Nothing here may block or fail the command.
-	ref, agent := refOf(c), s.agentOf(t)
+	ref, agent := refOf(c), s.agentOf(cred)
 	var in, out atomic.Int64 // bytes relayed, for a copy
 	copyDir, copyPath, isCopy := transfer.Classify(start.Argv)
 	// ended records the end of a plain command, the first time it's called:
@@ -274,9 +317,9 @@ func (s *Server) agentExec(w http.ResponseWriter, r *http.Request, c environment
 	_ = ws.Close(websocket.StatusNormalClosure, "")
 }
 
-// agentCDP proxies the shared Chromium's DevTools protocol through the
+// remoteCDP proxies the shared Chromium's DevTools protocol through the
 // desktop's Caddy (/_cdp/), pointing /json URLs back through this route.
-func (s *Server) agentCDP(w http.ResponseWriter, r *http.Request, c environments.Environment, t token, rest string) {
+func (s *Server) remoteCDP(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential, rest string) {
 	addr, tok, err := s.Environments.Target(r.Context(), c.Name)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
@@ -289,7 +332,7 @@ func (s *Server) agentCDP(w http.ResponseWriter, r *http.Request, c environments
 	if r.TLS != nil {
 		wsScheme = "wss"
 	}
-	public := r.Host + agentPrefix + "/cdp/devtools/"
+	public := r.Host + "/api/environments/" + c.Name + "/cdp/devtools/"
 	rp := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.Out.URL.Scheme = "http"
@@ -325,10 +368,10 @@ func (s *Server) agentCDP(w http.ResponseWriter, r *http.Request, c environments
 		},
 	}
 	if strings.HasPrefix(rest, "/devtools/") {
-		s.Log.Info("agent browser connect", "environment", c.Name, "token", t.Name)
-		defer s.activity.BrowserOpen(refOf(c), s.agentOf(t))()
+		s.Log.Info("remote browser connect", "environment", c.Name, "credential", cred.Name, "account", cred.Username)
+		defer s.activity.BrowserOpen(refOf(c), s.agentOf(cred))()
 	} else {
-		s.activity.BrowserTouch(refOf(c), s.agentOf(t))
+		s.activity.BrowserTouch(refOf(c), s.agentOf(cred))
 	}
 	rp.ServeHTTP(w, r)
 }

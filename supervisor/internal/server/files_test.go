@@ -376,19 +376,12 @@ func TestFilesAccess(t *testing.T) {
 		if code, _, _ := fetch(t, anon, base+route); code != 401 {
 			t.Errorf("anonymous on %s: %d", route, code)
 		}
-		_, secret, err := s.tokens.create("bot", "alice", "admin", nil)
-		if err != nil {
-			t.Fatal(err)
+		_, ben := issueCredential(t, s, accountNamed(t, s, "ben"))
+		if code, _, _ := bearerRequest(t, "GET", base+route, ben); code != 200 {
+			t.Errorf("a viewer's client credential on %s: %d", route, code)
 		}
-		req, _ := http.NewRequest("GET", base+route, nil)
-		req.Header.Set("Authorization", "Bearer "+secret)
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		resp.Body.Close()
-		if resp.StatusCode != 401 {
-			t.Errorf("an agent token on %s: %d", route, resp.StatusCode)
+		if code, _, _ := bearerRequest(t, "GET", base+route, "dyt_00000000_removed"); code != 401 {
+			t.Errorf("a removed access token on %s: %d", route, code)
 		}
 	}
 }

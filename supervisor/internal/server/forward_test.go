@@ -41,7 +41,7 @@ type relayHarness struct {
 
 func newRelayHarness(t *testing.T) *relayHarness {
 	t.Helper()
-	h := &relayHarness{lk: newForwardLink("bot", []int{8765}), result: make(chan error, 1)}
+	h := &relayHarness{lk: newForwardLink("bot", "bot", []int{8765}), result: make(chan error, 1)}
 	toHelperR, toHelperW := io.Pipe()
 	fromHelperR, fromHelperW := io.Pipe()
 	h.helperIn, h.helperOut = toHelperR, fromHelperW
@@ -208,9 +208,9 @@ func TestForwardRelayDropsMalformedFrames(t *testing.T) {
 
 func TestForwardListedOncePerTokenSorted(t *testing.T) {
 	f := newForwards()
-	a := newForwardLink("zed", []int{9000})
-	b := newForwardLink("bot", []int{5173, 3000})
-	c := newForwardLink("bot", []int{3000})
+	a := newForwardLink("zed", "zed", []int{9000})
+	b := newForwardLink("bot", "bot", []int{5173, 3000})
+	c := newForwardLink("bot", "bot", []int{3000})
 	b.in[1] = 4000
 	for _, l := range []*forwardLink{a, b, c} {
 		f.tryAdd("alice", l)
@@ -307,26 +307,29 @@ func TestForwardLinkCapPerToken(t *testing.T) {
 		f := newForwards()
 		var links []*forwardLink
 		for i := 0; i < maxLinksPerToken; i++ {
-			l := newForwardLink("bot", nil)
+			l := newForwardLink("bot", "bot", nil)
 			if !f.tryAdd("alice", l) {
 				t.Fatalf("link %d of %d was refused", i+1, maxLinksPerToken)
 			}
 			links = append(links, l)
 		}
-		if f.tryAdd("alice", newForwardLink("bot", nil)) {
+		if f.tryAdd("alice", newForwardLink("bot", "bot", nil)) {
 			t.Fatalf("link %d for one token was accepted", maxLinksPerToken+1)
 		}
-		if !f.tryAdd("alice", newForwardLink("other", nil)) {
-			t.Error("another token's link was refused")
+		if !f.tryAdd("alice", newForwardLink("other", "other", nil)) {
+			t.Error("another credential's link was refused")
 		}
-		if !f.tryAdd("bob", newForwardLink("bot", nil)) {
+		if !f.tryAdd("alice", newForwardLink("bot", "bot-2", nil)) {
+			t.Error("another credential of the same name was refused")
+		}
+		if !f.tryAdd("bob", newForwardLink("bot", "bot", nil)) {
 			t.Error("the same token on another desktop was refused")
 		}
 		f.remove("alice", links[0])
-		if !f.tryAdd("alice", newForwardLink("bot", nil)) {
+		if !f.tryAdd("alice", newForwardLink("bot", "bot", nil)) {
 			t.Error("a new link was refused after one was removed")
 		}
-		if f.tryAdd("alice", newForwardLink("bot", nil)) {
+		if f.tryAdd("alice", newForwardLink("bot", "bot", nil)) {
 			t.Error("the cap didn't hold after the replacement")
 		}
 	})
@@ -346,19 +349,14 @@ func TestForwardLinkCapPerToken(t *testing.T) {
 		defineEnvironments(t, s)
 		srv := httptest.NewServer(s)
 		t.Cleanup(srv.Close)
-		_, bot, err := s.tokens.create("bot", "alice", "admin", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, other, err := s.tokens.create("other", "alice", "admin", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
+		// Both of one account and named alike: the cap is per credential.
+		_, bot := issueCredential(t, s, accountNamed(t, s, "admin"))
+		_, other := issueCredential(t, s, accountNamed(t, s, "admin"))
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		dial := func(tok string) (*websocket.Conn, string) {
 			t.Helper()
-			ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+agentPrefix+"/forward",
+			ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/api/environments/alice/forward",
 				&websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer " + tok}}})
 			if err != nil {
 				t.Fatal(err)
@@ -406,7 +404,7 @@ func TestForwardLinkCapPerToken(t *testing.T) {
 		}
 		waitExecs(maxLinksPerToken) // refused before any exec
 		if _, msg := dial(other); msg != "" {
-			t.Fatalf("another token's link refused: %s", msg)
+			t.Fatalf("another credential's link refused: %s", msg)
 		}
 		waitExecs(maxLinksPerToken + 1)
 		open[0].CloseNow()
@@ -430,13 +428,13 @@ func TestForwardListCappedPerToken(t *testing.T) {
 		t.Fatalf("maxListedPerToken is %d; the documented cap is 64", maxListedPerToken)
 	}
 	f := newForwards()
-	many := newForwardLink("bot", nil)
+	many := newForwardLink("bot", "bot", nil)
 	for i := 0; i < maxListedPerToken+36; i++ {
 		many.in[uint32(i)] = 10000 + i
 	}
 	f.tryAdd("alice", many)
-	f.tryAdd("alice", newForwardLink("zed", []int{9000}))
-	f.tryAdd("alice", newForwardLink("abe", []int{1}))
+	f.tryAdd("alice", newForwardLink("zed", "zed", []int{9000}))
+	f.tryAdd("alice", newForwardLink("abe", "abe", []int{1}))
 	got := f.list("alice")
 	perToken := map[string]int{}
 	for _, e := range got {

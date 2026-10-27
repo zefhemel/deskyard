@@ -138,7 +138,7 @@ func TestUploadAbortLeavesNothing(t *testing.T) {
 }
 
 func TestUploadAccess(t *testing.T) {
-	s, ts, root := newFilesServer(t)
+	_, ts, root := newFilesServer(t)
 	if code, _ := upload(t, login(t, ts, "ben"), ts.URL, "v.txt", strings.NewReader("x")); code != 200 {
 		t.Errorf("a viewer: %d", code)
 	}
@@ -148,9 +148,8 @@ func TestUploadAccess(t *testing.T) {
 	if code, _ := upload(t, &http.Client{}, ts.URL, "n.txt", strings.NewReader("x")); code != 401 {
 		t.Errorf("anonymous: %d", code)
 	}
-	_, secret, _ := s.tokens.create("bot", "alice", "admin", nil)
 	req, _ := http.NewRequest("POST", ts.URL+"/api/environments/alice/upload?name=t.txt", strings.NewReader("x"))
-	req.Header.Set("Authorization", "Bearer "+secret)
+	req.Header.Set("Authorization", "Bearer dyt_00000000_removed")
 	req.Header.Set("Origin", ts.URL)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -158,7 +157,7 @@ func TestUploadAccess(t *testing.T) {
 	}
 	resp.Body.Close()
 	if resp.StatusCode != 401 {
-		t.Errorf("agent token: %d", resp.StatusCode)
+		t.Errorf("a removed access token: %d", resp.StatusCode)
 	}
 	// Same-origin check: a state change from another origin is refused.
 	req, _ = http.NewRequest("POST", ts.URL+"/api/environments/alice/upload?name=t.txt", strings.NewReader("x"))

@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,7 +14,11 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
+	"github.com/zefhemel/deskyard/supervisor/internal/activity"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
+	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 )
 
 // createShare makes a share of alice by sharer at level, with a login link
@@ -362,5 +368,255 @@ func TestTokensJSONRemovedAtStartup(t *testing.T) {
 	restart(t, s)
 	if _, err := os.Stat(p); !os.IsNotExist(err) {
 		t.Fatalf("tokens.json after startup: %v", err)
+	}
+}
+
+// define defines (or redefines) the named environment as created then.
+func define(t *testing.T, s *Server, name string, created time.Time) {
+	t.Helper()
+	def := environments.Definition{Name: name, Created: created.UTC(), Revision: 1, Image: environments.ImageRef{Ref: "img"},
+		Network: environments.Network{Kind: environments.NetworkIsolated}, Power: environments.PowerStopped}
+	if err := s.Environments.Defs.Put(def); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStartupDropsGrantsOfUndefinedEnvironments(t *testing.T) {
+	s, _ := newTestServer(t)
+	define(t, s, "carol", time.Now())
+	if err := s.Accounts.SetAccess("carol", fullAccess("anna")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Environments.Defs.Delete("carol"); err != nil {
+		t.Fatal(err)
+	}
+	restarted := restart(t, s)
+	a, _ := restarted.Accounts.Get("anna")
+	if a.HasAccess("carol") || !a.HasAccess("alice") {
+		t.Fatalf("grants after startup: %v", a.Grants)
+	}
+}
+
+type failingCreateEngine struct{ fakeEngine }
+
+func (failingCreateEngine) ImageInspect(context.Context, string) (engine.Image, error) {
+	return engine.Image{ID: "sha256:img", Labels: map[string]string{environments.LabelContract: environments.Contract}}, nil
+}
+func (failingCreateEngine) Networks(context.Context, map[string]string) ([]engine.Network, error) {
+	return nil, errors.New("no networks in this test")
+}
+
+func TestCreateDropsLeftoverGrantsOfTheName(t *testing.T) {
+	s, ts := newTestServerWith(t, failingCreateEngine{})
+	define(t, s, "carol", time.Now())
+	if err := s.Accounts.SetAccess("carol", fullAccess("anna")); err != nil {
+		t.Fatal(err)
+	}
+	// A removal that deleted the definition but not the grant.
+	if err := s.Environments.Defs.Delete("carol"); err != nil {
+		t.Fatal(err)
+	}
+	admin := login(t, ts, "admin")
+	req, _ := http.NewRequest("POST", ts.URL+"/api/environments", strings.NewReader(`{"name":"carol","image":"img"}`))
+	req.Header.Set("Origin", ts.URL)
+	resp, err := admin.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var res struct{ Job string }
+	_ = json.NewDecoder(resp.Body).Decode(&res)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("create: %d", resp.StatusCode)
+	}
+	select { // the create itself fails: this engine has no networks
+	case <-s.jobs.get(res.Job).done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("create job timed out")
+	}
+	if a, _ := s.Accounts.Get("anna"); a.HasAccess("carol") {
+		t.Fatal("new environment inherited the removed one's grant")
+	}
+}
+
+// folderStuckEngine removes containers but can't run the helper that deletes
+// a folder the supervisor itself can't.
+type folderStuckEngine struct{ fakeEngine }
+
+func (folderStuckEngine) Remove(context.Context, string) error { return nil }
+func (folderStuckEngine) Networks(context.Context, map[string]string) ([]engine.Network, error) {
+	return nil, nil
+}
+func (folderStuckEngine) Pull(context.Context, string, func(engine.PullProgress)) error {
+	return errors.New("no registry in this test")
+}
+
+// A removal that deletes the definition but then fails to delete the files
+// still purges the grants and activity, closing the connections, and reports the removal.
+func TestRemovalWhoseFolderDeletionFailsStillPurgesAccess(t *testing.T) {
+	s, ts := newTestServerWith(t, folderStuckEngine{})
+	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := issueCredential(t, s, accountNamed(t, s, "anna"))
+	conn, cancel := context.WithCancel(context.Background())
+	defer s.credentials.track(c.ID, "alice", cancel)()
+	s.activity.Inside(activity.Ref{Name: "alice", ID: "alice"}, activity.Event{Agent: "terminal", Kind: "cmd-start", ID: "cmd", Cmd: "sleep", T: time.Now()})
+	if len(s.activity.Present("alice")) == 0 {
+		t.Fatal("test did not record activity")
+	}
+	sub := &subscriber{username: "admin", c: make(chan event, 16), refresh: make(chan struct{}, 1), overflow: make(chan struct{}, 1)}
+	s.events.mu.Lock()
+	s.events.subs[sub] = true
+	s.events.mu.Unlock()
+	// A folder the supervisor can't delete itself.
+	home := s.Environments.Layout.HomeOf("alice")
+	if err := os.WriteFile(filepath.Join(home, "file"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(home, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(home, 0o755) })
+	admin := login(t, ts, "admin")
+	if code := status(t, admin, "DELETE", ts.URL+"/api/environments/alice?files=1", ts.URL); code < 400 {
+		t.Fatalf("failed folder deletion reported %d", code)
+	}
+	if _, ok := s.Environments.Defs.Get("alice"); ok {
+		t.Fatal("test did not delete the definition")
+	}
+	if a, _ := s.Accounts.Get("anna"); a.HasAccess("alice") {
+		t.Error("removal kept the grant")
+	}
+	if conn.Err() == nil {
+		t.Error("removal left a credential's connection open")
+	}
+	if len(s.activity.Present("alice")) != 0 {
+		t.Error("removal kept the activity")
+	}
+	for removed := false; !removed; {
+		select {
+		case e := <-sub.c:
+			removed = e.kind == "removed" && e.environment == "alice"
+		default:
+			t.Fatal("removal not published")
+		}
+	}
+}
+
+// A creation that fails but leaves the environment defined, to be recovered,
+// still applies the requested access.
+func TestCreateFailureKeepingTheEnvironmentAppliesAccess(t *testing.T) {
+	e := &journalEngine{}
+	s, ts := newTestServerWith(t, e)
+	st := s.Environments.Networking.Connections
+	u, p := "user", "password"
+	conn, err := st.Create(vpn.Input{Name: "Home", Provider: "nordvpn", Country: "Netherlands", Username: &u, Password: &p})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Environments.ConfigureNetworking(st, &rolloutRuntime{fail: true}, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	admin := login(t, ts, "admin")
+	req, _ := http.NewRequest("POST", ts.URL+"/api/environments", strings.NewReader(`{"name":"carol","image":"img","access":["anna"],"vpnConnectionId":"`+conn.ID+`"}`))
+	req.Header.Set("Origin", ts.URL)
+	resp, err := admin.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var res struct{ Job string }
+	_ = json.NewDecoder(resp.Body).Decode(&res)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("create: %d", resp.StatusCode)
+	}
+	select {
+	case <-s.jobs.get(res.Job).done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("create job timed out")
+	}
+	if j := s.jobs.get(res.Job); j.state.Status != "failed" {
+		t.Fatal("test's creation did not fail")
+	}
+	if _, ok := s.Environments.Defs.Get("carol"); !ok {
+		t.Fatal("test's failed creation did not keep the definition")
+	}
+	if a, _ := s.Accounts.Get("anna"); !a.HasAccess("carol") {
+		t.Error("environment kept for recovery lost its requested access")
+	}
+}
+
+// trackCredential registers a live connection of a new credential of the
+// account to the environment, as exec does.
+func trackCredential(t *testing.T, s *Server, a accounts.Account, environment string) context.Context {
+	t.Helper()
+	c, _ := issueCredential(t, s, a)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	t.Cleanup(s.credentials.track(c.ID, environment, cancel))
+	return ctx
+}
+
+func TestGrantRemovalClosesOnlyThatEnvironmentsConnections(t *testing.T) {
+	s, _ := newTestServer(t)
+	define(t, s, "bob", time.Now())
+	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Accounts.SetAccess("bob", fullAccess("anna")); err != nil {
+		t.Fatal(err)
+	}
+	anna := accountNamed(t, s, "anna")
+	onAlice, onBob := trackCredential(t, s, anna, "alice"), trackCredential(t, s, anna, "bob")
+	if err := s.Accounts.SetPassword("anna", "changed"); err != nil {
+		t.Fatal(err)
+	}
+	if onAlice.Err() != nil || onBob.Err() != nil {
+		t.Fatal("a password change closed client credential connections")
+	}
+	if err := s.Accounts.SetAccess("alice", nil); err != nil {
+		t.Fatal(err)
+	}
+	if onAlice.Err() == nil {
+		t.Fatal("a removed grant left its connection open")
+	}
+	if onBob.Err() != nil {
+		t.Fatal("removing one grant closed another environment's connection")
+	}
+}
+
+func TestAdminKeepsCredentialConnectionsWhenRedundantGrantRemoved(t *testing.T) {
+	s, _ := newTestServer(t)
+	if err := s.Accounts.SetAccess("alice", fullAccess("admin")); err != nil {
+		t.Fatal(err)
+	}
+	conn := trackCredential(t, s, accountNamed(t, s, "admin"), "alice")
+	if err := s.Accounts.SetAccess("alice", nil); err != nil {
+		t.Fatal(err)
+	}
+	if conn.Err() != nil {
+		t.Fatal("removing an admin's redundant grant closed their connection")
+	}
+}
+
+func TestDemotionClosesCredentialConnections(t *testing.T) {
+	s, ts := newTestServer(t)
+	if _, err := s.Accounts.Update("anna", func(a *accounts.Account) { a.Admin = true }); err != nil {
+		t.Fatal(err)
+	}
+	conn := trackCredential(t, s, accountNamed(t, s, "anna"), "alice")
+	_, bearer := issueCredential(t, s, accountNamed(t, s, "anna"))
+	if _, err := s.Accounts.Update("anna", func(a *accounts.Account) { a.Admin = false }); err != nil {
+		t.Fatal(err)
+	}
+	if conn.Err() == nil {
+		t.Fatal("a demotion left the credential's connection open")
+	}
+	if code, _, _ := bearerRequest(t, "GET", ts.URL+"/api/environments/alice/status", bearer); code != 404 {
+		t.Fatalf("a demoted account's credential on alice: %d", code)
 	}
 }
