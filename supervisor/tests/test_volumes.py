@@ -135,6 +135,12 @@ def test_volume_deletion_rules(supervisor, admin, name):
     assert not folder.exists()
 
 
+def rename(src, dst):
+    """Renames inside the data folder as root: a supervisor in a container
+    owns volume/ as root, which a Linux test runner can't write."""
+    docker("run", "--rm", "-v", f"{src.parent}:/d", "alpine:3.22", "mv", f"/d/{src.name}", f"/d/{dst.name}")
+
+
 def test_missing_volume_folder_blocks_start(supervisor, admin, name):
     vol = make_volume(admin)
     folder = supervisor.data / "volume" / vol
@@ -142,20 +148,20 @@ def test_missing_volume_folder_blocks_start(supervisor, admin, name):
     try:
         admin.create(name, volumes=[{"name": vol, "readOnly": True}])
         assert admin.post(f"/api/environments/{name}/stop").status_code == 204
-        folder.rename(aside)
+        rename(folder, aside)
         r = admin.post(f"/api/environments/{name}/start")
         assert r.status_code >= 400 and str(folder) in r.text, r.text
         assert not folder.exists()
         d = admin.desktop(name)
         assert d["state"] != "running" and str(folder) in d.get("error", ""), d
-        aside.rename(folder)
+        rename(aside, folder)
         r = admin.post(f"/api/environments/{name}/start")
         assert r.status_code == 204, r.text
         d = wait_until(lambda: (d := admin.desktop(name))["state"] == "running" and d, 60, 1)
         assert d and not d.get("error"), admin.desktop(name)
     finally:
         if aside.exists() and not folder.exists():
-            aside.rename(folder)
+            rename(aside, folder)
         admin.delete(f"/api/environments/{name}?files=1")
         drop_volume(admin, vol)
 
