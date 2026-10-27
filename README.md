@@ -430,9 +430,9 @@ listed as a warning. Each snapshot can be:
   resources; VPN, Docker access and grants of missing volumes are dropped) or
   volume, leaving the original alone.
 
-**In the repositories** on the Backups tab lists everything the repositories
-hold, including removed environments and other machines' backups, to restore as
-new. rclone and restic run in short-lived helper containers
+**Other backups** on the Backups tab lists what the repositories hold besides
+this Deskyard's current environments and volumes (removed ones, other
+machines'), to restore as new. rclone and restic run in short-lived helper containers
 (`rclone/rclone:1.75.2`, with restic 0.19.1), which get credentials only as
 read-only files. To read a repository without Deskyard:
 `restic -r rclone:<remote>:<root>/<folder> snapshots`, with the remote's
