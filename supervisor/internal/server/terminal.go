@@ -63,11 +63,14 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 409, "upgrade this desktop image to use the shared terminal (requires deskyard.terminal=tmux-v1)")
 		return
 	}
-	claims, ok := s.Sessions.Claims(r)
-	if !ok {
+	// The terminal takes the login cookie's claims as authenticated for this
+	// request; a credential request carries none and is refused.
+	who, ok := s.principal(r)
+	if !ok || who.claims == nil {
 		writeError(w, 401, "sign in first")
 		return
 	}
+	claims := *who.claims
 	ctx, cancel := context.WithDeadline(r.Context(), claims.Expires)
 	defer cancel()
 	live := &terminalConnection{claims: claims, environment: c.ID, session: session, join: !create, cancel: cancel}

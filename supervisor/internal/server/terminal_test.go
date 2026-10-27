@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"io"
@@ -545,5 +546,33 @@ func TestTerminalAttachBurstFitsInputQueue(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("resize never arrived")
+	}
+}
+
+// A credential request authenticates as the credential's account and ignores
+// any cookie it carries; the terminal needs the login cookie, so it refuses.
+func TestTerminalRefusesBearerWithOtherCookie(t *testing.T) {
+	e := newTerminalEngine()
+	s, ts := newTestServerWith(t, e)
+	admin, _ := s.Accounts.Get("admin")
+	_, bearer := issueCredential(t, s, admin)
+	// The cookie is valid for another account that may open the terminal.
+	if _, err := s.Accounts.Create(accounts.NewAccount{Username: "carol", Password: "pw", Admin: true}); err != nil {
+		t.Fatal(err)
+	}
+	carol := login(t, ts, "carol")
+	req, _ := http.NewRequest("GET", ts.URL+"/api/environments/alice/terminal?session=main", nil)
+	req.Header.Set("Origin", ts.URL)
+	req.Header.Set("Authorization", "Bearer "+bearer)
+	resp, err := carol.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 401 {
+		t.Fatalf("status %d want 401", resp.StatusCode)
+	}
+	if e.calls.Load() != 0 {
+		t.Fatal("terminal opened as the cookie's account")
 	}
 }
