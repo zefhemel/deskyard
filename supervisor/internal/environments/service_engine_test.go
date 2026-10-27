@@ -41,10 +41,13 @@ func testSubnet() string {
 	return "10.214.0.0/20"
 }
 
+// routeProbeImage is a small image whose busybox nc can serve a port.
+const routeProbeImage = "alpine:3.22"
+
 // skipWithoutRouteToBridge skips a test that must reach a desktop by its
 // container IP when the test host can't: on macOS the engine's custom bridge
 // networks are not routable (Linux CI runs these tests). It probes a throwaway
-// container on a fresh network with a short TCP dial.
+// container on a fresh network with a short TCP dial, pulling the image first.
 func skipWithoutRouteToBridge(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS != "darwin" {
@@ -56,13 +59,16 @@ func skipWithoutRouteToBridge(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
+	if err := d.Pull(ctx, routeProbeImage, func(engine.PullProgress) {}); err != nil {
+		t.Fatalf("pulling %s: %v", routeProbeImage, err)
+	}
 	name := "cct-route-" + randomHex(3)
 	labels := map[string]string{"deskyard.enginetest": name}
 	if err := d.CreateNetwork(ctx, name, "", labels); err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = d.RemoveNetwork(context.Background(), name) }()
-	id, err := d.Create(ctx, engine.ContainerSpec{Name: name, Image: "alpine:3.22", Labels: labels, Network: name,
+	id, err := d.Create(ctx, engine.ContainerSpec{Name: name, Image: routeProbeImage, Labels: labels, Network: name,
 		Cmd: []string{"nc", "-lk", "-p", "8080", "-e", "true"}})
 	if err != nil {
 		t.Fatal(err)
@@ -75,8 +81,15 @@ func skipWithoutRouteToBridge(t *testing.T) {
 	if err != nil || c.IP[name] == "" {
 		t.Fatalf("probe container address: %+v %v", c.IP, err)
 	}
-	time.Sleep(time.Second) // let nc start listening
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(c.IP[name], "8080"), 2*time.Second)
+	// nc takes a moment to listen: retry for about 3 s before giving up.
+	var conn net.Conn
+	for deadline := time.Now().Add(3 * time.Second); ; {
+		conn, err = net.DialTimeout("tcp", net.JoinHostPort(c.IP[name], "8080"), time.Second)
+		if err == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
 	if err != nil {
 		t.Skip("the macOS host can't route to the engine's custom bridge networks, so it can't reach a desktop by its IP; Linux CI runs this test")
 	}
