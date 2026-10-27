@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Environment } from "../api.ts";
-import { notice } from "./format.ts";
+import { notice, selfFirst } from "./format.ts";
 
 type Seen = Pick<Environment, "state" | "revision" | "appliedRevision" | "error" | "conflict">;
 const applied: Seen = { state: "running", revision: 3, appliedRevision: 3, error: "", conflict: "" };
@@ -38,4 +38,9 @@ test("a conflict wins, and busy environments wait for their job", () => {
   });
   assert.equal(notice({ ...applied, state: "upgrading", revision: 4 }), null);
   assert.equal(notice({ ...applied, state: "creating", revision: 1, appliedRevision: 0, error: "x" }), null);
+});
+
+test("you come first among the viewers", () => {
+  assert.deepEqual(selfFirst(["ann", "zef", "bo"], "zef"), ["zef", "ann", "bo"]);
+  assert.deepEqual(selfFirst(["ann", "bo"], "zef"), ["ann", "bo"]);
 });

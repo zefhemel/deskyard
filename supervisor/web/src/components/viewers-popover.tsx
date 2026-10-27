@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { api, type AgentPresence, type Forward } from "../api.ts";
 import { useLive } from "../live.tsx";
 import { agentTitle } from "../lib/activity-format.ts";
+import { selfFirst } from "../lib/format.ts";
 import { AgentAvatar } from "./agent-avatar.tsx";
 import { AgentSummary, useActivity } from "./agent-summary.tsx";
 import { Avatar } from "./avatar.tsx";
@@ -96,6 +97,7 @@ export function ViewersPopover({
   canShare?: boolean;
   onClose: () => void;
 }) {
+  const { me } = useLive();
   const ref = useRef<HTMLDivElement>(null);
   const revocable = useRevocableShares(name, canShare === true);
 
@@ -128,7 +130,7 @@ export function ViewersPopover({
       <h3 class="mb-1.5 text-[13px] font-semibold text-muted">Viewing</h3>
       {viewers.length ? (
         <ul class="m-0 mb-1 list-none p-0">
-          {viewers.map((v) => (
+          {selfFirst(viewers, me.username).map((v) => (
             <li key={v} class="flex items-center gap-2 py-1 text-sm">
               <Avatar name={v} size={22} mic={mics.includes(v)} />
               <span class="truncate">{v}</span>
