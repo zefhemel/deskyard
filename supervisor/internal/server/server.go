@@ -130,6 +130,12 @@ func New(o Options) (*Server, error) {
 	if s.links, err = loadLinks(o.Layout.Data); err != nil {
 		return nil, err
 	}
+	// A CLI redemption that stopped between saving its credential and
+	// deleting its link left the credential, whose bearer it never handed
+	// out; the link still works.
+	if err := s.credentials.remove(func(c credential) bool { return c.Link != "" && s.links.has(c.Link) }); err != nil {
+		o.Log.Error("deleting credentials of unfinished link redemptions", "err", err)
+	}
 	// Grants of names without a definition are left over from a
 	// removal whose cleanup didn't persist; a later environment of the name
 	// must not inherit them.

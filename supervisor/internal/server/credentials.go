@@ -29,6 +29,8 @@ type credential struct {
 	Hash      string     `json:"hash"`
 	Created   time.Time  `json:"created"`
 	LastUsed  *time.Time `json:"lastUsed"`
+	// Link is the login link whose redemption made it, if one did.
+	Link string `json:"link,omitempty"`
 }
 
 // credentialConn is a live connection made with a credential.
@@ -70,8 +72,17 @@ func (cs *credentialStore) write(next []credential) error {
 // create issues a credential for a and returns it with its bearer secret,
 // which is never available again.
 func (cs *credentialStore) create(a accounts.Account, kind, name string) (credential, string, error) {
+	return cs.add(credential{AccountID: a.ID, Username: a.Username, Kind: kind, Name: name})
+}
+
+// createRedeeming is create for a CLI redeeming the login link with this ID.
+func (cs *credentialStore) createRedeeming(a accounts.Account, name, link string) (credential, string, error) {
+	return cs.add(credential{AccountID: a.ID, Username: a.Username, Kind: "cli", Name: name, Link: link})
+}
+
+func (cs *credentialStore) add(c credential) (credential, string, error) {
 	id, bearer, hash := newSecret(credentialPrefix)
-	c := credential{ID: id, AccountID: a.ID, Username: a.Username, Kind: kind, Name: name, Hash: hash, Created: time.Now().UTC()}
+	c.ID, c.Hash, c.Created = id, hash, time.Now().UTC()
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	next := append(slices.Clone(cs.all), c)

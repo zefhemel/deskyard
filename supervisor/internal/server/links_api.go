@@ -161,7 +161,7 @@ func (s *Server) handleRedeemLink(w http.ResponseWriter, r *http.Request) {
 		// Made before the link is deleted, so a failure keeps the link; it
 		// is handed out only once the deletion is saved.
 		var err error
-		cred, bearer, err = s.credentials.create(a, "cli", req.Name)
+		cred, bearer, err = s.credentials.createRedeeming(a, req.Name, l.ID)
 		return err
 	})
 	if err != nil && cred.ID != "" {

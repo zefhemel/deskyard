@@ -125,6 +125,13 @@ func (ls *linkStore) redeem(code string, accept func(link) error) (link, error) 
 	return l, nil
 }
 
+// has reports whether the link with this ID is unused.
+func (ls *linkStore) has(id string) bool {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	return slices.ContainsFunc(ls.all, func(l link) bool { return l.ID == id })
+}
+
 // pending reports whether the account with this ID has an unused link.
 func (ls *linkStore) pending(accountID string) bool {
 	ls.mu.Lock()

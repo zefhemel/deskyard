@@ -230,3 +230,36 @@ func TestLinkRetain(t *testing.T) {
 		t.Fatal("retain reported success without persisting")
 	}
 }
+
+// A CLI redemption stopped between saving its credential and deleting its
+// link leaves a credential whose bearer was never handed out: the restart
+// deletes it, and keeps the link and the credentials of finished ones.
+func TestRestartDeletesCredentialOfUnfinishedRedemption(t *testing.T) {
+	s, _ := newTestServer(t)
+	bob := createBob(t, s)
+	code := issueLink(t, s.links, bob)
+	id, _, _ := parseBearer(linkPrefix, code)
+	unfinished, _, err := s.credentials.createRedeeming(bob, defaultCredentialName, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	anna := accountNamed(t, s, "anna")
+	annaCode := issueLink(t, s.links, anna)
+	var finished credential
+	if _, err := s.links.redeem(annaCode, func(l link) error {
+		finished, _, err = s.credentials.createRedeeming(anna, defaultCredentialName, l.ID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	restarted := restart(t, s)
+	if restarted.credentials.has(unfinished.ID) {
+		t.Error("kept the credential of an unfinished redemption")
+	}
+	if !restarted.credentials.has(finished.ID) {
+		t.Error("deleted the credential of a finished redemption")
+	}
+	if !restarted.links.pending(bob.ID) {
+		t.Error("deleted the link of the unfinished redemption")
+	}
+}
