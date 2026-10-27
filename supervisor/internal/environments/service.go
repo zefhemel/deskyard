@@ -140,6 +140,7 @@ type Service struct {
 	ItemBusy func(kind, name string) error
 
 	mu         sync.Mutex
+	subnetMu   sync.Mutex        // choosing and creating a network's subnet
 	busy       map[string]string // name → transient state
 	errs       map[string]string // name → why its last change failed
 	folderErrs map[string]string // name → its missing home or volume folder, shown over errs
@@ -769,26 +770,37 @@ func (s *Service) WaitReady(ctx context.Context, name string, limit time.Duratio
 	}
 }
 
+// createNetwork gives name's network the first free subnet of the pool.
+// Choosing and creating are one step for this supervisor (subnetMu), so
+// environments created at once don't choose the same subnet; one that another
+// supervisor on the engine takes meanwhile is chosen again.
 func (s *Service) createNetwork(ctx context.Context, name string) error {
-	nets, err := s.Eng.Networks(ctx, nil)
-	if err != nil {
-		return err
-	}
-	var used []string
-	for _, n := range nets {
-		if n.Subnet != "" {
-			used = append(used, n.Subnet)
-		}
-	}
 	pool, err := netipParse(s.Cfg.Subnet)
 	if err != nil {
 		return err
 	}
-	subnet, err := freeSubnet(pool, used)
-	if err != nil {
-		return err
+	s.subnetMu.Lock()
+	defer s.subnetMu.Unlock()
+	for attempt := 0; ; attempt++ {
+		nets, err := s.Eng.Networks(ctx, nil)
+		if err != nil {
+			return err
+		}
+		var used []string
+		for _, n := range nets {
+			if n.Subnet != "" {
+				used = append(used, n.Subnet)
+			}
+		}
+		subnet, err := freeSubnet(pool, used)
+		if err != nil {
+			return err
+		}
+		err = s.Eng.CreateNetwork(ctx, containerName(name), subnet.String(), s.ownLabels(name))
+		if !errors.Is(err, engine.ErrSubnetTaken) || attempt == 4 {
+			return err
+		}
 	}
-	return s.Eng.CreateNetwork(ctx, containerName(name), subnet.String(), s.ownLabels(name))
 }
 
 // network checks name's network: engine.ErrNotFound when there is none,

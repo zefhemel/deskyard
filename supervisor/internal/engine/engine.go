@@ -13,6 +13,10 @@ import (
 // ErrNotFound is returned for a container, network or image that doesn't exist.
 var ErrNotFound = errors.New("not found")
 
+// ErrSubnetTaken is returned by CreateNetwork when another network already
+// uses part of the subnet, possibly one created since it was chosen.
+var ErrSubnetTaken = errors.New("subnet in use")
+
 type Mount struct {
 	Source, Target string // Source is a host path
 	// Volume is the Docker volume's name when an inspected mount is a named

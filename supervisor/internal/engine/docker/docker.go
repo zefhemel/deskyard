@@ -431,6 +431,9 @@ func (d *Docker) CreateNetwork(ctx context.Context, name, subnet string, labels 
 		opts.IPAM = &network.IPAM{Config: []network.IPAMConfig{{Subnet: p}}}
 	}
 	_, err := d.c.NetworkCreate(ctx, name, opts)
+	if err != nil && strings.Contains(err.Error(), "Pool overlaps") {
+		return fmt.Errorf("%w: %w", engine.ErrSubnetTaken, err)
+	}
 	return err
 }
 
