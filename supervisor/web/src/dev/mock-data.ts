@@ -43,6 +43,7 @@ function environment(c: Partial<Environment> & { name: string }): Environment {
     imageTitle: "Debian XFCE",
     imageVersion: "2026.10.22",
     memoryReclaim: true,
+    webdav: false,
     updateAvailable: null,
     vpn: {state:"disabled",changedAt:"0001-01-01T00:00:00Z",exitIpObservedAt:"0001-01-01T00:00:00Z",desiredRevision:0,appliedRevision:0,idle:false},
     settings: { dockerAccess: false, memoryBytes: 0, nanoCpus: 0, vpnConnectionId: null, lanExceptions: [], volumes: [] },

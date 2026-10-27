@@ -92,7 +92,7 @@ function asSeenBy(c: Environment, a: MockAccount): Environment {
   const level = levelOf(a, c.name) ?? "full";
   if (level === "observe") {
     return {
-      ...c, level, folder: "", memoryReclaim: false, access: [], terminals: [], forwards: [], agents: [], vpn: blankVPN,
+      ...c, level, folder: "", memoryReclaim: false, webdav: false, access: [], terminals: [], forwards: [], agents: [], vpn: blankVPN,
       settings: { memoryBytes: 0, nanoCpus: 0, dockerAccess: false, vpnConnectionId: null, lanExceptions: [], volumes: [] },
     };
   }
@@ -462,7 +462,19 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   }
   if (path === "/api/me" && method === "GET") return json(res, 200, meJSON(m));
   if (path === "/api/me/password") return m.password === null ? json(res, 400, { error: "token accounts have no password" }) : json(res, 204);
-  if (path === "/api/me/sign-out-everywhere" && method === "POST") return json(res, 204);
+  if (path === "/api/me/sign-out-everywhere" && method === "POST") {
+    credentials[m.username] = (credentials[m.username] ?? []).filter((d) => d.kind !== "webdav");
+    return json(res, 204);
+  }
+  if (path === "/api/me/webdav-password") {
+    const others = (credentials[m.username] ?? []).filter((d) => d.kind !== "webdav");
+    if (method === "DELETE") return (credentials[m.username] = others), json(res, 204);
+    if (method === "POST") {
+      const id = Math.random().toString(16).slice(2, 10);
+      credentials[m.username] = [{ id, kind: "webdav", name: "WebDAV password", created: new Date().toISOString(), lastUsed: null }, ...others];
+      return json(res, 201, { password: `dyc_${id}_mock-webdav-password` });
+    }
+  }
   if (path === "/api/me/credentials" && method === "GET") return json(res, 200, (credentials[m.username] ?? []).map((d) => ({ ...d, current: false })));
   const myCred = /^\/api\/me\/credentials\/([^/]+)$/.exec(path);
   if (myCred?.[1] && method === "DELETE") {
@@ -508,7 +520,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const c: Environment = {
       name, state: "creating", power: "running", revision: 1, appliedRevision: 0, error: "", conflict: "",
       startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/home/${name}`, image: img.ref, imageTitle: img.title,
-      memoryReclaim: true, imageVersion: img.version, updateAvailable: null, settings: { dockerAccess: b.dockerAccess === true, memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), vpnConnectionId: null, lanExceptions: [], volumes: (b.volumes as Environment["settings"]["volumes"]) ?? [] },
+      memoryReclaim: true, webdav: false, imageVersion: img.version, updateAvailable: null, settings: { dockerAccess: b.dockerAccess === true, memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), vpnConnectionId: null, lanExceptions: [], volumes: (b.volumes as Environment["settings"]["volumes"]) ?? [] },
       vpn: blankVPN, level: "full", access: [], viewers: [], observers: [], mics: [], terminal: true, terminals: [], forwards: [], agents: [], stats: null,
     };
     for (const g of (b.access as AccessGrant[]) ?? []) accounts.find((a) => a.username === g.username)?.grants.push({ environment: name, level: g.level });
@@ -745,6 +757,11 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     }, c.name));
   }
   if (sub === "start") return setState(c, "starting", "running"), json(res, 204);
+  if (sub === "webdav" && method === "PUT") {
+    c.webdav = (await readBody(req)).webdav === true;
+    changed(c);
+    return json(res, 204);
+  }
   if (sub === "memory-policy" && method === "PUT") {
     c.memoryReclaim = (await readBody(req)).memoryReclaim === true;
     changed(c);
