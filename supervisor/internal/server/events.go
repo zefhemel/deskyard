@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
+	"github.com/zefhemel/deskyard/supervisor/internal/activity"
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
@@ -70,6 +72,33 @@ func (h *hub) count() int {
 	return len(h.subs)
 }
 
+// eventFor is the event as the account may receive it, false when it may
+// not: an observer gets no activity, and viewers events without the
+// mappings and clients full users have open.
+func eventFor(a accounts.Account, e event) (event, bool) {
+	if e.environment == "" {
+		return e, true
+	}
+	switch level := a.Level(e.environment); {
+	case level == auth.LevelNone:
+		return e, false
+	case level == auth.LevelFull:
+		return e, true
+	case e.kind == "activity":
+		return e, false
+	case e.kind == "viewers":
+		if data, ok := e.data.(map[string]any); ok {
+			observed := make(map[string]any, len(data))
+			for k, v := range data {
+				observed[k] = v
+			}
+			observed["forwards"], observed["agents"] = []forwardJSON{}, []activity.Presence{}
+			e.data = observed
+		}
+	}
+	return e, true
+}
+
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(r)
 	ctx, sse, closeStream := s.startUIEvents(w, r)
@@ -106,7 +135,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		}
 		now := map[string]bool{}
 		for _, c := range list {
-			if acct.HasAccess(c.ID) {
+			if auth.Can(acct, auth.Observe, c.ID) {
 				now[c.Name] = true
 				send("environment", s.environmentJSON(r.Context(), c, acct))
 			}
@@ -134,7 +163,8 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
-			if e.environment != "" && !acct.HasAccess(e.environment) {
+			e, ok = eventFor(acct, e)
+			if !ok {
 				continue
 			}
 			// Lifecycle payloads can have queued before the snapshot. Resolve
@@ -153,7 +183,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 				if err != nil && !errors.Is(err, environments.ErrNotFound) {
 					return
 				}
-				if err == nil && (acct.HasAccess(c.ID)) {
+				if err == nil && auth.Can(acct, auth.Observe, c.ID) {
 					visible[name] = true
 					send("environment", s.environmentJSON(r.Context(), c, acct))
 				} else {

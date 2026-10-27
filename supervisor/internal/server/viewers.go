@@ -6,15 +6,19 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 )
 
 // viewers tracks the open desktop streams per desktop, with the account
-// each belongs to, the browser tab it comes from, whether that tab's mic is
-// on, and a way to close it (when access is revoked).
+// each belongs to, the level it was opened at, the browser tab it comes
+// from, whether that tab's mic is on, and a way to close it (when access is
+// revoked or changes level).
 type conn struct {
 	username    string
 	tab         string // the page's id for its browser tab ("" if it sent none)
 	environment string
+	level       auth.Level // the account's level when it opened; another level closes it
 	cancel      context.CancelFunc
 	// guarded by viewers.mu: whether the tab's page last said its mic is on,
 	// and the sequence number it said it with (a page numbers its reports;
@@ -66,6 +70,21 @@ func (v *viewers) names(name string) []string {
 	return out
 }
 
+// observers lists the accounts watching a desktop at observe level, each
+// once, sorted.
+func (v *viewers) observers(name string) []string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	out := []string{}
+	for c := range v.byName[name] {
+		if c.level == auth.LevelObserve && !slices.Contains(out, c.username) {
+			out = append(out, c.username)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // setMic turns the mic badge of an account's stream from one tab on or off.
 // seq orders a page's reports: one numbered no higher than the last applied
 // is ignored (0 is unnumbered and always applies). It reports false when that
@@ -104,13 +123,15 @@ func (v *viewers) mics(name string) []string {
 	return out
 }
 
-// revoke closes the connections of an account to desktops it may no longer use.
-func (v *viewers) revoke(username string, stillAllowed func(environment string) bool) {
+// revoke closes the connections of an account whose level on their desktop
+// is no longer the one they were opened at: access removed, or lowered or
+// raised (the page reconnects at the new level).
+func (v *viewers) revoke(username string, level func(environment string) auth.Level) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	for _, conns := range v.byName {
 		for c := range conns {
-			if c.username == username && !stillAllowed(c.environment) {
+			if c.username == username && level(c.environment) != c.level {
 				c.cancel()
 			}
 		}
@@ -136,7 +157,7 @@ func (s *Server) publishViewers(name, environment string) {
 
 func (s *Server) sendViewers(name, environment string) {
 	s.events.publish(event{kind: "viewers", environment: environment,
-		data: map[string]any{"name": name, "viewers": s.viewers.names(name), "mics": s.viewers.mics(name), "forwards": s.forwards.list(name),
+		data: map[string]any{"name": name, "viewers": s.viewers.names(name), "observers": s.viewers.observers(name), "mics": s.viewers.mics(name), "forwards": s.forwards.list(name),
 			"agents": s.activity.Present(name)}})
 }
 

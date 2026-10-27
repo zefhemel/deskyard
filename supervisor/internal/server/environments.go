@@ -56,8 +56,10 @@ type environmentJSON struct {
 	ImageVersion    string                 `json:"imageVersion"`
 	UpdateAvailable *string                `json:"updateAvailable"`
 	Settings        settingsJSON           `json:"settings"`
+	Level           auth.Level             `json:"level"`
 	Access          []string               `json:"access"`
 	Viewers         []string               `json:"viewers"`
+	Observers       []string               `json:"observers"`
 	Mics            []string               `json:"mics"`
 	Forwards        []forwardJSON          `json:"forwards"`
 	Agents          []activity.Presence    `json:"agents"`
@@ -75,7 +77,8 @@ func (s *Server) environmentJSON(ctx context.Context, c environments.Environment
 		ImageTitle: c.ImageLabels["org.opencontainers.image.title"], ImageVersion: c.ImageLabels["org.opencontainers.image.version"],
 		VPN:      c.VPN,
 		Settings: settingsJSON{MemoryBytes: c.Settings.MemoryBytes, NanoCPUs: c.Settings.NanoCPUs, LANExceptions: c.Settings.LANExceptions, Mounts: c.Settings.Mounts, DockerAccess: c.Settings.DockerAccess, Volumes: c.Settings.Volumes},
-		Access:   []string{}, Viewers: s.viewers.names(c.Name),
+		Level:    a.Level(c.Name),
+		Access:   []string{}, Viewers: s.viewers.names(c.Name), Observers: s.viewers.observers(c.Name),
 		Mics: s.viewers.mics(c.Name), Forwards: s.forwards.list(c.Name), Agents: s.activity.Present(c.Name),
 	}
 	if c.Settings.VPNConnectionID != "" {
@@ -113,7 +116,19 @@ func (s *Server) environmentJSON(ctx context.Context, c environments.Environment
 		j.Tokens = s.tokens.activeCount(c.Name)
 		j.UpdateAvailable = s.images.updateFor(c)
 	}
+	if j.Level == auth.LevelObserve {
+		j.observed()
+	}
 	return j
+}
+
+// observed blanks what an observer may not see: the environment's
+// configuration and what full users do in it.
+func (j *environmentJSON) observed() {
+	j.Folder, j.MemoryReclaim, j.Tokens = "", false, 0
+	j.Settings = settingsJSON{LANExceptions: []vpn.Exception{}, Mounts: []environments.HostMount{}, Volumes: []environments.VolumeGrant{}}
+	j.VPN = environments.VPNStatus{Status: vpn.Status{State: "disabled"}}
+	j.Access, j.Terminals, j.Forwards, j.Agents = []string{}, []terminal.Session{}, []forwardJSON{}, []activity.Presence{}
 }
 
 // conflictJSON is a container of this supervisor's that it can't match to
@@ -148,7 +163,7 @@ func (s *Server) handleListEnvironments(w http.ResponseWriter, r *http.Request) 
 	}
 	out := []environmentJSON{}
 	for _, c := range list {
-		if a.HasAccess(c.Name) {
+		if auth.Can(a, auth.Observe, c.Name) {
 			out = append(out, s.environmentJSON(r.Context(), c, a))
 		}
 	}
@@ -156,7 +171,7 @@ func (s *Server) handleListEnvironments(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleGetEnvironment(w http.ResponseWriter, r *http.Request) {
-	c, a, ok := s.environmentFor(w, r, auth.View)
+	c, a, ok := s.environmentFor(w, r, auth.Observe)
 	if !ok {
 		return
 	}
@@ -179,7 +194,7 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 	var running, total int
 	var memUsed uint64
 	for _, c := range list {
-		if !a.HasAccess(c.Name) {
+		if !auth.Can(a, auth.Observe, c.Name) {
 			continue
 		}
 		total++
@@ -406,6 +421,7 @@ func (s *Server) environmentRemoved(name string) error {
 	if err != nil {
 		s.Log.Error("persisting removed environment access cleanup", "environment", name, "err", err)
 	}
+	s.sweep() // the environment's shares end with it
 	s.activity.ForgetDesktop(name)
 	s.events.publish(event{kind: "removed", environment: name, data: map[string]string{"name": name}})
 	return err

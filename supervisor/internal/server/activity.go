@@ -121,18 +121,19 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 // handleScreenEvents streams the screen actions agents make on a desktop,
 // for drawing them over the viewer's screen.
 func (s *Server) handleScreenEvents(w http.ResponseWriter, r *http.Request) {
-	c, a, ok := s.environmentFor(w, r, auth.View)
+	c, a, ok := s.environmentFor(w, r, auth.Observe)
 	if !ok {
 		return
 	}
+	level := a.Level(c.ID)
 	allowed := func() bool {
 		acct, ok := s.Accounts.Get(a.Username)
-		return ok && auth.Can(acct, auth.View, c.ID)
+		return ok && acct.ID == a.ID && levelOf(acct, ok, time.Now())(c.ID) == level
 	}
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	// Registered so that a revoke closes the stream even while it is idle.
-	cn := &conn{username: a.Username, environment: c.ID, cancel: cancel}
+	cn := &conn{username: a.Username, environment: c.ID, level: level, cancel: cancel}
 	s.screenWatchers.add(c.Name, cn)
 	defer s.screenWatchers.remove(c.Name, cn)
 	if !allowed() { // revoked between environmentFor and add

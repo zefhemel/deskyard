@@ -39,7 +39,7 @@ func (s *Server) serveDesktop(w http.ResponseWriter, r *http.Request, name, rest
 	}
 	a, _ := s.account(r)
 	c, err := s.Environments.Get(r.Context(), name)
-	if err != nil || !auth.Can(a, auth.View, c.ID) {
+	if err != nil || !auth.Can(a, auth.Observe, c.ID) {
 		http.NotFound(w, r) // the same for missing and invisible desktops
 		return
 	}
@@ -218,7 +218,7 @@ func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, c environme
 	observer := !auth.Can(a, auth.View, c.ID) // allowed to watch, not to use
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	cn := &conn{username: a.Username, tab: tab, environment: c.ID, cancel: cancel}
+	cn := &conn{username: a.Username, tab: tab, environment: c.ID, level: a.Level(c.ID), cancel: cancel}
 	s.viewers.add(c.Name, cn)
 	s.publishViewers(c.Name, c.ID)
 	defer func() {

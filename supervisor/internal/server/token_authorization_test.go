@@ -290,7 +290,7 @@ func TestRecreatedEnvironmentRejectsOldTokensAndGrants(t *testing.T) {
 	}
 }
 
-func TestStartupDropsGrantsAndTokensOfUndefinedEnvironments(t *testing.T) {
+func TestStartupDropsGrantsOfUndefinedEnvironments(t *testing.T) {
 	s, _ := newTestServer(t)
 	define(t, s, "carol", time.Now())
 	if err := s.Accounts.SetAccess("carol", fullAccess("anna")); err != nil {
@@ -303,10 +303,6 @@ func TestStartupDropsGrantsAndTokensOfUndefinedEnvironments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, kept, err := s.tokens.create("bot", "alice", "anna", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := s.Environments.Defs.Delete("carol"); err != nil {
 		t.Fatal(err)
 	}
@@ -315,11 +311,10 @@ func TestStartupDropsGrantsAndTokensOfUndefinedEnvironments(t *testing.T) {
 	if a.HasAccess("carol") || !a.HasAccess("alice") {
 		t.Fatalf("grants after startup: %v", a.Grants)
 	}
+	// Startup deletes tokens.json, so no token survives it (see
+	// TestTokensJSONRemovedAtStartup).
 	if _, ok := restarted.tokens.check(gone); ok {
 		t.Fatal("startup kept the token of an undefined environment")
-	}
-	if code := agentRequestCode(t, restarted, kept); code != http.StatusOK {
-		t.Fatalf("startup broke a current token: %d", code)
 	}
 }
 

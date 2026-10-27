@@ -267,7 +267,7 @@ func (s *Server) canSeeEnvironment(r *http.Request, a accounts.Account, name str
 		return false
 	}
 	c, err := s.Environments.Get(r.Context(), name)
-	return err == nil && auth.Can(a, auth.View, c.ID)
+	return err == nil && auth.Can(a, auth.Observe, c.ID)
 }
 
 // --- server-sent events -----------------------------------------------------------

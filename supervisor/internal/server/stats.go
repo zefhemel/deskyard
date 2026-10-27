@@ -175,7 +175,7 @@ func (sc *statsCollector) follow(worker *environmentWorker, c environments.Envir
 func round1(f float64) float64 { return float64(int(f*10+0.5)) / 10 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
-	c, _, ok := s.environmentFor(w, r, auth.View)
+	c, _, ok := s.environmentFor(w, r, auth.Observe)
 	if !ok {
 		return
 	}
@@ -209,7 +209,7 @@ func newThumbnails(s *Server) *thumbnails { return &thumbnails{s: s, m: map[stri
 const thumbWidth = 480
 
 func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
-	c, _, ok := s.environmentFor(w, r, auth.View)
+	c, _, ok := s.environmentFor(w, r, auth.Observe)
 	if !ok {
 		return
 	}

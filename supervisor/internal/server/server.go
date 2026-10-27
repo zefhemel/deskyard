@@ -54,6 +54,7 @@ type Server struct {
 	thumbs           *thumbnails
 	tokens           *tokenStore
 	credentials      *credentialStore
+	links            *linkStore
 	images           *catalog
 	reconcile        chan struct{} // wakes the environments' reconcile loop
 
@@ -109,10 +110,16 @@ func New(o Options) (*Server, error) {
 	s.terminalSessions = newTerminalSessions(s)
 	s.stats = newStatsCollector(s)
 	s.thumbs = newThumbnails(s)
+	if err := s.removeTokensFile(); err != nil {
+		return nil, err
+	}
 	if s.tokens, err = loadTokens(o.Layout.Data); err != nil {
 		return nil, err
 	}
 	if s.credentials, err = loadCredentials(o.Layout.Data); err != nil {
+		return nil, err
+	}
+	if s.links, err = loadLinks(o.Layout.Data); err != nil {
 		return nil, err
 	}
 	// Grants and tokens of names without a definition are left over from a
@@ -138,6 +145,7 @@ func New(o Options) (*Server, error) {
 	// An environment whose pinned image was pulled again has a new revision.
 	s.Environments.Repinned = func([]environments.Repin) { s.events.refresh() }
 	o.Accounts.OnChange = s.accountsChanged
+	s.sweep() // links, credentials and shares left over from changes that didn't persist
 	s.detectMemoryReclaim(o.StartupContext)
 	s.routes()
 	return s, nil
@@ -153,6 +161,7 @@ func (s *Server) Run(ctx context.Context) {
 	go s.stats.run(ctx)
 	go s.inside.run(ctx)
 	go s.tokens.expireLoop(ctx, s)
+	go s.expireLoop(ctx)
 	go s.images.checkLoop(ctx, s)
 	go s.activityLoop(ctx)
 	go s.idleMemoryLoop(ctx)
@@ -371,19 +380,22 @@ func (s *Server) environmentCreated(name string) (time.Time, bool) {
 	return def.Created, ok
 }
 
-// accountsChanged closes desktop connections and event streams of accounts
-// whose access or sessions changed.
+// accountsChanged closes the connections of accounts whose access or
+// sessions changed that their level no longer allows, sweeps the shares,
+// links and credentials that depended on them, and refreshes event streams.
 func (s *Server) accountsChanged(usernames ...string) {
+	now := time.Now()
 	for _, u := range usernames {
 		a, ok := s.Accounts.Get(u)
-		stillAllowed := func(name string) bool { return ok && a.HasAccess(name) }
+		level := levelOf(a, ok, now)
 		s.terminals.revalidate(s, u)
-		s.viewers.revoke(u, stillAllowed)
-		s.screenWatchers.revoke(u, stillAllowed)
+		s.viewers.revoke(u, level)
+		s.screenWatchers.revoke(u, level)
 		if err := s.tokens.creatorChanged(s, u); err != nil {
 			s.Log.Error("revoking account agent tokens", "account", u, "err", err)
 		}
 	}
+	s.sweep()
 	s.events.refresh()
 }
 

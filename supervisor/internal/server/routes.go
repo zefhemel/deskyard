@@ -206,16 +206,21 @@ func (s *Server) handleSignOutEverywhere(w http.ResponseWriter, r *http.Request)
 // --- helpers for environment routes -------------------------------------------------------
 
 // environmentFor resolves {name} for the signed-in account, writing 404 when it
-// doesn't exist or the account can't see it, and 403 when the action isn't allowed.
+// doesn't exist or the account has no grant of it (at any level), and 403
+// when the action isn't allowed: an observer may only watch.
 func (s *Server) environmentFor(w http.ResponseWriter, r *http.Request, action auth.Action) (environments.Environment, accounts.Account, bool) {
 	a, _ := s.account(r)
 	c, err := s.Environments.Get(r.Context(), r.PathValue("name"))
-	if err != nil || !auth.Can(a, auth.View, c.ID) {
+	if err != nil || !auth.Can(a, auth.Observe, c.ID) {
 		writeError(w, http.StatusNotFound, "no such environment")
 		return c, a, false
 	}
 	if !auth.Can(a, action, c.ID) {
-		writeError(w, http.StatusForbidden, "only an admin can do that")
+		msg := "only an admin can do that"
+		if a.Level(c.ID) == auth.LevelObserve && (action == auth.View || action == auth.Power || action == auth.Share) {
+			msg = "observe-only access can't do that" // full access would allow it
+		}
+		writeError(w, http.StatusForbidden, msg)
 		return c, a, false
 	}
 	return c, a, true

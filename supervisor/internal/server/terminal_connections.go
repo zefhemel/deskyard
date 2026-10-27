@@ -169,6 +169,18 @@ func (t *terminalConnections) revalidate(s *Server, username string) {
 		}
 	}
 }
+
+// closeAccount closes every terminal of the account, as when it should be
+// gone but deleting it failed.
+func (t *terminalConnections) closeAccount(username string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for c := range t.active {
+		if c.claims.Username == username {
+			c.cancel()
+		}
+	}
+}
 func (t *terminalConnections) shutdown() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
