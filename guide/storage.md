@@ -67,7 +67,7 @@ read-only. Host volumes aren't included.
 
 Anyone with full access and a password can connect, with their username
 and password; observers and accounts that sign in with links can't. Your
-page (the account menu → **Signed-in devices**) lists your drives and can
+page (the account menu → **Account and devices**) lists your drives and can
 make a separate **WebDAV password**: while you have one, WebDAV takes only
 that password, so your account password isn't stored in WebDAV clients.
 Removing it, or signing out everywhere, disconnects them.

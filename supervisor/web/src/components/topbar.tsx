@@ -67,7 +67,7 @@ export function TopBar() {
         )}
         <Menu
           items={[
-            { label: "Signed-in devices", onSelect: () => route("/account") },
+            { label: "Account and devices", onSelect: () => route("/account") },
             // Token accounts have no password: they sign in with login links.
             ...(me.kind === "password" ? [{ label: "Change password", onSelect: () => setChanging(true) }] : []),
             { label: "Sign out everywhere", onSelect: () => setEverywhere(true), separated: true },
