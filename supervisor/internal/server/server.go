@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
@@ -66,6 +67,7 @@ type Server struct {
 	activityPub    *throttle
 	screenWatchers *viewers // screen-events streams, closed on revoke like viewers
 	unsaved        *unsavedRevocations
+	seen           *lastSeen // browser requests, by account ID
 
 	api *http.ServeMux
 }
@@ -108,7 +110,7 @@ func New(o Options) (*Server, error) {
 		Layout: o.Layout, UI: o.UI,
 		jobs: newJobs(), events: newHub(), viewers: newViewers(), terminals: newTerminalConnections(), forwards: newForwards(), viewersPub: newThrottle(viewersInterval), streamDials: newDialGates(),
 		clients:     &clientFiles{eng: o.Eng, dir: filepath.Join(o.Layout.Cache, "client")},
-		activityPub: newThrottle(activityInterval), screenWatchers: newViewers(), cliLogins: newCLILogins(), unsaved: newUnsavedRevocations(),
+		activityPub: newThrottle(activityInterval), screenWatchers: newViewers(), cliLogins: newCLILogins(), unsaved: newUnsavedRevocations(), seen: &lastSeen{at: map[string]time.Time{}},
 		reconcile: make(chan struct{}, 1),
 	}
 	s.activity = s.newActivity(o.ActivityPresence)
@@ -236,6 +238,27 @@ func (p principal) epoch() int {
 	return p.claims.Epoch
 }
 
+// lastSeen remembers, in memory, when each account's browser last made a
+// request.
+type lastSeen struct {
+	mu sync.Mutex
+	at map[string]time.Time
+}
+
+func (l *lastSeen) touch(accountID string, t time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if t.After(l.at[accountID]) {
+		l.at[accountID] = t
+	}
+}
+
+func (l *lastSeen) get(accountID string) time.Time {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.at[accountID]
+}
+
 // signedIn reports whether the request's sign-in still holds for a, the
 // account as it is now: a browser login ends when a's session epoch moves
 // on. A credential's revocation closes what it opened (trackStream).
@@ -322,6 +345,7 @@ func (s *Server) withSession(w http.ResponseWriter, r *http.Request) (*http.Requ
 	if !found || a.SessionEpoch != claims.Epoch {
 		return r, false
 	}
+	s.seen.touch(a.ID, time.Now())
 	if claims.Refresh && (a.Expires == nil || claims.Expires.Before(a.Expires.Truncate(time.Second))) {
 		claims.NotAfter = expiryOf(a)
 		s.Sessions.Refresh(w, claims)

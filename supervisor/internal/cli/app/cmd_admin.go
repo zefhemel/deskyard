@@ -909,7 +909,7 @@ func runShareList(a *App, c *call) error {
 			Username string `json:"username"`
 		} `json:"sharedBy"`
 		Expires     *string `json:"expires"`
-		LastLogin   *string `json:"lastLogin"`
+		LastUsed    *string `json:"lastUsed"`
 		LinkPending bool    `json:"linkPending"`
 		Connected   bool    `json:"connected"`
 	}
@@ -921,7 +921,7 @@ func runShareList(a *App, c *call) error {
 		return nil
 	}
 	tw := tabwriter.NewWriter(a.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tLEVEL\tSHARED BY\tEXPIRES\tLAST SIGN-IN\tNOTE")
+	fmt.Fprintln(tw, "NAME\tLEVEL\tSHARED BY\tEXPIRES\tLAST USED\tNOTE")
 	for _, s := range list {
 		var note []string
 		if s.Connected {
@@ -930,7 +930,7 @@ func runShareList(a *App, c *call) error {
 		if s.LinkPending {
 			note = append(note, "unused link")
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", s.Username, s.Level, s.SharedBy.Username, when(s.Expires), when(s.LastLogin), dash(strings.Join(note, ", ")))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", s.Username, s.Level, s.SharedBy.Username, when(s.Expires), when(s.LastUsed), dash(strings.Join(note, ", ")))
 	}
 	return tw.Flush()
 }

@@ -239,6 +239,8 @@ export interface Share {
   created: string;
   /** The last redemption of a link. */
   lastLogin: string | null;
+  /** The last redemption, CLI request or browser request (since the server started). */
+  lastUsed: string | null;
   linkPending: boolean;
   /** It has a desktop, terminal or CLI connection open on the environment now. */
   connected: boolean;

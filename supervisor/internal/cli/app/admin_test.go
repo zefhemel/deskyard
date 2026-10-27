@@ -282,9 +282,11 @@ func TestAdminSharing(t *testing.T) {
 	h, f := adminHarness(t)
 	fixedNow(t, time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC))
 	f.Answer("GET /api/environments/alice/shares", clitest.Answer{JSON: []any{map[string]any{"username": "sanne", "environment": "alice", "level": "observe",
-		"sharedBy": map[string]any{"username": "zef", "id": "a1"}, "expires": nil, "created": "2026-10-01T10:00:00Z", "lastLogin": nil, "linkPending": true, "connected": false}}})
+		"sharedBy": map[string]any{"username": "zef", "id": "a1"}, "expires": nil, "created": "2026-10-01T10:00:00Z", "lastLogin": nil, "lastUsed": "2026-10-26T10:00:00Z", "linkPending": true, "connected": false}}})
 	r := h.run("share", "list", "alice")
-	if r.code != 0 || !strings.Contains(r.stdout, "sanne") || !strings.Contains(r.stdout, "observe") || !strings.Contains(r.stdout, "zef") {
+	used := time.Date(2026, 10, 26, 10, 0, 0, 0, time.UTC).Local().Format("2006-01-02 15:04")
+	if r.code != 0 || !strings.Contains(r.stdout, "sanne") || !strings.Contains(r.stdout, "observe") || !strings.Contains(r.stdout, "zef") ||
+		!strings.Contains(r.stdout, "LAST USED") || !strings.Contains(r.stdout, used) {
 		t.Errorf("share list: %+v", r)
 	}
 	wantCall(t, f, "GET", "/api/environments/alice/shares", "", "")

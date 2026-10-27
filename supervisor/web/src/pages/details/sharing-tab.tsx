@@ -49,7 +49,7 @@ export function SharingTab({ environment: c }: { environment: Environment }) {
                 <th class={th}>Access</th>
                 <th class={th}>Shared by</th>
                 <th class={th}>Ends</th>
-                <th class={th}>Last signed in</th>
+                <th class={th}>Last used</th>
                 <th class={th} />
               </tr>
             </thead>
@@ -124,7 +124,7 @@ function ShareRow({ share: s, canManage, onLink, onChanged }: { share: Share; ca
       <td class={`${td} whitespace-nowrap`}>
         <Expiry expires={s.expires} />
       </td>
-      <td class={`${td} whitespace-nowrap`}>{ago(s.lastLogin)}</td>
+      <td class={`${td} whitespace-nowrap`}>{ago(s.lastUsed)}</td>
       <td class={`${td} text-right whitespace-nowrap`}>
         {canManage &&
           (confirming ? (

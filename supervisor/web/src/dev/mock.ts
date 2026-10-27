@@ -135,7 +135,7 @@ function shareJSON(a: MockAccount): Share {
   const env = environments.find((c) => c.name === g.environment);
   return {
     username: a.username, environment: g.environment, level: g.level, sharedBy: a.sharedBy!, expires: a.expires, created: a.created,
-    lastLogin: a.lastLogin, linkPending: [...links.values()].includes(a.username), connected: env?.viewers.includes(a.username) ?? false,
+    lastLogin: a.lastLogin, lastUsed: a.lastLogin, linkPending: [...links.values()].includes(a.username), connected: env?.viewers.includes(a.username) ?? false,
   };
 }
 

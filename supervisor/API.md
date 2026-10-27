@@ -273,7 +273,7 @@ Neither route needs a session or a client credential. Both are throttled per cli
 
 **Share** on an environment makes a token account with one grant of that environment (`full` or `observe`), `sharedBy` set to the account sharing it and an optional expiry, and returns its first login link. Admins may share any environment; other accounts may share environments they have `full` access to, unless they are themselves shares. A share ends (is deleted with its link and credentials, closing its connections) when it is revoked, expires, or its sharer is deleted, recreated, or no longer has full access to the environment (an admin sharer keeps their shares while they remain an admin).
 
-`Share` = `{"username","environment","level":Level,"sharedBy":Sharer,"expires"|null,"created","lastLogin"|null,"linkPending":bool,"connected":bool}`. `lastLogin` is the last redemption of a link; `connected` is true while the share has a desktop stream, browser terminal or CLI connection open on the environment.
+`Share` = `{"username","environment","level":Level,"sharedBy":Sharer,"expires"|null,"created","lastLogin"|null,"lastUsed"|null,"linkPending":bool,"connected":bool}`. `lastLogin` is the last redemption of a link; `lastUsed` is the latest of that, a request with one of its client credentials, and a request of its browser since the supervisor started; `connected` is true while the share has a desktop stream, browser terminal or CLI connection open on the environment.
 
 | Method and path | Body | Response |
 | --- | --- | --- |

@@ -19,6 +19,7 @@ type shareJSON struct {
 	Expires     *time.Time      `json:"expires"`
 	Created     time.Time       `json:"created"`
 	LastLogin   *time.Time      `json:"lastLogin"`
+	LastUsed    *time.Time      `json:"lastUsed"`
 	LinkPending bool            `json:"linkPending"`
 	Connected   bool            `json:"connected"`
 }
@@ -29,6 +30,18 @@ func (s *Server) toShareJSON(a accounts.Account) shareJSON {
 	if a.SharedBy != nil {
 		j.SharedBy = *a.SharedBy
 	}
+	// Last used: signed in, or a request of its browser (since this server
+	// started) or of its CLI.
+	used := a.LastLogin
+	if seen := s.seen.get(a.ID); seen.After(used) {
+		used = seen
+	}
+	for _, c := range s.credentials.list(a.ID) {
+		if c.LastUsed != nil && c.LastUsed.After(used) {
+			used = *c.LastUsed
+		}
+	}
+	j.LastUsed = since(used)
 	if len(a.Grants) > 0 {
 		j.Environment, j.Level = a.Grants[0].Environment, a.Grants[0].Level
 		j.Connected = slices.Contains(s.viewers.names(j.Environment), a.Username) || s.credentials.connected(a.ID)

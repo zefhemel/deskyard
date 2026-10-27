@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
@@ -315,5 +316,43 @@ func TestLinkInspectionThrottled(t *testing.T) {
 	}
 	if code, _ := redeemCLI(t, ts, "dyl_00000000_nope"); code != http.StatusTooManyRequests {
 		t.Fatalf("redemption after the throttle: %d", code)
+	}
+}
+
+// A share's last use counts its CLI credential and its browser, not only
+// its link's redemption.
+func TestShareLastUsed(t *testing.T) {
+	s, ts := newTestServer(t)
+	admin := accountNamed(t, s, "admin")
+	share, c := createShare(t, s, admin, "sanne", auth.LevelFull)
+	if j := s.toShareJSON(share); j.LastUsed != nil {
+		t.Fatalf("an unused share was used %v", j.LastUsed)
+	}
+	if err := s.Accounts.TouchLogin("sanne"); err != nil {
+		t.Fatal(err)
+	}
+	redeemed := accountNamed(t, s, "sanne").LastLogin
+	later := redeemed.Add(time.Hour)
+	s.credentials.mu.Lock()
+	for i := range s.credentials.all {
+		if s.credentials.all[i].ID == c.ID {
+			s.credentials.all[i].LastUsed = &later
+		}
+	}
+	s.credentials.mu.Unlock()
+	if j := s.toShareJSON(accountNamed(t, s, "sanne")); j.LastUsed == nil || !j.LastUsed.Equal(later) {
+		t.Fatalf("last used %v, want the credential's %v", j.LastUsed, later)
+	}
+	// So does a browser request.
+	s.seen.touch(share.ID, later.Add(time.Hour))
+	if j := s.toShareJSON(accountNamed(t, s, "sanne")); j.LastUsed == nil || !j.LastUsed.Equal(later.Add(time.Hour)) {
+		t.Fatalf("last used %v, want the browser's", j.LastUsed)
+	}
+	before := time.Now()
+	if code := status(t, login(t, ts, "anna"), "GET", ts.URL+"/api/me", ""); code != 200 {
+		t.Fatal(code)
+	}
+	if seen := s.seen.get(accountNamed(t, s, "anna").ID); seen.Before(before) {
+		t.Fatalf("a browser request wasn't seen: %v", seen)
 	}
 }
