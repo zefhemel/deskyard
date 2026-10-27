@@ -1045,3 +1045,25 @@ func TestHelpNamesEnvironment(t *testing.T) {
 		t.Errorf("exec -e description doesn't tell it apart from the global -e: %q", execEnv)
 	}
 }
+
+// A login link, or a page of the web UI, given to login says what to do
+// instead, before anyone approves anything.
+func TestLoginRefusesLinksAndPages(t *testing.T) {
+	f := clitest.New(t, "alice")
+	h := newHarness(t)
+	r := h.run("login", f.LinkURL())
+	if r.code != 2 || !strings.Contains(r.stderr, "deskyard auth") {
+		t.Errorf("login LINK: %+v", r)
+	}
+	for _, page := range []string{"accounts", "link", "volumes"} {
+		r = h.run("login", f.URL+"/"+page, "--no-browser")
+		if r.code != 2 || !strings.Contains(r.stderr, "isn't an environment") {
+			t.Errorf("login %s: %+v", page, r)
+		}
+	}
+	for _, c := range f.Calls() {
+		if c.Path == "/api/cli-login" {
+			t.Errorf("started a CLI login: %+v", c)
+		}
+	}
+}

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/cli/remote"
+	"github.com/zefhemel/deskyard/supervisor/internal/envname"
 )
 
 // loginInterval is how long deskyard login waits between polls, given the
@@ -96,9 +97,15 @@ func serverName(c *call, base string) (string, error) {
 // ---- login
 
 func runLogin(a *App, c *call) error {
+	if _, _, err := remote.ParseLink(c.args[0]); err == nil {
+		return usagef(c.cmd, "that's a login link: sign in with it with `deskyard auth LINK`")
+	}
 	t, err := remote.ParseURL(c.args[0])
 	if err != nil {
 		return usagef(c.cmd, "%v", err)
+	}
+	if envname.IsReserved(t.Environment) {
+		return usagef(c.cmd, "%s/%s is a page of Deskyard, it isn't an environment: run `deskyard login %s`, or add an environment's name to it", t.Base, t.Environment, t.Base)
 	}
 	name, err := serverName(c, t.Base)
 	if err != nil {

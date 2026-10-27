@@ -4,23 +4,16 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/zefhemel/deskyard/supervisor/internal/envname"
 )
 
 var nameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}[a-z0-9]$`)
 
-// Reserved names are the supervisor's own top-level routes.
-var reserved = map[string]bool{
-	"api": true, "login": true, "logout": true, "assets": true, "static": true,
-	"healthz": true, "favicon.ico": true, "robots.txt": true,
-	// The UI's own pages.
-	"desktops": true, "environments": true, "images": true, "accounts": true,
-	"volumes": true, "link": true, "cli-login": true, "account": true,
-}
-
 // ValidName checks an environment name: DNS label rules (so it also works as a
 // container, network and folder name), not one of the supervisor's routes.
 func ValidName(name string) error {
-	if strings.HasPrefix(name, "_") || reserved[name] {
+	if envname.IsReserved(name) {
 		return fmt.Errorf("%q is reserved by the supervisor", name)
 	}
 	if !nameRE.MatchString(name) {
@@ -42,6 +35,4 @@ func ValidNewName(name string) error {
 }
 
 // IsReserved reports whether a top-level path segment belongs to the supervisor.
-func IsReserved(segment string) bool {
-	return reserved[segment] || strings.HasPrefix(segment, "_")
-}
+func IsReserved(segment string) bool { return envname.IsReserved(segment) }
