@@ -23,7 +23,7 @@ func TestReclaimMemoryGuards(t *testing.T) {
 	s, ts := newTestServer(t)
 	admin := login(t, ts, "admin")
 	anna := login(t, ts, "anna")
-	if err := s.Accounts.SetAccess("alice", []string{"anna"}); err != nil {
+	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {

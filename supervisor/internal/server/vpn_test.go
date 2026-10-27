@@ -144,7 +144,7 @@ func TestVPNRegularUserCanReadSelectedStatus(t *testing.T) {
 	c.Name = "deskyard-bob"
 	c.Env = map[string]string{environments.TokenEnv: "proxy-secret"}
 	s, ts := newTestServerWith(t, fakeEngine{others: []engine.Container{c}})
-	s.Accounts.SetAccess("bob", []string{"anna"})
+	s.Accounts.SetAccess("bob", fullAccess("anna"))
 	user := login(t, ts, "anna")
 	resp, err := user.Get(ts.URL + "/api/environments/bob")
 	if err != nil {

@@ -21,7 +21,7 @@ func TestDockerAccessSettingsAPI(t *testing.T) {
 	s, ts := newTestServerWith(t, e)
 	admin := login(t, ts, "admin")
 	anna := login(t, ts, "anna")
-	if err := s.Accounts.SetAccess("alice", []string{"anna"}); err != nil {
+	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
 		t.Fatal(err)
 	}
 	send := func(client *http.Client, method, path string, body map[string]any) (int, []byte) {

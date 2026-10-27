@@ -78,31 +78,72 @@ func TestThrottle(t *testing.T) {
 
 type subject struct {
 	admin  bool
-	access map[string]bool
+	share  bool
+	levels map[string]Level
 }
 
-func (s subject) IsAdmin() bool            { return s.admin }
-func (s subject) HasAccess(id string) bool { return s.admin || s.access[id] }
+func (s subject) IsAdmin() bool           { return s.admin }
+func (s subject) IsShare() bool           { return s.share }
+func (s subject) Level(name string) Level { return s.levels[name] }
 
 func TestCanMatchesThePermissionsTable(t *testing.T) {
 	admin := subject{admin: true}
-	anna := subject{access: map[string]bool{"alice": true}}
+	anna := subject{levels: map[string]Level{"alice": LevelFull}}
 	rows := []struct {
 		action  Action
 		admin   bool
 		withAcc bool
 		without bool
 	}{
+		{Observe, true, true, false},
 		{View, true, true, false},
 		{Power, true, true, false},
 		{Manage, true, false, false},
 		{ManageAccounts, true, false, false},
-		{CreateToken, true, true, false},
-		{RevokeAnyToken, true, false, false},
+		{Share, true, true, false},
 	}
 	for _, r := range rows {
 		if Can(admin, r.action, "bob") != r.admin || Can(anna, r.action, "alice") != r.withAcc || Can(anna, r.action, "bob") != r.without {
 			t.Errorf("action %d", r.action)
 		}
+	}
+}
+
+func TestCanByLevel(t *testing.T) {
+	observer := subject{levels: map[string]Level{"alice": LevelObserve}}
+	share := subject{share: true, levels: map[string]Level{"alice": LevelFull}}
+	adminShare := subject{admin: true, share: true}
+	rows := []struct {
+		name    string
+		who     subject
+		action  Action
+		allowed bool
+	}{
+		{"observer observes", observer, Observe, true},
+		{"observer views", observer, View, false},
+		{"observer powers", observer, Power, false},
+		{"observer shares", observer, Share, false},
+		{"observer manages", observer, Manage, false},
+		{"share observes", share, Observe, true},
+		{"share views", share, View, true},
+		{"share powers", share, Power, true},
+		{"share shares", share, Share, false},
+		{"admin share shares", adminShare, Share, true},
+	}
+	for _, r := range rows {
+		if got := Can(r.who, r.action, "alice"); got != r.allowed {
+			t.Errorf("%s: %v", r.name, got)
+		}
+	}
+	if Can(observer, Observe, "") {
+		t.Error("observe without an environment")
+	}
+	for _, l := range []Level{LevelNone, "admin", "FULL"} {
+		if ValidLevel(l) {
+			t.Errorf("valid level %q", l)
+		}
+	}
+	if !ValidLevel(LevelFull) || !ValidLevel(LevelObserve) {
+		t.Error("levels not valid")
 	}
 }

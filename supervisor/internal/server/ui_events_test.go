@@ -62,7 +62,7 @@ func TestUIEventsWebSocketRejectsForeignOrigin(t *testing.T) {
 
 func TestScreenEventsWebSocketClosesOnRevoke(t *testing.T) {
 	s, ts := newTestServer(t)
-	_ = s.Accounts.SetAccess("alice", []string{"anna"})
+	_ = s.Accounts.SetAccess("alice", fullAccess("anna"))
 	client := login(t, ts, "anna")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

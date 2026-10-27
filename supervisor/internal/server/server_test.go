@@ -18,11 +18,21 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 )
+
+// fullAccess gives each of usernames full access, for SetAccess.
+func fullAccess(usernames ...string) map[string]auth.Level {
+	out := map[string]auth.Level{}
+	for _, u := range usernames {
+		out[u] = auth.LevelFull
+	}
+	return out
+}
 
 // fakeEngine knows one stopped desktop, "alice", plus any others a test
 // adds, and nothing else. Every image holds the Selkies client in fakeClient.
@@ -91,7 +101,7 @@ func newTestServerCfg(t *testing.T, e engine.Engine, cfg environments.Config) (*
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	accts, _ := accounts.Load(dir)
 	_, _ = accts.EnsureAdmin("admin", "pw")
-	_, _ = accts.Create("anna", "pw", false, nil)
+	_, _ = accts.Create(accounts.NewAccount{Username: "anna", Password: "pw"})
 	s, err := New(Options{Log: log, Eng: e, Accounts: accts, Layout: config.NewLayout(dir), DefaultImage: "img",
 		Environments: environments.New(e, cfg, log),
 		UI:           fstest.MapFS{"index.html": {Data: []byte("<!doctype html>ui")}, "assets/a.js": {Data: []byte("js")}}})

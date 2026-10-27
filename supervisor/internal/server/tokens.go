@@ -32,9 +32,7 @@ type token struct {
 	EnvironmentCreated time.Time  `json:"environmentCreated"`
 	Hash               string     `json:"hash"`
 	CreatedBy          string     `json:"createdBy"`
-	CreatorCreated     time.Time  `json:"creatorCreated,omitzero"`
-	CreatorEpoch       uint64     `json:"creatorEpoch,omitempty"`
-	GrantEpoch         uint64     `json:"grantEpoch,omitempty"`
+	CreatorID          string     `json:"creatorID,omitempty"`
 	Created            time.Time  `json:"created"`
 	Expires            *time.Time `json:"expires"`
 	LastUsed           *time.Time `json:"lastUsed"`
@@ -77,8 +75,7 @@ func loadTokens(dataDir string) (*tokenStore, error) {
 }
 
 func tokenCreatorAllowed(t token, a accounts.Account, exists bool) bool {
-	return exists && a.HasAccess(t.Environment) && !t.CreatorCreated.IsZero() &&
-		t.CreatorCreated.Equal(a.Created) && t.CreatorEpoch == a.TokenEpoch && t.GrantEpoch == a.EnvironmentTokenEpochs[t.Environment]
+	return exists && a.HasAccess(t.Environment) && t.CreatorID != "" && t.CreatorID == a.ID
 }
 
 // environmentCurrent reports whether t's environment is the one it was made
@@ -93,8 +90,7 @@ func (ts *tokenStore) environmentCurrent(t token) bool {
 
 // bind attaches the accounts and environment definitions tokens are checked
 // against, and purges, before the server accepts requests, records whose
-// creator identity, retained authorization revisions or environment no
-// longer match.
+// creator identity (account ID), access or environment no longer match.
 func (ts *tokenStore) bind(accts *accounts.Store, created func(name string) (time.Time, bool)) error {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
@@ -152,7 +148,7 @@ func (ts *tokenStore) create(name, environment, createdBy string, expires *time.
 		if !exists || !a.HasAccess(environment) {
 			return token{}, "", errors.New("token creator no longer has access to the environment")
 		}
-		t.CreatorCreated, t.CreatorEpoch, t.GrantEpoch = a.Created, a.TokenEpoch, a.EnvironmentTokenEpochs[environment]
+		t.CreatorID = a.ID
 	}
 	next := append(slices.Clone(ts.list), t)
 	if err := store.WriteJSON(ts.path, map[string]any{"tokens": next}); err != nil {
@@ -388,7 +384,7 @@ func baseURL(r *http.Request) string {
 }
 
 func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
-	c, a, ok := s.environmentFor(w, r, auth.CreateToken)
+	c, a, ok := s.environmentFor(w, r, auth.Share)
 	if !ok {
 		return
 	}
@@ -418,7 +414,7 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteToken(w http.ResponseWriter, r *http.Request) {
-	c, a, ok := s.environmentFor(w, r, auth.CreateToken)
+	c, a, ok := s.environmentFor(w, r, auth.Share)
 	if !ok {
 		return
 	}
@@ -434,7 +430,7 @@ func (s *Server) handleDeleteToken(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such token")
 		return
 	}
-	if found.CreatedBy != a.Username && !auth.Can(a, auth.RevokeAnyToken, c.Name) {
+	if found.CreatedBy != a.Username && !a.IsAdmin() {
 		writeError(w, http.StatusForbidden, "only its creator or an admin can revoke this token")
 		return
 	}

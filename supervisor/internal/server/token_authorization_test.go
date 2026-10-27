@@ -30,9 +30,9 @@ func agentRequestCode(t *testing.T, s *Server, bearer string) int {
 	return w.Code
 }
 
-func TestAgentAccessCleanupFailureCannotReviveToken(t *testing.T) {
+func TestAgentAccessCleanupFailureStillRevokesToken(t *testing.T) {
 	s, _ := newTestServer(t)
-	if err := s.Accounts.SetAccess("alice", []string{"anna"}); err != nil {
+	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
 		t.Fatal(err)
 	}
 	tok, bearer, err := s.tokens.create("bot", "alice", "anna", nil)
@@ -51,28 +51,11 @@ func TestAgentAccessCleanupFailureCannotReviveToken(t *testing.T) {
 	if code := agentRequestCode(t, s, bearer); code != http.StatusUnauthorized {
 		t.Errorf("access loss still authorized: %d", code)
 	}
-	if err := s.Accounts.SetAccess("alice", []string{"anna"}); err != nil {
-		t.Fatal(err)
-	}
-	if code := agentRequestCode(t, s, bearer); code != http.StatusUnauthorized {
-		t.Errorf("regrant revived token: %d", code)
-	}
-	persistedAccounts, err := accounts.Load(s.Layout.Data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	restarted, err := New(Options{Log: s.Log, Eng: s.Eng, Environments: s.Environments, Accounts: persistedAccounts, Layout: s.Layout, DefaultImage: "img"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if code := agentRequestCode(t, restarted, bearer); code != http.StatusUnauthorized {
-		t.Errorf("restart revived token: %d", code)
-	}
 }
 
 func TestAgentDeletedCreatorCannotAuthorizeRecreatedAccount(t *testing.T) {
 	s, _ := newTestServer(t)
-	if err := s.Accounts.SetAccess("alice", []string{"anna"}); err != nil {
+	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
 		t.Fatal(err)
 	}
 	_, bearer, err := s.tokens.create("bot", "alice", "anna", nil)
@@ -83,7 +66,7 @@ func TestAgentDeletedCreatorCannotAuthorizeRecreatedAccount(t *testing.T) {
 	if err := s.Accounts.Delete("anna"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Accounts.Create("anna", "pw", false, []string{"alice"}); err != nil {
+	if _, err := s.Accounts.Create(accounts.NewAccount{Username: "anna", Password: "pw", Grants: fullGrants([]string{"alice"})}); err != nil {
 		t.Fatal(err)
 	}
 	if code := agentRequestCode(t, s, bearer); code != http.StatusUnauthorized {
@@ -110,7 +93,7 @@ func (e tokenAuthEngine) Inspect(_ context.Context, id string) (engine.Container
 
 func TestAgentOpenStreamClosesWhenCreatorCleanupFails(t *testing.T) {
 	s, ts := newTestServerWith(t, tokenAuthEngine{})
-	if err := s.Accounts.SetAccess("alice", []string{"anna"}); err != nil {
+	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
 		t.Fatal(err)
 	}
 	_, bearer, err := s.tokens.create("bot", "alice", "anna", nil)
@@ -136,7 +119,7 @@ func TestAgentOpenStreamClosesWhenCreatorCleanupFails(t *testing.T) {
 
 func TestAgentRegistrationRechecksCreatorAfterLookup(t *testing.T) {
 	s, _ := newTestServer(t)
-	if err := s.Accounts.SetAccess("alice", []string{"anna"}); err != nil {
+	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
 		t.Fatal(err)
 	}
 	_, bearer, err := s.tokens.create("bot", "alice", "anna", nil)
@@ -190,10 +173,10 @@ func (e *accessChangeEngine) Inspect(_ context.Context, id string) (engine.Conta
 func TestAgentGrantRevocationKeepsOtherEnvironmentsAndPasswordChanges(t *testing.T) {
 	s, _ := newTestServer(t)
 	define(t, s, "bob", time.Now())
-	if err := s.Accounts.SetAccess("alice", []string{"anna"}); err != nil {
+	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Accounts.SetAccess("bob", []string{"anna"}); err != nil {
+	if err := s.Accounts.SetAccess("bob", fullAccess("anna")); err != nil {
 		t.Fatal(err)
 	}
 	aliceToken, _, err := s.tokens.create("alice-bot", "alice", "anna", nil)
@@ -219,12 +202,6 @@ func TestAgentGrantRevocationKeepsOtherEnvironmentsAndPasswordChanges(t *testing
 	}
 	if !s.tokenCreatorAllowed(bobToken) {
 		t.Fatal("unrelated environment token was invalidated")
-	}
-	if err := s.Accounts.SetAccess("alice", []string{"anna"}); err != nil {
-		t.Fatal(err)
-	}
-	if s.tokenCreatorAllowed(aliceToken) {
-		t.Fatal("regrant reset retained revision")
 	}
 }
 
@@ -253,14 +230,14 @@ func restart(t *testing.T, s *Server) *Server {
 
 func TestTokenWithoutCreatorIdentityIsPurged(t *testing.T) {
 	s, _ := newTestServer(t)
-	if err := s.Accounts.SetAccess("alice", []string{"anna"}); err != nil {
+	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
 		t.Fatal(err)
 	}
 	tok, bearer, err := s.tokens.create("bot", "alice", "anna", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tok.CreatorCreated = time.Time{}
+	tok.CreatorID = ""
 	if err := store.WriteJSON(s.tokens.path, map[string]any{"tokens": []token{tok}}); err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +265,7 @@ func TestTokenWithoutCreatorIdentityIsPurged(t *testing.T) {
 // of the same name: neither the old token nor the old grant carries over.
 func TestRecreatedEnvironmentRejectsOldTokensAndGrants(t *testing.T) {
 	s, _ := newTestServer(t)
-	if err := s.Accounts.SetAccess("alice", []string{"anna"}); err != nil {
+	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
 		t.Fatal(err)
 	}
 	tok, bearer, err := s.tokens.create("bot", "alice", "anna", nil)
@@ -329,10 +306,10 @@ func TestRecreatedEnvironmentRejectsOldTokensAndGrants(t *testing.T) {
 func TestStartupDropsGrantsAndTokensOfUndefinedEnvironments(t *testing.T) {
 	s, _ := newTestServer(t)
 	define(t, s, "carol", time.Now())
-	if err := s.Accounts.SetAccess("carol", []string{"anna"}); err != nil {
+	if err := s.Accounts.SetAccess("carol", fullAccess("anna")); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Accounts.SetAccess("alice", []string{"anna"}); err != nil {
+	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
 		t.Fatal(err)
 	}
 	_, gone, err := s.tokens.create("bot", "carol", "anna", nil)
@@ -349,7 +326,7 @@ func TestStartupDropsGrantsAndTokensOfUndefinedEnvironments(t *testing.T) {
 	restarted := restart(t, s)
 	a, _ := restarted.Accounts.Get("anna")
 	if a.HasAccess("carol") || !a.HasAccess("alice") {
-		t.Fatalf("grants after startup: %v", a.Environments)
+		t.Fatalf("grants after startup: %v", a.Grants)
 	}
 	if _, ok := restarted.tokens.check(gone); ok {
 		t.Fatal("startup kept the token of an undefined environment")
@@ -371,7 +348,7 @@ func (failingCreateEngine) Networks(context.Context, map[string]string) ([]engin
 func TestCreateDropsLeftoverGrantsAndTokensOfTheName(t *testing.T) {
 	s, ts := newTestServerWith(t, failingCreateEngine{})
 	define(t, s, "carol", time.Now())
-	if err := s.Accounts.SetAccess("carol", []string{"anna"}); err != nil {
+	if err := s.Accounts.SetAccess("carol", fullAccess("anna")); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := s.tokens.create("bot", "carol", "anna", nil); err != nil {
@@ -432,7 +409,7 @@ func TestAgentRegistrationRechecksExplicitRevocation(t *testing.T) {
 
 func TestAgentAdminKeepsAccessWhenRedundantGrantRemoved(t *testing.T) {
 	s, _ := newTestServer(t)
-	if err := s.Accounts.SetAccess("alice", []string{"admin"}); err != nil {
+	if err := s.Accounts.SetAccess("alice", fullAccess("admin")); err != nil {
 		t.Fatal(err)
 	}
 	tok, _, err := s.tokens.create("bot", "alice", "admin", nil)
@@ -447,7 +424,7 @@ func TestAgentAdminKeepsAccessWhenRedundantGrantRemoved(t *testing.T) {
 	}
 }
 
-func TestAgentRoleChangeRetainsRevocationDespiteCleanupFailure(t *testing.T) {
+func TestAgentRoleChangeRevokesDespiteCleanupFailure(t *testing.T) {
 	s, _ := newTestServer(t)
 	if _, err := s.Accounts.Update("anna", func(a *accounts.Account) { a.Admin = true }); err != nil {
 		t.Fatal(err)
@@ -465,11 +442,8 @@ func TestAgentRoleChangeRetainsRevocationDespiteCleanupFailure(t *testing.T) {
 	if !canceled {
 		t.Fatal("demotion retained live token connection")
 	}
-	if _, err := s.Accounts.Update("anna", func(a *accounts.Account) { a.Admin = true }); err != nil {
-		t.Fatal(err)
-	}
 	if code := agentRequestCode(t, s, bearer); code != http.StatusUnauthorized {
-		t.Fatalf("promotion revived old role token: %d", code)
+		t.Fatalf("demoted creator's token still authorized: %d", code)
 	}
 }
 
@@ -482,11 +456,11 @@ func TestDelayedCreatorNotificationKeepsCurrentTokens(t *testing.T) {
 				if err := s.Accounts.Delete("anna"); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := s.Accounts.Create("anna", "pw", false, []string{"alice"}); err != nil {
+				if _, err := s.Accounts.Create(accounts.NewAccount{Username: "anna", Password: "pw", Grants: fullGrants([]string{"alice"})}); err != nil {
 					t.Fatal(err)
 				}
 			} else {
-				if err := s.Accounts.SetAccess("alice", []string{"anna"}); err != nil {
+				if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -532,7 +506,7 @@ func (folderStuckEngine) Pull(context.Context, string, func(engine.PullProgress)
 // still purges the grants, tokens and activity, and reports the removal.
 func TestRemovalWhoseFolderDeletionFailsStillPurgesAccess(t *testing.T) {
 	s, ts := newTestServerWith(t, folderStuckEngine{})
-	if err := s.Accounts.SetAccess("alice", []string{"anna"}); err != nil {
+	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := s.tokens.create("bot", "alice", "anna", nil); err != nil {

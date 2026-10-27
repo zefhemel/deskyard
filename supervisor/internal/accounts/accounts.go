@@ -1,12 +1,14 @@
 // Package accounts keeps the supervisor's accounts and which environments
-// each may use, in accounts.json. Grants key on environment names.
+// each may use at which level, in accounts.json. Grants key on environment
+// names.
 package accounts
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
-	"maps"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -19,29 +21,128 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 )
 
-type Account struct {
-	Username     string `json:"username"`
-	PasswordHash string `json:"passwordHash"`
-	Admin        bool   `json:"admin"`
-	SessionEpoch int    `json:"sessionEpoch"`
-	TokenEpoch   uint64 `json:"tokenEpoch,omitempty"`
-	// EnvironmentTokenEpochs counts, per environment name, the times this
-	// account lost access to it; agent tokens record the count they were made at.
-	EnvironmentTokenEpochs map[string]uint64 `json:"environmentTokenEpochs,omitempty"`
-	Environments           []string          `json:"environments"` // environment names
-	Created                time.Time         `json:"created"`
-	LastLogin              time.Time         `json:"lastLogin,omitzero"`
+// Grant lets an account use an environment at a level.
+type Grant struct {
+	Environment string     `json:"environment"`
+	Level       auth.Level `json:"level"`
 }
 
-// HasAccess reports whether the account may use the named environment.
-func (a Account) HasAccess(name string) bool {
-	return a.Admin || slices.Contains(a.Environments, name)
+// Sharer is the account that created a share, by ID so a recreated
+// account of the same name isn't its sharer.
+type Sharer struct {
+	Username string `json:"username"`
+	ID       string `json:"id"`
+}
+
+// Account is a password account, or, without a password, a token account
+// that signs in through login links and client credentials. A share is a
+// token account with SharedBy set.
+type Account struct {
+	// ID is random and immutable: cookies, links and credentials bind to it,
+	// so a reused username never matches them.
+	ID           string     `json:"id"`
+	Username     string     `json:"username"`
+	PasswordHash string     `json:"passwordHash,omitempty"`
+	Description  string     `json:"description,omitempty"`
+	Admin        bool       `json:"admin"`
+	SessionEpoch int        `json:"sessionEpoch"`
+	Grants       []Grant    `json:"grants"`
+	SharedBy     *Sharer    `json:"sharedBy,omitempty"`
+	Expires      *time.Time `json:"expires,omitempty"`
+	Created      time.Time  `json:"created"`
+	LastLogin    time.Time  `json:"lastLogin,omitzero"`
+}
+
+// Level is how far the account may use the named environment; admins have
+// full access to every environment.
+func (a Account) Level(name string) auth.Level {
+	if a.Admin {
+		return auth.LevelFull
+	}
+	return grantLevel(a.Grants, name)
+}
+
+// HasAccess reports whether the account has full use of the named environment.
+func (a Account) HasAccess(name string) bool { return a.Level(name) == auth.LevelFull }
+
+func (a Account) IsShare() bool     { return a.SharedBy != nil }
+func (a Account) HasPassword() bool { return a.PasswordHash != "" }
+
+// Expired reports whether the account's time limit has passed by now; an
+// expired account is treated as deleted.
+func (a Account) Expired(now time.Time) bool { return a.Expires != nil && now.After(*a.Expires) }
+
+// GrantNames lists the environments the account has a grant of, at any level.
+func (a Account) GrantNames() []string {
+	out := make([]string, len(a.Grants))
+	for i, g := range a.Grants {
+		out[i] = g.Environment
+	}
+	return out
+}
+
+func grantLevel(grants []Grant, name string) auth.Level {
+	for _, g := range grants {
+		if g.Environment == name {
+			return g.Level
+		}
+	}
+	return auth.LevelNone
+}
+
+// withLevel is grants with the named environment at level; LevelNone drops it.
+func withLevel(grants []Grant, name string, level auth.Level) []Grant {
+	out := slices.DeleteFunc(slices.Clone(grants), func(g Grant) bool { return g.Environment == name })
+	if level != auth.LevelNone {
+		out = append(out, Grant{Environment: name, Level: level})
+	}
+	return out
+}
+
+func rank(l auth.Level) int {
+	switch l {
+	case auth.LevelFull:
+		return 2
+	case auth.LevelObserve:
+		return 1
+	}
+	return 0
+}
+
+// lowered reports whether after grants less than before on any environment.
+func lowered(before, after []Grant) bool {
+	for _, g := range before {
+		if rank(grantLevel(after, g.Environment)) < rank(g.Level) {
+			return true
+		}
+	}
+	return false
+}
+
+func validGrants(grants []Grant) error {
+	seen := map[string]bool{}
+	for _, g := range grants {
+		if !auth.ValidLevel(g.Level) {
+			return fmt.Errorf("%q is not an access level: use full or observe", g.Level)
+		}
+		if g.Environment == "" || seen[g.Environment] {
+			return fmt.Errorf("a grant needs one environment, once: %q", g.Environment)
+		}
+		seen[g.Environment] = true
+	}
+	return nil
+}
+
+func randomID() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 var (
 	ErrNotFound  = errors.New("no such account")
 	ErrExists    = errors.New("an account with that name already exists")
-	ErrLastAdmin = errors.New("the last admin can't be deleted or made a regular account")
+	ErrLastAdmin = errors.New("the last admin with a password can't be deleted, made a regular account or lose the password")
 	usernameRE   = regexp.MustCompile(`^[a-z][a-z0-9._-]{0,31}$`)
 )
 
@@ -54,6 +155,13 @@ func ValidUsername(u string) error {
 
 type file struct {
 	Accounts []Account `json:"accounts"`
+}
+
+// loaded is an account as stored, including the environments list grants
+// replaced.
+type loaded struct {
+	Account
+	Environments []string `json:"environments"`
 }
 
 // Store is safe for concurrent use; every change is written to disk at once.
@@ -72,11 +180,39 @@ func Load(dataDir string) (*Store, error) {
 	if err := store.Restrict(s.path); err != nil {
 		return nil, err
 	}
-	var f file
+	var f struct {
+		Accounts []loaded `json:"accounts"`
+	}
 	if err := store.ReadJSON(s.path, &f); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
-	s.list = f.Accounts
+	// Accounts without an ID get one, and an environments list becomes full
+	// grants; the file is rewritten so they keep them.
+	changed := false
+	for _, l := range f.Accounts {
+		a := l.Account
+		if a.ID == "" {
+			a.ID = randomID()
+			changed = true
+		}
+		if l.Environments != nil {
+			for _, name := range l.Environments {
+				if grantLevel(a.Grants, name) == auth.LevelNone {
+					a.Grants = append(a.Grants, Grant{Environment: name, Level: auth.LevelFull})
+				}
+			}
+			changed = true
+		}
+		if a.Grants == nil {
+			a.Grants = []Grant{}
+		}
+		s.list = append(s.list, a)
+	}
+	if changed {
+		if err := s.publish(s.list); err != nil {
+			return nil, err
+		}
+	}
 	return s, nil
 }
 
@@ -117,7 +253,8 @@ func (s *Store) EnsureAdmin(username, password string) (generated string, err er
 		password = auth.RandomPassword()
 		generated = password
 	}
-	next := []Account{{Username: username, PasswordHash: auth.HashPassword(password), Admin: true, Created: time.Now().UTC()}}
+	next := []Account{{ID: randomID(), Username: username, PasswordHash: auth.HashPassword(password), Admin: true,
+		Grants: []Grant{}, Created: time.Now().UTC()}}
 	if err := s.publish(next); err != nil {
 		return "", err
 	}
@@ -145,28 +282,16 @@ func (s *Store) Get(username string) (Account, bool) {
 }
 
 func clone(a Account) Account {
-	a.Environments = slices.Clone(a.Environments)
-	a.EnvironmentTokenEpochs = maps.Clone(a.EnvironmentTokenEpochs)
+	a.Grants = slices.Clone(a.Grants)
+	if a.SharedBy != nil {
+		sharer := *a.SharedBy
+		a.SharedBy = &sharer
+	}
+	if a.Expires != nil {
+		expires := *a.Expires
+		a.Expires = &expires
+	}
 	return a
-}
-
-// retainTokenRevocations makes authorization loss survive later grants and
-// username reuse. A role change invalidates tokens account-wide; access changes
-// only advance the affected environment's revision.
-func retainTokenRevocations(before Account, after *Account) {
-	after.TokenEpoch = before.TokenEpoch
-	after.EnvironmentTokenEpochs = maps.Clone(before.EnvironmentTokenEpochs)
-	if before.Admin != after.Admin {
-		after.TokenEpoch++
-	}
-	for _, name := range before.Environments {
-		if !after.HasAccess(name) {
-			if after.EnvironmentTokenEpochs == nil {
-				after.EnvironmentTokenEpochs = map[string]uint64{}
-			}
-			after.EnvironmentTokenEpochs[name] = before.EnvironmentTokenEpochs[name] + 1
-		}
-	}
 }
 
 func (s *Store) List() []Account {
@@ -180,33 +305,54 @@ func (s *Store) List() []Account {
 	return out
 }
 
-func (s *Store) admins() int {
+// passwordAdmin is an admin that can sign in with a password; the
+// last-admin guard keeps one, so the instance always has a password login.
+func passwordAdmin(a Account) bool { return a.Admin && a.HasPassword() }
+
+func (s *Store) passwordAdmins() int {
 	n := 0
 	for _, a := range s.list {
-		if a.Admin {
+		if passwordAdmin(a) {
 			n++
 		}
 	}
 	return n
 }
 
-func (s *Store) Create(username, password string, admin bool, environments []string) (Account, error) {
+// NewAccount describes an account to create; without a password it is a
+// token account.
+type NewAccount struct {
+	Username, Password, Description string
+	Admin                           bool
+	Grants                          []Grant
+	SharedBy                        *Sharer
+	Expires                         *time.Time
+}
+
+func (s *Store) Create(n NewAccount) (Account, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	username = strings.ToLower(username)
+	username := strings.ToLower(n.Username)
 	if err := ValidUsername(username); err != nil {
 		return Account{}, err
 	}
 	if s.index(username) >= 0 {
 		return Account{}, ErrExists
 	}
-	if password == "" {
-		return Account{}, errors.New("a password is required")
+	if err := validGrants(n.Grants); err != nil {
+		return Account{}, err
 	}
-	a := Account{Username: username, PasswordHash: auth.HashPassword(password), Admin: admin,
-		Environments: slices.Clone(environments), Created: time.Now().UTC()}
-	if a.Environments == nil {
-		a.Environments = []string{}
+	a := Account{ID: randomID(), Username: username, Description: n.Description, Admin: n.Admin,
+		Grants: slices.Clone(n.Grants), Expires: n.Expires, Created: time.Now().UTC()}
+	if n.Password != "" {
+		a.PasswordHash = auth.HashPassword(n.Password)
+	}
+	if a.Grants == nil {
+		a.Grants = []Grant{}
+	}
+	if n.SharedBy != nil {
+		sharer := *n.SharedBy
+		a.SharedBy = &sharer
 	}
 	if err := s.publish(append(s.next(), a)); err != nil {
 		return Account{}, err
@@ -215,7 +361,8 @@ func (s *Store) Create(username, password string, admin bool, environments []str
 }
 
 // Update applies fn to the account; it bumps the session epoch when the
-// password or admin flag changes, and refuses to leave no admin.
+// password or admin flag changes or a grant is lowered, and refuses to
+// leave no admin with a password. The ID and username don't change.
 func (s *Store) Update(username string, fn func(a *Account)) (Account, error) {
 	s.mu.Lock()
 	i := s.index(username)
@@ -226,15 +373,21 @@ func (s *Store) Update(username string, fn func(a *Account)) (Account, error) {
 	before := s.list[i]
 	a := clone(before)
 	fn(&a)
-	a.Username = before.Username
-	if before.Admin && !a.Admin && s.admins() == 1 {
+	a.ID, a.Username = before.ID, before.Username
+	if a.Grants == nil {
+		a.Grants = []Grant{}
+	}
+	if err := validGrants(a.Grants); err != nil {
+		s.mu.Unlock()
+		return Account{}, err
+	}
+	if passwordAdmin(before) && !passwordAdmin(a) && s.passwordAdmins() == 1 {
 		s.mu.Unlock()
 		return Account{}, ErrLastAdmin
 	}
-	if a.PasswordHash != before.PasswordHash || a.Admin != before.Admin {
+	if a.PasswordHash != before.PasswordHash || a.Admin != before.Admin || lowered(before.Grants, a.Grants) {
 		a.SessionEpoch = before.SessionEpoch + 1
 	}
-	retainTokenRevocations(before, &a)
 	next := s.next()
 	next[i] = a
 	err := s.publish(next)
@@ -246,6 +399,11 @@ func (s *Store) Update(username string, fn func(a *Account)) (Account, error) {
 	return clone(a), nil
 }
 
+// BumpSessionEpoch ends every browser session of the account.
+func (s *Store) BumpSessionEpoch(username string) (Account, error) {
+	return s.Update(username, func(a *Account) { a.SessionEpoch++ })
+}
+
 func (s *Store) SetPassword(username, password string) error {
 	if password == "" {
 		return errors.New("a password is required")
@@ -255,23 +413,50 @@ func (s *Store) SetPassword(username, password string) error {
 }
 
 func (s *Store) Delete(username string) error {
-	s.mu.Lock()
-	i := s.index(username)
-	if i < 0 {
-		s.mu.Unlock()
+	username = strings.ToLower(username)
+	gone, err := s.DeleteWhere(func(a Account) bool { return a.Username == username })
+	if err == nil && len(gone) == 0 {
 		return ErrNotFound
 	}
-	if s.list[i].Admin && s.admins() == 1 {
-		s.mu.Unlock()
-		return ErrLastAdmin
-	}
-	name := s.list[i].Username
-	err := s.publish(slices.Delete(s.next(), i, i+1))
-	s.mu.Unlock()
-	if err == nil {
-		s.notify(name)
-	}
 	return err
+}
+
+// DeleteWhere deletes every account fn accepts in one write and returns
+// their usernames. It refuses to delete the last admin with a password;
+// token accounts never count for that.
+func (s *Store) DeleteWhere(fn func(Account) bool) ([]string, error) {
+	s.mu.Lock()
+	var gone []string
+	var keep []Account
+	removed := 0
+	for _, a := range s.next() {
+		if fn(clone(a)) {
+			gone = append(gone, a.Username)
+			if passwordAdmin(a) {
+				removed++
+			}
+		} else {
+			keep = append(keep, a)
+		}
+	}
+	if len(gone) == 0 {
+		s.mu.Unlock()
+		return nil, nil
+	}
+	if removed > 0 && removed == s.passwordAdmins() {
+		s.mu.Unlock()
+		return nil, ErrLastAdmin
+	}
+	if keep == nil {
+		keep = []Account{}
+	}
+	err := s.publish(keep)
+	s.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	s.notify(gone...)
+	return gone, nil
 }
 
 func (s *Store) TouchLogin(username string) error {
@@ -286,24 +471,24 @@ func (s *Store) TouchLogin(username string) error {
 }
 
 // SetAccess makes exactly the given accounts (besides admins) able to use
-// the named environment.
-func (s *Store) SetAccess(name string, usernames []string) error {
+// the named environment, each at its level; every other account loses its
+// grant of it.
+func (s *Store) SetAccess(name string, levels map[string]auth.Level) error {
+	for u, l := range levels {
+		if !auth.ValidLevel(l) {
+			return fmt.Errorf("%q is not an access level for %s: use full or observe", l, u)
+		}
+	}
 	s.mu.Lock()
 	var changed []string
 	next := s.next()
 	for i := range next {
 		a := &next[i]
-		want := slices.Contains(usernames, a.Username)
-		has := slices.Contains(a.Environments, name)
-		switch {
-		case want && !has:
-			a.Environments = append(a.Environments, name)
-			changed = append(changed, a.Username)
-		case !want && has:
-			a.Environments = slices.DeleteFunc(a.Environments, func(n string) bool { return n == name })
+		want := levels[a.Username]
+		if grantLevel(a.Grants, name) != want {
+			a.Grants = withLevel(a.Grants, name, want)
 			changed = append(changed, a.Username)
 		}
-		retainTokenRevocations(s.list[i], a)
 	}
 	err := s.publish(next)
 	s.mu.Unlock()
@@ -313,12 +498,13 @@ func (s *Store) SetAccess(name string, usernames []string) error {
 	return err
 }
 
-// WithAccess lists the regular accounts that may use the named environment.
-func (s *Store) WithAccess(name string) []string {
-	var out []string
+// WithAccess maps the regular accounts with a grant of the named environment
+// to their level.
+func (s *Store) WithAccess(name string) map[string]auth.Level {
+	out := map[string]auth.Level{}
 	for _, a := range s.List() {
-		if !a.Admin && slices.Contains(a.Environments, name) {
-			out = append(out, a.Username)
+		if l := grantLevel(a.Grants, name); !a.Admin && l != auth.LevelNone {
+			out[a.Username] = l
 		}
 	}
 	return out
@@ -337,11 +523,10 @@ func (s *Store) Retain(keep func(name string) bool) error {
 	defer s.mu.Unlock()
 	next, changed := s.next(), false
 	for i := range next {
-		n := len(next[i].Environments)
-		next[i].Environments = slices.DeleteFunc(next[i].Environments, func(name string) bool { return !keep(name) })
-		if len(next[i].Environments) != n {
+		n := len(next[i].Grants)
+		next[i].Grants = slices.DeleteFunc(next[i].Grants, func(g Grant) bool { return !keep(g.Environment) })
+		if len(next[i].Grants) != n {
 			changed = true
-			retainTokenRevocations(s.list[i], &next[i])
 		}
 	}
 	if !changed {

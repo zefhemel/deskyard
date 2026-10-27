@@ -5,18 +5,31 @@ package auth
 type Action int
 
 const (
-	View           Action = iota // see and open an environment, its processes and activity
+	View           Action = iota // use an environment fully: its desktop, terminal, processes and activity
 	Power                        // start, stop, restart
 	Manage                       // create, remove, change settings, upgrade
 	ManageAccounts               // accounts, access, image catalog
-	CreateToken                  // create agent tokens, revoke own
-	RevokeAnyToken
+	Share                        // share an environment with a new token account
+	Observe                      // watch an environment's desktop, nothing else
 )
+
+// Level is how far a grant lets an account use an environment.
+type Level string
+
+const (
+	LevelNone    Level = ""
+	LevelObserve Level = "observe"
+	LevelFull    Level = "full"
+)
+
+// ValidLevel reports whether l is a level a grant can carry.
+func ValidLevel(l Level) bool { return l == LevelObserve || l == LevelFull }
 
 // Subject is what Can needs to know about an account.
 type Subject interface {
 	IsAdmin() bool
-	HasAccess(name string) bool
+	Level(name string) Level
+	IsShare() bool
 }
 
 // Can decides action on the named environment ("" for none).
@@ -24,9 +37,17 @@ func Can(a Subject, action Action, name string) bool {
 	if a.IsAdmin() {
 		return true
 	}
+	if name == "" {
+		return false
+	}
 	switch action {
-	case View, Power, CreateToken:
-		return name != "" && a.HasAccess(name)
+	case Observe:
+		return a.Level(name) != LevelNone
+	case View, Power:
+		return a.Level(name) == LevelFull
+	case Share:
+		// Shares can't share.
+		return a.Level(name) == LevelFull && !a.IsShare()
 	default:
 		return false
 	}

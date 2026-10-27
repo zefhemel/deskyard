@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 )
@@ -40,10 +41,10 @@ func TestFirstAdminAndLastAdminRules(t *testing.T) {
 func TestPasswordChangeBumpsEpochAndAccess(t *testing.T) {
 	s, _ := Load(t.TempDir())
 	_, _ = s.EnsureAdmin("admin", "x")
-	if _, err := s.Create("anna", "pw", false, nil); err != nil {
+	if _, err := s.Create(NewAccount{Username: "anna", Password: "pw"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Create("Anna", "pw", false, nil); !errors.Is(err, ErrExists) {
+	if _, err := s.Create(NewAccount{Username: "Anna", Password: "pw"}); !errors.Is(err, ErrExists) {
 		t.Fatal("case-insensitive duplicate allowed")
 	}
 	var notified []string
@@ -52,11 +53,11 @@ func TestPasswordChangeBumpsEpochAndAccess(t *testing.T) {
 	if a, _ := s.Get("anna"); a.SessionEpoch != 1 {
 		t.Fatal("epoch not bumped")
 	}
-	_ = s.SetAccess("c1", []string{"anna"})
+	_ = s.SetAccess("c1", map[string]auth.Level{"anna": auth.LevelFull})
 	if a, _ := s.Get("anna"); !a.HasAccess("c1") || a.HasAccess("c2") {
 		t.Fatal("access")
 	}
-	if got := s.WithAccess("c1"); len(got) != 1 || got[0] != "anna" {
+	if got := s.WithAccess("c1"); len(got) != 1 || got["anna"] != auth.LevelFull {
 		t.Fatal(got)
 	}
 	_ = s.Forget("c1")
@@ -72,7 +73,7 @@ func TestRetainDropsGrantsOfUndefinedEnvironments(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := Load(dir)
 	_, _ = s.EnsureAdmin("admin", "x")
-	if _, err := s.Create("anna", "pw", false, []string{"alice", "gone"}); err != nil {
+	if _, err := s.Create(NewAccount{Username: "anna", Password: "pw", Grants: []Grant{{Environment: "alice", Level: auth.LevelFull}, {Environment: "gone", Level: auth.LevelObserve}}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Retain(func(name string) bool { return name == "alice" }); err != nil {
@@ -81,13 +82,10 @@ func TestRetainDropsGrantsOfUndefinedEnvironments(t *testing.T) {
 	reloaded, _ := Load(dir)
 	a, _ := reloaded.Get("anna")
 	if !a.HasAccess("alice") || a.HasAccess("gone") {
-		t.Fatalf("grants after retain: %v", a.Environments)
+		t.Fatalf("grants after retain: %v", a.Grants)
 	}
-	if a.EnvironmentTokenEpochs["gone"] != 1 {
-		t.Fatalf("dropped grant kept its token revision: %v", a.EnvironmentTokenEpochs)
-	}
-	if !strings.Contains(readFile(t, dir), `"environments"`) {
-		t.Fatal("grants not stored under environments")
+	if !strings.Contains(readFile(t, dir), `"grants"`) {
+		t.Fatal("grants not stored under grants")
 	}
 }
 
@@ -98,4 +96,158 @@ func readFile(t *testing.T, dir string) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+func TestLegacyEnvironmentsBecomeFullGrants(t *testing.T) {
+	dir := t.TempDir()
+	legacy := `{"accounts":[{"username":"bob","passwordHash":"x","environments":["alice"],"tokenEpoch":2}]}`
+	if err := os.WriteFile(filepath.Join(dir, "accounts.json"), []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := s.Get("bob")
+	if a.Level("alice") != auth.LevelFull || a.ID == "" {
+		t.Fatalf("legacy account: %+v", a)
+	}
+	disk := readFile(t, dir)
+	if !strings.Contains(disk, `"grants"`) || strings.Contains(disk, `"environments"`) || strings.Contains(disk, "tokenEpoch") {
+		t.Fatalf("not rewritten with grants: %s", disk)
+	}
+	reloaded, _ := Load(dir)
+	if b, _ := reloaded.Get("bob"); b.ID != a.ID || b.Level("alice") != auth.LevelFull {
+		t.Fatalf("reload changed the account: %+v", b)
+	}
+}
+
+func TestTokenAccountHasNoPassword(t *testing.T) {
+	s, _ := Load(t.TempDir())
+	a, err := s.Create(NewAccount{Username: "sanne", Grants: []Grant{{Environment: "alice", Level: auth.LevelObserve}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.HasPassword() || a.PasswordHash != "" || a.ID == "" || a.Level("alice") != auth.LevelObserve || a.HasAccess("alice") {
+		t.Fatalf("token account: %+v", a)
+	}
+	if _, err := s.Create(NewAccount{Username: "piet", Grants: []Grant{{Environment: "alice", Level: "admin"}}}); err == nil {
+		t.Fatal("invalid level accepted")
+	}
+}
+
+func TestLastPasswordAdminGuard(t *testing.T) {
+	s, _ := Load(t.TempDir())
+	_, _ = s.EnsureAdmin("admin", "x")
+	if _, err := s.Create(NewAccount{Username: "robot", Admin: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete("admin"); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := s.Update("admin", func(a *Account) { a.Admin = false }); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("demote: %v", err)
+	}
+	if _, err := s.Update("admin", func(a *Account) { a.PasswordHash = "" }); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("drop password: %v", err)
+	}
+	if _, err := s.DeleteWhere(func(a Account) bool { return a.Admin }); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("delete where: %v", err)
+	}
+	gone, err := s.DeleteWhere(func(a Account) bool { return !a.HasPassword() })
+	if err != nil || len(gone) != 1 || gone[0] != "robot" {
+		t.Fatalf("delete token admin: %v %v", gone, err)
+	}
+}
+
+func TestSetAccessLevels(t *testing.T) {
+	s, _ := Load(t.TempDir())
+	_, _ = s.EnsureAdmin("admin", "x")
+	if _, err := s.Create(NewAccount{Username: "bob", Password: "pw"}); err != nil {
+		t.Fatal(err)
+	}
+	var notified []string
+	s.OnChange = func(n ...string) { notified = append(notified, n...) }
+	if err := s.SetAccess("alice", map[string]auth.Level{"bob": auth.LevelObserve}); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := s.Get("bob"); a.Level("alice") != auth.LevelObserve || a.HasAccess("alice") {
+		t.Fatalf("observe: %+v", a)
+	}
+	if got := s.WithAccess("alice"); len(got) != 1 || got["bob"] != auth.LevelObserve {
+		t.Fatalf("with access: %v", got)
+	}
+	if err := s.SetAccess("alice", map[string]auth.Level{"bob": auth.LevelFull}); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := s.Get("bob"); !a.HasAccess("alice") || len(a.Grants) != 1 {
+		t.Fatalf("full: %+v", a)
+	}
+	if err := s.SetAccess("alice", map[string]auth.Level{}); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := s.Get("bob"); a.Level("alice") != auth.LevelNone || len(a.Grants) != 0 {
+		t.Fatalf("none: %+v", a)
+	}
+	if len(notified) != 3 {
+		t.Fatalf("notified %v", notified)
+	}
+	if err := s.SetAccess("alice", map[string]auth.Level{"bob": "write"}); err == nil {
+		t.Fatal("invalid level accepted")
+	}
+}
+
+func TestLoweredGrantBumpsSessionEpoch(t *testing.T) {
+	s, _ := Load(t.TempDir())
+	_, _ = s.Create(NewAccount{Username: "bob", Password: "pw", Grants: []Grant{{Environment: "alice", Level: auth.LevelFull}}})
+	a, _ := s.Update("bob", func(a *Account) { a.Grants = append(a.Grants, Grant{Environment: "carol", Level: auth.LevelObserve}) })
+	if a.SessionEpoch != 0 {
+		t.Fatal("added grant bumped the epoch")
+	}
+	a, _ = s.Update("bob", func(a *Account) { a.Grants[0].Level = auth.LevelObserve })
+	if a.SessionEpoch != 1 {
+		t.Fatal("downgrade kept the epoch")
+	}
+	a, _ = s.Update("bob", func(a *Account) { a.Grants = a.Grants[:1] })
+	if a.SessionEpoch != 2 {
+		t.Fatal("removed grant kept the epoch")
+	}
+	if a, _ = s.BumpSessionEpoch("bob"); a.SessionEpoch != 3 {
+		t.Fatal("bump")
+	}
+}
+
+func TestRecreatedUsernameGetsNewID(t *testing.T) {
+	s, _ := Load(t.TempDir())
+	_, _ = s.EnsureAdmin("admin", "x")
+	first, _ := s.Create(NewAccount{Username: "bob", Password: "pw"})
+	if _, err := s.Update("bob", func(a *Account) { a.ID = "forged" }); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := s.Get("bob"); a.ID != first.ID {
+		t.Fatal("update changed the ID")
+	}
+	if err := s.Delete("bob"); err != nil {
+		t.Fatal(err)
+	}
+	second, _ := s.Create(NewAccount{Username: "bob", Password: "pw"})
+	if second.ID == "" || second.ID == first.ID {
+		t.Fatalf("IDs %q %q", first.ID, second.ID)
+	}
+	if admin, _ := s.Get("admin"); admin.ID == "" {
+		t.Fatal("first admin has no ID")
+	}
+}
+
+func TestShareAndExpiry(t *testing.T) {
+	s, _ := Load(t.TempDir())
+	past := time.Now().Add(-time.Minute)
+	a, _ := s.Create(NewAccount{Username: "sanne", SharedBy: &Sharer{Username: "zef", ID: "z1"}, Expires: &past,
+		Grants: []Grant{{Environment: "alice", Level: auth.LevelFull}}})
+	if !a.IsShare() || !a.Expired(time.Now()) || a.Expired(past.Add(-time.Second)) {
+		t.Fatalf("share: %+v", a)
+	}
+	if names := a.GrantNames(); len(names) != 1 || names[0] != "alice" {
+		t.Fatal(names)
+	}
 }

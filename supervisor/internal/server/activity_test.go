@@ -216,7 +216,7 @@ func TestActivityRoutes(t *testing.T) {
 
 func TestScreenEventsStream(t *testing.T) {
 	s, ts := newTestServer(t)
-	_ = s.Accounts.SetAccess("alice", []string{"anna"})
+	_ = s.Accounts.SetAccess("alice", fullAccess("anna"))
 	anna := login(t, ts, "anna")
 	resp, err := anna.Get(ts.URL + "/api/environments/alice/screen-events")
 	if err != nil || resp.StatusCode != 200 {

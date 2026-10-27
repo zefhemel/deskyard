@@ -429,7 +429,7 @@ func TestTerminalAccessRevocationAndShutdown(t *testing.T) {
 		t.Run(how, func(t *testing.T) {
 			e := newTerminalEngine()
 			s, ts := newTestServerWith(t, e)
-			s.Accounts.SetAccess("alice", []string{"anna"})
+			s.Accounts.SetAccess("alice", fullAccess("anna"))
 			ws := terminalDial(t, ts, login(t, ts, "anna"))
 			terminalReady(t, ws)
 			if how == "revoke" {

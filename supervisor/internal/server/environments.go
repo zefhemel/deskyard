@@ -3,7 +3,9 @@ package server
 import (
 	"context"
 	"errors"
+	"maps"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -102,7 +104,7 @@ func (s *Server) environmentJSON(ctx context.Context, c environments.Environment
 		}
 	}
 	if a.Admin && c.Revision != 0 { // defined, not still being created
-		j.Access = s.Accounts.WithAccess(c.Name)
+		j.Access = slices.Sorted(maps.Keys(s.Accounts.WithAccess(c.Name)))
 		if j.Access == nil {
 			j.Access = []string{}
 		}
@@ -297,12 +299,12 @@ func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request)
 			// in time, or a VPN creation kept for recovery) can still come
 			// up: it gets its requested access.
 			if _, ok := s.Environments.Defs.Get(req.Name); ok {
-				return errors.Join(err, s.Accounts.SetAccess(req.Name, req.Access))
+				return errors.Join(err, s.Accounts.SetAccess(req.Name, s.accessLevels(req.Name, req.Access)))
 			}
 			return err
 		}
 		s.Log.Info("created", "environment", req.Name, "by", a.Username)
-		return s.Accounts.SetAccess(req.Name, req.Access)
+		return s.Accounts.SetAccess(req.Name, s.accessLevels(req.Name, req.Access))
 	})
 	// After the job starts, so the event carries its id.
 	s.publishEnvironment(context.Background(), req.Name)
@@ -505,7 +507,7 @@ func (s *Server) handleSetAccess(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := s.Accounts.SetAccess(c.Name, req.Usernames); err != nil {
+	if err := s.Accounts.SetAccess(c.Name, s.accessLevels(c.Name, req.Usernames)); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

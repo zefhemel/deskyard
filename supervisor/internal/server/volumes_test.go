@@ -259,7 +259,7 @@ func TestPatchVolumesUnknown400(t *testing.T) {
 	s, ts, send := newVolumeServer(t)
 	admin := login(t, ts, "admin")
 	anna := login(t, ts, "anna")
-	if err := s.Accounts.SetAccess("alice", []string{"anna"}); err != nil {
+	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
 		t.Fatal(err)
 	}
 	code, b := send(admin, "PATCH", "/api/environments/alice", `{"volumes":[{"name":"ghost"}]}`)

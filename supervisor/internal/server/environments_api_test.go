@@ -125,7 +125,7 @@ func TestEnvironmentListReportsConflictsToAdmins(t *testing.T) {
 func TestJobAndAccountJSONUseEnvironmentNames(t *testing.T) {
 	s, ts := newTestServer(t)
 	admin := login(t, ts, "admin")
-	if err := s.Accounts.SetAccess("alice", []string{"anna"}); err != nil {
+	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
 		t.Fatal(err)
 	}
 	var accts []map[string]any
@@ -147,8 +147,8 @@ func TestJobAndAccountJSONUseEnvironmentNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	res.Body.Close()
-	if a, _ := s.Accounts.Get("anna"); res.StatusCode != 200 || len(a.Environments) != 0 {
-		t.Fatalf("%d %+v", res.StatusCode, a.Environments)
+	if a, _ := s.Accounts.Get("anna"); res.StatusCode != 200 || len(a.Grants) != 0 {
+		t.Fatalf("%d %+v", res.StatusCode, a.Grants)
 	}
 	id := s.jobs.start("admin", "alice", func(context.Context, func(string, float64)) error { return nil })
 	if got := s.jobs.get(id); got == nil || got.get().Environment != "alice" {
@@ -168,7 +168,7 @@ func TestEventsSendConflictsToAdmins(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Environments.ReconcileOnce(context.Background())
-	if err := s.Accounts.SetAccess("alice", []string{"anna"}); err != nil {
+	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
 		t.Fatal(err)
 	}
 	snapshot := func(user string) map[string]string {

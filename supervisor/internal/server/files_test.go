@@ -203,8 +203,8 @@ func newFilesServer(t *testing.T) (*Server, *httptest.Server, string) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	accts, _ := accounts.Load(dir)
 	_, _ = accts.EnsureAdmin("admin", "pw")
-	_, _ = accts.Create("anna", "pw", false, nil)
-	_, _ = accts.Create("ben", "pw", false, nil)
+	_, _ = accts.Create(accounts.NewAccount{Username: "anna", Password: "pw"})
+	_, _ = accts.Create(accounts.NewAccount{Username: "ben", Password: "pw"})
 	e := &filesEngine{root: root}
 	s, err := New(Options{Log: log, Eng: e, Accounts: accts, Layout: config.NewLayout(dir), DefaultImage: "img",
 		Environments: environments.New(e, environments.Config{DataDir: dir, Subnet: "10.0.0.0/16"}, log),
@@ -214,7 +214,7 @@ func newFilesServer(t *testing.T) (*Server, *httptest.Server, string) {
 	}
 	defineEnvironments(t, s)
 	// Granted once alice is defined: startup drops grants of undefined names.
-	if err := accts.SetAccess("alice", []string{"ben"}); err != nil {
+	if err := accts.SetAccess("alice", fullAccess("ben")); err != nil {
 		t.Fatal(err)
 	}
 	ts := httptest.NewServer(s)

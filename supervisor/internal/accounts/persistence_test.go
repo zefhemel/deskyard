@@ -5,10 +5,12 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 )
 
 func TestFailedMutationKeepsPublishedAccounts(t *testing.T) {
-	for _, op := range []string{"ensure", "create", "update", "delete", "access", "forget", "login"} {
+	for _, op := range []string{"ensure", "create", "update", "delete", "deleteWhere", "bump", "access", "forget", "login"} {
 		t.Run(op, func(t *testing.T) {
 			dir := t.TempDir()
 			s, err := Load(dir)
@@ -19,7 +21,7 @@ func TestFailedMutationKeepsPublishedAccounts(t *testing.T) {
 				if _, err := s.EnsureAdmin("admin", "password"); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := s.Create("anna", "password", false, []string{"old"}); err != nil {
+				if _, err := s.Create(NewAccount{Username: "anna", Password: "password", Grants: []Grant{{Environment: "old", Level: auth.LevelFull}}}); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -37,13 +39,17 @@ func TestFailedMutationKeepsPublishedAccounts(t *testing.T) {
 			case "ensure":
 				_, err = s.EnsureAdmin("admin", "password")
 			case "create":
-				_, err = s.Create("bob", "password", false, nil)
+				_, err = s.Create(NewAccount{Username: "bob", Password: "password"})
 			case "update":
-				_, err = s.Update("anna", func(a *Account) { a.Admin = true; a.Environments[0] = "changed" })
+				_, err = s.Update("anna", func(a *Account) { a.Admin = true; a.Grants[0].Environment = "changed" })
 			case "delete":
 				err = s.Delete("anna")
+			case "deleteWhere":
+				_, err = s.DeleteWhere(func(a Account) bool { return a.Username == "anna" })
+			case "bump":
+				_, err = s.BumpSessionEpoch("anna")
 			case "access":
-				err = s.SetAccess("new", []string{"anna"})
+				err = s.SetAccess("new", map[string]auth.Level{"anna": auth.LevelObserve})
 			case "forget":
 				err = s.Forget("old")
 			case "login":

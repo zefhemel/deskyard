@@ -12,7 +12,7 @@ func TestMemoryPolicyAPI(t *testing.T) {
 	s, ts := newTestServerWith(t, e)
 	admin := login(t, ts, "admin")
 	anna := login(t, ts, "anna")
-	if err := s.Accounts.SetAccess("bob", []string{"anna"}); err != nil {
+	if err := s.Accounts.SetAccess("bob", fullAccess("anna")); err != nil {
 		t.Fatal(err)
 	}
 	put := func(client *http.Client, body, origin string) int {
