@@ -547,7 +547,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     return json(res, 204);
   }
   if (path === "/api/accounts" && method === "GET") {
-    return json(res, 200, m.admin ? accounts.map(accountJSON).sort((x, y) => x.username.localeCompare(y.username)) : accounts.map((a) => ({ username: a.username })));
+    return json(res, 200, m.admin ? accounts.map(accountJSON).sort((x, y) => x.username.localeCompare(y.username)) : accounts.filter((a) => a === m || (!m.sharedBy && (!a.sharedBy || a.sharedBy.id === m.id))).map((a) => ({ username: a.username })));
   }
   if (path.startsWith("/api/accounts") && !m.admin) return json(res, 403, { error: "admins only" });
   if (path === "/api/accounts" && method === "POST") {

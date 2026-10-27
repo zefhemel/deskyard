@@ -254,3 +254,36 @@ func TestMeShowsKind(t *testing.T) {
 		t.Fatalf("me: %s", body)
 	}
 }
+
+// A non-admin lists the usernames of the invited accounts and of its own
+// shares; a share, an outsider, lists only itself.
+func TestAccountListForNonAdmins(t *testing.T) {
+	s, ts := newTestServer(t)
+	bob := createBob(t, s)
+	if err := s.Accounts.SetAccess("alice", fullAccess("bob")); err != nil {
+		t.Fatal(err)
+	}
+	createShare(t, s, bob, "sanne", auth.LevelObserve)
+	guest, _ := createShare(t, s, bob, "secretguest", auth.LevelObserve)
+	_, bearer := issueCredential(t, s, guest)
+	names := func(body string) string {
+		var list []struct{ Username string }
+		if err := json.Unmarshal([]byte(body), &list); err != nil {
+			t.Fatalf("%s: %v", body, err)
+		}
+		var out []string
+		for _, a := range list {
+			out = append(out, a.Username)
+		}
+		return strings.Join(out, ",")
+	}
+	for _, tc := range []struct{ who, want string }{{"anna", "admin,anna,bob"}, {"bob", "admin,anna,bob,sanne,secretguest"}} {
+		code, body := send(t, login(t, ts, tc.who), "GET", ts.URL+"/api/accounts", "", "")
+		if code != 200 || names(body) != tc.want {
+			t.Errorf("%s lists %d %s, want %s", tc.who, code, body, tc.want)
+		}
+	}
+	if code, body := sendBearer(t, "GET", ts.URL+"/api/accounts", bearer, ""); code != 200 || names(body) != "secretguest" {
+		t.Errorf("a share lists %d %s", code, body)
+	}
+}

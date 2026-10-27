@@ -97,10 +97,13 @@ func (o *optionalTime) UnmarshalJSON(b []byte) error {
 func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) {
 	me, _ := s.account(r)
 	if !me.Admin {
-		// Everyone may know the usernames (avatars, who's viewing).
+		// Invited accounts may know each other's usernames (avatars, who's
+		// viewing) and their own shares'; a share, an outsider, only its own.
 		out := []map[string]string{}
 		for _, a := range s.Accounts.List() {
-			out = append(out, map[string]string{"username": a.Username})
+			if a.Username == me.Username || !me.IsShare() && (!a.IsShare() || a.SharedBy.ID == me.ID) {
+				out = append(out, map[string]string{"username": a.Username})
+			}
 		}
 		writeJSON(w, http.StatusOK, out)
 		return
