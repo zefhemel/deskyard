@@ -150,12 +150,17 @@ func TestLostContainerRecreatedFromDefinition(t *testing.T) {
 	defer cancel()
 	name := "cct-" + randomHex(3)
 	t.Cleanup(func() { _ = s.Remove(context.Background(), name, true) })
-	prior, err := s.Create(ctx, name, Settings{Image: testImage(), MemoryBytes: 2 << 30, NanoCPUs: 2e9}, func(string, float64) {})
-	if err != nil {
+	// Written before creating, which adopts the folder: once the desktop has
+	// started, the home belongs to UID 1000, which on Linux isn't this test.
+	marker := filepath.Join(s.Layout.HomeOf(name), "lost-marker.txt")
+	if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	marker := filepath.Join(s.Layout.HomeOf(name), "lost-marker.txt")
 	if err := os.WriteFile(marker, []byte("kept"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prior, err := s.Create(ctx, name, Settings{Image: testImage(), MemoryBytes: 2 << 30, NanoCPUs: 2e9}, func(string, float64) {})
+	if err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Eng.Remove(ctx, prior.Container.ID); err != nil {
