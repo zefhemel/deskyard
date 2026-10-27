@@ -277,6 +277,67 @@ func TestRestoreToFolderNeverDeletes(t *testing.T) {
 	}
 }
 
+// noHelpers answers like restoreReply but fails any root helper command
+// (install, chown) the supervisor should have no need of.
+func noHelpers(def environments.Definition) func(Call) (string, Result, error) {
+	inner := restoreReply(def, nil)
+	return func(c Call) (string, Result, error) {
+		if c.Args[0] == "install" || c.Args[0] == "chown" {
+			return "", Result{Code: 1, Stderr: "no helper expected"}, nil
+		}
+		return inner(c)
+	}
+}
+
+func TestRestoreAsNewWithoutHelper(t *testing.T) {
+	f := &fakeRunner{}
+	s, env := testService(t, f)
+	f.reply = noHelpers(environments.Definition{})
+	if _, err := s.Restore(context.Background(), Item{KindVolume, "photos"}, RestoreRequest{Repository: "home", Snapshot: "v1", Mode: "new", NewName: "photos-old"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := os.Stat(env.layout.VolumeOf("photos-old")); err != nil || !st.IsDir() {
+		t.Fatalf("no folder: %v", err)
+	}
+}
+
+func TestRestoreToFolderLocalWithoutHelper(t *testing.T) {
+	f := &fakeRunner{}
+	s, env := testService(t, f)
+	f.reply = noHelpers(environments.Definition{})
+	env.addVolume(t, "photos")
+	res, err := s.Restore(context.Background(), Item{KindVolume, "photos"}, RestoreRequest{Repository: "home", Snapshot: "v1", Mode: "folder", Paths: []string{"a.txt"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := os.Stat(filepath.Join(env.layout.VolumeOf("photos"), res.Folder))
+	if err != nil || !st.IsDir() || st.Mode().Perm() != 0o755 {
+		t.Fatalf("restore folder %v %v", st, err)
+	}
+}
+
+func TestRestoreToFolderHostUsesHelper(t *testing.T) {
+	f := &fakeRunner{}
+	s, env := testService(t, f)
+	f.reply = restoreReply(environments.Definition{}, nil)
+	host := t.TempDir()
+	env.addHostVolume(t, "photos", host)
+	res, err := s.Restore(context.Background(), Item{KindVolume, "photos"}, RestoreRequest{Repository: "home", Snapshot: "v1", Mode: "folder", Paths: []string{"a.txt"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, c := range f.calls {
+		if c.Args[0] == "install" && slices.Contains(c.Args, "-o") && slices.Contains(c.Args, "1000") && c.Args[len(c.Args)-1] == "/item/"+res.Folder &&
+			len(c.Mounts) == 1 && c.Mounts[0].Source == host {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no install -d -o 1000 helper call: %+v", f.calls)
+	}
+}
+
 func TestCleanSnapshotPath(t *testing.T) {
 	for _, bad := range []string{"../x", "/etc", "a\nb", "a/../../b", "a\x00", ".."} {
 		if _, err := cleanSnapshotPath(bad); err == nil {

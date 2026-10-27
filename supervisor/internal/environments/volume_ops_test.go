@@ -115,17 +115,39 @@ func TestCreateVolumeMakesFolder(t *testing.T) {
 	if err != nil || len(reloaded.List()) != 1 {
 		t.Fatalf("not on disk: %v %v", reloaded, err)
 	}
-	helpers := eng.ran()
-	if len(helpers) != 1 {
-		t.Fatalf("helpers: %+v", helpers)
-	}
-	cmd := helpers[0].Cmd
-	if cmd[0] != "install" || !slices.Contains(cmd, "-o") || !slices.Contains(cmd, "1000") || !slices.Contains(cmd, "0755") {
-		t.Fatalf("helper command %v", cmd)
+	if len(eng.ran()) != 0 {
+		t.Fatalf("helpers: %+v", eng.ran())
 	}
 	if len(eng.cs) != 0 {
 		t.Fatalf("helper left behind: %v", eng.cs)
 	}
+}
+
+// A local volume's folder is the supervisor's to make: no helper container
+// is created, and the folder has mode 0755.
+func TestMakeVolumeFolderWithoutHelper(t *testing.T) {
+	eng := &noCreateEngine{fakeEngine: newFakeEngine()}
+	s, err := Open(eng, Config{DataDir: t.TempDir()}, "test", slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Layout.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.CreateVolume(context.Background(), "photos", ""); err != nil {
+		t.Fatal(err)
+	}
+	st, err := os.Stat(s.Layout.VolumeOf("photos"))
+	if err != nil || !st.IsDir() || st.Mode().Perm() != 0o755 {
+		t.Fatalf("folder %v %v", st, err)
+	}
+}
+
+// noCreateEngine fails any Create.
+type noCreateEngine struct{ *fakeEngine }
+
+func (e *noCreateEngine) Create(context.Context, engine.ContainerSpec) (string, error) {
+	return "", errors.New("no container expected")
 }
 
 func TestCreateVolumeAdoptsFolder(t *testing.T) {

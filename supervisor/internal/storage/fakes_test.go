@@ -60,6 +60,15 @@ func (e *fakeEnv) addVolume(t *testing.T, name string) {
 	}
 }
 
+// addHostVolume registers a volume on a host folder, made at path.
+func (e *fakeEnv) addHostVolume(t *testing.T, name, path string) {
+	t.Helper()
+	e.vols[name] = environments.Volume{Name: name, Kind: environments.VolumeHost, HostPath: path, Created: time.Now()}
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func (e *fakeEnv) record(s string) { e.mu.Lock(); e.log = append(e.log, s); e.mu.Unlock() }
 
 func (e *fakeEnv) events() string { e.mu.Lock(); defer e.mu.Unlock(); return strings.Join(e.log, ",") }
@@ -73,7 +82,12 @@ func (e *fakeEnv) Volume(name string) (environments.Volume, bool) {
 	v, ok := e.vols[name]
 	return v, ok
 }
-func (e *fakeEnv) VolumeFolder(v environments.Volume) string { return e.layout.VolumeOf(v.Name) }
+func (e *fakeEnv) VolumeFolder(v environments.Volume) string {
+	if v.Kind == environments.VolumeHost {
+		return v.HostPath
+	}
+	return e.layout.VolumeOf(v.Name)
+}
 func (e *fakeEnv) VolumeUsers(name string) []environments.VolumeUser {
 	var out []environments.VolumeUser
 	for _, d := range e.defs {

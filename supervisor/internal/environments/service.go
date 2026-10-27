@@ -1133,7 +1133,9 @@ func (s *Service) removeNetwork(ctx context.Context, name string) error {
 }
 
 // FolderSize adds up the sizes of the files in an environment's folder. complete
-// is false when some directories couldn't be read (files belong to UID 1000).
+// is false when some directories couldn't be read (the supervisor is UID 1000,
+// so only root-owned files, as an environment with Docker access can leave,
+// are out of reach).
 func (s *Service) FolderSize(name string) (bytes int64, complete bool) {
 	return treeSize(s.Layout.HomeOf(name))
 }

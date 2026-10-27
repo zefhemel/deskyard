@@ -268,11 +268,6 @@ func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snaps
 		removeFolder()
 		return RestoreResult{}, err
 	}
-	// The folder itself is the supervisor's; the files keep their owner.
-	if err := s.helper(ctx, "setting the folder's owner", []engine.Mount{{Source: folder, Target: "/target", MustExist: true}}, "chown", "1000:1000", "/target"); err != nil {
-		removeFolder()
-		return RestoreResult{}, err
-	}
 	res := RestoreResult{Created: name}
 	if it.Kind == KindVolume {
 		if _, _, err := s.Env.CreateVolume(ctx, name, ""); err != nil {
@@ -353,7 +348,14 @@ func (s *Service) restoreFolder(ctx context.Context, it Item, repo Repo, snap Sn
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
 	defer s.useRemote(repo.Remote)()
-	if err := s.helper(ctx, "making "+name, []engine.Mount{{Source: folder, Target: "/item", MustExist: true}}, "install", "-d", "-o", "1000", "-g", "1000", "-m", "0755", "/item/"+name); err != nil {
+	// A host volume's folder may be one the supervisor can't write in (it
+	// belongs to the host's user), so the root helper makes the folder
+	// there. Homes and local volumes are the supervisor's own.
+	if v, ok := s.Env.Volume(it.Name); it.Kind == KindVolume && ok && v.Kind == environments.VolumeHost {
+		if err := s.helper(ctx, "making "+name, []engine.Mount{{Source: folder, Target: "/item", MustExist: true}}, "install", "-d", "-o", "1000", "-g", "1000", "-m", "0755", "/item/"+name); err != nil {
+			return RestoreResult{}, err
+		}
+	} else if err := os.Mkdir(filepath.Join(folder, name), 0o755); err != nil {
 		return RestoreResult{}, err
 	}
 	progress("Restoring", 0)

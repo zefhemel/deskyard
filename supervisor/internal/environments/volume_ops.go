@@ -199,17 +199,12 @@ func (s *Service) checkGrants(grants []VolumeGrant) error {
 	return nil
 }
 
-// makeVolumeFolder makes volume/<name>/, owned by the desktop user (UID and
-// GID 1000) with mode 0755, through the root helper container: the
-// supervisor may not be able to give a folder away itself.
-func (s *Service) makeVolumeFolder(ctx context.Context, name string) error {
-	if err := s.runHelper(ctx, "deskyard-volume-", s.Layout.Volume, "/volume-root",
-		"install", "-d", "-o", "1000", "-g", "1000", "-m", "0755", "/volume-root/"+name); err != nil {
+// makeVolumeFolder makes volume/<name>/ with mode 0755. The supervisor runs
+// as the desktop user (UID and GID 1000), so the folder is already that
+// user's. ctx is unused; the signature stays with its caller.
+func (s *Service) makeVolumeFolder(_ context.Context, name string) error {
+	if err := os.MkdirAll(s.Layout.Volume, 0o755); err != nil {
 		return err
 	}
-	folder := s.Layout.VolumeOf(name)
-	if st, err := os.Stat(folder); err != nil || !st.IsDir() {
-		return fmt.Errorf("could not create %s", folder)
-	}
-	return nil
+	return os.Mkdir(s.Layout.VolumeOf(name), 0o755)
 }
