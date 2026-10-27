@@ -55,6 +55,35 @@ func TestSessionRoundTripAndExpiry(t *testing.T) {
 	}
 }
 
+// A session of an account that expires ends with it: the cookie and its
+// claims expire then, also when renewed.
+func TestSessionCappedAtNotAfter(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	s := &Sessions{Key: []byte("k"), Now: func() time.Time { return now }}
+	until := now.Add(3 * time.Hour)
+	w := httptest.NewRecorder()
+	s.IssueUntil(w, "sanne", "acct1234", 0, until)
+	cookie := w.Result().Cookies()[0]
+	if !cookie.Expires.Equal(until) {
+		t.Fatalf("cookie expires %v, want %v", cookie.Expires, until)
+	}
+	r := &http.Request{Header: http.Header{"Cookie": w.Header()["Set-Cookie"]}}
+	c, ok := s.Claims(r)
+	if !ok || !c.Expires.Equal(until) {
+		t.Fatalf("%+v %v", c, ok)
+	}
+	c.NotAfter = until
+	w = httptest.NewRecorder()
+	s.Refresh(w, c)
+	if got := w.Result().Cookies()[0].Expires; !got.Equal(until) {
+		t.Fatalf("renewed cookie expires %v, want %v", got, until)
+	}
+	now = until
+	if _, ok := s.Claims(r); ok {
+		t.Fatal("a session outlived its account's expiry")
+	}
+}
+
 func TestThrottle(t *testing.T) {
 	now := time.Unix(0, 0)
 	th := &Throttle{Now: func() time.Time { return now }}

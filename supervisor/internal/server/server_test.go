@@ -368,3 +368,44 @@ func TestSignOutEverywhere(t *testing.T) {
 		t.Fatalf("this browser signed out: %d", got)
 	}
 }
+
+// The session of an account that expires never outlives it.
+func TestSessionCookieEndsWithTheAccount(t *testing.T) {
+	s, ts := newTestServer(t)
+	until := time.Now().Add(2 * time.Hour).Truncate(time.Second)
+	if _, err := s.Accounts.Create(accounts.NewAccount{Username: "temp", Password: "pw", Expires: &until}); err != nil {
+		t.Fatal(err)
+	}
+	c := login(t, ts, "temp")
+	cookies := c.Jar.Cookies(nil)
+	if len(cookies) != 1 || !cookies[0].Expires.Equal(until) {
+		t.Fatalf("session cookie %v, want it to expire at %v", cookies, until)
+	}
+}
+
+// Signing out everywhere closes the desktop streams of the account's browser
+// sessions; connections held with a client credential stay.
+func TestSignOutEverywhereClosesDesktopStreams(t *testing.T) {
+	s, ts := newTestServer(t)
+	here := login(t, ts, "admin")
+	admin, _ := s.Accounts.Get("admin")
+	stream, closeStream := context.WithCancel(context.Background())
+	defer closeStream()
+	cn := &conn{username: "admin", accountID: admin.ID, epoch: admin.SessionEpoch, environment: "alice", level: auth.LevelFull, cancel: closeStream}
+	s.viewers.add("alice", cn)
+	defer s.viewers.remove("alice", cn)
+	watch, closeWatch := context.WithCancel(context.Background())
+	defer closeWatch()
+	cli := &conn{username: "admin", accountID: admin.ID, epoch: noSession, environment: "alice", level: auth.LevelFull, cancel: closeWatch}
+	s.screenWatchers.add("alice", cli)
+	defer s.screenWatchers.remove("alice", cli)
+	if got := status(t, here, "POST", ts.URL+"/api/me/sign-out-everywhere", ts.URL); got != 204 {
+		t.Fatalf("sign out everywhere: %d", got)
+	}
+	if stream.Err() == nil {
+		t.Fatal("a desktop stream of an ended browser session stayed open")
+	}
+	if watch.Err() != nil {
+		t.Fatal("signing out everywhere closed a client credential's connection")
+	}
+}

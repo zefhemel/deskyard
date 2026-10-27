@@ -172,7 +172,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if err := s.Accounts.TouchLogin(a.Username); err != nil {
 		s.Log.Warn("recording account login", "account", a.Username, "err", err)
 	}
-	s.Sessions.Issue(w, a.Username, a.ID, a.SessionEpoch)
+	s.replaceSession(w, r, a)
 	s.Log.Info("signed in", "account", a.Username, "ip", clientIP(r))
 	writeJSON(w, http.StatusOK, toMeJSON(a))
 }

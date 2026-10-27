@@ -133,7 +133,8 @@ func (s *Server) handleScreenEvents(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	// Registered so that a revoke closes the stream even while it is idle.
-	cn := &conn{username: a.Username, environment: c.ID, level: level, cancel: cancel}
+	who, _ := s.principal(r)
+	cn := &conn{username: a.Username, accountID: a.ID, epoch: who.epoch(), environment: c.ID, level: level, cancel: cancel}
 	s.screenWatchers.add(c.Name, cn)
 	defer s.screenWatchers.remove(c.Name, cn)
 	if !allowed() { // revoked between environmentFor and add

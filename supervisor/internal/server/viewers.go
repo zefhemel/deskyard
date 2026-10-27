@@ -13,9 +13,11 @@ import (
 // viewers tracks the open desktop streams per desktop, with the account
 // each belongs to, the level it was opened at, the browser tab it comes
 // from, whether that tab's mic is on, and a way to close it (when access is
-// revoked or changes level).
+// revoked or changes level, or its browser session ends).
 type conn struct {
 	username    string
+	accountID   string
+	epoch       int    // the session epoch of the browser login it came from; noSession for a client credential
 	tab         string // the page's id for its browser tab ("" if it sent none)
 	environment string
 	level       auth.Level // the account's level when it opened; another level closes it
@@ -132,6 +134,25 @@ func (v *viewers) revoke(username string, level func(environment string) auth.Le
 	for _, conns := range v.byName {
 		for c := range conns {
 			if c.username == username && level(c.environment) != c.level {
+				c.cancel()
+			}
+		}
+	}
+}
+
+// noSession is the epoch of a connection made with a client credential,
+// which session epochs don't end.
+const noSession = -1
+
+// endSessions closes the connections of an account's browser logins that
+// its current session epoch no longer accepts, and any of an earlier
+// account of the name.
+func (v *viewers) endSessions(username, accountID string, epoch int) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	for _, conns := range v.byName {
+		for c := range conns {
+			if c.username == username && (c.accountID != accountID || c.epoch != noSession && c.epoch != epoch) {
 				c.cancel()
 			}
 		}

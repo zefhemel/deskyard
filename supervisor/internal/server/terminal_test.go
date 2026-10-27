@@ -576,3 +576,34 @@ func TestTerminalRefusesBearerWithOtherCookie(t *testing.T) {
 		t.Fatal("terminal opened as the cookie's account")
 	}
 }
+
+// A link redeemed in a browser signed in to another account replaces that
+// browser login, ending its terminals as signing out does.
+func TestLinkRedemptionEndsAnotherAccountsBrowserLogin(t *testing.T) {
+	s, ts := newTestServer(t)
+	browser := login(t, ts, "admin")
+	req := httptest.NewRequest("GET", "/", nil)
+	req.AddCookie(browser.Jar.Cookies(nil)[0])
+	claims, _ := s.Sessions.Claims(req)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	live := &terminalConnection{claims: claims, environment: "alice", cancel: cancel}
+	if !s.terminals.add(live) {
+		t.Fatal("register")
+	}
+	defer s.terminals.remove(live)
+	sanne, err := s.Accounts.Create(accounts.NewAccount{Username: "sanne"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, err := s.links.issue(sanne, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, body := send(t, browser, "POST", ts.URL+"/api/links/redeem", ts.URL, `{"link":"`+code+`","client":"browser"}`); got != 200 {
+		t.Fatalf("redeem: %d %s", got, body)
+	}
+	if ctx.Err() == nil {
+		t.Fatal("the replaced browser login's terminal stayed open")
+	}
+}

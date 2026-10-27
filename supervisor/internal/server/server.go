@@ -212,6 +212,15 @@ func (s *Server) principal(r *http.Request) (principal, bool) {
 	return p, ok
 }
 
+// epoch is the session epoch of the request's browser login, or noSession
+// for a client credential.
+func (p principal) epoch() int {
+	if p.claims == nil {
+		return noSession
+	}
+	return p.claims.Epoch
+}
+
 // account returns the signed-in account of the request, if any.
 func (s *Server) account(r *http.Request) (accounts.Account, bool) {
 	p, ok := s.principal(r)
@@ -228,11 +237,33 @@ func (s *Server) credentialOf(r *http.Request) (credential, bool) {
 	return *p.credential, true
 }
 
+// issueSession signs this browser in to a, until a expires at the latest.
+func (s *Server) issueSession(w http.ResponseWriter, a accounts.Account) {
+	s.Sessions.IssueUntil(w, a.Username, a.ID, a.SessionEpoch, expiryOf(a))
+}
+
+// replaceSession signs this browser in to a. A browser login of another
+// account it replaces ends as on logout, closing its terminals.
+func (s *Server) replaceSession(w http.ResponseWriter, r *http.Request, a accounts.Account) {
+	if old, ok := s.Sessions.Claims(r); ok && old.AccountID != a.ID {
+		s.terminals.logout(old)
+	}
+	s.issueSession(w, a)
+}
+
+// expiryOf is when a expires, or zero when it doesn't.
+func expiryOf(a accounts.Account) time.Time {
+	if a.Expires == nil {
+		return time.Time{}
+	}
+	return *a.Expires
+}
+
 // reissueSession signs this browser in again to a, as after a change that
 // bumped its session epoch. Credential requests have no cookie to renew.
 func (s *Server) reissueSession(w http.ResponseWriter, r *http.Request, a accounts.Account) {
 	if p, ok := s.principal(r); ok && p.claims != nil {
-		s.Sessions.Issue(w, a.Username, a.ID, a.SessionEpoch)
+		s.issueSession(w, a)
 	}
 }
 
@@ -249,7 +280,8 @@ func (s *Server) withSession(w http.ResponseWriter, r *http.Request) (*http.Requ
 	if !found || a.SessionEpoch != claims.Epoch {
 		return r, false
 	}
-	if claims.Refresh {
+	if claims.Refresh && (a.Expires == nil || claims.Expires.Before(a.Expires.Truncate(time.Second))) {
+		claims.NotAfter = expiryOf(a)
 		s.Sessions.Refresh(w, claims)
 	}
 	return r.WithContext(context.WithValue(r.Context(), ctxKey{}, principal{account: a, claims: &claims})), true
@@ -373,6 +405,10 @@ func (s *Server) accountsChanged(usernames ...string) {
 		s.terminals.revalidate(s, u)
 		s.viewers.revoke(u, level)
 		s.screenWatchers.revoke(u, level)
+		if ok {
+			s.viewers.endSessions(u, a.ID, a.SessionEpoch)
+			s.screenWatchers.endSessions(u, a.ID, a.SessionEpoch)
+		}
 	}
 	s.sweep()
 	s.events.refresh()

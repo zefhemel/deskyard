@@ -151,26 +151,32 @@ func (cl *cliLogins) decide(id string, a *accounts.Account) error {
 	return nil
 }
 
-// take answers a poll: errCLILoginPending until decided, then once the
-// approving account and the client's name, or errCLILoginDenied, after
-// which the request is gone.
+// take answers a poll: errCLILoginPending until decided, errCLILoginDenied
+// once after a denial, and once approved, issue's answer for the approving
+// account and the client's name. The request is gone after its answer is
+// taken; when issue fails (other than with errCLILoginExpired) it stays
+// approved, for the next poll to try again.
 // An unknown or expired request, or a wrong secret, is errCLILoginExpired;
 // a wrong secret leaves the request for the right one.
-func (cl *cliLogins) take(id, pollSecret string) (a accounts.Account, client string, err error) {
+func (cl *cliLogins) take(id, pollSecret string, issue func(a accounts.Account, client string) error) error {
 	cl.mu.Lock()
 	defer cl.mu.Unlock()
 	l, ok := cl.get(id)
 	if !ok || subtle.ConstantTimeCompare([]byte(l.pollHash), []byte(hashSecret(pollSecret))) != 1 {
-		return accounts.Account{}, "", errCLILoginExpired
+		return errCLILoginExpired
 	}
 	if !l.decided {
-		return accounts.Account{}, "", errCLILoginPending
+		return errCLILoginPending
 	}
-	delete(cl.all, id)
 	if l.account == nil {
-		return accounts.Account{}, "", errCLILoginDenied
+		delete(cl.all, id)
+		return errCLILoginDenied
 	}
-	return *l.account, l.client, nil
+	err := issue(*l.account, l.client)
+	if err == nil || errors.Is(err, errCLILoginExpired) {
+		delete(cl.all, id)
+	}
+	return err
 }
 
 // --- routes ------------------------------------------------------------------------------
@@ -256,7 +262,18 @@ func (s *Server) handleCLILoginToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	approver, client, err := s.cliLogins.take(id, req.PollSecret)
+	var a accounts.Account
+	var client, bearer string
+	err := s.cliLogins.take(id, req.PollSecret, func(approver accounts.Account, name string) error {
+		var ok bool
+		if a, ok = s.accountNow(approver.Username, approver.ID, time.Now()); !ok {
+			return errCLILoginExpired
+		}
+		client = name
+		var err error
+		_, bearer, err = s.credentials.create(a, "cli", client)
+		return err
+	})
 	switch {
 	case errors.Is(err, errCLILoginPending):
 		writeJSON(w, http.StatusAccepted, map[string]string{"status": "pending"})
@@ -264,20 +281,13 @@ func (s *Server) handleCLILoginToken(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, errCLILoginDenied):
 		writeError(w, http.StatusForbidden, "denied")
 		return
-	case err != nil:
+	case errors.Is(err, errCLILoginExpired):
 		s.Throttle.Fail(key)
 		writeError(w, http.StatusGone, errCLILoginExpired.Error())
 		return
-	}
-	a, ok := s.accountNow(approver.Username, approver.ID, time.Now())
-	if !ok {
-		writeError(w, http.StatusGone, errCLILoginExpired.Error())
-		return
-	}
-	_, bearer, err := s.credentials.create(a, "cli", client)
-	if err != nil {
+	case err != nil:
 		s.Log.Error("saving a CLI login's credential", "account", a.Username, "err", err)
-		writeError(w, http.StatusInternalServerError, "the sign-in couldn't be saved; run deskyard login again")
+		writeError(w, http.StatusInternalServerError, "the sign-in couldn't be saved yet; the next poll tries again")
 		return
 	}
 	if err := s.Accounts.TouchLogin(a.Username); err != nil {

@@ -79,7 +79,7 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.terminals.remove(live)
-	viewer := &conn{username: claims.Username, environment: c.ID, level: auth.LevelFull, cancel: cancel}
+	viewer := &conn{username: claims.Username, accountID: claims.AccountID, epoch: claims.Epoch, environment: c.ID, level: auth.LevelFull, cancel: cancel}
 	s.viewers.add(c.Name, viewer)
 	s.publishViewers(c.Name, c.ID)
 	defer func() { s.viewers.remove(c.Name, viewer); s.publishViewers(c.Name, c.ID) }()

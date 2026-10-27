@@ -214,11 +214,12 @@ func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, c environme
 		return // the client went away while waiting its turn
 	}
 	defer release()
-	a, _ := s.account(r)
+	who, _ := s.principal(r)
+	a := who.account
 	observer := !auth.Can(a, auth.View, c.ID) // allowed to watch, not to use
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	cn := &conn{username: a.Username, tab: tab, environment: c.ID, level: a.Level(c.ID), cancel: cancel}
+	cn := &conn{username: a.Username, accountID: a.ID, epoch: who.epoch(), tab: tab, environment: c.ID, level: a.Level(c.ID), cancel: cancel}
 	s.viewers.add(c.Name, cn)
 	// Registered, a revoke closes the stream; one while it waited its turn
 	// (a downgrade to observe included) refuses it.

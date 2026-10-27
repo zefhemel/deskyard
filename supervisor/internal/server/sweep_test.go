@@ -345,7 +345,8 @@ func TestDowngradeClosesViewerStream(t *testing.T) {
 	// An observer's stream at observe level stays open on an unrelated change.
 	observing, cancelObserving := context.WithCancel(context.Background())
 	defer cancelObserving()
-	obs := &conn{username: "bob", environment: "alice", level: auth.LevelObserve, cancel: cancelObserving}
+	bob, _ = s.Accounts.Get("bob")
+	obs := &conn{username: "bob", accountID: bob.ID, epoch: bob.SessionEpoch, environment: "alice", level: auth.LevelObserve, cancel: cancelObserving}
 	s.viewers.add("alice", obs)
 	defer s.viewers.remove("alice", obs)
 	if _, err := s.Accounts.Update("bob", func(a *accounts.Account) { a.Description = "a colleague" }); err != nil {
@@ -618,5 +619,34 @@ func TestDemotionClosesCredentialConnections(t *testing.T) {
 	}
 	if code, _, _ := bearerRequest(t, "GET", ts.URL+"/api/environments/alice/status", bearer); code != 404 {
 		t.Fatalf("a demoted account's credential on alice: %d", code)
+	}
+}
+
+// Signing out everywhere ends the event streams of the browser logins it
+// ended.
+func TestSignOutEverywhereEndsEventStreams(t *testing.T) {
+	_, ts := newTestServer(t)
+	here, there := login(t, ts, "admin"), login(t, ts, "admin")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+"/api/events",
+		&websocket.DialOptions{HTTPClient: there, HTTPHeader: http.Header{"Origin": {ts.URL}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.CloseNow()
+	if _, _, err := ws.Read(ctx); err != nil { // the snapshot
+		t.Fatal(err)
+	}
+	if got := status(t, here, "POST", ts.URL+"/api/me/sign-out-everywhere", ts.URL); got != 204 {
+		t.Fatalf("sign out everywhere: %d", got)
+	}
+	for {
+		if _, _, err := ws.Read(ctx); err != nil {
+			if ctx.Err() != nil {
+				t.Fatal("a signed-out browser's event stream stayed open")
+			}
+			return
+		}
 	}
 }

@@ -189,7 +189,7 @@ func (s *Server) handleRedeemLink(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"credential": bearer, "username": a.Username, "environments": s.cliEnvironments(a)})
 		return
 	}
-	s.Sessions.Issue(w, a.Username, a.ID, a.SessionEpoch)
+	s.replaceSession(w, r, a)
 	next := "/"
 	if grants := s.definedGrants(a); !a.Admin && len(grants) == 1 {
 		next = "/" + grants[0].Environment + "/"

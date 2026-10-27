@@ -40,16 +40,26 @@ func (s *Sessions) sign(payload string) string {
 }
 
 func (s *Sessions) Issue(w http.ResponseWriter, username, accountID string, epoch int) {
+	s.IssueUntil(w, username, accountID, epoch, time.Time{})
+}
+
+// IssueUntil is Issue for an account that expires at notAfter (zero: never):
+// the session ends then at the latest.
+func (s *Sessions) IssueUntil(w http.ResponseWriter, username, accountID string, epoch int, notAfter time.Time) {
 	id := make([]byte, 24)
 	if _, err := rand.Read(id); err != nil {
 		panic(err)
 	}
-	s.Refresh(w, SessionClaims{Username: username, AccountID: accountID, Epoch: epoch, ID: base64.RawURLEncoding.EncodeToString(id)})
+	s.Refresh(w, SessionClaims{Username: username, AccountID: accountID, Epoch: epoch, ID: base64.RawURLEncoding.EncodeToString(id), NotAfter: notAfter})
 }
 
-// Refresh preserves the browser login identity across sliding cookie renewal.
+// Refresh preserves the browser login identity across sliding cookie renewal,
+// never past c.NotAfter.
 func (s *Sessions) Refresh(w http.ResponseWriter, c SessionClaims) {
 	exp := s.now().Add(sessionTTL).Unix()
+	if !c.NotAfter.IsZero() {
+		exp = min(exp, c.NotAfter.Unix())
+	}
 	payload := fmt.Sprintf("%s|%d|%d|%s|%s", c.Username, c.Epoch, exp, c.ID, c.AccountID)
 	value := base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + s.sign(payload)
 	http.SetCookie(w, &http.Cookie{
@@ -72,6 +82,9 @@ type SessionClaims struct {
 	ID        string
 	Expires   time.Time
 	Refresh   bool
+	// NotAfter caps the expiry of a cookie issued or renewed with these
+	// claims (the account's expiry); zero means no cap. It isn't in the cookie.
+	NotAfter time.Time
 }
 
 // Claims verifies the cookie's signature and expiry. Cookies without an

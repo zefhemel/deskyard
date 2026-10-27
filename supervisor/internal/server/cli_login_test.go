@@ -266,3 +266,27 @@ func TestCLILoginCodes(t *testing.T) {
 		seen[id] = true
 	}
 }
+
+// A credential that can't be saved answers 500 and keeps the approval, so
+// the CLI's next poll gets it once saving works again.
+func TestCLILoginKeepsApprovalWhenSavingFails(t *testing.T) {
+	s, ts := newTestServer(t)
+	fullOnAlice(t, s)
+	start := startCLILogin(t, ts)
+	bob := login(t, ts, "bob")
+	if code, body := send(t, bob, "POST", ts.URL+"/api/cli-login/"+start.ID+"/approve", ts.URL, ""); code != http.StatusNoContent {
+		t.Fatalf("approve: %d %s", code, body)
+	}
+	saved := s.credentials.path
+	s.credentials.path = blockedStatePath(t)
+	if code, body := pollCLILogin(t, ts, start.ID, start.PollSecret); code != http.StatusInternalServerError {
+		t.Fatalf("poll while saving fails: %d %s", code, body)
+	}
+	s.credentials.path = saved
+	if code, body := pollCLILogin(t, ts, start.ID, start.PollSecret); code != 200 || !strings.Contains(body, `"credential":"dyc_`) {
+		t.Fatalf("poll once saving works: %d %s", code, body)
+	}
+	if n := len(s.credentials.list(accountNamed(t, s, "bob").ID)); n != 1 {
+		t.Fatalf("%d credentials, want 1", n)
+	}
+}
