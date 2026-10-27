@@ -54,16 +54,21 @@ interface DialogProps {
 
 export function Dialog({ title, intro, onClose, onSubmit, footer, children, wide }: DialogProps) {
   const ref = useRef<HTMLFormElement>(null);
+  // Callers pass a new onClose on every render (live updates re-render often),
+  // so the effect reads it through a ref and runs once: otherwise each render
+  // would move the focus back to the first field.
+  const close = useRef(onClose);
+  close.current = onClose;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") close.current();
     };
     window.addEventListener("keydown", onKey);
-    // Focus the first field, as a dialog should.
+    // Focus the first field when the dialog opens, as a dialog should.
     const first = ref.current?.querySelector<HTMLElement>("input:not([disabled]):not(.hidden), textarea, select");
     first?.focus();
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, []);
   return (
     <div
       data-dialog-overlay
