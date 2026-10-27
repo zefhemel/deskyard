@@ -18,11 +18,11 @@ export function VolumeGrantFields({
     <section class="mt-6 border-t border-line pt-5 first:mt-0 first:border-t-0 first:pt-0" aria-label="Volumes">
       <h2 class="mb-1 text-base font-semibold">Volumes</h2>
       <p class="mb-4 text-sm text-muted">
-        Share a volume with this environment, by default at <span class="mono">/share/&lt;volume&gt;</span>.{!creating && " Changes apply when you save, which recreates its container."}
+        {creating ? "Volumes shared with this environment." : "Saving recreates the container."}
       </p>
       {!volumes.length && !grants.length && (
         <p class="mb-4 text-sm text-muted">
-          There are no volumes yet. <a href="/volumes">Create one on the Volumes page</a>.
+          No volumes yet. <a href="/volumes">Create one</a>.
         </p>
       )}
       {grants.map((grant, index) => {
@@ -45,7 +45,7 @@ export function VolumeGrantFields({
             <Field
               label="Path in the environment"
               htmlFor={`volume-path-${index}`}
-              hint={pathError ? <span class="text-danger">{pathError}</span> : "Any folder outside /workspace and the system folders, such as /share/photos or /mnt/photos."}
+              hint={pathError ? <span class="text-danger">{pathError}</span> : undefined}
             >
               <input
                 type="text"
@@ -59,9 +59,7 @@ export function VolumeGrantFields({
                 onInput={(e) => onChange(updateGrant(grants, index, { path: e.currentTarget.value }))}
               />
             </Field>
-            <Check id={`volume-readonly-${index}`} checked={grant.readOnly} onChange={(readOnly) => onChange(updateGrant(grants, index, { readOnly }))} title="Read only">
-              Turn off to allow this environment to change files in the volume.
-            </Check>
+            <Check id={`volume-readonly-${index}`} checked={grant.readOnly} onChange={(readOnly) => onChange(updateGrant(grants, index, { readOnly }))} title="Read only" />
             <Button variant="quiet" aria-label={`Remove volume ${grant.name}`} onClick={() => onChange(removeGrant(grants, index))}>
               Remove volume
             </Button>

@@ -4,7 +4,7 @@ import { api, ApiError, type BackupItem, type Environment, type Volume, type Vol
 import { Page, PageHead } from "../components/topbar.tsx";
 import { notify } from "../components/toast.tsx";
 import { EnvironmentChip } from "../components/environment-chip.tsx";
-import { Button, Check, Dialog, ErrorText, Field, Meter, Note, Tag, errorMessage } from "../components/ui.tsx";
+import { Button, Check, Dialog, ErrorText, Field, Meter, Note, Seg, Tag, errorMessage } from "../components/ui.tsx";
 import { bytes } from "../lib/format.ts";
 import { useFetch } from "../lib/use-fetch.ts";
 import { cx } from "../components/ui.tsx";
@@ -25,7 +25,7 @@ export function StoragePage() {
   const tab: StorageTab = TABS.find((t) => t.id === query.tab)?.id ?? "volumes";
   return (
     <Page>
-      <PageHead title="Storage" sub="Volumes shared between environments, the remotes they're backed up to, and the backups." />
+      <PageHead title="Storage" />
       <nav class="mb-6 flex gap-1 overflow-x-auto border-b border-line [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="tablist">
         {TABS.map((t) => (
           <button
@@ -66,8 +66,7 @@ function VolumesTab() {
   }, [loaded]);
   return (
     <>
-      <div class="mb-4 flex flex-wrap items-center gap-3">
-        <p class="mr-auto max-w-[640px] text-sm text-muted">Folders shared between environments, by default at /share/&lt;volume&gt; in each: in the data folder, or an existing folder on the host.</p>
+      <div class="mb-4 flex justify-end">
         <Button variant="primary" disabled={!list.data} onClick={() => setCreating(true)}>
           Create volume
         </Button>
@@ -76,7 +75,7 @@ function VolumesTab() {
       {!volumes ? (
         <p class="text-muted">Loading…</p>
       ) : !volumes.length ? (
-        <p class="text-muted">No volumes yet. Create one, then grant it to environments in their settings.</p>
+        <p class="text-muted">No volumes yet.</p>
       ) : (
         <div class="grid gap-3">
           {volumes.map((v) => (
@@ -84,9 +83,6 @@ function VolumesTab() {
           ))}
         </div>
       )}
-      <p class="mt-5 max-w-[760px] text-sm text-muted">
-        Grant a volume to an environment in its settings, read only or read and write. Removing an environment never touches its volumes.
-      </p>
       {creating && <CreateVolume onClose={() => setCreating(false)} onCreated={list.reload} />}
       {removing && <DeleteVolume volume={removing} onClose={() => setRemoving(null)} onDeleted={list.reload} />}
     </>
@@ -99,7 +95,8 @@ export function BackupTag({ backup }: { backup: BackupItem | undefined }) {
   return st && <Tag kind={st.kind === "update" ? "update" : st.kind}>{st.label}</Tag>;
 }
 
-export function VolumeCard({ volume: v, environments, backup, onDelete, linked = true }: { volume: Volume; environments: Environment[] | undefined; backup?: BackupItem; onDelete: () => void; linked?: boolean }) {
+/** A volume's card; `bare` leaves out its name and actions, for its own page. */
+export function VolumeCard({ volume: v, environments, backup, onDelete, bare }: { volume: Volume; environments: Environment[] | undefined; backup?: BackupItem; onDelete?: () => void; bare?: boolean }) {
   // Sizing walks the whole folder, so each card asks for its own.
   const [usage, setUsage] = useState<VolumeUsage | null>(null);
   useEffect(() => {
@@ -112,16 +109,15 @@ export function VolumeCard({ volume: v, environments, backup, onDelete, linked =
   const disk = usage?.diskSize ? usage : null;
   return (
     <article id={`volume-${v.name}`} class="scroll-mt-20 rounded-[10px] border border-line bg-surface p-5 target:outline-3 target:outline-offset-2 target:outline-accent">
-      <div class="flex flex-wrap items-start gap-x-4 gap-y-2">
-        <div class="mr-auto min-w-0">
-          <h2 class="text-lg font-semibold">
-            {linked ? <a href={`/volumes/${v.name}`}>{v.name}</a> : v.name} <BackupTag backup={backup} />
+      {!bare && (
+        <div class="mb-4 flex flex-wrap items-start gap-x-4 gap-y-2">
+          <h2 class="mr-auto min-w-0 text-lg font-semibold">
+            <a href={`/volumes/${v.name}`}>{v.name}</a> {v.kind === "host" && <Tag>Host folder</Tag>} <BackupTag backup={backup} />
           </h2>
-          <p class="text-sm text-muted">{v.kind === "host" ? "Host folder" : "In the data folder"}</p>
+          <Button onClick={onDelete}>Delete</Button>
         </div>
-        <Button onClick={onDelete}>Delete</Button>
-      </div>
-      <dl class="mt-4 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[7.5rem_1fr] sm:gap-y-3">
+      )}
+      <dl class="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[7.5rem_1fr] sm:gap-y-3">
         <dt class="text-muted">Size</dt>
         <dd class="min-w-0" aria-label="Size">
           {!usage ? (
@@ -133,7 +129,7 @@ export function VolumeCard({ volume: v, environments, backup, onDelete, linked =
               </span>
               {disk && (
                 <>
-                  <span class="text-muted"> · {bytes(disk.diskFree ?? 0)} free of {bytes(disk.diskSize ?? 0)} on its disk</span>
+                  <span class="text-muted"> · {bytes(disk.diskFree ?? 0)} free of {bytes(disk.diskSize ?? 0)}</span>
                   <Meter class="mt-1.5 max-w-[360px]" percent={(100 * ((disk.diskSize ?? 0) - (disk.diskFree ?? 0))) / (disk.diskSize ?? 1)} />
                 </>
               )}
@@ -159,7 +155,7 @@ export function VolumeCard({ volume: v, environments, backup, onDelete, linked =
               })}
             </ul>
           ) : (
-            <span class="text-muted">No environment yet. Grant it in an environment's settings.</span>
+            <span class="text-muted">None. Grant it in an environment's settings.</span>
           )}
         </dd>
       </dl>
@@ -235,34 +231,34 @@ function CreateVolume({ onClose, onCreated }: { onClose: () => void; onCreated: 
         htmlFor="volume-name"
         hint={
           name && !valid ? (
-            <span class="text-danger">Use 2–32 lowercase letters, digits and dashes, starting with a letter and not ending with a dash.</span>
+            <span class="text-danger">Use 2–32 lowercase letters, digits and dashes, starting with a letter.</span>
           ) : (
-            <>
-              Lowercase letters, digits and dashes; it can't be changed later.{NAME.test(name) && <> Environments see it at <span class="mono">/share/{name}</span> unless their grant names another path.</>}
-            </>
+            "Can't be changed later."
           )
         }
       >
         <input id="volume-name" type="text" autocomplete="off" spellcheck={false} value={name} onInput={(e) => setName(e.currentTarget.value.toLowerCase())} />
       </Field>
-      <fieldset class="mb-4">
-        <legend class="mb-2 text-sm font-semibold">Where its files live</legend>
-        <label class="mb-1 flex items-center gap-2 text-sm">
-          <input type="radio" name="volume-where" checked={!onHost} onChange={() => setOnHost(false)} /> In the data folder, managed by Deskyard
-        </label>
-        <label class="flex items-center gap-2 text-sm">
-          <input type="radio" name="volume-where" checked={onHost} onChange={() => setOnHost(true)} /> An existing folder on the host
-        </label>
-      </fieldset>
+      <Field label="Files in">
+        <Seg
+          label="Files in"
+          options={[
+            { value: false, label: "Data folder" },
+            { value: true, label: "Host folder" },
+          ]}
+          value={onHost}
+          onChange={setOnHost}
+        />
+      </Field>
       {onHost && (
         <Field
-          label="Host folder"
+          label="Path"
           htmlFor="volume-host-path"
           hint={
             hostPath && !hostPathValid ? (
               <span class="text-danger">Use an absolute path without a trailing slash, . or ..</span>
             ) : (
-              "A folder on the machine running the container engine. It must exist; Deskyard never changes or deletes it."
+              "An existing folder on the engine host. Deskyard never changes or deletes it."
             )
           }
         >

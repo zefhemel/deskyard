@@ -2,7 +2,6 @@ import { useState } from "preact/hooks";
 import { api, type Remote, type RemoteType } from "../../api.ts";
 import { notify } from "../../components/toast.tsx";
 import { Button, Dialog, ErrorText, Field, Note, Tag, errorMessage } from "../../components/ui.tsx";
-import { day } from "../../lib/format.ts";
 import { blankDraft, draftFromRemote, fieldsFor, REMOTE_TYPES, remoteDraftErrors, toRemoteInput, type RemoteDraft } from "../../lib/remote-form.ts";
 import { useFetch } from "../../lib/use-fetch.ts";
 
@@ -28,10 +27,7 @@ export function RemotesTab() {
   const remotes = list.data?.remotes;
   return (
     <>
-      <div class="mb-4 flex flex-wrap items-center gap-3">
-        <p class="mr-auto max-w-[640px] text-sm text-muted">
-          Storage remotes are connections to storage elsewhere: a bucket, a NAS or a WebDAV server. Backup repositories live on them.
-        </p>
+      <div class="mb-4 flex justify-end">
         <Button variant="primary" onClick={() => setEditing("new")}>
           Add remote
         </Button>
@@ -40,25 +36,24 @@ export function RemotesTab() {
       {!remotes ? (
         !list.error && <p class="text-muted">Loading…</p>
       ) : !remotes.length ? (
-        <p class="text-muted">No remotes yet. Add one to back up to it.</p>
+        <p class="text-muted">No remotes yet. A remote is storage elsewhere, such as a bucket, a NAS or a WebDAV server, to back up to.</p>
       ) : (
         <div class="grid gap-3">
           {remotes.map((r) => (
             <article key={r.name} class="rounded-[10px] border border-line bg-surface p-5">
-              <div class="flex flex-wrap items-start gap-x-4 gap-y-2">
-                <div class="mr-auto min-w-0">
-                  <h2 class="text-lg font-semibold">
-                    {r.name} <Tag>{typeLabel(r.type)}</Tag>
-                  </h2>
-                  <p class="mono text-sm break-all text-muted">{where(r)}</p>
-                </div>
+              <div class="mb-4 flex flex-wrap items-start gap-x-4 gap-y-2">
+                <h2 class="mr-auto min-w-0 text-lg font-semibold">
+                  {r.name} <Tag>{typeLabel(r.type)}</Tag>
+                </h2>
                 <Button onClick={() => setEditing(r)}>Edit</Button>
                 <Button onClick={() => setRemoving(r)}>Delete</Button>
               </div>
-              <p class="mt-3 text-sm text-muted">
-                Added {day(r.created)}.{" "}
-                {r.repositories.length ? `Backup repositories: ${r.repositories.join(", ")}.` : "No backup repository on it yet."}
-              </p>
+              <dl class="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[7.5rem_1fr] sm:gap-y-3">
+                <dt class="text-muted">Location</dt>
+                <dd class="mono min-w-0 break-all">{where(r)}</dd>
+                <dt class="mt-2 text-muted sm:mt-0">Repositories</dt>
+                <dd class="min-w-0">{r.repositories.length ? r.repositories.join(", ") : <span class="text-muted">None</span>}</dd>
+              </dl>
             </article>
           ))}
         </div>
@@ -119,7 +114,6 @@ function RemoteDialog({ remote, onClose, onSaved }: { remote: Remote | null; onC
   return (
     <Dialog
       title={creating ? "Add remote" : `Edit ${remote.name}`}
-      intro="Deskyard connects to it before saving."
       wide
       onClose={onClose}
       onSubmit={() => (valid ? void save() : setTried(true))}
@@ -159,7 +153,7 @@ function RemoteDialog({ remote, onClose, onSaved }: { remote: Remote | null; onC
           </div>
         </Field>
       )}
-      <Field label="Name" htmlFor="remote-name" hint={shows("name") && errs.name ? <span class="text-danger">{errs.name}</span> : creating ? "It can't be changed later." : undefined}>
+      <Field label="Name" htmlFor="remote-name" hint={shows("name") && errs.name ? <span class="text-danger">{errs.name}</span> : creating ? "Can't be changed later." : undefined}>
         <input type="text" id="remote-name" value={d.name} disabled={!creating} autocomplete="off" spellcheck={false} onInput={(e) => set({ name: e.currentTarget.value.toLowerCase() })} />
       </Field>
       {fieldsFor(d.type).map((f) => {
@@ -167,7 +161,7 @@ function RemoteDialog({ remote, onClose, onSaved }: { remote: Remote | null; onC
         const value = d[f.key];
         const err = shows(f.key) ? errs[f.key] : undefined;
         const keep = !creating && f.secret && remote.secretsSet.includes(f.key);
-        const hint = err ? <span class="text-danger">{err}</span> : keep ? "Saved. Leave empty to keep it." : f.hint;
+        const hint = err ? <span class="text-danger">{err}</span> : keep ? "Leave empty to keep the saved one." : f.hint;
         return (
           <Field key={f.key} label={f.label} htmlFor={id} hint={hint}>
             {f.options ? (
@@ -190,7 +184,7 @@ function RemoteDialog({ remote, onClose, onSaved }: { remote: Remote | null; onC
       })}
       {moved && remote.repositories.length > 0 && (
         <Note>
-          {remote.repositories.join(", ")} {remote.repositories.length === 1 ? "is" : "are"} on this remote. Pointing it somewhere else makes them unreachable until it points at their folder again.
+          Pointing it elsewhere makes {remote.repositories.join(", ")} unreachable.
         </Note>
       )}
       <ErrorText error={error} />
@@ -227,9 +221,9 @@ function DeleteRemote({ remote: r, onClose, onDeleted }: { remote: Remote; onClo
       }
     >
       {r.repositories.length ? (
-        <p class="text-sm">Remove its backup repositories first: {r.repositories.join(", ")}.</p>
+        <p class="text-sm">Remove its repositories first: {r.repositories.join(", ")}.</p>
       ) : (
-        <p class="text-sm">Deskyard forgets the connection and its credentials. Nothing stored on the remote is touched.</p>
+        <p class="text-sm">Nothing stored on the remote is touched.</p>
       )}
       <ErrorText error={error} />
     </Dialog>

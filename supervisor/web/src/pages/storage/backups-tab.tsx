@@ -37,10 +37,7 @@ export function BackupsTab() {
     <>
       <section aria-label="Backup repositories">
         <div class="mb-4 flex flex-wrap items-center gap-3">
-          <div class="mr-auto max-w-[640px]">
-            <h2 class="text-lg font-semibold">Backup repositories</h2>
-            <p class="text-sm text-muted">A repository is a folder on a remote where restic keeps encrypted, deduplicated snapshots. Its recovery key opens it from anywhere.</p>
-          </div>
+          <h2 class="mr-auto text-lg font-semibold">Repositories</h2>
           <Button variant="primary" disabled={!remotes.data?.remotes.length} onClick={() => setCreating(true)}>
             Add repository
           </Button>
@@ -51,26 +48,29 @@ export function BackupsTab() {
           </p>
         )}
         <ErrorText error={overview.error} />
-        {o && !o.repositories.length && <p class="text-sm text-muted">No repositories yet.</p>}
+        {o && !o.repositories.length && <p class="text-sm text-muted">No repositories yet. A repository is a folder on a remote that holds encrypted snapshots.</p>}
         <div class="grid gap-3">
           {o?.repositories.map((r) => (
-            <RepositoryCard key={r.name} repository={r} used={o.items.filter((i) => i.policy?.repository === r.name).length} onRemoved={overview.reload} />
+            <RepositoryCard key={r.name} repository={r} used={o.items.filter((i) => i.policy?.repository === r.name).map((i) => splitItem(i.item)[1])} onRemoved={overview.reload} />
           ))}
         </div>
       </section>
 
       <section aria-label="Backed up" class="mt-8">
         <h2 class="mb-2 text-lg font-semibold">Backed up</h2>
-        {o && !o.items.length && <p class="text-sm text-muted">Nothing is backed up yet. Set up backups on an environment's or a volume's Backups tab.</p>}
+        {o && !o.items.length && <p class="text-sm text-muted">Nothing yet. Set up backups on an environment's Backups tab or a volume's page.</p>}
         {!!o?.items.length && (
           <ul class="m-0 list-none divide-y divide-hairline rounded-[10px] border border-line bg-surface p-0">
             {o.items.map((i) => (
               <li key={i.item} class="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
-                <a href={itemHref(i.item)} class="mr-auto font-semibold">
-                  {i.item.replace(":", " ")}
-                </a>
-                {i.policy && <span class="text-sm text-muted">{i.policy.enabled ? describeSchedule(i.policy.schedule) : "Paused"} → {i.policy.repository}</span>}
-                <span class="text-sm">{isTime(i.state.lastSuccess) ? `Last ${ago(i.state.lastSuccess).toLowerCase()}` : "Not yet"}</span>
+                <span class="mr-auto min-w-0">
+                  <a href={itemHref(i.item)} class="font-semibold">
+                    {splitItem(i.item)[1]}
+                  </a>{" "}
+                  <span class="text-sm text-muted">{splitItem(i.item)[0] === "environment" ? "environment" : "volume"}</span>
+                </span>
+                {i.policy && <span class="text-sm text-muted">{i.policy.enabled ? describeSchedule(i.policy.schedule) : "Paused"} · {i.policy.repository}</span>}
+                <span class="text-sm">{isTime(i.state.lastSuccess) ? ago(i.state.lastSuccess) : "Never"}</span>
                 {(() => {
                   const st = backupStatus(i);
                   return st && <Tag kind={st.kind}>{st.label}</Tag>;
@@ -86,14 +86,14 @@ export function BackupsTab() {
         )}
       </section>
 
-      <section aria-label="In the repositories" class="mt-8">
+      <section aria-label="Other backups" class="mt-8">
         <div class="mb-2 flex flex-wrap items-center gap-3">
-          <div class="mr-auto max-w-[640px]">
-            <h2 class="text-lg font-semibold">In the repositories</h2>
-            <p class="text-sm text-muted">Everything the repositories hold, including removed environments and volumes and other machines' backups, to restore as new.</p>
+          <div class="mr-auto">
+            <h2 class="text-lg font-semibold">Other backups</h2>
+            <p class="text-sm text-muted">Of removed environments and volumes, and other machines.</p>
           </div>
           <Button disabled={looking || !o?.repositories.length} onClick={() => void look()}>
-            {looking ? "Looking…" : catalog ? "Look again" : "Look"}
+            {looking ? "Looking…" : catalog ? "Refresh" : "Show"}
           </Button>
         </div>
         <ErrorText error={lookError} />
@@ -106,31 +106,28 @@ export function BackupsTab() {
 
 function Catalog({ overview: o }: { overview: BackupsOverview }) {
   const [restoring, setRestoring] = useState<CatalogItem | null>(null);
-  const items = o.catalog ?? [];
+  const items = (o.catalog ?? []).filter((c) => !c.local);
   return (
     <>
       {Object.entries(o.catalogErrors ?? {}).map(([repo, err]) => (
         <ErrorText key={repo} error={`${repo}: ${err}`} />
       ))}
       {!items.length ? (
-        <p class="text-sm text-muted">The repositories are empty.</p>
+        <p class="text-sm text-muted">None.</p>
       ) : (
         <ul class="m-0 list-none divide-y divide-hairline rounded-[10px] border border-line bg-surface p-0">
           {items.map((c) => (
             <li key={`${c.repository} ${c.host} ${c.item}`} class="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
               <div class="mr-auto min-w-0">
-                <div class="font-semibold">{c.item.replace(":", " ")}</div>
+                <div>
+                  <span class="font-semibold">{splitItem(c.item)[1]}</span> <span class="text-sm text-muted">{splitItem(c.item)[0]}</span>
+                </div>
                 <div class="text-sm text-muted">
-                  {c.snapshots} snapshot{c.snapshots === 1 ? "" : "s"}, latest {day(c.latest)} · {c.repository} · {c.host === o.host ? "this Deskyard" : c.host}
+                  {c.snapshots} snapshot{c.snapshots === 1 ? "" : "s"}, latest {day(c.latest)} · {c.repository}
+                  {c.host !== o.host && ` · ${c.host}`}
                 </div>
               </div>
-              {c.local ? (
-                <a href={itemHref(c.item)} class="text-sm">
-                  Open
-                </a>
-              ) : (
-                <Button onClick={() => setRestoring(c)}>Restore latest as new</Button>
-              )}
+              <Button onClick={() => setRestoring(c)}>Restore as new</Button>
             </li>
           ))}
         </ul>
@@ -147,7 +144,7 @@ function Catalog({ overview: o }: { overview: BackupsOverview }) {
   );
 }
 
-function RepositoryCard({ repository: r, used, onRemoved }: { repository: Repository; used: number; onRemoved: () => void }) {
+function RepositoryCard({ repository: r, used, onRemoved }: { repository: Repository; used: string[]; onRemoved: () => void }) {
   const [key, setKey] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -160,27 +157,27 @@ function RepositoryCard({ repository: r, used, onRemoved }: { repository: Reposi
   };
   return (
     <article class="rounded-[10px] border border-line bg-surface p-5">
-      <div class="flex flex-wrap items-start gap-x-4 gap-y-2">
-        <div class="mr-auto min-w-0">
-          <h3 class="text-lg font-semibold">{r.name}</h3>
-          <p class="mono text-sm break-all text-muted">
-            {r.remote}:{r.folder}
-          </p>
-        </div>
-        <Button onClick={() => (key ? setKey(null) : void reveal())}>{key ? "Hide recovery key" : "Show recovery key"}</Button>
+      <div class="mb-4 flex flex-wrap items-start gap-x-4 gap-y-2">
+        <h3 class="mr-auto min-w-0 text-lg font-semibold">{r.name}</h3>
+        <Button onClick={() => (key ? setKey(null) : void reveal())}>{key ? "Hide recovery key" : "Recovery key"}</Button>
         <Button onClick={() => setRemoving(true)}>Remove</Button>
       </div>
-      <p class="mt-3 text-sm text-muted">
-        Added {day(r.created)}. {used ? `${used} item${used === 1 ? "" : "s"} back up here.` : "Nothing backs up here yet."}
-      </p>
-      {key && <KeyPanel repository={r} recoveryKey={key} />}
+      <dl class="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[7.5rem_1fr] sm:gap-y-3">
+        <dt class="text-muted">Location</dt>
+        <dd class="mono min-w-0 break-all">
+          {r.remote}:{r.folder}
+        </dd>
+        <dt class="mt-2 text-muted sm:mt-0">Backs up</dt>
+        <dd class="min-w-0">{used.length ? used.join(", ") : <span class="text-muted">Nothing yet</span>}</dd>
+      </dl>
+      {key && <KeyPanel recoveryKey={key} />}
       <ErrorText error={error} />
       {removing && <RemoveRepository repository={r} onClose={() => setRemoving(false)} onRemoved={onRemoved} />}
     </article>
   );
 }
 
-function KeyPanel({ repository: r, recoveryKey }: { repository: Repository; recoveryKey: string }) {
+function KeyPanel({ recoveryKey }: { recoveryKey: string }) {
   return (
     <div class="mt-3 rounded-lg border border-line bg-white p-3.5">
       <div class="flex flex-wrap items-center gap-2">
@@ -198,13 +195,7 @@ function KeyPanel({ repository: r, recoveryKey }: { repository: Repository; reco
           Copy
         </Button>
       </div>
-      <p class="mt-2 text-[13px] text-muted">
-        Keep it in a password manager: without it the backups can't be read, even with the remote's credentials. By hand:{" "}
-        <span class="mono">
-          restic -r rclone:{r.remote}:…/{r.folder} snapshots
-        </span>{" "}
-        with the remote's rclone configuration.
-      </p>
+      <p class="mt-2 text-[13px] text-muted">Without this key the backups can't be read. Keep it in a password manager.</p>
     </div>
   );
 }
@@ -233,7 +224,7 @@ function CreateRepository({ remotes, onClose, onCreated }: { remotes: string[]; 
     } catch (e) {
       if (e instanceof ApiError && e.code === "needsKey") {
         setNeedsKey(true);
-        setError("There's already a backup repository in that folder. Enter its recovery key to connect it.");
+        setError("That folder already holds a repository. Enter its recovery key to connect it.");
       } else setError(errorMessage(e));
     } finally {
       setBusy(false);
@@ -242,15 +233,14 @@ function CreateRepository({ remotes, onClose, onCreated }: { remotes: string[]; 
   if (created?.recoveryKey) {
     return (
       <Dialog title={`Created ${created.repository.name}`} onClose={onClose} onSubmit={onClose} footer={<Button type="submit" variant="primary">I've saved it</Button>}>
-        <p class="text-sm">This is the repository's recovery key. Save it somewhere safe now; you can show it again later on this page.</p>
-        <KeyPanel repository={created.repository} recoveryKey={created.recoveryKey} />
+        <p class="text-sm">This is the repository's recovery key.</p>
+        <KeyPanel recoveryKey={created.recoveryKey} />
       </Dialog>
     );
   }
   return (
     <Dialog
       title="Add backup repository"
-      intro="A new folder gets a new repository and recovery key. A folder that already holds one, from a reinstall or another Deskyard, is connected with its key."
       onClose={onClose}
       onSubmit={() => valid && void submit()}
       footer={
@@ -276,7 +266,7 @@ function CreateRepository({ remotes, onClose, onCreated }: { remotes: string[]; 
           ))}
         </select>
       </Field>
-      <Field label="Folder on the remote" htmlFor="repo-folder" hint="Below the remote's root. It can't be changed later.">
+      <Field label="Folder on the remote" htmlFor="repo-folder" hint="Can't be changed later.">
         <input type="text" id="repo-folder" class="mono" value={folder} spellcheck={false} onInput={(e) => { setFolder(e.currentTarget.value); setNeedsKey(false); }} />
       </Field>
       {needsKey && (
@@ -317,9 +307,7 @@ function RemoveRepository({ repository: r, onClose, onRemoved }: { repository: R
         </>
       }
     >
-      <Note>
-        Deskyard forgets the repository and its recovery key. Its snapshots stay on {r.remote}; to reach them again, add the repository with the same folder and its recovery key, so save the key first.
-      </Note>
+      <Note>Its snapshots stay on {r.remote}, but you need the recovery key to add it again. Save the key first.</Note>
       <ErrorText error={error} />
     </Dialog>
   );

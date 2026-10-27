@@ -49,7 +49,7 @@ export const WEBDAV_VENDORS = ["nextcloud", "owncloud", "other"];
 const FIELDS: Record<RemoteType, FieldSpec[]> = {
   s3: [
     { key: "provider", label: "Provider", required: true, options: S3_PROVIDERS },
-    { key: "endpoint", label: "Endpoint", placeholder: "https://…", hint: "The service's URL; leave empty for AWS." },
+    { key: "endpoint", label: "Endpoint", placeholder: "https://…", hint: "Empty for AWS." },
     { key: "region", label: "Region", placeholder: "us-east-1" },
     { key: "accessKeyId", label: "Access key ID", required: true },
     { key: "secretAccessKey", label: "Secret access key", secret: true, required: true },
@@ -66,8 +66,8 @@ const FIELDS: Record<RemoteType, FieldSpec[]> = {
     { key: "user", label: "User", required: true },
     { key: "password", label: "Password", secret: true, hint: "A password or a private key." },
     { key: "privateKey", label: "Private key", secret: true, multiline: true, placeholder: "-----BEGIN OPENSSH PRIVATE KEY-----" },
-    { key: "hostKey", label: "Host key", placeholder: "nas.local ssh-ed25519 AAAA…", hint: "A known_hosts line pinning the server's key. Without it, any server answering at the host is accepted." },
-    { key: "root", label: "Folder", placeholder: "/volume1/backups", hint: "Where on the server; empty is the user's home." },
+    { key: "hostKey", label: "Host key", placeholder: "nas.local ssh-ed25519 AAAA…", hint: "Optional known_hosts line that pins the server's key." },
+    { key: "root", label: "Folder", placeholder: "/volume1/backups", hint: "Empty is the user's home." },
   ],
   webdav: [
     { key: "url", label: "URL", required: true, placeholder: "https://cloud.example.com/remote.php/dav/files/me" },

@@ -39,6 +39,7 @@ export function BackupsPanel({ kind, name, stoppers, hostPath }: { kind: ItemKin
   }, [item.data?.activity]);
 
   const repos = overview.data?.repositories ?? [];
+  const manyRepos = new Set(snaps.data?.snapshots.map((s) => s.repository)).size > 1;
   const b = item.data;
   return (
     <section aria-label="Backups">
@@ -47,13 +48,15 @@ export function BackupsPanel({ kind, name, stoppers, hostPath }: { kind: ItemKin
         <div class="rounded-[10px] border border-line bg-surface p-5">
           <div class="flex flex-wrap items-start gap-x-4 gap-y-2">
             <div class="mr-auto min-w-0">
-              <h2 class="text-lg font-semibold">{!b.policy ? "Not backed up" : !b.policy.enabled ? "Backups paused" : isTime(b.state.lastSuccess) ? "Backed up" : "Backups set up"}</h2>
+              <h2 class="text-lg font-semibold">
+                {!b.policy ? "Not backed up" : `${b.policy.enabled ? describeSchedule(b.policy.schedule) : "Paused"} → ${b.policy.repository}`}
+              </h2>
               <p class="text-sm text-muted">
                 {b.policy
-                  ? `${describeSchedule(b.policy.schedule)} to ${b.policy.repository}; keeping ${describeRetention(b.policy.retention)}.`
+                  ? `Keeps ${describeRetention(b.policy.retention)}`
                   : kind === "environment"
-                    ? "Back up this environment's settings and home folder to a backup repository."
-                    : "Back up this volume's files to a backup repository."}
+                    ? "Its settings and home folder, to a backup repository."
+                    : "Its files, to a backup repository."}
               </p>
             </div>
             {b.policy && (
@@ -67,7 +70,7 @@ export function BackupsPanel({ kind, name, stoppers, hostPath }: { kind: ItemKin
           </div>
           {!repos.length && !b.policy && overview.data && (
             <p class="mt-3 text-sm text-muted">
-              There's no backup repository yet. <a href="/volumes?tab=backups">Add one under Storage → Backups</a>.
+              <a href="/volumes?tab=backups">Add a backup repository</a> first.
             </p>
           )}
           <Status item={b} />
@@ -82,7 +85,7 @@ export function BackupsPanel({ kind, name, stoppers, hostPath }: { kind: ItemKin
       {!snaps.data ? (
         !snaps.error && <p class="text-sm text-muted">Loading…</p>
       ) : !snaps.data.snapshots.length ? (
-        <p class="text-sm text-muted">{b?.policy ? "No snapshots yet. Back up now, or wait for the next scheduled backup." : "No snapshots yet."}</p>
+        <p class="text-sm text-muted">No snapshots yet.</p>
       ) : (
         <ul class="m-0 list-none divide-y divide-hairline rounded-[10px] border border-line bg-surface p-0">
           {snaps.data.snapshots.map((s) => (
@@ -90,17 +93,13 @@ export function BackupsPanel({ kind, name, stoppers, hostPath }: { kind: ItemKin
               <div class="mr-auto min-w-0">
                 <div class="font-semibold">{when(s.time)}</div>
                 <div class="text-sm text-muted">
-                  {[describeReason(s.reason), s.summary && `${bytes(s.summary.total_bytes_processed)}, ${bytes(s.summary.data_added)} new`, s.repository, s.short_id]
-                    .filter(Boolean)
-                    .join(" · ")}
+                  {[describeReason(s.reason), s.summary && bytes(s.summary.total_bytes_processed), manyRepos && s.repository].filter(Boolean).join(" · ")}
                 </div>
               </div>
               <div class="flex flex-wrap gap-2">
                 <Button onClick={() => setBrowsing(s)}>Browse</Button>
                 <Button onClick={() => setRestoring({ snap: s, mode: "new" })}>Restore as new</Button>
-                <Button variant="danger" onClick={() => setRestoring({ snap: s, mode: "here" })}>
-                  Restore here
-                </Button>
+                <Button onClick={() => setRestoring({ snap: s, mode: "here" })}>Restore here</Button>
               </div>
             </li>
           ))}
@@ -283,7 +282,7 @@ function PolicyDialog({
           />
         </div>
       </Field>
-      <Field label="Keep" hint={retErr ? <span class="text-danger">{retErr}</span> : `Snapshots beyond these are forgotten after each backup: ${describeRetention(p.retention) || "none"}.`}>
+      <Field label="Keep" hint={retErr ? <span class="text-danger">{retErr}</span> : "Older snapshots are forgotten after each backup."}>
         <div class="grid grid-cols-3 gap-2 sm:grid-cols-6">
           {num("last", "Last")}
           {num("hourly", "Hourly")}
@@ -294,9 +293,8 @@ function PolicyDialog({
         </div>
       </Field>
       <Check id="policy-enabled" checked={p.enabled} onChange={(enabled) => setP({ ...p, enabled })} title="Back up on this schedule">
-        Turn off to pause scheduled backups; Back up now still works.
+        Off pauses scheduled backups.
       </Check>
-      <p class="mt-3 text-sm text-muted">Backups run while {kind === "environment" ? "the environment" : "environments using the volume"} keep running; a file being written at that moment may be saved half-written.</p>
       <ErrorText error={error} />
     </Dialog>
   );
@@ -328,8 +326,7 @@ function BrowseDialog({ kind, name, snapshot: s, onClose }: { kind: ItemKind; na
     return (
       <Dialog title="Files restored" onClose={onClose} onSubmit={onClose} footer={<Button type="submit" variant="primary">Done</Button>}>
         <p class="text-sm" role="status">
-          The {picked.length === 1 ? "selection is" : `${picked.length} selections are`} in <span class="mono break-all">{done.folder}</span>{" "}
-          {kind === "environment" ? "in the home folder" : "in the volume"}. Nothing else was changed.
+          In <span class="mono break-all">{done.folder}</span> {kind === "environment" ? "in the home folder" : "in the volume"}.
         </p>
       </Dialog>
     );
@@ -369,7 +366,7 @@ function BrowseDialog({ kind, name, snapshot: s, onClose }: { kind: ItemKind; na
       </nav>
       <ErrorText error={error} />
       {!entries ? (
-        !error && <p class="text-sm text-muted">Loading… (each folder takes a few seconds)</p>
+        !error && <p class="text-sm text-muted">Loading…</p>
       ) : !entries.length ? (
         <p class="text-sm text-muted">This folder is empty.</p>
       ) : (
@@ -392,9 +389,7 @@ function BrowseDialog({ kind, name, snapshot: s, onClose }: { kind: ItemKind; na
           ))}
         </ul>
       )}
-      <p class="mt-3 text-sm text-muted">
-        Restoring to a folder puts the selection into a new “Restored …” folder {kind === "environment" ? "in the home folder" : "in the volume"}, keeping its subfolders. Nothing existing is overwritten, and nothing is stopped.
-      </p>
+      <p class="mt-3 text-sm text-muted">Selected items are restored into a new “Restored …” folder. Nothing is overwritten.</p>
       <JobProgress job={run.job} />
       <ErrorText error={run.error} />
     </Dialog>
@@ -443,18 +438,14 @@ function RestoreHereDialog({
       }
     >
       <Note danger>
-        Every file in {kind === "environment" ? `${name}'s home folder` : hostPath ? `the host folder ${hostPath}` : `the volume ${name}`} is replaced with the snapshot's: files added or changed since are lost, and deleted ones come back.
-        {kind === "environment" && " Its settings stay as they are."}
+        {kind === "environment" ? `${name}'s home folder` : hostPath ? `The host folder ${hostPath}` : `The volume ${name}`}
+        {" "}goes back to this snapshot. Files added or changed since are lost.
+        {stoppers.length > 0 && ` ${stoppers.join(", ")} ${stoppers.length === 1 ? "is" : "are"} stopped meanwhile.`}
       </Note>
-      {stoppers.length > 0 && (
-        <p class="my-3 text-sm">
-          {stoppers.join(", ")} {stoppers.length === 1 ? "is" : "are"} stopped while the files are restored, and started again afterwards if running.
-        </p>
-      )}
+
       <Check id="restore-first" checked={first} disabled={!hasPolicy} onChange={setFirst} title="Back up the current files first">
-        {hasPolicy ? "A snapshot of how things are now, so this restore can be undone." : "Set up backups to keep a copy of the current files first."}
+        {hasPolicy ? "So this can be undone." : "Needs a backup policy."}
       </Check>
-      <p class="mt-3 text-sm text-muted">To get back only some files, or to look first, use Browse or Restore as new instead.</p>
       <JobProgress job={run.job} />
       <ErrorText error={run.error} />
     </Dialog>
@@ -476,12 +467,11 @@ export function RestoreNewDialog({ kind, name, snapshot: s, onClose }: { kind: I
     return (
       <Dialog title={`Restored as ${result.created}`} onClose={onClose} onSubmit={() => (location.href = href)} footer={<><Button variant="quiet" onClick={onClose}>Close</Button><Button type="submit" variant="primary">Open {result.created}</Button></>}>
         <p class="text-sm" role="status">
-          {kind === "environment" ? `${result.created} is a new environment with the snapshot's files, left stopped.` : `${result.created} is a new volume with the snapshot's files.`}{" "}
-          {name} is unchanged.
+          {kind === "environment" ? `${result.created} is ready, and stopped.` : `${result.created} is ready.`}
         </p>
         {!!result.dropped?.length && (
           <Note>
-            Not taken over from the saved settings: {result.dropped.join("; ")}. Set them in its settings if needed.
+            Not copied: {result.dropped.join("; ")}.
           </Note>
         )}
       </Dialog>
@@ -490,7 +480,7 @@ export function RestoreNewDialog({ kind, name, snapshot: s, onClose }: { kind: I
   return (
     <Dialog
       title={`Restore ${name} as new`}
-      intro={`From ${when(s.time)}. ${name} itself isn't touched.`}
+      intro={`From ${when(s.time)}.`}
       onClose={onClose}
       onSubmit={() => valid && void run.start(() => api.restore(kind, name, { snapshot: s.id, repository: s.repository, mode: "new", newName, newImage: image || undefined }))}
       footer={
@@ -508,7 +498,7 @@ export function RestoreNewDialog({ kind, name, snapshot: s, onClose }: { kind: I
         <input type="text" id="restore-name" value={newName} autocomplete="off" spellcheck={false} onInput={(e) => setNewName(e.currentTarget.value.toLowerCase())} />
       </Field>
       {kind === "environment" && (
-        <Field label="Image" htmlFor="restore-image" hint="The saved image is used unless you choose another, for instance when it's gone from this machine. VPN, Docker access and missing volumes aren't taken over.">
+        <Field label="Image" htmlFor="restore-image" hint="VPN, Docker access and missing volumes aren't copied.">
           <select id="restore-image" value={image} onChange={(e) => setImage(e.currentTarget.value)}>
             <option value="">The saved image</option>
             {(images.data ?? []).map((i) => (
