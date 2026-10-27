@@ -27,7 +27,7 @@ def test_login_logout_and_wrong_password(supervisor):
     c = supervisor.client()
     assert c.post("/api/login", json={"username": "admin", "password": "nope"}).status_code == 401
     c.login("admin", ADMIN_PASSWORD)
-    assert c.get("/api/me").json() == {"username": "admin", "admin": True}
+    assert c.get("/api/me").json() == {"username": "admin", "admin": True, "kind": "password", "share": False}
     assert c.post("/api/logout").status_code == 204
     c.cookies.clear()
     assert c.get("/api/me").status_code == 401
