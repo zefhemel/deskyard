@@ -13,7 +13,8 @@ Arguments:
 
 Options:
   --name NAME          local name for the server, used with -e NAME/ENV
-                       (default: its host name)
+                       (default: its host name, unless another server already
+                       has it)
 
 Prints: a confirmation with the account and environment
 

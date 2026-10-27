@@ -81,12 +81,21 @@ type loginAnswer struct {
 	} `json:"environments"`
 }
 
-// serverName is --name, else the server's host name.
-func serverName(c *call, base string) (string, error) {
+// serverName is --name, else the server's host name. A host name that
+// already names another server (one on another port of the same host) is
+// refused rather than replacing that server's login.
+func serverName(a *App, c *call, base string) (string, error) {
 	name := c.str("--name", "")
 	if name == "" {
 		if name = remote.DefaultName(base); name == "" {
 			return "", usagef(c.cmd, "can't name the server after its address %s: pass --name NAME", base)
+		}
+		cfg, _, err := a.loadConfig()
+		if err != nil {
+			return "", err
+		}
+		if old := cfg.Servers[name]; old != nil && old.URL != base {
+			return "", usagef(c.cmd, "the server name %q is already used by %s: pass --name NAME to save %s under another name", name, old.URL, base)
 		}
 	}
 	if !remote.ValidName(name) {
@@ -115,7 +124,7 @@ func runLogin(a *App, c *call) error {
 			return usagef(c.cmd, "%s is a page of Deskyard, it isn't an environment: run `deskyard login %s`, or add an environment's name to it", t.URL(), u)
 		}
 	}
-	name, err := serverName(c, t.Base)
+	name, err := serverName(a, c, t.Base)
 	if err != nil {
 		return err
 	}
@@ -179,7 +188,7 @@ func runAuth(a *App, c *call) error {
 	if err != nil {
 		return usagef(c.cmd, "%v", err)
 	}
-	name, err := serverName(c, base)
+	name, err := serverName(a, c, base)
 	if err != nil {
 		return err
 	}

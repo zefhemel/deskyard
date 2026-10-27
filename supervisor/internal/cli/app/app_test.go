@@ -395,6 +395,35 @@ func TestAuthLinkSavesServer(t *testing.T) {
 	}
 }
 
+// Two servers on one host get the same default name: the second login or
+// link is refused before it reaches the server, keeping the first login.
+func TestLoginRefusesAnotherServerUnderTheSameDefaultName(t *testing.T) {
+	fastLogin(t)
+	f := clitest.New(t, "alice")
+	g := clitest.New(t, "alice")
+	h := newHarness(t)
+	if r := h.run("auth", f.LinkURL()); r.code != 0 {
+		t.Fatalf("auth: %+v", r)
+	}
+	first := h.servers().Servers["127.0.0.1"]
+	for _, args := range [][]string{{"login", g.URL, "--no-browser"}, {"auth", g.LinkURL()}} {
+		r := h.run(args...)
+		if r.code != 2 || !strings.Contains(r.stderr, f.URL) || !strings.Contains(r.stderr, "--name") {
+			t.Errorf("%s: %+v", args[0], r)
+		}
+	}
+	if s := h.servers().Servers["127.0.0.1"]; s == nil || s.URL != f.URL || s.Credential != first.Credential || !f.Valid(first.Credential) {
+		t.Errorf("the first server's login changed: %+v (valid %v)", s, f.Valid(first.Credential))
+	}
+	if len(g.Calls()) != 0 || len(g.Clients()) != 0 {
+		t.Errorf("the second server was asked: %+v", g.Calls())
+	}
+	// Under a name of its own it is saved beside the first.
+	if r := h.run("auth", g.LinkURL(), "--name", "other"); r.code != 0 || h.servers().Servers["127.0.0.1"].URL != f.URL {
+		t.Errorf("--name: %+v", r)
+	}
+}
+
 func TestLogoutRevokesThenForgets(t *testing.T) {
 	h, f := remoteHarness(t)
 	g := clitest.New(t, "bob")

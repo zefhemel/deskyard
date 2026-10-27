@@ -796,7 +796,7 @@
           "name": "--name",
           "type": "string",
           "value": "NAME",
-          "description": "local name for the server, used with -e NAME/ENV (default: its host name)"
+          "description": "local name for the server, used with -e NAME/ENV (default: its host name, unless another server already has it)"
         },
         {
           "name": "--no-browser",
@@ -834,7 +834,7 @@
           "name": "--name",
           "type": "string",
           "value": "NAME",
-          "description": "local name for the server, used with -e NAME/ENV (default: its host name)"
+          "description": "local name for the server, used with -e NAME/ENV (default: its host name, unless another server already has it)"
         }
       ],
       "output": {

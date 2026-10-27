@@ -254,7 +254,7 @@ func init() {
 				"Then saves the server, your username and a client credential for this machine in servers.json ($XDG_CONFIG_HOME/deskyard, default ~/.config/deskyard; mode 0600). " +
 				"With an environment in the URL (https://host/alice) it becomes the server's default environment, once checked that you have full access to it; without one, your only environment does. The first server becomes the default. The request expires after 10 minutes.",
 			Args: []Arg{{Name: "url", Type: "string", Required: true, Desc: "the server's address, optionally with an environment: https://host or https://host/alice"}},
-			Flags: []Flag{{Name: "--name", Type: "string", Value: "NAME", Desc: "local name for the server, used with -e NAME/ENV (default: its host name)"},
+			Flags: []Flag{{Name: "--name", Type: "string", Value: "NAME", Desc: "local name for the server, used with -e NAME/ENV (default: its host name, unless another server already has it)"},
 				{Name: "--no-browser", Type: "boolean", Desc: "only print the approval URL, don't open a browser"}},
 			Output:   Output{Type: "text", Desc: "a confirmation with the account and environment; the code and approval URL on stderr"},
 			Examples: []string{"deskyard login https://deskyard.example.com/alice", "deskyard login https://deskyard.example.com --name work --no-browser"},
@@ -263,7 +263,7 @@ func init() {
 			Usage:    "auth LINK [--name NAME]",
 			Desc:     "Signs this CLI in with a login link (https://host/link#dyl_…), without a browser: the link is used up, and the server, your username and a client credential are saved in servers.json as for login. When the account has exactly one environment it becomes the default. Observe-only links work in a browser only.",
 			Args:     []Arg{{Name: "link", Type: "string", Required: true, Desc: "the whole login link, https://host/link#dyl_…"}},
-			Flags:    []Flag{{Name: "--name", Type: "string", Value: "NAME", Desc: "local name for the server, used with -e NAME/ENV (default: its host name)"}},
+			Flags:    []Flag{{Name: "--name", Type: "string", Value: "NAME", Desc: "local name for the server, used with -e NAME/ENV (default: its host name, unless another server already has it)"}},
 			Output:   Output{Type: "text", Desc: "a confirmation with the account and environment"},
 			Examples: []string{"deskyard auth 'https://deskyard.example.com/link#dyl_…'"},
 			Where:    whereServer, Exit: exitStd, run: runAuth},
