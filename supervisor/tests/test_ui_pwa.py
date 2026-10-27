@@ -51,8 +51,8 @@ def test_pwa_viewport_keeps_controls_visible(supervisor, desktop, name):
             assert page.evaluate("document.documentElement.scrollHeight <= innerHeight+1")
         # Simulate a notched standalone viewport, including its native blur buffer.
         page.add_style_tag(content=":root{--safe-top:62px;--standalone-edge:16px;--safe-bottom:34px}")
-        page.get_by_role("button",name="Apps",exact=True).click()
-        dialog = page.get_by_role("dialog")
+        page.get_by_role("button",name="Audio",exact=True).click()
+        dialog = page.get_by_role("dialog",name="Audio")
         expect(dialog).to_be_visible()
         assert dialog.bounding_box()["y"] >= 78
         browser.close()

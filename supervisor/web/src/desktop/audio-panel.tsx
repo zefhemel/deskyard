@@ -367,7 +367,7 @@ function Panel({ onClose, children }: { onClose: () => void; children: Component
       ref={ref}
       role="dialog"
       aria-label="Audio"
-      class="absolute top-[42px] right-0 z-40 max-h-[calc(100dvh-58px)] w-[290px] overflow-y-auto rounded-[10px] bg-surface p-3.5 text-ink shadow-[0_18px_40px_-12px_rgba(0,0,0,.6)] max-sm:fixed max-sm:inset-x-2.5 max-sm:top-[50px] max-sm:w-auto"
+      class="absolute top-[42px] right-0 z-40 max-h-[calc(100dvh-58px)] w-[290px] overflow-y-auto rounded-[10px] bg-surface p-3.5 text-ink shadow-[0_18px_40px_-12px_rgba(0,0,0,.6)] max-sm:fixed max-sm:inset-x-2.5 max-sm:top-[calc(50px+var(--safe-top)+var(--standalone-edge))] max-sm:max-h-[calc(100dvh-58px-var(--safe-top)-var(--standalone-edge)-var(--safe-bottom))] max-sm:w-auto"
     >
       {children}
     </div>
