@@ -67,6 +67,10 @@ type Server struct {
 	activityPub    *throttle
 	screenWatchers *viewers // screen-events streams, closed on revoke like viewers
 	unsaved        *unsavedRevocations
+	// revoking is held by a change that decides an account's access or
+	// sessions, from its save to holding or forgetting what couldn't be
+	// saved, and by the sweep saving those; neither undoes the other.
+	revoking sync.Mutex
 	seen           *lastSeen // browser requests, by account ID
 
 	api *http.ServeMux

@@ -35,6 +35,9 @@ func accountKind(a accounts.Account) string {
 
 // toAccountJSON shows a with its grants of defined environments.
 func (s *Server) toAccountJSON(a accounts.Account) accountJSON {
+	if held, ok := s.unsaved.apply(a); ok {
+		a = held
+	}
 	return accountJSON{Username: a.Username, Kind: accountKind(a), Admin: a.Admin, Description: a.Description,
 		Grants: s.definedGrants(a), SharedBy: a.SharedBy, Expires: a.Expires, LinkPending: s.links.pending(a.ID),
 		Created: a.Created, LastLogin: since(a.LastLogin)}
@@ -108,8 +111,10 @@ func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
+	// As access stands, so what the Edit dialog saves back keeps what
+	// couldn't be saved.
 	out := []accountJSON{}
-	for _, a := range s.Accounts.List() {
+	for _, a := range s.accountStates() {
 		out = append(out, s.toAccountJSON(a))
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -189,16 +194,8 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 	if req.Expires.Set && !checkExpiry(w, req.Expires.Time) {
 		return
 	}
-	// This change decides the account's grants and role anew: what an
-	// earlier one that couldn't be saved revoked of them no longer applies.
-	s.unsaved.forget(current.Username, func(u *unsavedRevocation) {
-		if req.Grants != nil {
-			u.caps = nil
-		}
-		if req.Admin != nil {
-			u.demoted = false
-		}
-	})
+	s.revoking.Lock()
+	defer s.revoking.Unlock()
 	a, err := s.Accounts.Update(current.Username, func(a *accounts.Account) {
 		if req.Password != nil {
 			a.PasswordHash = auth.HashPassword(*req.Password)
@@ -230,6 +227,20 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 		writeError(w, errorStatus(err), err.Error())
 		return
 	}
+	// Saved, this change decides the account's grants and role anew: what
+	// an earlier one that couldn't be saved revoked of them no longer
+	// applies.
+	if req.Grants != nil || req.Admin != nil {
+		s.unsaved.forget(current.Username, func(u *unsavedRevocation) {
+			if req.Grants != nil {
+				u.caps = nil
+			}
+			if req.Admin != nil {
+				u.demoted = false
+			}
+		})
+		s.events.refresh()
+	}
 	// Changing one's own password or role keeps this session.
 	if a.Username == me.Username {
 		s.reissueSession(w, r, a)
@@ -258,6 +269,8 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 // deleted in memory, which closes its live connections and refuses its
 // reconnects, until the sweep saves the deletion.
 func (s *Server) deleteAccount(w http.ResponseWriter, username string) bool {
+	s.revoking.Lock()
+	defer s.revoking.Unlock()
 	before, _ := s.Accounts.Get(username)
 	err := s.Accounts.Delete(username)
 	switch {

@@ -9,13 +9,15 @@ import (
 )
 
 // unsavedRevocation is a revocation of one account (by ID) that couldn't be
-// saved: the account deleted, its admin role taken, or grants lowered.
+// saved: the account deleted, its admin role taken, grants lowered, or its
+// browser sessions ended.
 type unsavedRevocation struct {
 	username string
 	id       string
 	deleted  bool
 	demoted  bool
 	caps     map[string]auth.Level // environment → the most it may still use
+	epoch    int                   // the least session epoch its cookies may name
 }
 
 // unsavedRevocations holds revocations while writing accounts.json fails.
@@ -40,6 +42,7 @@ func (u *unsavedRevocations) add(r unsavedRevocation) {
 	}
 	old.deleted = old.deleted || r.deleted
 	old.demoted = old.demoted || r.demoted
+	old.epoch = max(old.epoch, r.epoch)
 	maps.Copy(old.caps, r.caps)
 	u.m[r.username] = old
 }
@@ -52,7 +55,7 @@ func (u *unsavedRevocations) forget(username string, fn func(r *unsavedRevocatio
 	if r, ok := u.m[username]; ok {
 		r.caps = maps.Clone(r.caps)
 		fn(&r)
-		if !r.deleted && !r.demoted && len(r.caps) == 0 {
+		if !r.deleted && !r.demoted && len(r.caps) == 0 && r.epoch == 0 {
 			delete(u.m, username)
 		} else {
 			u.m[username] = r
@@ -86,12 +89,14 @@ func (u *unsavedRevocations) apply(a accounts.Account) (accounts.Account, bool) 
 		a.Admin = false
 	}
 	a.Grants = accounts.Capped(a.Grants, r.caps)
+	a.SessionEpoch = max(a.SessionEpoch, r.epoch)
 	return a, true
 }
 
 // saved reports whether the stored account a already holds r.
 func (r unsavedRevocation) saved(a accounts.Account) bool {
-	return !r.deleted && (!r.demoted || !a.Admin) && len(accounts.Lowered(a.Grants, accounts.Capped(a.Grants, r.caps))) == 0
+	return !r.deleted && (!r.demoted || !a.Admin) && len(accounts.Lowered(a.Grants, accounts.Capped(a.Grants, r.caps))) == 0 &&
+		a.SessionEpoch >= r.epoch
 }
 
 // accountState is the named account as it stands, with the revocations
@@ -116,15 +121,22 @@ func (s *Server) accountStates() []accounts.Account {
 }
 
 // revokeUnsaved holds r although saving it failed, and closes the live
-// connections it ends.
+// connections it ends. The caller holds s.revoking.
 func (s *Server) revokeUnsaved(r unsavedRevocation) {
 	s.unsaved.add(r)
 	s.accountsChanged(r.username)
 }
 
 // retryUnsaved saves the revocations that couldn't be saved; it forgets
-// those of accounts gone or replaced, and those saved since.
+// those of accounts gone or replaced, and those saved since. While a change
+// decides access anew (or this retry's own save notifies) it leaves them to
+// a later sweep: the change may forget them, and saving them after it
+// would undo its decision.
 func (s *Server) retryUnsaved() {
+	if !s.revoking.TryLock() {
+		return
+	}
+	defer s.revoking.Unlock()
 	for _, r := range s.unsaved.list() {
 		a, ok := s.Accounts.Get(r.username)
 		if !ok || a.ID != r.id || r.saved(a) {
@@ -138,10 +150,14 @@ func (s *Server) retryUnsaved() {
 			_, err = s.Accounts.Update(r.username, func(a *accounts.Account) {
 				a.Admin = a.Admin && !r.demoted
 				a.Grants = accounts.Capped(a.Grants, r.caps)
+				a.SessionEpoch = max(a.SessionEpoch, r.epoch)
 			})
 		}
 		if err != nil {
 			s.Log.Error("saving a revocation", "account", r.username, "err", err)
+			continue
 		}
+		// Holding s.revoking, nothing added to it since it was listed.
+		s.unsaved.forget(r.username, func(u *unsavedRevocation) { *u = unsavedRevocation{} })
 	}
 }

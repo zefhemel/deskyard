@@ -105,3 +105,126 @@ func TestUnsavedGrantChangesHold(t *testing.T) {
 		})
 	}
 }
+
+// A change refused for another reason than saving keeps what an earlier
+// one that couldn't be saved revoked.
+func TestRefusedChangeKeepsUnsavedRevocation(t *testing.T) {
+	s, ts := newTestServer(t)
+	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
+		t.Fatal(err)
+	}
+	admin := login(t, ts, "admin")
+	blockAccountsFile(t, s)
+	if code, body := send(t, admin, "PATCH", ts.URL+"/api/accounts/anna", ts.URL, `{"grants":[]}`); code != http.StatusInternalServerError {
+		t.Fatalf("removal: %d %s", code, body)
+	}
+	unblockAccountsFile(t, s)
+	if code, body := send(t, admin, "PATCH", ts.URL+"/api/accounts/anna", ts.URL,
+		`{"grants":[{"environment":"alice","level":"full"},{"environment":"alice","level":"full"}]}`); code != http.StatusBadRequest {
+		t.Fatalf("refused change: %d %s", code, body)
+	}
+	if a, _ := s.accountNow("anna", accountNamed(t, s, "anna").ID, time.Now()); a.Level("alice") != auth.LevelNone {
+		t.Errorf("a refused change restored the revoked access: %v", a.Grants)
+	}
+}
+
+// A change that can't be saved either keeps what an earlier unsaved one
+// revoked, also when it asks for the access back.
+func TestUnsavedAccessChangeKeepsEarlierRevocation(t *testing.T) {
+	s, ts := newTestServer(t)
+	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
+		t.Fatal(err)
+	}
+	admin := login(t, ts, "admin")
+	blockAccountsFile(t, s)
+	for _, level := range []string{"observe", "full"} {
+		if code, body := send(t, admin, "PUT", ts.URL+"/api/environments/alice/access", ts.URL, `{"grants":[{"username":"anna","level":"`+level+`"}]}`); code != http.StatusInternalServerError {
+			t.Fatalf("%s: %d %s", level, code, body)
+		}
+	}
+	if a, _ := s.accountNow("anna", accountNamed(t, s, "anna").ID, time.Now()); a.Level("alice") != auth.LevelObserve {
+		t.Errorf("anna now: %v", a.Grants)
+	}
+}
+
+// The Accounts page and the Access tab show access as it stands, so saving
+// what they show keeps a revocation that couldn't be saved.
+func TestEditorsShowUnsavedRevocations(t *testing.T) {
+	s, ts := newTestServer(t)
+	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
+		t.Fatal(err)
+	}
+	admin := login(t, ts, "admin")
+	blockAccountsFile(t, s)
+	if code, body := send(t, admin, "PATCH", ts.URL+"/api/accounts/anna", ts.URL, `{"grants":[{"environment":"alice","level":"observe"}]}`); code != http.StatusInternalServerError {
+		t.Fatalf("downgrade: %d %s", code, body)
+	}
+	unblockAccountsFile(t, s)
+	var list []accountJSON
+	if code := getJSON(t, admin, ts.URL+"/api/accounts", &list); code != 200 {
+		t.Fatal(code)
+	}
+	for _, a := range list {
+		if a.Username == "anna" && (len(a.Grants) != 1 || a.Grants[0].Level != auth.LevelObserve) {
+			t.Errorf("the Accounts page shows anna with %v", a.Grants)
+		}
+	}
+	var env struct{ Access []accessGrant }
+	if code := getJSON(t, admin, ts.URL+"/api/environments/alice", &env); code != 200 {
+		t.Fatal(code)
+	}
+	if len(env.Access) != 1 || env.Access[0].Level != auth.LevelObserve {
+		t.Errorf("the Access tab shows %v", env.Access)
+	}
+}
+
+// The sweep doesn't save a held revocation while a change is deciding the
+// account's access anew: that change's decision would be overwritten.
+func TestRetryWaitsForAChangeDecidingAnew(t *testing.T) {
+	s, ts := newTestServer(t)
+	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
+		t.Fatal(err)
+	}
+	admin := login(t, ts, "admin")
+	blockAccountsFile(t, s)
+	if code, body := send(t, admin, "PATCH", ts.URL+"/api/accounts/anna", ts.URL, `{"grants":[]}`); code != http.StatusInternalServerError {
+		t.Fatalf("removal: %d %s", code, body)
+	}
+	unblockAccountsFile(t, s)
+	s.revoking.Lock()
+	s.sweep()
+	if a := accountNamed(t, s, "anna"); a.Level("alice") != auth.LevelFull {
+		s.revoking.Unlock()
+		t.Fatalf("the sweep saved a revocation while a change was deciding anew: %v", a.Grants)
+	}
+	s.revoking.Unlock()
+	s.sweep()
+	if a := accountNamed(t, s, "anna"); a.Level("alice") != auth.LevelNone {
+		t.Errorf("the sweep didn't save the revocation after: %v", a.Grants)
+	}
+}
+
+// Signing out everywhere ends the other sessions although the new session
+// epoch can't be saved, and keeps this browser signed in.
+func TestUnsavedSignOutEverywhereEndsSessions(t *testing.T) {
+	s, ts := newTestServer(t)
+	first, second := login(t, ts, "anna"), login(t, ts, "anna")
+	blockAccountsFile(t, s)
+	if code, body := send(t, first, "POST", ts.URL+"/api/me/sign-out-everywhere", ts.URL, ""); code != http.StatusInternalServerError {
+		t.Fatalf("sign out everywhere: %d %s", code, body)
+	}
+	if code := status(t, second, "GET", ts.URL+"/api/me", ""); code != http.StatusUnauthorized {
+		t.Errorf("the other browser after signing out everywhere: %d", code)
+	}
+	if code := status(t, first, "GET", ts.URL+"/api/me", ""); code != http.StatusOK {
+		t.Errorf("this browser after signing out everywhere: %d", code)
+	}
+	unblockAccountsFile(t, s)
+	s.sweep()
+	if len(s.unsaved.list()) != 0 {
+		t.Error("the saved sign-out is still held")
+	}
+	if code := status(t, second, "GET", ts.URL+"/api/me", ""); code != http.StatusUnauthorized {
+		t.Errorf("the other browser after the sign-out was saved: %d", code)
+	}
+}

@@ -245,8 +245,18 @@ func (s *Server) handleOwnPassword(w http.ResponseWriter, r *http.Request) {
 // signs this browser in again.
 func (s *Server) handleSignOutEverywhere(w http.ResponseWriter, r *http.Request) {
 	me, _ := s.account(r)
+	s.revoking.Lock()
+	defer s.revoking.Unlock()
 	a, err := s.Accounts.BumpSessionEpoch(me.Username)
 	if err != nil {
+		// The other sessions end although the new epoch isn't saved; this
+		// browser keeps its sign-in under it.
+		if errors.Is(err, accounts.ErrNotSaved) {
+			s.revokeUnsaved(unsavedRevocation{username: me.Username, id: me.ID, epoch: me.SessionEpoch + 1})
+			if a, ok := s.accountState(me.Username); ok {
+				s.reissueSession(w, r, a)
+			}
+		}
 		writeError(w, errorStatus(err), err.Error())
 		return
 	}
