@@ -17,21 +17,22 @@ def up(client, name, fname, data, **kw):
     return client.post(f"/api/environments/{name}/upload", params={"name": fname}, data=data, **kw)
 
 
-def desk(desktop) -> Path:
-    return Path(desktop["folder"]) / "Desktop"
+def desk(supervisor, desktop) -> Path:
+    """The desktop's ~/Desktop, seen from here (its folder is under /data)."""
+    return supervisor.outside(desktop["folder"]) / "Desktop"
 
 
-def test_two_files_land_owned_by_user_and_a_clash_gets_a_number(admin, desktop, name):
+def test_two_files_land_owned_by_user_and_a_clash_gets_a_number(supervisor, admin, desktop, name):
     a, b = os.urandom(5 * 1024 * 1024 + 3), b"second file\n"
     r1, r2 = up(admin, name, "one.bin", a), up(admin, name, "two.txt", b)
     assert r1.status_code == 200 and r2.status_code == 200, (r1.text, r2.text)
     assert r1.json() == {"path": "/workspace/Desktop/one.bin", "bytes": len(a)}
-    assert (desk(desktop) / "one.bin").read_bytes() == a
-    assert (desk(desktop) / "two.txt").read_bytes() == b
+    assert (desk(supervisor, desktop) / "one.bin").read_bytes() == a
+    assert (desk(supervisor, desktop) / "two.txt").read_bytes() == b
     r = up(admin, name, "two.txt", b"again")
     assert r.json()["path"] == "/workspace/Desktop/two (2).txt"
     assert up(admin, name, "two.txt", b"x").json()["path"] == "/workspace/Desktop/two (3).txt"
-    assert (desk(desktop) / "two (2).txt").read_bytes() == b"again"
+    assert (desk(supervisor, desktop) / "two (2).txt").read_bytes() == b"again"
     t = make_credential(admin, name)
     out, _, _ = asyncio.run(exec_ws(admin.base, name, t["credential"], ["sh", "-c", "stat -c '%u:%g' ~/Desktop/one.bin ~/Desktop/'two (2).txt'; ls -A ~/Desktop"]))
     lines = out.decode().split("\n")
@@ -39,10 +40,10 @@ def test_two_files_land_owned_by_user_and_a_clash_gets_a_number(admin, desktop, 
     assert not any(n.endswith(".part") for n in lines[2:])
 
 
-def test_bad_names_are_refused(admin, desktop, name):
+def test_bad_names_are_refused(supervisor, admin, desktop, name):
     for n in ["", "a/b", "../x", "..", "a\x00b", "x" * 300]:
         assert up(admin, name, n, b"x").status_code == 400, repr(n)
-    assert not desk(desktop).exists() or list(desk(desktop).iterdir()) == []
+    assert not desk(supervisor, desktop).exists() or list(desk(supervisor, desktop).iterdir()) == []
 
 
 def raw_post(admin, name, fname, length):
@@ -55,7 +56,7 @@ def raw_post(admin, name, fname, length):
     return s
 
 
-def test_upload_limits(admin, desktop, name):
+def test_upload_limits(supervisor, admin, desktop, name):
     # 2 GB + 1 byte: refused with a message before any byte is sent.
     s = raw_post(admin, name, "big.bin", 2 * 1024**3 + 1)
     reply = s.makefile("rb").read().decode(errors="replace")
@@ -69,7 +70,7 @@ def test_upload_limits(admin, desktop, name):
     s.sendall(os.urandom(2 * 1024 * 1024))
     time.sleep(1)
     s.close()
-    left = lambda: sorted(p.name for p in desk(desktop).iterdir())  # noqa: E731
+    left = lambda: sorted(p.name for p in desk(supervisor, desktop).iterdir())  # noqa: E731
     deadline = time.time() + 15
     while time.time() < deadline and left() != ["seed.txt"]:
         time.sleep(0.5)
@@ -95,7 +96,7 @@ def test_access_and_credentials(admin, desktop, name, supervisor):
         assert r.status_code == 404
         assert requests.post(f"{supervisor.base}/api/environments/{name}/upload?name=a", data=b"x", cookies=admin.cookies,
                              headers={"Origin": "https://evil.example"}, timeout=10).status_code == 403
-        assert sorted(p.name for p in desk(desktop).iterdir()) == ["v.txt"]
+        assert sorted(p.name for p in desk(supervisor, desktop).iterdir()) == ["v.txt"]
     finally:
         for who in (user, user + "v"):
             admin.delete(f"/api/accounts/{who}")

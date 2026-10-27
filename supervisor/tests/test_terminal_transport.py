@@ -9,7 +9,7 @@ import pytest
 from contextlib import contextmanager
 
 from websockets.sync.client import connect
-from conftest import docker, MODE
+from conftest import docker
 
 
 def shell(name, command):
@@ -119,7 +119,6 @@ def test_remote_terminal_disconnect_and_eof(cli, remote, name):
 
 
 @pytest.mark.serial
-@pytest.mark.skipif(MODE != "direct", reason="uses the directly launched supervisor process")
 def test_terminal_lease_survives_supervisor_crash(supervisor, admin, desktop, name):
     if supervisor.pool:
         supervisor.pool.settle()
@@ -128,11 +127,10 @@ def test_terminal_lease_survives_supervisor_crash(supervisor, admin, desktop, na
             ws.send(b'printf "%s" "$$" > /workspace/crash-pid\r')
             eventually(lambda:shell(name,'test -s /workspace/crash-pid && printf ready || true'),'ready')
             pid=shell(name,'cat /workspace/crash-pid')
-            supervisor.proc.kill()
-            supervisor.proc.wait(10)
+            supervisor.kill()
             eventually(lambda:client_count(name),'0')
             assert shell(name,'tmux -S /run/workspace/deskyard-terminal/tmux.sock list-sessions -F "#{session_name}"')=='main'
             assert shell(name,'tmux -S /run/workspace/deskyard-terminal/tmux.sock display-message -p -t =main: "#{pane_pid}"')==pid
     finally:
-        if supervisor.proc.poll() is not None:
+        if not supervisor.running():
             supervisor.start()

@@ -1,18 +1,19 @@
 """Integration tests: a real supervisor against the local container engine.
 
-DESKYARD_TEST_MODE=direct (default) runs the binary on this machine;
-DESKYARD_TEST_MODE=container runs the supervisor image (DESKYARD_TEST_SUPERVISOR_IMAGE,
-default deskyard:test, built from this checkout) with the socket and the
-data folder mounted at the same path. CC_TEST_IMAGE is the desktop image
-(default deskyard-debian-xfce:test, built from the debian-xfce target in images/Dockerfile;
+The supervisor runs only in a container: each runs the base image
+(deskyard:base) with the socket, its data folder at /data, and the binary
+cross-compiled for the engine's Linux mounted over the image's, as
+`make dev` does, so a code change needs no image build.
+
+CC_TEST_IMAGE is the desktop image (default deskyard-debian-xfce:test, built from the debian-xfce target in images/Dockerfile;
 these suites don't build it, so build it from this checkout first, as
 `make test-engine` does, or name one: an older build has the wrong contract).
 DESKYARD_TEST_SUBNET is the desktops' subnet pool (default 10.215.0.0/20);
 under xdist each worker runs its own supervisor on its own slice of it.
 
 What runs once, before any worker starts: the web UI is rebuilt if its
-sources are newer than internal/web/dist, and the supervisor and the
-deskyard command are built (or, in container mode, the supervisor's image).
+sources are newer than internal/web/dist, the supervisor is cross-compiled
+(`make linux`), the base image is built, and the deskyard command is built.
 
 The `desktop` fixture takes a desktop from a small pool that each
 supervisor creates ahead of the tests (DESKYARD_TEST_POOL, default 1; 0 is
@@ -47,14 +48,13 @@ import netchange  # noqa: F401  (Chromium's pages survive a desktop's network co
 ROOT = Path(__file__).resolve().parent.parent
 REPO = ROOT.parent
 IMAGE = os.environ.get("CC_TEST_IMAGE", "deskyard-debian-xfce:test")
-MODE = os.environ.get("DESKYARD_TEST_MODE", "direct")
-SUPERVISOR_IMAGE = os.environ.get("DESKYARD_TEST_SUPERVISOR_IMAGE", "deskyard:test")
+SUPERVISOR_IMAGE = "deskyard:base"
 # Another checkout's tests can run at the same time on a different subnet.
 SUBNET = os.environ.get("DESKYARD_TEST_SUBNET", "10.215.0.0/20")
 POOL_SIZE = int(os.environ.get("DESKYARD_TEST_POOL", "1"))
 ADMIN_PASSWORD = "admin-password"
 BIN = ROOT / "bin"
-SUPERVISOR_BIN = BIN / "deskyard-supervisor-test"
+SUPERVISOR_BIN = BIN / "deskyard-supervisor-linux"  # make linux
 CLI_BIN = BIN / "deskyard-test"
 
 
@@ -85,17 +85,15 @@ def web_is_stale() -> bool:
 
 
 def build_once():
-    if MODE == "container":
-        subprocess.run(["docker", "build", "-q", "-t", SUPERVISOR_IMAGE, str(ROOT)], check=True, stdout=subprocess.DEVNULL)
-    else:
-        # The UI the supervisor embeds: never test against an old build of it.
-        if web_is_stale():
-            target = ["web"] if not (ROOT / "web" / "node_modules").exists() else []
-            if target:
-                subprocess.run(["make", "web"], cwd=ROOT, check=True)
-            else:
-                subprocess.run(["npm", "run", "build"], cwd=ROOT / "web", check=True, stdout=subprocess.DEVNULL)
-        subprocess.run(["go", "build", "-o", str(SUPERVISOR_BIN), "./cmd/deskyard-supervisor"], cwd=ROOT, check=True)
+    # The UI the supervisor embeds: never test against an old build of it.
+    if web_is_stale():
+        if not (ROOT / "web" / "node_modules").exists():
+            subprocess.run(["make", "web"], cwd=ROOT, check=True)
+        else:
+            subprocess.run(["npm", "run", "build"], cwd=ROOT / "web", check=True, stdout=subprocess.DEVNULL)
+    subprocess.run(["make", "-C", str(ROOT), "linux"], check=True, stdout=subprocess.DEVNULL)
+    subprocess.run(["docker", "build", "-q", "--target", "base", "-t", SUPERVISOR_IMAGE, str(ROOT)],
+                   check=True, stdout=subprocess.DEVNULL)
     subprocess.run(["go", "build", "-o", str(CLI_BIN), "./cmd/deskyard"], cwd=ROOT, check=True)
 
 
@@ -213,43 +211,55 @@ class Supervisor:
         self.port = free_port()
         self.base = f"http://127.0.0.1:{self.port}"
         self.subnet = my_subnet()
-        self.proc = None
-        self.container = None
+        # One per worker (a session fixture), kept across restarts.
+        self.container = f"deskyard-test-supervisor-{uuid.uuid4().hex[:6]}"
         self.pool: DesktopPool | None = None
         self._instance = ""
 
     def start(self):
         env = {
-            "DESKYARD_DATA_DIR": str(self.data), "DESKYARD_ADMIN_PASSWORD": ADMIN_PASSWORD,
+            "DESKYARD_ADMIN_PASSWORD": ADMIN_PASSWORD,
             "DESKYARD_IMAGE": IMAGE, "DESKYARD_SUBNET": self.subnet,
             "DESKYARD_ACTIVITY_PRESENCE": "12s",
         }
-        if MODE == "container":
-            self.container = f"deskyard-test-supervisor-{uuid.uuid4().hex[:6]}"
-            args = ["run", "-d", "--name", self.container, "-p", f"127.0.0.1:{self.port}:7343",
-                    "-v", "/var/run/docker.sock:/var/run/docker.sock", "-v", f"{self.data}:{self.data}"]
-            for k, v in env.items():
-                args += ["-e", f"{k}={v}"]
-            docker(*args, SUPERVISOR_IMAGE)
-        else:
-            self.log = open(self.data.parent / "supervisor.log", "a")
-            self.proc = subprocess.Popen([str(SUPERVISOR_BIN)], env={**os.environ, **env, "DESKYARD_LISTEN": f"127.0.0.1:{self.port}"},
-                                         stdout=self.log, stderr=subprocess.STDOUT)
+        docker("rm", "-f", self.container, check=False)  # one that crashed or was killed
+        args = ["run", "-d", "--name", self.container, "-p", f"127.0.0.1:{self.port}:7343",
+                "-v", "/var/run/docker.sock:/var/run/docker.sock", "-v", f"{self.data}:/data",
+                "-v", f"{SUPERVISOR_BIN}:/usr/local/bin/deskyard-supervisor:ro"]
+        for k, v in env.items():
+            args += ["-e", f"{k}={v}"]
+        docker(*args, SUPERVISOR_IMAGE)
         deadline = time.time() + 60
         while time.time() < deadline:
             try:
                 requests.get(self.base + "/healthz", timeout=1)
+                self.instance()  # for teardown, whatever becomes of the container
                 return
             except requests.RequestException:
+                if not self.running():
+                    break
                 time.sleep(0.3)
         raise TimeoutError("supervisor didn't start:\n" + self.logs())
 
+    def running(self) -> bool:
+        r = docker("inspect", "-f", "{{.State.Running}}", self.container, check=False)
+        return r.stdout.strip() == "true"
+
+    def inside(self, path: Path) -> str:
+        """A path in the data folder as the supervisor names it (under /data)."""
+        rel = path.relative_to(self.data)
+        return "/data" if rel == Path(".") else f"/data/{rel}"
+
+    def outside(self, path: str) -> Path:
+        """The data folder's path as the supervisor names it (/data/...), seen from here."""
+        rel = Path(path).relative_to("/data")
+        return self.data / rel
+
     def read(self, path: Path) -> str:
-        """A file the supervisor wrote. In container mode through the
-        container: on a Linux engine its files are root's, some owner-only."""
-        if not self.container:
-            return path.read_text()
-        r = docker("exec", self.container, "cat", str(path), check=False)
+        """A file the supervisor wrote in its data folder (self.data/...),
+        read through the container: on a Linux engine its files are UID
+        1000's, some owner-only, which a test runner's account can't read."""
+        r = docker("exec", self.container, "cat", self.inside(path), check=False)
         if r.returncode != 0:
             raise (FileNotFoundError if "No such file" in r.stderr else RuntimeError)(f"reading {path}: {r.stderr}")
         return r.stdout
@@ -265,19 +275,17 @@ class Supervisor:
         return self._instance
 
     def logs(self) -> str:
-        if self.container:
-            r = docker("logs", self.container, check=False)
-            return r.stdout + r.stderr
-        return (self.data.parent / "supervisor.log").read_text()
+        r = docker("logs", self.container, check=False)
+        return r.stdout + r.stderr
+
+    def kill(self):
+        """Ends the supervisor at once, as a crash would (no shutdown)."""
+        docker("kill", self.container, check=False)
 
     def stop(self):
         if self.pool:
             self.pool.settle()  # no create cut off halfway
-        if self.proc:
-            self.proc.terminate()
-            self.proc.wait(10)
-        if self.container:
-            docker("rm", "-f", self.container, check=False)
+        docker("rm", "-f", self.container, check=False)
 
     def client(self) -> Client:
         # One create at a time on a supervisor: a test's waits for the pool's.
@@ -338,7 +346,7 @@ def supervisor(tmp_path_factory):
     sup = Supervisor(base)
     sup.start()
     yield sup
-    instance = sup.instance()  # before stop: container mode reads it through the container
+    instance = sup.instance()  # before stop: it's read through the container
     sup.stop()
     # Remove what the tests created, and nothing else on the engine: this
     # supervisor's containers and networks carry its instance label, and any

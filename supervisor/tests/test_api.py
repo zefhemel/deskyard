@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+import sys
 import uuid
 
 import requests
@@ -126,11 +127,8 @@ def test_desktop_publishes_only_8080_and_is_isolated(admin, desktop, name, super
     other = "o" + uuid.uuid4().hex[:5]
     admin.create(other)
     try:
-        ports = docker("port", f"deskyard-{name}").stdout.split()
-        if supervisor.container:
-            assert ports == []
-        else:
-            assert ports[0] == "8080/tcp" and ports[2].startswith("127.0.0.1:") and len(ports) == 3, ports
+        # The supervisor reaches it on its network: nothing is published.
+        assert docker("port", f"deskyard-{name}").stdout.split() == []
         ip = json.loads(docker("inspect", f"deskyard-{other}").stdout)[0]["NetworkSettings"]["Networks"][f"deskyard-{other}"]["IPAddress"]
         r = subprocess.run(["docker", "exec", "-u", "user", f"deskyard-{name}", "curl", "-s", "-m", "3", "-o", "/dev/null",
                             "-w", "%{http_code}", f"http://{ip}:8080/"], capture_output=True, text=True)
@@ -212,6 +210,21 @@ def test_visible_data_layout_and_labels(admin, desktop, name, supervisor):
     assert labels["deskyard.name"] == name and labels["deskyard.instance"] == supervisor.instance() != ""
     assert labels["deskyard.revision"] == str(desktop["revision"])
     assert not [k for k in labels if k == "deskyard.id" or k.startswith("deskyard.setting.")], labels
+
+
+def test_supervisor_runs_as_uid_1000(supervisor, desktop, name):
+    """Started as root, the supervisor serves as UID and GID 1000 with the
+    socket's group. (docker exec runs as the image's root: look at PID 1.)"""
+    status = dict(line.split(":", 1) for line in docker("exec", supervisor.container, "cat", "/proc/1/status").stdout.splitlines())
+    assert status["Uid"].split() == ["1000"] * 4, status["Uid"]
+    assert status["Gid"].split() == ["1000"] * 4, status["Gid"]
+    socket_gid = docker("exec", supervisor.container, "stat", "-c", "%g", "/var/run/docker.sock").stdout.strip()
+    assert socket_gid in status["Groups"].split(), status["Groups"]
+    if sys.platform != "linux":
+        return  # ownership isn't real on a macOS folder bind-mounted into the engine's VM
+    for path in ("/data/state/owner", "/data/home", f"/data/home/{name}"):
+        uid = docker("exec", supervisor.container, "stat", "-c", "%u", path).stdout.strip()
+        assert uid == "1000", (path, uid)
 
 
 def test_restart_recreates_a_lost_container(supervisor, admin, desktop, name):

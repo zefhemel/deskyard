@@ -12,8 +12,9 @@ from helpers import (BROWSERS, PICTURE, SHOWING, frame_size, in_desktop, mouse_l
                      signed_in, to_page, wait_until)
 
 
-def desk(desktop) -> Path:
-    return Path(desktop["folder"]) / "Desktop"
+def desk(supervisor, desktop) -> Path:
+    """The desktop's ~/Desktop, seen from here (its folder is under /data)."""
+    return supervisor.outside(desktop["folder"]) / "Desktop"
 
 
 @pytest.mark.parametrize("touch", [False, True], ids=["mouse", "touch"])
@@ -211,7 +212,7 @@ def test_drag_inside_the_frame_shows_overlay_and_drop_uploads(supervisor, deskto
         page.evaluate(DRAG_JS, ["drop", files])  # the overlay now covers the frame and takes the drop
         expect(page.get_by_text("Copied from-frame.txt")).to_be_visible(timeout=20000)
         expect(overlay).to_be_hidden()
-        assert (desk(desktop) / "from-frame.txt").read_text() == "via the iframe\n"
+        assert (desk(supervisor, desktop) / "from-frame.txt").read_text() == "via the iframe\n"
 
         # The frame is reloaded (reconnect): listeners come back.
         frame.evaluate("window.__beforeReload = true")
@@ -253,7 +254,7 @@ def test_drag_that_leaves_hides_the_overlay(supervisor, desktop, name):
         }""", files)
         expect(overlay).to_be_visible()
         expect(overlay).to_be_hidden(timeout=5000)
-        assert not (desk(desktop).exists() and any(desk(desktop).iterdir()))
+        assert not (desk(supervisor, desktop).exists() and any(desk(supervisor, desktop).iterdir()))
         browser.close()
 
 
