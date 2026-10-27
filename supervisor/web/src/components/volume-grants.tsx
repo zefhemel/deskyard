@@ -48,6 +48,7 @@ export function VolumeGrantFields({
               hint={pathError ? <span class="text-danger">{pathError}</span> : "Any folder outside /workspace and the system folders, such as /share/photos or /mnt/photos."}
             >
               <input
+                type="text"
                 id={`volume-path-${index}`}
                 class="mono"
                 value={grant.path}

@@ -265,7 +265,7 @@ function CreateRepository({ remotes, onClose, onCreated }: { remotes: string[]; 
       }
     >
       <Field label="Name" htmlFor="repo-name" hint={name && !NAME.test(name) ? <span class="text-danger">Use 2–32 lowercase letters, digits and dashes.</span> : undefined}>
-        <input id="repo-name" value={name} autocomplete="off" spellcheck={false} onInput={(e) => setName(e.currentTarget.value.toLowerCase())} />
+        <input type="text" id="repo-name" value={name} autocomplete="off" spellcheck={false} onInput={(e) => setName(e.currentTarget.value.toLowerCase())} />
       </Field>
       <Field label="Remote" htmlFor="repo-remote">
         <select id="repo-remote" value={remote} onChange={(e) => setRemote(e.currentTarget.value)}>
@@ -277,7 +277,7 @@ function CreateRepository({ remotes, onClose, onCreated }: { remotes: string[]; 
         </select>
       </Field>
       <Field label="Folder on the remote" htmlFor="repo-folder" hint="Below the remote's root. It can't be changed later.">
-        <input id="repo-folder" class="mono" value={folder} spellcheck={false} onInput={(e) => { setFolder(e.currentTarget.value); setNeedsKey(false); }} />
+        <input type="text" id="repo-folder" class="mono" value={folder} spellcheck={false} onInput={(e) => { setFolder(e.currentTarget.value); setNeedsKey(false); }} />
       </Field>
       {needsKey && (
         <Field label="Recovery key" htmlFor="repo-key">

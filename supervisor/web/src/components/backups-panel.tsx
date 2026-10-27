@@ -505,7 +505,7 @@ export function RestoreNewDialog({ kind, name, snapshot: s, onClose }: { kind: I
       }
     >
       <Field label={kind === "environment" ? "New environment's name" : "New volume's name"} htmlFor="restore-name" hint={newName && !valid ? <span class="text-danger">Use 2–32 lowercase letters, digits and dashes, starting with a letter.</span> : undefined}>
-        <input id="restore-name" value={newName} autocomplete="off" spellcheck={false} onInput={(e) => setNewName(e.currentTarget.value.toLowerCase())} />
+        <input type="text" id="restore-name" value={newName} autocomplete="off" spellcheck={false} onInput={(e) => setNewName(e.currentTarget.value.toLowerCase())} />
       </Field>
       {kind === "environment" && (
         <Field label="Image" htmlFor="restore-image" hint="The saved image is used unless you choose another, for instance when it's gone from this machine. VPN, Docker access and missing volumes aren't taken over.">

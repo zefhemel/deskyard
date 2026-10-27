@@ -1,7 +1,7 @@
 import { useState } from "preact/hooks";
 import { api, type Remote, type RemoteType } from "../../api.ts";
 import { notify } from "../../components/toast.tsx";
-import { Button, Dialog, ErrorText, Field, Note, Pick, Picks, Tag, errorMessage } from "../../components/ui.tsx";
+import { Button, Dialog, ErrorText, Field, Note, Tag, errorMessage } from "../../components/ui.tsx";
 import { day } from "../../lib/format.ts";
 import { blankDraft, draftFromRemote, fieldsFor, REMOTE_TYPES, remoteDraftErrors, toRemoteInput, type RemoteDraft } from "../../lib/remote-form.ts";
 import { useFetch } from "../../lib/use-fetch.ts";
@@ -75,12 +75,17 @@ function RemoteDialog({ remote, onClose, onSaved }: { remote: Remote | null; onC
   const [busy, setBusy] = useState<"" | "test" | "save">("");
   const [error, setError] = useState<string | null>(null);
   const [tested, setTested] = useState(false);
+  // Errors show for fields typed in, and for all once saving is tried.
+  const [touched, setTouched] = useState<Set<string>>(new Set());
+  const [tried, setTried] = useState(false);
   const errs = remoteDraftErrors(d, creating, remote?.secretsSet ?? []);
   const valid = Object.keys(errs).length === 0;
   const set = (change: Partial<RemoteDraft>) => {
     setD({ ...d, ...change });
+    setTouched(new Set([...touched, ...Object.keys(change)]));
     setTested(false);
   };
+  const shows = (key: string) => tried || touched.has(key);
   const moved = remote && (d.host !== (remote.host ?? "") || d.root !== (remote.root ?? "") || d.url !== (remote.url ?? "") || d.endpoint !== (remote.endpoint ?? ""));
   const test = async () => {
     setBusy("test");
@@ -111,14 +116,13 @@ function RemoteDialog({ remote, onClose, onSaved }: { remote: Remote | null; onC
       setBusy("");
     }
   };
-  const shown = (k: string) => (d as unknown as Record<string, string>)[k] !== "" || !creating;
   return (
     <Dialog
       title={creating ? "Add remote" : `Edit ${remote.name}`}
       intro="Deskyard connects to it before saving."
       wide
       onClose={onClose}
-      onSubmit={() => valid && void save()}
+      onSubmit={() => (valid ? void save() : setTried(true))}
       footer={
         <>
           <Button class="mr-auto" disabled={!valid || !!busy} onClick={() => void test()}>
@@ -127,7 +131,7 @@ function RemoteDialog({ remote, onClose, onSaved }: { remote: Remote | null; onC
           <Button variant="quiet" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={!valid || !!busy}>
+          <Button type="submit" variant="primary" disabled={!!busy}>
             {busy === "save" ? "Connecting…" : creating ? "Add remote" : "Save"}
           </Button>
         </>
@@ -135,24 +139,33 @@ function RemoteDialog({ remote, onClose, onSaved }: { remote: Remote | null; onC
     >
       {creating && (
         <Field label="Type">
-          <Picks>
+          <div role="radiogroup" aria-label="Type" class="rounded-lg border border-line bg-white">
             {REMOTE_TYPES.map((t) => (
-              <Pick key={t.type} checked={d.type === t.type} onChange={() => setD({ ...blankDraft(t.type), name: d.name })}>
+              <label key={t.type} class="flex items-center gap-2.5 border-b border-hairline px-3 py-2 text-sm last:border-b-0">
+                <input
+                  type="radio"
+                  name="remote-type"
+                  checked={d.type === t.type}
+                  onChange={() => {
+                    setD({ ...blankDraft(t.type), name: d.name });
+                    setTouched(new Set(d.name ? ["name"] : []));
+                  }}
+                />
                 <span>
                   <b class="font-semibold">{t.label}</b> <span class="text-muted">· {t.hint}</span>
                 </span>
-              </Pick>
+              </label>
             ))}
-          </Picks>
+          </div>
         </Field>
       )}
-      <Field label="Name" htmlFor="remote-name" hint={d.name && errs.name ? <span class="text-danger">{errs.name}</span> : creating ? "It can't be changed later." : undefined}>
-        <input id="remote-name" value={d.name} disabled={!creating} autocomplete="off" spellcheck={false} onInput={(e) => set({ name: e.currentTarget.value.toLowerCase() })} />
+      <Field label="Name" htmlFor="remote-name" hint={shows("name") && errs.name ? <span class="text-danger">{errs.name}</span> : creating ? "It can't be changed later." : undefined}>
+        <input type="text" id="remote-name" value={d.name} disabled={!creating} autocomplete="off" spellcheck={false} onInput={(e) => set({ name: e.currentTarget.value.toLowerCase() })} />
       </Field>
       {fieldsFor(d.type).map((f) => {
         const id = `remote-${f.key}`;
         const value = d[f.key];
-        const err = errs[f.key] && (shown(f.key) || f.secret) ? errs[f.key] : undefined;
+        const err = shows(f.key) ? errs[f.key] : undefined;
         const keep = !creating && f.secret && remote.secretsSet.includes(f.key);
         const hint = err ? <span class="text-danger">{err}</span> : keep ? "Saved. Leave empty to keep it." : f.hint;
         return (
