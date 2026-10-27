@@ -146,6 +146,8 @@ func runLogin(a *App, c *call) error {
 			continue
 		case remote.IsStatus(err, http.StatusForbidden):
 			return errors.New("the login was denied in the browser: " + again + " if that was a mistake")
+		case remote.IsStatus(err, http.StatusInternalServerError):
+			continue // approved, but not saved yet: the server keeps it for the next poll
 		case err != nil:
 			return err
 		case ans.Credential == "":

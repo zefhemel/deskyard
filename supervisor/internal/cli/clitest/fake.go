@@ -70,6 +70,9 @@ type Fake struct {
 	// it is approved; LoginDeny denies it instead.
 	LoginPending int
 	LoginDeny    bool
+	// LoginSaveFails is how many polls after the approval answer 500, as
+	// when the server can't save the credential yet.
+	LoginSaveFails int
 	// Answers are the answers to the other /api/ routes, keyed by "METHOD
 	// /api/path" (no query); a route without one answers 404 "no such
 	// route". An answer for GET /api/environments/{name} replaces the
@@ -361,6 +364,9 @@ func (f *Fake) pollLogin(w http.ResponseWriter, r *http.Request) {
 	case f.LoginDeny:
 		f.loginDone = true
 		writeErr(w, http.StatusForbidden, "denied")
+	case f.LoginSaveFails > 0:
+		f.LoginSaveFails--
+		writeErr(w, http.StatusInternalServerError, "the sign-in couldn't be saved yet; the next poll tries again")
 	default:
 		f.loginDone = true
 		writeJSON(w, http.StatusOK, f.issueLocked())

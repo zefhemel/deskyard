@@ -274,3 +274,17 @@ func TestDoDoesNotFollowRedirects(t *testing.T) {
 		}
 	}
 }
+
+// A redirect answer says where the server sent the request, so the user can
+// sign in with the final URL.
+func TestRedirectErrorNamesTheTarget(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://deskyard.example.com"+r.URL.Path, http.StatusPermanentRedirect)
+	}))
+	defer srv.Close()
+	c := &Client{Base: srv.URL, Environment: "alice", Token: clitest.Credential}
+	err := c.JSON(context.Background(), http.MethodGet, "/me", nil, nil)
+	if !IsStatus(err, http.StatusPermanentRedirect) || !strings.Contains(err.Error(), "deskyard login https://deskyard.example.com") || strings.Contains(err.Error(), "<a") {
+		t.Fatalf("%v", err)
+	}
+}

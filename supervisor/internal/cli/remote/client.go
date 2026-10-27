@@ -185,6 +185,17 @@ func (c *Client) ResponseError(resp *http.Response) error {
 	var body struct {
 		Error string `json:"error"`
 	}
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		// Not followed, so the credential never goes elsewhere.
+		to := resp.Header.Get("Location")
+		if u, err := resp.Location(); err == nil {
+			to = u.String()
+			if t, err := ParseURL(u.Scheme + "://" + u.Host); err == nil {
+				return &APIError{Status: resp.StatusCode, Msg: fmt.Sprintf("%s redirected the request to %s (%d): sign in with the server's final address, e.g. `deskyard login %s`", c.Base, to, resp.StatusCode, t.Base)}
+			}
+		}
+		return &APIError{Status: resp.StatusCode, Msg: fmt.Sprintf("%s redirected the request to %q (%d): use the server's final address", c.Base, to, resp.StatusCode)}
+	}
 	var msg string
 	if resp.Body != nil {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))

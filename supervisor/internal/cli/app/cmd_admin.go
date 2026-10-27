@@ -674,6 +674,15 @@ func runAccountList(a *App, c *call) error {
 	if done, err := getJSON(a, c, cl, "/accounts", &list); done || err != nil {
 		return err
 	}
+	// A regular account is given the usernames only (they have no kind).
+	if len(list) > 0 && list[0].Kind == "" {
+		fmt.Fprintln(a.Stdout, "USER")
+		for _, ac := range list {
+			fmt.Fprintln(a.Stdout, ac.Username)
+		}
+		fmt.Fprintln(a.Stderr, "Only an admin sees the accounts' access; these are their usernames.")
+		return nil
+	}
 	tw := tabwriter.NewWriter(a.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "USER\tKIND\tACCESS\tEXPIRES\tLAST SIGN-IN\tNOTE")
 	for _, ac := range list {

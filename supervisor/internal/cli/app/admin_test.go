@@ -350,6 +350,17 @@ func TestAdminCommandForbiddenShowsServerMessage(t *testing.T) {
 	}
 }
 
+// A regular account gets only usernames from GET /api/accounts: the list
+// shows those, without empty columns.
+func TestAccountListForRegularAccount(t *testing.T) {
+	h, f := adminHarness(t)
+	f.Answer("GET /api/accounts", clitest.Answer{JSON: []any{map[string]any{"username": "anna"}, map[string]any{"username": "zef"}}})
+	r := h.run("account", "list")
+	if r.code != 0 || r.stdout != "USER\nanna\nzef\n" || !strings.Contains(r.stderr, "admin") {
+		t.Errorf("account list: %+v", r)
+	}
+}
+
 func TestAdminServerChoice(t *testing.T) {
 	h, f := adminHarness(t)
 	g := clitest.New(t, "bob")

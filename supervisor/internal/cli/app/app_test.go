@@ -327,6 +327,18 @@ func TestLoginSavesCredentialAndEnvironment(t *testing.T) {
 	}
 }
 
+// A server that can't save the credential yet keeps the approval: the CLI
+// polls on and signs in once it can.
+func TestLoginRetriesWhenTheServerCantSave(t *testing.T) {
+	fastLogin(t)
+	f := clitest.New(t, "alice")
+	f.LoginSaveFails = 2
+	h := newHarness(t)
+	if r := h.run("login", f.URL, "--no-browser"); r.code != 0 || !strings.Contains(r.stdout, "Signed in to 127.0.0.1 as zef") {
+		t.Fatalf("login: %+v", r)
+	}
+}
+
 func TestLoginRejectsUnknownEnvironment(t *testing.T) {
 	fastLogin(t)
 	f := clitest.New(t, "alice")
