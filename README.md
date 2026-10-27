@@ -137,7 +137,7 @@ Environment variables of the supervisor:
 | `DESKYARD_ADMIN_PASSWORD` | generated, printed once | first start only: its password |
 | `DESKYARD_IMAGE` | `ghcr.io/zefhemel/deskyard-debian-xfce:latest` | the catalog's first image |
 
-Back up the whole data folder (the host folder mounted at `/data`; see
+Back up the whole data folder (see
 [the data folder](guide/storage.md#the-data-folder)); its `cache/` can be left out.
 
 ## Guides

@@ -35,8 +35,10 @@ untouched and the page says so. A host folder must already exist; Deskyard
 checks it on the engine host (Docker API 1.44 or newer and recursively
 read-only bind mounts are required), and never creates, chowns or deletes it:
 existing host permissions must let UID 1000 use its files. Host paths refer to
-the machine running the container engine, with the supervisor running directly
-or in a container; on macOS the container runtime must share the folder.
+the machine running the container engine; on macOS the container runtime must
+share the folder. A host folder can't be the data folder or one of its own
+folders (`home`, `volume`, `secret`, `state`, `cache`), whether named by its
+host path or under `/data`.
 
 Deleting a volume is refused while any environment's settings grant it, running
 or stopped, and the refusal names those environments; remove the grants first.
