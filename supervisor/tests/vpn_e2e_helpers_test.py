@@ -119,8 +119,12 @@ class LifecycleCountersTests(unittest.TestCase):
                 ready = {"containers": ["old"], "names": ["desktop"]}
                 rows = f"{direct} 0 /* desktop-direct */\n0 0 /* desktop-direct */\n{replies} 0 /* late-tunnel-return */\n{broad} 0 /* all-direct-forwards */"
 
-                def req(path):
-                    return b"vpn-e2e-workspace" if "download" in path else b""
+                def req(_path):
+                    return b""
+
+                def docker(*args):
+                    # The workspace file is read with docker exec; the rest are counters.
+                    return "vpn-e2e-workspace" if "cat" in args else rows
 
                 with (
                     patch.object(
@@ -132,7 +136,7 @@ class LifecycleCountersTests(unittest.TestCase):
                     patch.object(
                         traffic, "request", side_effect=lambda c, _url: c == "new"
                     ),
-                    patch.object(traffic, "docker", return_value=rows),
+                    patch.object(traffic, "docker", side_effect=docker),
                 ):
                     if direct or broad != replies:
                         with self.assertRaises(AssertionError):
