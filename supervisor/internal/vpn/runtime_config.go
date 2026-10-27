@@ -90,15 +90,45 @@ func buildRuntime(in runtimeInput) (runtimeConfig, error) {
 	if in.Instance != "" {
 		spec.Labels[LabelInstance] = in.Instance
 	}
-	// Configuration identity includes only
-	// versioned mount paths, public metadata and the exact enforced policy.
-	encoded, _ := json.Marshal(struct {
-		Spec   engine.ContainerSpec
-		Policy firewallPolicy
-	}{spec, policy})
-	sum := sha256.Sum256(encoded)
-	spec.Labels[labelPolicy] = hex.EncodeToString(sum[:])
+	spec.Labels[labelPolicy] = policyLabel(spec, policy)
 	return runtimeConfig{spec, policy}, nil
+}
+
+// policyIdentityVersion versions policyIdentity. Changing either replaces
+// every running VPN runtime (and its desktop) on the next reconcile, so do it
+// only when what defines a runtime changes on purpose.
+const policyIdentityVersion = 1
+
+// policyIdentity is what defines a VPN runtime: the container fields
+// buildRuntime sets, with mount sources as the layout's paths (inside the
+// supervisor's container, before the engine maps them to the host), and the
+// exact enforced firewall policy. It is its own record rather than the engine
+// structs, so a new engine field doesn't change existing runtimes' identity.
+type policyIdentity struct {
+	Version                       int
+	Name, Image, Network, Restart string
+	CapAdd, Devices               []string
+	Env, Labels                   map[string]string
+	Mounts                        []policyMount
+	Firewall                      firewallPolicy
+}
+
+type policyMount struct {
+	Source, Target string
+	ReadOnly       bool
+}
+
+// policyLabel is the policy label's value for spec (without that label) and
+// its firewall policy: a hash of their policyIdentity.
+func policyLabel(spec engine.ContainerSpec, firewall firewallPolicy) string {
+	id := policyIdentity{Version: policyIdentityVersion, Name: spec.Name, Image: spec.Image, Network: spec.Network, Restart: spec.Restart,
+		CapAdd: spec.CapAdd, Devices: spec.Devices, Env: spec.Env, Labels: spec.Labels, Firewall: firewall}
+	for _, m := range spec.Mounts {
+		id.Mounts = append(id.Mounts, policyMount{Source: m.Source, Target: m.Target, ReadOnly: m.ReadOnly})
+	}
+	encoded, _ := json.Marshal(id)
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:])
 }
 
 var runtimeRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$`)

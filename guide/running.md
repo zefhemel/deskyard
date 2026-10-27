@@ -12,6 +12,12 @@ HTTPS. Publish `80:80` and `443:443` instead of `127.0.0.1:7343:7343`. Without
 a domain, keep the default localhost binding and put your own HTTPS proxy or
 Tailscale in front (see [On a LAN](#on-a-lan)).
 
+The supervisor binds 80 and 443 as UID 1000. That works because Docker lets
+any user in a container's own network namespace bind low ports
+(`net.ipv4.ip_unprivileged_port_start=0`); with `--network host` it would not,
+and the supervisor can't run there anyway, since it finds its own container
+by hostname.
+
 ## The container
 
 The supervisor runs only in a container, with the Docker socket and a host
@@ -46,7 +52,9 @@ mounted the data folder at its host path and named it in `DESKYARD_DATA_DIR`
 supervisor now exits at start, with the instructions, if `DESKYARD_DATA_DIR`
 is set to anything but `/data`. Replace the mount with
 `-v /srv/deskyard:/data` and delete the variable; existing environments, homes
-and volume grants carry over. The `deskyard-supervisor` binaries that used to
+and volume grants carry over. Environments with a VPN connection are replaced
+once on the first start: their desktops restart; homes and volumes are kept.
+The `deskyard-supervisor` binaries that used to
 run without a container are no longer released (the `deskyard` command still
 is).
 
@@ -55,9 +63,9 @@ is).
 To reach Deskyard from other machines at home or in an office, either
 serve it over https or accept what plain http costs.
 
-**Plain http** (`DESKYARD_LISTEN=0.0.0.0:7343`, then
-`http://192.168.1.20:7343`): browsers treat any address but `localhost`
-over http as insecure and turn features off. The desktop page says so in
+**Plain http** (publish `-p 7343:7343` instead of `-p 127.0.0.1:7343:7343`,
+then open `http://192.168.1.20:7343`): browsers treat any address but
+`localhost` over http as insecure and turn features off. The desktop page says so in
 its bar ("Not secure: some features off"). What still works: the picture,
 keyboard and mouse, sound, the Clipboard button's text box (both ways),
 Lock size, Quality, upload and the CLI activity overlay. Gamepads
@@ -76,7 +84,7 @@ should too in Chromium and Safari, which keep the Gamepad API over http. What do
 - **Passwords travel in clear text.** Only on a network you trust.
 
 **https** keeps everything. Without a public domain, the simplest is
-Tailscale: run the supervisor on its default `127.0.0.1:7343`, then
+Tailscale: keep the default `-p 127.0.0.1:7343:7343`, then
 `tailscale serve --bg 7343` on the same machine, and open
 `https://<machine>.<tailnet>.ts.net` from any device on your tailnet. Or
 put any reverse proxy with a certificate in front (Caddy:
@@ -107,5 +115,5 @@ itself ([With a domain](#with-a-domain)).
 - No `sudo` in environments, and every command the supervisor runs in one runs
   as `user`.
 - Over plain HTTP, passwords travel in clear text: keep the default
-  `127.0.0.1` binding unless the network is trusted, or set
+  `127.0.0.1` publish unless the network is trusted, or set
   `DESKYARD_DOMAIN` for HTTPS.

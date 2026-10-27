@@ -2,6 +2,7 @@ package vpn
 
 import (
 	"net/netip"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -123,5 +124,80 @@ func TestNordVPNUsesProviderDefaultPort(t *testing.T) {
 	}
 	if cfg.Spec.Env["OPENVPN_PROTOCOL"] != "udp" {
 		t.Fatal("NordVPN default UDP port must remain selected")
+	}
+}
+
+func policyTestInput() runtimeInput {
+	return runtimeInput{Environment: "alice", Instance: strings.Repeat("c", 32), Network: "alice-net",
+		Connection:  Connection{ID: strings.Repeat("b", 32), Provider: "nordvpn", Country: "Netherlands", Revision: 2},
+		Credentials: CredentialFiles{Username: "/data/secret/vpn/user", Password: "/data/secret/vpn/password"},
+		Directory:   "/data/state/vpn/alice", Reserved: []netip.Prefix{netip.MustParsePrefix("10.213.0.0/16")}}
+}
+
+// The policy label is the identity of a versioned record of the runtime's
+// policy, not of engine structs: a new field in engine.ContainerSpec or
+// engine.Mount must not change it, or every running VPN environment would be
+// replaced on upgrade. Changing this value replaces them all, so only do it
+// on purpose (and bump policyIdentityVersion).
+func TestRuntimePolicyLabelIsStable(t *testing.T) {
+	cfg, err := buildRuntime(policyTestInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "305213d84161315810b2539dc92f65efc02316a570d20fd711e5cad6f9ab1bff"
+	if got := cfg.Spec.Labels[labelPolicy]; got != want {
+		t.Fatalf("policy label = %s, want %s", got, want)
+	}
+}
+
+// Every ContainerSpec field buildRuntime sets is part of the policy identity:
+// a new one must be added to policyIdentity (and the version bumped).
+func TestRuntimePolicyIdentityCoversSpec(t *testing.T) {
+	in := policyTestInput()
+	in.Fixture = &wireguardFixture{Endpoint: netip.MustParseAddr("192.0.2.1"), Port: 51820, PublicKey: "pub", PrivateKeyFile: "/data/secret/vpn/key", Address: "10.64.0.2/32"}
+	for _, input := range []runtimeInput{policyTestInput(), in} {
+		cfg, err := buildRuntime(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		covered := map[string]bool{"Name": true, "Image": true, "Network": true, "Restart": true, "CapAdd": true, "Devices": true, "Env": true, "Labels": true, "Mounts": true}
+		v := reflect.ValueOf(cfg.Spec)
+		for i := range v.NumField() {
+			if name := v.Type().Field(i).Name; !v.Field(i).IsZero() && !covered[name] {
+				t.Errorf("ContainerSpec.%s is set but not in the policy identity", name)
+			}
+		}
+		for _, m := range cfg.Spec.Mounts {
+			if m.Volume != "" || m.MustExist {
+				t.Errorf("mount %+v sets a field not in the policy identity", m)
+			}
+		}
+	}
+}
+
+// Each part of the runtime's policy changes the label.
+func TestRuntimePolicyLabelChanges(t *testing.T) {
+	base, err := buildRuntime(policyTestInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, change := range map[string]func(*runtimeInput){
+		"country":   func(in *runtimeInput) { in.Connection.Country = "Germany" },
+		"revision":  func(in *runtimeInput) { in.Connection.Revision = 3 },
+		"secret":    func(in *runtimeInput) { in.Credentials.Username = "/data/secret/vpn/other" },
+		"directory": func(in *runtimeInput) { in.Directory = "/data/state/vpn/other" },
+		"exception": func(in *runtimeInput) {
+			in.Exceptions = []Exception{{Destination: "192.168.50.10", Protocol: "tcp", Ports: []PortRange{{Start: 631}}}}
+		},
+	} {
+		in := policyTestInput()
+		change(&in)
+		cfg, err := buildRuntime(in)
+		if err != nil {
+			t.Fatal(name, err)
+		}
+		if cfg.Spec.Labels[labelPolicy] == base.Spec.Labels[labelPolicy] {
+			t.Errorf("%s: policy label unchanged", name)
+		}
 	}
 }
