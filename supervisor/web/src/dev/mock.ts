@@ -796,7 +796,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   }
   if (sub === "activity") return json(res, 200, activityOf(c));
   if (sub === "stats") return json(res, 200, history(c));
-  if (sub === "folder") return json(res, 200, { path: c.folder, bytes: 3.2 * GB, complete: true });
+  if (sub === "folder") return json(res, 200, { path: c.folder, bytes: 3.2 * GB, complete: true, diskFree: 212 * GB, diskSize: 460 * GB });
   if (sub === "processes") {
     return json(res, 200, {
       titles: ["PID", "USER", "%CPU", "RSS", "ELAPSED", "COMMAND"],

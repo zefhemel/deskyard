@@ -295,6 +295,9 @@ export interface FolderSize {
   bytes: number;
   /** False when some directories couldn't be read, so bytes is a lower bound. */
   complete: boolean;
+  /** The disk holding the folder (absent when unknown). */
+  diskFree?: number;
+  diskSize?: number;
 }
 
 export interface Uploaded {

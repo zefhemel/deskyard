@@ -180,7 +180,11 @@ func (s *Server) handleFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	bytes, complete := s.Environments.FolderSize(c.Name)
-	writeJSON(w, http.StatusOK, map[string]any{"path": c.Folder, "bytes": bytes, "complete": complete})
+	out := map[string]any{"path": c.Folder, "bytes": bytes, "complete": complete}
+	if free, size, ok := environments.DiskSpace(c.Folder); ok {
+		out["diskFree"], out["diskSize"] = free, size
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
