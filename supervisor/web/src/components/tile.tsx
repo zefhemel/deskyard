@@ -116,7 +116,7 @@ function SessionLinks({ environment: c }: { environment: Environment }) {
   );
 }
 
-export function Tile({ environment: c, job, now, admin }: { environment: Environment; job: Job | undefined; now: number; admin: boolean }) {
+export function Tile({ environment: c, job, now, admin, backupFailed }: { environment: Environment; job: Job | undefined; now: number; admin: boolean; backupFailed?: boolean }) {
   const kind = statusKind(c);
   const busy = kind === "busy";
   return (
@@ -139,6 +139,11 @@ export function Tile({ environment: c, job, now, admin }: { environment: Environ
           )}
         </div>
         <NoticeLine environment={c} class="mt-2" />
+        {backupFailed && (
+          <a href={`/environments/${c.name}?tab=backups`} class="mt-2 block text-[13px] text-danger">
+            Its last backup failed
+          </a>
+        )}
         {c.state === "running" && (
           <SessionLinks environment={c} />
         )}

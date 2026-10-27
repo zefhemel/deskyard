@@ -19,8 +19,9 @@ import { AccessTab } from "./details/access-tab.tsx";
 import { AgentsTab } from "./details/agents-tab.tsx";
 import { ProcessesTab } from "./details/processes-tab.tsx";
 import { SettingsTab } from "./details/settings-tab.tsx";
+import { BackupsPanel } from "../components/backups-panel.tsx";
 
-type Tab = "overview" | "processes" | "agents" | "settings" | "access";
+type Tab = "overview" | "processes" | "agents" | "settings" | "access" | "backups";
 
 export function DetailsPage() {
   const { params } = useRoute();
@@ -69,6 +70,7 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
       ? [
           { id: "settings" as const, label: "Settings" },
           { id: "access" as const, label: "Access" },
+          { id: "backups" as const, label: "Backups" },
         ]
       : []),
   ];
@@ -148,6 +150,7 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
           {tab === "agents" && <AgentsTab environment={c} />}
           {tab === "settings" && <SettingsTab environment={c} />}
           {tab === "access" && <AccessTab environment={c} />}
+          {tab === "backups" && <BackupsPanel kind="environment" name={c.name} stoppers={c.state === "running" ? [c.name] : []} />}
         </div>
       )}
     </Page>

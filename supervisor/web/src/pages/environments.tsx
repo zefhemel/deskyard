@@ -1,5 +1,6 @@
 import { useState } from "preact/hooks";
-import type { Conflict } from "../api.ts";
+import { api, type Conflict } from "../api.ts";
+import { useFetch } from "../lib/use-fetch.ts";
 import { Page, PageHead } from "../components/topbar.tsx";
 import { Tile } from "../components/tile.tsx";
 import { Button } from "../components/ui.tsx";
@@ -10,6 +11,9 @@ export function EnvironmentsPage() {
   const { me, environments, conflicts, jobs } = useLive();
   const now = useNow(10000);
   const [creating, setCreating] = useState(false);
+  // Backups whose last run failed, shown on their tiles (admins only).
+  const backups = useFetch(() => (me.admin ? api.backups() : Promise.resolve(null)), "backups");
+  const failing = new Set((backups.data?.items ?? []).filter((i) => i.state.error).map((i) => i.item));
 
   return (
     <Page>
@@ -28,7 +32,7 @@ export function EnvironmentsPage() {
       ) : (
         <div class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-x-6 gap-y-7 max-sm:grid-cols-1">
           {environments.map((c) => (
-            <Tile key={c.name} environment={c} job={jobs[c.name]} now={now} admin={me.admin} />
+            <Tile key={c.name} environment={c} job={jobs[c.name]} now={now} admin={me.admin} backupFailed={failing.has(`environment:${c.name}`)} />
           ))}
         </div>
       )}

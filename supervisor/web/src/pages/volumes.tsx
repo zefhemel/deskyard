@@ -1,17 +1,61 @@
 import { useEffect, useState } from "preact/hooks";
-import { api, ApiError, type Environment, type Volume, type VolumeUsage, type VPNReference } from "../api.ts";
+import { useLocation } from "preact-iso";
+import { api, ApiError, type BackupItem, type Environment, type Volume, type VolumeUsage, type VPNReference } from "../api.ts";
 import { Page, PageHead } from "../components/topbar.tsx";
 import { notify } from "../components/toast.tsx";
 import { EnvironmentChip } from "../components/environment-chip.tsx";
 import { Button, Check, Dialog, ErrorText, Field, Meter, Note, Tag, errorMessage } from "../components/ui.tsx";
 import { bytes } from "../lib/format.ts";
 import { useFetch } from "../lib/use-fetch.ts";
+import { cx } from "../components/ui.tsx";
+import { isTime } from "../lib/backup-policy.ts";
+import { BackupsTab } from "./storage/backups-tab.tsx";
+import { RemotesTab } from "./storage/remotes-tab.tsx";
+
+type StorageTab = "volumes" | "remotes" | "backups";
+const TABS: { id: StorageTab; label: string }[] = [
+  { id: "volumes", label: "Volumes" },
+  { id: "remotes", label: "Remotes" },
+  { id: "backups", label: "Backups" },
+];
+
+/** The Storage area: volumes, storage remotes and backups. */
+export function StoragePage() {
+  const { query, route } = useLocation();
+  const tab: StorageTab = TABS.find((t) => t.id === query.tab)?.id ?? "volumes";
+  return (
+    <Page>
+      <PageHead title="Storage" sub="Volumes shared between environments, the remotes they're backed up to, and the backups." />
+      <nav class="mb-6 flex gap-1 overflow-x-auto border-b border-line [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="tablist">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={t.id === tab}
+            onClick={() => route(`/volumes${t.id === "volumes" ? "" : `?tab=${t.id}`}`, true)}
+            class={cx(
+              "-mb-px cursor-pointer border-0 border-b-2 bg-transparent px-3.5 py-2.5 text-sm font-semibold",
+              t.id === tab ? "border-ink text-ink" : "border-transparent text-muted hover:text-ink",
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
+      {tab === "volumes" && <VolumesTab />}
+      {tab === "remotes" && <RemotesTab />}
+      {tab === "backups" && <BackupsTab />}
+    </Page>
+  );
+}
 
 const NAME = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
 
-export function VolumesPage() {
+function VolumesTab() {
   const list = useFetch(() => api.volumes(), "volumes");
   const envs = useFetch(() => api.environments(), "environments");
+  const backups = useFetch(() => api.backups(), "backups");
   const [creating, setCreating] = useState(false);
   const [removing, setRemoving] = useState<Volume | null>(null);
   const volumes = list.data?.volumes;
@@ -21,12 +65,13 @@ export function VolumesPage() {
     if (loaded && location.hash) document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView({ block: "start" });
   }, [loaded]);
   return (
-    <Page>
-      <PageHead title="Volumes" sub="Folders shared between environments, at /share/<volume> in each.">
+    <>
+      <div class="mb-4 flex flex-wrap items-center gap-3">
+        <p class="mr-auto max-w-[640px] text-sm text-muted">Folders shared between environments, by default at /share/&lt;volume&gt; in each: in the data folder, or an existing folder on the host.</p>
         <Button variant="primary" disabled={!list.data} onClick={() => setCreating(true)}>
           Create volume
         </Button>
-      </PageHead>
+      </div>
       <ErrorText error={list.error} />
       {!volumes ? (
         <p class="text-muted">Loading…</p>
@@ -35,7 +80,7 @@ export function VolumesPage() {
       ) : (
         <div class="grid gap-3">
           {volumes.map((v) => (
-            <VolumeCard key={v.name} volume={v} environments={envs.data?.environments} onDelete={() => setRemoving(v)} />
+            <VolumeCard key={v.name} volume={v} environments={envs.data?.environments} backup={backups.data?.items.find((i) => i.item === `volume:${v.name}`)} onDelete={() => setRemoving(v)} />
           ))}
         </div>
       )}
@@ -44,11 +89,18 @@ export function VolumesPage() {
       </p>
       {creating && <CreateVolume onClose={() => setCreating(false)} onCreated={list.reload} />}
       {removing && <DeleteVolume volume={removing} onClose={() => setRemoving(null)} onDeleted={list.reload} />}
-    </Page>
+    </>
   );
 }
 
-function VolumeCard({ volume: v, environments, onDelete }: { volume: Volume; environments: Environment[] | undefined; onDelete: () => void }) {
+/** A volume's backup state as a tag: failing, or when it last ran. */
+export function BackupTag({ backup }: { backup: BackupItem | undefined }) {
+  if (!backup?.policy) return null;
+  if (backup.state.error) return <Tag kind="danger">Backup failed</Tag>;
+  return <Tag kind="ok">{isTime(backup.state.lastSuccess) ? "Backed up" : "Backup pending"}</Tag>;
+}
+
+export function VolumeCard({ volume: v, environments, backup, onDelete, linked = true }: { volume: Volume; environments: Environment[] | undefined; backup?: BackupItem; onDelete: () => void; linked?: boolean }) {
   // Sizing walks the whole folder, so each card asks for its own.
   const [usage, setUsage] = useState<VolumeUsage | null>(null);
   useEffect(() => {
@@ -63,7 +115,9 @@ function VolumeCard({ volume: v, environments, onDelete }: { volume: Volume; env
     <article id={`volume-${v.name}`} class="scroll-mt-20 rounded-[10px] border border-line bg-surface p-5 target:outline-3 target:outline-offset-2 target:outline-accent">
       <div class="flex flex-wrap items-start gap-x-4 gap-y-2">
         <div class="mr-auto min-w-0">
-          <h2 class="text-lg font-semibold">{v.name}</h2>
+          <h2 class="text-lg font-semibold">
+            {linked ? <a href={`/volumes/${v.name}`}>{v.name}</a> : v.name} <BackupTag backup={backup} />
+          </h2>
           <p class="text-sm text-muted">{v.kind === "host" ? "Host folder" : "In the data folder"}</p>
         </div>
         <Button onClick={onDelete}>Delete</Button>
@@ -221,7 +275,7 @@ function CreateVolume({ onClose, onCreated }: { onClose: () => void; onCreated: 
   );
 }
 
-function DeleteVolume({ volume: v, onClose, onDeleted }: { volume: Volume; onClose: () => void; onDeleted: () => void }) {
+export function DeleteVolume({ volume: v, onClose, onDeleted }: { volume: Volume; onClose: () => void; onDeleted: () => void }) {
   const [files, setFiles] = useState(false);
   const [refs, setRefs] = useState<VPNReference[]>(v.environments.map((g) => ({ id: g.name, name: g.name })));
   const [error, setError] = useState<string | null>(null);
