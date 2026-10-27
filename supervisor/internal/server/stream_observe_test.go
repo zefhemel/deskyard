@@ -161,7 +161,11 @@ func TestObserverStreamIsFiltered(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			a := accounts.Account{ID: "id-olga", Username: "olga", Grants: []accounts.Grant{{Environment: c.ID, Level: level}}}
+			a, err := s.Accounts.Create(accounts.NewAccount{Username: "olga", Password: "pw",
+				Grants: []accounts.Grant{{Environment: c.ID, Level: level}}})
+			if err != nil {
+				t.Fatal(err)
+			}
 			// Straight to serveStream, as the desktop's route hands it an
 			// account allowed to watch.
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -200,5 +204,45 @@ func TestObserverStreamIsFiltered(t *testing.T) {
 				t.Fatalf("Selkies got %q, want %q", got, want)
 			}
 		})
+	}
+}
+
+// TestStreamRechecksLevelOnceRegistered opens a stream with the account as
+// it was authorized, full, after a downgrade to observe while it waited its
+// turn to dial: it's refused rather than opened unfiltered.
+func TestStreamRechecksLevelOnceRegistered(t *testing.T) {
+	up := &recordingUpstream{}
+	s, _ := newTestServerWith(t, fakeEngine{others: []engine.Container{runningEnvironment(t, "bob", up)}})
+	c, err := s.Environments.Get(context.Background(), "bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorized, err := s.Accounts.Create(accounts.NewAccount{Username: "olga", Password: "pw",
+		Grants: []accounts.Grant{{Environment: c.ID, Level: auth.LevelFull}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Accounts.Update("olga", func(a *accounts.Account) {
+		a.Grants = []accounts.Grant{{Environment: c.ID, Level: auth.LevelObserve}}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.serveStream(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, principal{account: authorized})), c)
+	}))
+	defer ts.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ws, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+"/?tab=t1",
+		&websocket.DialOptions{HTTPHeader: http.Header{"Origin": {ts.URL}}})
+	if err == nil {
+		ws.CloseNow()
+		t.Fatal("opened a stream at the level the account had before the downgrade")
+	}
+	if resp == nil || resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("dial: %v %v", resp, err)
+	}
+	if got := s.viewers.observers("bob"); len(got) != 0 {
+		t.Fatalf("the refused stream stayed registered: %v", got)
 	}
 }

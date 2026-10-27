@@ -2,10 +2,14 @@ package server
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/coder/websocket"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
@@ -169,9 +173,9 @@ func TestExpiredShareDeletedAndConnectionsClosed(t *testing.T) {
 	cn := &conn{username: "sanne", environment: "alice", level: auth.LevelFull, cancel: cancelStream}
 	s.viewers.add("alice", cn)
 	defer s.viewers.remove("alice", cn)
-	past := time.Now().Add(-time.Minute)
-	if _, err := s.Accounts.Update("sanne", func(a *accounts.Account) { a.Expires = &past }); err != nil {
-		t.Fatal(err)
+	expire(t, s, "sanne")
+	if ctx.Err() != nil || stream.Err() != nil {
+		t.Fatal("the connections closed before the expiry tick")
 	}
 	s.expireAccounts(time.Now())
 	shareGone(t, s, share)
@@ -186,14 +190,96 @@ func TestExpiryClosesConnectionsWhenTheDeletionFails(t *testing.T) {
 	_, c := createShare(t, s, admin, "sanne", auth.LevelFull)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer s.credentials.track(c.ID, "alice", cancel)()
+	stream, cancelStream := context.WithCancel(context.Background())
+	defer cancelStream()
+	cn := &conn{username: "sanne", environment: "alice", level: auth.LevelFull, cancel: cancelStream}
+	s.viewers.add("alice", cn)
+	defer s.viewers.remove("alice", cn)
+	expire(t, s, "sanne")
+	blockAccountsFile(t, s)
+	if ctx.Err() != nil || stream.Err() != nil {
+		t.Fatal("the connections closed before the expiry tick")
+	}
+	s.expireAccounts(time.Now())
+	if _, ok := s.Accounts.Get("sanne"); !ok {
+		t.Fatal("deleted the expired account although writing accounts.json fails")
+	}
+	if ctx.Err() == nil || stream.Err() == nil {
+		t.Fatalf("an expired account's connections stayed open when its deletion failed: exec %v, stream %v", ctx.Err(), stream.Err())
+	}
+}
+
+// expire makes the account expired without the change notification, as
+// time passing does.
+func expire(t *testing.T, s *Server, username string) {
+	t.Helper()
+	s.Accounts.OnChange = nil
+	defer func() { s.Accounts.OnChange = s.accountsChanged }()
 	past := time.Now().Add(-time.Minute)
-	if _, err := s.Accounts.Update("sanne", func(a *accounts.Account) { a.Expires = &past }); err != nil {
+	if _, err := s.Accounts.Update(username, func(a *accounts.Account) { a.Expires = &past }); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestExpiryEndsEventStreamWhenTheDeletionFails(t *testing.T) {
+	s, ts := newTestServer(t)
+	createBob(t, s)
+	if err := s.Accounts.SetAccess("alice", map[string]auth.Level{"bob": auth.LevelObserve}); err != nil {
+		t.Fatal(err)
+	}
+	bob := login(t, ts, "bob")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+"/api/events",
+		&websocket.DialOptions{HTTPClient: bob, HTTPHeader: http.Header{"Origin": {ts.URL}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.CloseNow()
+	if _, _, err := ws.Read(ctx); err != nil { // the snapshot
+		t.Fatal(err)
+	}
+	expire(t, s, "bob")
 	blockAccountsFile(t, s)
 	s.expireAccounts(time.Now())
-	if ctx.Err() == nil {
-		t.Fatal("an expired account's connection stayed open when its deletion failed")
+	for {
+		if _, _, err := ws.Read(ctx); err != nil {
+			if ctx.Err() != nil {
+				t.Fatal("an expired account's event stream stayed open when its deletion failed")
+			}
+			return
+		}
+	}
+}
+
+func TestOrphanedShareRefusedWhenTheDeletionFails(t *testing.T) {
+	s, ts := newTestServer(t)
+	bob := createBob(t, s)
+	if err := s.Accounts.SetAccess("alice", fullAccess("bob")); err != nil {
+		t.Fatal(err)
+	}
+	share, _ := createShare(t, s, bob, "sanne", auth.LevelFull)
+	_, bearer := issueCredential(t, s, share)
+	if code, _, _ := bearerRequest(t, "GET", ts.URL+"/api/environments/alice", bearer); code != 200 {
+		t.Fatalf("the share before its sharer lost access: %d", code)
+	}
+	// bob loses full access, but deleting his share fails.
+	s.Accounts.OnChange = nil
+	if _, err := s.Accounts.Update("bob", func(a *accounts.Account) {
+		a.Grants = []accounts.Grant{{Environment: "alice", Level: auth.LevelObserve}}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.Accounts.OnChange = s.accountsChanged
+	blockAccountsFile(t, s)
+	s.sweep()
+	if _, ok := s.Accounts.Get("sanne"); !ok {
+		t.Fatal("deleted the share although writing accounts.json fails")
+	}
+	for _, path := range []string{"/api/me", "/api/environments/alice"} {
+		if code, _, _ := bearerRequest(t, "GET", ts.URL+path, bearer); code != http.StatusUnauthorized {
+			t.Errorf("the orphaned share's GET %s: %d", path, code)
+		}
 	}
 }
 
@@ -214,9 +300,24 @@ func blockAccountsFile(t *testing.T, s *Server) {
 
 func TestDowngradeClosesViewerStream(t *testing.T) {
 	s, _ := newTestServer(t)
-	createBob(t, s)
+	bob := createBob(t, s)
 	if err := s.Accounts.SetAccess("alice", fullAccess("bob")); err != nil {
 		t.Fatal(err)
+	}
+	bob, _ = s.Accounts.Get("bob")
+	term, cancelTerm := context.WithCancel(context.Background())
+	defer cancelTerm()
+	tc := &terminalConnection{environment: "alice", session: "main", cancel: cancelTerm,
+		claims: auth.SessionClaims{Username: "bob", AccountID: bob.ID, Epoch: bob.SessionEpoch, ID: "sess-1", Expires: time.Now().Add(time.Hour)}}
+	if !s.terminals.add(tc) {
+		t.Fatal("the terminal wasn't registered")
+	}
+	defer s.terminals.remove(tc)
+	if _, err := s.Accounts.Update("bob", func(a *accounts.Account) { a.Description = "colleague" }); err != nil {
+		t.Fatal(err)
+	}
+	if term.Err() != nil {
+		t.Fatal("an unrelated change closed a full user's terminal")
 	}
 	full, cancelFull := context.WithCancel(context.Background())
 	defer cancelFull()
@@ -231,8 +332,8 @@ func TestDowngradeClosesViewerStream(t *testing.T) {
 	if err := s.Accounts.SetAccess("alice", map[string]auth.Level{"bob": auth.LevelObserve}); err != nil {
 		t.Fatal(err)
 	}
-	if full.Err() == nil || watch.Err() == nil {
-		t.Fatalf("a downgrade left full-level connections open: stream %v, screen events %v", full.Err(), watch.Err())
+	if full.Err() == nil || watch.Err() == nil || term.Err() == nil {
+		t.Fatalf("a downgrade left full-level connections open: stream %v, screen events %v, terminal %v", full.Err(), watch.Err(), term.Err())
 	}
 
 	// An observer's stream at observe level stays open on an unrelated change.
@@ -241,7 +342,7 @@ func TestDowngradeClosesViewerStream(t *testing.T) {
 	obs := &conn{username: "bob", environment: "alice", level: auth.LevelObserve, cancel: cancelObserving}
 	s.viewers.add("alice", obs)
 	defer s.viewers.remove("alice", obs)
-	if _, err := s.Accounts.Update("bob", func(a *accounts.Account) { a.Description = "colleague" }); err != nil {
+	if _, err := s.Accounts.Update("bob", func(a *accounts.Account) { a.Description = "a colleague" }); err != nil {
 		t.Fatal(err)
 	}
 	if observing.Err() != nil {

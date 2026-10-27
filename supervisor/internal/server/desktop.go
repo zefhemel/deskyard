@@ -220,6 +220,13 @@ func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, c environme
 	defer cancel()
 	cn := &conn{username: a.Username, tab: tab, environment: c.ID, level: a.Level(c.ID), cancel: cancel}
 	s.viewers.add(c.Name, cn)
+	// Registered, a revoke closes the stream; one while it waited its turn
+	// (a downgrade to observe included) refuses it.
+	if acct, ok := s.accountNow(a.Username, a.ID, time.Now()); !ok || acct.Level(c.ID) != cn.level {
+		s.viewers.remove(c.Name, cn)
+		writeError(w, http.StatusNotFound, "no such environment")
+		return
+	}
 	s.publishViewers(c.Name, c.ID)
 	defer func() {
 		s.viewers.remove(c.Name, cn)

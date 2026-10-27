@@ -249,15 +249,15 @@ func (s *Server) reissueSession(w http.ResponseWriter, r *http.Request, a accoun
 
 // withSession resolves the session cookie into the request context; it
 // refreshes cookies that are more than a day old. The cookie must name the
-// account by its ID and current session epoch, and the account must not
-// have expired.
+// account by its ID and current session epoch, and the account must still
+// be usable (accountNow).
 func (s *Server) withSession(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
 	claims, ok := s.Sessions.Claims(r)
 	if !ok {
 		return r, false
 	}
-	a, found := s.Accounts.Get(claims.Username)
-	if !found || a.ID != claims.AccountID || a.SessionEpoch != claims.Epoch || a.Expired(time.Now()) {
+	a, found := s.accountNow(claims.Username, claims.AccountID, time.Now())
+	if !found || a.SessionEpoch != claims.Epoch {
 		return r, false
 	}
 	if claims.Refresh {
@@ -277,14 +277,14 @@ func bearerOf(r *http.Request) (string, bool) {
 }
 
 // withCredential resolves a client credential into the request context. Its
-// account must exist with the ID it was issued to and not have expired.
+// account must be the one it was issued to, still usable (accountNow).
 func (s *Server) withCredential(r *http.Request, bearer string) (*http.Request, bool) {
 	c, ok := s.credentials.check(bearer)
 	if !ok {
 		return r, false
 	}
-	a, found := s.Accounts.Get(c.Username)
-	if !found || a.ID != c.AccountID || a.Expired(time.Now()) {
+	a, found := s.accountNow(c.Username, c.AccountID, time.Now())
+	if !found {
 		return r, false
 	}
 	return r.WithContext(context.WithValue(r.Context(), ctxKey{}, principal{account: a, credential: &c})), true

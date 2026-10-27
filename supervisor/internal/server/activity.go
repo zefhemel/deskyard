@@ -127,8 +127,8 @@ func (s *Server) handleScreenEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	level := a.Level(c.ID)
 	allowed := func() bool {
-		acct, ok := s.Accounts.Get(a.Username)
-		return ok && acct.ID == a.ID && levelOf(acct, ok, time.Now())(c.ID) == level
+		acct, ok := s.accountNow(a.Username, a.ID, time.Now())
+		return ok && acct.Level(c.ID) == level
 	}
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()

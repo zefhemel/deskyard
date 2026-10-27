@@ -23,6 +23,27 @@ func levelOf(a accounts.Account, ok bool, now time.Time) func(environment string
 	}
 }
 
+// accountNow is the named account as it stands now, while it is still the
+// one with id and may use anything: it hasn't expired and isn't a share whose
+// sharer lost it, as when deleting it failed. Requests and the connections
+// they hold check it, so revocation holds even when persisting it failed.
+func (s *Server) accountNow(username, id string, now time.Time) (accounts.Account, bool) {
+	a, ok := s.Accounts.Get(username)
+	if !ok || a.ID != id || a.Expired(now) {
+		return accounts.Account{}, false
+	}
+	if a.SharedBy != nil {
+		sharers := map[string]accounts.Account{}
+		if sharer, ok := s.Accounts.Get(a.SharedBy.Username); ok {
+			sharers[sharer.Username] = sharer
+		}
+		if orphanedShare(a, sharers, now) {
+			return accounts.Account{}, false
+		}
+	}
+	return a, true
+}
+
 // orphanedShare reports whether share has lost its reason to exist: its
 // environment is gone (it has no grant), or its sharer (by ID, from
 // sharers) is gone, expired or no longer full on the environment. Admins
@@ -91,12 +112,14 @@ func (s *Server) closeAccount(username string) {
 	}
 }
 
-// expireLoop deletes accounts as they expire, which ends their access.
+// expireLoop deletes accounts as they expire, which ends their access, and
+// retries the sweep, whose deletions may have failed.
 func (s *Server) expireLoop(ctx context.Context) {
 	tick := time.NewTicker(15 * time.Second)
 	defer tick.Stop()
 	for {
 		s.expireAccounts(time.Now())
+		s.sweep()
 		select {
 		case <-ctx.Done():
 			return

@@ -124,8 +124,10 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	visible := map[string]bool{}  // environment names this stream has shown
 	conflicts := []conflictJSON{} // the conflicts this stream has shown
+	// The stream ends once the account is gone, expired or replaced, also
+	// when deleting it failed.
 	sendAll := func() bool {
-		acct, ok := s.Accounts.Get(a.Username)
+		acct, ok := s.accountNow(a.Username, a.ID, time.Now())
 		if !ok {
 			return false
 		}
@@ -159,7 +161,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case e := <-sub.c:
-			acct, ok := s.Accounts.Get(a.Username)
+			acct, ok := s.accountNow(a.Username, a.ID, time.Now())
 			if !ok {
 				return
 			}
