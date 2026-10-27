@@ -1,5 +1,5 @@
 // Fake data for the dev-server mock (mock.ts). Never part of the build.
-import type { Account, ActivityEvent, AgentPresence, AgentSummary, CatalogImage, Conflict, Environment, Token } from "../api.ts";
+import type { Account, ActivityEvent, AgentPresence, AgentSummary, CatalogImage, Conflict, Credential, Environment } from "../api.ts";
 
 const GB = 1024 ** 3;
 const HOUR = 3600 * 1000;
@@ -46,14 +46,16 @@ function environment(c: Partial<Environment> & { name: string }): Environment {
     updateAvailable: null,
     vpn: {state:"disabled",changedAt:"0001-01-01T00:00:00Z",exitIpObservedAt:"0001-01-01T00:00:00Z",desiredRevision:0,appliedRevision:0,idle:false},
     settings: { dockerAccess: false, memoryBytes: 0, nanoCpus: 0, vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: [] },
+    // level and access come from the accounts' grants (mock.ts).
+    level: "full",
     access: [],
     viewers: [],
+    observers: [],
     mics: [],
     terminal: true,
     terminals: [],
     forwards: [],
     agents: [],
-    tokens: 0,
     stats: null,
     ...c,
   };
@@ -66,22 +68,20 @@ export const environments: Environment[] = [
     imageVersion: "2026.10.15",
     updateAvailable: "2026.10.22",
     settings: { dockerAccess: false, memoryBytes: 2 * GB, nanoCpus: 2e9, vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: [{ name: "photos", readOnly: false }] },
-    access: ["anna"],
-    viewers: ["zef", "anna"],
+    viewers: ["zef", "anna", "sanne"],
+    observers: ["sanne"],
     forwards: [
       { token: "My laptop", direction: "in", port: 3000 },
       { token: "My laptop", direction: "out", port: 5173 },
     ],
     agents: [agent("My laptop", "zef", false, 2), agent("a terminal", "", true, 4), agent("Work laptop", "anna", false, 270)],
     terminals: [{ name: "main", clients: 1, command: "bash" }, { name: "terminal-1", clients: 0, command: "htop" }, { name: "build", clients: 2, command: "zsh" }],
-    tokens: 2,
     stats: { cpuPercent: 34, memBytes: 1.4 * GB, memLimit: 2 * GB },
   }),
   environment({
     name: "research",
     startedAt: iso(5 * HOUR),
     settings: { dockerAccess: false, memoryBytes: 0, nanoCpus: 0, vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: [{ name: "photos", readOnly: true }] },
-    access: ["anna", "sam"],
     viewers: ["anna"],
     terminals: [{ name: "main", clients: 0, command: "bash" }],
     stats: { cpuPercent: 8, memBytes: 0.9 * GB, memLimit: 16 * GB },
@@ -98,7 +98,6 @@ export const environments: Environment[] = [
     startedAt: iso(2 * DAY),
     imageVersion: "2026.10.15",
     updateAvailable: "2026.10.22",
-    access: ["anna"],
     stats: { cpuPercent: 2, memBytes: 0.7 * GB, memLimit: 16 * GB },
   }),
   environment({ name: "data-lab", state: "creating", startedAt: "", imageVersion: "" }),
@@ -132,12 +131,47 @@ export const conflicts: Conflict[] = [
   { name: "old-lab", kind: "unknown", containers: ["deskyard-old-lab"], message: "deskyard-old-lab claims environment old-lab, which isn't defined" },
 ];
 
-export const accounts: (Account & { password: string })[] = [
-  { username: "zef", admin: true, environments: [], created: iso(30 * DAY), lastLogin: iso(0), password: "zef" },
-  { username: "anna", admin: false, environments: ["alice", "research", "notes"], created: iso(20 * DAY), lastLogin: iso(60 * 1000), password: "anna" },
-  { username: "sam", admin: false, environments: ["research"], created: iso(10 * DAY), lastLogin: iso(3 * DAY), password: "sam" },
-  { username: "ci", admin: false, environments: [], created: iso(2 * DAY), lastLogin: null, password: "ci" },
+/** An account as accounts.json holds it: password null for a token account; linkPending comes from `links`. */
+export type MockAccount = Omit<Account, "kind" | "linkPending"> & { id: string; password: string | null };
+
+export const accounts: MockAccount[] = [
+  { id: "a0000001", username: "zef", admin: true, description: "", grants: [], sharedBy: null, expires: null, created: iso(30 * DAY), lastLogin: iso(0), password: "zef" },
+  {
+    id: "a0000002", username: "anna", admin: false, description: "", sharedBy: null, expires: null, created: iso(20 * DAY), lastLogin: iso(60 * 1000), password: "anna",
+    grants: [{ environment: "alice", level: "full" }, { environment: "notes", level: "observe" }, { environment: "research", level: "full" }],
+  },
+  { id: "a0000003", username: "sam", admin: false, description: "", grants: [{ environment: "research", level: "full" }], sharedBy: null, expires: null, created: iso(10 * DAY), lastLogin: iso(3 * DAY), password: "sam" },
+  { id: "a0000004", username: "ci", admin: false, description: "The build runner", grants: [{ environment: "build-bot", level: "full" }], sharedBy: null, expires: null, created: iso(2 * DAY), lastLogin: iso(HOUR), password: null },
+  // Shares: token accounts with one grant, made by Share.
+  {
+    id: "a0000005", username: "sanne", admin: false, description: "", grants: [{ environment: "alice", level: "observe" }], sharedBy: { username: "zef", id: "a0000001" },
+    expires: new Date(now + DAY).toISOString(), created: iso(2 * HOUR), lastLogin: iso(HOUR), password: null,
+  },
+  {
+    id: "a0000006", username: "bob", admin: false, description: "", grants: [{ environment: "research", level: "full" }], sharedBy: { username: "anna", id: "a0000002" },
+    expires: null, created: iso(3 * DAY), lastLogin: null, password: null,
+  },
 ];
+
+/**
+ * Unused login links: code → username. Open /link#dyl_5a17e0aa_mock-bob-link
+ * to sign in as bob (once); the Share dialog and "New login link" make more.
+ */
+export const links = new Map<string, string>([["dyl_5a17e0aa_mock-bob-link", "bob"]]);
+
+/** Signed-in devices by username (current is worked out per request). */
+export const credentials: Record<string, Omit<Credential, "current">[]> = {
+  zef: [
+    { id: "c3f9a1b2", kind: "cli", name: "deskyard CLI on zef-mbp", created: iso(9 * DAY), lastUsed: iso(2 * 60 * 1000) },
+    { id: "c71d0e44", kind: "cli", name: "deskyard CLI on build-box", created: iso(25 * DAY), lastUsed: iso(6 * DAY) },
+  ],
+  ci: [{ id: "c0be11a9", kind: "cli", name: "deskyard CLI on runner-3", created: iso(2 * DAY), lastUsed: iso(HOUR) }],
+};
+
+/** Pending `deskyard login` requests; open /cli-login#mock-request to approve one. */
+export const cliLogins = new Map<string, { client: string; ip: string; code: string; created: string; answer: "approved" | "denied" | null; approver: string | null }>([
+  ["mock-request", { client: "deskyard CLI on zef-mbp", ip: "192.168.1.23", code: "KXQF-7RTB", created: iso(20 * 1000), answer: null, approver: null }],
+]);
 
 function customImage(slug: string, title: string, description: string, over: Partial<CatalogImage>): CatalogImage {
   return {
@@ -180,14 +214,6 @@ export const images: CatalogImage[] = [
   customImage("work-signed-in", "Work, signed in", "Chromium and the work apps, signed in to everything", {}),
   customImage("video-tools", "Video tools", "Kdenlive and ffmpeg", {}),
 ];
-
-export const tokens: Record<string, Token[]> = {
-  alice: [
-    { id: "7f3kq2", name: "claude on zef's laptop", createdBy: "zef", created: iso(10 * DAY), expires: null, lastUsed: iso(2 * 60 * 1000), expired: false },
-    { id: "m2q9x8", name: "Work laptop", createdBy: "zef", created: iso(4 * DAY), expires: new Date(now + 26 * DAY).toISOString(), lastUsed: iso(5 * HOUR), expired: false },
-    { id: "a81c4d", name: "demo for sam", createdBy: "anna", created: iso(21 * DAY), expires: iso(14 * DAY), lastUsed: iso(14 * DAY), expired: true },
-  ],
-};
 
 export const processRows: [number, string, number, number, string, string][] = [
   [412, "user", 18.2, 626688, "02:14:07", "/usr/lib/chromium/chromium --type=renderer --enable-features=… https://github.com/…"],

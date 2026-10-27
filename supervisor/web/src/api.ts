@@ -3,6 +3,28 @@
 export interface Me {
   username: string;
   admin: boolean;
+  /** token: an account without a password, which signs in through login links. */
+  kind: "password" | "token";
+  /** Made by Share on an environment; shares can't share. */
+  share: boolean;
+}
+
+/** What an account may do on an environment: everything, or watch its desktop. Admins are full everywhere. */
+export type Level = "full" | "observe";
+/** An account's grant of an environment. */
+export interface Grant {
+  environment: string;
+  level: Level;
+}
+/** An environment's grant to an account. */
+export interface AccessGrant {
+  username: string;
+  level: Level;
+}
+/** The account that made a share. */
+export interface Sharer {
+  username: string;
+  id: string;
 }
 
 export interface Host {
@@ -121,15 +143,19 @@ export interface Environment {
   updateAvailable: string | null;
   settings: Settings;
   vpn: VPNStatus;
-  access: string[];
+  /** The signed-in account's level here. An observer's environment has its configuration blanked. */
+  level: Level;
+  /** The regular accounts granted it (admins only; shares are listed by its shares). */
+  access: AccessGrant[];
   viewers: string[];
+  /** The viewers watching at observe level. */
+  observers: string[];
   /** Viewers with a mic on (per stream; gone when the stream closes). */
   mics: string[];
   /** Port mappings agents have set up with `deskyard forward`; port is the environment's. */
   forwards: Forward[];
-  /** Agents at work in the environment: from outside (a token) or inside (a program). */
+  /** Agents at work in the environment: from outside (a CLI credential) or inside (a program). */
   agents: AgentPresence[];
-  tokens: number;
   stats: Stats | null;
 }
 
@@ -185,25 +211,68 @@ export interface Job {
 
 export interface Account {
   username: string;
+  kind: "password" | "token";
   admin: boolean;
-  environments: string[];
+  description: string;
+  grants: Grant[];
+  /** Set on shares only. */
+  sharedBy: Sharer | null;
+  expires: string | null;
+  /** It has an unused login link. */
+  linkPending: boolean;
   created: string;
   lastLogin: string | null;
 }
 
-export interface Token {
-  id: string;
-  name: string;
-  createdBy: string;
-  created: string;
-  expires: string | null;
-  lastUsed: string | null;
-  expired: boolean;
+export interface AccountChange {
+  password?: string;
+  admin?: boolean;
+  description?: string;
+  grants?: Grant[];
+  expires?: string | null;
 }
 
-export interface CreatedToken extends Token {
-  token: string;
-  remoteAdd: string;
+/** A token account with one grant, made by Share on an environment. */
+export interface Share {
+  username: string;
+  environment: string;
+  level: Level;
+  sharedBy: Sharer;
+  expires: string | null;
+  created: string;
+  /** The last redemption of a link. */
+  lastLogin: string | null;
+  linkPending: boolean;
+  /** It has a desktop, terminal or CLI connection open on the environment now. */
+  connected: boolean;
+}
+
+/** What a login link signs in as, before it is used. */
+export interface LinkInfo {
+  username: string;
+  description: string;
+  grants: Grant[];
+  sharedBy: Sharer | null;
+  expires: string | null;
+}
+
+/** A signed-in client (a CLI) of an account. */
+export interface Credential {
+  id: string;
+  kind: "cli";
+  name: string;
+  created: string;
+  lastUsed: string | null;
+  /** The credential making this request. */
+  current: boolean;
+}
+
+/** A pending `deskyard login`, for its approval page. */
+export interface CliLoginRequest {
+  client: string;
+  ip: string;
+  code: string;
+  created: string;
 }
 
 export interface CatalogImage {
@@ -259,7 +328,7 @@ export interface StatsEvent extends Stats {
   t: string;
 }
 export interface Forward {
-  /** The name of the agent token that set it up. */
+  /** The name of the client credential that set it up (its wire name is token). */
   token: string;
   /** in: this machine's port appears in the environment; out: the environment's port appears there. */
   direction: "in" | "out";
@@ -268,6 +337,7 @@ export interface Forward {
 export interface ViewersEvent {
   name: string;
   viewers: string[];
+  observers: string[];
   mics: string[];
   forwards: Forward[];
   agents: AgentPresence[];
@@ -277,7 +347,7 @@ export interface ViewersEvent {
 export interface AgentPresence {
   id: string;
   name: string;
-  /** The account that made the token; empty for agents inside the environment. */
+  /** The credential's account; empty for agents inside the environment. */
   owner: string;
   inside: boolean;
   color: string;
@@ -341,12 +411,19 @@ export class ApiError extends Error {
   }
 }
 
-/** Sends the browser to the login page, coming back here afterwards. */
+/**
+ * Sends the browser to the login page, coming back here afterwards. The
+ * fragment comes along (the CLI login page's request id is in it), except on
+ * the link page, whose fragment is a secret that mustn't reach a query string.
+ */
 export function goToLogin(): void {
   if (location.pathname === "/login") return;
-  const next = location.pathname + location.search;
+  const next = location.pathname + location.search + (location.pathname === "/link" ? "" : location.hash);
   location.href = `/login?next=${encodeURIComponent(next)}`;
 }
+
+/** Routes that answer 401 without meaning "sign in first". */
+const no401Redirect = new Set(["/api/login", "/api/links/inspect", "/api/links/redeem"]);
 
 async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const init: RequestInit = { method, credentials: "same-origin", headers: {}, signal };
@@ -355,7 +432,7 @@ async function request<T>(method: string, path: string, body?: unknown, signal?:
     init.headers = { "Content-Type": "application/json" };
   }
   const res = await fetch(path, init);
-  if (res.status === 401 && path !== "/api/login") {
+  if (res.status === 401 && !no401Redirect.has(path)) {
     goToLogin();
     throw new ApiError(401, "Signed out");
   }
@@ -394,7 +471,18 @@ export const api = {
   login: (username: string, password: string) => request<Me>("POST", "/api/login", { username, password }),
   logout: () => request<void>("POST", "/api/logout"),
   me: () => request<Me>("GET", "/api/me"),
+  /** The signed-in account, or null when signed out (without going to the login page). */
+  whoami: async (): Promise<Me | null> => {
+    const res = await fetch("/api/me", { credentials: "same-origin" });
+    if (res.status === 401) return null;
+    if (!res.ok) throw new ApiError(res.status, `${res.status} ${res.statusText}`);
+    return (await res.json()) as Me;
+  },
   changePassword: (current: string, next: string) => request<void>("POST", "/api/me/password", { current, new: next }),
+  /** Ends every browser session of the account; this one is re-issued. */
+  signOutEverywhere: () => request<void>("POST", "/api/me/sign-out-everywhere"),
+  credentials: () => request<Credential[]>("GET", "/api/me/credentials"),
+  revokeCredential: (id: string) => request<void>("DELETE", `/api/me/credentials/${enc(id)}`),
   host: () => request<Host>("GET", "/api/host"),
 
   environments: () => request<EnvironmentList>("GET", "/api/environments"),
@@ -405,7 +493,7 @@ export const api = {
   createTerminal: (name: string) => request<{ name: string }>("POST", `${c(name)}/terminal/sessions`),
   /** Ends a session for everyone attached to it. */
   endTerminal: (name: string, session: string) => request<void>("DELETE", `${c(name)}/terminal/sessions/${enc(session)}`),
-  createEnvironment: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: string[]; dockerAccess: boolean; mounts?: HostMount[]; volumes?: VolumeGrant[] } & EnvironmentVPNSettings) =>
+  createEnvironment: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: AccessGrant[]; dockerAccess: boolean; mounts?: HostMount[]; volumes?: VolumeGrant[] } & EnvironmentVPNSettings) =>
     request<JobRef>("POST", "/api/environments", body),
   power: (name: string, action: "start" | "stop" | "restart") => request<void>("POST", `${c(name)}/${action}`),
   setMemoryPolicy: (name: string, memoryReclaim: boolean) => request<void>("PUT", `${c(name)}/memory-policy`, { memoryReclaim }),
@@ -413,7 +501,7 @@ export const api = {
   removeEnvironment: (name: string, files: boolean) => request<void>("DELETE", c(name) + (files ? "?files=1" : "")),
   updateSettings: (name: string, body: SettingsPatch) =>
     request<JobRef>("PATCH", c(name), body),
-  setAccess: (name: string, usernames: string[]) => request<void>("PUT", `${c(name)}/access`, { usernames }),
+  setAccess: (name: string, grants: AccessGrant[]) => request<void>("PUT", `${c(name)}/access`, { grants }),
   processes: (name: string) => request<Processes>("GET", `${c(name)}/processes`),
   activity: (name: string) => request<ActivityEvent>("GET", `${c(name)}/activity`),
   stats: (name: string) => request<StatsHistory>("GET", `${c(name)}/stats`),
@@ -445,16 +533,31 @@ export const api = {
   testVPN: (body: VPNInput & {connectionId?: string}) => request<JobRef>("POST", "/api/vpn/test", body),
 
   accounts: () => request<Account[]>("GET", "/api/accounts"),
-  createAccount: (body: { username: string; password: string; admin: boolean; environments: string[] }) =>
-    request<Account>("POST", "/api/accounts", body),
-  updateAccount: (username: string, body: { password?: string; admin?: boolean; environments?: string[] }) =>
-    request<Account>("PATCH", `/api/accounts/${enc(username)}`, body),
+  /** Without a password it is a token account, which signs in through a login link. */
+  createAccount: (body: AccountChange & { username: string }) => request<Account>("POST", "/api/accounts", body),
+  updateAccount: (username: string, body: AccountChange) => request<Account>("PATCH", `/api/accounts/${enc(username)}`, body),
   deleteAccount: (username: string) => request<void>("DELETE", `/api/accounts/${enc(username)}`),
+  /** A new login link for a token account, replacing its unused one. */
+  accountLink: (username: string) => request<{ link: string }>("POST", `/api/accounts/${enc(username)}/link`),
+  accountCredentials: (username: string) => request<Credential[]>("GET", `/api/accounts/${enc(username)}/credentials`),
+  revokeAccountCredential: (username: string, id: string) =>
+    request<void>("DELETE", `/api/accounts/${enc(username)}/credentials/${enc(id)}`),
 
-  tokens: (name: string) => request<Token[]>("GET", `${c(name)}/tokens`),
-  createToken: (name: string, body: { name: string; expires: string | null }) =>
-    request<CreatedToken>("POST", `${c(name)}/tokens`, body),
-  deleteToken: (name: string, id: string) => request<void>("DELETE", `${c(name)}/tokens/${enc(id)}`),
+  shares: (name: string) => request<Share[]>("GET", `${c(name)}/shares`),
+  /** The link is only ever shown here. */
+  createShare: (name: string, body: { username: string; level: Level; expires: string | null }) =>
+    request<{ share: Share; link: string }>("POST", `${c(name)}/shares`, body),
+  newShareLink: (username: string) => request<{ link: string }>("POST", `/api/shares/${enc(username)}/link`),
+  revokeShare: (username: string) => request<void>("DELETE", `/api/shares/${enc(username)}`),
+
+  /** What a link's code signs in as; uses nothing up. */
+  inspectLink: (link: string) => request<LinkInfo>("POST", "/api/links/inspect", { link }),
+  /** Uses the link up and signs this browser in as its account. */
+  redeemLink: (link: string) => request<{ username: string; next: string }>("POST", "/api/links/redeem", { link, client: "browser" }),
+
+  cliLogin: (id: string) => request<CliLoginRequest>("GET", `/api/cli-login/${enc(id)}`),
+  approveCliLogin: (id: string) => request<void>("POST", `/api/cli-login/${enc(id)}/approve`),
+  denyCliLogin: (id: string) => request<void>("POST", `/api/cli-login/${enc(id)}/deny`),
 
   images: () => request<CatalogImage[]>("GET", "/api/images"),
   addImage: (ref: string) => request<JobRef>("POST", "/api/images", { ref }),

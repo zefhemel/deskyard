@@ -4,12 +4,15 @@ import { api, type Me } from "./api.ts";
 import { Toaster } from "./components/toast.tsx";
 import { LiveProvider } from "./live.tsx";
 import { AccountsPage } from "./pages/accounts.tsx";
+import { CliLoginPage } from "./pages/cli-login.tsx";
 import { DetailsPage } from "./pages/details.tsx";
+import { DevicesPage } from "./pages/devices.tsx";
 import { EnvironmentsPage } from "./pages/environments.tsx";
 import { EnvironmentPage } from "./desktop/desktop.tsx";
 import { VPNPage } from "./pages/vpn.tsx";
 import { ImagesPage } from "./pages/images.tsx";
 import { VolumesPage } from "./pages/volumes.tsx";
+import { LinkPage } from "./pages/link.tsx";
 import { LoginPage } from "./pages/login.tsx";
 import { NotFound } from "./pages/not-found.tsx";
 
@@ -31,9 +34,15 @@ export function App() {
   );
 }
 
+/**
+ * /login and /link (a login link) work signed out; /cli-login asks for a
+ * session itself, through the API, so it can come back with its fragment.
+ */
 function Shell() {
   const { path } = useLocation();
   if (path === "/login") return <LoginPage />;
+  if (path === "/link") return <LinkPage />;
+  if (path === "/cli-login") return <CliLoginPage />;
   return <SignedIn />;
 }
 
@@ -56,6 +65,7 @@ function SignedIn() {
         <Router>
           <Route path="/" component={EnvironmentsPage} />
           <Route path="/environments/:name" component={DetailsPage} />
+          <Route path="/account" component={DevicesPage} />
           <Route path="/_vpn" component={me.admin ? VPNPage : NotFound} />
           <Route path="/images" component={me.admin ? ImagesPage : NotFound} />
           <Route path="/volumes" component={me.admin ? VolumesPage : NotFound} />

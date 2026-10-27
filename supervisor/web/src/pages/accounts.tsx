@@ -1,13 +1,16 @@
 import { useState } from "preact/hooks";
 import { api, type Account } from "../api.ts";
 import { Avatar } from "../components/avatar.tsx";
-import { Menu } from "../components/menu.tsx";
+import { Menu, type MenuItem } from "../components/menu.tsx";
+import { notifyError } from "../components/toast.tsx";
 import { Page, PageHead } from "../components/topbar.tsx";
 import { Button, Dialog, ErrorText, errorMessage, IconButton, MORE, Tag } from "../components/ui.tsx";
 import { AccountDialog } from "../dialogs/account.tsx";
+import { Expiry, LinkDialog } from "../dialogs/share.tsx";
 import { useLive } from "../live.tsx";
 import { ago } from "../lib/format.ts";
 import { useFetch } from "../lib/use-fetch.ts";
+import { DeviceList } from "./devices.tsx";
 
 const th = "border-b border-line px-4 py-[11px] text-left text-[13px] font-semibold text-muted";
 const td = "border-b border-hairline px-4 py-[13px] align-middle";
@@ -17,6 +20,17 @@ export function AccountsPage() {
   const accounts = useFetch(() => api.accounts(), "accounts");
   const [editing, setEditing] = useState<Account | "new" | null>(null);
   const [deleting, setDeleting] = useState<Account | null>(null);
+  const [devices, setDevices] = useState<Account | null>(null);
+  const [link, setLink] = useState<{ username: string; link: string } | null>(null);
+
+  const newLink = async (a: Account) => {
+    try {
+      setLink({ username: a.username, link: (await api.accountLink(a.username)).link });
+      accounts.reload();
+    } catch (e) {
+      notifyError(e);
+    }
+  };
 
   return (
     <Page>
@@ -33,50 +47,71 @@ export function AccountsPage() {
               <tr>
                 <th class={th}>Account</th>
                 <th class={th}>Can use</th>
+                <th class={th}>Ends</th>
                 <th class={th}>Last signed in</th>
                 <th class={th} />
               </tr>
             </thead>
             <tbody>
-              {accounts.data.map((a) => (
-                <tr key={a.username} class="last:[&>td]:border-b-0">
-                  <td class={td}>
-                    <span class="inline-flex items-center gap-2 font-semibold whitespace-nowrap">
-                      <Avatar name={a.username} /> {a.username}
-                      {a.admin && <Tag kind="admin">admin</Tag>}
-                    </span>
-                  </td>
-                  <td class={td}>
-                    {a.admin ? (
-                      <span class="text-muted">Every environment</span>
-                    ) : a.environments.length ? (
-                      <div class="flex flex-wrap gap-[5px]">
-                        {a.environments.map((c) => (
-                          <Tag key={c}>{c}</Tag>
-                        ))}
+              {accounts.data.map((a) => {
+                const items: MenuItem[] = [
+                  ...(a.kind === "token" ? [{ label: a.linkPending ? "New login link (replaces the unused one)" : "New login link", onSelect: () => void newLink(a) }] : []),
+                  { label: "Signed-in devices…", onSelect: () => setDevices(a) },
+                  { label: a.sharedBy ? "Revoke…" : "Delete…", danger: true, separated: true, onSelect: () => setDeleting(a) },
+                ];
+                return (
+                  <tr key={a.username} class="last:[&>td]:border-b-0">
+                    <td class={td}>
+                      <span class="inline-flex items-center gap-2 font-semibold whitespace-nowrap">
+                        <Avatar name={a.username} /> {a.username}
+                        {a.admin && <Tag kind="admin">admin</Tag>}
+                        {a.sharedBy && <Tag>share</Tag>}
+                      </span>
+                      <div class="mt-0.5 text-[13px] text-muted">
+                        {[a.description, a.kind === "token" && !a.sharedBy ? "Signs in with a login link" : "", a.linkPending ? "Link not used yet" : ""]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </div>
-                    ) : (
-                      <span class="text-muted">No environments yet</span>
-                    )}
-                  </td>
-                  <td class={`${td} whitespace-nowrap`}>{a.username === me.username ? "Now" : ago(a.lastLogin)}</td>
-                  <td class={`${td} text-right whitespace-nowrap`}>
-                    <span class="inline-flex gap-1.5">
-                      <Button class="h-[30px]! px-[11px]!" onClick={() => setEditing(a)}>
-                        Edit
-                      </Button>
-                      <Menu
-                        items={[{ label: "Delete…", danger: true, onSelect: () => setDeleting(a) }]}
-                        trigger={({ toggle, open }) => (
-                          <IconButton class="h-[30px]! w-[30px]!" aria-label={`More actions for ${a.username}`} aria-haspopup="menu" aria-expanded={open} onClick={toggle}>
-                            {MORE}
-                          </IconButton>
-                        )}
-                      />
-                    </span>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td class={td}>
+                      {a.admin ? (
+                        <span class="text-muted">Every environment</span>
+                      ) : a.grants.length ? (
+                        <div class="flex flex-wrap gap-[5px]">
+                          {a.grants.map((g) => (
+                            <Tag key={g.environment}>
+                              {g.environment}
+                              {g.level === "observe" && <span class="font-medium text-muted"> · observe</span>}
+                            </Tag>
+                          ))}
+                        </div>
+                      ) : (
+                        <span class="text-muted">No environments yet</span>
+                      )}
+                      {a.sharedBy && <div class="mt-1 text-[13px] text-muted">Shared by {a.sharedBy.username}</div>}
+                    </td>
+                    <td class={`${td} whitespace-nowrap`}>
+                      <Expiry expires={a.expires} />
+                    </td>
+                    <td class={`${td} whitespace-nowrap`}>{a.username === me.username ? "Now" : ago(a.lastLogin)}</td>
+                    <td class={`${td} text-right whitespace-nowrap`}>
+                      <span class="inline-flex gap-1.5">
+                        <Button class="h-[30px]! px-[11px]!" onClick={() => setEditing(a)}>
+                          Edit
+                        </Button>
+                        <Menu
+                          items={items}
+                          trigger={({ toggle, open }) => (
+                            <IconButton class="h-[30px]! w-[30px]!" aria-label={`More actions for ${a.username}`} aria-haspopup="menu" aria-expanded={open} onClick={toggle}>
+                              {MORE}
+                            </IconButton>
+                          )}
+                        />
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -85,8 +120,9 @@ export function AccountsPage() {
         <AccountDialog
           account={editing === "new" ? null : editing}
           onClose={() => setEditing(null)}
-          onSaved={() => {
+          onSaved={(l) => {
             setEditing(null);
+            if (l) setLink(l);
             accounts.reload();
           }}
         />
@@ -102,7 +138,31 @@ export function AccountsPage() {
           }}
         />
       )}
+      {devices && <AccountDevicesDialog account={devices} onClose={() => setDevices(null)} />}
+      {link && <LinkDialog username={link.username} link={link.link} title={`A login link for ${link.username}`} onClose={() => setLink(null)} />}
     </Page>
+  );
+}
+
+function AccountDevicesDialog({ account: a, onClose }: { account: Account; onClose: () => void }) {
+  const devices = useFetch(() => api.accountCredentials(a.username), a.username);
+  return (
+    <Dialog
+      title={`${a.username}'s signed-in devices`}
+      intro="The deskyard command on each machine signed in as this account. Signing one out ends its open shells and connections at once."
+      onClose={onClose}
+      onSubmit={onClose}
+      wide
+      footer={
+        <Button type="submit" variant="primary">
+          Done
+        </Button>
+      }
+    >
+      <div class="mb-[18px]">
+        <DeviceList devices={devices.data} error={devices.error} revoke={(id) => api.revokeAccountCredential(a.username, id)} onChanged={devices.reload} />
+      </div>
+    </Dialog>
   );
 }
 
@@ -120,24 +180,26 @@ function DeleteAccountDialog({ account: a, self, onClose, onDeleted }: { account
       setBusy(false);
     }
   };
+  const verb = a.sharedBy ? "Revoke" : "Delete";
   return (
     <Dialog
-      title={`Delete ${a.username}?`}
+      title={`${verb} ${a.username}?`}
       intro={
         <>
-          {a.username} is signed out everywhere, and their access tokens are revoked. Their environments stay.
+          {a.username} is signed out everywhere: browsers and signed-in devices, with their open desktops, terminals and connections. Its login
+          link stops working{a.sharedBy ? "" : ", and the shares it made end"}. Environments stay.
           {self && " This is your own account: you'll be signed out."}
         </>
       }
       onClose={onClose}
-      onSubmit={submit}
+      onSubmit={() => void submit()}
       footer={
         <>
           <Button variant="quiet" onClick={onClose}>
             Cancel
           </Button>
           <Button type="submit" variant="danger" disabled={busy}>
-            Delete {a.username}
+            {verb} {a.username}
           </Button>
         </>
       }

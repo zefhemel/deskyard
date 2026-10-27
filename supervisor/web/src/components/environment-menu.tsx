@@ -30,11 +30,13 @@ export function EnvironmentMenu({
   const [removing, setRemoving] = useState(false);
 
   const items: MenuItem[] = [];
-  if (withPower && c.state === "running") {
+  // Observers can't start or stop it.
+  const powered = withPower && c.level !== "observe";
+  if (powered && c.state === "running") {
     items.push({ label: "Restart", onSelect: () => power(c.name, "restart") });
     items.push({ label: "Stop", onSelect: () => power(c.name, "stop") });
   }
-  if (withPower && c.state === "stopped") items.push({ label: "Start", onSelect: () => power(c.name, "start") });
+  if (powered && c.state === "stopped") items.push({ label: "Start", onSelect: () => power(c.name, "start") });
   if (me.admin) {
     items.push({ label: "Settings", onSelect: () => route(`/environments/${c.name}?tab=settings`) });
     items.push(...adminItems);

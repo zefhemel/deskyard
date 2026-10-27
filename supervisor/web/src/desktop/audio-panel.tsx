@@ -170,7 +170,8 @@ const barButton =
  * screen is the frame's client (null until it loads), connected whether its
  * stream is up.
  */
-export function AudioControl({ name, screen, connected }: { name: string; screen: DeskyardScreen | null; connected: boolean }) {
+/** The bar's Audio panel: desktop sound, and (unless `micAllowed` is false, as for observers) this browser's mic into the desktop. */
+export function AudioControl({ name, screen, connected, micAllowed = true }: { name: string; screen: DeskyardScreen | null; connected: boolean; micAllowed?: boolean }) {
   const [sound, setSoundPrefs] = useState(loadSound);
   const soundRef = useRef(sound);
   soundRef.current = sound;
@@ -314,8 +315,8 @@ export function AudioControl({ name, screen, connected }: { name: string; screen
               />
             </label>
           </Section>
-          <hr class="my-3 border-0 border-t border-hairline" />
-          <Section
+          {micAllowed && <hr class="my-3 border-0 border-t border-hairline" />}
+          {micAllowed && <Section
             title={`My mic into ${name}`}
             label="My mic"
             checked={mic.on}
@@ -332,7 +333,7 @@ export function AudioControl({ name, screen, connected }: { name: string; screen
                 <Hint>Everyone on {name} sees when your mic is on</Hint>
               </>
             )}
-          </Section>
+          </Section>}
         </Panel>
       )}
     </div>

@@ -1,15 +1,18 @@
 // A fake supervisor API for `npm run dev` (Vite dev-server middleware only:
 // `apply: "serve"` keeps it out of `vite build`). It follows supervisor/API.md
-// closely enough to click through every page. Sign in as zef (admin) or anna
-// (regular) with any password; "wrong" fails.
-import { createHash } from "node:crypto";
+// closely enough to click through every page. Sign in as zef (admin), anna
+// (regular; she observes notes) or sam with any password; "wrong" fails.
+// sanne observes alice: sign in as her through a link from "New link" on
+// alice's Sharing tab. /link#dyl_5a17e0aa_mock-bob-link signs in as bob once,
+// and /cli-login#mock-request is a pending `deskyard login`.
+import { createHash, randomBytes } from "node:crypto";
 import { readFileSync, existsSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
-import type { CreatedToken, Environment, Job } from "../api.ts";
-import { accounts, activityOf, conflicts, environments, FOLDER, images, processRows, refreshImages, tokens, volumes } from "./mock-data.ts";
+import type { AccessGrant, Account, Environment, Grant, Job, Level, Share } from "../api.ts";
+import { accounts, activityOf, cliLogins, conflicts, credentials, environments, FOLDER, images, links, type MockAccount, processRows, refreshImages, volumes } from "./mock-data.ts";
 
 
 const GB = 1024 ** 3;
@@ -42,19 +45,203 @@ function sse(res: ServerResponse): void {
 }
 
 function broadcast(event: string, data: unknown): void {
+  // One session at a time here: events go out as that account would get them.
+  const m = me();
+  if (event === "environment" && m) {
+    const c = data as Environment;
+    if (levelOf(m, c.name) === null) return;
+    data = asSeenBy(c, m);
+  }
+  if (event === "viewers" && m && levelOf(m, (data as { name: string }).name) === "observe") data = { ...(data as object), forwards: [], agents: [] };
   for (const s of streams) s.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   for (const send of eventSockets) send(event, data);
 }
 
 function me() {
-  return accounts.find((a) => a.username === session);
+  const a = accounts.find((a) => a.username === session);
+  return a && (!a.expires || Date.parse(a.expires) > Date.now()) ? a : undefined;
+}
+
+function meJSON(a: MockAccount) {
+  return { username: a.username, admin: a.admin, kind: a.password === null ? "token" : "password", share: a.sharedBy !== null };
+}
+
+function accountJSON(a: MockAccount): Account {
+  const { password, id: _, ...rest } = a;
+  return { ...rest, kind: password === null ? "token" : "password", linkPending: [...links.values()].includes(a.username), grants: [...a.grants].sort((x, y) => x.environment.localeCompare(y.environment)) };
+}
+
+/** An account's level on an environment, or null without access. */
+function levelOf(a: MockAccount, env: string): Level | null {
+  if (a.admin) return "full";
+  return a.grants.find((g) => g.environment === env)?.level ?? null;
+}
+
+/** The regular accounts granted an environment, as admins see it. */
+function accessOf(env: string): AccessGrant[] {
+  return accounts
+    .filter((a) => !a.admin && !a.sharedBy)
+    .flatMap((a) => a.grants.filter((g) => g.environment === env).map((g) => ({ username: a.username, level: g.level })))
+    .sort((x, y) => x.username.localeCompare(y.username));
+}
+
+const blankVPN: Environment["vpn"] = { state: "disabled", changedAt: "0001-01-01T00:00:00Z", exitIpObservedAt: "0001-01-01T00:00:00Z", desiredRevision: 0, appliedRevision: 0, idle: false };
+
+/** An environment as an account sees it: an observer's has its configuration blanked. */
+function asSeenBy(c: Environment, a: MockAccount): Environment {
+  const level = levelOf(a, c.name) ?? "full";
+  if (level === "observe") {
+    return {
+      ...c, level, folder: "", memoryReclaim: false, access: [], terminals: [], forwards: [], agents: [], vpn: blankVPN,
+      settings: { memoryBytes: 0, nanoCpus: 0, dockerAccess: false, vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: [] },
+    };
+  }
+  return { ...c, level, access: a.admin ? accessOf(c.name) : [] };
 }
 
 function visible(): Environment[] {
   const m = me();
   if (!m) return [];
-  const list = m.admin ? environments : environments.filter((c) => c.access.includes(m.username));
-  return list.map((c) => (m.admin ? c : { ...c, access: [] })).sort((a, b) => a.name.localeCompare(b.name));
+  return environments
+    .filter((c) => levelOf(m, c.name) !== null)
+    .map((c) => asSeenBy(c, m))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function viewersOf(c: Environment) {
+  return { name: c.name, viewers: c.viewers, observers: c.observers, mics: c.mics, forwards: c.forwards, agents: c.agents };
+}
+
+const hex = (n: number) => randomBytes(n).toString("hex").slice(0, n);
+
+/** A new login link for an account, replacing its unused one. */
+function newLink(req: IncomingMessage, username: string): string {
+  for (const [code, u] of links) if (u === username) links.delete(code);
+  const code = `dyl_${hex(8)}_${randomBytes(32).toString("base64url")}`;
+  links.set(code, username);
+  return `http://${req.headers.host ?? "localhost:5173"}/link#${code}`;
+}
+
+/** The environments a redeemed link or approved CLI login reports. */
+function environmentsOf(a: MockAccount) {
+  return environments
+    .filter((c) => levelOf(a, c.name) !== null)
+    .map((c) => ({ name: c.name, level: levelOf(a, c.name)! }))
+    .sort((x, y) => x.name.localeCompare(y.name));
+}
+
+function shareJSON(a: MockAccount): Share {
+  const g = a.grants[0]!;
+  const env = environments.find((c) => c.name === g.environment);
+  return {
+    username: a.username, environment: g.environment, level: g.level, sharedBy: a.sharedBy!, expires: a.expires, created: a.created,
+    lastLogin: a.lastLogin, linkPending: [...links.values()].includes(a.username), connected: env?.viewers.includes(a.username) ?? false,
+  };
+}
+
+/** Deletes an account with its link, credentials and the shares it made, and closes its viewing. */
+function removeAccount(a: MockAccount): void {
+  for (const share of accounts.filter((x) => x.sharedBy?.id === a.id)) removeAccount(share);
+  const i = accounts.indexOf(a);
+  if (i >= 0) accounts.splice(i, 1);
+  for (const [code, u] of links) if (u === a.username) links.delete(code);
+  delete credentials[a.username];
+  for (const c of environments) {
+    if (!c.viewers.includes(a.username)) continue;
+    c.viewers = c.viewers.filter((v) => v !== a.username);
+    c.observers = c.observers.filter((v) => v !== a.username);
+    broadcast("viewers", viewersOf(c));
+  }
+}
+
+/** Ends the shares of an environment made by an account that no longer has full access to it. */
+function endOrphanShares(): void {
+  for (const share of accounts.filter((x) => x.sharedBy)) {
+    const sharer = accounts.find((x) => x.id === share.sharedBy!.id);
+    if (!sharer || levelOf(sharer, share.grants[0]!.environment) !== "full") removeAccount(share);
+  }
+}
+
+function checkGrants(grants: unknown): string | null {
+  if (!Array.isArray(grants)) return null;
+  const seen = new Set<string>();
+  for (const g of grants as Grant[]) {
+    if (!environments.some((c) => c.name === g.environment)) return `no environment ${g.environment}`;
+    if (g.level !== "full" && g.level !== "observe") return `the level must be full or observe`;
+    if (seen.has(g.environment)) return `${g.environment} is listed twice`;
+    seen.add(g.environment);
+  }
+  return null;
+}
+
+const USERNAME = /^[a-z][a-z0-9._-]{0,31}$/;
+const RESERVED = ["api", "login", "logout", "assets", "static", "healthz", "desktops", "environments", "images", "accounts", "volumes", "link", "cli-login", "account"];
+
+/** The routes that need no session: link sign-in and the CLI's side of `deskyard login`. */
+async function signedOut(req: IncomingMessage, res: ServerResponse, path: string, method: string): Promise<boolean> {
+  if (method !== "POST") return false;
+  if (path === "/api/links/inspect" || path === "/api/links/redeem") {
+    const b = await readBody(req);
+    const username = links.get(String(b.link));
+    const a = accounts.find((x) => x.username === username);
+    if (!a) {
+      json(res, 410, { error: "this link was already used or replaced" });
+      return true;
+    }
+    if (path === "/api/links/inspect") {
+      const { username, description, grants, sharedBy, expires } = accountJSON(a);
+      json(res, 200, { username, description, grants, sharedBy, expires });
+      return true;
+    }
+    if (b.client === "cli" && !a.admin && !a.grants.some((g) => g.level === "full")) {
+      json(res, 403, { error: "observe-only access is for the browser" });
+      return true;
+    }
+    links.delete(String(b.link));
+    a.lastLogin = new Date().toISOString();
+    if (b.client === "cli") {
+      const id = hex(8);
+      (credentials[a.username] ??= []).unshift({ id, kind: "cli", name: String(b.name ?? "deskyard CLI"), created: a.lastLogin, lastUsed: null });
+      json(res, 200, { credential: `dyc_${id}_${randomBytes(32).toString("base64url")}`, username: a.username, environments: environmentsOf(a) });
+      return true;
+    }
+    session = a.username;
+    const only = !a.admin && a.grants.length === 1 ? a.grants[0]!.environment : null;
+    json(res, 200, { username: a.username, next: only ? `/${only}/` : "/" });
+    return true;
+  }
+  if (path === "/api/cli-login") {
+    const client = String((await readBody(req)).client ?? "");
+    if (!client || client.length > 100) {
+      json(res, 400, { error: "a client name is required" });
+      return true;
+    }
+    const id = hex(16);
+    const letters = "BCDFGHJKLMNPQRSTVWXZ";
+    const code = Array.from(randomBytes(8), (x) => letters[x % letters.length]).join("");
+    cliLogins.set(id, { client, ip: "127.0.0.1", code: `${code.slice(0, 4)}-${code.slice(4)}`, created: new Date().toISOString(), answer: null, approver: null });
+    json(res, 200, { id, code: cliLogins.get(id)!.code, approveURL: `http://${req.headers.host}/cli-login#${id}`, pollSecret: "mock", interval: 2, expiresIn: 600 });
+    return true;
+  }
+  const poll = /^\/api\/cli-login\/([^/]+)\/token$/.exec(path);
+  if (poll?.[1]) {
+    const r = cliLogins.get(poll[1]);
+    if (!r) json(res, 410, { error: "this login request expired or was already used; run deskyard login again" });
+    else if (r.answer === null) json(res, 202, { status: "pending" });
+    else {
+      cliLogins.delete(poll[1]);
+      const a = accounts.find((x) => x.username === r.approver);
+      if (r.answer === "denied") json(res, 403, { error: "denied" });
+      else if (!a) json(res, 410, { error: "this login request expired or was already used; run deskyard login again" });
+      else {
+        const id = hex(8);
+        (credentials[a.username] ??= []).unshift({ id, kind: "cli", name: r.client, created: new Date().toISOString(), lastUsed: null });
+        json(res, 200, { credential: `dyc_${id}_${randomBytes(32).toString("base64url")}`, username: a.username, environments: environmentsOf(a) });
+      }
+    }
+    return true;
+  }
+  return false;
 }
 
 function changed(c: Environment): void {
@@ -73,6 +260,7 @@ function setState(c: Environment, state: Environment["state"], later?: Environme
   if (state === "stopped") {
     c.stats = null;
     c.viewers = [];
+    c.observers = [];
     c.mics = [];
     // Sessions end with the container.
     for (const t of c.terminals) endAttachments(c.name, t.name);
@@ -148,8 +336,8 @@ setInterval(() => {
 setInterval(() => {
   const alice = environments.find((c) => c.name === "alice");
   if (!alice || alice.state !== "running") return;
-  alice.viewers = alice.viewers.includes("sam") ? alice.viewers.filter((v) => v !== "sam") : [...alice.viewers, "sam"];
-  broadcast("viewers", { name: "alice", viewers: alice.viewers, mics: alice.mics, forwards: alice.forwards, agents: alice.agents });
+  alice.viewers = alice.viewers.includes("anna") ? alice.viewers.filter((v) => v !== "anna") : [...alice.viewers, "anna"].sort();
+  broadcast("viewers", viewersOf(alice));
 }, 20000);
 // The agents' summaries move on, as they would from the supervisor (once a second at most).
 setInterval(() => {
@@ -255,22 +443,44 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
       failures = 0;
       return json(res, 429, { error: "Too many attempts" });
     }
-    if (!a || b.password === "wrong" || !b.password) {
+    // Token accounts have no password: they sign in with login links.
+    if (!a || a.password === null || b.password === "wrong" || !b.password) {
       failures++;
-      return json(res, 401, { error: "Wrong username or password" });
+      return json(res, 401, { error: "wrong username or password" });
     }
     session = a.username;
-    return json(res, 200, { username: a.username, admin: a.admin });
+    a.lastLogin = new Date().toISOString();
+    return json(res, 200, meJSON(a));
   }
+  if (await signedOut(req, res, path, method)) return;
   const m = me();
-  if (!m) return json(res, 401, { error: "Signed out" });
+  if (!m) return json(res, 401, { error: "sign in first" });
 
   if (path === "/api/logout") {
     session = null;
     return json(res, 204);
   }
-  if (path === "/api/me" && method === "GET") return json(res, 200, { username: m.username, admin: m.admin });
-  if (path === "/api/me/password") return json(res, 204);
+  if (path === "/api/me" && method === "GET") return json(res, 200, meJSON(m));
+  if (path === "/api/me/password") return m.password === null ? json(res, 400, { error: "token accounts have no password" }) : json(res, 204);
+  if (path === "/api/me/sign-out-everywhere" && method === "POST") return json(res, 204);
+  if (path === "/api/me/credentials" && method === "GET") return json(res, 200, (credentials[m.username] ?? []).map((d) => ({ ...d, current: false })));
+  const myCred = /^\/api\/me\/credentials\/([^/]+)$/.exec(path);
+  if (myCred?.[1] && method === "DELETE") {
+    const list = credentials[m.username] ?? [];
+    if (!list.some((d) => d.id === myCred[1])) return json(res, 404, { error: "no such credential" });
+    credentials[m.username] = list.filter((d) => d.id !== myCred[1]);
+    return json(res, 204);
+  }
+  const cli = /^\/api\/cli-login\/([^/]+)(?:\/(approve|deny))?$/.exec(path);
+  if (cli?.[1]) {
+    const r = cliLogins.get(cli[1]);
+    if (!r || r.answer !== null) return json(res, 404, { error: "no such login request" });
+    if (!cli[2]) return json(res, 200, { client: r.client, ip: r.ip, code: r.code, created: r.created });
+    if (cli[2] === "approve" && !m.admin && !m.grants.some((g) => g.level === "full")) return json(res, 403, { error: "observe-only access is for the browser" });
+    r.answer = cli[2] === "approve" ? "approved" : "denied";
+    r.approver = m.username;
+    return json(res, 204);
+  }
   if (path === "/api/host") return json(res, 200, host());
   if (path === "/api/events") {
     sse(res);
@@ -285,7 +495,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   if (path === "/api/validate-name") {
     const name = url.searchParams.get("name") ?? "";
     if (environments.some((c) => c.name === name)) return json(res, 200, { ok: false, error: "an environment with that name already exists", folderExists: false });
-    if (["api", "login", "logout", "assets", "static", "healthz", "environments", "volumes"].includes(name)) return json(res, 200, { ok: false, error: `${name} is reserved.`, folderExists: false });
+    if (RESERVED.includes(name)) return json(res, 200, { ok: false, error: `${name} is reserved.`, folderExists: false });
     return json(res, 200, { ok: true, folderExists: name === "old-project", folder: `${FOLDER}/home/${name}` });
   }
   if (path === "/api/environments" && method === "GET") return json(res, 200, { environments: visible(), conflicts: m.admin ? conflicts : [] });
@@ -299,9 +509,9 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
       name, state: "creating", power: "running", revision: 1, appliedRevision: 0, error: "", conflict: "",
       startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/home/${name}`, image: img.ref, imageTitle: img.title,
       memoryReclaim: true, imageVersion: img.version, updateAvailable: null, settings: { dockerAccess: b.dockerAccess === true, memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: (b.volumes as Environment["settings"]["volumes"]) ?? [] },
-      vpn: {state:"disabled",changedAt:"0001-01-01T00:00:00Z",exitIpObservedAt:"0001-01-01T00:00:00Z",desiredRevision:0,appliedRevision:0,idle:false},
-      access: (b.access as string[]) ?? [], viewers: [], mics: [], terminal: true, terminals: [], forwards: [], agents: [], tokens: 0, stats: null,
+      vpn: blankVPN, level: "full", access: [], viewers: [], observers: [], mics: [], terminal: true, terminals: [], forwards: [], agents: [], stats: null,
     };
+    for (const g of (b.access as AccessGrant[]) ?? []) accounts.find((a) => a.username === g.username)?.grants.push({ environment: name, level: g.level });
     environments.push(c);
     changed(c);
     return json(res, 202, job(["Pulling image, 120 of 820 MB", "Pulling image, 540 of 820 MB", "Creating the container", "Starting"], () => setState(c, "running"), name));
@@ -313,7 +523,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   if (path === "/api/volumes" && method === "POST") {
     const name = String((await readBody(req)).name ?? "");
     if (!/^[a-z][a-z0-9-]{0,30}[a-z0-9]$/.test(name)) return json(res, 400, { error: "Use 2–32 lowercase letters, digits and dashes, starting with a letter." });
-    if (["api", "login", "logout", "assets", "static", "healthz", "environments", "volumes"].includes(name)) return json(res, 400, { error: `${name} is reserved` });
+    if (RESERVED.includes(name)) return json(res, 400, { error: `${name} is reserved` });
     if (volumes.some((v) => v.name === name)) return json(res, 409, { error: "a volume with that name already exists" });
     const v = { name, created: new Date().toISOString(), kind: "local" as const };
     volumes.push(v);
@@ -337,28 +547,83 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     return json(res, 204);
   }
   if (path === "/api/accounts" && method === "GET") {
-    return json(res, 200, m.admin ? accounts.map(({ password: _, ...a }) => a) : accounts.map((a) => ({ username: a.username })));
+    return json(res, 200, m.admin ? accounts.map(accountJSON).sort((x, y) => x.username.localeCompare(y.username)) : accounts.map((a) => ({ username: a.username })));
   }
+  if (path.startsWith("/api/accounts") && !m.admin) return json(res, 403, { error: "admins only" });
   if (path === "/api/accounts" && method === "POST") {
     const b = await readBody(req);
-    const a = { username: String(b.username), password: String(b.password), admin: Boolean(b.admin), environments: (b.environments as string[]) ?? [], created: new Date().toISOString(), lastLogin: null };
+    const username = String(b.username ?? "");
+    if (!USERNAME.test(username)) return json(res, 400, { error: "invalid username" });
+    if (accounts.some((x) => x.username === username)) return json(res, 409, { error: "an account with that name already exists" });
+    const bad = checkGrants(b.grants);
+    if (bad) return json(res, 400, { error: bad });
+    const password = typeof b.password === "string" && b.password ? b.password : null;
+    if (b.admin === true && password && b.expires) return json(res, 400, { error: "admins with a password can't expire" });
+    const a: MockAccount = {
+      id: hex(8), username, password, admin: b.admin === true, description: String(b.description ?? ""), grants: (b.grants as Grant[]) ?? [],
+      sharedBy: null, expires: (b.expires as string | null) ?? null, created: new Date().toISOString(), lastLogin: null,
+    };
     accounts.push(a);
-    return json(res, 201, a);
+    return json(res, 201, accountJSON(a));
+  }
+  const accLink = /^\/api\/accounts\/([^/]+)\/link$/.exec(path);
+  if (accLink?.[1] && method === "POST") {
+    const a = accounts.find((x) => x.username === accLink[1]);
+    if (!a) return json(res, 404, { error: "no such account" });
+    if (a.password !== null) return json(res, 400, { error: "password accounts sign in with their password" });
+    return json(res, 200, { link: newLink(req, a.username) });
+  }
+  const accCreds = /^\/api\/accounts\/([^/]+)\/credentials(?:\/([^/]+))?$/.exec(path);
+  if (accCreds?.[1]) {
+    const a = accounts.find((x) => x.username === accCreds[1]);
+    if (!a) return json(res, 404, { error: "no such account" });
+    const list = credentials[a.username] ?? [];
+    if (!accCreds[2]) return json(res, 200, list.map((d) => ({ ...d, current: false })));
+    if (!list.some((d) => d.id === accCreds[2])) return json(res, 404, { error: "no such credential" });
+    credentials[a.username] = list.filter((d) => d.id !== accCreds[2]);
+    return json(res, 204);
   }
   const acc = /^\/api\/accounts\/([^/]+)$/.exec(path);
   if (acc?.[1]) {
     const a = accounts.find((x) => x.username === acc[1]);
-    if (!a) return json(res, 404, { error: "No such account" });
+    if (!a) return json(res, 404, { error: "no such account" });
+    const passwordAdmins = accounts.filter((x) => x.admin && x.password !== null);
+    const lastAdmin = a.admin && a.password !== null && passwordAdmins.length === 1;
+    const guard = "the last admin with a password can't be deleted, made a regular account or lose the password";
     if (method === "DELETE") {
-      if (a.admin && accounts.filter((x) => x.admin).length === 1) return json(res, 409, { error: "That's the last admin." });
-      accounts.splice(accounts.indexOf(a), 1);
+      if (lastAdmin) return json(res, 409, { error: guard });
+      removeAccount(a);
+      endOrphanShares();
       return json(res, 204);
     }
     const b = await readBody(req);
-    if (b.admin === false && a.admin && accounts.filter((x) => x.admin).length === 1) return json(res, 409, { error: "That would leave no admin." });
-    if (typeof b.admin === "boolean") a.admin = b.admin;
-    if (Array.isArray(b.environments)) a.environments = b.environments as string[];
-    return json(res, 200, a);
+    if (a.sharedBy && (b.admin !== undefined || b.grants !== undefined)) return json(res, 400, { error: "a share's access is set when it is shared" });
+    if (b.admin === false && lastAdmin) return json(res, 409, { error: guard });
+    if (typeof b.password === "string" && a.password === null) return json(res, 400, { error: "token accounts have no password" });
+    const bad = checkGrants(b.grants);
+    if (bad) return json(res, 400, { error: bad });
+    const admin = typeof b.admin === "boolean" ? b.admin : a.admin;
+    const expires = b.expires !== undefined ? (b.expires as string | null) : a.expires;
+    if (admin && a.password !== null && expires) return json(res, 400, { error: "admins with a password can't expire" });
+    a.admin = admin;
+    a.expires = expires;
+    if (typeof b.description === "string") a.description = b.description;
+    if (typeof b.password === "string" && b.password) a.password = b.password;
+    if (Array.isArray(b.grants)) a.grants = b.grants as Grant[];
+    endOrphanShares();
+    for (const c of environments) changed(c);
+    return json(res, 200, accountJSON(a));
+  }
+  const shareMatch = /^\/api\/shares\/([^/]+)(\/link)?$/.exec(path);
+  if (shareMatch?.[1]) {
+    const a = accounts.find((x) => x.username === shareMatch[1] && x.sharedBy);
+    if (!a) return json(res, 404, { error: "no such share" });
+    if (!m.admin && a.sharedBy!.id !== m.id) return json(res, 403, { error: "only the person who shared it or an admin can do that" });
+    if (shareMatch[2] && method === "POST") return json(res, 200, { link: newLink(req, a.username) });
+    if (!shareMatch[2] && method === "DELETE") {
+      removeAccount(a);
+      return json(res, 204);
+    }
   }
   if (path === "/api/images" && method === "GET") {
     refreshImages();
@@ -403,6 +668,30 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   const c = cm?.[1] ? visible().find((x) => x.name === cm[1]) && environments.find((x) => x.name === cm[1]) : undefined;
   if (!cm || !c) return json(res, 404, { error: "no such environment" });
   const sub = cm[2] ?? "";
+  // Observers may watch, and nothing else.
+  if (levelOf(m, c.name) === "observe" && !(method === "GET" && ["", "stats", "screen.png", "screen-events"].includes(sub))) {
+    return json(res, 403, { error: "observe-only access can't do that" });
+  }
+
+  if (sub === "shares" && method === "GET") {
+    return json(res, 200, accounts.filter((a) => a.sharedBy && a.grants[0]?.environment === c.name).map(shareJSON).sort((x, y) => x.username.localeCompare(y.username)));
+  }
+  if (sub === "shares" && method === "POST") {
+    if (m.sharedBy) return json(res, 403, { error: "shares can't share" });
+    const b = await readBody(req);
+    const username = String(b.username ?? "");
+    if (!USERNAME.test(username)) return json(res, 400, { error: "invalid username" });
+    if (b.level !== "full" && b.level !== "observe") return json(res, 400, { error: "the level must be full or observe" });
+    if (b.expires && Date.parse(String(b.expires)) <= Date.now()) return json(res, 400, { error: "the expiry must be in the future" });
+    if (accounts.some((x) => x.username === username)) return json(res, 409, { error: "an account with that name already exists" });
+    const a: MockAccount = {
+      id: hex(8), username, password: null, admin: false, description: "", grants: [{ environment: c.name, level: b.level }],
+      sharedBy: { username: m.username, id: m.id }, expires: (b.expires as string | null) ?? null, created: new Date().toISOString(), lastLogin: null,
+    };
+    accounts.push(a);
+    const link = newLink(req, username);
+    return json(res, 201, { share: shareJSON(a), link });
+  }
 
   if (sub === "terminal/sessions" && method === "GET") {
     if (c.state !== "running" || !c.terminal) return json(res, 409, { error: "Environment terminal unavailable" });
@@ -431,6 +720,10 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   if (sub === "" && method === "GET") return json(res, 200, visible().find((x) => x.name === c.name));
   if (sub === "" && method === "DELETE") {
     environments.splice(environments.indexOf(c), 1);
+    for (const a of [...accounts]) {
+      if (a.sharedBy && a.grants[0]?.environment === c.name) removeAccount(a);
+      else a.grants = a.grants.filter((g) => g.environment !== c.name);
+    }
     broadcast("removed", { name: c.name });
     return json(res, 204);
   }
@@ -469,7 +762,18 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   if (sub === "stop") return setState(c, "stopped"), json(res, 204);
   if (sub === "restart") return setState(c, "starting", "running"), json(res, 204);
   if (sub === "access") {
-    c.access = ((await readBody(req)).usernames as string[]) ?? [];
+    const grants = ((await readBody(req)).grants as AccessGrant[]) ?? [];
+    for (const g of grants) {
+      const a = accounts.find((x) => x.username === g.username);
+      if (!a) return json(res, 400, { error: `no account ${g.username}` });
+      if (a.sharedBy) return json(res, 400, { error: `${g.username} is a share; change it on the Sharing tab` });
+    }
+    for (const a of accounts) {
+      if (a.admin || a.sharedBy) continue;
+      const g = grants.find((x) => x.username === a.username);
+      a.grants = [...a.grants.filter((x) => x.environment !== c.name), ...(g ? [{ environment: c.name, level: g.level }] : [])];
+    }
+    endOrphanShares();
     changed(c);
     return json(res, 204);
   }
@@ -485,8 +789,8 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   if (sub === "keys") return json(res, 204);
   if (sub === "mic" && method === "POST") {
     const on = (await readBody(req)).on === true;
-    const me = "zef";
-    c.mics = on ? [...new Set([...c.mics, me])] : c.mics.filter((m) => m !== me);
+    const me = m.username;
+    c.mics = on ? [...new Set([...c.mics, me])] : c.mics.filter((x) => x !== me);
     if (on && !c.viewers.includes(me)) c.viewers = [...c.viewers, me];
     changed(c);
     return json(res, 204);
@@ -506,29 +810,6 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     res.setHeader("Content-Type", "image/png");
     res.end(readFileSync(file));
     return;
-  }
-  if (sub === "tokens" && method === "GET") return json(res, 200, tokens[c.name] ?? []);
-  if (sub === "tokens" && method === "POST") {
-    const b = await readBody(req);
-    const id = Math.random().toString(36).slice(2, 8);
-    const secret = "Jx3vT9pLr7KzA1mYc5HdE0sWb6NfQ8uRg2iVo4Ce";
-    const t: CreatedToken = {
-      id, name: String(b.name), createdBy: m.username, created: new Date().toISOString(), expires: (b.expires as string | null) ?? null,
-      lastUsed: null, expired: false, token: `dyt_${id}_${secret}`,
-      remoteAdd: `deskyard remote add ${c.name} https://deskyard.example.com/${c.name} --token dyt_${id}_${secret}`,
-    };
-    const { token: _t, remoteAdd: _r, ...listed } = t;
-    (tokens[c.name] ??= []).push(listed);
-    c.tokens++;
-    changed(c);
-    return json(res, 201, t);
-  }
-  const tok = /^tokens\/(.+)$/.exec(sub);
-  if (tok && method === "DELETE") {
-    tokens[c.name] = (tokens[c.name] ?? []).filter((t) => t.id !== tok[1]);
-    c.tokens = tokens[c.name]!.filter((t) => !t.expired).length;
-    changed(c);
-    return json(res, 204);
   }
   return json(res, 404, { error: `mock: no route for ${method} ${path}` });
 }

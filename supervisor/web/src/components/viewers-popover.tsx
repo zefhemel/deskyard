@@ -76,6 +76,7 @@ function AgentRows({ name, agents }: { name: string; agents: AgentPresence[] }) 
 export function ViewersPopover({
   name,
   viewers,
+  observers,
   mics,
   forwards,
   agents,
@@ -83,6 +84,8 @@ export function ViewersPopover({
 }: {
   name: string;
   viewers: string[];
+  /** The viewers watching at observe level: they can't use the desktop. */
+  observers: string[];
   mics: string[];
   forwards: Forward[];
   agents: AgentPresence[];
@@ -123,7 +126,11 @@ export function ViewersPopover({
             <li key={v} class="flex items-center gap-2 py-1 text-sm">
               <Avatar name={v} size={22} mic={mics.includes(v)} />
               <span class="truncate">{v}</span>
-              {mics.includes(v) && <span class="ml-auto flex-none text-[12px] text-muted">mic on</span>}
+              {(mics.includes(v) || observers.includes(v)) && (
+                <span class="ml-auto flex-none text-[12px] text-muted" title={observers.includes(v) ? "Watching, without keyboard or mouse" : undefined}>
+                  {[...(observers.includes(v) ? ["observing"] : []), ...(mics.includes(v) ? ["mic on"] : [])].join(", ")}
+                </span>
+              )}
             </li>
           ))}
         </ul>

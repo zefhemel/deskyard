@@ -1,6 +1,7 @@
-// Form controls shared by the New environment dialog and the details page's
-// Settings and Access tabs.
-import type { Account, CatalogImage } from "../api.ts";
+// Form controls shared by the New environment dialog, the details page's
+// Settings and Access tabs and the account dialog.
+import type { ComponentChildren } from "preact";
+import type { AccessGrant, Account, CatalogImage, Level } from "../api.ts";
 import { gb, trim } from "../lib/format.ts";
 import { Pick, Picks, type SegOption, Tag, cx } from "./ui.tsx";
 
@@ -44,9 +45,66 @@ export function ImagePick({ images, value, onChange }: { images: CatalogImage[];
   );
 }
 
+/** A name picked with a level: an account on an environment, or an environment for an account. */
+export interface LevelPick {
+  name: string;
+  level: Level;
+}
+
 /**
- * Which accounts may use an environment. Admins are listed checked and disabled:
- * they can use every environment.
+ * A checkbox per name and, once checked, its level. `children` come first
+ * (fixed rows, such as admins); `empty` shows when there are no names.
+ */
+export function LevelPicks({
+  names,
+  value,
+  onChange,
+  empty,
+  children,
+}: {
+  names: string[];
+  value: LevelPick[];
+  onChange: (picks: LevelPick[]) => void;
+  empty: ComponentChildren;
+  children?: ComponentChildren;
+}) {
+  const toggle = (name: string, on: boolean) =>
+    onChange(on ? [...value, { name, level: "full" }] : value.filter((p) => p.name !== name));
+  const setLevel = (name: string, level: Level) => onChange(value.map((p) => (p.name === name ? { name, level } : p)));
+  return (
+    <Picks>
+      {children}
+      {names.map((n) => {
+        const picked = value.find((p) => p.name === n);
+        return (
+          <div key={n} class="flex items-center gap-2.5 border-b border-hairline pr-2 last:border-b-0">
+            <label class="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2 text-sm">
+              <input type="checkbox" checked={!!picked} onChange={(e) => toggle(n, e.currentTarget.checked)} />
+              <span class="truncate">{n}</span>
+            </label>
+            {picked && (
+              <select
+                aria-label={`Level for ${n}`}
+                class="h-[30px]! w-auto! flex-none py-0! text-[13px]"
+                value={picked.level}
+                onChange={(e) => setLevel(n, e.currentTarget.value === "observe" ? "observe" : "full")}
+              >
+                <option value="full">Full access</option>
+                <option value="observe">Observe only</option>
+              </select>
+            )}
+          </div>
+        );
+      })}
+      {!names.length && <div class="px-3 py-2 text-sm text-muted">{empty}</div>}
+    </Picks>
+  );
+}
+
+/**
+ * Which accounts may use an environment, and how. Admins are listed checked
+ * and disabled: they can use every environment. Shares are left out: they are
+ * managed on the Sharing tab.
  */
 export function AccessPicks({
   accounts,
@@ -54,26 +112,24 @@ export function AccessPicks({
   onChange,
 }: {
   accounts: Account[];
-  value: string[];
-  onChange: (usernames: string[]) => void;
+  value: AccessGrant[];
+  onChange: (grants: AccessGrant[]) => void;
 }) {
-  const toggle = (u: string, on: boolean) => onChange(on ? [...value, u] : value.filter((x) => x !== u));
   const admins = accounts.filter((a) => a.admin);
-  const regular = accounts.filter((a) => !a.admin);
+  const regular = accounts.filter((a) => !a.admin && !a.sharedBy);
   return (
-    <Picks>
+    <LevelPicks
+      names={regular.map((a) => a.username)}
+      value={value.map((g) => ({ name: g.username, level: g.level }))}
+      onChange={(picks) => onChange(picks.map((p) => ({ username: p.name, level: p.level })))}
+      empty="There are no other accounts yet."
+    >
       {admins.map((a) => (
         <Pick key={a.username} checked disabled>
           {a.username} <Tag kind="admin">admin</Tag> <span class="text-muted max-sm:hidden">admins can use every environment</span>
         </Pick>
       ))}
-      {regular.map((a) => (
-        <Pick key={a.username} checked={value.includes(a.username)} onChange={(on) => toggle(a.username, on)}>
-          {a.username}
-        </Pick>
-      ))}
-      {!regular.length && <div class="px-3 py-2 text-sm text-muted">There are no other accounts yet.</div>}
-    </Picks>
+    </LevelPicks>
   );
 }
 

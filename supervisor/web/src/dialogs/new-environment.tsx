@@ -2,7 +2,7 @@ import type { ComponentChildren } from "preact";
 import { VPNFields } from "../components/vpn.tsx";
 import { parseExceptions, type ExceptionRow } from "../lib/vpn-form.ts";
 import { useEffect, useState } from "preact/hooks";
-import { api, type NameCheck, type VolumeGrant } from "../api.ts";
+import { api, type AccessGrant, type NameCheck, type VolumeGrant } from "../api.ts";
 import { AccessPicks, DockerAccessField, cpuOptions, ImagePick, memoryOptions } from "../components/environment-fields.tsx";
 import { JobProgress, useJob } from "../components/job.tsx";
 import { VolumeGrantFields } from "../components/volume-grants.tsx";
@@ -37,7 +37,7 @@ export function NewEnvironmentDialog({ onClose }: { onClose: () => void }) {
   const [memory, setMemory] = useState(0);
   const [cpus, setCpus] = useState(0);
   const [dockerAccess, setDockerAccess] = useState(false);
-  const [access, setAccess] = useState<string[]>([]);
+  const [access, setAccess] = useState<AccessGrant[]>([]);
   const run = useJob(() => onClose());
 
   // Default to the catalog's first image.

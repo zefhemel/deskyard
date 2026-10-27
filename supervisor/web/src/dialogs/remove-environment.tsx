@@ -31,7 +31,7 @@ export function RemoveDialog({ environment: c, onClose, onRemoved }: { environme
       title={`Remove ${c.name}?`}
       intro={
         <>
-          The environment is stopped and removed, with its container, access grants and tokens. {files ? "Its files in " : "Its files stay in "}
+          The environment is stopped and removed, with its container, access grants and shares. {files ? "Its files in " : "Its files stay in "}
           <span class="mono">{c.folder}</span>
           {size && ` (${size.complete ? "" : "at least "}${bytes(size.bytes)})`}
           {files ? " are deleted too." : "."}

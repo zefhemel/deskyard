@@ -16,11 +16,11 @@ import { UpgradeDialog } from "../dialogs/upgrade.tsx";
 import { useEnvironment, useLive, useNow } from "../live.tsx";
 import { day, limits, names, statusKind, statusLine } from "../lib/format.ts";
 import { AccessTab } from "./details/access-tab.tsx";
-import { AgentsTab } from "./details/agents-tab.tsx";
 import { ProcessesTab } from "./details/processes-tab.tsx";
 import { SettingsTab } from "./details/settings-tab.tsx";
+import { SharingTab } from "./details/sharing-tab.tsx";
 
-type Tab = "overview" | "processes" | "agents" | "settings" | "access";
+type Tab = "overview" | "processes" | "sharing" | "settings" | "access";
 
 export function DetailsPage() {
   const { params } = useRoute();
@@ -61,10 +61,16 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
   const { me, jobs } = useLive();
   const { query, route } = useLocation();
   const now = useNow(10000);
+  // Observers watch the desktop and nothing else: no other tabs, no actions.
+  const full = c.level !== "observe";
   const tabs: { id: Tab; label: string }[] = [
     { id: "overview", label: "Overview" },
-    { id: "processes", label: "Processes" },
-    { id: "agents", label: "Remote access" },
+    ...(full
+      ? [
+          { id: "processes" as const, label: "Processes" },
+          { id: "sharing" as const, label: "Sharing" },
+        ]
+      : []),
     ...(me.admin
       ? [
           { id: "settings" as const, label: "Settings" },
@@ -84,8 +90,14 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
           {c.name}
         </h1>
         <Status kind={statusKind(c)}>{statusLine(c, now)}</Status>
+        {!full && <Tag>Observing</Tag>}
         <div class="ml-auto flex flex-wrap gap-2">
-          {c.state === "running" && (
+          {c.state === "running" && !full && (
+            <a href={`/${c.name}/`} class={btnClass("primary")}>
+              Watch desktop
+            </a>
+          )}
+          {c.state === "running" && full && (
             <>
               <a href={`/${c.name}/`} class={btnClass("primary")}>
                 Desktop
@@ -96,16 +108,18 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
               {me.admin && <ReclaimMemoryButton name={c.name} disabled={!!c.job} />}
             </>
           )}
-          {c.state === "stopped" && (
+          {c.state === "stopped" && full && (
             <Button variant="primary" onClick={() => power(c.name, "start")}>
               Start
             </Button>
           )}
-          <EnvironmentMenu
-            environment={c}
-            power={false}
-            onRemoved={() => route("/")}
-          />
+          {full && (
+            <EnvironmentMenu
+              environment={c}
+              power={false}
+              onRemoved={() => route("/")}
+            />
+          )}
         </div>
       </div>
 
@@ -136,16 +150,16 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
         <div class="grid grid-cols-[minmax(0,1.55fr)_minmax(320px,1fr)] items-start gap-8 max-[900px]:grid-cols-1">
           <Monitor environment={c} job={jobs[c.name]} now={now} big />
           <div class="flex flex-col gap-4">
-            <ViewersPanel viewers={c.viewers} mics={c.mics} forwards={c.forwards} agents={c.agents} />
-            <div class="rounded-[10px] border border-line bg-surface px-5 py-[18px]"><VPNStatus vpn={c.vpn} /></div>
+            <ViewersPanel viewers={c.viewers} observers={c.observers} mics={c.mics} forwards={c.forwards} agents={c.agents} observing={!full} />
+            {full && <div class="rounded-[10px] border border-line bg-surface px-5 py-[18px]"><VPNStatus vpn={c.vpn} /></div>}
             <ChartsPanel environment={c} />
-            <Facts environment={c} admin={me.admin} onTab={setTab} />
+            <Facts environment={c} admin={me.admin} full={full} onTab={setTab} />
           </div>
         </div>
       ) : (
         <div class="overflow-hidden rounded-[10px] border border-line bg-surface">
           {tab === "processes" && <ProcessesTab environment={c} />}
-          {tab === "agents" && <AgentsTab environment={c} />}
+          {tab === "sharing" && <SharingTab environment={c} />}
           {tab === "settings" && <SettingsTab environment={c} />}
           {tab === "access" && <AccessTab environment={c} />}
         </div>
@@ -156,15 +170,21 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
 
 function ViewersPanel({
   viewers,
+  observers,
   mics,
   forwards,
   agents,
+  observing,
 }: {
   viewers: string[];
+  observers: string[];
   mics: string[];
   forwards: Forward[];
   agents: AgentPresence[];
+  /** The signed-in account only observes. */
+  observing: boolean;
 }) {
+  const watching = observers.filter((o) => viewers.includes(o));
   return (
     <div class="flex items-center gap-2.5 rounded-[10px] border border-line bg-surface px-5 py-[18px] text-sm">
       {(viewers.length > 0 || agents.length > 0) && <Avatars names={viewers} mics={mics} agents={agents} />}
@@ -174,9 +194,15 @@ function ViewersPanel({
             ? `${names(viewers)} ${viewers.length === 1 ? "is" : "are"} viewing`
             : "Nobody is viewing"}
         </b>
+        {watching.length > 0 && (
+          <p class="mt-0 text-[13px] text-muted" aria-label="Observing">
+            {names(watching)} {watching.length === 1 ? "is" : "are"} observing: watching, without keyboard or mouse.
+          </p>
+        )}
         <p class="mt-0 text-[13px] text-muted">
-          Same desktop, one mouse and keyboard. It follows the window of whoever
-          resized last.
+          {observing
+            ? "You can watch this desktop, but not use it."
+            : "Same desktop, one mouse and keyboard. It follows the window of whoever resized last."}
         </p>
         {agents.length > 0 && (
           <p class="mt-1.5 mb-0 text-[13px]" aria-label="CLI activity">
@@ -192,10 +218,13 @@ function ViewersPanel({
 function Facts({
   environment: c,
   admin,
+  full,
   onTab,
 }: {
   environment: Environment;
   admin: boolean;
+  /** Observers aren't told the environment's configuration. */
+  full: boolean;
   onTab: (t: Tab) => void;
 }) {
   const [upgrading, setUpgrading] = useState(false);
@@ -210,8 +239,12 @@ function Facts({
             /{c.name}/
           </a>
         </dd>
-        <dt class="text-muted">Files</dt>
-        <dd class="mono m-0 min-w-0 [overflow-wrap:anywhere]">{c.folder}</dd>
+        {full && (
+          <>
+            <dt class="text-muted">Files</dt>
+            <dd class="mono m-0 min-w-0 [overflow-wrap:anywhere]">{c.folder}</dd>
+          </>
+        )}
         <dt class="text-muted">Image</dt>
         <dd class="m-0 min-w-0 [overflow-wrap:anywhere]">
           {c.imageTitle || c.image} {c.imageVersion}{" "}
@@ -233,7 +266,7 @@ function Facts({
             <dt class="text-muted">Access</dt>
             <dd class="m-0 min-w-0">
               {c.access.length
-                ? `${c.access.join(", ")}, and admins`
+                ? `${c.access.map((g) => (g.level === "observe" ? `${g.username} (observe)` : g.username)).join(", ")}, and admins`
                 : "Admins only"}{" "}
               <button
                 type="button"
@@ -245,15 +278,18 @@ function Facts({
             </dd>
           </>
         )}
-        <dt class="text-muted">Limits</dt>
-        <dd class="m-0">{limits(c.settings)}</dd>
-        <dt class="text-muted">Access tokens</dt>
-        <dd class="m-0">
-          {c.tokens ? `${c.tokens} active` : "None"}{" "}
-          <button type="button" class={link} onClick={() => onTab("agents")}>
-            Manage
-          </button>
-        </dd>
+        {full && (
+          <>
+            <dt class="text-muted">Limits</dt>
+            <dd class="m-0">{limits(c.settings)}</dd>
+            <dt class="text-muted">Sharing</dt>
+            <dd class="m-0">
+              <button type="button" class={link} onClick={() => onTab("sharing")}>
+                Shares and links
+              </button>
+            </dd>
+          </>
+        )}
         {c.created && (
           <>
             <dt class="text-muted">Created</dt>

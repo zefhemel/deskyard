@@ -92,6 +92,14 @@ function SessionLinks({ environment: c }: { environment: Environment }) {
       notifyError(err);
     }
   };
+  if (c.level === "observe") {
+    return (
+      <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm" aria-label="Open">
+        <a href={`/${c.name}/`}>Watch desktop</a>
+        <Tag>Observing</Tag>
+      </div>
+    );
+  }
   return (
     <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm" aria-label="Open">
       <a href={`/${c.name}/`}>Desktop</a>

@@ -136,13 +136,15 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
   const { me } = useLive();
   const { query, route } = useLocation();
   const running = c.state === "running";
-  const listed = running ? (c.terminals ?? []).map((t) => t.name) : [];
+  // Observers watch the desktop: no terminals, no input, no power actions.
+  const observing = c.level === "observe";
+  const listed = running && !observing ? (c.terminals ?? []).map((t) => t.name) : [];
   const listKey = listed.join("\n");
 
   // Sessions opened here that the list doesn't show yet (session → create on first attach).
   const [pending, setPending] = useState<Record<string, boolean>>(() => {
     const s = query.terminal;
-    if (!s || !validSession(s)) return {};
+    if (!s || !validSession(s) || observing) return {};
     if (query.create === "1") return { [s]: true };
     return listed.includes(s) ? {} : { [s]: false };
   });
@@ -156,7 +158,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
   const seen = useRef(new Set<string>());
   const ending = useRef(new Set<string>());
   // A deep link's session the list hasn't shown: if it turns out ended, Desktop shows.
-  const linked = useRef(new Set<string>(query.terminal && validSession(query.terminal) && query.create !== "1" && !listed.includes(query.terminal) ? [query.terminal] : []));
+  const linked = useRef(new Set<string>(!observing && query.terminal && validSession(query.terminal) && query.create !== "1" && !listed.includes(query.terminal) ? [query.terminal] : []));
   // × and + in flight, so a double click asks or acts once.
   const busy = useRef(new Set<string>());
   const deleting = useRef(new Set<string>());
@@ -212,6 +214,10 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
     const s = query.terminal;
     if (!s) return;
     if (!validSession(s)) {
+      show(null);
+      return;
+    }
+    if (observing) {
       show(null);
       return;
     }
@@ -381,7 +387,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
     tabHooks.current?.refocus();
   }, []);
   const envItems: MenuItem[] = [
-    ...(running
+    ...(running && !observing
       ? [
           { label: "Restart", onSelect: () => power(c.name, "restart") },
           { label: "Stop", onSelect: () => power(c.name, "stop") },
@@ -400,6 +406,11 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
         </a>
         <span class="min-w-0 shrink-0 truncate text-[15px] font-bold text-white max-sm:hidden sm:max-w-[22vw]">{c.name}</span>
         <span ref={setDot} class="contents" />
+        {observing && (
+          <span data-observing class="ml-1 rounded-full bg-bar-hover px-2 py-px text-[12.5px] font-semibold whitespace-nowrap text-white" title="You can watch this desktop, but not use it">
+            Observing
+          </span>
+        )}
         {c.vpn && c.vpn.state !== "disabled" && (
           <a
             href={`/environments/${c.name}?tab=settings&section=networking`}
@@ -416,7 +427,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
             return { name: s, others: t ? others(t, states[s] === "connected") : 0 };
           })}
           active={active}
-          canAdd={running && c.terminal}
+          canAdd={running && c.terminal && !observing}
           onSelect={show}
           onClose={(s) => void requestEnd(s)}
           onAdd={() => void add()}
@@ -454,7 +465,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
             )}
           />
         </div>
-        {viewersOpen && present && <ViewersPopover name={c.name} viewers={c.viewers} mics={c.mics} forwards={c.forwards} agents={c.agents} onClose={closeViewers} />}
+        {viewersOpen && present && <ViewersPopover name={c.name} viewers={c.viewers} observers={c.observers} mics={c.mics} forwards={c.forwards} agents={c.agents} onClose={closeViewers} />}
       </div>
       <div class="relative flex min-h-0 flex-1 flex-col">
         <div role="tabpanel" id={panelId(null)} aria-labelledby={tabId(null)} hidden={active !== null} class={cx("relative min-h-0 flex-1 flex-col", active === null ? "flex" : "hidden")}>
@@ -521,8 +532,17 @@ function EndSessionDialog({ session, others: n, command, onEnd, onClose }: { ses
   );
 }
 
-/** The Desktop tab: mounted only while it's shown, so a hidden desktop doesn't stream. */
+/**
+ * The Desktop tab: mounted only while it's shown, so a hidden desktop doesn't
+ * stream. An observer's desktop is view only: the supervisor drops its input
+ * before it reaches the desktop, and the page offers none (a cover over the
+ * frame takes the pointer, the frame never takes focus, the bar has no input
+ * controls) and never asks to change the display.
+ */
 function Desktop({ environment: c, slots }: { environment: Environment; slots: BarSlots }) {
+  const observing = c.level === "observe";
+  const observingRef = useRef(observing);
+  observingRef.current = observing;
   const frame = useRef<HTMLIFrameElement>(null);
   const [trackpad, setTrackpad] = useState(() => stored("deskyard.trackpad", (v) => v === "true", false));
   const trackpadRef = useRef(trackpad);
@@ -556,7 +576,7 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
 
   const refocus = useCallback(() => {
     // After the click that closed a menu has landed.
-    window.setTimeout(() => focusFrame(frame.current), 0);
+    if (!observingRef.current) window.setTimeout(() => focusFrame(frame.current), 0);
   }, []);
 
   // Each load of the frame: follow its stream and the desktop's clipboard.
@@ -577,7 +597,7 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
       if (s === "connected") screen.setTouchMode?.(trackpadRef.current);
       // Not while a panel or menu of the bar is open: focusing the frame blurs
       // this window, which closes it under the user's pointer.
-      if (s === "connected" && !document.querySelector('[aria-expanded="true"]')) focusFrame(frame.current);
+      if (s === "connected" && !observingRef.current && !document.querySelector('[aria-expanded="true"]')) focusFrame(frame.current);
     };
     // What this page has done for the current connection's display.
     let was: Display = { owner: null, width: 0, height: 0, settings: null };
@@ -585,6 +605,13 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
       if (d.owner === null) was = d; // a new connection
       setOwner(d.owner);
       if (d.settings) setLive(qualityOf(d.settings));
+      if (observingRef.current) {
+        // Only ever beside the display: the picture at the stream's size,
+        // scaled to fit, and no settings of ours.
+        if (d.width > 0 && (d.width !== was.width || d.height !== was.height || was.owner === null)) lockSize(frame.current, { width: d.width, height: d.height });
+        was = d;
+        return;
+      }
       const { quality, locked } = prefs.current;
       if (jpegOnly && d.settings && d.settings.encoder !== "jpeg") {
         // A display streaming a codec this browser can't decode (another
@@ -702,9 +729,11 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
   ];
   const compactOnly = "sm:hidden";
   const showing = running;
+  // The bar's input controls: none for an observer.
+  const controlling = showing && !observing;
   // Phones and narrow tablets need these actions in ⋯.
   const moreItems: MenuItem[] = [
-    ...(showing
+    ...(controlling
       ? [
           ...(owner ? [
             { label: "Lock size", checked: locked !== null, onSelect: toggleLock, separated: true, class: compactOnly },
@@ -723,7 +752,7 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
           })),
         ]
       : []),
-    ...(running ? [{ label: "Download…", onSelect: () => setDownloadOpen(true), separated: true, class: compactOnly }] : []),
+    ...(running && !observing ? [{ label: "Download…", onSelect: () => setDownloadOpen(true), separated: true, class: compactOnly }] : []),
   ];
   useTabHooks(slots, true, { menu: () => moreItems, refocus });
 
@@ -739,7 +768,8 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
               Reconnect
             </button>
           )}
-          {showing && (
+          {showing && observing && <AudioControl name={c.name} screen={screen} connected={conn === "connected"} micAllowed={false} />}
+          {controlling && (
             <>
               <AudioControl name={c.name} screen={screen} connected={conn === "connected"} />
               <Menu
@@ -780,7 +810,7 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
               </button>
             </>
           )}
-          {clipOpen && showing && (
+          {clipOpen && controlling && (
             <ClipboardPopover
               name={c.name}
               frame={frame.current}
@@ -796,7 +826,7 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
         </>,
         slots.controls,
       )}
-      {showing && touchControls && <TouchControls keyboard={keyboard} trackpad={trackpad} zoom={zoom}
+      {controlling && touchControls && <TouchControls keyboard={keyboard} trackpad={trackpad} zoom={zoom}
         onKeyboard={toggleKeyboard} onMode={chooseTouchMode} onFit={() => setZoom(1)} onKey={sendKeys} />}
       {!running ? (
         <Stopped environment={c} />
@@ -807,13 +837,15 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
           ref={frame}
           src={frameSrc(c.name)}
           title={`${c.name}'s desktop`}
-          allow="clipboard-read; clipboard-write; autoplay; microphone; speaker-selection"
+          allow={observing ? "autoplay; speaker-selection" : "clipboard-read; clipboard-write; autoplay; microphone; speaker-selection"}
+          tabIndex={observing ? -1 : undefined}
           class="block h-full w-full border-0"
           onLoad={onFrameLoad}
         />
+        {observing && <div data-observer-cover class="absolute inset-0 cursor-default" aria-hidden="true" />}
         </ZoomViewport>
       )}
-      {running && <DropZone environment={c.name} frame={frame} frameKey={frameKey} />}
+      {running && !observing && <DropZone environment={c.name} frame={frame} frameKey={frameKey} />}
       {showing && zoom === 1 && <ActivityOverlay name={c.name} geometry={() => selkiesScreenGeometry(frame.current)} />}
       {downloadOpen && running && <DownloadDialog environment={c} onClose={closeDownload} />}
     </>
@@ -851,9 +883,13 @@ function Stopped({ environment: c }: { environment: Environment }) {
       <Centered>
         <p class="text-lg font-semibold text-white">{c.name} is stopped</p>
         {problem && <p class={cx("max-w-[480px] text-center text-sm", problem.kind === "error" ? "text-[#f0a49b]" : "text-[#9aa6b5]")}>{problem.text}</p>}
-        <Button variant="primary" onClick={() => power(c.name, "start")}>
-          Start
-        </Button>
+        {c.level === "observe" ? (
+          <p class="text-sm text-[#9aa6b5]">You can watch it once someone with full access starts it.</p>
+        ) : (
+          <Button variant="primary" onClick={() => power(c.name, "start")}>
+            Start
+          </Button>
+        )}
       </Centered>
     );
   }

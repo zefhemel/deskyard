@@ -2,12 +2,7 @@ import { useState } from "preact/hooks";
 import { api, ApiError } from "../api.ts";
 import { Logo } from "../components/logo.tsx";
 import { Button, Field } from "../components/ui.tsx";
-
-/** Only paths on this origin: never send someone elsewhere after signing in. */
-function safeNext(next: string | null): string {
-  if (!next || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/\\")) return "/";
-  return next;
-}
+import { safeNext } from "../lib/access.ts";
 
 /** A small drawn screen: a window on a desktop, or a dark (stopped) one. */
 function Mini({ dark, wide }: { dark?: boolean; wide?: boolean }) {

@@ -1,11 +1,16 @@
 import { useEffect, useState } from "preact/hooks";
-import { api, type Environment } from "../../api.ts";
+import { api, type AccessGrant, type Environment } from "../../api.ts";
 import { AccessPicks } from "../../components/environment-fields.tsx";
 import { notify } from "../../components/toast.tsx";
 import { Button, ErrorText, errorMessage } from "../../components/ui.tsx";
 import { useFetch } from "../../lib/use-fetch.ts";
 
-const same = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
+const key = (grants: AccessGrant[]) =>
+  grants
+    .map((g) => `${g.username}:${g.level}`)
+    .sort()
+    .join(",");
+const same = (a: AccessGrant[], b: AccessGrant[]) => key(a) === key(b);
 
 export function AccessTab({ environment: c }: { environment: Environment }) {
   const accounts = useFetch(() => api.accounts(), "accounts");
@@ -18,7 +23,7 @@ export function AccessTab({ environment: c }: { environment: Environment }) {
   useEffect(() => {
     if (same(value, saved)) setValue(c.access);
     setSaved(c.access);
-  }, [c.access.join(",")]);
+  }, [key(c.access)]);
 
   const save = async () => {
     setBusy(true);
@@ -34,16 +39,27 @@ export function AccessTab({ environment: c }: { environment: Environment }) {
     }
   };
 
-  const removed = saved.filter((u) => !value.includes(u));
+  const removed = saved.filter((g) => !value.some((v) => v.username === g.username)).map((g) => g.username);
+  const lowered = saved
+    .filter((g) => g.level === "full" && value.some((v) => v.username === g.username && v.level === "observe"))
+    .map((g) => g.username);
   return (
     <div class="max-w-[620px] px-5 py-5">
       <p class="mt-0 mb-3.5 text-sm text-muted">
-        Who can open {c.name}, start and stop it, and create access tokens for it. Changing this doesn't restart anything.
+        Who can open {c.name}. Full access is everything: its desktop, terminals and files, starting and stopping it, the CLI and sharing it.
+        Observe only is watching its desktop, nothing else. Changing this doesn't restart anything.
       </p>
       {accounts.data ? <AccessPicks accounts={accounts.data} value={value} onChange={setValue} /> : <ErrorText error={accounts.error} />}
       {removed.length > 0 && (
         <p class="mt-1.5 mb-0 text-[13px] text-muted">
-          Taking {c.name} away from {removed.join(", ")} also closes their open desktop on it and revokes their access tokens for it.
+          Taking {c.name} away from {removed.join(", ")} also closes their open desktop, terminals and CLI connections on it, and ends the shares they
+          made of it.
+        </p>
+      )}
+      {lowered.length > 0 && (
+        <p class="mt-1.5 mb-0 text-[13px] text-muted">
+          Lowering {lowered.join(", ")} to observe only closes their open desktop, terminals and CLI connections on it (the desktop reconnects, view
+          only), and ends the shares they made of it.
         </p>
       )}
       <div class="mt-4">

@@ -5,6 +5,7 @@ import { api } from "../api.ts";
 import { useLive } from "../live.tsx";
 import { gb } from "../lib/format.ts";
 import { ChangePasswordDialog } from "../dialogs/change-password.tsx";
+import { SignOutEverywhereDialog } from "../dialogs/sign-out-everywhere.tsx";
 import { Avatar } from "./avatar.tsx";
 import { Logo } from "./logo.tsx";
 import { Menu } from "./menu.tsx";
@@ -20,8 +21,9 @@ const nav = [
 
 export function TopBar() {
   const { me, host } = useLive();
-  const { path } = useLocation();
+  const { path, route } = useLocation();
   const [changing, setChanging] = useState(false);
+  const [everywhere, setEverywhere] = useState(false);
 
   const signOut = () => {
     api.logout().finally(() => {
@@ -65,8 +67,11 @@ export function TopBar() {
         )}
         <Menu
           items={[
-            { label: "Change password", onSelect: () => setChanging(true) },
-            { label: "Sign out", onSelect: signOut, separated: true },
+            { label: "Signed-in devices", onSelect: () => route("/account") },
+            // Token accounts have no password: they sign in with login links.
+            ...(me.kind === "password" ? [{ label: "Change password", onSelect: () => setChanging(true) }] : []),
+            { label: "Sign out everywhere", onSelect: () => setEverywhere(true), separated: true },
+            { label: "Sign out", onSelect: signOut },
           ]}
           trigger={({ toggle, open }) => (
             <button
@@ -84,6 +89,7 @@ export function TopBar() {
         />
       </div>
       {changing && <ChangePasswordDialog onClose={() => setChanging(false)} />}
+      {everywhere && <SignOutEverywhereDialog onClose={() => setEverywhere(false)} />}
     </div>
   );
 }

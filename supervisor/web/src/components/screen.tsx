@@ -115,9 +115,11 @@ export function Monitor({ environment: c, job, now, big, href }: MonitorProps) {
     inner = (
       <div class={blank}>
         Stopped
-        <Button variant="primary" class="h-8!" disabled={starting} onClick={start}>
-          {starting ? "Starting…" : "Start"}
-        </Button>
+        {c.level !== "observe" && (
+          <Button variant="primary" class="h-8!" disabled={starting} onClick={start}>
+            {starting ? "Starting…" : "Start"}
+          </Button>
+        )}
         {startError && <span class="text-[#f0a49b]">{startError}</span>}
       </div>
     );
