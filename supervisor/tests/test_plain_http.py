@@ -53,11 +53,11 @@ def open_desktop(page, base, name):
 
 
 def has_picture(page) -> bool:
-    """The screen shows the desktop: its light panel along the top, where an
-    undecodable stream leaves the canvas black."""
+    """The screen shows the desktop: an undecodable stream leaves the canvas
+    flat black, a decoded one has wallpaper, icons and a taskbar."""
     pic = page.evaluate(PICTURE)
-    shot = page.screenshot(clip={"x": pic["left"], "y": pic["top"], "width": pic["width"], "height": 16})
-    return ImageStat.Stat(Image.open(BytesIO(shot)).convert("L")).mean[0] > 150
+    shot = page.screenshot(clip={"x": pic["left"], "y": pic["top"], "width": pic["width"], "height": pic["height"]})
+    return ImageStat.Stat(Image.open(BytesIO(shot)).convert("L")).stddev[0] > 15
 
 
 @pytest.mark.parametrize("host", ["deskyard.test", "deskyard.invalid"])
@@ -92,7 +92,7 @@ def test_plain_http_screen(supervisor, desktop, name, remote):
         frame = page.frames[1]
         assert frame.evaluate("deskyardScreen.insecure") is True
 
-        # The bar says so, pointing at the README.
+        # The bar says so, pointing at the running guide.
         note = page.get_by_role("link", name="Not secure: some features off")
         expect(note).to_be_visible()
         assert note.get_attribute("href").endswith("#on-a-lan")

@@ -12,7 +12,7 @@ done
 
 if [ "$cmd" = "run" ] &&
     ! bwrap --unshare-user --unshare-pid --ro-bind / / --proc /proc --dev /dev true 2>/dev/null; then
-    echo "flatpak: apps can't run here because this container uses Docker's default security settings. Start the sandbox with Flatpak support enabled (see README, \"Flatpak\")." >&2
+    echo "flatpak: apps can't run here because this container uses Docker's default security settings. Start the sandbox with Flatpak support enabled (see https://github.com/zefhemel/deskyard/blob/main/guide/images.md#flatpak)." >&2
     exit 1
 fi
 

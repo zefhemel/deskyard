@@ -146,7 +146,7 @@ export const insecureContext = typeof window !== "undefined" && window.isSecureC
 export const jpegOnly = typeof VideoDecoder === "undefined";
 
 /** Where "Needs https" points: running Deskyard on a LAN. */
-export const httpsHelp = "https://github.com/zefhemel/deskyard#on-a-lan";
+export const httpsHelp = "https://github.com/zefhemel/deskyard/blob/main/guide/running.md#on-a-lan";
 
 function frameWindow(frame: HTMLIFrameElement | null): ScreenWindow | null {
   try {

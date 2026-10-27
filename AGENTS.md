@@ -10,7 +10,7 @@ Deskyard runs persistent Linux desktops in containers, accessed and shared by pe
 - When the user invokes `$sb-inbox`, read `.agents/skills/sb-inbox/SKILL.md` and process the SilverBullet agent inbox as the explicit task.
 - At startup and meaningful work checkpoints, check `sb --space "Container Computer" eval 'identity.mentions("agent")' --json`. Read the current comments and their context, handle relevant requests, and follow `docs/Operations manual.md` for replies and completion.
 
-- Read `README.md` for the product, repository layout, configuration and development commands.
+- Read `README.md` for the product, how to run it and its configuration, and the topic guides under `guide/` for behavior in depth; `guide/development.md` has the repository layout, development commands and tests.
 - Read `docs/AGENTS.md` and `docs/index.md` before changing code or documentation. The `docs/` folder is the project's SilverBullet documentation space; `docs/AGENTS.md` is the authoritative manual for its page formats, links, metadata and architecture diagrams.
 - Find and read the architecture pages under `docs/Architecture/` and the specs and plans under `docs/superpowers/` relevant to the task. Use `docs/Architecture.md`, `docs/Specs.md` and `docs/Plans.md` as entry points; inspect the underlying Markdown pages when their SilverBullet queries are not rendered.
 - Read `docs/Features.md` and `docs/Milestones.md` for capability state and agreed outcomes. Follow the record schemas in `docs/CONFIG.md` and the field contract in `docs/AGENTS.md`; keep discovery candidates distinct from approved scope.
@@ -24,7 +24,7 @@ Documentation maintenance is part of every task, not a follow-up. Review the doc
 
 - Before declaring any task complete, perform the architecture review in `docs/Operations manual.md` ("Keep architecture aligned with implementation"). Update affected component prose, `partOf`, `uses`, `status` and implementation paths in the same change, inspect affected generated diagrams, and report the pages updated or the concrete reason no architecture change was needed.
 - Keep retained design specs accurate about current behavior and agreed future work. After implementation, extract durable decisions, evidence and remaining work, then purge the completed plan and repair its references. Remove stale specs after preserving useful rationale; the space's remote versioning keeps their history. Follow `docs/Operations manual.md` for retention details.
-- Update `README.md` when user-facing behavior, setup, configuration, commands or development workflows change; keep the corresponding documentation in `docs/` consistent.
+- Update `README.md` and the affected page under `guide/` when user-facing behavior, setup, configuration, commands or development workflows change; keep the README short (run it, configuration, links to the guides) and put detail in the guides. Keep the corresponding documentation in `docs/` consistent.
 - Follow `docs/AGENTS.md` for all documentation edits. Keep that manual as the single source for documentation conventions rather than duplicating them here.
 - For each task, report which documentation was updated. If no update is needed, state briefly why the existing documentation remains accurate. Do not make cosmetic edits solely to claim a documentation update.
 
@@ -32,7 +32,7 @@ Documentation maintenance is part of every task, not a follow-up. Review the doc
 
 - `supervisor/` contains the Go supervisor and CLI; `supervisor/web/` contains the Preact/TypeScript UI. Desktop images share `images/Dockerfile`, `images/common/` and `images/tests/`; desktop-specific overlays live under `images/debian-{xfce,mate}/rootfs/`.
 - Use the existing patterns in the affected component and keep changes focused on the task.
-- Run checks appropriate to the change. From `supervisor/`, use `make test` for Go tests, `make typecheck` for UI type checking and tests, and `make build` to build the UI and binaries. Engine integration tests (`make test-engine`) and desktop image tests require Docker; see `README.md` for their setup.
+- Run checks appropriate to the change. From `supervisor/`, use `make test` for Go tests, `make typecheck` for UI type checking and tests, and `make build` to build the UI and binaries. Engine integration tests (`make test-engine`) and desktop image tests require Docker; see `guide/development.md` for their setup.
 - Validate documentation metadata and relationships with `sb --space "Container Computer" script --file scripts/check-docs.lua --json` from the repository root. This runs regression checks and asserts that whole-space SilverBullet lint has no diagnostics.
 - Check documentation links, referenced paths and metadata after documentation edits. Follow the SilverBullet checks in `docs/AGENTS.md` when available; report any checks that could not be run.
 - Keep `docs/Testing/Project record schemas.md` updated with observed SilverBullet/CLI failures, reproducible cases, workarounds and retest outcomes; follow the operations manual for feedback details.
