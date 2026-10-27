@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -261,5 +262,39 @@ func TestRestartDeletesCredentialOfUnfinishedRedemption(t *testing.T) {
 	}
 	if !restarted.links.pending(bob.ID) {
 		t.Error("deleted the link of the unfinished redemption")
+	}
+}
+
+// A redemption whose link deletion and cleanup both failed leaves a
+// credential whose bearer was never handed out, and keeps the link: trying
+// the link again deletes that credential, from a CLI or a browser.
+func TestRedeemingAgainDeletesCredentialOfFailedRedemption(t *testing.T) {
+	for _, client := range []string{"cli", "browser"} {
+		t.Run(client, func(t *testing.T) {
+			s, ts := newTestServer(t)
+			bob := fullOnAlice(t, s)
+			code := issueLink(t, s.links, bob)
+			id, _, _ := parseBearer(linkPrefix, code)
+			leftover, _, err := s.credentials.createRedeeming(bob, defaultCredentialName, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var status int
+			var body string
+			if client == "cli" {
+				status, body = redeemCLI(t, ts, code)
+			} else {
+				status, body = send(t, browser(), "POST", ts.URL+"/api/links/redeem", ts.URL, `{"link":"`+code+`","client":"browser"}`)
+			}
+			if status != http.StatusOK {
+				t.Fatalf("redeem again: %d %s", status, body)
+			}
+			if s.credentials.has(leftover.ID) {
+				t.Error("kept the credential of the failed redemption")
+			}
+			if restart(t, s).credentials.has(leftover.ID) {
+				t.Error("the credential of the failed redemption survives a restart")
+			}
+		})
 	}
 }

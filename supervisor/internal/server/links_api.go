@@ -152,6 +152,12 @@ func (s *Server) handleRedeemLink(w http.ResponseWriter, r *http.Request) {
 		if a, ok = s.linkAccount(l); !ok {
 			return errLinkUsed
 		}
+		// An earlier redemption of the link that failed, and couldn't
+		// delete its credential either, left one whose bearer it never
+		// handed out.
+		if err := s.credentials.remove(func(c credential) bool { return c.Link == l.ID }); err != nil {
+			return err
+		}
 		if req.Client != "cli" {
 			return nil
 		}
