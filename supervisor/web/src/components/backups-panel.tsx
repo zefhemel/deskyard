@@ -16,7 +16,7 @@ function when(iso: string): string {
 }
 
 /** `stoppers` are the environments a restore here stops: the environment itself, or those granted the volume. */
-export function BackupsPanel({ kind, name, stoppers }: { kind: ItemKind; name: string; stoppers: string[] }) {
+export function BackupsPanel({ kind, name, stoppers, hostPath }: { kind: ItemKind; name: string; stoppers: string[]; hostPath?: string }) {
   const item = useFetch(() => api.backup(kind, name), `backup-${kind}-${name}`);
   const overview = useFetch(() => api.backups(), "backups");
   const snaps = useFetch(() => api.snapshots(kind, name), `snapshots-${kind}-${name}`);
@@ -111,7 +111,7 @@ export function BackupsPanel({ kind, name, stoppers }: { kind: ItemKind; name: s
       )}
       {browsing && <BrowseDialog kind={kind} name={name} snapshot={browsing} onClose={() => setBrowsing(null)} />}
       {restoring?.mode === "here" && (
-        <RestoreHereDialog kind={kind} name={name} snapshot={restoring.snap} hasPolicy={!!b?.policy} stoppers={stoppers} onClose={() => setRestoring(null)} onDone={refresh} />
+        <RestoreHereDialog kind={kind} name={name} snapshot={restoring.snap} hasPolicy={!!b?.policy} stoppers={stoppers} hostPath={hostPath} onClose={() => setRestoring(null)} onDone={refresh} />
       )}
       {restoring?.mode === "new" && <RestoreNewDialog kind={kind} name={name} snapshot={restoring.snap} onClose={() => setRestoring(null)} />}
     </section>
@@ -134,6 +134,20 @@ function Status({ item: b }: { item: BackupItem }) {
         <>
           <dt class="text-muted">Next backup</dt>
           <dd>{when(b.nextRun)}</dd>
+        </>
+      )}
+      {!st.error && !!st.warnings?.length && (
+        <>
+          <dt class="text-[#8a5a12]">Left out</dt>
+          <dd class="min-w-0 break-words text-[#8a5a12]">
+            {st.warnings.length} file{st.warnings.length === 1 ? "" : "s"} couldn't be read: {st.warnings.join("; ")}
+          </dd>
+        </>
+      )}
+      {b.policy?.enabled && isTime(b.nextRun) && Date.parse(b.nextRun) < Date.now() - 3600_000 && !b.activity && (
+        <>
+          <dt class="text-danger">Overdue</dt>
+          <dd class="text-danger">The backup due {ago(b.nextRun).toLowerCase()} hasn't run.</dd>
         </>
       )}
       {st.error && (
@@ -393,6 +407,7 @@ function RestoreHereDialog({
   snapshot: s,
   hasPolicy,
   stoppers,
+  hostPath,
   onClose,
   onDone,
 }: {
@@ -401,6 +416,7 @@ function RestoreHereDialog({
   snapshot: Snapshot;
   hasPolicy: boolean;
   stoppers: string[];
+  hostPath?: string;
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -427,7 +443,7 @@ function RestoreHereDialog({
       }
     >
       <Note danger>
-        Every file in {kind === "environment" ? `${name}'s home folder` : `the volume ${name}`} is replaced with the snapshot's: files added or changed since are lost, and deleted ones come back.
+        Every file in {kind === "environment" ? `${name}'s home folder` : hostPath ? `the host folder ${hostPath}` : `the volume ${name}`} is replaced with the snapshot's: files added or changed since are lost, and deleted ones come back.
         {kind === "environment" && " Its settings stay as they are."}
       </Note>
       {stoppers.length > 0 && (

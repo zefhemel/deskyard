@@ -387,7 +387,7 @@ func (t Tool) Restore(ctx context.Context, repo Repo, snapshot, subpath string, 
 	target.Target = "/target"
 	args := []string{"restore", "--json", "--retry-lock", "10m", "--target", "/target"}
 	for _, inc := range includes {
-		args = append(args, "--include", inc)
+		args = append(args, "--include", literal(inc))
 	}
 	if del {
 		args = append(args, "--delete")
@@ -405,11 +405,42 @@ func (t Tool) Restore(ctx context.Context, repo Repo, snapshot, subpath string, 
 	}
 	harmless, others := fileErrors(res.Stderr)
 	others = append(others, pw.errs...)
-	switch {
-	case len(others) > 0:
+	if len(others) > 0 {
 		return fmt.Errorf("restoring: %s", firstOf(others, 5))
-	case harmless > 0:
-		return nil // only links' xattrs, which can't be set on a dangling link
+	}
+	// restic ends a restore that only had per-file errors with exit 1 and
+	// "There were N errors". When those were all harmless (links' xattrs,
+	// which can't be set on a dangling link), the restore is complete.
+	var n int
+	if _, err := fmt.Sscanf(exitMessage(res.Stderr), "Fatal: There were %d errors", &n); err == nil && res.Code == 1 && harmless > 0 && n == harmless {
+		return nil
 	}
 	return failure("restoring", res)
+}
+
+// exitMessage is restic's JSON exit error message on stderr, or "".
+func exitMessage(stderr string) string {
+	msg := ""
+	for _, l := range strings.Split(stderr, "\n") {
+		var e struct {
+			MessageType string `json:"message_type"`
+			Message     string `json:"message"`
+		}
+		if json.Unmarshal([]byte(strings.TrimSpace(l)), &e) == nil && e.MessageType == "exit_error" {
+			msg = e.Message
+		}
+	}
+	return msg
+}
+
+// literal escapes a path for restic's --include patterns.
+func literal(p string) string {
+	var b strings.Builder
+	for _, c := range p {
+		if strings.ContainsRune(`*?[\`, c) {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(c)
+	}
+	return b.String()
 }

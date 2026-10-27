@@ -3,7 +3,7 @@ import { api, ApiError, type BackupsOverview, type CatalogItem, type Repository 
 import { RestoreNewDialog } from "../../components/backups-panel.tsx";
 import { notify } from "../../components/toast.tsx";
 import { Button, Dialog, ErrorText, Field, Note, Tag, errorMessage } from "../../components/ui.tsx";
-import { describeSchedule, isTime, splitItem } from "../../lib/backup-policy.ts";
+import { backupStatus, describeSchedule, isTime, splitItem } from "../../lib/backup-policy.ts";
 import { ago, day } from "../../lib/format.ts";
 import { useFetch } from "../../lib/use-fetch.ts";
 
@@ -71,7 +71,10 @@ export function BackupsTab() {
                 </a>
                 {i.policy && <span class="text-sm text-muted">{i.policy.enabled ? describeSchedule(i.policy.schedule) : "Paused"} → {i.policy.repository}</span>}
                 <span class="text-sm">{isTime(i.state.lastSuccess) ? `Last ${ago(i.state.lastSuccess).toLowerCase()}` : "Not yet"}</span>
-                {i.activity && <Tag kind="update">{i.activity}</Tag>}
+                {(() => {
+                  const st = backupStatus(i);
+                  return st && <Tag kind={st.kind}>{st.label}</Tag>;
+                })()}
                 {i.state.error && (
                   <span class="w-full text-sm text-danger" role="alert">
                     Failed: {i.state.error}

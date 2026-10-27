@@ -937,6 +937,9 @@ func (s *Service) power(ctx context.Context, name, action string) error {
 		if err := s.checkFolders(name); err != nil {
 			return err
 		}
+		if err := s.checkHostVolumes(ctx, name); err != nil {
+			return err
+		}
 		if err := s.setPower(name, PowerRunning); err != nil {
 			return err
 		}
@@ -955,6 +958,9 @@ func (s *Service) power(ctx context.Context, name, action string) error {
 		return fmt.Errorf("%w: %s", ErrConflict, c.Conflict)
 	}
 	if err := s.checkFolders(name); err != nil {
+		return err
+	}
+	if err := s.checkHostVolumes(ctx, name); err != nil {
 		return err
 	}
 	if err := s.setPower(name, PowerRunning); err != nil {
@@ -987,6 +993,17 @@ func (s *Service) power(ctx context.Context, name, action string) error {
 	// what this start retries; an error of a failed change stays.
 	s.clearError(name, errNotReady)
 	return nil
+}
+
+// checkHostVolumes checks the folders of name's host volumes on the engine
+// host before a start, so a missing one is named rather than left to the
+// engine's bind error. Without host volumes it does nothing.
+func (s *Service) checkHostVolumes(ctx context.Context, name string) error {
+	def, ok := s.Defs.Get(name)
+	if !ok {
+		return nil
+	}
+	return s.checkHostSources(ctx, s.hostSources(def.Volumes), false)
 }
 
 // build creates the container of an environment that has none, from its

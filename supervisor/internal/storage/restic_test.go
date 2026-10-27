@@ -267,3 +267,31 @@ func TestTestRemoteArgs(t *testing.T) {
 		t.Errorf("args %s", got)
 	}
 }
+
+// Only exit 1 with exactly the harmless errors counted passes: a restore that
+// died otherwise (killed, a fatal lock error) failed, whatever came before.
+func TestRestoreDiedAfterHarmlessErrorsFails(t *testing.T) {
+	restoreXattr := `{"message_type":"error","error":{"message":"xattr.list /target/.claude/skills/b: no such file or directory"},"during":"restore","item":"/.claude/skills/b"}`
+	for name, res := range map[string]Result{
+		"killed":      {Code: 137, Stderr: restoreXattr + "\n"},
+		"fatal":       {Code: 1, Stderr: restoreXattr + "\n" + `{"message_type":"exit_error","code":1,"message":"Fatal: failed to refresh lock"}` + "\n"},
+		"more errors": {Code: 1, Stderr: restoreXattr + "\n" + `{"message_type":"exit_error","code":1,"message":"Fatal: There were 3 errors"}` + "\n"},
+	} {
+		f := &fakeRunner{reply: func(Call) (string, Result, error) { return "", res, nil }}
+		if err := testTool(f).Restore(context.Background(), testRepo, "a", "/x", engine.Mount{Source: "/t"}, nil, false, nil); err == nil {
+			t.Errorf("%s: passed", name)
+		}
+	}
+}
+
+// --include takes patterns: a selected name is matched literally.
+func TestRestoreIncludesAreLiteral(t *testing.T) {
+	f := &fakeRunner{}
+	if err := testTool(f).Restore(context.Background(), testRepo, "a", "/x", engine.Mount{Source: "/t"}, []string{"/report[1].pdf", "/a*b?", `/back\slash`}, false, nil); err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(f.last().Args, " ")
+	if !strings.Contains(got, `--include /report\[1].pdf --include /a\*b\? --include /back\\slash`) {
+		t.Fatalf("args %s", got)
+	}
+}

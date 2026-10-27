@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 import { api, type Conflict } from "../api.ts";
 import { useFetch } from "../lib/use-fetch.ts";
+import { backupStatus } from "../lib/backup-policy.ts";
 import { Page, PageHead } from "../components/topbar.tsx";
 import { Tile } from "../components/tile.tsx";
 import { Button } from "../components/ui.tsx";
@@ -13,7 +14,7 @@ export function EnvironmentsPage() {
   const [creating, setCreating] = useState(false);
   // Backups whose last run failed, shown on their tiles (admins only).
   const backups = useFetch(() => (me.admin ? api.backups() : Promise.resolve(null)), "backups");
-  const failing = new Set((backups.data?.items ?? []).filter((i) => i.state.error).map((i) => i.item));
+  const failing = new Set((backups.data?.items ?? []).filter((i) => backupStatus(i)?.kind === "danger").map((i) => i.item));
 
   return (
     <Page>

@@ -1,4 +1,4 @@
-import type { PolicyInput, Retention, Schedule } from "../api.ts";
+import type { BackupItem, PolicyInput, Retention, Schedule } from "../api.ts";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -56,4 +56,17 @@ export function splitItem(item: string): ["environment" | "volume", string] {
 /** Whether a time from the API is set: Go sends its zero time for never. */
 export function isTime(iso: string | null | undefined): iso is string {
   return !!iso && !iso.startsWith("0001-");
+}
+
+export type BackupStatus = { label: string; kind: "ok" | "plain" | "update" | "danger" };
+
+/** An item's backup status as a tag: failed, overdue (due over an hour ago, not run), left files out, or fine; null without a policy. */
+export function backupStatus(b: BackupItem | undefined, now = Date.now()): BackupStatus | null {
+  if (!b?.policy) return null;
+  const st = b.state;
+  if (b.activity) return { label: b.activity[0]!.toUpperCase() + b.activity.slice(1), kind: "update" };
+  if (st.error) return { label: "Backup failed", kind: "danger" };
+  if (b.policy.enabled && isTime(b.nextRun) && Date.parse(b.nextRun) < now - 3600_000) return { label: "Backup overdue", kind: "danger" };
+  if (st.warnings?.length) return { label: `Backed up, ${st.warnings.length} file${st.warnings.length === 1 ? "" : "s"} left out`, kind: "update" };
+  return isTime(st.lastSuccess) ? { label: "Backed up", kind: "ok" } : { label: "Backup pending", kind: "plain" };
 }

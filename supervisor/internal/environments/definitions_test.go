@@ -276,7 +276,7 @@ func TestDefinitionsLoadRejectsMalformedEntries(t *testing.T) {
 			d.Network = Network{Kind: NetworkVPN, Connection: "c", LANExceptions: []vpn.Exception{{Destination: "8.8.8.8", Protocol: "tcp", Ports: []vpn.PortRange{{Start: 53}}}}}
 		},
 		"bad grant path": func(d *Definition) { d.Volumes = []VolumeGrant{{Name: "photos", Path: "relative"}} },
-		"unknown power": func(d *Definition) { d.Power = "paused" },
+		"unknown power":  func(d *Definition) { d.Power = "paused" },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {

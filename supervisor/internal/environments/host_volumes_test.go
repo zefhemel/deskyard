@@ -231,3 +231,30 @@ func TestMissingHostVolumeIsEnvironmentError(t *testing.T) {
 		t.Fatal("missing host folder was created")
 	}
 }
+
+// Starting an environment whose host volume folder has gone says which
+// volume and folder, rather than the engine's bind error.
+func TestStartMissingHostVolumeNamesIt(t *testing.T) {
+	s, eng := mountService(t)
+	ctx := context.Background()
+	source := filepath.Join(t.TempDir(), "usb")
+	if err := os.Mkdir(source, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.seed(ctx, "alice", Settings{Image: "img", Volumes: []VolumeGrant{hostVolume(t, s, "usb", source, "/mnt/usb", false)}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Stop(ctx, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(source); err != nil {
+		t.Fatal(err)
+	}
+	err := s.Start(ctx, "alice")
+	if err == nil || !strings.Contains(err.Error(), "usb") || !strings.Contains(err.Error(), source) {
+		t.Fatalf("got %v", err)
+	}
+	if c, _ := eng.Inspect(ctx, "deskyard-alice"); c.Running() {
+		t.Fatal("started anyway")
+	}
+}

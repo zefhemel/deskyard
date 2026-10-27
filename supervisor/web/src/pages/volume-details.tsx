@@ -27,7 +27,7 @@ export function VolumeDetailsPage() {
         <>
           <VolumeCard volume={v} environments={envs.data?.environments} onDelete={() => setRemoving(true)} linked={false} />
           <h2 class="mt-8 mb-3 text-xl font-bold">Backups</h2>
-          <BackupsPanel kind="volume" name={v.name} stoppers={v.environments.filter((g) => envs.data?.environments.find((e) => e.name === g.name)?.state === "running").map((g) => g.name)} />
+          <BackupsPanel kind="volume" name={v.name} hostPath={v.kind === "host" ? v.folder : undefined} stoppers={v.environments.filter((g) => envs.data?.environments.find((e) => e.name === g.name)?.state === "running").map((g) => g.name)} />
           {removing && <DeleteVolume volume={v} onClose={() => setRemoving(false)} onDeleted={() => route("/volumes")} />}
         </>
       )}

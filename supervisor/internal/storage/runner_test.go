@@ -64,6 +64,23 @@ func (e *helperFakeEngine) CopyToContainer(_ context.Context, id, dir string, _ 
 	return nil
 }
 func (e *helperFakeEngine) Start(context.Context, string) error { return nil }
+func (e *helperFakeEngine) List(_ context.Context, labels map[string]string) ([]engine.Container, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var out []engine.Container
+	for _, s := range e.specs {
+		match := true
+		for k, v := range labels {
+			if s.Labels[k] != v {
+				match = false
+			}
+		}
+		if match {
+			out = append(out, engine.Container{ID: s.Name, Name: s.Name, Labels: s.Labels})
+		}
+	}
+	return out, nil
+}
 func (e *helperFakeEngine) Exec(_ context.Context, _ string, s engine.ExecSpec) (*engine.Process, error) {
 	e.mu.Lock()
 	e.execs = append(e.execs, s)
@@ -149,5 +166,26 @@ func TestEngineRunnerMountsCachedRestic(t *testing.T) {
 		if len(s.Mounts) != 1 || s.Mounts[0] != (engine.Mount{Source: cached, Target: "/usr/local/bin/restic", ReadOnly: true, MustExist: true}) {
 			t.Fatalf("mounts %+v", s.Mounts)
 		}
+	}
+}
+
+// Helpers carry this supervisor's instance, so ones a crash left behind are
+// removed when it starts again, and other supervisors' are left alone.
+func TestEngineRunnerRemovesStaleHelpers(t *testing.T) {
+	e := &helperFakeEngine{}
+	mine := &EngineRunner{Eng: e, Instance: "aaa"}
+	if _, err := mine.Run(context.Background(), Call{Args: []string{"restic", "version"}}); err != nil {
+		t.Fatal(err)
+	}
+	if l := e.specs[0].Labels; l["deskyard.helper"] != "storage" || l["deskyard.instance"] != "aaa" {
+		t.Fatalf("labels %v", l)
+	}
+	e.specs = append(e.specs,
+		engine.ContainerSpec{Name: "deskyard-storage-left", Labels: map[string]string{"deskyard.helper": "storage", "deskyard.instance": "aaa"}},
+		engine.ContainerSpec{Name: "deskyard-storage-other", Labels: map[string]string{"deskyard.helper": "storage", "deskyard.instance": "bbb"}})
+	e.removed = nil
+	mine.RemoveStale(context.Background())
+	if strings.Join(e.removed, ",") != e.specs[0].Name+",deskyard-storage-left" {
+		t.Fatalf("removed %v", e.removed)
 	}
 }

@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
-	"io"
 	"testing"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
@@ -167,7 +167,7 @@ func TestRestoreAsNewEnvironmentDropsMachineSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := env.events(); got != "create alice-copy,stop alice-copy" {
+	if got := env.events(); got != "reserve alice-copy,create alice-copy,stop alice-copy" {
 		t.Fatalf("lifecycle %s", got)
 	}
 	set := env.created["alice-copy"]
@@ -339,5 +339,49 @@ func TestBrowseAndDownload(t *testing.T) {
 	name = ""
 	if err := s.Download(context.Background(), it, "home", "e1", "../x", false, open); err == nil || name != "" {
 		t.Fatal("downloaded outside the item")
+	}
+}
+
+// Every environment using the volume is reserved before any is stopped: one
+// that is busy stops nothing.
+func TestRestoreHereVolumeBusyUserStopsNothing(t *testing.T) {
+	f := &fakeRunner{}
+	s, env := testService(t, f)
+	f.reply = restoreReply(environments.Definition{}, nil)
+	env.addVolume(t, "photos")
+	env.addEnvironment(t, "alice", true, environments.Settings{Image: "img", Volumes: []environments.VolumeGrant{{Name: "photos"}}})
+	env.addEnvironment(t, "bob", true, environments.Settings{Image: "img", Volumes: []environments.VolumeGrant{{Name: "photos"}}})
+	env.reserved["bob"], env.reserved["alice"] = false, false
+	// Whichever comes second is busy.
+	release, _ := env.Reserve("bob", "upgrading")
+	defer release()
+	_, err := s.Restore(context.Background(), Item{KindVolume, "photos"}, RestoreRequest{Repository: "home", Snapshot: "v1", Mode: "here"}, nil)
+	if err == nil {
+		t.Fatal("restored with a busy user")
+	}
+	if strings.Contains(env.events(), "stop") || !env.running["alice"] || len(restoreCalls(f)) != 0 {
+		t.Fatalf("lifecycle %s", env.events())
+	}
+}
+
+// The new environment's name is reserved while its home is restored and it
+// is created, as the create API does.
+func TestRestoreAsNewReservesName(t *testing.T) {
+	f := &fakeRunner{}
+	s, env := testService(t, f)
+	f.reply = restoreReply(environments.Definition{Image: environments.ImageRef{Ref: "img"}}, nil)
+	if _, err := s.Restore(context.Background(), Item{KindEnvironment, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-copy"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := env.events(); got != "reserve alice-copy,create alice-copy,stop alice-copy" {
+		t.Fatalf("lifecycle %s", got)
+	}
+	release, _ := env.Reserve("carol", "creating")
+	defer release()
+	if _, err := s.Restore(context.Background(), Item{KindEnvironment, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "carol"}, nil); err == nil {
+		t.Fatal("restored into a name being created")
+	}
+	if _, err := os.Stat(env.layout.HomeOf("carol")); !os.IsNotExist(err) {
+		t.Fatal("made a folder for a busy name")
 	}
 }

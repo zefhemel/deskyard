@@ -54,8 +54,11 @@ type Runner interface {
 type EngineRunner struct {
 	Eng    engine.Engine
 	BinDir string
+	// Instance labels the helpers as this supervisor's, for RemoveStale.
+	Instance string
 
-	pullMu sync.Mutex
+	pullMu    sync.Mutex
+	cleanOnce sync.Once
 }
 
 // resticBinary is the restic binary extracted into BinDir, made on first use.
@@ -117,6 +120,7 @@ func (r *EngineRunner) ensureImages(ctx context.Context) error {
 }
 
 func (r *EngineRunner) Run(ctx context.Context, c Call) (Result, error) {
+	r.cleanOnce.Do(func() { r.RemoveStale(ctx) })
 	if err := r.ensureImages(ctx); err != nil {
 		return Result{}, err
 	}
@@ -135,7 +139,7 @@ func (r *EngineRunner) Run(ctx context.Context, c Call) (Result, error) {
 	name := "deskyard-storage-" + hex.EncodeToString(raw)
 	if _, err := r.Eng.Create(ctx, engine.ContainerSpec{
 		Name: name, Image: RcloneImage, Entrypoint: []string{"sleep"}, Cmd: []string{"86400"},
-		Mounts: mounts, NoHealthcheck: true, Restart: "no",
+		Mounts: mounts, NoHealthcheck: true, Restart: "no", Labels: r.labels(),
 	}); err != nil {
 		return Result{}, err
 	}
@@ -178,6 +182,23 @@ func (r *EngineRunner) Run(ctx context.Context, c Call) (Result, error) {
 		return Result{}, err
 	}
 	return Result{Code: res.Code, Stderr: tail(string(res.Stderr), 8<<10)}, nil
+}
+
+func (r *EngineRunner) labels() map[string]string {
+	return map[string]string{"deskyard.helper": "storage", "deskyard.instance": r.Instance}
+}
+
+// RemoveStale removes this supervisor's helpers that a crash or kill left
+// running, which would otherwise keep folders mounted and repository locks
+// held. Run calls it once, before this supervisor's first helper.
+func (r *EngineRunner) RemoveStale(ctx context.Context) {
+	cs, err := r.Eng.List(ctx, r.labels())
+	if err != nil {
+		return
+	}
+	for _, c := range cs {
+		_ = r.Eng.Remove(ctx, c.ID)
+	}
 }
 
 func tail(s string, n int) string {

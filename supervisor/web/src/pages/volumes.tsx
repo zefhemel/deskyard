@@ -8,7 +8,7 @@ import { Button, Check, Dialog, ErrorText, Field, Meter, Note, Tag, errorMessage
 import { bytes } from "../lib/format.ts";
 import { useFetch } from "../lib/use-fetch.ts";
 import { cx } from "../components/ui.tsx";
-import { isTime } from "../lib/backup-policy.ts";
+import { backupStatus } from "../lib/backup-policy.ts";
 import { BackupsTab } from "./storage/backups-tab.tsx";
 import { RemotesTab } from "./storage/remotes-tab.tsx";
 
@@ -95,9 +95,8 @@ function VolumesTab() {
 
 /** A volume's backup state as a tag: failing, or when it last ran. */
 export function BackupTag({ backup }: { backup: BackupItem | undefined }) {
-  if (!backup?.policy) return null;
-  if (backup.state.error) return <Tag kind="danger">Backup failed</Tag>;
-  return <Tag kind="ok">{isTime(backup.state.lastSuccess) ? "Backed up" : "Backup pending"}</Tag>;
+  const st = backupStatus(backup);
+  return st && <Tag kind={st.kind === "update" ? "update" : st.kind}>{st.label}</Tag>;
 }
 
 export function VolumeCard({ volume: v, environments, backup, onDelete, linked = true }: { volume: Volume; environments: Environment[] | undefined; backup?: BackupItem; onDelete: () => void; linked?: boolean }) {
@@ -130,7 +129,7 @@ export function VolumeCard({ volume: v, environments, backup, onDelete, linked =
           ) : (
             <>
               <span class="font-semibold">
-                {usage.bytes === 0 && usage.complete ? "Empty" : `${usage.complete ? "" : "At least "}${bytes(usage.bytes)}`}
+                {usage.bytes === 0 && usage.complete ? "Empty" : usage.bytes === 0 ? "Unknown" : `${usage.complete ? "" : "At least "}${bytes(usage.bytes)}`}
               </span>
               {disk && (
                 <>

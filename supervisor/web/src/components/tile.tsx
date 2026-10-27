@@ -141,7 +141,7 @@ export function Tile({ environment: c, job, now, admin, backupFailed }: { enviro
         <NoticeLine environment={c} class="mt-2" />
         {backupFailed && (
           <a href={`/environments/${c.name}?tab=backups`} class="mt-2 block text-[13px] text-danger">
-            Its last backup failed
+            Its backup failed or is overdue
           </a>
         )}
         {c.state === "running" && (

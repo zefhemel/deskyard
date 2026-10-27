@@ -135,7 +135,8 @@ func New(o Options) (*Server, error) {
 	}
 	run := o.StorageRunner
 	if run == nil {
-		run = &storage.EngineRunner{Eng: o.Eng, BinDir: filepath.Join(o.Layout.Cache, "storage")}
+		helpers := &storage.EngineRunner{Eng: o.Eng, BinDir: filepath.Join(o.Layout.Cache, "storage"), Instance: o.Environments.Instance}
+		run = helpers
 	}
 	if s.storage, err = storage.Open(o.Layout, o.Environments.Instance, run, storage.EnvironmentsOf(o.Environments), o.Log); err != nil {
 		return nil, err

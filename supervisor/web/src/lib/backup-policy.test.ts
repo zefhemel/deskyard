@@ -42,3 +42,19 @@ test("Go's zero time means never", async () => {
   assert.equal(isTime(null), false);
   assert.equal(isTime("2026-10-27T03:00:00Z"), true);
 });
+
+test("an item's backup status: failed, overdue, with files left out, or fine", async () => {
+  const { backupStatus } = await import("./backup-policy.ts");
+  const now = Date.parse("2026-10-27T12:00:00Z");
+  const policy = { item: "volume:v", repository: "r", enabled: true, schedule: { every: "daily" as const, at: "03:00", weekday: 0 }, retention: { last: 0, hourly: 0, daily: 7, weekly: 0, monthly: 0, yearly: 0 }, updated: "" };
+  const item = (state: object, extra: object = {}) => ({ item: "volume:v", policy, state: { lastAttempt: "", lastSuccess: "0001-01-01T00:00:00Z", ...state }, activity: "", nextRun: "2026-10-28T03:00:00Z", ...extra });
+  assert.equal(backupStatus(undefined, now), null);
+  assert.equal(backupStatus({ ...item({}), policy: null }, now), null);
+  assert.deepEqual(backupStatus(item({ lastSuccess: "2026-10-27T03:00:00Z" }), now), { label: "Backed up", kind: "ok" });
+  assert.deepEqual(backupStatus(item({}), now), { label: "Backup pending", kind: "plain" });
+  assert.deepEqual(backupStatus(item({ error: "boom" }), now), { label: "Backup failed", kind: "danger" });
+  assert.deepEqual(backupStatus(item({ lastSuccess: "2026-10-27T03:00:00Z", warnings: ["a", "b"] }), now), { label: "Backed up, 2 files left out", kind: "update" });
+  // Due over an hour ago and not run: the scheduler isn't keeping up, or the supervisor was down.
+  assert.deepEqual(backupStatus(item({ lastSuccess: "2026-10-25T03:00:00Z" }, { nextRun: "2026-10-27T03:00:00Z" }), now), { label: "Backup overdue", kind: "danger" });
+  assert.deepEqual(backupStatus(item({ lastSuccess: "2026-10-25T03:00:00Z" }, { nextRun: "2026-10-27T03:00:00Z", activity: "backing up" }), now), { label: "Backing up", kind: "update" });
+});

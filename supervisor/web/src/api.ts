@@ -457,6 +457,8 @@ export interface RunState {
   lastSuccess: string;
   snapshot?: string;
   error?: string;
+  /** Files the last snapshot left out because they couldn't be read. */
+  warnings?: string[];
 }
 export type ItemKind = "environment" | "volume";
 /** An environment's or volume's backups: its policy (null without one), last run and what it's doing. */

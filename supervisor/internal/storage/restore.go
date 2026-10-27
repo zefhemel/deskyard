@@ -143,27 +143,37 @@ func (s *Service) restoreHere(ctx context.Context, it Item, repo Repo, snap Snap
 			envs = append(envs, u.Environment)
 		}
 	}
-	var restart []string
+	// After any backup that holds the lock, so nothing sits stopped waiting.
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
+	// Every one is reserved before any is stopped, so a busy one stops none.
 	for _, name := range envs {
 		release, err := s.Env.Reserve(name, "restoring")
 		if err != nil {
 			return fmt.Errorf("%s is busy: %w", name, err)
 		}
 		defer release()
-		c, err := s.Env.Get(ctx, name)
-		if err != nil {
-			return err
-		}
-		if c.Running() {
-			progress("Stopping "+name, -1)
-			if err := s.Env.Stop(ctx, name); err != nil {
-				return fmt.Errorf("stopping %s: %w", name, err)
-			}
-			restart = append(restart, name)
+	}
+	var restart []string
+	startAgain := func() {
+		for _, name := range restart {
+			_ = s.Env.Start(context.WithoutCancel(ctx), name)
 		}
 	}
-	s.opMu.Lock()
-	defer s.opMu.Unlock()
+	for _, name := range envs {
+		c, err := s.Env.Get(ctx, name)
+		if err == nil && c.Running() {
+			progress("Stopping "+name, -1)
+			if err = s.Env.Stop(ctx, name); err == nil {
+				restart = append(restart, name)
+				continue
+			}
+		}
+		if err != nil {
+			startAgain() // nothing is restored yet
+			return fmt.Errorf("stopping %s: %w", name, err)
+		}
+	}
 	defer s.useRemote(repo.Remote)()
 	progress("Restoring", 0)
 	if err := s.Tool.Restore(ctx, repo, snap.ID, itemRoot(it), engine.Mount{Source: folder, MustExist: true}, nil, true, func(frac float64, msg string) {
@@ -213,6 +223,15 @@ func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snaps
 		return RestoreResult{}, err
 	}
 	defer release()
+	if it.Kind == KindEnvironment {
+		// As the create API does, so reconcile and other operations leave the
+		// name alone while its home is restored and it is created.
+		releaseName, err := s.Env.Reserve(name, "creating")
+		if err != nil {
+			return RestoreResult{}, fmt.Errorf("%s is busy: %w", name, err)
+		}
+		defer releaseName()
+	}
 	var def environments.Definition
 	if it.Kind == KindEnvironment {
 		var buf bytes.Buffer
