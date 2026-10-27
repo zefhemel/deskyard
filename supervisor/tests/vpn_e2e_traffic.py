@@ -137,14 +137,11 @@ def traffic(d):
     )
 
     evidence = {"initialBlocked": True}
-    # Container mode starts with its endpoint down to prove pre-tunnel access.
-    if cfg["mode"] == "container":
-        for c in r["containers"]:
-            assert not request(c, "https://1.1.1.1/cdn-cgi/trace"), "startup escaped"
-        for name in r["names"]:
-            assert req("/" + name + "/screen/api/websockets") == b""
-    else:
-        evidence["initialBlocked"] = False
+    # The endpoint starts down, to prove pre-tunnel access is blocked.
+    for c in r["containers"]:
+        assert not request(c, "https://1.1.1.1/cdn-cgi/trace"), "startup escaped"
+    for name in r["names"]:
+        assert req("/" + name + "/screen/api/websockets") == b""
     docker("exec", endpoint, "ip", "link", "set", "wg0", "up")
     for c in r["containers"]:
         eventually(

@@ -36,9 +36,12 @@ type e2eConfig struct {
 	Production                                                  bool
 }
 
-// TestVPNEndToEnd is a scoped real supervisor. The orchestration script supplies
-// one owned endpoint and private fixture keys. A continue file releases lifecycle
-// assertions after browser/agent API checks; stop releases the optional Nord UI.
+// TestVPNEndToEnd is a scoped real supervisor. It runs only in a container, as
+// the supervisor does: tests/vpn_e2e.py mounts the data folder at /data and its
+// private directory (DESKYARD_VPN_E2E_DIR) beside it. The orchestration script
+// supplies one owned endpoint and private fixture keys. A continue file releases
+// lifecycle assertions after browser/agent API checks; stop releases the
+// optional Nord UI.
 func TestVPNEndToEnd(t *testing.T) {
 	dir := os.Getenv("DESKYARD_VPN_E2E_DIR")
 	if dir == "" {
@@ -84,7 +87,24 @@ func TestVPNEndToEnd(t *testing.T) {
 			t.Error("cannot save private OUTPUT diagnostics")
 		}
 	}
-	layout := config.NewLayout(filepath.Join(dir, "data"))
+	// As the supervisor does: find the data folder's host path on its own
+	// container and translate mount sources at the engine.
+	self, err := raw.Inspect(ctx, cfg.SelfID)
+	if err != nil {
+		t.Fatal("the fixture supervisor's own container", err)
+	}
+	dataHost := ""
+	for _, m := range self.Mounts {
+		if m.Target == config.DataDir {
+			dataHost = m.Source
+		}
+	}
+	if dataHost == "" {
+		t.Fatal("no bind mount at " + config.DataDir)
+	}
+	layout := config.NewLayout(config.DataDir)
+	hostLayout := layout.WithHost(dataHost)
+	eng := engine.WithHostPaths(e, hostLayout.ToHost, hostLayout.FromHost)
 	state := layout.State
 	if err = layout.Prepare(); err != nil {
 		t.Fatal(err)
@@ -137,14 +157,14 @@ func TestVPNEndToEnd(t *testing.T) {
 	}
 	makeService := func() *environments.Service {
 		// Open reads the saved definitions, so a fresh service recovers from them.
-		ds, err := environments.Open(e, environments.Config{DataDir: layout.Data, Subnet: "10.219.0.0/16", SelfID: cfg.SelfID}, instance, log)
+		ds, err := environments.Open(eng, environments.Config{DataDir: layout.Data, DataHost: dataHost, Subnet: "10.219.0.0/16", SelfID: cfg.SelfID}, instance, log)
 		if err != nil {
 			t.Fatal(err)
 		}
-		manager := vpn.NewManager(e, store, state)
+		manager := vpn.NewManager(eng, store, state)
 		if !cfg.Production {
 			var release func()
-			manager, release = vpn.NewFixtureManager(e, store, state, resolver)
+			manager, release = vpn.NewFixtureManager(eng, store, state, resolver)
 			t.Cleanup(release)
 		}
 		manager.ForInstance(instance)
@@ -166,7 +186,7 @@ func TestVPNEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	ui, _ := fs.Sub(web.Dist, "dist")
-	s, err := New(Options{Log: log, Eng: e, Environments: ds, Accounts: accts, Layout: layout, UI: ui, DefaultImage: os.Getenv("CC_TEST_IMAGE")})
+	s, err := New(Options{Log: log, Eng: eng, Environments: ds, Accounts: accts, Layout: layout, UI: ui, DefaultImage: os.Getenv("CC_TEST_IMAGE")})
 	if err != nil {
 		t.Fatal(err)
 	}

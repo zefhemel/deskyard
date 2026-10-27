@@ -1,6 +1,9 @@
 """Opt-in scoped end-to-end fixture; never starts production main.
 prepare prints a private directory; start/check/lifecycle/cleanup consume it.
 Run each phase separately to permit a real browser screen inspection at ready.
+Like the supervisor, the fixture runs only in a container: the vpnintegration
+test binary, cross-compiled for the engine and mounted into deskyard:base, with
+the data folder at /data and the private directory at /e2e.
 """
 
 import argparse
@@ -9,7 +12,6 @@ import json
 import os
 import pathlib
 import secrets
-import signal
 import subprocess
 import tempfile
 import time
@@ -17,6 +19,9 @@ import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 LABEL = "deskyard.vpn.e2e-fixture"
+SUPERVISOR_IMAGE = "deskyard:base"  # as conftest.py: the base image, binary mounted
+INSIDE = "/e2e"  # the private directory inside the fixture supervisor's container
+GOARCH = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64", "arm64": "arm64"}
 
 
 def run(*args, input=None, env=None, check=True):
@@ -53,15 +58,17 @@ def wait_file(path, seconds=240):
 
 
 def prepare(mode):
-    if mode not in ("direct", "container", "preview"):
-        raise ValueError("mode must be direct, container, or preview")
+    if mode not in ("fixture", "preview"):
+        raise ValueError("mode must be fixture or preview")
     d = pathlib.Path(tempfile.mkdtemp(prefix="deskyard-vpn-e2e-", dir="/private/tmp"))
+    (d / "data").mkdir()
     scope = secrets.token_hex(8)
     prefix = "dy-e2e-" + scope[:10]
     cfg = {
         "Scope": scope,
         "Endpoint": prefix + "-endpoint",
-        "Listen": "127.0.0.1:0",
+        "SelfID": prefix + "-supervisor",
+        "Listen": "0.0.0.0:7343",
         "Keys": [],
         "mode": mode,
     }
@@ -190,10 +197,8 @@ def prepare(mode):
             "-ec",
             "tcpdump -l -nn -i nflog:5 >/tmp/forward-observation.txt 2>&1",
         )
-        if mode == "container":
-            docker("exec", cfg["Endpoint"], "ip", "link", "set", "wg0", "down")
-            cfg["SelfID"] = prefix + "-supervisor"
-            cfg["Listen"] = "0.0.0.0:7343"
+        # The tunnel starts down, to verify initial blocked internet access.
+        docker("exec", cfg["Endpoint"], "ip", "link", "set", "wg0", "down")
         write(d / "fixture.json", cfg)
         print(d)
     except BaseException:
@@ -203,12 +208,12 @@ def prepare(mode):
 
 def start(d):
     cfg = json.loads((d / "fixture.json").read_text())
-    env = os.environ.copy()
     image = os.environ.get("CC_TEST_IMAGE", "deskyard-debian-xfce:selkies")
-    env.update(DESKYARD_VPN_E2E_DIR=str(d), CC_TEST_IMAGE=image)
-    buildenv = env.copy()
-    if cfg["mode"] == "container":
-        buildenv.update(GOOS="linux", GOARCH="arm64", CGO_ENABLED="0")
+    arch = docker("info", "-f", "{{.Architecture}}")
+    if arch not in GOARCH:
+        raise RuntimeError(f"unsupported engine architecture {arch}")
+    buildenv = os.environ.copy()
+    buildenv.update(GOOS="linux", GOARCH=GOARCH[arch], CGO_ENABLED="0")
     run(
         "go",
         "test",
@@ -220,62 +225,43 @@ def start(d):
         "./internal/server",
         env=buildenv,
     )
-    if cfg["mode"] == "container":
-        docker(
-            "run",
-            "-d",
-            "--name",
-            cfg["SelfID"],
-            "--label",
-            f"{LABEL}={cfg['Scope']}",
-            "-v",
-            f"{d}:{d}",
-            "-v",
-            "/Users/zef/.orbstack/run/docker.sock:/var/run/docker.sock",
-            "-e",
-            f"DESKYARD_VPN_E2E_DIR={d}",
-            "-e",
-            "DOCKER_HOST=unix:///var/run/docker.sock",
-            "-e",
-            f"CC_TEST_IMAGE={image}",
-            "-p",
-            "127.0.0.1::7343",
-            "alpine:3.22",
-            str(d / "supervisor.test"),
-            "-test.run",
-            "^TestVPNEndToEnd$",
-            "-test.v",
-        )
-    else:
-        with (d / "supervisor.log").open("w") as log:
-            p = subprocess.Popen(
-                [
-                    str(d / "supervisor.test"),
-                    "-test.run",
-                    "^TestVPNEndToEnd$",
-                    "-test.v",
-                ],
-                env=env,
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-            )
-        (d / "pid").write_text(str(p.pid))
-        identity = native_process(p.pid)
-        if identity is None:
-            raise RuntimeError("fixture supervisor exited during startup")
-        write(d / "native-process.json", identity)
-    ready = wait_file(d / "ready.json")
-    if cfg["mode"] == "container":
-        port = docker(
-            "inspect",
-            "--format",
-            '{{(index (index .NetworkSettings.Ports "7343/tcp") 0).HostPort}}',
-            cfg["SelfID"],
-        )
-        url = "http://127.0.0.1:" + port
-    else:
-        url = "http://" + ready["listen"]
+    docker("build", "-q", "--target", "base", "-t", SUPERVISOR_IMAGE, str(ROOT))
+    docker(
+        "run",
+        "-d",
+        "--name",
+        cfg["SelfID"],
+        "--label",
+        f"{LABEL}={cfg['Scope']}",
+        "-v",
+        "/var/run/docker.sock:/var/run/docker.sock",
+        "-v",
+        f"{d / 'data'}:/data",
+        "-v",
+        f"{d}:{INSIDE}",
+        "-e",
+        f"DESKYARD_VPN_E2E_DIR={INSIDE}",
+        "-e",
+        "DOCKER_HOST=unix:///var/run/docker.sock",
+        "-e",
+        f"CC_TEST_IMAGE={image}",
+        "-p",
+        "127.0.0.1::7343",
+        "--entrypoint",
+        f"{INSIDE}/supervisor.test",
+        SUPERVISOR_IMAGE,
+        "-test.run",
+        "^TestVPNEndToEnd$",
+        "-test.v",
+    )
+    wait_file(d / "ready.json")
+    port = docker(
+        "inspect",
+        "--format",
+        '{{(index (index .NetworkSettings.Ports "7343/tcp") 0).HostPort}}',
+        cfg["SelfID"],
+    )
+    url = "http://127.0.0.1:" + port
     (d / "url").write_text(url)
     print(url)
 
@@ -381,90 +367,6 @@ def check(d):
     print("PASS real exec/files/screenshot/activity/proxy/browser for two desktops")
 
 
-def native_process(pid):
-    # Never inspect environment variables: the command/start identity contains
-    # only this private fixture binary path and Go test flags.
-    result = subprocess.run(
-        [
-            "ps",
-            "-ww",
-            "-p",
-            str(pid),
-            "-o",
-            "uid=",
-            "-o",
-            "stat=",
-            "-o",
-            "lstart=",
-            "-o",
-            "command=",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=5,
-    )
-    if (
-        result.returncode == 1
-        and not result.stdout.strip()
-        and not result.stderr.strip()
-    ):
-        return None
-    if result.returncode:
-        raise RuntimeError("cannot verify fixture process ownership")
-    fields = result.stdout.strip().split(None, 7)
-    if len(fields) != 8:
-        raise RuntimeError("cannot parse fixture process ownership")
-    if fields[1].startswith("Z"):
-        return None
-    return {
-        "uid": int(fields[0]),
-        "started": " ".join(fields[2:7]),
-        "command": fields[7],
-    }
-
-
-def stop_native(d):
-    if not (d / "pid").exists():
-        return  # Preparation or compilation failed before a process was started.
-    pid = int((d / "pid").read_text())
-    if pid <= 1:
-        raise RuntimeError("invalid fixture process ownership")
-    current = native_process(pid)
-    if current is None:
-        return
-    identity_path = d / "native-process.json"
-    if not identity_path.exists():
-        raise RuntimeError(
-            "missing fixture process ownership record; stop the original process first"
-        )
-    expected = json.loads(identity_path.read_text())
-    command = f"{d}/supervisor.test -test.run ^TestVPNEndToEnd$ -test.v"
-    if expected.get("uid") != os.getuid() or expected.get("command") != command:
-        raise RuntimeError("fixture process ownership mismatch")
-    for sig, seconds in ((signal.SIGTERM, 10), (signal.SIGKILL, 5)):
-        # Revalidate before each signal and throughout the wait. A reused PID
-        # aborts cleanup rather than receiving a signal or permitting deletion.
-        current = native_process(pid)
-        if current is None:
-            return
-        if current != expected:
-            raise RuntimeError("fixture process ownership changed")
-        try:
-            os.kill(pid, sig)
-        except ProcessLookupError:
-            return
-        deadline = time.monotonic() + seconds
-        while time.monotonic() < deadline:
-            current = native_process(pid)
-            if current is None:
-                return
-            if current != expected:
-                raise RuntimeError("fixture process ownership changed while waiting")
-            time.sleep(0.1)
-    raise RuntimeError("fixture supervisor shutdown deadline; resources preserved")
-
-
 def stop_container_supervisor(cfg):
     scope = cfg["Scope"]
     for rid in docker(
@@ -486,10 +388,7 @@ def stop_container_supervisor(cfg):
 def cleanup(d):
     cfg = json.loads((d / "fixture.json").read_text())
     scope = cfg["Scope"]
-    if cfg["mode"] == "container":
-        stop_container_supervisor(cfg)
-    else:
-        stop_native(d)
+    stop_container_supervisor(cfg)
     for kind in ("container", "network"):
         args = [kind, "ls", "--no-trunc", "-q", "--filter", f"label={LABEL}={scope}"]
         if kind == "container":
