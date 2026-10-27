@@ -26,7 +26,9 @@ supervisor/
   web/              the UI: Preact + TypeScript + Tailwind, built with Vite
   tests/            integration tests against a real engine
   Dockerfile        node build -> go build -> alpine
-  compose.yaml      the supervisor in a container
+  compose.yaml      the supervisor built from this checkout, for development
+deploy/
+  compose.yaml      the supervisor's published image, for production
 images/
   Dockerfile       build stages and the XFCE desktop target
   common/          shared rootfs and streaming patches

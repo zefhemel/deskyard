@@ -58,12 +58,24 @@ docker run -d --name deskyard --restart unless-stopped \
   ghcr.io/zefhemel/deskyard:latest
 ```
 
-Or with Compose, using [`compose.yaml`](compose.yaml) from this repository:
+Or with Compose, in a `compose.yaml`:
 
-```bash
-curl -fsSLO https://raw.githubusercontent.com/zefhemel/deskyard/main/compose.yaml
-DESKYARD_DATA_DIR=/srv/deskyard docker compose up -d
+```yaml
+services:
+  supervisor:
+    image: ghcr.io/zefhemel/deskyard:latest
+    restart: unless-stopped
+    environment:
+      DESKYARD_DATA_DIR: /srv/deskyard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /srv/deskyard:/srv/deskyard
+    ports:
+      - "127.0.0.1:7343:7343"
 ```
+
+and `docker compose up -d`. [`deploy/compose.yaml`](deploy/compose.yaml) is
+the same with comments and the HTTPS options.
 
 On first start the supervisor creates the account `admin` and prints its
 generated password once in its log (`docker logs deskyard`, or

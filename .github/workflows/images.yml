@@ -52,7 +52,7 @@ jobs:
       - id: list
         name: Image directories and today's version
         run: |
-          images=$(docker buildx bake --print | jq -c '.group.default.targets')
+          images=$(docker buildx bake -f docker-bake.hcl --print | jq -c '.group.default.targets')
           echo "images=$images" >> "$GITHUB_OUTPUT"
           echo "version=$(date -u +%Y.%m.%d)" >> "$GITHUB_OUTPUT"
           echo "Images: $images"

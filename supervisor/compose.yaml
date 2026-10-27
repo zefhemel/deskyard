@@ -5,8 +5,7 @@
 #   docker compose logs supervisor     # first start: the generated admin password
 #
 # then open http://localhost:7343. Rerun the first command after a change.
-# Production uses the published image instead: see compose.yaml in the
-# repository root.
+# Production uses the published image instead: see deploy/compose.yaml.
 
 services:
   supervisor:
