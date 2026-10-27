@@ -2,7 +2,7 @@ import { useState } from "preact/hooks";
 import { useLocation, useRoute } from "preact-iso";
 import { api } from "../api.ts";
 import { BackupsPanel } from "../components/backups-panel.tsx";
-import { Page } from "../components/topbar.tsx";
+import { Page, useTitle } from "../components/topbar.tsx";
 import { Button, ErrorText, Tag } from "../components/ui.tsx";
 import { useFetch } from "../lib/use-fetch.ts";
 import { BackupTag, DeleteVolume, VolumeCard } from "./volumes.tsx";
@@ -17,6 +17,7 @@ export function VolumeDetailsPage() {
   const backup = useFetch(() => api.backup("volume", name), `backup-volume-${name}`);
   const [removing, setRemoving] = useState(false);
   const v = list.data?.volumes.find((x) => x.name === name);
+  useTitle(name, "Storage");
   return (
     <Page>
       <div class="mb-2 text-sm">

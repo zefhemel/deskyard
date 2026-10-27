@@ -10,7 +10,7 @@ import { Monitor } from "../components/screen.tsx";
 import { NoticeLine } from "../components/tile.tsx";
 import { useReclaimMemoryItem } from "../components/reclaim-memory.tsx";
 import { ForwardLines } from "../components/viewers-popover.tsx";
-import { Page } from "../components/topbar.tsx";
+import { Page, useTitle } from "../components/topbar.tsx";
 import { btnClass, Button, cx, Meter, Status, Tag } from "../components/ui.tsx";
 import { UpgradeDialog } from "../dialogs/upgrade.tsx";
 import { useEnvironment, useLive, useNow } from "../live.tsx";
@@ -80,6 +80,7 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
   const setTab = (t: Tab) =>
     route(`/environments/${c.name}${t === "overview" ? "" : `?tab=${t}`}`, true);
   const reclaim = useReclaimMemoryItem(c.name, !!c.job);
+  useTitle(tab === "overview" ? undefined : tabs.find((t) => t.id === tab)?.label, c.name);
 
   return (
     <Page>

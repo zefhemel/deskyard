@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 import { api, ApiError } from "../api.ts";
 import { Logo } from "../components/logo.tsx";
+import { useTitle } from "../components/topbar.tsx";
 import { Button, Field } from "../components/ui.tsx";
 import { safeNext } from "../lib/access.ts";
 
@@ -27,6 +28,7 @@ function Mini({ dark, wide }: { dark?: boolean; wide?: boolean }) {
 }
 
 export function LoginPage() {
+  useTitle("Sign in");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);

@@ -25,7 +25,7 @@ export function StoragePage() {
   const tab: StorageTab = TABS.find((t) => t.id === query.tab)?.id ?? "volumes";
   return (
     <Page>
-      <PageHead title="Storage" />
+      <PageHead title="Storage" tab={TABS.find((t) => t.id === tab)?.label} />
       <nav class="mb-6 flex gap-1 overflow-x-auto border-b border-line [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="tablist">
         {TABS.map((t) => (
           <button

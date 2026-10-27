@@ -1,5 +1,5 @@
 import type { ComponentChildren } from "preact";
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { api } from "../api.ts";
 import { useLive } from "../live.tsx";
@@ -104,7 +104,17 @@ export function Page({ children }: { children: ComponentChildren }) {
   );
 }
 
-export function PageHead({ title, sub, children }: { title: string; sub?: ComponentChildren; children?: ComponentChildren }) {
+/** Sets the browser's title: the most specific part first, then Deskyard. */
+export function useTitle(...parts: (string | undefined)[]) {
+  const title = [...parts.filter(Boolean), "Deskyard"].join(" · ");
+  useEffect(() => {
+    document.title = title;
+  }, [title]);
+}
+
+/** A page's heading, which is also its browser title; tab names the shown tab, if any. */
+export function PageHead({ title, tab, sub, children }: { title: string; tab?: string; sub?: ComponentChildren; children?: ComponentChildren }) {
+  useTitle(tab, title);
   return (
     <div class="mb-[22px] flex flex-wrap items-baseline gap-x-4 gap-y-2">
       <h1 class="text-[26px] leading-tight font-bold tracking-[-0.015em]">{title}</h1>
