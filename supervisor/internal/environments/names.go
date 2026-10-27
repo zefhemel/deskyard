@@ -14,7 +14,7 @@ var reserved = map[string]bool{
 	"healthz": true, "favicon.ico": true, "robots.txt": true,
 	// The UI's own pages.
 	"desktops": true, "environments": true, "images": true, "accounts": true,
-	"volumes": true,
+	"volumes": true, "link": true, "cli-login": true, "account": true,
 }
 
 // ValidName checks an environment name: DNS label rules (so it also works as a

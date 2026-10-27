@@ -143,7 +143,10 @@ var (
 	ErrNotFound  = errors.New("no such account")
 	ErrExists    = errors.New("an account with that name already exists")
 	ErrLastAdmin = errors.New("the last admin with a password can't be deleted, made a regular account or lose the password")
-	usernameRE   = regexp.MustCompile(`^[a-z][a-z0-9._-]{0,31}$`)
+	// ErrAdminExpires keeps the last-admin guard whole: an admin with a
+	// password never expires, so the expiry sweep can't remove one.
+	ErrAdminExpires = errors.New("admins with a password can't expire")
+	usernameRE      = regexp.MustCompile(`^[a-z][a-z0-9._-]{0,31}$`)
 )
 
 func ValidUsername(u string) error {
@@ -342,6 +345,9 @@ func (s *Store) Create(n NewAccount) (Account, error) {
 	if err := validGrants(n.Grants); err != nil {
 		return Account{}, err
 	}
+	if n.Admin && n.Password != "" && n.Expires != nil {
+		return Account{}, ErrAdminExpires
+	}
 	a := Account{ID: randomID(), Username: username, Description: n.Description, Admin: n.Admin,
 		Grants: slices.Clone(n.Grants), Expires: n.Expires, Created: time.Now().UTC()}
 	if n.Password != "" {
@@ -380,6 +386,10 @@ func (s *Store) Update(username string, fn func(a *Account)) (Account, error) {
 	if err := validGrants(a.Grants); err != nil {
 		s.mu.Unlock()
 		return Account{}, err
+	}
+	if passwordAdmin(a) && a.Expires != nil {
+		s.mu.Unlock()
+		return Account{}, ErrAdminExpires
 	}
 	if passwordAdmin(before) && !passwordAdmin(a) && s.passwordAdmins() == 1 {
 		s.mu.Unlock()

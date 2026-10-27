@@ -160,6 +160,27 @@ func TestLastPasswordAdminGuard(t *testing.T) {
 	}
 }
 
+func TestPasswordAdminsCantExpire(t *testing.T) {
+	s, _ := Load(t.TempDir())
+	_, _ = s.EnsureAdmin("admin", "x")
+	soon := time.Now().Add(time.Hour)
+	if _, err := s.Create(NewAccount{Username: "boss", Password: "y", Admin: true, Expires: &soon}); !errors.Is(err, ErrAdminExpires) {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := s.Update("admin", func(a *Account) { a.Expires = &soon }); !errors.Is(err, ErrAdminExpires) {
+		t.Fatalf("expire admin: %v", err)
+	}
+	if _, err := s.Create(NewAccount{Username: "bob", Password: "y", Expires: &soon}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Update("bob", func(a *Account) { a.Admin = true }); !errors.Is(err, ErrAdminExpires) {
+		t.Fatalf("promote expiring account: %v", err)
+	}
+	if _, err := s.Create(NewAccount{Username: "robot", Admin: true, Expires: &soon}); err != nil {
+		t.Fatalf("token admin with expiry: %v", err)
+	}
+}
+
 func TestSetAccessLevels(t *testing.T) {
 	s, _ := Load(t.TempDir())
 	_, _ = s.EnsureAdmin("admin", "x")

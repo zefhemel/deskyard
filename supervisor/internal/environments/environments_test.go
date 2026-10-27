@@ -14,7 +14,7 @@ func TestValidName(t *testing.T) {
 			t.Errorf("%q: %v", ok, err)
 		}
 	}
-	for _, bad := range []string{"", "a", "Alice", "1abc", "abc-", "a_b", "api", "login", "_x", "desktops", "environments", "volumes", "x234567890123456789012345678901ab"} {
+	for _, bad := range []string{"", "a", "Alice", "1abc", "abc-", "a_b", "api", "login", "_x", "desktops", "environments", "volumes", "link", "cli-login", "account", "x234567890123456789012345678901ab"} {
 		if ValidName(bad) == nil {
 			t.Errorf("%q accepted", bad)
 		}
