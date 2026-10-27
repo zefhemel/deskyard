@@ -26,6 +26,9 @@ type catalogEntry struct {
 	// Legacy locally built images retain their update policy; the update
 	// check never pulls them.
 	Custom bool `json:"custom,omitempty"`
+	// Previous are the image IDs Newest moved away from, oldest first:
+	// the only images pruning may delete.
+	Previous []string `json:"previous,omitempty"`
 }
 
 type catalog struct {
@@ -87,7 +90,8 @@ func (c *catalog) setNewest(ref, id string) error {
 	now := time.Now().UTC()
 	for i := range next {
 		if sameRef(next[i].Ref, ref) {
-			next[i].Newest, next[i].Checked = id, &now
+			next[i].moveNewest(id)
+			next[i].Checked = &now
 			return c.publish(next)
 		}
 	}
@@ -95,6 +99,49 @@ func (c *catalog) setNewest(ref, id string) error {
 		return c.publish(append(next, catalogEntry{Ref: image.Ref, Newest: id, Checked: &now}))
 	}
 	return nil
+}
+
+// moveNewest makes id the newest version, recording the one it replaces.
+func (e *catalogEntry) moveNewest(id string) {
+	if e.Newest != "" && e.Newest != id && !slices.Contains(e.Previous, e.Newest) {
+		e.Previous = append(slices.Clone(e.Previous), e.Newest)
+	}
+	e.Previous = slices.DeleteFunc(slices.Clone(e.Previous), func(p string) bool { return p == id })
+	e.Newest = id
+}
+
+// previous is every version the catalog's entries replaced.
+func (c *catalog) previous() map[string]bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := map[string]bool{}
+	for _, e := range c.list {
+		for _, id := range e.Previous {
+			out[id] = true
+		}
+	}
+	return out
+}
+
+// forget drops ids from the entries' previous versions.
+func (c *catalog) forget(ids map[string]bool) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	next := slices.Clone(c.list)
+	changed := false
+	for i := range next {
+		kept := slices.DeleteFunc(slices.Clone(next[i].Previous), func(id string) bool { return ids[id] })
+		if len(kept) != len(next[i].Previous) {
+			next[i].Previous, changed = kept, true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return c.publish(next)
 }
 
 // noteLocal records a local resolution without counting it as a registry check.
@@ -107,7 +154,7 @@ func (c *catalog) noteLocal(ref, id string) error {
 			if next[i].Newest == id {
 				return nil
 			}
-			next[i].Newest = id
+			next[i].moveNewest(id)
 			return c.publish(next)
 		}
 	}
@@ -136,13 +183,17 @@ func (c *catalog) entry(ref string) (catalogEntry, bool) {
 	return catalogEntry{}, false
 }
 
-// put adds e, or replaces the entry with the same ref.
+// put adds e, or replaces the entry with the same ref, keeping the versions
+// it replaced.
 func (c *catalog) put(e catalogEntry) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	next := slices.Clone(c.list)
 	for i := range next {
 		if sameRef(next[i].Ref, e.Ref) {
+			old := next[i]
+			old.moveNewest(e.Newest)
+			e.Previous = old.Previous
 			next[i] = e
 			return c.publish(next)
 		}
@@ -238,21 +289,26 @@ func (s *Server) checkImages(ctx context.Context, progress func(string, float64)
 }
 
 // pruneImages deletes desktop image versions that nothing uses any more:
-// ones no tag names (an older version that a newer pull or build of its tag
-// replaced), that no container runs from and that no environment definition
-// or catalog entry pins. Tagged images, local builds and custom images
-// included, are never touched, and the engine refuses any image a container
-// still uses. Failures are logged; the next check tries again.
+// ones this supervisor's catalog replaced with a newer pull or build of
+// their tag, that no tag names any more, that no container runs from and
+// that no environment definition or catalog entry pins. Versions this
+// catalog never had are never touched: another supervisor on the same
+// engine may pin them without a container. Tagged images, local builds and
+// custom images included, are never touched either, and the engine refuses
+// any image a container still uses. A version removed or gone is
+// forgotten. Failures are logged; the next check tries again.
 func (s *Server) pruneImages(ctx context.Context) {
 	pruner, ok := s.Eng.(engine.ImagePruner)
 	if !ok {
 		return
 	}
+	replaced := s.images.previous()
+	if len(replaced) == 0 {
+		return
+	}
 	old, err := pruner.DanglingImages(ctx, map[string]string{"deskyard.kind": "desktop"})
-	if err != nil || len(old) == 0 {
-		if err != nil {
-			s.Log.Warn("listing old desktop images", "err", err)
-		}
+	if err != nil {
+		s.Log.Warn("listing old desktop images", "err", err)
 		return
 	}
 	keep, err := s.Environments.ImagesInUse(ctx)
@@ -263,17 +319,36 @@ func (s *Server) pruneImages(ctx context.Context) {
 	for _, e := range s.images.entries() {
 		keep[s.images.newest(e.Ref)] = true
 	}
+	gone := map[string]bool{}
+	dangling := map[string]bool{}
 	for _, img := range old {
-		if keep[img.ID] {
+		dangling[img.ID] = true
+		if !replaced[img.ID] || keep[img.ID] {
 			continue
 		}
 		if err := pruner.RemoveImage(ctx, img.ID); err != nil {
-			if !errors.Is(err, engine.ErrNotFound) {
+			if errors.Is(err, engine.ErrNotFound) {
+				gone[img.ID] = true
+			} else {
 				s.Log.Warn("removing an old desktop image", "id", img.ID, "err", err)
 			}
 			continue
 		}
+		gone[img.ID] = true
 		s.Log.Info("removed an old desktop image", "id", img.ID, "bytes", img.Size)
+	}
+	// A replaced version that is still tagged stays recorded; one that has
+	// left the engine otherwise is forgotten.
+	for id := range replaced {
+		if dangling[id] {
+			continue
+		}
+		if _, err := s.Eng.ImageInspect(ctx, id); errors.Is(err, engine.ErrNotFound) {
+			gone[id] = true
+		}
+	}
+	if err := s.images.forget(gone); err != nil {
+		s.Log.Warn("forgetting removed desktop images", "err", err)
 	}
 }
 

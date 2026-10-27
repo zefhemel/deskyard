@@ -49,10 +49,12 @@ CI rebuilds it weekly (Debian security updates) and on every change, tagged `lat
 now"); available images stay undownloaded. The catalog shows **Available**,
 **Installed** or **Update available** when environments are behind.
 After each check and each upgrade, the supervisor deletes old versions of
-desktop images that nothing uses any more: images no tag names (a newer pull
-or build replaced them), that no container runs from, stopped ones included,
-and that no environment pins. Tagged images, such as local builds and custom
-images, are never deleted.
+desktop images that nothing uses any more: images it saw a newer pull or
+build of the same tag replace, that no tag names any more, that no container
+runs from, stopped ones included, and that no environment pins. Versions it
+never saw replaced, such as another supervisor's on the same Docker engine,
+and tagged images, such as local builds and custom images, are never
+deleted.
 
 Upgrading an environment recreates its container on the new image with the same
 settings and folder; the Images page can upgrade all environments on an image
