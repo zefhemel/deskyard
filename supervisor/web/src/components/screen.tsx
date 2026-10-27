@@ -40,7 +40,7 @@ interface MonitorProps {
   job?: Job | undefined;
   now: number;
   big?: boolean;
-  /** Where clicking the screen goes; the desktop when unset. The Open desktop button always opens the desktop. */
+  /** Where clicking the screen goes; the desktop when unset. The Open button always opens the desktop. */
   href?: string;
 }
 
@@ -81,7 +81,7 @@ export function Monitor({ environment: c, job, now, big, href }: MonitorProps) {
         <a href={desktop} title={`Open ${c.name}'s desktop`} class={cx(bezel, "group", outline)}>
           <div class={glass}>
             {inner}
-            <span class={button}>Open desktop</span>
+            <span class={button}>Open</span>
           </div>
         </a>
       );
@@ -93,7 +93,7 @@ export function Monitor({ environment: c, job, now, big, href }: MonitorProps) {
           <div class={glass}>{inner}</div>
         </a>
         <a href={desktop} title={`Open ${c.name}'s desktop`} class={cx(button, "hover:brightness-110 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-white", big ? "" : "mr-[7px] mb-[7px]")}>
-          Open desktop
+          Open
         </a>
       </div>
     );
