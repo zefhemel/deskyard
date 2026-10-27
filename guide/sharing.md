@@ -12,7 +12,9 @@ levels:
 - **Observe**: watch the desktop and nothing else. The supervisor drops an
   observer's keyboard, mouse, clipboard and resize messages before they reach
   the desktop, and refuses its terminal, files, processes, CLI and settings.
-  Observers show as "observing" next to the viewers.
+  Observers show as "observing" next to the viewers. Observers don't see the
+  mouse pointer: it isn't part of the picture, and each controlling browser
+  draws its own.
 
 | | Admin | Full access | Observe |
 | --- | --- | --- | --- |
