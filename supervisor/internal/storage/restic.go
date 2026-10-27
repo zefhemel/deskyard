@@ -127,11 +127,22 @@ func (t Tool) call(repo Repo, mounts []engine.Mount, args ...string) Call {
 	}
 }
 
-// failure is the error of a failed command: its last meaningful stderr line.
+// failure is the error of a failed command: restic's JSON exit error, or
+// else its last meaningful stderr line.
 func failure(what string, res Result) error {
 	msg := ""
 	for _, l := range strings.Split(res.Stderr, "\n") {
 		l = strings.TrimSpace(l)
+		var e struct {
+			MessageType string `json:"message_type"`
+			Message     string `json:"message"`
+		}
+		if json.Unmarshal([]byte(l), &e) == nil && e.MessageType != "" {
+			if e.MessageType == "exit_error" {
+				msg = e.Message
+			}
+			continue
+		}
 		if l != "" && (msg == "" || !strings.HasPrefix(msg, "Fatal:") || strings.HasPrefix(l, "Fatal:")) {
 			msg = l // the last Fatal: line, or else the last line
 		}
@@ -200,6 +211,33 @@ func (t Tool) Snapshots(ctx context.Context, repo Repo, tag string) ([]Snapshot,
 	return snaps, nil
 }
 
+// fileErrors are restic's per-file errors, reported as JSON on stderr with
+// --json, split into the harmless and the others. restic lists extended
+// attributes through symbolic links, so a link that dangles in the helper
+// (a home's links into the desktop image do) is an xattr error that loses
+// nothing: those are harmless.
+func fileErrors(stderr string) (harmless int, others []string) {
+	for _, l := range strings.Split(stderr, "\n") {
+		var e progressLine
+		if json.Unmarshal([]byte(strings.TrimSpace(l)), &e) != nil || e.MessageType != "error" || e.Error == nil {
+			continue
+		}
+		if strings.Contains(e.Error.Message, "xattr.list") && strings.Contains(e.Error.Message, "no such file or directory") {
+			harmless++
+			continue
+		}
+		others = append(others, strings.TrimSpace(e.Error.Message))
+	}
+	return harmless, others
+}
+
+func firstOf(errs []string, n int) string {
+	if len(errs) > n {
+		return strings.Join(errs[:n], "; ") + fmt.Sprintf(" and %d more", len(errs)-n)
+	}
+	return strings.Join(errs, "; ")
+}
+
 // progressLine is a line of restic's --json output for backup and restore.
 type progressLine struct {
 	MessageType   string  `json:"message_type"`
@@ -259,8 +297,9 @@ func (p *progressWriter) line(line []byte) {
 }
 
 // Backup backs up paths (inside the helper, from the src mounts) as a new
-// snapshot tagged tags, and returns its ID. Unreadable files fail it.
-func (t Tool) Backup(ctx context.Context, repo Repo, src []engine.Mount, paths, tags []string, progress func(float64, string)) (string, error) {
+// snapshot tagged tags, and returns its ID. Files that couldn't be read are
+// left out of it and returned as warnings.
+func (t Tool) Backup(ctx context.Context, repo Repo, src []engine.Mount, paths, tags []string, progress func(float64, string)) (string, []string, error) {
 	args := []string{"backup", "--json", "--host", t.Host, "--exclude-caches", "--retry-lock", "10m"}
 	for _, tag := range tags {
 		args = append(args, "--tag", tag)
@@ -271,19 +310,26 @@ func (t Tool) Backup(ctx context.Context, repo Repo, src []engine.Mount, paths, 
 	c.Stdout = pw
 	res, err := t.Run.Run(ctx, c)
 	if err != nil {
-		return "", fmt.Errorf("backing up: %w", err)
+		return "", nil, fmt.Errorf("backing up: %w", err)
 	}
-	if res.Code != 0 {
-		// 3: a snapshot was made, but some files couldn't be read.
-		if res.Code == 3 && len(pw.errs) > 0 {
-			return "", fmt.Errorf("backing up: some files couldn't be read: %s", strings.Join(pw.errs, "; "))
+	_, others := fileErrors(res.Stderr)
+	others = append(others, pw.errs...)
+	switch {
+	case res.Code == 3 && pw.snapshot != "":
+		// A snapshot was made, without the files that couldn't be read.
+		if len(others) > 20 {
+			others = append(others[:20], fmt.Sprintf("and %d more", len(others)-20))
 		}
-		return "", failure("backing up", res)
+		return pw.snapshot, others, nil
+	case res.Code != 0:
+		if len(others) > 0 {
+			return "", nil, fmt.Errorf("%w (%s)", failure("backing up", res), firstOf(others, 3))
+		}
+		return "", nil, failure("backing up", res)
+	case pw.snapshot == "":
+		return "", nil, errors.New("backing up: restic reported no snapshot")
 	}
-	if pw.snapshot == "" {
-		return "", errors.New("backing up: restic reported no snapshot")
-	}
-	return pw.snapshot, nil
+	return pw.snapshot, nil, nil
 }
 
 // Forget forgets this host's snapshots tagged tag beyond keep.
@@ -354,11 +400,16 @@ func (t Tool) Restore(ctx context.Context, repo Repo, snapshot, subpath string, 
 	if err != nil {
 		return fmt.Errorf("restoring: %w", err)
 	}
-	if res.Code != 0 {
-		if len(pw.errs) > 0 {
-			return fmt.Errorf("restoring: %s", strings.Join(pw.errs, "; "))
-		}
-		return failure("restoring", res)
+	if res.Code == 0 {
+		return nil
 	}
-	return nil
+	harmless, others := fileErrors(res.Stderr)
+	others = append(others, pw.errs...)
+	switch {
+	case len(others) > 0:
+		return fmt.Errorf("restoring: %s", firstOf(others, 5))
+	case harmless > 0:
+		return nil // only links' xattrs, which can't be set on a dangling link
+	}
+	return failure("restoring", res)
 }

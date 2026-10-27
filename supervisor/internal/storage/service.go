@@ -411,6 +411,9 @@ func (s *Service) backUp(ctx context.Context, it Item, reason string, progress f
 		st.LastAttempt = start
 		st.Error = ""
 		if err != nil {
+			st.Warnings = nil
+		}
+		if err != nil {
 			st.Error = err.Error()
 		}
 		if rerr := s.State.Record(it, st); rerr != nil && s.Log != nil {
@@ -438,13 +441,13 @@ func (s *Service) backUp(ctx context.Context, it Item, reason string, progress f
 		return err
 	}
 	progress("Backing up "+it.String(), 0)
-	id, err := s.Tool.Backup(ctx, repo, mounts, []string{root}, []string{"deskyard", it.Tag(), reason}, func(frac float64, msg string) {
+	id, warnings, err := s.Tool.Backup(ctx, repo, mounts, []string{root}, []string{"deskyard", it.Tag(), reason}, func(frac float64, msg string) {
 		progress("Backing up: "+msg, frac)
 	})
 	if err != nil {
 		return err
 	}
-	st.LastSuccess, st.Snapshot = start, id
+	st.LastSuccess, st.Snapshot, st.Warnings = start, id, warnings
 	progress("Forgetting old snapshots", -1)
 	if err := s.Tool.Forget(ctx, repo, it.Tag(), p.Retention); err != nil {
 		return err

@@ -298,12 +298,14 @@ func sortedPolicies(m map[Item]Policy) []Policy {
 }
 
 // RunState is what happened to an item's backups: the last attempt and
-// success, the snapshot it made, and the last error ("" after a success).
+// success, the snapshot it made, the last error ("" after a success), and the
+// files the last snapshot left out because they couldn't be read.
 type RunState struct {
 	LastAttempt time.Time `json:"lastAttempt"`
 	LastSuccess time.Time `json:"lastSuccess"`
 	Snapshot    string    `json:"snapshot,omitempty"`
 	Error       string    `json:"error,omitempty"`
+	Warnings    []string  `json:"warnings,omitempty"`
 }
 
 type stateFile struct {

@@ -59,7 +59,7 @@ func TestBackupArgsAndEnv(t *testing.T) {
 		return `{"message_type":"summary","snapshot_id":"abcdef0123456789"}` + "\n", Result{}, nil
 	}}
 	src := []engine.Mount{{Source: "/data/volume/photos", Target: "/deskyard/volume/photos", ReadOnly: true}}
-	if _, err := testTool(f).Backup(context.Background(), testRepo, src, []string{"/deskyard/volume/photos"}, []string{"deskyard", "volume:photos", "manual"}, nil); err != nil {
+	if _, _, err := testTool(f).Backup(context.Background(), testRepo, src, []string{"/deskyard/volume/photos"}, []string{"deskyard", "volume:photos", "manual"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	c := f.last()
@@ -104,7 +104,7 @@ func TestBackupParsesSummary(t *testing.T) {
 `
 	f := &fakeRunner{reply: func(Call) (string, Result, error) { return out, Result{}, nil }}
 	var seen []float64
-	id, err := testTool(f).Backup(context.Background(), testRepo, nil, []string{"/x"}, nil, func(frac float64, msg string) { seen = append(seen, frac) })
+	id, _, err := testTool(f).Backup(context.Background(), testRepo, nil, []string{"/x"}, nil, func(frac float64, msg string) { seen = append(seen, frac) })
 	if err != nil || id != "abcdef0123456789" {
 		t.Fatalf("id %q err %v", id, err)
 	}
@@ -117,16 +117,60 @@ func TestBackupFailureCarriesStderr(t *testing.T) {
 	f := &fakeRunner{reply: func(Call) (string, Result, error) {
 		return "", Result{Code: 1, Stderr: "Fatal: unable to open repository at rclone:nas:x: connection refused\n"}, nil
 	}}
-	_, err := testTool(f).Backup(context.Background(), testRepo, nil, []string{"/x"}, nil, nil)
+	_, _, err := testTool(f).Backup(context.Background(), testRepo, nil, []string{"/x"}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "connection refused") {
 		t.Fatalf("got %v", err)
 	}
-	// Exit 3 is a snapshot with unreadable files: a failure here, never a success.
-	f.reply = func(Call) (string, Result, error) {
-		return `{"message_type":"summary","snapshot_id":"abc"}` + "\n", Result{Code: 3, Stderr: "error: open /x/locked: permission denied\n"}, nil
+}
+
+const xattrErr = `{"message_type":"error","error":{"message":"incomplete metadata for /x/link: xattr.list /x/link: no such file or directory"},"during":"archival","item":"/x/link"}`
+
+// Homes link into the desktop image, so their links dangle in a helper:
+// restic can't list those links' xattrs. That loses nothing and isn't a warning.
+func TestBackupIgnoresDanglingSymlinkXattrs(t *testing.T) {
+	f := &fakeRunner{reply: func(Call) (string, Result, error) {
+		return `{"message_type":"summary","snapshot_id":"abc"}` + "\n", Result{Code: 3, Stderr: xattrErr + "\n" + `{"message_type":"exit_error","code":3,"message":"Warning: at least one source file could not be read"}` + "\n"}, nil
+	}}
+	id, warnings, err := testTool(f).Backup(context.Background(), testRepo, nil, []string{"/x"}, nil, nil)
+	if err != nil || id != "abc" || len(warnings) != 0 {
+		t.Fatalf("%q %v %v", id, warnings, err)
 	}
-	if _, err := testTool(f).Backup(context.Background(), testRepo, nil, []string{"/x"}, nil, nil); err == nil || !strings.Contains(err.Error(), "permission denied") {
-		t.Fatalf("exit 3: %v", err)
+}
+
+// Exit 3 is a snapshot with some files unreadable: it is made, with warnings.
+func TestBackupUnreadableFilesWarn(t *testing.T) {
+	f := &fakeRunner{reply: func(Call) (string, Result, error) {
+		return `{"message_type":"summary","snapshot_id":"abc"}` + "\n", Result{Code: 3, Stderr: xattrErr + "\n" +
+			`{"message_type":"error","error":{"message":"open /x/locked: permission denied"},"during":"archival","item":"/x/locked"}` + "\n"}, nil
+	}}
+	id, warnings, err := testTool(f).Backup(context.Background(), testRepo, nil, []string{"/x"}, nil, nil)
+	if err != nil || id != "abc" || len(warnings) != 1 || !strings.Contains(warnings[0], "permission denied") {
+		t.Fatalf("%q %v %v", id, warnings, err)
+	}
+}
+
+func TestRestoreIgnoresDanglingSymlinkXattrs(t *testing.T) {
+	restoreXattr := `{"message_type":"error","error":{"message":"xattr.list /target/.claude/skills/b: no such file or directory"},"during":"restore","item":"/.claude/skills/b"}`
+	f := &fakeRunner{reply: func(Call) (string, Result, error) {
+		return "", Result{Code: 1, Stderr: restoreXattr + "\n" + restoreXattr + "\n" + `{"message_type":"exit_error","code":1,"message":"Fatal: There were 2 errors"}` + "\n"}, nil
+	}}
+	if err := testTool(f).Restore(context.Background(), testRepo, "a", "/x", engine.Mount{Source: "/t"}, nil, false, nil); err != nil {
+		t.Fatalf("harmless errors failed the restore: %v", err)
+	}
+	f.reply = func(Call) (string, Result, error) {
+		return "", Result{Code: 1, Stderr: restoreXattr + "\n" + `{"message_type":"error","error":{"message":"write /target/big: no space left on device"},"during":"restore","item":"/big"}` + "\n" + `{"message_type":"exit_error","code":1,"message":"Fatal: There were 2 errors"}` + "\n"}, nil
+	}
+	err := testTool(f).Restore(context.Background(), testRepo, "a", "/x", engine.Mount{Source: "/t"}, nil, false, nil)
+	if err == nil || !strings.Contains(err.Error(), "no space left") || strings.Contains(err.Error(), "xattr") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+// restic --json reports a fatal error as JSON on stderr.
+func TestFailureReadsJSONExitError(t *testing.T) {
+	err := failure("backing up", Result{Code: 1, Stderr: "rclone: NOTICE: something\n" + `{"message_type":"exit_error","code":1,"message":"Fatal: unable to open repository: 401"}` + "\n"})
+	if err == nil || err.Error() != "backing up: unable to open repository: 401" {
+		t.Fatalf("got %v", err)
 	}
 }
 

@@ -336,3 +336,23 @@ func TestSnapshotsAreThisHostsAndItems(t *testing.T) {
 		t.Fatalf("listing not cached: %d calls", calls)
 	}
 }
+
+func TestBackUpRecordsWarnings(t *testing.T) {
+	f := &fakeRunner{reply: func(c Call) (string, Result, error) {
+		if c.Args[1] == "backup" {
+			return `{"message_type":"summary","snapshot_id":"snap1"}` + "\n", Result{Code: 3, Stderr: `{"message_type":"error","error":{"message":"open /x/locked: permission denied"},"during":"archival","item":"/x/locked"}` + "\n"}, nil
+		}
+		return resticReply(c)
+	}}
+	s, env := testService(t, f)
+	env.addVolume(t, "photos")
+	it := Item{KindVolume, "photos"}
+	_ = s.Store.PutPolicy(policyOf(it))
+	if err := s.BackUp(context.Background(), it, ReasonManual, nil); err != nil {
+		t.Fatal(err)
+	}
+	st := s.State.Get(it)
+	if st.Snapshot != "snap1" || st.Error != "" || len(st.Warnings) != 1 || !strings.Contains(st.Warnings[0], "permission denied") {
+		t.Fatalf("state %+v", st)
+	}
+}

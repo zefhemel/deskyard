@@ -127,7 +127,7 @@ func TestResticRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	src := []engine.Mount{{Source: filepath.Join(root, "data"), Target: "/deskyard/volume/v", ReadOnly: true}}
-	id, err := tool.Backup(ctx, repo, src, []string{"/deskyard/volume/v"}, []string{"deskyard", "volume:v", "manual"}, nil)
+	id, _, err := tool.Backup(ctx, repo, src, []string{"/deskyard/volume/v"}, []string{"deskyard", "volume:v", "manual"}, nil)
 	if err != nil || id == "" {
 		t.Fatalf("backup %q %v", id, err)
 	}
