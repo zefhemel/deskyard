@@ -82,9 +82,20 @@ func (s *Server) routes() {
 	s.api = m
 }
 
-// authed requires a session, and a same-origin Origin for state changes.
+// authed requires a client credential (an Authorization bearer, which needs
+// no Origin check: there is no ambient credential to forge) or a session and,
+// for state changes, a same-origin Origin.
 func (s *Server) authed(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if bearer, ok := bearerOf(r); ok {
+			r, ok := s.withCredential(r, bearer)
+			if !ok {
+				writeError(w, http.StatusUnauthorized, "the credential is unknown, revoked or expired")
+				return
+			}
+			next(w, r)
+			return
+		}
 		r, ok := s.withSession(w, r)
 		if !ok {
 			writeError(w, http.StatusUnauthorized, "sign in first")
@@ -174,7 +185,7 @@ func (s *Server) handleOwnPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a, _ = s.Accounts.Get(a.Username)
-	s.Sessions.Issue(w, a.Username, a.ID, a.SessionEpoch)
+	s.reissueSession(w, r, a)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -187,7 +198,7 @@ func (s *Server) handleSignOutEverywhere(w http.ResponseWriter, r *http.Request)
 		writeError(w, errorStatus(err), err.Error())
 		return
 	}
-	s.Sessions.Issue(w, a.Username, a.ID, a.SessionEpoch)
+	s.reissueSession(w, r, a)
 	s.Log.Info("signed out everywhere", "account", a.Username, "ip", clientIP(r))
 	w.WriteHeader(http.StatusNoContent)
 }

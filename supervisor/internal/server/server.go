@@ -53,6 +53,7 @@ type Server struct {
 	inside           *insideReader
 	thumbs           *thumbnails
 	tokens           *tokenStore
+	credentials      *credentialStore
 	images           *catalog
 	reconcile        chan struct{} // wakes the environments' reconcile loop
 
@@ -109,6 +110,9 @@ func New(o Options) (*Server, error) {
 	s.stats = newStatsCollector(s)
 	s.thumbs = newThumbnails(s)
 	if s.tokens, err = loadTokens(o.Layout.Data); err != nil {
+		return nil, err
+	}
+	if s.credentials, err = loadCredentials(o.Layout.Data); err != nil {
 		return nil, err
 	}
 	// Grants and tokens of names without a definition are left over from a
@@ -197,10 +201,41 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 type ctxKey struct{}
 
+// principal is who a request acts as: an account, signed in either by a
+// browser session (claims) or by a client credential.
+type principal struct {
+	account    accounts.Account
+	credential *credential
+	claims     *auth.SessionClaims
+}
+
+func (s *Server) principal(r *http.Request) (principal, bool) {
+	p, ok := r.Context().Value(ctxKey{}).(principal)
+	return p, ok
+}
+
 // account returns the signed-in account of the request, if any.
 func (s *Server) account(r *http.Request) (accounts.Account, bool) {
-	a, ok := r.Context().Value(ctxKey{}).(accounts.Account)
-	return a, ok
+	p, ok := s.principal(r)
+	return p.account, ok
+}
+
+// credentialOf returns the client credential the request was made with, if
+// it was.
+func (s *Server) credentialOf(r *http.Request) (credential, bool) {
+	p, ok := s.principal(r)
+	if !ok || p.credential == nil {
+		return credential{}, false
+	}
+	return *p.credential, true
+}
+
+// reissueSession signs this browser in again to a, as after a change that
+// bumped its session epoch. Credential requests have no cookie to renew.
+func (s *Server) reissueSession(w http.ResponseWriter, r *http.Request, a accounts.Account) {
+	if p, ok := s.principal(r); ok && p.claims != nil {
+		s.Sessions.Issue(w, a.Username, a.ID, a.SessionEpoch)
+	}
 }
 
 // withSession resolves the session cookie into the request context; it
@@ -219,7 +254,31 @@ func (s *Server) withSession(w http.ResponseWriter, r *http.Request) (*http.Requ
 	if claims.Refresh {
 		s.Sessions.Refresh(w, claims)
 	}
-	return r.WithContext(context.WithValue(r.Context(), ctxKey{}, a)), true
+	return r.WithContext(context.WithValue(r.Context(), ctxKey{}, principal{account: a, claims: &claims})), true
+}
+
+// bearerOf returns the request's Authorization bearer, if it has one (an
+// empty one included: it authenticates nobody).
+func bearerOf(r *http.Request) (string, bool) {
+	scheme, value, _ := strings.Cut(strings.TrimSpace(r.Header.Get("Authorization")), " ")
+	if !strings.EqualFold(scheme, "Bearer") {
+		return "", false
+	}
+	return strings.TrimSpace(value), true
+}
+
+// withCredential resolves a client credential into the request context. Its
+// account must exist with the ID it was issued to and not have expired.
+func (s *Server) withCredential(r *http.Request, bearer string) (*http.Request, bool) {
+	c, ok := s.credentials.check(bearer)
+	if !ok {
+		return r, false
+	}
+	a, found := s.Accounts.Get(c.Username)
+	if !found || a.ID != c.AccountID || a.Expired(time.Now()) {
+		return r, false
+	}
+	return r.WithContext(context.WithValue(r.Context(), ctxKey{}, principal{account: a, credential: &c})), true
 }
 
 // sameOrigin reports whether the request's Origin is this server's own.

@@ -3,10 +3,8 @@ package server
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"io/fs"
 	"net/http"
@@ -115,17 +113,6 @@ func (ts *tokenStore) bind(accts *accounts.Store, created func(name string) (tim
 func (s *Server) tokenCreatorAllowed(t token) bool {
 	a, exists := s.Accounts.Get(t.CreatedBy)
 	return tokenCreatorAllowed(t, a, exists)
-}
-
-func randomID(n int) string {
-	b := make([]byte, n)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)[:n]
-}
-
-func hashSecret(secret string) string {
-	h := sha256.Sum256([]byte(secret))
-	return hex.EncodeToString(h[:])
 }
 
 func (ts *tokenStore) create(name, environment, createdBy string, expires *time.Time) (token, string, error) {

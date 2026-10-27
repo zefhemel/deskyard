@@ -215,19 +215,6 @@ func define(t *testing.T, s *Server, name string, created time.Time) {
 	}
 }
 
-func restart(t *testing.T, s *Server) *Server {
-	t.Helper()
-	persistedAccounts, err := accounts.Load(s.Layout.Data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	restarted, err := New(Options{Log: s.Log, Eng: s.Eng, Environments: s.Environments, Accounts: persistedAccounts, Layout: s.Layout, DefaultImage: "img"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return restarted
-}
-
 func TestTokenWithoutCreatorIdentityIsPurged(t *testing.T) {
 	s, _ := newTestServer(t)
 	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {

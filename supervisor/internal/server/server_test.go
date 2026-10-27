@@ -151,6 +151,21 @@ func defineEnvironments(t *testing.T, s *Server) {
 	}
 }
 
+// restart starts another server on s's data folder, as a supervisor restart
+// would.
+func restart(t *testing.T, s *Server) *Server {
+	t.Helper()
+	persistedAccounts, err := accounts.Load(s.Layout.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := New(Options{Log: s.Log, Eng: s.Eng, Environments: s.Environments, Accounts: persistedAccounts, Layout: s.Layout, DefaultImage: "img"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return restarted
+}
+
 func login(t *testing.T, ts *httptest.Server, user string) *http.Client {
 	jar := &cookieJar{}
 	c := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
