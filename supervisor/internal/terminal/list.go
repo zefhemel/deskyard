@@ -170,14 +170,32 @@ func queryServer(ctx context.Context, args ...string) ([]byte, error) {
 	var stdout, stderr boundedListBuffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
-		// tmux leaves the socket behind when the final shell exits. This is an
-		// empty list, while unrelated executable/socket failures remain errors.
-		if strings.TrimSpace(stderr.String()) == "no server running on "+socket {
+		// An empty list, while unrelated executable/socket failures remain errors.
+		if noServer(strings.TrimSpace(stderr.String()), socket) {
 			return nil, nil
+		}
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return nil, fmt.Errorf("query shared terminals: %w: %s", err, msg)
 		}
 		return nil, fmt.Errorf("query shared terminals: %w", err)
 	}
 	return stdout.Bytes(), nil
+}
+
+// noServer tells whether tmux failed because no server is there to ask. tmux
+// leaves the socket behind when the final shell exits ("no server running",
+// or a refused connection), and a server that is exiting can remove the socket
+// after the check above or drop the query midway.
+func noServer(stderr, socket string) bool {
+	switch stderr {
+	case "no server running on " + socket,
+		"error connecting to " + socket + " (No such file or directory)",
+		"error connecting to " + socket + " (Connection refused)",
+		"server exited unexpectedly",
+		"lost server":
+		return true
+	}
+	return false
 }
 
 type boundedListBuffer struct{ bytes.Buffer }

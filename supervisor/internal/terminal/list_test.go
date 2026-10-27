@@ -49,3 +49,24 @@ func TestParseSessionDetails(t *testing.T) {
 		t.Fatalf("%+v", sessions)
 	}
 }
+
+// A server that is gone, or going, is an empty list; anything else stays an error.
+func TestNoServer(t *testing.T) {
+	socket := "/run/workspace/deskyard-terminal/tmux.sock"
+	for _, msg := range []string{
+		"no server running on " + socket,
+		"error connecting to " + socket + " (No such file or directory)",
+		"error connecting to " + socket + " (Connection refused)",
+		"server exited unexpectedly",
+		"lost server",
+	} {
+		if !noServer(msg, socket) {
+			t.Errorf("%q should mean no server", msg)
+		}
+	}
+	for _, msg := range []string{"", "error connecting to " + socket + " (Permission denied)", "no server running on /tmp/other.sock", "unknown option -- Z"} {
+		if noServer(msg, socket) {
+			t.Errorf("%q should stay an error", msg)
+		}
+	}
+}
