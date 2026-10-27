@@ -9,7 +9,6 @@ import { notify } from "../../components/toast.tsx";
 import { Button, Check, cx, ErrorText, Field, Note, Seg } from "../../components/ui.tsx";
 import { useLive } from "../../live.tsx";
 import { useFetch } from "../../lib/use-fetch.ts";
-import { davAddress, davInTheClear } from "../../lib/webdav.ts";
 import { VolumeGrantFields } from "../../components/volume-grants.tsx";
 import { UPGRADE_NOTE } from "../../dialogs/upgrade.tsx";
 
@@ -156,7 +155,6 @@ export function SettingsTab({ environment: c }: { environment: Environment }) {
           </div>
         </form>
         {section === "general" && <MemoryPolicy environment={c} host={host} />}
-        {section === "general" && <WebDAVSetting environment={c} />}
       </div>
     </div>
   );
@@ -202,42 +200,3 @@ function MemoryPolicy({ environment: c, host }: { environment: Environment; host
   );
 }
 
-/** Serving the environment's files over WebDAV; saves independently of container settings. */
-function WebDAVSetting({ environment: c }: { environment: Environment }) {
-  const [enabled, setEnabled] = useState(c.webdav);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => setEnabled(c.webdav), [c.name, c.webdav]);
-  const save = async (value: boolean) => {
-    setSaving(true);
-    setEnabled(value);
-    setError(null);
-    try {
-      await api.setWebDAV(c.name, value);
-      notify(value ? "WebDAV switched on" : "WebDAV switched off");
-    } catch (err) {
-      setEnabled(!value);
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSaving(false);
-    }
-  };
-  return (
-    <section class="mt-6 border-t border-line pt-5">
-      <fieldset disabled={saving} class="m-0 min-w-0 border-0 p-0">
-        <Check id="webdav" checked={enabled} onChange={(v) => void save(v)} title="Serve files over WebDAV">
-          Lets people with full access mount the home folder and local volumes as a drive in Finder, Windows or a WebDAV app, also while the environment is stopped. Host volumes aren&apos;t included. Saves immediately.
-        </Check>
-      </fieldset>
-      {enabled && (
-        <p class="-mt-2 mb-3 text-sm">
-          Address: <span class="mono break-all">{davAddress(c.name)}</span>
-        </p>
-      )}
-      {enabled && davInTheClear() && (
-        <Note danger>This page is on plain HTTP, so WebDAV passwords would cross the network readable by anyone on the way. Windows refuses to connect this way.</Note>
-      )}
-      <ErrorText error={error} />
-    </section>
-  );
-}

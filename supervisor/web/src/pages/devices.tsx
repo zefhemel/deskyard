@@ -157,7 +157,7 @@ function WebDAVSection({ devices, onChanged }: { devices: Credential[] | undefin
           ))}
         </ul>
       ) : (
-        <p class="mb-3.5 text-sm text-muted">None of your environments has WebDAV switched on. An admin switches it on in an environment&apos;s settings.</p>
+        <p class="mb-3.5 text-sm text-muted">None of your environments has WebDAV switched on. An admin switches it on in an environment&apos;s Access tab.</p>
       )}
       {davInTheClear() && <Note danger>This page is on plain HTTP, so a password given to a WebDAV client crosses the network readable. Windows refuses to connect this way.</Note>}
       {password && (

@@ -16,6 +16,8 @@ import { UpgradeDialog } from "../dialogs/upgrade.tsx";
 import { useEnvironment, useLive, useNow } from "../live.tsx";
 import { bytes, day, limits, names, statusKind, statusLine } from "../lib/format.ts";
 import { AccessTab } from "./details/access-tab.tsx";
+import { WebDAVAccess } from "./details/webdav-access.tsx";
+import { davView } from "../lib/webdav.ts";
 import { ProcessesTab } from "./details/processes-tab.tsx";
 import { SettingsTab } from "./details/settings-tab.tsx";
 import { SharingTab } from "./details/sharing-tab.tsx";
@@ -161,7 +163,8 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
           {tab === "access" && (
             <>
               {me.admin && <AccessTab environment={c} />}
-              <div class={me.admin ? "border-t border-line" : undefined}>
+              <WebDAVAccess environment={c} />
+              <div class={me.admin || davView(c, me) ? "border-t border-line" : undefined}>
                 <SharingTab environment={c} />
               </div>
             </>

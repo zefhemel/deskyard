@@ -58,8 +58,9 @@ the previous version, or delete the `mounts` entries, then create host volumes.
 
 An environment's files can be mounted as a drive on your own computer,
 also while the environment is stopped. An admin switches it on per
-environment under **Settings → General → Serve files over WebDAV**; it is
-off by default. The drive is at `https://<your Deskyard>/<name>/dav/` and
+environment on its **Access** tab, with **Serve files over WebDAV**; it is
+off by default. Others with full access see the drive's address there
+while it is on. The drive is at `https://<your Deskyard>/<name>/dav/` and
 shows the environment's own paths: `workspace/` (the home folder) and each
 local volume at its path, such as `share/photos/`. Read-only volumes stay
 read-only. Host volumes aren't included.
