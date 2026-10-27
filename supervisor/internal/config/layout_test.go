@@ -135,3 +135,47 @@ func TestOwns(t *testing.T) {
 		}
 	}
 }
+
+func TestFromHostOnlyTranslatesLayoutEntries(t *testing.T) {
+	l := NewLayout("/data").WithHost("/srv/deskyard")
+	for in, want := range map[string]string{
+		"/srv/deskyard/photos":  "/srv/deskyard/photos",
+		"/srv/deskyard/home/a":  "/data/home/a",
+		"/srv/deskyard":         "/data",
+		"/srv/deskyard/../etc":  "/srv/deskyard/../etc",
+		"/srv/deskyard//home/a": "/data/home/a",
+	} {
+		if got := l.FromHost(in); got != want {
+			t.Errorf("FromHost(%q) = %q, want %q", in, got, want)
+		}
+	}
+	short := NewLayout("/data").WithHost("/srv/d")
+	if got := short.FromHost("/srv/data/home/x"); got != "/srv/data/home/x" {
+		t.Errorf("sibling-prefix host path translated: %q", got)
+	}
+}
+
+func TestPathsAreCleanedBeforeTranslation(t *testing.T) {
+	l := NewLayout("/data").WithHost("/srv/deskyard")
+	if l.Owns("/data/home/../../etc") || l.ToHost("/data/home/../../etc") != "/data/home/../../etc" {
+		t.Error("a path escaping /data must not be owned or translated")
+	}
+	if got := l.ToHost("/data//photos"); got != "/data//photos" {
+		t.Errorf("ToHost(/data//photos) = %q", got)
+	}
+	if got := l.ToHost("/data//home/a"); got != "/srv/deskyard/home/a" {
+		t.Errorf("ToHost(/data//home/a) = %q", got)
+	}
+	for p, want := range map[string]bool{"/data/": true, "/datax": false, "/datax/home": false} {
+		if got := l.Owns(p); got != want {
+			t.Errorf("Owns(%q) = %v, want %v", p, got, want)
+		}
+	}
+}
+
+func TestWithHostEmptyIsIdentity(t *testing.T) {
+	l := NewLayout("/data").WithHost("")
+	if l.ToHost("/data/home/a") != "/data/home/a" || l.FromHost("./home/a") != "./home/a" {
+		t.Error("an empty host must leave paths unchanged")
+	}
+}
