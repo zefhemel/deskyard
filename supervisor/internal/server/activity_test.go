@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/activity"
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/forward"
@@ -333,5 +336,35 @@ func TestExecEnvWins(t *testing.T) {
 	has := func(kv string) bool { return slices.Contains(env, kv) }
 	if !has("DESKYARD_ACTIVITY=off") || !has("FOO=1") || has("DESKYARD_ACTIVITY=on") || !has("WORKSPACE_PROXY_TOKEN=") {
 		t.Errorf("env = %v", env)
+	}
+}
+
+// A browser login that ended between its request's check and the stream's
+// registration doesn't get the agents' screen actions.
+func TestScreenEventsRecheckSession(t *testing.T) {
+	s, _ := newTestServer(t)
+	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
+		t.Fatal(err)
+	}
+	anna := accountNamed(t, s, "anna")
+	claims := &auth.SessionClaims{Username: "anna", AccountID: anna.ID, Epoch: anna.SessionEpoch}
+	if _, err := s.Accounts.BumpSessionEpoch("anna"); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.SetPathValue("name", "alice")
+		s.handleScreenEvents(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, principal{account: anna, claims: claims})))
+	}))
+	defer ts.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", ts.URL, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("screen events for a browser login that ended: %d", resp.StatusCode)
 	}
 }

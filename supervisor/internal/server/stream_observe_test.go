@@ -246,3 +246,38 @@ func TestStreamRechecksLevelOnceRegistered(t *testing.T) {
 		t.Fatalf("the refused stream stayed registered: %v", got)
 	}
 }
+
+// A browser login that ended (sign out everywhere, a password change) while
+// its stream waited its turn doesn't get the stream.
+func TestStreamRechecksSessionOnceRegistered(t *testing.T) {
+	up := &recordingUpstream{}
+	s, _ := newTestServerWith(t, fakeEngine{others: []engine.Container{runningEnvironment(t, "bob", up)}})
+	c, err := s.Environments.Get(context.Background(), "bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	signedIn, err := s.Accounts.Create(accounts.NewAccount{Username: "olga", Password: "pw",
+		Grants: []accounts.Grant{{Environment: c.ID, Level: auth.LevelFull}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims := &auth.SessionClaims{Username: "olga", AccountID: signedIn.ID, Epoch: signedIn.SessionEpoch}
+	if _, err := s.Accounts.BumpSessionEpoch("olga"); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.serveStream(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, principal{account: signedIn, claims: claims})), c)
+	}))
+	defer ts.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ws, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+"/?tab=t1",
+		&websocket.DialOptions{HTTPHeader: http.Header{"Origin": {ts.URL}}})
+	if err == nil {
+		ws.CloseNow()
+		t.Fatal("opened a stream for a browser login that ended")
+	}
+	if resp == nil || resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("dial: %v %v", resp, err)
+	}
+}

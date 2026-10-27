@@ -102,6 +102,8 @@ func eventFor(a accounts.Account, e event) (event, bool) {
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	who, _ := s.principal(r)
 	a := who.account
+	r, untrack := s.trackStream(r)
+	defer untrack()
 	ctx, sse, closeStream := s.startUIEvents(w, r)
 	if sse == nil {
 		return
@@ -126,11 +128,12 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	visible := map[string]bool{}  // environment names this stream has shown
 	conflicts := []conflictJSON{} // the conflicts this stream has shown
 	// The stream ends once the account is gone, expired or replaced, also
-	// when deleting it failed, and once its browser login ended (a bumped
-	// session epoch; the page reconnects with its new cookie).
+	// when deleting it failed, once its browser login ended (a bumped
+	// session epoch; the page reconnects with its new cookie), and once its
+	// credential is deleted.
 	sendAll := func() bool {
 		acct, ok := s.accountNow(a.Username, a.ID, time.Now())
-		if !ok || who.epoch() != noSession && who.epoch() != acct.SessionEpoch {
+		if !ok || !who.signedIn(acct) {
 			return false
 		}
 		list, err := s.Environments.List(r.Context())

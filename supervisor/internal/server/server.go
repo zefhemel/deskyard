@@ -236,6 +236,33 @@ func (p principal) epoch() int {
 	return p.claims.Epoch
 }
 
+// signedIn reports whether the request's sign-in still holds for a, the
+// account as it is now: a browser login ends when a's session epoch moves
+// on. A credential's revocation closes what it opened (trackStream).
+func (p principal) signedIn(a accounts.Account) bool {
+	return p.epoch() == noSession || p.epoch() == a.SessionEpoch
+}
+
+// trackStream registers a long-lived stream opened with a client credential
+// under it, so deleting the credential closes it; the stream checks its
+// account's access itself. The returned request carries the stream's
+// context, and the function unregisters it.
+func (s *Server) trackStream(r *http.Request) (*http.Request, func()) {
+	c, ok := s.credentialOf(r)
+	if !ok {
+		return r, func() {}
+	}
+	ctx, cancel := context.WithCancel(r.Context())
+	untrack := s.credentials.track(c.ID, "", cancel)
+	if !s.credentials.has(c.ID) { // deleted before it was registered
+		cancel()
+	}
+	return r.WithContext(ctx), func() {
+		untrack()
+		cancel()
+	}
+}
+
 // account returns the signed-in account of the request, if any.
 func (s *Server) account(r *http.Request) (accounts.Account, bool) {
 	p, ok := s.principal(r)

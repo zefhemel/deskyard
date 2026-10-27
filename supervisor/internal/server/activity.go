@@ -126,18 +126,20 @@ func (s *Server) handleScreenEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	level := a.Level(c.ID)
+	who, _ := s.principal(r)
 	allowed := func() bool {
 		acct, ok := s.accountNow(a.Username, a.ID, time.Now())
-		return ok && acct.Level(c.ID) == level
+		return ok && acct.Level(c.ID) == level && who.signedIn(acct)
 	}
+	r, untrack := s.trackStream(r)
+	defer untrack()
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	// Registered so that a revoke closes the stream even while it is idle.
-	who, _ := s.principal(r)
 	cn := &conn{username: a.Username, accountID: a.ID, epoch: who.epoch(), environment: c.ID, level: level, cancel: cancel}
 	s.screenWatchers.add(c.Name, cn)
 	defer s.screenWatchers.remove(c.Name, cn)
-	if !allowed() { // revoked between environmentFor and add
+	if !allowed() { // revoked or signed out between environmentFor and add
 		writeError(w, http.StatusNotFound, "no such environment")
 		return
 	}

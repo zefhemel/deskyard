@@ -97,7 +97,7 @@ func (s *Server) sweep() {
 	for _, c := range s.credentials.list("") {
 		a, ok := s.accountState(c.Username)
 		level := levelOf(a, ok && a.ID == c.AccountID && !orphanedShare(a, byName, now), now)
-		s.credentials.closeWhere(c.ID, func(environment string) bool { return level(environment) != auth.LevelFull })
+		s.credentials.closeWhere(c.ID, func(environment string) bool { return environment != "" && level(environment) != auth.LevelFull })
 	}
 }
 

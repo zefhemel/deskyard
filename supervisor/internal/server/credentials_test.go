@@ -246,3 +246,37 @@ func createAccount(t *testing.T, s *Server, username string) accounts.Account {
 	}
 	return a
 }
+
+// Deleting a credential ends the event streams it opened, which its
+// account could otherwise keep reading.
+func TestCredentialRemoveClosesItsStreams(t *testing.T) {
+	for _, path := range []string{"/api/events", "/api/environments/alice/screen-events"} {
+		t.Run(path, func(t *testing.T) {
+			s, ts := newTestServer(t)
+			if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
+				t.Fatal(err)
+			}
+			c, bearer := issueCredential(t, s, accountNamed(t, s, "anna"))
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			req, _ := http.NewRequestWithContext(ctx, "GET", ts.URL+path, nil)
+			req.Header.Set("Authorization", "Bearer "+bearer)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != 200 {
+				t.Fatalf("stream: %d", resp.StatusCode)
+			}
+			// Sweeps (every account change) leave it open.
+			s.sweep()
+			if err := s.credentials.remove(func(o credential) bool { return o.ID == c.ID }); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := io.Copy(io.Discard, resp.Body); ctx.Err() != nil {
+				t.Fatalf("the stream stayed open after its credential was deleted (%v)", err)
+			}
+		})
+	}
+}

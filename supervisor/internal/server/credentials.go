@@ -170,7 +170,9 @@ func (cs *credentialStore) retain(valid func(c credential) bool) error {
 }
 
 // track registers a live connection of credential id to the environment so
-// revocation closes it; the returned function unregisters it.
+// revocation closes it; the returned function unregisters it. A connection
+// to no environment ("") closes only when the credential or its account
+// goes: it checks its access itself.
 func (cs *credentialStore) track(id, environment string, cancel context.CancelFunc) func() {
 	cs.mu.Lock()
 	cs.nextID++
@@ -188,6 +190,13 @@ func (cs *credentialStore) track(id, environment string, cancel context.CancelFu
 			delete(cs.open, id)
 		}
 	}
+}
+
+// has reports whether credential id is still on file.
+func (cs *credentialStore) has(id string) bool {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	return slices.ContainsFunc(cs.all, func(c credential) bool { return c.ID == id })
 }
 
 // closeWhere closes the connections of credential id to the environments fn
