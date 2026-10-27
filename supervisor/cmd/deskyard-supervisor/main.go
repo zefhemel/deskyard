@@ -19,6 +19,7 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/config"
+	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine/docker"
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/server"
@@ -93,15 +94,34 @@ func run(log *slog.Logger) error {
 	if err := config.CheckLegacy(cfg.DataDir); err != nil {
 		return err
 	}
-	eng, err := docker.New(cfg.EngineHost)
+	dockerEng, err := docker.New(cfg.EngineHost)
 	if err != nil {
 		return fmt.Errorf("container engine: %w", err)
 	}
+	var eng engine.Engine = dockerEng
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if _, err := eng.Info(ctx); err != nil {
 		return fmt.Errorf("can't reach the container engine (is Docker running, and may this user use its socket?): %w", err)
 	}
+	// The engine resolves mounts on the host, so find where /data lives there.
+	// The container ID is the hostname, which a user's --hostname would change:
+	// then the supervisor can't find itself and says so.
+	selfID, err := os.Hostname()
+	if err != nil {
+		return err
+	}
+	self, err := eng.Inspect(ctx, selfID)
+	if err != nil {
+		return fmt.Errorf("can't find the supervisor's own container %q (its hostname must be the container ID, so don't set --hostname): %w", selfID, err)
+	}
+	host, err := dataHostPath(self)
+	if err != nil {
+		return err
+	}
+	// Only the engine translates; everything else keeps the /data layout.
+	hostLayout := cfg.Layout.WithHost(host)
+	eng = engine.WithHostPaths(eng, hostLayout.ToHost, hostLayout.FromHost)
 	// Nor are an older supervisor's containers that use this data folder.
 	if err := environments.New(eng, environments.Config{DataDir: cfg.DataDir}, log).CheckLegacyContainers(ctx); err != nil {
 		return err
@@ -110,11 +130,6 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	instance, err := config.InstanceID(cfg.Layout)
-	if err != nil {
-		return err
-	}
-
-	selfID, err := os.Hostname()
 	if err != nil {
 		return err
 	}
