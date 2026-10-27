@@ -8,7 +8,7 @@ import { ChartsPanel } from "../components/charts-panel.tsx";
 import { EnvironmentMenu, power } from "../components/environment-menu.tsx";
 import { Monitor } from "../components/screen.tsx";
 import { NoticeLine } from "../components/tile.tsx";
-import { ReclaimMemoryButton } from "../components/reclaim-memory.tsx";
+import { useReclaimMemoryItem } from "../components/reclaim-memory.tsx";
 import { ForwardLines } from "../components/viewers-popover.tsx";
 import { Page } from "../components/topbar.tsx";
 import { btnClass, Button, cx, Meter, Status, Tag } from "../components/ui.tsx";
@@ -79,6 +79,7 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
   const tab: Tab = tabs.find((t) => t.id === asked)?.id ?? "overview";
   const setTab = (t: Tab) =>
     route(`/environments/${c.name}${t === "overview" ? "" : `?tab=${t}`}`, true);
+  const reclaim = useReclaimMemoryItem(c.name, !!c.job);
 
   return (
     <Page>
@@ -98,12 +99,10 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
           {c.state === "running" && full && (
             <>
               <a href={`/${c.name}/`} class={btnClass("primary")}>
-                Desktop
+                Open
               </a>
-              <a href={`/${c.name}/?terminal=main${c.terminals.some((t) => t.name === "main") ? "" : "&create=1"}`} class={btnClass()}>Terminal</a>
               <Button onClick={() => power(c.name, "restart")}>Restart</Button>
               <Button onClick={() => power(c.name, "stop")}>Stop</Button>
-              {me.admin && <ReclaimMemoryButton name={c.name} disabled={!!c.job} />}
             </>
           )}
           {c.state === "stopped" && full && (
@@ -111,10 +110,13 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
               Start
             </Button>
           )}
+          {full && me.admin && <Button onClick={() => setTab("settings")}>Settings</Button>}
           {full && (
             <EnvironmentMenu
               environment={c}
               power={false}
+              settings={false}
+              adminItems={c.state === "running" ? [reclaim] : []}
               onRemoved={() => route("/")}
             />
           )}

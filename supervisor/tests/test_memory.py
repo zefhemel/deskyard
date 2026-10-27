@@ -9,6 +9,12 @@ from playwright.sync_api import expect, sync_playwright
 from helpers import bearer, make_account, make_credential, signed_in
 
 
+def reclaim_item(page):
+    """Open the environment page's ⋯ menu and return its Reclaim memory item."""
+    page.get_by_role("button", name="More actions").click()
+    return page.get_by_role("menuitem", name="Reclaim memory")
+
+
 def test_reclaim_button_preserves_browser_state(admin, supervisor, desktop, name, tmp_path):
     support = admin.get("/api/host").json()["memoryReclaim"]
     assert "memory reclamation " in supervisor.logs()
@@ -16,7 +22,8 @@ def test_reclaim_button_preserves_browser_state(admin, supervisor, desktop, name
         with sync_playwright() as pw:
             browser, page = signed_in(pw, supervisor.base)
             page.goto(f"{supervisor.base}/environments/{name}")
-            expect(page.get_by_role("button", name="Reclaim memory", exact=True)).to_be_disabled(timeout=15000)
+            expect(page.get_by_role("heading", name=name, exact=True)).to_be_visible(timeout=15000)
+            expect(reclaim_item(page)).to_be_disabled(timeout=15000)
             expect(page.get_by_text("Unavailable:", exact=False)).to_be_visible()
             browser.close()
         assert admin.post(f"/api/environments/{name}/reclaim-memory").status_code == 501
@@ -35,8 +42,9 @@ def test_reclaim_button_preserves_browser_state(admin, supervisor, desktop, name
 
         browser, page = signed_in(pw, supervisor.base)
         page.goto(f"{supervisor.base}/environments/{name}")
-        button = page.get_by_role("button", name="Reclaim memory", exact=True)
-        expect(button).to_be_visible(timeout=15000)
+        expect(page.get_by_role("heading", name=name, exact=True)).to_be_visible(timeout=15000)
+        button = reclaim_item(page)
+        expect(button).to_be_enabled(timeout=15000)
         with page.expect_response(lambda r: r.url.endswith("/reclaim-memory") and r.request.method == "POST", timeout=60000) as response:
             button.click()
         reply = response.value
@@ -49,10 +57,11 @@ def test_reclaim_button_preserves_browser_state(admin, supervisor, desktop, name
         assert result["requestedBytes"] == 128 * 1024 * 1024
         assert result["beforeBytes"] > 0 and result["afterBytes"] > 0
         expect(page.get_by_text("resident memory", exact=False)).to_be_visible(timeout=15000)
-        expect(button).to_be_enabled()
+        expect(reclaim_item(page)).to_be_enabled()
         page.screenshot(path=str(tmp_path / "reclaimed.png"))
+        page.keyboard.press("Escape")
         page.set_viewport_size({"width": 390, "height": 844})
-        expect(button).to_be_visible()
+        expect(reclaim_item(page)).to_be_visible()
         assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
         page.screenshot(path=str(tmp_path / "reclaimed-mobile.png"))
         remote = pw.chromium.connect_over_cdp(version["webSocketDebuggerUrl"], headers=headers)
@@ -71,14 +80,16 @@ def test_reclaim_button_preserves_browser_state(admin, supervisor, desktop, name
         regular_browser, regular_page = signed_in(pw, supervisor.base, user=user, password="pw")
         regular_page.goto(f"{supervisor.base}/environments/{name}")
         expect(regular_page.get_by_role("heading", name=name, exact=True)).to_be_visible(timeout=15000)
-        expect(regular_page.get_by_role("button", name="Reclaim memory", exact=True)).to_have_count(0)
+        expect(regular_page.get_by_role("button", name="More actions")).to_have_count(0)
         regular_browser.close()
 
         assert admin.post(f"/api/environments/{name}/stop").status_code == 204
         assert admin.post(f"/api/environments/{name}/reclaim-memory").status_code == 409
         page.reload()
         expect(page.get_by_role("button", name="Start", exact=True).first).to_be_visible(timeout=15000)
-        expect(page.get_by_role("button", name="Reclaim memory", exact=True)).to_have_count(0)
+        reclaim_item(page)
+        expect(page.get_by_role("menuitem", name="Remove…")).to_be_visible()
+        expect(page.get_by_role("menuitem", name="Reclaim memory")).to_have_count(0)
         browser.close()
 
 
@@ -92,7 +103,8 @@ def test_reclaim_button_disabled_for_unsupported_host(supervisor, desktop, name)
             "memoryReclaim": {"enabled": False, "reason": "The Linux host has no swap."},
         }))
         page.goto(f"{supervisor.base}/environments/{name}")
-        expect(page.get_by_role("button", name="Reclaim memory", exact=True)).to_be_disabled(timeout=15000)
+        expect(page.get_by_role("heading", name=name, exact=True)).to_be_visible(timeout=15000)
+        expect(reclaim_item(page)).to_be_disabled(timeout=15000)
         expect(page.get_by_text("Unavailable: The Linux host has no swap.", exact=True)).to_be_visible()
         browser.close()
 
