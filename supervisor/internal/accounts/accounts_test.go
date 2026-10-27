@@ -218,7 +218,9 @@ func TestSetAccessLevels(t *testing.T) {
 	}
 }
 
-func TestLoweredGrantBumpsSessionEpoch(t *testing.T) {
+// Lowering a grant keeps the account's browser sessions: the connections
+// the new level doesn't allow are closed, not the account's other ones.
+func TestLoweredGrantKeepsSessionEpoch(t *testing.T) {
 	s, _ := Load(t.TempDir())
 	_, _ = s.Create(NewAccount{Username: "bob", Password: "pw", Grants: []Grant{{Environment: "alice", Level: auth.LevelFull}}})
 	a, _ := s.Update("bob", func(a *Account) { a.Grants = append(a.Grants, Grant{Environment: "carol", Level: auth.LevelObserve}) })
@@ -226,15 +228,28 @@ func TestLoweredGrantBumpsSessionEpoch(t *testing.T) {
 		t.Fatal("added grant bumped the epoch")
 	}
 	a, _ = s.Update("bob", func(a *Account) { a.Grants[0].Level = auth.LevelObserve })
-	if a.SessionEpoch != 1 {
-		t.Fatal("downgrade kept the epoch")
+	if a.SessionEpoch != 0 {
+		t.Fatal("downgrade bumped the epoch")
 	}
 	a, _ = s.Update("bob", func(a *Account) { a.Grants = a.Grants[:1] })
-	if a.SessionEpoch != 2 {
-		t.Fatal("removed grant kept the epoch")
+	if a.SessionEpoch != 0 {
+		t.Fatal("removed grant bumped the epoch")
 	}
-	if a, _ = s.BumpSessionEpoch("bob"); a.SessionEpoch != 3 {
+	if a, _ = s.BumpSessionEpoch("bob"); a.SessionEpoch != 1 {
 		t.Fatal("bump")
+	}
+}
+
+func TestLoweredLevels(t *testing.T) {
+	before := []Grant{{Environment: "alice", Level: auth.LevelFull}, {Environment: "beta", Level: auth.LevelFull}, {Environment: "carol", Level: auth.LevelObserve}}
+	after := []Grant{{Environment: "alice", Level: auth.LevelObserve}, {Environment: "beta", Level: auth.LevelFull}, {Environment: "dora", Level: auth.LevelFull}}
+	got := Lowered(before, after)
+	if len(got) != 2 || got["alice"] != auth.LevelObserve || got["carol"] != auth.LevelNone {
+		t.Fatalf("lowered %v", got)
+	}
+	capped := Capped(after, map[string]auth.Level{"beta": auth.LevelObserve, "dora": auth.LevelNone})
+	if grantLevel(capped, "alice") != auth.LevelObserve || grantLevel(capped, "beta") != auth.LevelObserve || grantLevel(capped, "dora") != auth.LevelNone || len(after) != 3 {
+		t.Fatalf("capped %v (from %v)", capped, after)
 	}
 }
 

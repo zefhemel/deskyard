@@ -180,7 +180,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Token accounts have no password and answer as unknown ones do.
-	a, ok := s.Accounts.Get(req.Username)
+	a, ok := s.accountState(req.Username)
 	if !ok || !a.HasPassword() || !auth.CheckPassword(a.PasswordHash, req.Password) {
 		if !ok || !a.HasPassword() {
 			auth.CheckPassword(dummyHash, req.Password) // same time either way
@@ -294,6 +294,8 @@ func errorStatus(err error) int {
 		errors.Is(err, environments.ErrBusy), errors.Is(err, accounts.ErrLastAdmin), errors.Is(err, environments.ErrStopped),
 		errors.Is(err, environments.ErrConflict), errors.Is(err, storage.ErrBusy):
 		return http.StatusConflict
+	case errors.Is(err, accounts.ErrNotSaved):
+		return http.StatusInternalServerError
 	default:
 		return http.StatusBadRequest
 	}

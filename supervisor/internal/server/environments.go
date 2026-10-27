@@ -121,7 +121,7 @@ func (s *Server) environmentJSON(ctx context.Context, c environments.Environment
 // observed blanks what an observer may not see: the environment's
 // configuration and what full users do in it.
 func (j *environmentJSON) observed() {
-	j.Folder, j.MemoryReclaim = "", false
+	j.Folder, j.MemoryReclaim, j.Job = "", false, nil
 	j.Settings = settingsJSON{LANExceptions: []vpn.Exception{}, Volumes: []environments.VolumeGrant{}}
 	j.VPN = environments.VPNStatus{Status: vpn.Status{State: "disabled"}}
 	j.Access, j.Terminals, j.Forwards, j.Agents = []accessGrant{}, []terminal.Session{}, []forwardJSON{}, []activity.Presence{}
@@ -541,7 +541,20 @@ func (s *Server) handleSetAccess(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// These levels decide the environment's grants anew: what an earlier
+	// change that couldn't be saved revoked of them no longer applies.
+	before := map[string]accounts.Account{}
+	for _, a := range s.Accounts.List() {
+		before[a.Username] = a
+		s.unsaved.forget(a.Username, func(u *unsavedRevocation) { delete(u.caps, c.Name) })
+	}
 	if err := s.Accounts.SetAccess(c.Name, access); err != nil {
+		// What it revokes ends although it isn't saved.
+		for u, a := range before {
+			if want := access[u]; !a.Admin && !a.IsShare() && len(accounts.Lowered(a.Grants, accounts.Capped(a.Grants, map[string]auth.Level{c.Name: want}))) > 0 {
+				s.revokeUnsaved(unsavedRevocation{username: u, id: a.ID, caps: map[string]auth.Level{c.Name: want}})
+			}
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

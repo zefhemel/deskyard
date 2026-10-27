@@ -23,18 +23,19 @@ func levelOf(a accounts.Account, ok bool, now time.Time) func(environment string
 	}
 }
 
-// accountNow is the named account as it stands now, while it is still the
-// one with id and may use anything: it hasn't expired and isn't a share whose
-// sharer lost it, as when deleting it failed. Requests and the connections
+// accountNow is the named account as it stands now (with the revocations
+// that couldn't be saved), while it is still the one with id and may use
+// anything: it hasn't expired and isn't a share whose sharer lost it, as
+// when deleting it failed. Requests and the connections
 // they hold check it, so revocation holds even when persisting it failed.
 func (s *Server) accountNow(username, id string, now time.Time) (accounts.Account, bool) {
-	a, ok := s.Accounts.Get(username)
+	a, ok := s.accountState(username)
 	if !ok || a.ID != id || a.Expired(now) {
 		return accounts.Account{}, false
 	}
 	if a.SharedBy != nil {
 		sharers := map[string]accounts.Account{}
-		if sharer, ok := s.Accounts.Get(a.SharedBy.Username); ok {
+		if sharer, ok := s.accountState(a.SharedBy.Username); ok {
 			sharers[sharer.Username] = sharer
 		}
 		if orphanedShare(a, sharers, now) {
@@ -63,12 +64,14 @@ func orphanedShare(share accounts.Account, sharers map[string]accounts.Account, 
 // the shares whose sharer lost them, the links and credentials whose account
 // is gone (also when one of the same name replaced it), and closes the
 // connections credentials hold to environments their account may no longer
-// use fully. It runs on every account change and once at startup. Failed
-// writes are logged and the connections are closed anyway.
+// use fully. It runs on every account change and once at startup, and first
+// retries saving the revocations that couldn't be saved. Failed writes are
+// logged and the connections are closed anyway.
 func (s *Server) sweep() {
+	s.retryUnsaved()
 	now := time.Now()
 	byName := map[string]accounts.Account{}
-	for _, a := range s.Accounts.List() {
+	for _, a := range s.accountStates() {
 		byName[a.Username] = a
 	}
 	// The deletion notifies accountsChanged, which closes the shares'
@@ -82,7 +85,7 @@ func (s *Server) sweep() {
 		}
 	}
 	current := func(username, id string) bool {
-		a, ok := s.Accounts.Get(username)
+		a, ok := s.accountState(username)
 		return ok && a.ID == id
 	}
 	if err := s.links.retain(func(l link) bool { return current(l.Username, l.AccountID) }); err != nil {
@@ -92,7 +95,7 @@ func (s *Server) sweep() {
 		s.Log.Error("deleting client credentials of deleted accounts", "err", err)
 	}
 	for _, c := range s.credentials.list("") {
-		a, ok := s.Accounts.Get(c.Username)
+		a, ok := s.accountState(c.Username)
 		level := levelOf(a, ok && a.ID == c.AccountID && !orphanedShare(a, byName, now), now)
 		s.credentials.closeWhere(c.ID, func(environment string) bool { return level(environment) != auth.LevelFull })
 	}

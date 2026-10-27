@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -109,5 +110,36 @@ func TestObserverEvents(t *testing.T) {
 	}
 	if _, ok := eventFor(accounts.Account{Username: "carol"}, viewers); ok {
 		t.Error("an account without a grant gets the event")
+	}
+}
+
+// An observer can't follow the environment's jobs: their progress and
+// results (a restore's folder, say) belong to full users.
+func TestObserverCannotFollowJobs(t *testing.T) {
+	s, ts := newTestServer(t)
+	observeAlice(t, s)
+	release := make(chan struct{})
+	defer close(release)
+	id := s.jobs.start("admin", "alice", func(ctx context.Context, _ func(string, float64)) error {
+		select {
+		case <-release:
+		case <-ctx.Done():
+		}
+		return nil
+	})
+	bob := login(t, ts, "bob")
+	var env map[string]any
+	getJSON(t, bob, ts.URL+"/api/environments/alice", &env)
+	if env["job"] != nil {
+		t.Errorf("observer sees the job: %v", env["job"])
+	}
+	if got := status(t, bob, "GET", ts.URL+"/api/jobs/"+id, ""); got != http.StatusNotFound {
+		t.Errorf("observer follows the job: %d", got)
+	}
+	anna := login(t, ts, "anna")
+	env = nil
+	getJSON(t, anna, ts.URL+"/api/environments/alice", &env)
+	if env["job"] != id {
+		t.Errorf("full user misses the job: %v", env["job"])
 	}
 }

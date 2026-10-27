@@ -261,13 +261,14 @@ func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// canSeeEnvironment: whoever can see an environment can follow its jobs.
+// canSeeEnvironment: whoever can use an environment can follow its jobs;
+// observers can't.
 func (s *Server) canSeeEnvironment(r *http.Request, a accounts.Account, name string) bool {
 	if name == "" {
 		return false
 	}
 	c, err := s.Environments.Get(r.Context(), name)
-	return err == nil && auth.Can(a, auth.Observe, c.ID)
+	return err == nil && auth.Can(a, auth.View, c.ID)
 }
 
 // --- server-sent events -----------------------------------------------------------

@@ -109,14 +109,28 @@ func rank(l auth.Level) int {
 	return 0
 }
 
-// lowered reports whether after grants less than before on any environment.
-func lowered(before, after []Grant) bool {
+// Lowered maps the environments after grants less than before to their
+// new level (LevelNone: the grant is gone).
+func Lowered(before, after []Grant) map[string]auth.Level {
+	out := map[string]auth.Level{}
 	for _, g := range before {
-		if rank(grantLevel(after, g.Environment)) < rank(g.Level) {
-			return true
+		if l := grantLevel(after, g.Environment); rank(l) < rank(g.Level) {
+			out[g.Environment] = l
 		}
 	}
-	return false
+	return out
+}
+
+// Capped is grants with each environment in caps at most at its level
+// there; LevelNone drops the grant.
+func Capped(grants []Grant, caps map[string]auth.Level) []Grant {
+	out := slices.Clone(grants)
+	for name, l := range caps {
+		if rank(grantLevel(out, name)) > rank(l) {
+			out = withLevel(out, name, l)
+		}
+	}
+	return out
 }
 
 func validGrants(grants []Grant) error {
@@ -146,8 +160,16 @@ var (
 	// ErrAdminExpires keeps the last-admin guard whole: an admin with a
 	// password never expires, so the expiry sweep can't remove one.
 	ErrAdminExpires = errors.New("admins with a password can't expire")
-	usernameRE      = regexp.MustCompile(`^[a-z][a-z0-9._-]{0,31}$`)
+	// ErrNotSaved marks a failure to write the accounts: nothing changed.
+	ErrNotSaved = errors.New("the accounts couldn't be saved")
+	usernameRE  = regexp.MustCompile(`^[a-z][a-z0-9._-]{0,31}$`)
 )
+
+// notSaved is a write error that is also ErrNotSaved, with its message.
+type notSaved struct{ err error }
+
+func (e notSaved) Error() string   { return e.err.Error() }
+func (e notSaved) Unwrap() []error { return []error{ErrNotSaved, e.err} }
 
 func ValidUsername(u string) error {
 	if !usernameRE.MatchString(u) {
@@ -221,7 +243,7 @@ func Load(dataDir string) (*Store, error) {
 
 func (s *Store) publish(next []Account) error {
 	if err := store.WriteJSON(s.path, file{Accounts: next}); err != nil {
-		return err
+		return notSaved{err}
 	}
 	s.list = next
 	return nil
@@ -367,7 +389,7 @@ func (s *Store) Create(n NewAccount) (Account, error) {
 }
 
 // Update applies fn to the account; it bumps the session epoch when the
-// password or admin flag changes or a grant is lowered, and refuses to
+// password or admin flag changes, and refuses to
 // leave no admin with a password. The ID and username don't change.
 func (s *Store) Update(username string, fn func(a *Account)) (Account, error) {
 	s.mu.Lock()
@@ -395,7 +417,7 @@ func (s *Store) Update(username string, fn func(a *Account)) (Account, error) {
 		s.mu.Unlock()
 		return Account{}, ErrLastAdmin
 	}
-	if a.PasswordHash != before.PasswordHash || a.Admin != before.Admin || lowered(before.Grants, a.Grants) {
+	if a.PasswordHash != before.PasswordHash || a.Admin != before.Admin {
 		a.SessionEpoch = before.SessionEpoch + 1
 	}
 	next := s.next()
