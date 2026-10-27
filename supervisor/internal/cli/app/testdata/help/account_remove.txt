@@ -1,0 +1,22 @@
+deskyard account remove: delete an account
+
+Usage: deskyard [-e ENV] account remove USER
+
+Deletes an account with its login link, signed-in devices and the shares it
+made, closing all their connections.
+
+Arguments:
+  USER       string      required  username
+
+Options:
+  --server NAME        the server to manage (see `deskyard server list`);
+                       default: the server -e SERVER/ENV names, else the
+                       default server
+
+Prints: a confirmation line
+
+Examples:
+  deskyard account remove anna
+
+Where: on this machine, talking to the server
+Exit codes: 0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error

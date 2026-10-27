@@ -2,7 +2,8 @@
 // implements the remote access API from supervisor/API.md (status, exec by
 // running commands on the test machine, CDP and forward, whose helper side
 // runs in the fake), the CLI login and link redemption routes, and deleting
-// one's own client credential.
+// one's own client credential. Every other /api/ route (the administrator
+// CLI's) is recorded and answered from Answers.
 package clitest
 
 import (
@@ -69,6 +70,11 @@ type Fake struct {
 	// it is approved; LoginDeny denies it instead.
 	LoginPending int
 	LoginDeny    bool
+	// Answers are the answers to the other /api/ routes, keyed by "METHOD
+	// /api/path" (no query); a route without one answers 404 "no such
+	// route". An answer for GET /api/environments/{name} replaces the
+	// built-in one.
+	Answers map[string]Answer
 
 	mu    sync.Mutex
 	Execs []ExecRequest
@@ -83,6 +89,22 @@ type Fake struct {
 	linkUsed      bool
 	clients       []string // CLI login client names and link redemption names
 	revoked       []string // credential IDs deleted through DELETE /api/me/credentials/{id}
+	calls         []Call
+}
+
+// Answer is a canned answer to an API route.
+type Answer struct {
+	Status int // default 200, or 204 without JSON and Events
+	JSON   any // the body, encoded as JSON
+	// Events, when set, make the answer a server-sent event stream with
+	// one data: line per event, each encoded as JSON (a job's progress).
+	Events []any
+}
+
+// Call is a request to a route answered from Answers.
+type Call struct {
+	Method, Path, Query string
+	Body                string // the raw body; "" without one
 }
 
 // New starts a fake whose account has the full environment name.
@@ -98,6 +120,7 @@ func New(t testing.TB, name string) *Fake {
 	mux.HandleFunc("POST /api/cli-login", f.startLogin)
 	mux.HandleFunc("POST /api/cli-login/{id}/token", f.pollLogin)
 	mux.HandleFunc("POST /api/links/redeem", f.redeem)
+	mux.HandleFunc("/api/", f.auth(f.answer))
 	f.Server = httptest.NewServer(mux)
 	t.Cleanup(f.Close)
 	return f
@@ -128,6 +151,23 @@ func (f *Fake) Revoked() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.revoked...)
+}
+
+// Calls returns the requests answered from Answers so far.
+func (f *Fake) Calls() []Call {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]Call(nil), f.calls...)
+}
+
+// Answer sets the answer to the route key ("METHOD /api/path").
+func (f *Fake) Answer(key string, a Answer) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.Answers == nil {
+		f.Answers = map[string]Answer{}
+	}
+	f.Answers[key] = a
 }
 
 // Valid reports whether the fake accepts cred.
@@ -202,12 +242,49 @@ func (f *Fake) remote(h http.HandlerFunc) http.HandlerFunc {
 }
 
 func (f *Fake) environment(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	_, canned := f.Answers[r.Method+" "+r.URL.Path]
+	f.mu.Unlock()
+	if canned {
+		f.answer(w, r)
+		return
+	}
 	name := r.PathValue("name")
 	if f.level(name) == "" {
 		writeErr(w, http.StatusNotFound, "no such environment")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"name": name, "state": "running"})
+}
+
+// answer records the request and serves its canned answer.
+func (f *Fake) answer(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
+	f.mu.Lock()
+	f.calls = append(f.calls, Call{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Body: string(body)})
+	a, ok := f.Answers[r.Method+" "+r.URL.Path]
+	f.mu.Unlock()
+	switch {
+	case !ok:
+		writeErr(w, http.StatusNotFound, "no such route")
+	case a.Events != nil:
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		for _, e := range a.Events {
+			data, _ := json.Marshal(e)
+			fmt.Fprintf(w, "data: %s\n\n", data)
+		}
+	case a.JSON == nil:
+		if a.Status == 0 {
+			a.Status = http.StatusNoContent
+		}
+		w.WriteHeader(a.Status)
+	default:
+		if a.Status == 0 {
+			a.Status = http.StatusOK
+		}
+		writeJSON(w, a.Status, a.JSON)
+	}
 }
 
 func (f *Fake) info(w http.ResponseWriter, r *http.Request) {

@@ -1,0 +1,23 @@
+deskyard volume remove: remove a volume
+
+Usage: deskyard [-e ENV] volume remove NAME [--delete-files]
+
+Removes a volume no environment grants any more; its folder is kept unless
+--delete-files.
+
+Arguments:
+  NAME       string      required  volume name
+
+Options:
+  --delete-files       also delete the volume's files
+  --server NAME        the server to manage (see `deskyard server list`);
+                       default: the server -e SERVER/ENV names, else the
+                       default server
+
+Prints: a confirmation line
+
+Examples:
+  deskyard volume remove photos
+
+Where: on this machine, talking to the server
+Exit codes: 0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error

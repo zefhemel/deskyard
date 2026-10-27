@@ -103,6 +103,15 @@ SHARING AN ENVIRONMENT
 - Keep long-running programs in the background (setsid -f CMD) so they
   outlive your command.
 
+MANAGING THE SERVER
+  With an administrator account (some need only full access):
+    deskyard env list | env create NAME --image REF | env start NAME
+    deskyard env access alice anna=full bob=observe   who may use it
+    deskyard share create alice sanne --observe --expires 1d   prints a link
+    deskyard account create anna --grant alice   token account: prints a link
+    deskyard volume list | device list | device revoke ID
+  --server NAME picks another signed-in server.
+
 MORE
   deskyard --help                 all commands
   deskyard COMMAND --help         arguments, an example, what it prints

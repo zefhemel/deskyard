@@ -175,7 +175,7 @@ func (a *App) run(ctx context.Context, argv []string) error {
 		if argv[0] == "remote" {
 			return usagef(nil, "unknown command \"remote\": remotes were replaced by servers you sign in to; run `deskyard login https://host/ENV` (or `deskyard auth LINK`), then `deskyard server list`")
 		}
-		if argv[0] == "server" || argv[0] == "env" || argv[0] == "browser" {
+		if len(subcommands(argv[0])) > 0 {
 			if len(argv) == 1 {
 				return usagef(nil, "%s needs a subcommand: %s", argv[0], strings.Join(subcommands(argv[0]), ", "))
 			}

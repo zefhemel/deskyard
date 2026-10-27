@@ -1,0 +1,25 @@
+deskyard env remove: remove an environment (admin)
+
+Usage: deskyard [-e ENV] env remove NAME [--delete-files]
+
+Removes an environment: its container, its grants to accounts and its shares
+(closing their connections). Its files in home/NAME/ are kept unless
+--delete-files; volumes are never touched.
+
+Arguments:
+  NAME       string      required  environment name
+
+Options:
+  --delete-files       also delete the environment's files (home/NAME/)
+  --server NAME        the server to manage (see `deskyard server list`);
+                       default: the server -e SERVER/ENV names, else the
+                       default server
+
+Prints: a confirmation line
+
+Examples:
+  deskyard env remove bob
+  deskyard env remove bob --delete-files
+
+Where: on this machine, talking to the server
+Exit codes: 0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error

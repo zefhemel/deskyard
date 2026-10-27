@@ -956,6 +956,873 @@
       "exitCodes": "0 ok, 1 error, 2 usage error"
     },
     {
+      "name": "env list",
+      "group": "environments",
+      "summary": "list the environments you can see",
+      "usage": "env list [--json]",
+      "description": "Lists the environments your account can see on the server, with their state, your access level, image and who is viewing. Administrators see every environment, and the containers the server can't match (conflicts) on stderr.",
+      "arguments": [],
+      "flags": [
+        {
+          "name": "--json",
+          "type": "boolean",
+          "description": "print JSON instead of text"
+        },
+        {
+          "name": "--server",
+          "type": "string",
+          "value": "NAME",
+          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "a table NAME STATE ACCESS IMAGE VIEWERS; with --json the API's answer {environments:[Environment],conflicts:[Conflict]} (see the server's API reference)",
+        "fields": {
+          "conflicts": "containers the server can't match to an environment (administrators only)",
+          "environments": "the environments, sorted by name"
+        }
+      },
+      "examples": [
+        "deskyard env list",
+        "deskyard env list --json"
+      ],
+      "where": "on this machine, talking to the server",
+      "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
+    },
+    {
+      "name": "env show",
+      "group": "environments",
+      "summary": "show an environment's state and settings",
+      "usage": "env show NAME [--json]",
+      "description": "Shows an environment's state, image, limits, volumes, access and viewers. Observers see its state only.",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "environment name"
+        }
+      ],
+      "flags": [
+        {
+          "name": "--json",
+          "type": "boolean",
+          "description": "print JSON instead of text"
+        },
+        {
+          "name": "--server",
+          "type": "string",
+          "value": "NAME",
+          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "\"key: value\" lines; with --json the API's Environment object"
+      },
+      "examples": [
+        "deskyard env show alice"
+      ],
+      "where": "on this machine, talking to the server",
+      "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
+    },
+    {
+      "name": "env create",
+      "group": "environments",
+      "summary": "create an environment (admin)",
+      "usage": "env create NAME --image REF [OPTIONS]",
+      "description": "Creates an environment from an image and starts it, printing the progress (pulling the image, starting the desktop) on stderr until it is ready; Ctrl-C stops following, not the creation. Its files are in home/NAME/ in the server's data folder; a folder left by an earlier environment of that name is reused. Administrators have access to every environment; --grant gives it to other accounts.",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "environment name (2–32 lowercase letters, digits and -)"
+        }
+      ],
+      "flags": [
+        {
+          "name": "--image",
+          "type": "string",
+          "value": "REF",
+          "description": "image reference (required), e.g. ghcr.io/zefhemel/deskyard-debian-xfce:latest"
+        },
+        {
+          "name": "--memory",
+          "type": "string",
+          "value": "BYTES",
+          "description": "memory limit in bytes, or with K, M, G or T (4G); default no limit"
+        },
+        {
+          "name": "--cpus",
+          "type": "number",
+          "value": "N",
+          "description": "CPU limit, e.g. 2 or 1.5; default no limit"
+        },
+        {
+          "name": "--grant",
+          "type": "string[]",
+          "value": "USER[=observe]",
+          "description": "give an account full access, or observe-only with =observe (repeatable)"
+        },
+        {
+          "name": "--volume",
+          "type": "string[]",
+          "value": "NAME[:ro]",
+          "description": "mount a volume at /share/NAME, read-only with :ro (repeatable)"
+        },
+        {
+          "name": "--server",
+          "type": "string",
+          "value": "NAME",
+          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "the new environment's URL once it is ready; progress on stderr"
+      },
+      "examples": [
+        "deskyard env create bob --image ghcr.io/zefhemel/deskyard-debian-xfce:latest --memory 4G --cpus 2 --grant bob",
+        "deskyard env create lab --image ghcr.io/zefhemel/deskyard-debian-xfce:latest --volume photos:ro"
+      ],
+      "where": "on this machine, talking to the server",
+      "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
+    },
+    {
+      "name": "env remove",
+      "group": "environments",
+      "summary": "remove an environment (admin)",
+      "usage": "env remove NAME [--delete-files]",
+      "description": "Removes an environment: its container, its grants to accounts and its shares (closing their connections). Its files in home/NAME/ are kept unless --delete-files; volumes are never touched.",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "environment name"
+        }
+      ],
+      "flags": [
+        {
+          "name": "--delete-files",
+          "type": "boolean",
+          "description": "also delete the environment's files (home/NAME/)"
+        },
+        {
+          "name": "--server",
+          "type": "string",
+          "value": "NAME",
+          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "a confirmation line"
+      },
+      "examples": [
+        "deskyard env remove bob",
+        "deskyard env remove bob --delete-files"
+      ],
+      "where": "on this machine, talking to the server",
+      "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
+    },
+    {
+      "name": "env start",
+      "group": "environments",
+      "summary": "start an environment",
+      "usage": "env start NAME",
+      "description": "Saves that the environment should be running and starts it, making its container when it has none or its settings changed; the server answers at once. Needs full access to it.",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "environment name"
+        }
+      ],
+      "flags": [
+        {
+          "name": "--server",
+          "type": "string",
+          "value": "NAME",
+          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "a confirmation line"
+      },
+      "examples": [
+        "deskyard env start alice"
+      ],
+      "where": "on this machine, talking to the server",
+      "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
+    },
+    {
+      "name": "env stop",
+      "group": "environments",
+      "summary": "stop an environment",
+      "usage": "env stop NAME",
+      "description": "Saves that the environment should be stopped and stops it, keeping its container and files; the server answers at once. Needs full access to it.",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "environment name"
+        }
+      ],
+      "flags": [
+        {
+          "name": "--server",
+          "type": "string",
+          "value": "NAME",
+          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "a confirmation line"
+      },
+      "examples": [
+        "deskyard env stop alice"
+      ],
+      "where": "on this machine, talking to the server",
+      "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
+    },
+    {
+      "name": "env restart",
+      "group": "environments",
+      "summary": "restart an environment",
+      "usage": "env restart NAME",
+      "description": "Saves that the environment should be running and restarts it, closing everyone's connections; the server answers at once. Needs full access to it.",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "environment name"
+        }
+      ],
+      "flags": [
+        {
+          "name": "--server",
+          "type": "string",
+          "value": "NAME",
+          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "a confirmation line"
+      },
+      "examples": [
+        "deskyard env restart alice"
+      ],
+      "where": "on this machine, talking to the server",
+      "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
+    },
+    {
+      "name": "env access",
+      "group": "environments",
+      "summary": "show or change who may use an environment (admin)",
+      "usage": "env access NAME [USER=LEVEL]...",
+      "description": "Without assignments, lists the accounts with access to the environment and their level. With them, changes the named accounts (none removes the access) and keeps the others; a lowered or removed access closes that account's connections at once. Administrators always have full access; shares are managed with `deskyard share`.",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "environment name"
+        },
+        {
+          "name": "assignment",
+          "type": "string",
+          "required": false,
+          "variadic": true,
+          "description": "USER=LEVEL: USER=full, USER=observe or USER=none"
+        }
+      ],
+      "flags": [
+        {
+          "name": "--json",
+          "type": "boolean",
+          "description": "print JSON instead of text"
+        },
+        {
+          "name": "--server",
+          "type": "string",
+          "value": "NAME",
+          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "without assignments a table USER LEVEL (with --json the API's Environment object, whose access field lists them); with them a confirmation line"
+      },
+      "examples": [
+        "deskyard env access alice",
+        "deskyard env access alice anna=full bob=observe carl=none"
+      ],
+      "where": "on this machine, talking to the server",
+      "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
+    },
+    {
+      "name": "volume list",
+      "group": "volumes",
+      "summary": "list the volumes",
+      "usage": "volume list [--json]",
+      "description": "Lists the volumes (shared folders in the server's data folder, mounted at /share/NAME) and the environments they are granted to.",
+      "arguments": [],
+      "flags": [
+        {
+          "name": "--json",
+          "type": "boolean",
+          "description": "print JSON instead of text"
+        },
+        {
+          "name": "--server",
+          "type": "string",
+          "value": "NAME",
+          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "a table NAME ENVIRONMENTS FOLDER CREATED; with --json the API's answer {volumes:[Volume]}"
+      },
+      "examples": [
+        "deskyard volume list"
+      ],
+      "where": "on this machine, talking to the server",
+      "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
+    },
+    {
+      "name": "volume create",
+      "group": "volumes",
+      "summary": "create a volume",
+      "usage": "volume create NAME",
+      "description": "Creates a volume, volume/NAME/ in the server's data folder; an existing folder of that name is kept as it is. Grant it to environments with `deskyard env create … --volume NAME`.",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "volume name (2–32 lowercase letters, digits and -)"
+        }
+      ],
+      "flags": [
+        {
+          "name": "--server",
+          "type": "string",
+          "value": "NAME",
+          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "a confirmation line"
+      },
+      "examples": [
+        "deskyard volume create photos"
+      ],
+      "where": "on this machine, talking to the server",
+      "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
+    },
+    {
+      "name": "volume remove",
+      "group": "volumes",
+      "summary": "remove a volume",
+      "usage": "volume remove NAME [--delete-files]",
+      "description": "Removes a volume no environment grants any more; its folder is kept unless --delete-files.",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "volume name"
+        }
+      ],
+      "flags": [
+        {
+          "name": "--delete-files",
+          "type": "boolean",
+          "description": "also delete the volume's files"
+        },
+        {
+          "name": "--server",
+          "type": "string",
+          "value": "NAME",
+          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "a confirmation line"
+      },
+      "examples": [
+        "deskyard volume remove photos"
+      ],
+      "where": "on this machine, talking to the server",
+      "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
+    },
+    {
+      "name": "account list",
+      "group": "accounts",
+      "summary": "list the accounts",
+      "usage": "account list [--json]",
+      "description": "Lists the accounts, shares included, with their kind (password or token), access, expiry and last sign-in.",
+      "arguments": [],
+      "flags": [
+        {
+          "name": "--json",
+          "type": "boolean",
+          "description": "print JSON instead of text"
+        },
+        {
+          "name": "--server",
+          "type": "string",
+          "value": "NAME",
+          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "a table USER KIND ACCESS EXPIRES LAST-SIGN-IN NOTE; with --json the API's [Account]"
+      },
+      "examples": [
+        "deskyard account list"
+      ],
+      "where": "on this machine, talking to the server",
+      "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
+    },
+    {
+      "name": "account create",
+      "group": "accounts",
+      "summary": "create an account",
+      "usage": "account create USER [OPTIONS]",
+      "description": "Creates an account. With --password-stdin it signs in with that password; without one it is a token account, which signs in with a login link: the link is printed, and works once.",
+      "arguments": [
+        {
+          "name": "user",
+          "type": "string",
+          "required": true,
+          "description": "username"
+        }
+      ],
+      "flags": [
+        {
+          "name": "--password-stdin",
+          "type": "boolean",
+          "description": "read the password from stdin (without the final line break)"
+        },
+        {
+          "name": "--admin",
+          "type": "boolean",
+          "description": "make it an administrator (full access to everything, and these commands)"
+        },
+        {
+          "name": "--description",
+          "type": "string",
+          "value": "TEXT",
+          "description": "who it is for (at most 200 characters)"
+        },
+        {
+          "name": "--grant",
+          "type": "string[]",
+          "value": "ENV[=observe]",
+          "description": "give full access to an environment, or observe-only with =observe (repeatable)"
+        },
+        {
+          "name": "--expires",
+          "type": "string",
+          "value": "WHEN",
+          "description": "when the account ends: a time from now (90m, 2h, 7d, 2w) or an RFC 3339 time (2026-12-01T18:00:00Z)"
+        },
+        {
+          "name": "--server",
+          "type": "string",
+          "value": "NAME",
+          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "for a token account its login link alone on stdout (what it gives on stderr); for a password account a confirmation line"
+      },
+      "examples": [
+        "deskyard account create anna --grant alice",
+        "printf '%s' \"$PW\" | deskyard account create carl --password-stdin --admin",
+        "deskyard account create guest --grant demo=observe --expires 7d"
+      ],
+      "where": "on this machine, talking to the server",
+      "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
+    },
+    {
+      "name": "account update",
+      "group": "accounts",
+      "summary": "change an account",
+      "usage": "account update USER [OPTIONS]",
+      "description": "Changes what the options give and keeps the rest; --grant changes the named environments (=none removes one) and keeps the others. Lowering access, a new password or --no-admin signs the account out of its browsers and closes the connections it may no longer have.",
+      "arguments": [
+        {
+          "name": "user",
+          "type": "string",
+          "required": true,
+          "description": "username"
+        }
+      ],
+      "flags": [
+        {
+          "name": "--password-stdin",
+          "type": "boolean",
+          "description": "set the password from stdin (password accounts only)"
+        },
+        {
+          "name": "--admin",
+          "type": "boolean",
+          "description": "make it an administrator"
+        },
+        {
+          "name": "--no-admin",
+          "type": "boolean",
+          "description": "make it a regular account"
+        },
+        {
+          "name": "--description",
+          "type": "string",
+          "value": "TEXT",
+          "description": "who it is for; \"\" clears it"
+        },
+        {
+          "name": "--grant",
+          "type": "string[]",
+          "value": "ENV[=LEVEL]",
+          "description": "set its access to an environment: ENV or ENV=full, ENV=observe, ENV=none (repeatable)"
+        },
+        {
+          "name": "--expires",
+          "type": "string",
+          "value": "WHEN",
+          "description": "when the account ends: a time from now (2h, 7d), an RFC 3339 time, or never"
+        },
+        {
+          "name": "--server",
+          "type": "string",
+          "value": "NAME",
+          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "a confirmation line"
+      },
+      "examples": [
+        "deskyard account update anna --grant bob=observe --grant alice=none",
+        "deskyard account update guest --expires never"
+      ],
+      "where": "on this machine, talking to the server",
+      "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
+    },
+    {
+      "name": "account remove",
+      "group": "accounts",
+      "summary": "delete an account",
+      "usage": "account remove USER",
+      "description": "Deletes an account with its login link, signed-in devices and the shares it made, closing all their connections.",
+      "arguments": [
+        {
+          "name": "user",
+          "type": "string",
+          "required": true,
+          "description": "username"
+        }
+      ],
+      "flags": [
+        {
+          "name": "--server",
+          "type": "string",
+          "value": "NAME",
+          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "a confirmation line"
+      },
+      "examples": [
+        "deskyard account remove anna"
+      ],
+      "where": "on this machine, talking to the server",
+      "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
+    },
+    {
+      "name": "account link",
+      "group": "accounts",
+      "summary": "make a new login link for a token account",
+      "usage": "account link USER",
+      "description": "Makes a new login link for a token account (or a share), replacing its unused one. The link works once.",
+      "arguments": [
+        {
+          "name": "user",
+          "type": "string",
+          "required": true,
+          "description": "username"
+        }
+      ],
+      "flags": [
+        {
+          "name": "--server",
+          "type": "string",
+          "value": "NAME",
+          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "the login link (https://host/link#dyl_…) alone on stdout; what it gives on stderr"
+      },
+      "examples": [
+        "deskyard account link anna"
+      ],
+      "where": "on this machine, talking to the server",
+      "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
+    },
+    {
+      "name": "share list",
+      "group": "sharing",
+      "summary": "list an environment's shares",
+      "usage": "share list ENV [--json]",
+      "description": "Lists the shares of an environment: who it was shared with and by, at which level, until when, and whether they are connected now. Needs full access to it.",
+      "arguments": [
+        {
+          "name": "env",
+          "type": "string",
+          "required": true,
+          "description": "environment name"
+        }
+      ],
+      "flags": [
+        {
+          "name": "--json",
+          "type": "boolean",
+          "description": "print JSON instead of text"
+        },
+        {
+          "name": "--server",
+          "type": "string",
+          "value": "NAME",
+          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "a table NAME LEVEL SHARED-BY EXPIRES LAST-SIGN-IN NOTE; with --json the API's [Share]"
+      },
+      "examples": [
+        "deskyard share list alice"
+      ],
+      "where": "on this machine, talking to the server",
+      "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
+    },
+    {
+      "name": "share create",
+      "group": "sharing",
+      "summary": "share an environment by link",
+      "usage": "share create ENV NAME [OPTIONS]",
+      "description": "Shares an environment you have full access to: makes the account NAME with access to it only, and prints its login link, which works once. Observe-only shares watch in a browser and can't use the CLI. The share ends when it is revoked or expires, or when you lose full access.",
+      "arguments": [
+        {
+          "name": "env",
+          "type": "string",
+          "required": true,
+          "description": "environment name"
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "the share's username, e.g. who it is for"
+        }
+      ],
+      "flags": [
+        {
+          "name": "--observe",
+          "type": "boolean",
+          "description": "observe only: watch the desktop, no input"
+        },
+        {
+          "name": "--expires",
+          "type": "string",
+          "value": "WHEN",
+          "description": "when the share ends: a time from now (90m, 2h, 7d, 2w) or an RFC 3339 time"
+        },
+        {
+          "name": "--server",
+          "type": "string",
+          "value": "NAME",
+          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "the login link (https://host/link#dyl_…) alone on stdout; what it gives on stderr"
+      },
+      "examples": [
+        "deskyard share create alice sanne --observe --expires 1d",
+        "link=$(deskyard share create alice pair)"
+      ],
+      "where": "on this machine, talking to the server",
+      "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
+    },
+    {
+      "name": "share link",
+      "group": "sharing",
+      "summary": "make a new link for a share",
+      "usage": "share link NAME",
+      "description": "Makes a new login link for a share you made (administrators: any share), replacing its unused one.",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "the share's username"
+        }
+      ],
+      "flags": [
+        {
+          "name": "--server",
+          "type": "string",
+          "value": "NAME",
+          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "the login link (https://host/link#dyl_…) alone on stdout; what it gives on stderr"
+      },
+      "examples": [
+        "deskyard share link sanne"
+      ],
+      "where": "on this machine, talking to the server",
+      "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
+    },
+    {
+      "name": "share revoke",
+      "group": "sharing",
+      "summary": "end a share",
+      "usage": "share revoke NAME",
+      "description": "Ends a share you made (administrators: any share): deletes its account and link and closes its connections.",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "the share's username"
+        }
+      ],
+      "flags": [
+        {
+          "name": "--server",
+          "type": "string",
+          "value": "NAME",
+          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "a confirmation line"
+      },
+      "examples": [
+        "deskyard share revoke sanne"
+      ],
+      "where": "on this machine, talking to the server",
+      "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
+    },
+    {
+      "name": "device list",
+      "group": "devices",
+      "summary": "list the signed-in CLIs",
+      "usage": "device list [OPTIONS]",
+      "description": "Lists the CLI credentials (signed-in devices) of your account, or of another one (admin); * marks this CLI's own.",
+      "arguments": [],
+      "flags": [
+        {
+          "name": "--account",
+          "type": "string",
+          "value": "USER",
+          "description": "another account's devices (admin)"
+        },
+        {
+          "name": "--json",
+          "type": "boolean",
+          "description": "print JSON instead of text"
+        },
+        {
+          "name": "--server",
+          "type": "string",
+          "value": "NAME",
+          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "a table ID NAME SIGNED-IN LAST-USED; with --json the API's [Credential]",
+        "fields": {
+          "current": "whether it is this CLI's own",
+          "id": "credential ID, for device revoke",
+          "name": "the client, e.g. deskyard CLI on HOST"
+        }
+      },
+      "examples": [
+        "deskyard device list",
+        "deskyard device list --account anna"
+      ],
+      "where": "on this machine, talking to the server",
+      "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
+    },
+    {
+      "name": "device revoke",
+      "group": "devices",
+      "summary": "sign out a device",
+      "usage": "device revoke ID [--account USER]",
+      "description": "Revokes a CLI credential by its ID (from device list), closing its connections at once. To sign out this CLI, use `deskyard logout` instead.",
+      "arguments": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "credential ID"
+        }
+      ],
+      "flags": [
+        {
+          "name": "--account",
+          "type": "string",
+          "value": "USER",
+          "description": "another account's device (admin)"
+        },
+        {
+          "name": "--server",
+          "type": "string",
+          "value": "NAME",
+          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+        }
+      ],
+      "output": {
+        "type": "text",
+        "description": "a confirmation line"
+      },
+      "examples": [
+        "deskyard device revoke 3f9c0a12",
+        "deskyard device revoke 3f9c0a12 --account anna"
+      ],
+      "where": "on this machine, talking to the server",
+      "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
+    },
+    {
       "name": "status",
       "group": "info",
       "summary": "show the environment's name, state, image and screen",

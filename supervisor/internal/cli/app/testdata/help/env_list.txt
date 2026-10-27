@@ -1,0 +1,24 @@
+deskyard env list: list the environments you can see
+
+Usage: deskyard [-e ENV] env list [--json]
+
+Lists the environments your account can see on the server, with their state,
+your access level, image and who is viewing. Administrators see every
+environment, and the containers the server can't match (conflicts) on stderr.
+
+Options:
+  --json               print JSON instead of text
+  --server NAME        the server to manage (see `deskyard server list`);
+                       default: the server -e SERVER/ENV names, else the
+                       default server
+
+Prints: a table NAME STATE ACCESS IMAGE VIEWERS; with --json the API's answer
+  {environments:[Environment],conflicts:[Conflict]} (see the server's
+  API reference)
+
+Examples:
+  deskyard env list
+  deskyard env list --json
+
+Where: on this machine, talking to the server
+Exit codes: 0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error

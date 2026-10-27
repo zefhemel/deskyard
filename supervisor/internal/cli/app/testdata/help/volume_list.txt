@@ -1,0 +1,21 @@
+deskyard volume list: list the volumes
+
+Usage: deskyard [-e ENV] volume list [--json]
+
+Lists the volumes (shared folders in the server's data folder, mounted at
+/share/NAME) and the environments they are granted to.
+
+Options:
+  --json               print JSON instead of text
+  --server NAME        the server to manage (see `deskyard server list`);
+                       default: the server -e SERVER/ENV names, else the
+                       default server
+
+Prints: a table NAME ENVIRONMENTS FOLDER CREATED; with --json the API's answer
+  {volumes:[Volume]}
+
+Examples:
+  deskyard volume list
+
+Where: on this machine, talking to the server
+Exit codes: 0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error

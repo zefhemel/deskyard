@@ -40,6 +40,38 @@ Servers and sign-in:
   server default [NAME]                set or show the default server
   env use ENV|SERVER/ENV               set a server's default environment
 
+Environments (on the server):
+  env list [--json]                    list the environments you can see
+  env show NAME [--json]               show an environment's state and settings
+  env create NAME --image REF [OPTIONS] create an environment (admin)
+  env remove NAME [--delete-files]     remove an environment (admin)
+  env start NAME                       start an environment
+  env stop NAME                        stop an environment
+  env restart NAME                     restart an environment
+  env access NAME [USER=LEVEL]...      show or change who may use an environment (admin)
+
+Volumes (admin):
+  volume list [--json]                 list the volumes
+  volume create NAME                   create a volume
+  volume remove NAME [--delete-files]  remove a volume
+
+Accounts (admin):
+  account list [--json]                list the accounts
+  account create USER [OPTIONS]        create an account
+  account update USER [OPTIONS]        change an account
+  account remove USER                  delete an account
+  account link USER                    make a new login link for a token account
+
+Sharing:
+  share list ENV [--json]              list an environment's shares
+  share create ENV NAME [OPTIONS]      share an environment by link
+  share link NAME                      make a new link for a share
+  share revoke NAME                    end a share
+
+Signed-in devices:
+  device list [OPTIONS]                list the signed-in CLIs
+  device revoke ID [--account USER]    sign out a device
+
 Information:
   status [--json]                      show the environment's name, state, image and screen
   guide                                short manual for environment access and control
