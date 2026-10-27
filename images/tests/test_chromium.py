@@ -175,3 +175,20 @@ time.sleep(60)
         assert sandbox.exec("test ! -e /workspace/.config/chromium-shared/.open", check=False).returncode == 0
     finally:
         sandbox.exec('kill "$(cat /tmp/marker-renderer.pid)"', check=False)
+
+
+def test_start_chromium_waits_seconds_not_rounds_for_the_panel(sandbox):
+    # A panel that never reserves its space (a custom layout, an older base)
+    # costs a few seconds before Chromium starts, not a fixed number of slow
+    # checks (once about 24 s).
+    source = sandbox.exec("cat /usr/local/bin/start-chromium").stdout
+    launch = '/usr/bin/chromium "${flags[@]}" "$@"'
+    check = "/usr/local/bin/desktop-ready && panel_reserved && break"
+    assert launch in source and check in source
+    source = source.replace(launch, 'true "${flags[@]}" "$@"').replace(check, "false && break")
+    sandbox.exec("printf %s " + shlex.quote(source) + " > /tmp/start-chromium-panel-test")
+    started = time.monotonic()
+    sandbox.exec("bash /tmp/start-chromium-panel-test")
+    took = time.monotonic() - started
+    assert 2 <= took <= 8, took
+
