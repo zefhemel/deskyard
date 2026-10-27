@@ -15,7 +15,7 @@ const nav = [
   { href: "/", label: "Environments", match: (p: string) => p === "/" || p.startsWith("/environments/") },
   { href: "/images", label: "Images", match: (p: string) => p === "/images" },
   { href: "/volumes", label: "Storage", match: (p: string) => p === "/volumes" || p.startsWith("/volumes/") },
-  { href: "/_vpn", label: "VPN connections", match: (p: string) => p === "/_vpn" },
+  { href: "/_vpn", label: "Networking", match: (p: string) => p === "/_vpn" },
   { href: "/accounts", label: "Accounts", match: (p: string) => p === "/accounts" },
 ];
 
@@ -67,7 +67,7 @@ export function TopBar() {
         )}
         <Menu
           items={[
-            { label: "Signed-in devices", onSelect: () => route("/account") },
+            { label: "Account and devices", onSelect: () => route("/account") },
             // Token accounts have no password: they sign in with login links.
             ...(me.kind === "password" ? [{ label: "Change password", onSelect: () => setChanging(true) }] : []),
             { label: "Sign out everywhere", onSelect: () => setEverywhere(true), separated: true },

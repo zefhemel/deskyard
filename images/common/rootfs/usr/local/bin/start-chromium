@@ -19,7 +19,10 @@ panel_reserved() {
     screen=$(xdotool getdisplaygeometry 2>/dev/null)
     [ -n "$area" ] && [ -n "$screen" ] && [ "$area" != "0 0 $screen" ]
 }
-for _ in $(seq 200); do
+# A time limit, not a count: each check takes about 0.1 s itself, and a panel
+# that never reserves space must not hold Chromium back for long.
+deadline=$((SECONDS + 5))
+while ((SECONDS < deadline)); do
     /usr/local/bin/desktop-ready && panel_reserved && break
     sleep 0.1
 done

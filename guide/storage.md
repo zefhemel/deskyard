@@ -1,6 +1,6 @@
 # Storage
 
-Volumes shared between environments, backups, and the supervisor's data folder.
+Volumes shared between environments, WebDAV drives, backups, and the supervisor's data folder.
 
 ## Volumes
 
@@ -53,6 +53,41 @@ Per-environment host folders were replaced by host volumes. A data folder whose
 `environments.json` still has host folders (`mounts`) isn't migrated: the
 supervisor refuses to start and names the environment; remove its folders with
 the previous version, or delete the `mounts` entries, then create host volumes.
+
+## WebDAV drives
+
+An environment's files can be mounted as a drive on your own computer,
+also while the environment is stopped. An admin switches it on per
+environment on its **Access** tab, with **Serve files over WebDAV**; it is
+off by default. Others with full access see the drive's address there
+while it is on. The drive is at `https://<your Deskyard>/<name>/dav/` and
+shows the environment's own paths: `workspace/` (the home folder) and each
+local volume at its path, such as `share/photos/`. Read-only volumes stay
+read-only. Host volumes aren't included.
+
+Anyone with full access and a password can connect, with their username
+and password; observers and accounts that sign in with links can't. Your
+page (the account menu → **Account and devices**) lists your drives and can
+make a separate **WebDAV password**: while you have one, WebDAV takes only
+that password, so your account password isn't stored in WebDAV clients.
+Removing it, or signing out everywhere, disconnects them.
+
+- **macOS:** in Finder, **Go → Connect to Server**, enter the address and
+  sign in. Finder's `.DS_Store` and `._` files are accepted but not kept,
+  so Finder tags don't travel with files. WebDAV has no symlinks: Finder
+  gives up on a folder that contains one ("One or more items can't be
+  copied", and Skip copies nothing more of it). Remove the links first, or
+  copy in Terminal with `cp -R`, which skips them and copies the rest.
+- **iPhone and iPad:** the Files app's own Connect to Server speaks SMB
+  only; use a WebDAV app such as Owlfiles, which adds the drive to Files.
+- **Windows:** **Map network drive** with the address. Windows refuses
+  passwords over plain HTTP, so it needs HTTPS.
+- **Linux:** your file manager's **Connect to Server** with `davs://` (or
+  `dav://` on plain HTTP), davfs2, or rclone's WebDAV remote.
+
+Without HTTPS the password crosses the network readable; the settings and
+your page warn when that is the case. Files opened from the drive in a
+browser are always downloaded rather than shown.
 
 ## Backups
 

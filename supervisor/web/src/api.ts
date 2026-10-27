@@ -116,6 +116,8 @@ export interface Environment {
   terminals: TerminalSession[];
   /** Reclaim memory automatically while nobody is viewing; saves without restarting. */
   memoryReclaim: boolean;
+  /** Its home and local volumes are served over WebDAV at /<name>/dav/. */
+  webdav: boolean;
   /** The environment's identity everywhere: there is no separate ID. */
   name: string;
   /** Observed; power is the desired state. */
@@ -255,10 +257,10 @@ export interface LinkInfo {
   expires: string | null;
 }
 
-/** A signed-in client (a CLI) of an account. */
+/** A signed-in client of an account: a CLI, or the account's WebDAV password. */
 export interface Credential {
   id: string;
-  kind: "cli";
+  kind: "cli" | "webdav";
   name: string;
   created: string;
   lastUsed: string | null;
@@ -295,6 +297,9 @@ export interface FolderSize {
   bytes: number;
   /** False when some directories couldn't be read, so bytes is a lower bound. */
   complete: boolean;
+  /** The disk holding the folder (absent when unknown). */
+  diskFree?: number;
+  diskSize?: number;
 }
 
 export interface Uploaded {
@@ -599,6 +604,10 @@ export const api = {
   signOutEverywhere: () => request<void>("POST", "/api/me/sign-out-everywhere"),
   credentials: () => request<Credential[]>("GET", "/api/me/credentials"),
   revokeCredential: (id: string) => request<void>("DELETE", `/api/me/credentials/${enc(id)}`),
+  /** Makes the account's WebDAV password (replacing any), shown only in this answer. */
+  createWebDAVPassword: () => request<{ password: string }>("POST", "/api/me/webdav-password"),
+  /** Removes the WebDAV password; WebDAV takes the account password again. */
+  removeWebDAVPassword: () => request<void>("DELETE", "/api/me/webdav-password"),
   host: () => request<Host>("GET", "/api/host"),
 
   environments: () => request<EnvironmentList>("GET", "/api/environments"),
@@ -613,6 +622,7 @@ export const api = {
     request<JobRef>("POST", "/api/environments", body),
   power: (name: string, action: "start" | "stop" | "restart") => request<void>("POST", `${c(name)}/${action}`),
   setMemoryPolicy: (name: string, memoryReclaim: boolean) => request<void>("PUT", `${c(name)}/memory-policy`, { memoryReclaim }),
+  setWebDAV: (name: string, webdav: boolean) => request<void>("PUT", `${c(name)}/webdav`, { webdav }),
   reclaimMemory: (name: string) => request<MemoryReclaim>("POST", `${c(name)}/reclaim-memory`),
   removeEnvironment: (name: string, files: boolean) => request<void>("DELETE", c(name) + (files ? "?files=1" : "")),
   updateSettings: (name: string, body: SettingsPatch) =>

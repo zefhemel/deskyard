@@ -63,6 +63,9 @@ type Server struct {
 
 	memoryReclaim engine.MemoryReclaimSupport
 
+	davLocks     davLockSystems    // each environment's WebDAV locks
+	davPasswords *davPasswordCache // account passwords WebDAV clients sent that checked out
+
 	activity       *activity.Tracker
 	activityPub    *throttle
 	screenWatchers *viewers   // screen-events streams, closed on revoke like viewers
@@ -116,7 +119,7 @@ func New(o Options) (*Server, error) {
 		jobs: newJobs(), events: newHub(), viewers: newViewers(), terminals: newTerminalConnections(), forwards: newForwards(), viewersPub: newThrottle(viewersInterval), streamDials: newDialGates(),
 		clients:     &clientFiles{eng: o.Eng, dir: filepath.Join(o.Layout.Cache, "client")},
 		activityPub: newThrottle(activityInterval), screenWatchers: newViewers(), transfers: newTransfers(), cliLogins: newCLILogins(), unsaved: newUnsavedRevocations(), seen: &lastSeen{at: map[string]time.Time{}},
-		reconcile: make(chan struct{}, 1),
+		reconcile: make(chan struct{}, 1), davPasswords: newDAVPasswordCache(),
 	}
 	s.activity = s.newActivity(o.ActivityPresence)
 	s.terminalSessions = newTerminalSessions(s)
@@ -391,7 +394,7 @@ func bearerOf(r *http.Request) (string, bool) {
 // account must be the one it was issued to, still usable (accountNow).
 func (s *Server) withCredential(r *http.Request, bearer string) (*http.Request, bool) {
 	c, ok := s.credentials.check(bearer)
-	if !ok {
+	if !ok || c.Kind == davKind { // a WebDAV password opens only WebDAV
 		return r, false
 	}
 	a, found := s.accountNow(c.Username, c.AccountID, time.Now())

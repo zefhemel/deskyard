@@ -67,12 +67,12 @@ func TestDefinitionsRoundTripSpecKeys(t *testing.T) {
 	if first["name"] != "alice" {
 		t.Fatalf("environments are saved sorted by name, got %v first", first["name"])
 	}
-	for _, key := range []string{"name", "created", "revision", "image", "limits", "network", "volumes", "dockerAccess", "memoryReclaim", "power"} {
+	for _, key := range []string{"name", "created", "revision", "image", "limits", "network", "volumes", "dockerAccess", "memoryReclaim", "webdav", "power"} {
 		if _, ok := first[key]; !ok {
 			t.Errorf("missing key %q in %s", key, b)
 		}
 	}
-	if len(first) != 10 {
+	if len(first) != 11 {
 		t.Errorf("unexpected keys in %v", first)
 	}
 	if img := first["image"].(map[string]any); img["ref"] != alice.Image.Ref || img["id"] != "sha256:abc" {

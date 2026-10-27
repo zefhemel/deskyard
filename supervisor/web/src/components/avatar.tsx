@@ -1,4 +1,6 @@
 import type { AgentPresence } from "../api.ts";
+import { useLive } from "../live.tsx";
+import { selfFirst } from "../lib/format.ts";
 import { AgentAvatar } from "./agent-avatar.tsx";
 import { cx } from "./ui.tsx";
 
@@ -78,8 +80,10 @@ export function Avatars({
   size?: number;
   max?: number;
 }) {
+  const { me } = useLive();
   const live = (n: string) => mics.includes(n);
-  const people = [...names.filter(live), ...names.filter((n) => !live(n))].slice(0, max);
+  // You first, then whoever has a mic on.
+  const people = selfFirst([...names.filter(live), ...names.filter((n) => !live(n))], me.username).slice(0, max);
   const bots = agents.slice(0, Math.max(0, max - people.length));
   const hidden = names.length + agents.length - people.length - bots.length;
   return (

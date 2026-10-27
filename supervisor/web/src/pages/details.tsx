@@ -1,6 +1,6 @@
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import { useLocation, useRoute } from "preact-iso";
-import { api, type AgentPresence, type Environment, type Forward } from "../api.ts";
+import { api, type AgentPresence, type Environment, type FolderSize, type Forward } from "../api.ts";
 import { agentLabel } from "../lib/activity-format.ts";
 import { VPNStatus } from "../components/vpn.tsx";
 import { Avatars } from "../components/avatar.tsx";
@@ -8,14 +8,16 @@ import { ChartsPanel } from "../components/charts-panel.tsx";
 import { EnvironmentMenu, power } from "../components/environment-menu.tsx";
 import { Monitor } from "../components/screen.tsx";
 import { NoticeLine } from "../components/tile.tsx";
-import { ReclaimMemoryButton } from "../components/reclaim-memory.tsx";
+import { useReclaimMemoryItem } from "../components/reclaim-memory.tsx";
 import { ForwardLines } from "../components/viewers-popover.tsx";
 import { Page } from "../components/topbar.tsx";
-import { btnClass, Button, cx, Status, Tag } from "../components/ui.tsx";
+import { btnClass, Button, cx, Meter, Status, Tag } from "../components/ui.tsx";
 import { UpgradeDialog } from "../dialogs/upgrade.tsx";
 import { useEnvironment, useLive, useNow } from "../live.tsx";
-import { day, limits, names, statusKind, statusLine } from "../lib/format.ts";
+import { bytes, day, limits, names, statusKind, statusLine } from "../lib/format.ts";
 import { AccessTab } from "./details/access-tab.tsx";
+import { WebDAVAccess } from "./details/webdav-access.tsx";
+import { davView } from "../lib/webdav.ts";
 import { ProcessesTab } from "./details/processes-tab.tsx";
 import { SettingsTab } from "./details/settings-tab.tsx";
 import { SharingTab } from "./details/sharing-tab.tsx";
@@ -77,6 +79,7 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
   const tab: Tab = tabs.find((t) => t.id === asked)?.id ?? "overview";
   const setTab = (t: Tab) =>
     route(`/environments/${c.name}${t === "overview" ? "" : `?tab=${t}`}`, true);
+  const reclaim = useReclaimMemoryItem(c.name, !!c.job);
 
   return (
     <Page>
@@ -96,12 +99,10 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
           {c.state === "running" && full && (
             <>
               <a href={`/${c.name}/`} class={btnClass("primary")}>
-                Desktop
+                Open
               </a>
-              <a href={`/${c.name}/?terminal=main${c.terminals.some((t) => t.name === "main") ? "" : "&create=1"}`} class={btnClass()}>Terminal</a>
               <Button onClick={() => power(c.name, "restart")}>Restart</Button>
               <Button onClick={() => power(c.name, "stop")}>Stop</Button>
-              {me.admin && <ReclaimMemoryButton name={c.name} disabled={!!c.job} />}
             </>
           )}
           {c.state === "stopped" && full && (
@@ -109,10 +110,13 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
               Start
             </Button>
           )}
+          {full && me.admin && <Button onClick={() => setTab("settings")}>Settings</Button>}
           {full && (
             <EnvironmentMenu
               environment={c}
               power={false}
+              settings={false}
+              adminItems={c.state === "running" ? [reclaim] : []}
               onRemoved={() => route("/")}
             />
           )}
@@ -161,7 +165,8 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
           {tab === "access" && (
             <>
               {me.admin && <AccessTab environment={c} />}
-              <div class={me.admin ? "border-t border-line" : undefined}>
+              <WebDAVAccess environment={c} />
+              <div class={me.admin || davView(c, me) ? "border-t border-line" : undefined}>
                 <SharingTab environment={c} />
               </div>
             </>
@@ -247,6 +252,10 @@ function Facts({
           <>
             <dt class="text-muted">Files</dt>
             <dd class="mono m-0 min-w-0 [overflow-wrap:anywhere]">{c.folder}</dd>
+            <dt class="text-muted">Disk</dt>
+            <dd class="m-0 min-w-0" aria-label="Disk">
+              <DiskUsage name={c.name} />
+            </dd>
           </>
         )}
         <dt class="text-muted">Image</dt>
@@ -327,5 +336,32 @@ function UpgradeEnvironment({ environment: c, onClose }: { environment: Environm
       begin={() => api.upgrade(c.name)}
       onClose={onClose}
     />
+  );
+}
+
+/** The home folder's size and the disk holding it. Sizing walks the whole
+ * folder, so it's asked for once per page. */
+function DiskUsage({ name }: { name: string }) {
+  const [size, setSize] = useState<FolderSize | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.folder(name).then((f) => live && setSize(f), () => {});
+    return () => {
+      live = false;
+    };
+  }, [name]);
+  if (!size) return <span class="text-muted">Measuring…</span>;
+  const used = size.bytes === 0 && size.complete ? "Empty" : size.bytes === 0 ? "Unknown" : `${size.complete ? "" : "At least "}${bytes(size.bytes)}`;
+  const disk = size.diskSize ? { free: size.diskFree ?? 0, total: size.diskSize } : null;
+  return (
+    <>
+      <span class="font-semibold">{used}</span>
+      {disk && (
+        <>
+          <span class="text-muted"> · {bytes(disk.free)} free of {bytes(disk.total)}</span>
+          <Meter class="mt-1.5 max-w-[360px]" percent={(100 * (disk.total - disk.free)) / disk.total} />
+        </>
+      )}
+    </>
   );
 }

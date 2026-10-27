@@ -150,6 +150,11 @@ export function limits(s: Settings): string {
 }
 
 /** "zef", "zef and anna", "zef, anna and sam" */
+/** Viewer names with yourself first, the rest in their given order. */
+export function selfFirst(list: string[], self: string): string[] {
+  return list.includes(self) ? [self, ...list.filter((n) => n !== self)] : list;
+}
+
 export function names(list: string[]): string {
   if (list.length <= 1) return list.join("");
   return `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;

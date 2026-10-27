@@ -26,6 +26,8 @@ func (s *Server) routes() {
 	h("GET /api/me", s.handleMe)
 	h("POST /api/me/password", s.handleOwnPassword)
 	h("POST /api/me/sign-out-everywhere", s.handleSignOutEverywhere)
+	h("POST /api/me/webdav-password", s.handleCreateWebDAVPassword)
+	h("DELETE /api/me/webdav-password", s.handleDeleteWebDAVPassword)
 	h("GET /api/me/credentials", s.handleOwnCredentials)
 	h("DELETE /api/me/credentials/{id}", s.handleDeleteOwnCredential)
 	h("GET /api/cli-login/{id}", s.handleViewCLILogin)
@@ -53,6 +55,7 @@ func (s *Server) routes() {
 	h("DELETE /api/environments/{name}", s.handleRemoveEnvironment)
 	h("POST /api/environments/{name}/reclaim-memory", s.handleReclaimMemory)
 	h("PUT /api/environments/{name}/memory-policy", s.handleMemoryPolicy)
+	h("PUT /api/environments/{name}/webdav", s.handleWebDAVSetting)
 	h("POST /api/environments/{name}/{action}", s.handlePower) // start, stop, restart, upgrade, keys
 	h("POST /api/environments/{name}/mic", s.handleMic)
 	h("PUT /api/environments/{name}/access", s.handleSetAccess)
@@ -257,6 +260,9 @@ func (s *Server) handleSignOutEverywhere(w http.ResponseWriter, r *http.Request)
 		}
 		writeError(w, errorStatus(err), err.Error())
 		return
+	}
+	if err := s.removeDAVPasswords(a.ID); err != nil {
+		s.Log.Warn("removing the WebDAV password", "account", a.Username, "err", err)
 	}
 	s.reissueSession(w, r, a)
 	s.Log.Info("signed out everywhere", "account", a.Username, "ip", clientIP(r))

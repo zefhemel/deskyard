@@ -36,8 +36,9 @@ type insideCursor struct {
 // readInside feeds the lines of an inside stream to the tracker, advancing
 // cur. The stream is hostile input: lines over 8 KiB and lines that aren't
 // JSON are skipped, as are events at or before the cursor (duplicates after a
-// reconnect); the tracker drops events that fail Sanitize.
-func readInside(ctx context.Context, body io.Reader, ref activity.Ref, tr *activity.Tracker, cur *insideCursor, heartbeat ...func(bool)) error {
+// reconnect); the tracker drops events that fail Sanitize. A "terminals" event
+// goes to terminals instead, when it is set.
+func readInside(ctx context.Context, body io.Reader, ref activity.Ref, tr *activity.Tracker, cur *insideCursor, terminals func(), heartbeat ...func(bool)) error {
 	br := bufio.NewReaderSize(body, insideMaxLine)
 	discarding := false
 	report := func(idle bool) {
@@ -85,6 +86,12 @@ func readInside(ctx context.Context, body io.Reader, ref activity.Ref, tr *activ
 			continue
 		}
 		cur.Seq = e.Seq
+		if e.Kind == "terminals" {
+			if terminals != nil {
+				terminals()
+			}
+			continue
+		}
 		tr.Inside(ref, e) // which rate-limits, then sanitizes
 	}
 	return ctx.Err()
@@ -93,7 +100,7 @@ func readInside(ctx context.Context, body io.Reader, ref activity.Ref, tr *activ
 // consumeInside handles a 200 response: a new epoch means the stream
 // restarted, so the commands we think are running there are over, then it
 // reads the lines.
-func consumeInside(ctx context.Context, resp *http.Response, ref activity.Ref, tr *activity.Tracker, cur *insideCursor, heartbeat ...func(bool)) error {
+func consumeInside(ctx context.Context, resp *http.Response, ref activity.Ref, tr *activity.Tracker, cur *insideCursor, terminals func(), heartbeat ...func(bool)) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -105,7 +112,7 @@ func consumeInside(ctx context.Context, resp *http.Response, ref activity.Ref, t
 		tr.ResetInside(ref)
 		*cur = insideCursor{Epoch: epoch}
 	}
-	return readInside(ctx, resp.Body, ref, tr, cur, heartbeat...)
+	return readInside(ctx, resp.Body, ref, tr, cur, terminals, heartbeat...)
 }
 
 type insidePosition struct {
@@ -323,11 +330,15 @@ func (ir *insideReader) connect(worker *environmentWorker, c environments.Enviro
 	case resp.StatusCode != http.StatusOK:
 		return 0, fmt.Errorf("activity stream: %s", resp.Status)
 	}
+	// Session changes reported while nobody followed the stream may be older
+	// than its backlog: list them once per connection, then on each event.
+	terminals := func() { ir.s.terminalSessions.changed(ctx, name) }
+	terminals()
 	// A stream that goes quiet (not even a keep-alive) is cut and retried.
 	idle := time.AfterFunc(insideIdle, cancel)
 	defer idle.Stop()
 	resp.Body = &idleBody{ReadCloser: resp.Body, idle: idle}
-	err = consumeInside(rctx, resp, ref, ir.s.activity, cur, func(idle bool) {
+	err = consumeInside(rctx, resp, ref, ir.s.activity, cur, terminals, func(idle bool) {
 		ir.mu.Lock()
 		if ir.running[name] != worker || ctx.Err() != nil {
 			ir.mu.Unlock()

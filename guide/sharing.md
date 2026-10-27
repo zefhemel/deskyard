@@ -26,8 +26,9 @@ levels:
 | Accounts, access, image catalog, volumes | yes | no | no |
 
 Everyone can change their own password (password accounts), see their
-**Signed-in devices** and sign each out, and **Sign out everywhere**, which
-ends every browser login of the account (from the account menu).
+signed-in devices under **Account and devices** and sign each out, and
+**Sign out everywhere**, which ends every browser login of the account
+(from the account menu).
 
 **Share** in the bar above an environment's desktop, under Shares on its
 **Access** tab, or `deskyard share create` makes a token account with one

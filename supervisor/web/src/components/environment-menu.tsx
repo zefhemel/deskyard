@@ -1,5 +1,5 @@
 // The ⋯ menu of an environment (tile, details page, desktop page): Restart, Stop, and for
-// admins Settings, the page's own admin actions, and Remove….
+// admins Settings (unless the page has its own button), the page's own admin actions, and Remove….
 import { useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { api, type Environment } from "../api.ts";
@@ -16,11 +16,14 @@ export function power(name: string, action: "start" | "stop" | "restart"): void 
 export function EnvironmentMenu({
   environment: c,
   power: withPower = true,
+  settings = true,
   adminItems = [],
   onRemoved,
 }: {
   environment: Environment;
   power?: boolean;
+  /** Whether to list Settings (the details page has its own button). */
+  settings?: boolean;
   /** More admin actions, before Remove…. */
   adminItems?: MenuItem[];
   onRemoved?: () => void;
@@ -38,7 +41,7 @@ export function EnvironmentMenu({
   }
   if (powered && c.state === "stopped") items.push({ label: "Start", onSelect: () => power(c.name, "start") });
   if (me.admin) {
-    items.push({ label: "Settings", onSelect: () => route(`/environments/${c.name}?tab=settings`) });
+    if (settings) items.push({ label: "Settings", onSelect: () => route(`/environments/${c.name}?tab=settings`) });
     items.push(...adminItems);
     items.push({ label: "Remove…", danger: true, separated: true, onSelect: () => setRemoving(true) });
   }

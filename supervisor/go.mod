@@ -9,6 +9,7 @@ require (
 	github.com/moby/moby/api v1.56.1
 	github.com/moby/moby/client v0.6.2
 	golang.org/x/crypto v0.58.0
+	golang.org/x/net v0.60.0
 	golang.org/x/sys v0.49.0
 )
 
@@ -38,6 +39,5 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.28.0 // indirect
 	go.uber.org/zap/exp v0.3.0 // indirect
-	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 )

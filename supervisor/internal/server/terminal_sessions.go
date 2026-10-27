@@ -18,9 +18,15 @@ import (
 )
 
 // terminalSessionsInterval is how often the shared terminal sessions of
-// running environments are listed, so that sessions opened natively or from
-// the CLI appear without any page polling.
-const terminalSessionsInterval = 10 * time.Second
+// running environments are listed regardless of events. The desktop's tmux
+// hooks report opens, ends and attaches on its activity stream (see changed),
+// so this is only a safety net, for instance for a program started in a
+// session or an event lost while the stream restarted.
+const terminalSessionsInterval = 60 * time.Second
+
+// terminalChangeGap is the least time between two refreshes asked for by
+// change events, so that a desktop sending many costs a few execs a second.
+const terminalChangeGap = 250 * time.Millisecond
 
 // terminalSessions caches each running environment's public shared terminal
 // sessions for the environment JSON. Entries belong to one running lifetime of
@@ -30,6 +36,9 @@ type terminalSessions struct {
 	mu      sync.Mutex
 	seq     uint64
 	entries map[string]terminalSessionsEntry
+	// changing has an entry while a change refresh runs for that environment;
+	// true when another change arrived meanwhile.
+	changing map[string]bool
 }
 
 type terminalSessionsEntry struct {
@@ -39,7 +48,7 @@ type terminalSessionsEntry struct {
 }
 
 func newTerminalSessions(s *Server) *terminalSessions {
-	return &terminalSessions{s: s, entries: map[string]terminalSessionsEntry{}}
+	return &terminalSessions{s: s, entries: map[string]terminalSessionsEntry{}, changing: map[string]bool{}}
 }
 
 func terminalCapable(c environments.Environment) bool {
@@ -110,6 +119,42 @@ func (t *terminalSessions) refresh(ctx context.Context, c environments.Environme
 // supervisor, outliving the request that made it.
 func (t *terminalSessions) refreshLater(ctx context.Context, c environments.Environment) {
 	go func() { _, _ = t.refresh(context.WithoutCancel(ctx), c) }()
+}
+
+// changed refreshes the named environment's sessions after its desktop
+// reported a change. Changes reported while a refresh runs fold into one more
+// refresh after it.
+func (t *terminalSessions) changed(ctx context.Context, name string) {
+	if t == nil {
+		return // a server that isn't running its background work
+	}
+	t.mu.Lock()
+	if _, busy := t.changing[name]; busy {
+		t.changing[name] = true
+		t.mu.Unlock()
+		return
+	}
+	t.changing[name] = false
+	t.mu.Unlock()
+	ctx = context.WithoutCancel(ctx)
+	go func() {
+		for {
+			if c, err := t.s.Environments.Get(ctx, name); err == nil {
+				if _, err := t.refresh(ctx, c); err != nil {
+					t.s.Log.Debug("listing shared terminals", "environment", name, "err", err)
+				}
+			}
+			time.Sleep(terminalChangeGap)
+			t.mu.Lock()
+			if !t.changing[name] {
+				delete(t.changing, name)
+				t.mu.Unlock()
+				return
+			}
+			t.changing[name] = false
+			t.mu.Unlock()
+		}
+	}()
 }
 
 func (t *terminalSessions) store(ctx context.Context, name string, e terminalSessionsEntry) {

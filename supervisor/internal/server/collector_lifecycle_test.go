@@ -105,7 +105,7 @@ func TestCancelledInsideResponseCannotResetTracker(t *testing.T) {
 	cancel()
 	cur := insideCursor{Epoch: "old", Seq: 1}
 	resp := &http.Response{Header: http.Header{"X-Activity-Epoch": []string{"new"}}, Body: http.NoBody}
-	if err := consumeInside(ctx, resp, insideRef, tr, &cur); !errors.Is(err, context.Canceled) {
+	if err := consumeInside(ctx, resp, insideRef, tr, &cur, nil); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
 	sums := tr.Summary(insideRef.Name)
