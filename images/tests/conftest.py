@@ -5,7 +5,7 @@ checkout once per run (before any xdist worker starts). The `sandbox`
 fixture takes a desktop from a small pool that boots ahead of the tests, so
 each test still gets a fresh desktop on its own home volume without waiting
 for it to boot. Tests marked `serial` are left out under xdist and run in a
-second pass with --only-serial (see `make test` in the README).
+second pass with --only-serial (see Tests in guide/development.md).
 """
 
 import os

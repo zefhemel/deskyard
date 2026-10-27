@@ -92,7 +92,7 @@ def test_plain_http_screen(supervisor, desktop, name, remote):
         frame = page.frames[1]
         assert frame.evaluate("deskyardScreen.insecure") is True
 
-        # The bar says so, pointing at the README.
+        # The bar says so, pointing at the running guide.
         note = page.get_by_role("link", name="Not secure: some features off")
         expect(note).to_be_visible()
         assert note.get_attribute("href").endswith("#on-a-lan")
