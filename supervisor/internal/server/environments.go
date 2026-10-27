@@ -57,7 +57,7 @@ type environmentJSON struct {
 	UpdateAvailable *string                `json:"updateAvailable"`
 	Settings        settingsJSON           `json:"settings"`
 	Level           auth.Level             `json:"level"`
-	Access          []string               `json:"access"`
+	Access          []accessGrant          `json:"access"`
 	Viewers         []string               `json:"viewers"`
 	Observers       []string               `json:"observers"`
 	Mics            []string               `json:"mics"`
@@ -77,7 +77,7 @@ func (s *Server) environmentJSON(ctx context.Context, c environments.Environment
 		VPN:      c.VPN,
 		Settings: settingsJSON{MemoryBytes: c.Settings.MemoryBytes, NanoCPUs: c.Settings.NanoCPUs, LANExceptions: c.Settings.LANExceptions, Mounts: c.Settings.Mounts, DockerAccess: c.Settings.DockerAccess, Volumes: c.Settings.Volumes},
 		Level:    a.Level(c.Name),
-		Access:   []string{}, Viewers: s.viewers.names(c.Name), Observers: s.viewers.observers(c.Name),
+		Access:   []accessGrant{}, Viewers: s.viewers.names(c.Name), Observers: s.viewers.observers(c.Name),
 		Mics: s.viewers.mics(c.Name), Forwards: s.forwards.list(c.Name), Agents: s.activity.Present(c.Name),
 	}
 	if c.Settings.VPNConnectionID != "" {
@@ -106,9 +106,9 @@ func (s *Server) environmentJSON(ctx context.Context, c environments.Environment
 		}
 	}
 	if a.Admin && c.Revision != 0 { // defined, not still being created
-		j.Access = slices.Sorted(maps.Keys(s.Accounts.WithAccess(c.Name)))
-		if j.Access == nil {
-			j.Access = []string{}
+		levels := s.Accounts.WithAccess(c.Name)
+		for _, u := range slices.Sorted(maps.Keys(levels)) {
+			j.Access = append(j.Access, accessGrant{Username: u, Level: levels[u]})
 		}
 	}
 	if c.Revision != 0 {
@@ -126,7 +126,7 @@ func (j *environmentJSON) observed() {
 	j.Folder, j.MemoryReclaim = "", false
 	j.Settings = settingsJSON{LANExceptions: []vpn.Exception{}, Mounts: []environments.HostMount{}, Volumes: []environments.VolumeGrant{}}
 	j.VPN = environments.VPNStatus{Status: vpn.Status{State: "disabled"}}
-	j.Access, j.Terminals, j.Forwards, j.Agents = []string{}, []terminal.Session{}, []forwardJSON{}, []activity.Presence{}
+	j.Access, j.Terminals, j.Forwards, j.Agents = []accessGrant{}, []terminal.Session{}, []forwardJSON{}, []activity.Presence{}
 }
 
 // conflictJSON is a container of this supervisor's that it can't match to
@@ -239,7 +239,7 @@ func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request)
 		Image           string                     `json:"image"`
 		MemoryBytes     int64                      `json:"memoryBytes"`
 		NanoCPUs        int64                      `json:"nanoCpus"`
-		Access          []string                   `json:"access"`
+		Access          []accessGrant              `json:"access"`
 		Mounts          []environments.HostMount   `json:"mounts"`
 		DockerAccess    bool                       `json:"dockerAccess"`
 		Volumes         []environments.VolumeGrant `json:"volumes"`
@@ -270,11 +270,9 @@ func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "limits can't be negative")
 		return
 	}
-	for _, u := range req.Access {
-		if _, ok := s.Accounts.Get(u); !ok {
-			writeError(w, http.StatusBadRequest, "no account "+u)
-			return
-		}
+	access, ok := s.accessLevels(w, req.Access, "it can only have the environment it was shared for")
+	if !ok {
+		return
 	}
 	set, err := s.Environments.ValidateNetworkSettings(environments.Settings{Image: req.Image, MemoryBytes: req.MemoryBytes, NanoCPUs: req.NanoCPUs, VPNConnectionID: req.VPNConnectionID.ID, LANExceptions: req.LANExceptions, Mounts: req.Mounts, DockerAccess: req.DockerAccess, Volumes: req.Volumes})
 	if err != nil {
@@ -312,12 +310,12 @@ func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request)
 			// in time, or a VPN creation kept for recovery) can still come
 			// up: it gets its requested access.
 			if _, ok := s.Environments.Defs.Get(req.Name); ok {
-				return errors.Join(err, s.Accounts.SetAccess(req.Name, s.accessLevels(req.Name, req.Access)))
+				return errors.Join(err, s.Accounts.SetAccess(req.Name, access))
 			}
 			return err
 		}
 		s.Log.Info("created", "environment", req.Name, "by", a.Username)
-		return s.Accounts.SetAccess(req.Name, s.accessLevels(req.Name, req.Access))
+		return s.Accounts.SetAccess(req.Name, access)
 	})
 	// After the job starts, so the event carries its id.
 	s.publishEnvironment(context.Background(), req.Name)
@@ -503,25 +501,54 @@ func (s *Server) handlePower(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// accessGrant is an environment's grant to an account.
+type accessGrant struct {
+	Username string     `json:"username"`
+	Level    auth.Level `json:"level"`
+}
+
+// accessLevels checks an environment's grants to regular accounts and maps
+// them by username, writing 400 for an unknown account, a share (shareMsg
+// says why), an invalid level or an account listed twice.
+func (s *Server) accessLevels(w http.ResponseWriter, grants []accessGrant, shareMsg string) (map[string]auth.Level, bool) {
+	out := map[string]auth.Level{}
+	for _, g := range grants {
+		a, ok := s.Accounts.Get(g.Username)
+		switch {
+		case !ok:
+			writeError(w, http.StatusBadRequest, "no account "+g.Username)
+		case a.IsShare():
+			writeError(w, http.StatusBadRequest, a.Username+" is a share; "+shareMsg)
+		case !auth.ValidLevel(g.Level):
+			writeError(w, http.StatusBadRequest, "the level of "+a.Username+" is full or observe")
+		case out[a.Username] != auth.LevelNone:
+			writeError(w, http.StatusBadRequest, a.Username+" is listed twice")
+		default:
+			out[a.Username] = g.Level
+			continue
+		}
+		return nil, false
+	}
+	return out, true
+}
+
 func (s *Server) handleSetAccess(w http.ResponseWriter, r *http.Request) {
 	c, _, ok := s.environmentFor(w, r, auth.ManageAccounts)
 	if !ok {
 		return
 	}
 	var req struct {
-		Usernames []string `json:"usernames"`
+		Grants []accessGrant `json:"grants"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
-	for _, u := range req.Usernames {
-		if _, ok := s.Accounts.Get(u); !ok {
-			writeError(w, http.StatusBadRequest, "no account "+u)
-			return
-		}
+	access, ok := s.accessLevels(w, req.Grants, "change it on the Sharing tab")
+	if !ok {
+		return
 	}
-	if err := s.Accounts.SetAccess(c.Name, s.accessLevels(c.Name, req.Usernames)); err != nil {
+	if err := s.Accounts.SetAccess(c.Name, access); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

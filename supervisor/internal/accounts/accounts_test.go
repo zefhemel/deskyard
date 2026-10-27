@@ -272,3 +272,34 @@ func TestShareAndExpiry(t *testing.T) {
 		t.Fatal(names)
 	}
 }
+
+func TestSetAccessLeavesAdminsAndSharesAlone(t *testing.T) {
+	s, _ := Load(t.TempDir())
+	_, _ = s.EnsureAdmin("admin", "x")
+	admin, _ := s.Get("admin")
+	if _, err := s.Create(NewAccount{Username: "sanne", Grants: []Grant{{Environment: "alice", Level: auth.LevelObserve}},
+		SharedBy: &Sharer{Username: "admin", ID: admin.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Create(NewAccount{Username: "bob", Password: "pw"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetAccess("alice", map[string]auth.Level{"bob": auth.LevelFull, "admin": auth.LevelFull}); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := s.Get("admin"); len(a.Grants) != 0 {
+		t.Fatalf("an admin got a grant: %+v", a.Grants)
+	}
+	if got := s.WithAccess("alice"); len(got) != 1 || got["bob"] != auth.LevelFull {
+		t.Fatalf("with access lists shares or admins: %v", got)
+	}
+	if err := s.SetAccess("alice", nil); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := s.Get("sanne"); a.Level("alice") != auth.LevelObserve {
+		t.Fatalf("setting access changed a share: %+v", a.Grants)
+	}
+	if a, _ := s.Get("bob"); len(a.Grants) != 0 {
+		t.Fatalf("bob kept %+v", a.Grants)
+	}
+}

@@ -16,11 +16,15 @@ func (s *Server) routes() {
 	// Without a session.
 	m.HandleFunc("POST /api/login", s.handleLogin)
 	m.HandleFunc("POST /api/logout", s.handleLogout)
+	m.HandleFunc("POST /api/links/inspect", s.handleInspectLink)
+	m.HandleFunc("POST /api/links/redeem", s.handleRedeemLink)
 
 	h := func(pattern string, fn http.HandlerFunc) { m.Handle(pattern, s.authed(fn)) }
 	h("GET /api/me", s.handleMe)
 	h("POST /api/me/password", s.handleOwnPassword)
 	h("POST /api/me/sign-out-everywhere", s.handleSignOutEverywhere)
+	h("GET /api/me/credentials", s.handleOwnCredentials)
+	h("DELETE /api/me/credentials/{id}", s.handleDeleteOwnCredential)
 	h("GET /api/host", s.handleHost)
 	h("GET /api/events", s.handleEvents)
 	h("GET /api/jobs/{id}", s.handleJob)
@@ -46,6 +50,10 @@ func (s *Server) routes() {
 	h("POST /api/environments/{name}/{action}", s.handlePower) // start, stop, restart, upgrade, keys
 	h("POST /api/environments/{name}/mic", s.handleMic)
 	h("PUT /api/environments/{name}/access", s.handleSetAccess)
+	h("GET /api/environments/{name}/shares", s.handleListShares)
+	h("POST /api/environments/{name}/shares", s.handleCreateShare)
+	h("POST /api/shares/{username}/link", s.handleShareLink)
+	h("DELETE /api/shares/{username}", s.handleRevokeShare)
 	h("GET /api/environments/{name}/screen.png", s.handleScreen)
 	h("GET /api/environments/{name}/processes", s.handleProcesses)
 	h("GET /api/environments/{name}/stats", s.handleStats)
@@ -68,6 +76,9 @@ func (s *Server) routes() {
 	h("POST /api/accounts", s.handleCreateAccount)
 	h("PATCH /api/accounts/{username}", s.handleUpdateAccount)
 	h("DELETE /api/accounts/{username}", s.handleDeleteAccount)
+	h("POST /api/accounts/{username}/link", s.handleAccountLink)
+	h("GET /api/accounts/{username}/credentials", s.handleAccountCredentials)
+	h("DELETE /api/accounts/{username}/credentials/{id}", s.handleDeleteAccountCredential)
 
 	h("GET /api/images", s.handleListImages)
 	h("POST /api/images", s.handleAddImage)
@@ -119,6 +130,12 @@ func (s *Server) authed(next http.HandlerFunc) http.Handler {
 type meJSON struct {
 	Username string `json:"username"`
 	Admin    bool   `json:"admin"`
+	Kind     string `json:"kind"`  // "password" or "token"
+	Share    bool   `json:"share"` // made by Share
+}
+
+func toMeJSON(a accounts.Account) meJSON {
+	return meJSON{Username: a.Username, Admin: a.Admin, Kind: accountKind(a), Share: a.IsShare()}
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -152,7 +169,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Sessions.Issue(w, a.Username, a.ID, a.SessionEpoch)
 	s.Log.Info("signed in", "account", a.Username, "ip", clientIP(r))
-	writeJSON(w, http.StatusOK, meJSON{a.Username, a.Admin})
+	writeJSON(w, http.StatusOK, toMeJSON(a))
 }
 
 var dummyHash = auth.HashPassword("dummy")
@@ -171,7 +188,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(r)
-	writeJSON(w, http.StatusOK, meJSON{a.Username, a.Admin})
+	writeJSON(w, http.StatusOK, toMeJSON(a))
 }
 
 func (s *Server) handleOwnPassword(w http.ResponseWriter, r *http.Request) {
@@ -179,6 +196,10 @@ func (s *Server) handleOwnPassword(w http.ResponseWriter, r *http.Request) {
 	var req struct{ Current, New string }
 	if err := readJSON(r, &req); err != nil || req.New == "" {
 		writeError(w, http.StatusBadRequest, "a new password is required")
+		return
+	}
+	if !a.HasPassword() {
+		writeError(w, http.StatusBadRequest, "token accounts have no password")
 		return
 	}
 	if !auth.CheckPassword(a.PasswordHash, req.Current) {

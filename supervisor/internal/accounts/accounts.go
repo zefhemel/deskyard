@@ -480,9 +480,10 @@ func (s *Store) TouchLogin(username string) error {
 	return nil
 }
 
-// SetAccess makes exactly the given accounts (besides admins) able to use
-// the named environment, each at its level; every other account loses its
-// grant of it.
+// SetAccess makes exactly the given regular accounts able to use the named
+// environment, each at its level; every other regular account loses its
+// grant of it. Admins (full everywhere) and shares (whose one grant is set
+// when they are shared) are left alone.
 func (s *Store) SetAccess(name string, levels map[string]auth.Level) error {
 	for u, l := range levels {
 		if !auth.ValidLevel(l) {
@@ -494,6 +495,9 @@ func (s *Store) SetAccess(name string, levels map[string]auth.Level) error {
 	next := s.next()
 	for i := range next {
 		a := &next[i]
+		if a.Admin || a.IsShare() {
+			continue
+		}
 		want := levels[a.Username]
 		if grantLevel(a.Grants, name) != want {
 			a.Grants = withLevel(a.Grants, name, want)
@@ -508,12 +512,12 @@ func (s *Store) SetAccess(name string, levels map[string]auth.Level) error {
 	return err
 }
 
-// WithAccess maps the regular accounts with a grant of the named environment
-// to their level.
+// WithAccess maps the regular accounts (not admins, not shares) with a grant
+// of the named environment to their level.
 func (s *Store) WithAccess(name string) map[string]auth.Level {
 	out := map[string]auth.Level{}
 	for _, a := range s.List() {
-		if l := grantLevel(a.Grants, name); !a.Admin && l != auth.LevelNone {
+		if l := grantLevel(a.Grants, name); !a.Admin && !a.IsShare() && l != auth.LevelNone {
 			out[a.Username] = l
 		}
 	}

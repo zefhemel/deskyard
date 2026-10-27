@@ -202,3 +202,16 @@ func (cs *credentialStore) closeWhere(id string, fn func(environment string) boo
 		}
 	}
 }
+
+// connected reports whether any credential of the account with this ID has
+// a live connection open.
+func (cs *credentialStore) connected(accountID string) bool {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	for _, c := range cs.all {
+		if c.AccountID == accountID && len(cs.open[c.ID]) > 0 {
+			return true
+		}
+	}
+	return false
+}

@@ -132,7 +132,7 @@ func TestJobAndAccountJSONUseEnvironmentNames(t *testing.T) {
 	getJSON(t, admin, ts.URL+"/api/accounts", &accts)
 	for _, a := range accts {
 		if a["username"] == "anna" {
-			if envs, _ := a["environments"].([]any); len(envs) != 1 || envs[0] != "alice" {
+			if grants, _ := a["grants"].([]any); len(grants) != 1 || grants[0].(map[string]any)["environment"] != "alice" {
 				t.Fatalf("%+v", a)
 			}
 			if _, ok := a["desktops"]; ok {
@@ -140,7 +140,7 @@ func TestJobAndAccountJSONUseEnvironmentNames(t *testing.T) {
 			}
 		}
 	}
-	req, _ := http.NewRequest("PATCH", ts.URL+"/api/accounts/anna", strings.NewReader(`{"environments":[]}`))
+	req, _ := http.NewRequest("PATCH", ts.URL+"/api/accounts/anna", strings.NewReader(`{"grants":[]}`))
 	req.Header.Set("Origin", ts.URL)
 	res, err := admin.Do(req)
 	if err != nil {

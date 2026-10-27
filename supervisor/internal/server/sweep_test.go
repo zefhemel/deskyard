@@ -522,7 +522,7 @@ func TestCreateFailureKeepingTheEnvironmentAppliesAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	admin := login(t, ts, "admin")
-	req, _ := http.NewRequest("POST", ts.URL+"/api/environments", strings.NewReader(`{"name":"carol","image":"img","access":["anna"],"vpnConnectionId":"`+conn.ID+`"}`))
+	req, _ := http.NewRequest("POST", ts.URL+"/api/environments", strings.NewReader(`{"name":"carol","image":"img","access":[{"username":"anna","level":"full"}],"vpnConnectionId":"`+conn.ID+`"}`))
 	req.Header.Set("Origin", ts.URL)
 	resp, err := admin.Do(req)
 	if err != nil {
