@@ -30,9 +30,14 @@ What's in an environment:
   menu, and the tabs get a row of their own.
 - **One shared Chromium** with one profile: your tabs and sign-ins stay
   with the environment. It starts when you open it or connect through browser tools.
-- **Remote access and control**: use the `deskyard` command from your terminal
-  for shells, shared terminals, file transfers, screenshots, clicks and typing.
-  Map ports to reach services on either machine.
+- **Sharing by link**: share an environment with full access or observe-only,
+  optionally for a limited time, through a single-use link you paste into a
+  chat; revoke it at any time.
+- **Remote access and control**: sign the `deskyard` command in with
+  `deskyard login` (approved in your browser) or a login link, then use it from
+  your terminal for shells, shared terminals, file transfers, screenshots,
+  clicks and typing, and, as an admin, to manage environments, volumes,
+  accounts and shares. Map ports to reach services on either machine.
 - **Persistent installs**: `/workspace` (the user's home) is a plain folder
   on the host (`~/deskyard/home/<name>`). Tools installed with mise, npm, uv or
   Flatpak live there and survive restarts and image upgrades.
@@ -239,7 +244,7 @@ The supervisor keeps each environment's definition (image, limits, network,
 host folders, volume grants, Docker access, memory preference and whether it should
 run) in `environments.json`, not on its container. The container is
 disposable: if it is lost, the supervisor recreates it from the definition
-with the same name, home folder, access grants, tokens and settings. A stopped
+with the same name, home folder, access grants, shares and settings. A stopped
 environment may have no container; it gets one when started. Stopping keeps the
 container, so changes outside `/workspace` survive until the container is next
 recreated.
@@ -585,35 +590,81 @@ can become the handler for the files it declares.
 
 ## Sharing
 
-Accounts are a username and a password; there are no email resets or SSO.
-Admins create accounts, set passwords and make accounts admin or not, and
-choose per environment which accounts may use it. Everyone can change their own
-password.
+An account is a username with either a password or none: a **token account**
+signs in through a single-use **login link** instead. There are no email
+resets or SSO. Admins create both kinds on the Accounts page (or with
+`deskyard account create`), optionally with a description, an expiry and the
+admin flag, and choose which environments each account may use, at one of two
+levels:
 
-| | Admin | Regular account |
-| --- | --- | --- |
-| See, open, start, stop, restart environments | all | those it has access to |
-| Create, remove, change settings, upgrade | yes | no |
-| Reclaim memory | yes | no |
-| Create access tokens | yes | for environments it has access to |
-| Accounts, access, image catalog | yes | no |
+- **Full**: everything a regular account could do before: the desktop, its
+  terminal, files, processes, the `deskyard` CLI, power actions and sharing.
+- **Observe**: watch the desktop and nothing else. The supervisor drops an
+  observer's keyboard, mouse, clipboard and resize messages before they reach
+  the desktop, and refuses its terminal, files, processes, CLI and settings.
+  Observers show as "observing" next to the viewers.
+
+| | Admin | Full access | Observe |
+| --- | --- | --- | --- |
+| See and open environments | all | granted ones | granted ones (view only) |
+| Start, stop, restart | all | granted ones | no |
+| Terminal, files, processes, `deskyard` CLI | all | granted ones | no |
+| Share an environment | all | granted ones (not from a share) | no |
+| Create, remove, change settings, upgrade, reclaim memory | yes | no | no |
+| Accounts, access, image catalog, volumes | yes | no | no |
+
+Everyone can change their own password (password accounts), see their
+**Signed-in devices** and sign each out, and **Sign out everywhere**, which
+ends every browser login of the account (from the account menu).
+
+**Share** on an environment's **Sharing** tab (or `deskyard share create`)
+makes a token account with one grant, full or observe-only, with an optional
+time limit, and shows a link such as `https://host/link#dyl_…` to send through
+a chat app. The link works once: opening it shows who it signs in as and a
+**Sign in** button, so link previews and scanners can't use it up. A used,
+replaced or revoked link answers "This link was already used or replaced".
+Unused links don't expire; **New link** replaces the previous one. **Revoke**
+ends a share at once, closing its desktop streams, terminals and CLI
+connections. A share also ends when the person who made it loses full access
+to the environment or is deleted. Shares can't share further. Admins make
+login links for other token accounts with **Login link** on the Accounts page
+(`deskyard account link USER`).
 
 Everyone with access to an environment opens the **same desktop**: one screen,
 one mouse, one keyboard, like two people at one desk. The desktop follows
-the browser window of whoever resized last. The supervisor shows who's
-viewing on the tiles, the details page and the desktop page's bar, but nothing
-arbitrates between people and CLI clients driving it at the same time.
+the browser window of whoever resized last (observers don't resize it). The
+supervisor shows who's viewing on the tiles, the details page and the desktop
+page's bar, but nothing arbitrates between people and CLI clients driving it at
+the same time.
+
+Removing an account, revoking a share, removing a grant or lowering it to
+observe takes effect at once: the connections the new access doesn't allow
+close, and a recreated account of the same name never honours the old
+account's cookies, links or devices. Lowering or removing a grant on the
+Accounts page (or with `deskyard account update`) also ends the account's
+browser logins; changing access on the environment's Access tab doesn't.
 
 ## Remote access and control
 
-Use `deskyard` from your laptop or another machine with an **access token**.
-Anyone with access to an environment creates one on its **Remote access** tab,
-with a name and optional expiry. Copy the setup command when it is shown;
-the token is only displayed once. Install `deskyard` on your machine
-(see Install), then:
+Use `deskyard` from your laptop or another machine. Install it (see Install)
+and sign it in once, in one of two ways:
+
+- `deskyard login https://desktops.example.com/alice` prints a code and opens
+  a browser page where you, signed in to Deskyard, check the code and press
+  **Approve**. Any account with full access somewhere can do this. With an
+  environment in the URL, that becomes the default.
+- `deskyard auth LINK` signs in with a login link instead, without a browser:
+  useful for agents and scripts. A full-access share's link works;
+  observe-only links are for the browser.
+
+Each signed-in CLI holds its own **client credential** (`dyc_…`, in
+`~/.config/deskyard/servers.json`, mode 0600). It shows under **Signed-in
+devices**, where you or an admin can sign it out; `deskyard logout` revokes it
+on the server and forgets the server. A credential acts with its account's
+access at the time of each request. Then:
 
 ```bash
-deskyard remote add alice https://desktops.example.com/alice --token dyt_...
+deskyard env list                         # the environments you can use
 deskyard -e alice exec -- ls ~            # one command; exit code passed through
 deskyard -e alice shell                   # interactive shell
 deskyard -e alice terminal                # shared terminal; rejoin later
@@ -626,29 +677,47 @@ deskyard -e alice browser connect --port 9222   # the shared Chromium on local 1
 With `browser connect` running, Playwright's
 `chromium.connect_over_cdp("http://127.0.0.1:9222")` (use
 `browser.contexts[0]`, the shared profile), Puppeteer or chrome-devtools
-tools work as if the browser were local. `-e NAME` (or `--environment NAME`)
-goes before the command; `-d` is no longer accepted. `deskyard remote default alice`
-saves typing `-e`; `DESKYARD_URL` and `DESKYARD_TOKEN` work without a config
-file. For command help, use `deskyard --help`, `deskyard guide` (a short
-manual) and `deskyard describe --json` (machine-readable command descriptions).
+tools work as if the browser were local. `-e ENV` (or `--environment ENV`)
+goes before the command and picks one of the default server's environments;
+`-e SERVER/ENV` picks one on another signed-in server. `deskyard env use alice`
+saves typing `-e`, `deskyard server list` and `server default NAME` manage the
+servers, and `DESKYARD_ENVIRONMENT` (`ENV` or `SERVER/ENV`) or
+`DESKYARD_URL` with `DESKYARD_CREDENTIAL` work without a config file. Inside an
+environment, without `-e`, commands act on that environment directly. For
+command help, use `deskyard --help`, `deskyard guide` (a short manual) and
+`deskyard describe --json` (machine-readable command descriptions).
 
-A token reaches one environment's shell, files, browser and desktop, nothing
-else: no other environments, no lifecycle, settings or accounts. Start a stopped
-environment from the web UI before connecting. Revoking a token, or its expiry,
-closes its open connections at once, and a token dies with its creator's access.
-A token also dies with its environment: removing an environment and creating a
-new one with the same name does not bring back its old tokens or access grants.
+The CLI can do what its account may do, checked by the server on every
+request: exec, shell, files, browser, forward and `env start|stop|restart`
+need full access to the environment, and `share` works where the account may
+share. Admins also manage the server from it:
+
+```bash
+deskyard env create bob --image ghcr.io/zefhemel/deskyard-debian-xfce:latest --grant sanne
+deskyard env access bob sanne=observe     # or =full, or =none
+deskyard volume create photos
+deskyard account create sanne --description "Contractor" --grant bob --expires 2w   # prints a login link
+printf '%s' "$PASSWORD" | deskyard account create anna --password-stdin --admin
+deskyard share create bob guest --observe --expires 1d                              # prints the link
+deskyard share revoke guest
+deskyard device list --account sanne
+```
+
+Removing an account, revoking a share or its device, its expiry, or losing the
+grant closes the CLI's open connections at once. An environment's access also
+dies with it: removing an environment and creating a new one with the same
+name does not bring back its old grants.
 
 ### Port mapping
 
-Reach a server on one machine from the other, with the same access token:
+Reach a server on one machine from the other, with the same sign-in:
 
 ```bash
 deskyard -e alice forward 3000 &      # your 127.0.0.1:3000 is localhost:3000 in the environment
 deskyard -e alice forward -R 5173 &   # the environment's localhost:5173 is your 127.0.0.1:5173
 ```
 
-The first lets the environment call a service running on your machine; the second lets you open a dev server running in the environment in your own browser. To use different port numbers, write `LOCAL:ENV` for a plain mapping (`8080:3000`: your 8080 is the environment's 3000) and `ENV:LOCAL` after `-R` (`-R 80:8080`: the environment's 80 is your 8080). Several mappings can share one command (at most 64 plain ones and 256 in all), and one token can hold four such links per environment. Everything goes over the existing HTTPS connection (no extra ports are opened on the engine host) and listens only on `127.0.0.1`. Only *listening* in the environment is limited to ports from 1024 up, so plain `forward 80` is refused while `-R 80:8080` works (the helper just dials). If the connection drops or the environment restarts, `deskyard` reconnects by itself with backoff (up to 30 s): `-R` local ports stay bound meanwhile, and plain mappings come back in the environment once the link is back. People watching the desktop see which ports your token maps (up to 64 per token are listed). "Linked to …" and the `out` lines are printed when the link is accepted, a moment before the helper in the environment is known to be running.
+The first lets the environment call a service running on your machine; the second lets you open a dev server running in the environment in your own browser. To use different port numbers, write `LOCAL:ENV` for a plain mapping (`8080:3000`: your 8080 is the environment's 3000) and `ENV:LOCAL` after `-R` (`-R 80:8080`: the environment's 80 is your 8080). Several mappings can share one command (at most 64 plain ones and 256 in all), and one signed-in CLI can hold four such links per environment. Everything goes over the existing HTTPS connection (no extra ports are opened on the engine host) and listens only on `127.0.0.1`. Only *listening* in the environment is limited to ports from 1024 up, so plain `forward 80` is refused while `-R 80:8080` works (the helper just dials). If the connection drops or the environment restarts, `deskyard` reconnects by itself with backoff (up to 30 s): `-R` local ports stay bound meanwhile, and plain mappings come back in the environment once the link is back. People watching the desktop see which ports your CLI maps (up to 64 per signed-in CLI are listed). "Linked to …" and the `out` lines are printed when the link is accepted, a moment before the helper in the environment is known to be running.
 
 ## Optional agent integrations
 
@@ -719,8 +788,9 @@ Environment variables of the supervisor:
 ```
 <data>/
   environments.json   environment definitions (no secrets)
-  accounts.json       accounts, password hashes and environment grants
-  tokens.json         access tokens (hashed)
+  accounts.json       accounts, password hashes and environment grants (full or observe)
+  links.json          unused login links (hashed)
+  credentials.json    signed-in CLIs' client credentials (hashed)
   networks.json       saved VPN connections (no credentials)
   images.json         the image catalog
   volumes.json        named volumes (grants live in environments.json)
@@ -733,8 +803,11 @@ Environment variables of the supervisor:
   volume/<name>/      each volume's files, shared at /share/<name>
 ```
 
-JSON files are written atomically with mode 0600, and existing `accounts.json`
-and `tokens.json` files are tightened to 0600 at startup; `secret/` and `state/` are
+JSON files are written atomically with mode 0600, and existing `accounts.json`,
+`links.json` and `credentials.json` files are tightened to 0600 at startup. A
+`tokens.json` left from a version with per-environment access tokens is deleted
+at startup with a log line: those tokens are replaced by accounts, and an
+`environments` list in `accounts.json` is read as full grants; `secret/` and `state/` are
 owner-only (0700). Host administrators can read these secrets. Back up the
 whole data folder; `cache/` can be left out.
 
@@ -776,8 +849,15 @@ startup and refuses to run, with an explanation, if they don't match.
   machine, so the supervisor is the most privileged thing there. Run
   directly on Linux, its user needs the `docker` group, which is
   root-equivalent; in a container, mounting the socket is the same.
-- Every route but the login page needs a signed-in account; access tokens
-  work only on the remote access API. Failed logins are throttled.
+- Every route but the login, link and CLI-login pages needs a signed-in
+  account: a browser session, or a CLI's client credential sent as a bearer
+  token (which never sets cookies and needs no `Origin`). Login links carry
+  their code in the URL fragment, which browsers don't send, and are exchanged
+  once for a session or credential. Secrets are stored as SHA-256 hashes.
+  Failed logins, link codes and CLI-login polls are throttled per address.
+- Observers' desktop streams pass through a filter that forwards only the
+  messages needed to receive the picture; their input never reaches the
+  desktop.
 - Environments have no password and nothing else of their own facing the
   network: only Caddy on 8080, which wants a per-environment token that only
   the supervisor has. With the supervisor in a container, environments publish
