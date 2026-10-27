@@ -26,10 +26,6 @@ import (
 	"golang.org/x/net/webdav"
 )
 
-// desktopUID owns the desktops' files; a supervisor running as root gives
-// what it creates to it.
-const desktopUID = 1000
-
 // partPrefix and partSuffix name the hidden files writes go to first.
 const (
 	partPrefix = ".dav-"
@@ -49,10 +45,10 @@ type mount struct {
 	readOnly bool
 }
 
-// FS is a tree of mounts. Close it when done.
+// FS is a tree of mounts. Close it when done. What it creates belongs to the
+// supervisor's user, UID 1000, which is also the desktops' user.
 type FS struct {
 	mounts []mount
-	chown  bool
 }
 
 var (
@@ -63,7 +59,7 @@ var (
 
 // New opens the mounts. One whose folder doesn't exist is left out.
 func New(mounts []Mount) (*FS, error) {
-	f := &FS{chown: os.Geteuid() == 0}
+	f := &FS{}
 	for _, m := range mounts {
 		if !path.IsAbs(m.At) || path.Clean(m.At) != m.At || m.At == "/" {
 			f.Close()
@@ -136,12 +132,6 @@ func (f *FS) Writable(name string) bool {
 	return err == nil && !synthesized && !m.readOnly && rel != "."
 }
 
-func (f *FS) owned(root *os.Root, rel string) {
-	if f.chown {
-		_ = root.Lchown(rel, desktopUID, desktopUID)
-	}
-}
-
 func (f *FS) Mkdir(ctx context.Context, name string, perm os.FileMode) error {
 	if junk(name) || !f.Writable(name) {
 		return errReadOnly
@@ -150,11 +140,7 @@ func (f *FS) Mkdir(ctx context.Context, name string, perm os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	if err := m.root.Mkdir(rel, 0o755); err != nil {
-		return err
-	}
-	f.owned(m.root, rel)
-	return nil
+	return m.root.Mkdir(rel, 0o755)
 }
 
 func (f *FS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (webdav.File, error) {
@@ -213,7 +199,6 @@ func (f *FS) createPart(ctx context.Context, m *mount, rel string) (*part, error
 		return nil, err
 	}
 	_ = file.Chmod(mode) // past the umask
-	f.owned(m.root, partRel)
 	return &part{File: file, root: m.root, rel: rel, partRel: partRel, upload: uploadOf(ctx), ctx: ctx}, nil
 }
 
@@ -320,7 +305,6 @@ func (f *FS) copyTree(from *os.Root, fromRel string, to *os.Root, toRel string) 
 	default:
 		return nil // sockets, devices and pipes aren't files to carry over
 	}
-	f.owned(to, toRel)
 	return nil
 }
 
