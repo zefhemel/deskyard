@@ -273,3 +273,16 @@ def test_settings_sections_keep_unsaved_changes(mock_ui, width):
         expect(page.get_by_label("Path in the environment")).to_have_value("/srv/photos")
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         browser.close()
+
+
+def test_environment_bar_shares(mock_ui):
+    with sync_playwright() as p:
+        browser, page = mock_page(p, mock_ui, "/alice/")
+        bar = page.locator("[data-environment-bar]")
+        bar.get_by_role("button", name="Share", exact=True).click()
+        dialog = page.get_by_role("dialog").filter(has=page.get_by_role("heading", name="Share alice"))
+        dialog.get_by_label("Name").fill("guest")
+        dialog.get_by_role("button", name="Share", exact=True).click()
+        link = page.get_by_role("dialog").filter(has=page.get_by_role("heading", name="alice is shared with guest"))
+        expect(link.get_by_role("button", name="Copy link")).to_be_visible()
+        browser.close()

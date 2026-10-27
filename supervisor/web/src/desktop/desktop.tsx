@@ -14,6 +14,7 @@ import { ViewersPopover } from "../components/viewers-popover.tsx";
 import { notify, notifyError } from "../components/toast.tsx";
 import { Button, cx, Dialog, MORE } from "../components/ui.tsx";
 import { DownloadDialog } from "../dialogs/download.tsx";
+import { LinkDialog, ShareDialog } from "../dialogs/share.tsx";
 import { useEnvironment, useLive } from "../live.tsx";
 import { agentTitle } from "../lib/activity-format.ts";
 import { leftNeighbour, loadOrder, orderTabs, saveOrder, vanished } from "../lib/tab-order.ts";
@@ -156,6 +157,10 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
   const [states, setStates] = useState<Record<string, string>>({});
   const [confirm, setConfirm] = useState<{ session: string; others: number; command: string } | null>(null);
   const [viewersOpen, setViewersOpen] = useState(false);
+  // Share, as on the environment's Sharing tab: full access, but not a share itself.
+  const canShare = !observing && !me.share;
+  const [sharing, setSharing] = useState(false);
+  const [shared, setShared] = useState<{ username: string; link: string } | null>(null);
   const seen = useRef(new Set<string>());
   const ending = useRef(new Set<string>());
   // A deep link's session the list hasn't shown: if it turns out ended, Desktop shows.
@@ -439,6 +444,11 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
         />
         <div class="ml-auto flex h-[46px] shrink-0 items-center gap-0.5">
           <span ref={setControls} class="contents" />
+          {canShare && (
+            <button type="button" class={cx(barButton, sharing && pressed)} title={`Share ${c.name} through a link`} onClick={() => setSharing(true)}>
+              Share
+            </button>
+          )}
           {present && (
             <button
               type="button"
@@ -468,6 +478,30 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
         </div>
         {viewersOpen && present && <ViewersPopover name={c.name} viewers={c.viewers} observers={c.observers} mics={c.mics} forwards={c.forwards} agents={c.agents} onClose={closeViewers} />}
       </div>
+      {sharing && (
+        <ShareDialog
+          environment={c.name}
+          onClose={() => {
+            setSharing(false);
+            tabHooks.current?.refocus();
+          }}
+          onShared={(username, link) => {
+            setSharing(false);
+            setShared({ username, link });
+          }}
+        />
+      )}
+      {shared && (
+        <LinkDialog
+          username={shared.username}
+          link={shared.link}
+          title={`${c.name} is shared with ${shared.username}`}
+          onClose={() => {
+            setShared(null);
+            tabHooks.current?.refocus();
+          }}
+        />
+      )}
       <div class="relative flex min-h-0 flex-1 flex-col">
         <div role="tabpanel" id={panelId(null)} aria-labelledby={tabId(null)} hidden={active !== null} class={cx("relative min-h-0 flex-1 flex-col", active === null ? "flex" : "hidden")}>
           {active === null && <Desktop environment={c} slots={slots} />}
