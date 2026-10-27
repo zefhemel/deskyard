@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/storage"
 )
 
 // volumeUserJSON is an environment whose definition grants a volume.
@@ -126,14 +127,18 @@ func (s *Server) handleDeleteVolume(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, environments.ErrNotFound):
 		writeError(w, http.StatusNotFound, "no such volume")
 		return
-	case errors.Is(err, environments.ErrConflict):
-		// A container still mounts it while its grant's removal is applied.
+	case errors.Is(err, environments.ErrConflict), errors.Is(err, storage.ErrBusy):
+		// A container still mounts it while its grant's removal is applied,
+		// or a backup or restore uses it.
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	case err != nil:
 		// Deleting the files failed; the volume itself may be gone already.
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if err := s.storage.ItemGone(storage.Item{Kind: storage.KindVolume, Name: name}); err != nil {
+		s.Log.Error("dropping deleted volume's backup policy", "volume", name, "err", err)
 	}
 	s.Log.Info("deleted volume", "volume", name, "files", deleteFiles, "by", a.Username)
 	w.WriteHeader(http.StatusNoContent)

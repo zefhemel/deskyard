@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"io"
 	"testing"
-	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
@@ -322,17 +322,22 @@ func TestBrowseAndDownload(t *testing.T) {
 		t.Fatal("browsed outside the item")
 	}
 	var out bytes.Buffer
-	name, err := s.Download(context.Background(), it, "home", "e1", "docs/a.txt", false, &out)
+	name := ""
+	open := func(n string) io.Writer { name = n; return &out }
+	err = s.Download(context.Background(), it, "home", "e1", "docs/a.txt", false, open)
 	if err != nil || name != "a.txt" || out.String() != "hello" {
 		t.Fatalf("download %q %q %v", name, out.String(), err)
 	}
-	name, err = s.Download(context.Background(), it, "home", "e1", "docs", true, &out)
+	err = s.Download(context.Background(), it, "home", "e1", "docs", true, open)
 	if err != nil || name != "docs.zip" || !slices.Contains(f.last().Args, "zip") {
 		t.Fatalf("folder download %q %v %v", name, err, f.last().Args)
 	}
-	name, _ = s.Download(context.Background(), it, "home", "e1", "", true, &out)
+	_ = s.Download(context.Background(), it, "home", "e1", "", true, open)
 	if name != "alice-2026-10-26.zip" {
 		t.Fatalf("whole download %q", name)
 	}
-	_ = time.Now
+	name = ""
+	if err := s.Download(context.Background(), it, "home", "e1", "../x", false, open); err == nil || name != "" {
+		t.Fatal("downloaded outside the item")
+	}
 }

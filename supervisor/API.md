@@ -221,6 +221,52 @@ A queue overflow or failed authoritative snapshot closes the stream so the clien
 
 Volume names follow the environment name rules (2–32 characters) and can't be changed. Volumes are recorded in `volumes.json` in the data folder; grants are recorded only in environment definitions.
 
+### Storage remotes (admin)
+
+A storage remote is a curated rclone connection; it knows nothing of restic. Backup repositories (below) are on remotes; sync and mounts may use them later.
+
+`Remote` = `{"name","type":"s3"|"b2"|"sftp"|"webdav","created","root"?,` plus the fields of its type: S3 `"provider":"AWS"|"Cloudflare"|"Minio"|"Wasabi"|"Other","endpoint"?,"region"?,"accessKeyId"`; B2 `"keyId"`; SFTP `"host","port"?,"user","hostKey"?` (a `known_hosts` line); WebDAV `"url","vendor"?:"nextcloud"|"owncloud"|"other","user"?` `}`, and in responses `"secretsSet":[names]` and `"repositories":[names on it]`. `root` is the path users of the remote address folders below: for S3 and B2 it starts with the bucket. `Secrets` = `{"secretAccessKey"?,"applicationKey"?,"password"?,"privateKey"?}` (S3, B2, SFTP or WebDAV password, SFTP PEM key): write-only, never returned, kept on an update when left out. Names follow the environment name rules and can't change; neither can the type.
+
+| Method and path | Body | Response |
+| --- | --- | --- |
+| `GET /api/remotes` | | `{"remotes":[Remote],"s3Providers":[…],"webdavVendors":[…]}` |
+| `POST /api/remotes` | `{"remote":Remote,"secrets":Secrets}` | 201 `Remote` once a connection test (listing the root with rclone, bounded to about a minute) passed; 400 with rclone's error when it fails or the settings are invalid, 409 for a name in use |
+| `POST /api/remotes/test` | `{"remote","secrets"}` | 204 when an unsaved remote connects; 400 with the error |
+| `GET /api/remotes/{name}` | | `Remote` |
+| `PUT /api/remotes/{name}` | `{"remote","secrets"}` | 200 `Remote` after a successful test; 409 `{"error","code":"busy"}` while a backup or restore uses it |
+| `POST /api/remotes/{name}/test` | `{"remote","secrets"}` | 204 when the saved remote, as edited, connects |
+| `DELETE /api/remotes/{name}` | | 204; 409 `{"code":"inUse"}` while a backup repository is on it. Nothing on the remote is touched |
+
+Public settings are kept in `storage-remotes.json`; secrets in `secret/remotes/<name>/secrets.json`, with a generated `rclone.conf` beside them (passwords obscured as rclone wants). rclone runs only in short-lived helper containers that mount that folder read-only; secrets never go in a helper's environment or arguments.
+
+### Backups (admin)
+
+A backup repository is a restic repository in a folder on a remote, with its own recovery key (restic's password). Each environment (its definition and home folder) and each volume can have a backup policy. Snapshots are tagged `deskyard`, `environment:<name>` or `volume:<name>`, and `scheduled`, `manual` or `pre-restore`; their restic host is `deskyard-` and the first 12 characters of the supervisor's instance ID, so several Deskyards can share a repository.
+
+`Repository` = `{"name","remote","folder","created"}`. `Policy` = `{"item":"volume:photos","repository","enabled","schedule":{"every":"hourly"|"daily"|"weekly","at":"HH:MM","weekday":0-6},"retention":{"last","hourly","daily","weekly","monthly","yearly"},"updated"}` (local time; hourly uses the minutes of `at`; weekday 0 is Sunday; at least one count is above 0). `Item` = `{"item","policy":Policy|null,"state":{"lastAttempt","lastSuccess","snapshot"?,"error"?},"activity":""|"backing up"|"restoring"|"restoring files","nextRun"|null}`. `Snapshot` = restic's `{"id","short_id","time","hostname","tags","paths","summary"?:{"data_added","total_bytes_processed"}}` plus `"repository"` and `"reason"`.
+
+| Method and path | Body | Response |
+| --- | --- | --- |
+| `GET /api/backups[?catalog=1]` | | `{"repositories":[Repository],"items":[Item] (those with a policy),"host"}`; with `catalog=1` also `"catalog":[{"repository","host","item","snapshots","latest","latestId","local"}]` (every item in every repository, by host; `local` is this Deskyard's snapshots of an item it has) and `"catalogErrors":{repository: error}` |
+| `POST /api/backups/repositories` | `{"name","remote","folder"?,"recoveryKey"?}` | 201 `{"repository","recoveryKey"?}`. Without a key: an empty folder (default `deskyard-backups`) gets a new repository and a generated key, returned this once; 409 `{"code":"needsKey"}` when a repository is already there. With a key: connects the repository there, 409 `{"code":"wrongKey"}` when the key doesn't open it, 400 when there is none |
+| `DELETE /api/backups/repositories/{name}` | | 204; 409 `{"code":"inUse"}` while a policy uses it. Forgets the repository and its local key; its snapshots stay on the remote |
+| `GET /api/backups/repositories/{name}/recovery-key` | | `{"recoveryKey"}` |
+| `GET /api/backups/{kind}/{name}` | | `Item`; `kind` is `environment` or `volume` |
+| `PUT /api/backups/{kind}/{name}` | `{"repository","enabled","schedule","retention"}` | 200 `Item`; 404 for an item that doesn't exist |
+| `DELETE /api/backups/{kind}/{name}` | | 204: the policy is gone; snapshots stay |
+| `POST /api/backups/{kind}/{name}/run` | | 202 `{"job"}`: backs up now, forgets snapshots beyond the retention and prunes the repository at most weekly; 409 `{"code":"busy"}` while another backup or restore holds the item |
+| `GET /api/backups/{kind}/{name}/snapshots` | | `{"snapshots":[Snapshot]}`: this Deskyard's, from every repository, newest first (listings are cached for 30 seconds and after each operation) |
+| `GET /api/backups/{kind}/{name}/snapshots/{id}/files?path=&repository=` | | `{"entries":[{"name","path","type","size","mtime"}]}`: one folder of the snapshot, paths relative to the item's root (the home folder for an environment); 400 for an absolute path or one with `..` |
+| `GET /api/backups/{kind}/{name}/snapshots/{id}/download?path=&dir=1&repository=` | | the file, or with `dir=1` the folder as a zip (the whole item with an empty path) |
+| `POST /api/backups/{kind}/{name}/restore` | `{"snapshot","repository"?,"mode":"here"|"new"|"folder","newName"?,"newImage"?,"backupFirst"?,"paths"?}` | 202 `{"job"}` whose result is `{"created"?,"dropped"?,"folder"?}` |
+
+`repository` defaults to the item's policy's; a snapshot from another machine or of a removed item names it. Restore modes:
+- `here` replaces the item's files with the snapshot's (`restic restore --delete` into the existing folder). The environment, or every running environment granting the volume, is stopped first and started again afterwards; if the restore fails they stay stopped and the job says so. `backupFirst` takes a `pre-restore` snapshot just before. An environment's settings don't change.
+- `new` restores into a new environment or volume `newName`, which must not exist, nor its folder. A new environment takes the saved image (or `newImage`), memory and CPU limits and the grants of volumes that exist here; the VPN, LAN exceptions, Docker access and other grants are dropped and listed in `dropped`. It is created and left stopped.
+- `folder` restores `paths` (relative to the item's root) into a new folder `Restored <YYYY-MM-DD HHMM>` (numbered when taken) inside the item, without touching other files or stopping anything.
+
+While a backup or restore holds an item, removing the environment, deleting the volume or another backup or restore of it is refused with 409. Repositories and policies are kept in `backups.json`, run state in `state/backups.json`, recovery keys in `secret/backups/<repository>/restic-password` and restic's cache in `cache/restic/`.
+
 ### Images (admin)
 
 `CatalogImage` = `{"ref","title","version","description","environments":[names],"behind":[names],"checked"|null,"installed":bool,"official":bool,"size"?,"built"?}`; `size` (bytes on disk) and `built` (the image's creation time) are present once the image is downloaded

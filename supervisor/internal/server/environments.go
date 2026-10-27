@@ -13,16 +13,17 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/storage"
 	"github.com/zefhemel/deskyard/supervisor/internal/terminal"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 )
 
 type settingsJSON struct {
-	VPNConnectionID *string                  `json:"vpnConnectionId"`
-	LANExceptions   []vpn.Exception          `json:"lanExceptions"`
-	MemoryBytes     int64                    `json:"memoryBytes"`
-	NanoCPUs        int64                    `json:"nanoCpus"`
-	DockerAccess    bool                     `json:"dockerAccess"`
+	VPNConnectionID *string         `json:"vpnConnectionId"`
+	LANExceptions   []vpn.Exception `json:"lanExceptions"`
+	MemoryBytes     int64           `json:"memoryBytes"`
+	NanoCPUs        int64           `json:"nanoCpus"`
+	DockerAccess    bool            `json:"dockerAccess"`
 	// Volumes is never null, like LANExceptions.
 	Volumes []environments.VolumeGrant `json:"volumes"`
 }
@@ -389,6 +390,9 @@ func (s *Server) startRecreate(w http.ResponseWriter, a accounts.Account, name s
 // definition a removal deleted (Service.Removed): its grants, agent tokens
 // and activity, and tells clients it is gone.
 func (s *Server) environmentRemoved(name string) error {
+	if err := s.storage.ItemGone(storage.Item{Kind: storage.KindEnvironment, Name: name}); err != nil {
+		s.Log.Error("dropping removed environment's backup policy", "environment", name, "err", err)
+	}
 	err := s.forgetAccess(name)
 	if err != nil {
 		s.Log.Error("persisting removed environment access cleanup", "environment", name, "err", err)

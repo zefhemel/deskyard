@@ -9,6 +9,7 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/storage"
 )
 
 func (s *Server) routes() {
@@ -74,6 +75,26 @@ func (s *Server) routes() {
 	h("POST /api/volumes", s.handleCreateVolume)
 	h("DELETE /api/volumes/{name}", s.handleDeleteVolume)
 	h("GET /api/volumes/{name}/usage", s.handleVolumeUsage)
+
+	h("GET /api/remotes", s.handleListRemotes)
+	h("POST /api/remotes", s.handleCreateRemote)
+	h("POST /api/remotes/test", s.handleTestRemote)
+	h("GET /api/remotes/{name}", s.handleGetRemote)
+	h("PUT /api/remotes/{name}", s.handleUpdateRemote)
+	h("DELETE /api/remotes/{name}", s.handleDeleteRemote)
+	h("POST /api/remotes/{name}/test", s.handleTestRemote)
+	h("GET /api/backups", s.handleBackups)
+	h("POST /api/backups/repositories", s.handleCreateRepository)
+	h("DELETE /api/backups/repositories/{name}", s.handleRemoveRepository)
+	h("GET /api/backups/repositories/{name}/recovery-key", s.handleRecoveryKey)
+	h("GET /api/backups/{kind}/{name}", s.handleGetBackup)
+	h("PUT /api/backups/{kind}/{name}", s.handlePutBackup)
+	h("DELETE /api/backups/{kind}/{name}", s.handleDeleteBackup)
+	h("POST /api/backups/{kind}/{name}/run", s.handleRunBackup)
+	h("GET /api/backups/{kind}/{name}/snapshots", s.handleSnapshots)
+	h("GET /api/backups/{kind}/{name}/snapshots/{id}/files", s.handleSnapshotFiles)
+	h("GET /api/backups/{kind}/{name}/snapshots/{id}/download", s.handleSnapshotDownload)
+	h("POST /api/backups/{kind}/{name}/restore", s.handleRestore)
 
 	m.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such API route")
@@ -208,7 +229,7 @@ func errorStatus(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, environments.ErrExists), errors.Is(err, accounts.ErrExists),
 		errors.Is(err, environments.ErrBusy), errors.Is(err, accounts.ErrLastAdmin), errors.Is(err, environments.ErrStopped),
-		errors.Is(err, environments.ErrConflict):
+		errors.Is(err, environments.ErrConflict), errors.Is(err, storage.ErrBusy):
 		return http.StatusConflict
 	default:
 		return http.StatusBadRequest

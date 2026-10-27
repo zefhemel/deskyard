@@ -368,24 +368,25 @@ func (s *Service) Browse(ctx context.Context, it Item, repoName, snapshot, dir s
 	return entries, nil
 }
 
-// Download writes p (relative to the item) of a snapshot to w: a file as
-// itself, a folder (dir) as a zip. It returns the file name to offer.
-func (s *Service) Download(ctx context.Context, it Item, repoName, snapshot, p string, dir bool, w io.Writer) (string, error) {
+// Download writes p (relative to the item) of a snapshot to the writer
+// open returns for the file name to offer: a file as itself, a folder (dir)
+// as a zip. open is called once the download can start.
+func (s *Service) Download(ctx context.Context, it Item, repoName, snapshot, p string, dir bool, open func(name string) io.Writer) error {
 	clean, err := cleanSnapshotPath(p)
 	if err != nil {
-		return "", err
+		return err
 	}
 	repoName, err = s.repoFor(it, repoName)
 	if err != nil {
-		return "", err
+		return err
 	}
 	repo, _, err := s.repo(repoName)
 	if err != nil {
-		return "", err
+		return err
 	}
 	snap, err := s.snapshotOf(ctx, repoName, it, snapshot)
 	if err != nil {
-		return "", err
+		return err
 	}
 	name := path.Base(clean)
 	if clean == "" {
@@ -395,5 +396,16 @@ func (s *Service) Download(ctx context.Context, it Item, repoName, snapshot, p s
 	if dir {
 		name += ".zip"
 	}
-	return name, s.Tool.Dump(ctx, repo, snap.ID, path.Join(itemRoot(it), clean), dir, w)
+	return s.Tool.Dump(ctx, repo, snap.ID, path.Join(itemRoot(it), clean), dir, open(name))
+}
+
+// CheckRestorePaths checks the paths of a restore to a folder, as the
+// browser sends them.
+func CheckRestorePaths(paths []string) error {
+	for _, p := range paths {
+		if _, err := cleanSnapshotPath(p); err != nil {
+			return err
+		}
+	}
+	return nil
 }

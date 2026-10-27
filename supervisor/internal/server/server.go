@@ -24,6 +24,7 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/storage"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 )
@@ -54,7 +55,8 @@ type Server struct {
 	thumbs           *thumbnails
 	tokens           *tokenStore
 	images           *catalog
-	reconcile        chan struct{} // wakes the environments' reconcile loop
+	storage          *storage.Service // storage remotes and backups
+	reconcile        chan struct{}    // wakes the environments' reconcile loop
 
 	memoryReclaim engine.MemoryReclaimSupport
 
@@ -75,6 +77,8 @@ type Options struct {
 	Secure       bool // served over HTTPS
 	DefaultImage string
 
+	// StorageRunner runs rclone and restic; nil uses helper containers on Eng.
+	StorageRunner    storage.Runner
 	ActivityPresence time.Duration   // how long an agent stays after its last action (0: 5 minutes)
 	StartupContext   context.Context // optional; bounds capability detection with the startup lifetime
 }
@@ -129,6 +133,14 @@ func New(o Options) (*Server, error) {
 			s.Log.Warn("recording local image", "ref", ref, "err", err)
 		}
 	}
+	run := o.StorageRunner
+	if run == nil {
+		run = &storage.EngineRunner{Eng: o.Eng, BinDir: filepath.Join(o.Layout.Cache, "storage")}
+	}
+	if s.storage, err = storage.Open(o.Layout, o.Environments.Instance, run, storage.EnvironmentsOf(o.Environments), o.Log); err != nil {
+		return nil, err
+	}
+	s.Environments.ItemBusy = s.storage.Busy
 	s.Environments.ConflictsChanged = s.events.refresh
 	s.Environments.Removed = s.environmentRemoved
 	// An environment whose pinned image was pulled again has a new revision.
@@ -153,6 +165,7 @@ func (s *Server) Run(ctx context.Context) {
 	go s.activityLoop(ctx)
 	go s.idleMemoryLoop(ctx)
 	go s.terminalSessions.run(ctx)
+	go s.storage.RunScheduler(ctx)
 }
 
 func sessionKey(secretDir string) ([]byte, error) {
