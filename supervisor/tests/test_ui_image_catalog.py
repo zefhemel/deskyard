@@ -51,7 +51,8 @@ def test_docker_permission_create_and_settings(mock_ui):
         expect(dialog).to_have_count(0, timeout=15000)
         page.goto(mock_ui + "/environments/" + name + "?tab=settings")
         permission = page.get_by_role("checkbox", name="Docker daemon access", exact=True)
-        expect(permission).to_be_checked()
+        # The mock's Vite server compiles the Settings tab on first use: slow on a busy runner.
+        expect(permission).to_be_checked(timeout=15000)
         permission.uncheck()
         expect(page.get_by_role("button", name="Save and restart", exact=True)).to_be_enabled()
         page.get_by_role("button", name="Undo changes", exact=True).click()
