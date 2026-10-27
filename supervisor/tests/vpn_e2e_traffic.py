@@ -205,8 +205,8 @@ def lifecycle(d):
         "replaced gateway tunnel",
     )
     assert (
-        req("/api/environments/" + r["names"][0] + "/download?path=/workspace/vpn-e2e.txt")
-        == b"vpn-e2e-workspace"
+        docker("exec", "-u", "user", r["containers"][0], "cat", "/workspace/vpn-e2e.txt")
+        == "vpn-e2e-workspace"
     )
     assert req("/" + r["names"][0] + "/screen/api/websockets") == b""
     cfg = json.loads((d / "fixture.json").read_text())

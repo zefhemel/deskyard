@@ -66,8 +66,6 @@ func (s *Server) routes() {
 	h("GET /api/environments/{name}/folder", s.handleFolder)
 	h("GET /api/environments/{name}/activity", s.handleActivity)
 	h("GET /api/environments/{name}/screen-events", s.handleScreenEvents)
-	h("GET /api/environments/{name}/files", s.handleFiles)
-	h("GET /api/environments/{name}/download", s.handleDownload)
 	h("POST /api/environments/{name}/upload", s.handleUpload)
 
 	// Remote access: client credentials only.

@@ -38,11 +38,6 @@ export const TerminalIcon = () => (
     <path d="m4.25 6 2.25 2-2.25 2M8 10.5h3.5" />
   </Icon>
 );
-export const FolderIcon = () => (
-  <Icon>
-    <path d="M1.75 4.25c0-.7.55-1.25 1.25-1.25h3l1.5 1.75h5.5c.7 0 1.25.55 1.25 1.25v6.25c0 .7-.55 1.25-1.25 1.25H3c-.7 0-1.25-.55-1.25-1.25Z" />
-  </Icon>
-);
 export const TextSizeIcon = () => (
   <Icon>
     <path d="M1.75 12.5 5 3.5l3.25 9M2.9 9.5h4.2M9.5 12.5l2.25-6 2.25 6M10.2 10.75h3.1" />

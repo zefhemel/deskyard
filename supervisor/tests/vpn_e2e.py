@@ -332,12 +332,7 @@ def check(d):
             env=env,
         )
         assert result == "1000", result
-        files = json.loads(req("/api/environments/" + name + "/files"))
-        assert any(x["name"] == "vpn-e2e.txt" for x in files["entries"])
-        assert (
-            req("/api/environments/" + name + "/download?path=/workspace/vpn-e2e.txt")
-            == b"vpn-e2e-workspace"
-        )
+        assert run(cli, "exec", "--", "cat", "/workspace/vpn-e2e.txt", env=env) == "vpn-e2e-workspace"
         png = subprocess.run(
             [cli, "screenshot"], env=env, capture_output=True, check=True
         ).stdout

@@ -65,8 +65,8 @@ type Server struct {
 
 	activity       *activity.Tracker
 	activityPub    *throttle
-	screenWatchers *viewers // screen-events streams, closed on revoke like viewers
-	transfers      *transfers // file downloads and uploads, closed on revoke
+	screenWatchers *viewers   // screen-events streams, closed on revoke like viewers
+	transfers      *transfers // file uploads, closed on revoke
 	unsaved        *unsavedRevocations
 	// revoking is held by a change that decides an account's access or
 	// sessions, from its save to holding or forgetting what couldn't be

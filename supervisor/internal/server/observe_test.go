@@ -37,7 +37,7 @@ func TestObserverCanSeeButNotUse(t *testing.T) {
 	if got := status(t, bob, "GET", base+"/screen.png", ""); got != http.StatusConflict {
 		t.Errorf("observer screen.png: %d", got)
 	}
-	for _, path := range []string{"/processes", "/folder", "/files", "/download", "/activity", "/terminal/sessions"} {
+	for _, path := range []string{"/processes", "/folder", "/activity", "/terminal/sessions"} {
 		if got := status(t, bob, "GET", base+path, ""); got != 403 {
 			t.Errorf("observer GET %s: %d", path, got)
 		}

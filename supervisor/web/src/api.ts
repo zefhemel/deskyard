@@ -297,21 +297,6 @@ export interface FolderSize {
   complete: boolean;
 }
 
-export interface FileEntry {
-  name: string;
-  dir: boolean;
-  size: number;
-  modified: string;
-}
-
-export interface FileListing {
-  /** The folder's real path in the environment, always /workspace or below. */
-  path: string;
-  entries: FileEntry[];
-  /** True when the folder has more than the 2,000 newest entries shown. */
-  truncated: boolean;
-}
-
 export interface Uploaded {
   path: string;
   bytes: number;
@@ -637,9 +622,6 @@ export const api = {
   activity: (name: string) => request<ActivityEvent>("GET", `${c(name)}/activity`),
   stats: (name: string) => request<StatsHistory>("GET", `${c(name)}/stats`),
   folder: (name: string) => request<FolderSize>("GET", `${c(name)}/folder`),
-  files: (name: string, path: string) => request<FileListing>("GET", `${c(name)}/files?path=${enc(path)}`),
-  /** A file, or a folder as a zip; the browser downloads it. */
-  downloadUrl: (name: string, path: string) => `${c(name)}/download?path=${enc(path)}`,
   keys: (name: string, keys: string) => request<void>("POST", `${c(name)}/keys`, { keys }),
   /**
    * This page's mic badge: tab is the frame's tab id, as on its stream; seq

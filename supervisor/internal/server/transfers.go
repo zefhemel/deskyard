@@ -10,7 +10,7 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 )
 
-// fileTransfer is a file download or upload in progress. It goes on only while
+// fileTransfer is a file upload in progress. It goes on only while
 // its account may still use the environment fully, as at its start.
 type fileTransfer struct {
 	username    string
