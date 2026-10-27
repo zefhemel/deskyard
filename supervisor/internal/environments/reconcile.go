@@ -435,7 +435,7 @@ func (s *Service) CheckLegacyContainers(ctx context.Context) error {
 		return nil
 	}
 	sort.Strings(old)
-	return fmt.Errorf("%w: containers from before environment definitions use %s: %s; remove them (docker rm -f %s), or choose another DESKYARD_DATA_DIR (they are not migrated)",
+	return fmt.Errorf("%w: containers from before environment definitions use %s: %s; remove them (docker rm -f %s), or mount another folder at /data (they are not migrated)",
 		config.ErrLegacyLayout, s.Layout.Data, strings.Join(old, ", "), strings.Join(old, " "))
 }
 

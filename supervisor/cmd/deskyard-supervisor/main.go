@@ -48,9 +48,9 @@ func main() {
 const usage = `deskyard-supervisor: runs desktops (Linux desktops in containers) and shares them in the browser.
 
 Configuration (environment variables):
-  DESKYARD_LISTEN          address for HTTP (default 127.0.0.1:7343)
+  DESKYARD_LISTEN          address for HTTP (default 0.0.0.0:7343)
   DESKYARD_DOMAIN          serve HTTPS on :443 (and :80) for this domain, with automatic certificates
-  DESKYARD_DATA_DIR        definitions, state and environment homes (default ~/deskyard; required in a container)
+  DESKYARD_DATA_DIR        no longer a setting: mount the data folder at /data
   DESKYARD_ENGINE_HOST     container engine socket (default DOCKER_HOST, else the platform default)
   DESKYARD_SUBNET          address pool for the desktops' networks (default 10.213.0.0/16)
   DESKYARD_ADMIN_USER      the first admin's username (default admin)

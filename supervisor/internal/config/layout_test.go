@@ -92,3 +92,46 @@ func TestInstanceIDStable(t *testing.T) {
 		t.Fatalf("instance file: %v %v", err, st)
 	}
 }
+
+func TestToHostTranslatesLayoutEntries(t *testing.T) {
+	l := NewLayout("/data").WithHost("/srv/deskyard")
+	for in, want := range map[string]string{
+		"/data/home/alice":                   "/srv/deskyard/home/alice",
+		"/data/secret/remotes/x/rclone.conf": "/srv/deskyard/secret/remotes/x/rclone.conf",
+		"/data/environments.json":            "/srv/deskyard/environments.json",
+		"/data":                              "/srv/deskyard",
+		"/data/photos":                       "/data/photos",
+		"/srv/photos":                        "/srv/photos",
+		"/data/homework":                     "/data/homework",
+	} {
+		if got := l.ToHost(in); got != want {
+			t.Errorf("ToHost(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestFromHostIsTheInverse(t *testing.T) {
+	l := NewLayout("/data").WithHost("/srv/deskyard")
+	if got := l.FromHost("/srv/deskyard/volume/v"); got != "/data/volume/v" {
+		t.Errorf("FromHost volume = %q", got)
+	}
+	if got := l.FromHost("/srv/other"); got != "/srv/other" {
+		t.Errorf("FromHost other = %q", got)
+	}
+	plain := NewLayout("/data")
+	if plain.ToHost("/data/home/a") != "/data/home/a" || plain.FromHost("/srv/x/home/a") != "/srv/x/home/a" {
+		t.Error("without WithHost both translations must be the identity")
+	}
+}
+
+func TestOwns(t *testing.T) {
+	l := NewLayout("/data")
+	for p, want := range map[string]bool{
+		"/data": true, "/data/home/x": true, "/data/state": true, "/data/accounts.json": true,
+		"/data/photos": false, "/data/homework": false, "/srv/home": false, "/data/sub/x.json": false,
+	} {
+		if got := l.Owns(p); got != want {
+			t.Errorf("Owns(%q) = %v, want %v", p, got, want)
+		}
+	}
+}

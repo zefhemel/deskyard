@@ -12,9 +12,9 @@ import (
 const DefaultImage = "ghcr.io/zefhemel/deskyard-debian-xfce:latest"
 
 type Config struct {
-	Listen        string // DESKYARD_LISTEN, default 127.0.0.1:7343
+	Listen        string // DESKYARD_LISTEN, default 0.0.0.0:7343
 	Domain        string // DESKYARD_DOMAIN: HTTPS on 80/443 with automatic certificates
-	DataDir       string // DESKYARD_DATA_DIR: definitions, state and environment homes
+	DataDir       string // always DataDir (/data): definitions, state and environment homes
 	Layout        Layout // the folders in DataDir
 	EngineHost    string // DESKYARD_ENGINE_HOST, else DOCKER_HOST, else the default socket
 	Subnet        netip.Prefix
@@ -37,9 +37,9 @@ func env(k, def string) string {
 
 func Load() (Config, error) {
 	c := Config{
-		Listen:        env("DESKYARD_LISTEN", "127.0.0.1:7343"),
+		Listen:        env("DESKYARD_LISTEN", "0.0.0.0:7343"),
 		Domain:        os.Getenv("DESKYARD_DOMAIN"),
-		DataDir:       os.Getenv("DESKYARD_DATA_DIR"),
+		DataDir:       DataDir,
 		EngineHost:    env("DESKYARD_ENGINE_HOST", os.Getenv("DOCKER_HOST")),
 		AdminUser:     env("DESKYARD_ADMIN_USER", "admin"),
 		AdminPassword: os.Getenv("DESKYARD_ADMIN_PASSWORD"),
@@ -51,22 +51,11 @@ func Load() (Config, error) {
 			c.InContainer = true
 		}
 	}
-	if c.DataDir == "" {
-		if c.InContainer {
-			return c, fmt.Errorf("DESKYARD_DATA_DIR is required in a container (mount it at the same path as on the host)")
-		}
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return c, err
-		}
-		c.DataDir = filepath.Join(home, "deskyard")
+	if v := os.Getenv("DESKYARD_DATA_DIR"); v != "" && filepath.Clean(v) != DataDir {
+		return c, fmt.Errorf("DESKYARD_DATA_DIR is no longer a setting: the data folder is always %s inside the container; mount the host folder there with -v %s:%s and drop DESKYARD_DATA_DIR", DataDir, v, DataDir)
 	}
-	abs, err := filepath.Abs(c.DataDir)
-	if err != nil {
-		return c, err
-	}
-	c.DataDir = abs
-	c.Layout = NewLayout(c.DataDir)
+	var err error
+	c.Layout = NewLayout(DataDir)
 	c.ActivityPresence, err = time.ParseDuration(env("DESKYARD_ACTIVITY_PRESENCE", "5m"))
 	if err != nil || c.ActivityPresence <= 0 {
 		return c, fmt.Errorf("DESKYARD_ACTIVITY_PRESENCE must be a positive duration")

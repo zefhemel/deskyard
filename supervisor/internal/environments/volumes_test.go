@@ -123,3 +123,14 @@ func TestVolumesAddDuplicate(t *testing.T) {
 		t.Fatalf("got %v, want ErrExists", err)
 	}
 }
+
+func TestValidHostPathRefusesDataEntries(t *testing.T) {
+	if err := ValidHostPath("/data/home/x"); err == nil {
+		t.Error("/data/home/x must be refused")
+	}
+	for _, p := range []string{"/data/photos", "/srv/photos"} {
+		if err := ValidHostPath(p); err != nil {
+			t.Errorf("%s: %v", p, err)
+		}
+	}
+}

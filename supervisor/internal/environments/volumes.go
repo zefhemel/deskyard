@@ -58,10 +58,14 @@ func (v Volume) validate() error {
 	return nil
 }
 
-// ValidHostPath checks a host volume's folder: a clean absolute path.
+// ValidHostPath checks a host volume's folder: a clean absolute path outside
+// the layout's entries in the supervisor's data mount.
 func ValidHostPath(p string) error {
 	if len(p) > 4096 || !filepath.IsAbs(p) || strings.ContainsRune(p, 0) || filepath.Clean(p) != p {
 		return fmt.Errorf("a host volume needs a clean absolute path on the engine host, not %q", p)
+	}
+	if config.NewLayout(config.DataDir).Owns(p) {
+		return fmt.Errorf("%s is inside the supervisor's data folder mount; choose a folder outside /data/home, /data/volume, /data/secret, /data/state and /data/cache", p)
 	}
 	return nil
 }
