@@ -187,8 +187,9 @@ const streamOrigin = "http://supervisor.deskyard.invalid"
 
 // serveStream proxies the desktop's stream (Selkies' WebSocket) to the
 // desktop, adding the desktop's token and dropping the session cookie, and
-// tracks who's viewing. ?tab= names the page's browser tab, for its mic badge.
-// A plain GET is the client's reconnect probe.
+// tracks who's viewing. An observer's messages pass observeFilter: they watch,
+// never act on the desktop. ?tab= names the page's browser tab, for its mic
+// badge. A plain GET is the client's reconnect probe.
 func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, c environments.Environment) {
 	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 		s.probeStream(w, r, c)
@@ -214,6 +215,7 @@ func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, c environme
 	}
 	defer release()
 	a, _ := s.account(r)
+	observer := !auth.Can(a, auth.View, c.ID) // allowed to watch, not to use
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	cn := &conn{username: a.Username, tab: tab, environment: c.ID, cancel: cancel}
@@ -228,6 +230,9 @@ func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, c environme
 		ModifyResponse: func(resp *http.Response) error {
 			release() // Selkies has answered: the next dial's wait starts now
 			if conn, ok := resp.Body.(io.ReadWriteCloser); ok && resp.StatusCode == http.StatusSwitchingProtocols {
+				if observer {
+					conn = newObserveFilter(conn) // under the watch, whose START_VIDEO it lets through
+				}
 				// Selkies may have stopped the desktop's stream: restarted
 				// if this viewer gets no picture.
 				resp.Body = newStreamWatch(conn, streamPictureWait, func() {
