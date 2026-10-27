@@ -332,8 +332,12 @@ type catalogImageJSON struct {
 	Built *time.Time `json:"built,omitempty"`
 }
 
+// handleListImages lists the catalog; each image names only the
+// environments using it that the account can see.
 func (s *Server) handleListImages(w http.ResponseWriter, r *http.Request) {
-	list, _ := s.Environments.List(r.Context())
+	a, _ := s.account(r)
+	all, _ := s.Environments.List(r.Context())
+	list := slices.DeleteFunc(all, func(c environments.Environment) bool { return !auth.Can(a, auth.Observe, c.ID) })
 	out := []catalogImageJSON{}
 	for _, e := range s.images.entries() {
 		j := catalogImageJSON{Ref: e.Ref, Checked: e.Checked, Environments: []string{}, Behind: []string{}}

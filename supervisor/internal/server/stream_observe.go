@@ -1,18 +1,21 @@
 package server
 
 import (
+	"bytes"
 	"encoding/binary"
 	"io"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // observeFilter sits on an observer's stream connection to Selkies and lets
 // through only the client messages a viewer needs to receive the picture:
 // keyboard, mouse, clipboard, resizes, settings, uploads and everything else
-// that would act on the shared desktop never reach it. Selkies' side (Read)
-// passes as it is.
+// that would act on the shared desktop never reach it. Of Selkies' side
+// (Read) it drops what Selkies sends every controller beyond the picture:
+// the desktop's clipboard and the names of printed documents.
 //
 // It reads the client's WebSocket framing however the bytes are split. A
 // frame the filter might forward is at most 139 bytes (an allowed message is
@@ -21,10 +24,19 @@ import (
 // it streams past without being held. Selkies' stream has no compression
 // extension, so payloads are as framed.
 //
+// Selkies' frames are read the same way: a text frame is held until its
+// first bytes tell what it is, then passed on or dropped as it streams; any
+// other frame (the picture) passes as it streams.
+//
 // Write is not safe for concurrent use: the proxy has one writer, and
-// streamWatch serializes its own START_VIDEO with it.
+// streamWatch serializes its own START_VIDEO with it. Neither is Read, which
+// the proxy calls from one goroutine.
 type observeFilter struct {
 	conn io.ReadWriteCloser
+	now  func() time.Time
+
+	lastStart time.Time // when START_VIDEO last passed
+	down      downstream
 
 	frame [maxHeldFrame]byte // the current frame's header so far, then the whole of a held frame
 	n     int                // bytes of it so far
@@ -37,13 +49,137 @@ type observeFilter struct {
 const (
 	maxObservedText = 125 // longer texts are none an observer may send
 	maxHeldFrame    = 14 + 125
+
+	// observeStartGap is how often an observer's START_VIDEO passes: each
+	// makes the shared stream send a keyframe. streamWatch's own comes
+	// streamPictureWait after the page's.
+	observeStartGap = 2 * time.Second
 )
 
 func newObserveFilter(conn io.ReadWriteCloser) io.ReadWriteCloser {
-	return &observeFilter{conn: conn}
+	return &observeFilter{conn: conn, now: time.Now}
 }
 
-func (f *observeFilter) Read(p []byte) (int, error) { return f.conn.Read(p) }
+// Read takes Selkies' side, going to the observer.
+func (f *observeFilter) Read(p []byte) (int, error) {
+	d := &f.down
+	for len(d.out) == 0 && d.err == nil {
+		if d.buf == nil {
+			d.buf = make([]byte, 32<<10)
+		}
+		n, err := f.conn.Read(d.buf)
+		d.feed(d.buf[:n])
+		d.err = err
+	}
+	if len(d.out) == 0 {
+		return 0, d.err
+	}
+	n := copy(p, d.out)
+	d.out = d.out[n:]
+	return n, nil
+}
+
+// downstream filters Selkies' frames to an observer.
+type downstream struct {
+	buf      []byte
+	out      []byte // filtered, to be read
+	err      error  // the connection's read error, once out is read
+	held     []byte // the current frame's header, then its payload's first bytes
+	pass     uint64 // payload bytes of a passed frame still to come
+	skip     uint64 // payload bytes of a dropped frame still to come
+	dropping bool   // continuations belong to a dropped fragmented message
+}
+
+// observedPrefix is how much of a text frame tells whether it may pass.
+const observedPrefix = 32
+
+func (d *downstream) feed(p []byte) {
+	if len(d.out) == 0 {
+		d.out = d.out[:0:0] // let the read slice go
+	}
+	for len(p) > 0 {
+		switch {
+		case d.pass > 0:
+			k := min(d.pass, uint64(len(p)))
+			d.out = append(d.out, p[:k]...)
+			d.pass -= k
+			p = p[k:]
+		case d.skip > 0:
+			k := min(d.skip, uint64(len(p)))
+			d.skip -= k
+			p = p[k:]
+		default:
+			d.held = append(d.held, p[0])
+			p = p[1:]
+			d.decide()
+		}
+	}
+}
+
+// decide passes or drops the held frame once enough of it is in.
+func (d *downstream) decide() {
+	h := d.held
+	if len(h) < 2 {
+		return
+	}
+	head := 2
+	switch h[1] & 0x7f {
+	case 126:
+		head += 2
+	case 127:
+		head += 8
+	}
+	if h[1]&0x80 != 0 {
+		head += 4
+	}
+	if len(h) < head {
+		return
+	}
+	var length uint64
+	switch n := h[1] & 0x7f; n {
+	case 126:
+		length = uint64(binary.BigEndian.Uint16(h[2:]))
+	case 127:
+		length = binary.BigEndian.Uint64(h[2:])
+	default:
+		length = uint64(n)
+	}
+	fin, opcode, masked := h[0]&0x80 != 0, h[0]&0x0f, h[1]&0x80 != 0
+	drop := false
+	switch {
+	case opcode == wsText && fin && !masked:
+		// Selkies' messages are unmasked and whole: what they are shows in
+		// their first bytes.
+		prefix := int(min(length, observedPrefix))
+		if len(h) < head+prefix {
+			return
+		}
+		drop = observerMayNotReceive(h[head:])
+	case opcode == wsText: // the start of a fragmented message: none we know
+		drop, d.dropping = true, !fin
+	case opcode == 0: // a continuation
+		drop = d.dropping
+		if fin {
+			d.dropping = false
+		}
+	}
+	rest := length - uint64(len(h)-head)
+	if drop {
+		d.skip = rest
+	} else {
+		d.out = append(d.out, h...)
+		d.pass = rest
+	}
+	d.held = d.held[:0]
+}
+
+// observerMayNotReceive reports whether a text message from Selkies,
+// starting with these bytes, is one an observer doesn't get: the desktop's
+// clipboard (clipboard, clipboard_binary, clipboard_start/_data/_finish,
+// clipboard_secret, clipboard_reply) and printed documents.
+func observerMayNotReceive(prefix []byte) bool {
+	return bytes.HasPrefix(prefix, []byte("clipboard")) || bytes.HasPrefix(prefix, []byte(`{"type": "print_document"`))
+}
 
 func (f *observeFilter) Close() error { return f.conn.Close() }
 
@@ -133,7 +269,17 @@ func (f *observeFilter) forward() bool {
 	for i := range payload {
 		payload[i] ^= mask[i%4]
 	}
-	return observerMayForward(payload)
+	if !observerMayForward(payload) {
+		return false
+	}
+	if string(payload) == "START_VIDEO" {
+		if now := f.now(); f.lastStart.IsZero() || now.Sub(f.lastStart) >= observeStartGap {
+			f.lastStart = now
+			return true
+		}
+		return false
+	}
+	return true
 }
 
 // observerMayForward reports whether an observer may send Selkies this text
@@ -146,10 +292,11 @@ func (f *observeFilter) forward() bool {
 //   - START_VIDEO: starts this connection's picture (for a connection without
 //     a display Selkies resets its decoder and sends a keyframe, or starts the
 //     capture at the desktop's current size); streamWatch sends it too.
+//     Selkies doesn't rate-limit it for a controller, so the filter passes
+//     one every observeStartGap.
 //   - REQUEST_KEYFRAME: the decoder's recovery; a keyframe of the shared
 //     stream, rate-limited per connection by Selkies.
 //   - LOST_FRAME <id>: the decoder's recovery without a keyframe, likewise.
-//   - _gz,1: compression of this connection's own messages.
 //
 // Dropped, among everything else:
 //   - SETTINGS,…: would make the observer the display's owner (its size,
@@ -165,10 +312,12 @@ func (f *observeFilter) forward() bool {
 //   - STOP_VIDEO: our client never sends it; a pause is the page's own.
 //   - CLIENT_FRAME_ACK, DECODE_PACE: count for the display's owner only.
 //   - cmd, and Selkies' commands, _stats: run things or report on them.
+//   - _gz,1: Selkies would gzip its large messages to the observer, which
+//     Read couldn't then tell apart.
 //   - every binary message: microphone, webcam, file uploads, gzipped text.
 func observerMayForward(text []byte) bool {
 	switch s := string(text); s {
-	case "START_VIDEO", "REQUEST_KEYFRAME", "_gz,1":
+	case "START_VIDEO", "REQUEST_KEYFRAME":
 		return true
 	default:
 		id, ok := strings.CutPrefix(s, "LOST_FRAME ")

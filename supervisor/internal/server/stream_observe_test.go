@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -76,7 +77,6 @@ func TestObserveFilterPassesVideoControl(t *testing.T) {
 		wsFrame(wsText, []byte("START_VIDEO"), true),
 		wsFrame(wsText, []byte("REQUEST_KEYFRAME"), true),
 		wsFrame(wsText, []byte("LOST_FRAME 4711"), true),
-		wsFrame(wsText, []byte("_gz,1"), true),
 		wsFrame(0x9, []byte("ping"), true),
 		wsFrame(0xA, []byte("pong"), true),
 		wsFrame(0x8, []byte{0x03, 0xe8}, true),
@@ -279,5 +279,96 @@ func TestStreamRechecksSessionOnceRegistered(t *testing.T) {
 	}
 	if resp == nil || resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("dial: %v %v", resp, err)
+	}
+}
+
+// received is what an observer receives of Selkies' frames, given in the
+// chunks shown.
+func received(t *testing.T, chunks ...[]byte) []byte {
+	t.Helper()
+	up := newFakeUpstream()
+	go func() {
+		for _, c := range chunks {
+			for len(c) > 0 { // the fake's reads take what fits
+				n := min(len(c), 4096)
+				up.toRead <- c[:n]
+				c = c[n:]
+			}
+		}
+		close(up.toRead)
+	}()
+	got, err := io.ReadAll(newObserveFilter(up))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+// Selkies sends the desktop's clipboard, and printed documents, to every
+// controller, which the supervisor's connection is: an observer doesn't get
+// them.
+func TestObserveFilterDropsClipboardFromSelkies(t *testing.T) {
+	video := wsFrame(wsBinary, bytes.Repeat([]byte{9}, 70000), false)
+	kept := [][]byte{
+		wsFrame(wsText, []byte("VIDEO_STARTED"), false), video,
+		wsFrame(wsText, []byte("cursor,{}"), false), wsFrame(0x9, nil, false),
+	}
+	dropped := [][]byte{
+		wsFrame(wsText, []byte("clipboard,c2VjcmV0"), false),
+		wsFrame(wsText, []byte("clipboard_secret"), false),
+		wsFrame(wsText, []byte("clipboard_start,text/plain,9000"), false),
+		wsFrame(wsText, []byte("clipboard_data,"+strings.Repeat("QUFB", 3000)), false),
+		wsFrame(wsText, []byte("clipboard_finish"), false),
+		wsFrame(wsText, []byte("clipboard_binary,image/png,iVBORw0K"), false),
+		wsFrame(wsText, []byte("clipboard_reply,cw"), false),
+		wsFrame(wsText, []byte(`{"type": "print_document", "name": "salaries.pdf", "size_bytes": 1}`), false),
+		slices.Concat([]byte{0x01, 4}, []byte("clip"), []byte{0x80, 5}, []byte("board")), // fragmented
+	}
+	stream := slices.Concat(kept[0], dropped[0], kept[1], dropped[1], dropped[2], dropped[3], kept[2],
+		dropped[4], dropped[5], dropped[6], dropped[7], dropped[8], kept[3])
+	want := slices.Concat(kept...)
+	if got := received(t, stream); !bytes.Equal(got, want) {
+		t.Fatalf("whole: got %d bytes, want %d", len(got), len(want))
+	}
+	for _, at := range []int{1, 2, 3, 7, 20, 100, 4000, len(stream) - 1} {
+		if got := received(t, stream[:at], stream[at:]); !bytes.Equal(got, want) {
+			t.Fatalf("split at %d: got %d bytes, want %d", at, len(got), len(want))
+		}
+	}
+	var bytewise [][]byte
+	for i := range stream[:300] {
+		bytewise = append(bytewise, stream[i:i+1])
+	}
+	if got := received(t, append(bytewise, stream[300:])...); !bytes.Equal(got, want) {
+		t.Fatal("bytewise")
+	}
+}
+
+// An observer's START_VIDEO starts its picture; repeated, it would make the
+// shared stream send keyframes, so it passes at most every few seconds.
+func TestObserveFilterThrottlesStartVideo(t *testing.T) {
+	up := newFakeUpstream()
+	f := newObserveFilter(up).(*observeFilter)
+	now := time.Unix(1000, 0)
+	f.now = func() time.Time { return now }
+	start := wsFrame(wsText, []byte("START_VIDEO"), true)
+	for range 100 {
+		_, _ = f.Write(start)
+	}
+	if got := up.sent(); !bytes.Equal(got, start) {
+		t.Fatalf("a burst forwarded %d bytes", len(got))
+	}
+	now = now.Add(observeStartGap)
+	_, _ = f.Write(start)
+	if got := up.sent(); !bytes.Equal(got, slices.Concat(start, start)) {
+		t.Fatalf("one after the gap: %d bytes", len(got))
+	}
+}
+
+// _gz,1 would have Selkies gzip its large messages to the observer, which
+// the filter couldn't read.
+func TestObserveFilterDropsGzip(t *testing.T) {
+	if got := observed(t, wsFrame(wsText, []byte("_gz,1"), true)); len(got) != 0 {
+		t.Fatalf("_gz,1 reached Selkies")
 	}
 }

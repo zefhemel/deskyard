@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
@@ -141,5 +143,31 @@ func TestObserverCannotFollowJobs(t *testing.T) {
 	getJSON(t, anna, ts.URL+"/api/environments/alice", &env)
 	if env["job"] != id {
 		t.Errorf("full user misses the job: %v", env["job"])
+	}
+}
+
+// The image catalog names only the environments the account can see.
+func TestImageCatalogListsOnlyVisibleEnvironments(t *testing.T) {
+	s, ts := newTestServer(t)
+	define(t, s, "secret", time.Now())
+	observeAlice(t, s)
+	var images []catalogImageJSON
+	getJSON(t, login(t, ts, "bob"), ts.URL+"/api/images", &images)
+	seen := false
+	for _, img := range images {
+		for _, name := range img.Environments {
+			seen = seen || name == "alice"
+			if name != "alice" {
+				t.Errorf("the observer sees %s on %s", name, img.Ref)
+			}
+		}
+	}
+	if !seen {
+		t.Errorf("the observer misses alice: %+v", images)
+	}
+	images = nil
+	getJSON(t, login(t, ts, "admin"), ts.URL+"/api/images", &images)
+	if all := slices.ContainsFunc(images, func(img catalogImageJSON) bool { return slices.Contains(img.Environments, "secret") }); !all {
+		t.Errorf("the admin misses secret: %+v", images)
 	}
 }
