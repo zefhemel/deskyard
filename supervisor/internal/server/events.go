@@ -193,7 +193,8 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 				if err == nil && auth.Can(acct, auth.Observe, c.ID) {
 					visible[name] = true
 					send("environment", s.environmentJSON(r.Context(), c, acct))
-				} else {
+				} else if visible[name] {
+					// Only of one it could see: others' names aren't its to know.
 					delete(visible, name)
 					send("removed", map[string]string{"name": name})
 				}

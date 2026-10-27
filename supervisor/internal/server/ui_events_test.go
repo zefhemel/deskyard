@@ -232,3 +232,31 @@ func TestSocketEventWriterWriteFailureCancels(t *testing.T) {
 		t.Fatal("failed event write did not cancel the feed")
 	}
 }
+
+// An account learns of no removal of an environment it couldn't see: a
+// removed environment's or a conflict container's name isn't sent to it.
+func TestUIEventsRemovedOnlyForVisibleEnvironments(t *testing.T) {
+	s, ts := newTestServer(t)
+	anna := login(t, ts, "anna")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+"/api/events", &websocket.DialOptions{HTTPClient: anna, HTTPHeader: http.Header{"Origin": {ts.URL}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.CloseNow()
+	s.publishEnvironment(ctx, "bobs-secret")
+	s.events.publish(event{kind: "marker", data: map[string]string{}})
+	for {
+		_, b, err := ws.Read(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(b), "bobs-secret") {
+			t.Fatalf("sent the name of an environment anna can't see: %s", b)
+		}
+		if strings.Contains(string(b), `"marker"`) {
+			return
+		}
+	}
+}
