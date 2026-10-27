@@ -47,7 +47,7 @@ export function BackupsPanel({ kind, name, stoppers, hostPath }: { kind: ItemKin
         <div class="rounded-[10px] border border-line bg-surface p-5">
           <div class="flex flex-wrap items-start gap-x-4 gap-y-2">
             <div class="mr-auto min-w-0">
-              <h2 class="text-lg font-semibold">{b.policy ? (b.policy.enabled ? "Backed up" : "Backups paused") : "Not backed up"}</h2>
+              <h2 class="text-lg font-semibold">{!b.policy ? "Not backed up" : !b.policy.enabled ? "Backups paused" : isTime(b.state.lastSuccess) ? "Backed up" : "Backups set up"}</h2>
               <p class="text-sm text-muted">
                 {b.policy
                   ? `${describeSchedule(b.policy.schedule)} to ${b.policy.repository}; keeping ${describeRetention(b.policy.retention)}.`
@@ -82,7 +82,7 @@ export function BackupsPanel({ kind, name, stoppers, hostPath }: { kind: ItemKin
       {!snaps.data ? (
         !snaps.error && <p class="text-sm text-muted">Loading…</p>
       ) : !snaps.data.snapshots.length ? (
-        <p class="text-sm text-muted">No snapshots yet.</p>
+        <p class="text-sm text-muted">{b?.policy ? "No snapshots yet. Back up now, or wait for the next scheduled backup." : "No snapshots yet."}</p>
       ) : (
         <ul class="m-0 list-none divide-y divide-hairline rounded-[10px] border border-line bg-surface p-0">
           {snaps.data.snapshots.map((s) => (

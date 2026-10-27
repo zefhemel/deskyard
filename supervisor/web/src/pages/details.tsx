@@ -144,13 +144,14 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
             <Facts environment={c} admin={me.admin} onTab={setTab} />
           </div>
         </div>
+      ) : tab === "backups" ? (
+        <BackupsPanel kind="environment" name={c.name} stoppers={c.state === "running" ? [c.name] : []} />
       ) : (
         <div class="overflow-hidden rounded-[10px] border border-line bg-surface">
           {tab === "processes" && <ProcessesTab environment={c} />}
           {tab === "agents" && <AgentsTab environment={c} />}
           {tab === "settings" && <SettingsTab environment={c} />}
           {tab === "access" && <AccessTab environment={c} />}
-          {tab === "backups" && <BackupsPanel kind="environment" name={c.name} stoppers={c.state === "running" ? [c.name] : []} />}
         </div>
       )}
     </Page>
