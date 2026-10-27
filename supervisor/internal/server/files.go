@@ -193,11 +193,13 @@ func parseListing(r io.Reader) ([]fileEntry, error) {
 func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := timeout(r, fileListTimeout)
 	c, real, kind, size, ok := s.filesTarget(w, r, ctx)
-	cancel() // the transfer itself has no deadline; it ends when the client goes
+	cancel() // the transfer itself has no deadline; it ends when the client goes or its access ends
 	if !ok {
 		return
 	}
-	ctx = r.Context()
+	ctx, done := s.startTransfer(w, r, c.Name)
+	defer done()
+	out := ctxWriter{ctx, w}
 	h := w.Header()
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
@@ -210,8 +212,8 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		h.Set("Content-Type", "application/octet-stream")
 		h.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": base}))
 		h.Set("Content-Length", strconv.FormatInt(size, 10))
-		err := s.execStream(ctx, c, 0, []string{"cat", "--", real}, func(out io.Reader) error {
-			_, err := io.Copy(w, out)
+		err := s.execStream(ctx, c, 0, []string{"cat", "--", real}, func(stdout io.Reader) error {
+			_, err := io.Copy(out, stdout)
 			return err
 		})
 		if err != nil {
@@ -222,8 +224,8 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		h.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": base + ".zip"}))
 		// tar exits 1 when a file changed or vanished while it was read; the archive is still
 		// complete. Unreadable files are skipped rather than failing the whole folder.
-		err := s.execStream(ctx, c, 1, []string{"tar", "--ignore-failed-read", "--warning=no-file-changed", "--hard-dereference", "-C", real, "-cf", "-", "."}, func(out io.Reader) error {
-			return tarToZip(w, out)
+		err := s.execStream(ctx, c, 1, []string{"tar", "--ignore-failed-read", "--warning=no-file-changed", "--hard-dereference", "-C", real, "-cf", "-", "."}, func(stdout io.Reader) error {
+			return tarToZip(out, stdout)
 		})
 		if err != nil {
 			s.abortDownload(w, c, real, err)

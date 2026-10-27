@@ -66,12 +66,13 @@ type Server struct {
 	activity       *activity.Tracker
 	activityPub    *throttle
 	screenWatchers *viewers // screen-events streams, closed on revoke like viewers
+	transfers      *transfers // file downloads and uploads, closed on revoke
 	unsaved        *unsavedRevocations
 	// revoking is held by a change that decides an account's access or
 	// sessions, from its save to holding or forgetting what couldn't be
 	// saved, and by the sweep saving those; neither undoes the other.
 	revoking sync.Mutex
-	seen           *lastSeen // browser requests, by account ID
+	seen     *lastSeen // browser requests, by account ID
 
 	api *http.ServeMux
 }
@@ -114,7 +115,7 @@ func New(o Options) (*Server, error) {
 		Layout: o.Layout, UI: o.UI,
 		jobs: newJobs(), events: newHub(), viewers: newViewers(), terminals: newTerminalConnections(), forwards: newForwards(), viewersPub: newThrottle(viewersInterval), streamDials: newDialGates(),
 		clients:     &clientFiles{eng: o.Eng, dir: filepath.Join(o.Layout.Cache, "client")},
-		activityPub: newThrottle(activityInterval), screenWatchers: newViewers(), cliLogins: newCLILogins(), unsaved: newUnsavedRevocations(), seen: &lastSeen{at: map[string]time.Time{}},
+		activityPub: newThrottle(activityInterval), screenWatchers: newViewers(), transfers: newTransfers(), cliLogins: newCLILogins(), unsaved: newUnsavedRevocations(), seen: &lastSeen{at: map[string]time.Time{}},
 		reconcile: make(chan struct{}, 1),
 	}
 	s.activity = s.newActivity(o.ActivityPresence)
@@ -492,6 +493,7 @@ func (s *Server) accountsChanged(usernames ...string) {
 		a, ok := s.accountState(u)
 		level := levelOf(a, ok, now)
 		s.terminals.revalidate(s, u)
+		s.transfers.revalidate(s, u)
 		s.viewers.revoke(u, level)
 		s.screenWatchers.revoke(u, level)
 		if ok {

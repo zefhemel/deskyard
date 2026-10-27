@@ -108,6 +108,7 @@ func (s *Server) closeAccount(username string) {
 	s.viewers.revoke(username, none)
 	s.screenWatchers.revoke(username, none)
 	s.terminals.closeAccount(username)
+	s.transfers.closeAccount(username)
 	for _, c := range s.credentials.list("") {
 		if c.Username == username {
 			s.credentials.closeWhere(c.ID, func(string) bool { return true })

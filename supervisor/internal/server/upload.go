@@ -90,7 +90,13 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	_, _ = rand.Read(rnd[:])
 	part := uploadDir + "/." + name + "." + hex.EncodeToString(rnd[:]) + ".part"
 
-	n, err := s.streamIn(r.Context(), c, part, r.Body)
+	ctx, done := s.startTransfer(w, r, c.Name)
+	n, err := s.streamIn(ctx, c, part, r.Body)
+	if ended := ctx.Err(); ended != nil && err == nil {
+		err = ended // all of it came, but too late
+	}
+	stopped := ctx.Err() != nil
+	done()
 	if err != nil {
 		s.dropPart(c, part)
 		switch {
@@ -98,6 +104,8 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusRequestEntityTooLarge, err.Error())
 		case r.Context().Err() != nil:
 			s.Log.Info("upload abandoned", "environment", c.Name, "name", name)
+		case stopped:
+			s.Log.Info("upload stopped: access ended", "environment", c.Name, "name", name)
 		default:
 			writeError(w, http.StatusBadGateway, "upload failed: "+err.Error())
 		}
