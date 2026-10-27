@@ -123,7 +123,7 @@ func (n *Networking) recover(ctx context.Context, r networkTransition, retry boo
 			}
 		}
 		if !replace {
-			g, err := n.runtime.Ensure(ctx, r.Name, containerName(r.Name), conn.ID, def.Network.LANExceptions, !s.Cfg.InContainer)
+			g, err := n.runtime.Ensure(ctx, r.Name, containerName(r.Name), conn.ID, def.Network.LANExceptions)
 			if err != nil || c.NetworkContainer != g.ID {
 				replace = true
 			} else {

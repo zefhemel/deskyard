@@ -40,7 +40,7 @@ func TestEnsureRedactsStoreFilesystemFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.store.metadata = filepath.Join(sentinel, "networks.json") // Get now fails with ENOTDIR and the private path.
-	_, err := m.Ensure(context.Background(), strings.Repeat("a", 32), "desktop", c.ID, nil, false)
+	_, err := m.Ensure(context.Background(), strings.Repeat("a", 32), "desktop", c.ID, nil)
 	if err == nil {
 		t.Fatal("unreadable store accepted")
 	}

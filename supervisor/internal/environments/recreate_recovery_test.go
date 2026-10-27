@@ -74,7 +74,7 @@ func replacementService(t *testing.T, running bool) (*Service, *replacementEngin
 	}
 	// The production engine accepts names and IDs; this fake maps by name, so
 	// the original's ID is its name.
-	base.cs["deskyard-alice"] = &engine.Container{ID: "deskyard-alice", Name: "deskyard-alice", Image: "repo:latest", ImageID: "sha256:old", State: state, LocalPort: base.port, Labels: map[string]string{LabelManaged: "true", LabelName: "alice", LabelRevision: "1", LabelInstance: ""}, Env: map[string]string{TokenEnv: "original-token"}}
+	base.cs["deskyard-alice"] = &engine.Container{ID: "deskyard-alice", Name: "deskyard-alice", Image: "repo:latest", ImageID: "sha256:old", State: state, IP: base.desktopIP("deskyard-alice"), Labels: map[string]string{LabelManaged: "true", LabelName: "alice", LabelRevision: "1", LabelInstance: ""}, Env: map[string]string{TokenEnv: "original-token"}}
 	power := PowerStopped
 	if running {
 		power = PowerRunning
@@ -277,7 +277,7 @@ func park(t *testing.T, e *replacementEngine) {
 
 // newContainer puts a container built from revision 2 under alice's name.
 func newContainer(e *replacementEngine, state string) {
-	e.cs["deskyard-alice"] = &engine.Container{ID: "deskyard-alice", Name: "deskyard-alice", Image: "new", ImageID: "new", State: state, LocalPort: e.port,
+	e.cs["deskyard-alice"] = &engine.Container{ID: "deskyard-alice", Name: "deskyard-alice", Image: "new", ImageID: "new", State: state, IP: e.desktopIP("deskyard-alice"),
 		Labels: map[string]string{LabelManaged: "true", LabelName: "alice", LabelRevision: "2", LabelInstance: ""}, Env: map[string]string{TokenEnv: "original-token"}}
 }
 
@@ -503,7 +503,6 @@ func TestStartupReconnectsNetworksBeforeReplacementRecovery(t *testing.T) {
 	writeInterruptedReplacement(t, s, false)
 	eng := &recoveryNetworkEngine{replacementEngine: base}
 	s.Eng = eng
-	s.Cfg.InContainer = true
 	s.Cfg.SelfID = "supervisor"
 	if err := s.Reconcile(context.Background()); err != nil {
 		t.Fatal(err)

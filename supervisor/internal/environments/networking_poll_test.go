@@ -328,13 +328,13 @@ func TestVPNPollBacksOffRestartingExitingConsumer(t *testing.T) {
 // A request that goes away while the environment comes up doesn't leave it
 // reported as not ready.
 func TestVPNCancelledReadyWaitIsNotRecordedAsNotReady(t *testing.T) {
-	s, e, r, conn := pairSetup(t)
+	s, e, _, conn := pairSetup(t)
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	e.port = l.Addr().(*net.TCPAddr).Port
-	r.gateway.LocalPort = e.port
+	s.Cfg.DesktopPort = e.port
 	l.Close() // nothing answers: never ready
 	ctx, cancel := context.WithCancel(context.Background())
 	time.AfterFunc(300*time.Millisecond, cancel)

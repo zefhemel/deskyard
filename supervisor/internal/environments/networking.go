@@ -17,8 +17,8 @@ import (
 // are keyed by environment name.
 type VPNRuntime interface {
 	SetReservedNetworks([]netip.Prefix) error
-	// Ensure(ctx, environment, network, connection, exceptions, publishLocal)
-	Ensure(context.Context, string, string, string, []vpn.Exception, bool) (engine.Container, error)
+	// Ensure(ctx, environment, network, connection, exceptions)
+	Ensure(context.Context, string, string, string, []vpn.Exception) (engine.Container, error)
 	Remove(context.Context, string) error
 	Status(context.Context, string) (vpn.Status, error)
 }

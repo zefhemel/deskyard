@@ -15,7 +15,10 @@ var ErrNotFound = errors.New("not found")
 
 type Mount struct {
 	Source, Target string // Source is a host path
-	ReadOnly       bool
+	// Volume is the Docker volume's name when an inspected mount is a named
+	// volume, empty for a bind mount. Create ignores it.
+	Volume   string
+	ReadOnly bool
 	// MustExist uses a strict bind: a missing host source is an error, never created.
 	MustExist bool
 }
@@ -26,18 +29,15 @@ type ContainerSpec struct {
 	Env         map[string]string
 	Mounts      []Mount
 	// NetworkContainer shares this existing container's network namespace.
-	// Mutually exclusive with Network, Aliases and PublishLocal.
+	// Mutually exclusive with Network and Aliases.
 	NetworkContainer string
 	// CapAdd explicitly grants capabilities; desktop defaults remain unchanged.
-	CapAdd  []string
-	Network string
-	Aliases []string
-	// PublishLocal, when set, publishes the container's port 8080 on host
-	// 127.0.0.1 at this port (0 picks a free one).
-	PublishLocal *int
-	MemoryBytes  int64
-	NanoCPUs     int64
-	ShmBytes     int64
+	CapAdd      []string
+	Network     string
+	Aliases     []string
+	MemoryBytes int64
+	NanoCPUs    int64
+	ShmBytes    int64
 	// Flatpak runs the container with the security options Flatpak's sandbox
 	// needs (seccomp profile, apparmor and system paths unconfined).
 	Flatpak bool
@@ -68,7 +68,6 @@ type Container struct {
 	Error                 string
 	StartedAt             time.Time
 	IP                    map[string]string // network name → address
-	LocalPort             int               // host 127.0.0.1 port published for 8080, 0 if none
 	MemoryBytes, NanoCPUs int64
 	Devices               []string // host devices passed in (their paths on the host)
 	Mounts                []Mount  // its mounts, Source on the host

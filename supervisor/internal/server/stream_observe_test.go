@@ -16,7 +16,6 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
-	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 )
 
 // fragment is a masked client frame with FIN as given.
@@ -156,7 +155,7 @@ func TestObserverStreamIsFiltered(t *testing.T) {
 	for _, level := range []auth.Level{auth.LevelObserve, auth.LevelFull} {
 		t.Run(string(level), func(t *testing.T) {
 			up := &recordingUpstream{}
-			s, _ := newTestServerWith(t, fakeEngine{others: []engine.Container{runningEnvironment(t, "bob", up)}})
+			s, _ := newTestServerRunning(t, "bob", up)
 			c, err := s.Environments.Get(context.Background(), "bob")
 			if err != nil {
 				t.Fatal(err)
@@ -212,7 +211,7 @@ func TestObserverStreamIsFiltered(t *testing.T) {
 // turn to dial: it's refused rather than opened unfiltered.
 func TestStreamRechecksLevelOnceRegistered(t *testing.T) {
 	up := &recordingUpstream{}
-	s, _ := newTestServerWith(t, fakeEngine{others: []engine.Container{runningEnvironment(t, "bob", up)}})
+	s, _ := newTestServerRunning(t, "bob", up)
 	c, err := s.Environments.Get(context.Background(), "bob")
 	if err != nil {
 		t.Fatal(err)
@@ -251,7 +250,7 @@ func TestStreamRechecksLevelOnceRegistered(t *testing.T) {
 // its stream waited its turn doesn't get the stream.
 func TestStreamRechecksSessionOnceRegistered(t *testing.T) {
 	up := &recordingUpstream{}
-	s, _ := newTestServerWith(t, fakeEngine{others: []engine.Container{runningEnvironment(t, "bob", up)}})
+	s, _ := newTestServerRunning(t, "bob", up)
 	c, err := s.Environments.Get(context.Background(), "bob")
 	if err != nil {
 		t.Fatal(err)

@@ -80,8 +80,7 @@ func TestCreateNamespaceAndDefaults(t *testing.T) {
 }
 func TestRejectIncompatibleNamespaceSpec(t *testing.T) {
 	d := testAdapter(t, func(w http.ResponseWriter, r *http.Request) { t.Error("invalid spec reached Docker") })
-	port := 0
-	for _, s := range []engine.ContainerSpec{{NetworkContainer: "gateway", Network: "bridge"}, {NetworkContainer: "gateway", Aliases: []string{"desktop"}}, {NetworkContainer: "gateway", PublishLocal: &port}} {
+	for _, s := range []engine.ContainerSpec{{NetworkContainer: "gateway", Network: "bridge"}, {NetworkContainer: "gateway", Aliases: []string{"desktop"}}} {
 		if _, err := d.Create(context.Background(), s); err == nil {
 			t.Errorf("accepted incompatible spec: %+v", s)
 		}
@@ -123,13 +122,9 @@ func TestDefaultDesktopHasNoAddedCapabilities(t *testing.T) {
 	d := testAdapter(t, func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			HostConfig struct {
-				CapAdd       []string
-				Privileged   bool
-				Devices      []any
-				PortBindings map[string][]struct {
-					HostIP   string
-					HostPort string
-				}
+				CapAdd     []string
+				Privileged bool
+				Devices    []any
 			}
 			NetworkingConfig struct {
 				EndpointsConfig map[string]struct{ Aliases []string }
@@ -141,10 +136,6 @@ func TestDefaultDesktopHasNoAddedCapabilities(t *testing.T) {
 		if len(body.HostConfig.CapAdd) != 0 || body.HostConfig.Privileged || len(body.HostConfig.Devices) != 0 {
 			t.Fatal("desktop network privileges changed")
 		}
-		bindings := body.HostConfig.PortBindings["8080/tcp"]
-		if len(bindings) != 1 || bindings[0].HostIP != "127.0.0.1" || bindings[0].HostPort != "18080" {
-			t.Errorf("private publication changed: %+v", bindings)
-		}
 		if aliases := body.NetworkingConfig.EndpointsConfig["desktop-net"].Aliases; len(aliases) != 1 || aliases[0] != "desktop" {
 			t.Errorf("network aliases changed: %v", aliases)
 		}
@@ -152,8 +143,7 @@ func TestDefaultDesktopHasNoAddedCapabilities(t *testing.T) {
 		w.WriteHeader(201)
 		_, _ = w.Write([]byte(`{"Id":"created"}`))
 	})
-	port := 18080
-	if _, err := d.Create(context.Background(), engine.ContainerSpec{Name: "desktop", Image: "test", Network: "desktop-net", Aliases: []string{"desktop"}, PublishLocal: &port}); err != nil {
+	if _, err := d.Create(context.Background(), engine.ContainerSpec{Name: "desktop", Image: "test", Network: "desktop-net", Aliases: []string{"desktop"}}); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -182,14 +182,19 @@ func (u *upstream) last() *http.Request {
 	return u.reqs[len(u.reqs)-1]
 }
 
-func runningEnvironment(t *testing.T, name string, up http.Handler) engine.Container {
+// newTestServerRunning is a server with one running environment whose desktop
+// is up, served on a local port: its address is 127.0.0.1 and the desktops'
+// port is the test seam environments.Config.DesktopPort.
+func newTestServerRunning(t *testing.T, name string, up http.Handler) (*Server, *httptest.Server) {
 	srv := httptest.NewServer(up)
 	t.Cleanup(srv.Close)
 	_, port, _ := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
 	p, _ := strconv.Atoi(port)
-	return engine.Container{ID: "c-" + name, Name: "deskyard-" + name, State: "running", ImageID: "sha256:abc", LocalPort: p,
+	c := engine.Container{ID: "c-" + name, Name: "deskyard-" + name, State: "running", ImageID: "sha256:abc",
+		IP:     map[string]string{"deskyard-" + name: "127.0.0.1"},
 		Env:    map[string]string{environments.TokenEnv: "tok-" + name},
 		Labels: map[string]string{environments.LabelManaged: "true", environments.LabelName: name, environments.LabelRevision: "1"}}
+	return newTestServerCfg(t, fakeEngine{others: []engine.Container{c}}, environments.Config{Subnet: "10.0.0.0/16", DesktopPort: p})
 }
 
 type viewersState struct {
@@ -233,7 +238,7 @@ func postMic(t *testing.T, c *http.Client, base, name, body string) int {
 
 func TestStreamProxyAndMics(t *testing.T) {
 	up := &upstream{}
-	_, ts := newTestServerWith(t, fakeEngine{others: []engine.Container{runningEnvironment(t, "bob", up)}})
+	_, ts := newTestServerRunning(t, "bob", up)
 	admin := login(t, ts, "admin")
 	cookie := admin.Jar.Cookies(nil)[0]
 	api := ts.URL + "/api/environments/bob"
@@ -330,7 +335,7 @@ func TestMicsPerStream(t *testing.T) {
 
 func TestStreamDialsSpacedOut(t *testing.T) {
 	up := &upstream{}
-	_, ts := newTestServerWith(t, fakeEngine{others: []engine.Container{runningEnvironment(t, "bob", up)}})
+	_, ts := newTestServerRunning(t, "bob", up)
 	admin := login(t, ts, "admin")
 	hdr := http.Header{"Origin": {ts.URL}, "Cookie": {admin.Jar.Cookies(nil)[0].String()}}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -420,7 +425,7 @@ func TestMicReportsInOrder(t *testing.T) {
 
 func TestMicBadgeEndpoint(t *testing.T) {
 	up := &upstream{}
-	_, ts := newTestServerWith(t, fakeEngine{others: []engine.Container{runningEnvironment(t, "bob", up)}})
+	_, ts := newTestServerRunning(t, "bob", up)
 	admin := login(t, ts, "admin")
 	hdr := http.Header{"Origin": {ts.URL}, "Cookie": {admin.Jar.Cookies(nil)[0].String()}}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

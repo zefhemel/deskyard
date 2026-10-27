@@ -44,7 +44,6 @@ type runtimeInput struct {
 	Credentials                               CredentialFiles
 	Exceptions                                []Exception
 	Reserved                                  []netip.Prefix
-	PublishLocal                              bool
 	Fixture                                   *wireguardFixture
 	Resolver                                  resolverPolicy
 }
@@ -87,10 +86,6 @@ func buildRuntime(in runtimeInput) (runtimeConfig, error) {
 		spec.Env["WIREGUARD_PRIVATE_KEY_SECRETFILE"] = "/run/secrets/wireguard_private_key"
 		spec.Mounts = append(spec.Mounts[2:], engine.Mount{Source: f.PrivateKeyFile, Target: "/run/secrets/wireguard_private_key", ReadOnly: true})
 		delete(spec.Env, "SERVER_COUNTRIES")
-	}
-	if in.PublishLocal {
-		port := 0
-		spec.PublishLocal = &port
 	}
 	if in.Instance != "" {
 		spec.Labels[LabelInstance] = in.Instance

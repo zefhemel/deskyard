@@ -35,7 +35,9 @@ func (e *pairEngine) Create(ctx context.Context, s engine.ContainerSpec) (string
 	e.calls = append(e.calls, "create")
 	id, err := e.fakeEngine.Create(ctx, s)
 	if err == nil {
-		e.cs[id].LocalPort = e.port
+		if e.port != 0 && s.Network != "" {
+			e.cs[id].IP = map[string]string{s.Network: "127.0.0.1"}
+		}
 		e.cs[id].MemoryBytes = s.MemoryBytes
 		e.cs[id].NanoCPUs = s.NanoCPUs
 	}
@@ -96,7 +98,7 @@ type pairRuntime struct {
 }
 
 func (r *pairRuntime) SetReservedNetworks([]netip.Prefix) error { return nil }
-func (r *pairRuntime) Ensure(context.Context, string, string, string, []vpn.Exception, bool) (engine.Container, error) {
+func (r *pairRuntime) Ensure(_ context.Context, name, _, _ string, _ []vpn.Exception) (engine.Container, error) {
 	r.ensures++
 	r.e.calls = append(r.e.calls, "ensure")
 	if r.fail {
@@ -104,6 +106,8 @@ func (r *pairRuntime) Ensure(context.Context, string, string, string, []vpn.Exce
 	}
 	r.gateway.Labels = map[string]string{vpn.LabelRole: "gateway"}
 	r.gateway.State = "running" // as vpn.Manager starts a stopped runtime
+	// The gateway sits on the environment's network, served on the local test port.
+	r.gateway.IP = map[string]string{containerName(name): "127.0.0.1"}
 	r.e.cs[r.gateway.ID] = &r.gateway
 	return r.gateway, nil
 }
@@ -134,7 +138,8 @@ func pairSetup(t *testing.T) (*Service, *pairEngine, *pairRuntime, vpn.Connectio
 	parsed, _ := url.Parse(ready.URL)
 	port, _ := strconv.Atoi(parsed.Port())
 	e.port = port
-	r := &pairRuntime{e: e, gateway: engine.Container{ID: "gateway", State: "running", LocalPort: port, IP: map[string]string{"deskyard-alice": "10.213.0.2"}}}
+	s.Cfg.DesktopPort = port
+	r := &pairRuntime{e: e, gateway: engine.Container{ID: "gateway", State: "running"}}
 	if err := s.ConfigureNetworking(st, r, s.Layout.State); err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +201,7 @@ func TestVPNEnableFailureRemainsVisibleAndRecovers(t *testing.T) {
 		t.Fatalf("snapshot lost: %+v", got)
 	}
 	spec := e.specs[len(e.specs)-1]
-	if spec.MemoryBytes != 123 || spec.NanoCPUs != 456 || spec.Restart != "no" || spec.Network != "" || spec.PublishLocal != nil {
+	if spec.MemoryBytes != 123 || spec.NanoCPUs != 456 || spec.Restart != "no" || spec.Network != "" {
 		t.Fatalf("unsafe consumer: %+v", spec)
 	}
 	if got.State != "running" || got.Error != "" || got.VPN.State == "blocked" {
@@ -227,15 +232,16 @@ func TestVPNPowerTargetAndCachedStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	addr, token, err := s.Target(ctx, "alice")
-	if err != nil || addr != "127.0.0.1:"+strconv.Itoa(r.gateway.LocalPort) || token == "" {
+	if err != nil || addr != "127.0.0.1:"+strconv.Itoa(s.Cfg.DesktopPort) || token == "" {
 		t.Fatalf("target %s %v", addr, err)
 	}
-	s.Cfg.InContainer = true
+	// Without the test port the proxy dials the desktop port.
+	s.Cfg.DesktopPort = 0
 	addr, _, err = s.Target(ctx, "alice")
-	if err != nil || addr != "10.213.0.2:8080" {
-		t.Fatalf("container target %s %v", addr, err)
+	if err != nil || addr != "127.0.0.1:8080" {
+		t.Fatalf("default port target %s %v", addr, err)
 	}
-	s.Cfg.InContainer = false
+	s.Cfg.DesktopPort = e.port
 	for range 5 {
 		s.List(ctx)
 		s.Get(ctx, "alice")
@@ -363,7 +369,7 @@ func TestVPNDefinitionWithoutJournalAppliesFailClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := e.specs[len(e.specs)-1]
-	if spec.NetworkContainer != "gateway" || spec.Network != "" || spec.Restart != "no" || spec.PublishLocal != nil || spec.Labels[LabelRevision] != "2" {
+	if spec.NetworkContainer != "gateway" || spec.Network != "" || spec.Restart != "no" || spec.Labels[LabelRevision] != "2" {
 		t.Fatalf("started without its namespace: %+v", spec)
 	}
 	if r, ok := s.Networking.record("alice"); !ok || r.AppliedRevision != 2 || r.Pending {

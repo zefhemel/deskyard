@@ -34,8 +34,17 @@ func (e *fakeEngine) Create(_ context.Context, s engine.ContainerSpec) (string, 
 		return "", errors.New("name in use")
 	}
 	e.cs[s.Name] = &engine.Container{ID: s.Name, Name: s.Name, Image: s.Image, ImageID: s.Image, Labels: s.Labels, Env: s.Env,
-		State: "created", Devices: s.Devices, Mounts: s.Mounts, NetworkContainer: s.NetworkContainer, Restart: s.Restart, LocalPort: e.port}
+		State: "created", Devices: s.Devices, Mounts: s.Mounts, NetworkContainer: s.NetworkContainer, Restart: s.Restart, IP: e.desktopIP(s.Network)}
 	return s.Name, nil
+}
+
+// desktopIP is the address map of a container on network when the engine
+// serves desktops on a local port: the supervisor dials 127.0.0.1 there.
+func (e *fakeEngine) desktopIP(network string) map[string]string {
+	if e.port == 0 || network == "" {
+		return nil
+	}
+	return map[string]string{network: "127.0.0.1"}
 }
 
 func (e *fakeEngine) Start(_ context.Context, id string) error {
@@ -136,5 +145,5 @@ func newFakeService(t *testing.T) (*Service, *fakeEngine) {
 	t.Cleanup(health.Close)
 	_, port, _ := net.SplitHostPort(health.Listener.Addr().String())
 	eng.port, _ = strconv.Atoi(port)
-	return New(eng, Config{DataDir: t.TempDir()}, slog.New(slog.DiscardHandler)), eng
+	return New(eng, Config{DataDir: t.TempDir(), DesktopPort: eng.port}, slog.New(slog.DiscardHandler)), eng
 }

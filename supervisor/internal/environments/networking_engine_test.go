@@ -321,7 +321,7 @@ func TestVPNPairedEngineLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !d.Container.Running() || d.Container.NetworkContainer == "" || d.Container.Restart != "no" || d.Container.LocalPort != 0 {
+	if !d.Container.Running() || d.Container.NetworkContainer == "" || d.Container.Restart != "no" {
 		t.Fatalf("unsafe consumer %+v", d.Container)
 	}
 	token, id := d.Container.Env[TokenEnv], d.ID
@@ -379,7 +379,7 @@ func TestVPNPairedEngineLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.Container.NetworkContainer != "" || d.Container.LocalPort == 0 {
+	if d.Container.NetworkContainer != "" {
 		t.Fatal("explicit disable did not restore direct networking")
 	}
 	if err = fresh.Remove(ctx, name, false); err != nil {
@@ -401,13 +401,13 @@ type observedPairRuntime struct {
 	lastInput string
 }
 
-func (r *observedPairRuntime) Ensure(ctx context.Context, name, network, connection string, exceptions []vpn.Exception, publish bool) (engine.Container, error) {
-	input, _ := json.Marshal([]any{name, network, connection, exceptions, publish})
+func (r *observedPairRuntime) Ensure(ctx context.Context, name, network, connection string, exceptions []vpn.Exception) (engine.Container, error) {
+	input, _ := json.Marshal([]any{name, network, connection, exceptions})
 	if r.lastInput != "" {
 		r.t.Logf("Ensure caller inputs unchanged=%t", r.lastInput == string(input))
 	}
 	r.lastInput = string(input)
-	g, err := r.VPNRuntime.Ensure(ctx, name, network, connection, exceptions, publish)
+	g, err := r.VPNRuntime.Ensure(ctx, name, network, connection, exceptions)
 	if err != nil {
 		r.t.Log("runtime Ensure diagnostic:", safeManagerDiagnostic(err))
 	}

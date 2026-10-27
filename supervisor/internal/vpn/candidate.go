@@ -99,7 +99,7 @@ func (m *Manager) test(ctx context.Context, connectionID string, in Input) (resu
 	if err = m.eng.CreateNetwork(ctx, network, "", labels); err != nil {
 		return Status{}, errors.New("VPN test network creation failed")
 	}
-	if _, err = manager.Ensure(ctx, id, network, connection.ID, nil, false); err != nil {
+	if _, err = manager.Ensure(ctx, id, network, connection.ID, nil); err != nil {
 		return Status{}, err
 	}
 	ticker := time.NewTicker(HealthInterval)

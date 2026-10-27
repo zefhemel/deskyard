@@ -70,7 +70,7 @@ type Repin struct {
 
 func (r Report) Err() error { return errors.Join(r.Errors...) }
 
-// Reconcile runs at startup. In a container, it reconnects the supervisor to
+// Reconcile runs at startup. With a supervisor container, it reconnects the supervisor to
 // each of its own environments' networks (e.g. after the supervisor's
 // container was recreated). Interrupted replacements and network transitions
 // are recovered. Conflicts are found first, so a duplicate blocks these
@@ -80,7 +80,7 @@ func (s *Service) Reconcile(ctx context.Context) error {
 	if _, err := s.findConflicts(ctx); err != nil {
 		errs = append(errs, err)
 	}
-	if s.Cfg.InContainer {
+	if s.Cfg.SelfID != "" {
 		nets, err := s.Eng.Networks(ctx, s.ownFilter())
 		if err != nil {
 			errs = append(errs, err)

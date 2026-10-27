@@ -218,7 +218,7 @@ func (n *Networking) apply(ctx context.Context, r networkTransition, progress fu
 		if err != nil {
 			return n.fail(r, phaseConnection)
 		}
-		g, err := n.runtime.Ensure(ctx, r.Name, containerName(r.Name), c.ID, def.Network.LANExceptions, !s.Cfg.InContainer)
+		g, err := n.runtime.Ensure(ctx, r.Name, containerName(r.Name), c.ID, def.Network.LANExceptions)
 		if err != nil {
 			return n.fail(r, phaseEnsure)
 		}

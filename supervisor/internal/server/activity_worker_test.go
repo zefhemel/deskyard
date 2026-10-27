@@ -19,13 +19,13 @@ type activityEngine struct{ fakeEngine }
 func (activityEngine) List(context.Context, map[string]string) ([]engine.Container, error) {
 	c := alice
 	c.State = "running"
-	c.LocalPort = 1
+	c.IP = map[string]string{"deskyard-alice": "127.0.0.1"}
 	return []engine.Container{c}, nil
 }
 func (activityEngine) Inspect(context.Context, string) (engine.Container, error) {
 	c := alice
 	c.State = "running"
-	c.LocalPort = 1
+	c.IP = map[string]string{"deskyard-alice": "127.0.0.1"}
 	return c, nil
 }
 
@@ -52,7 +52,7 @@ func (b *delayedActivityEOF) Close() error { return nil }
 func TestActivityWorkerHandsOffCursorBeforeReattach(t *testing.T) {
 	eng := activityEngine{}
 	s := &Server{Eng: eng, events: newHub(), activity: activity.NewTracker()}
-	s.Environments = environments.New(eng, environments.Config{DataDir: t.TempDir()}, nil)
+	s.Environments = environments.New(eng, environments.Config{DataDir: t.TempDir(), DesktopPort: 1}, nil)
 	defineEnvironments(t, s)
 	ir := newInsideReader(s)
 	s.inside = ir

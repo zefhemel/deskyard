@@ -96,10 +96,12 @@ type Environment struct {
 func (c Environment) Running() bool { return c.State == "running" }
 
 type Config struct {
-	DataDir     string // the supervisor's data folder (see config.Layout)
-	Subnet      string // DESKYARD_SUBNET
-	InContainer bool
-	SelfID      string // the supervisor's own container, when InContainer
+	DataDir string // the supervisor's data folder (see config.Layout)
+	Subnet  string // DESKYARD_SUBNET
+	SelfID  string // the supervisor's own container; empty in Go tests, which have none
+	// DesktopPort is the port the proxy dials on a desktop. Zero means 8080;
+	// only tests set it, to reach a fake desktop served on a local port.
+	DesktopPort int
 }
 
 type Service struct {
@@ -861,14 +863,10 @@ func (s *Service) createContainer(ctx context.Context, name string, revision uin
 			spec.Labels[vpn.LabelRevision] = strconv.FormatUint(r.ConnectionRevision, 10)
 		}
 	}
-	if !s.Cfg.InContainer && runtimeID == "" {
-		zero := 0
-		spec.PublishLocal = &zero
-	}
 	if _, err := s.Eng.Create(ctx, spec); err != nil {
 		return err
 	}
-	if s.Cfg.InContainer {
+	if s.Cfg.SelfID != "" {
 		// After a recreate the supervisor is still on the network.
 		if self, err := s.Eng.Inspect(ctx, s.Cfg.SelfID); err == nil && self.IP[containerName(name)] != "" {
 			return nil
@@ -1121,14 +1119,13 @@ func (s *Service) removed(name string) error {
 	return s.Removed(name)
 }
 
-// removeNetwork removes an environment's network. In container mode the supervisor
-// joined it to reach the environment, and has to leave it first. A network of
+// removeNetwork removes an environment's network. The supervisor joined it to reach the environment, and has to leave it first. A network of
 // its name that isn't this supervisor's is left alone (ErrConflict).
 func (s *Service) removeNetwork(ctx context.Context, name string) error {
 	if err := s.network(ctx, name); err != nil {
 		return err
 	}
-	if s.Cfg.InContainer {
+	if s.Cfg.SelfID != "" {
 		_ = s.Eng.DisconnectNetwork(ctx, containerName(name), s.Cfg.SelfID)
 	}
 	return s.Eng.RemoveNetwork(ctx, containerName(name))
@@ -1360,16 +1357,14 @@ func (s *Service) Target(ctx context.Context, name string) (addr, token string, 
 		}
 		c.Container = g
 	}
-	if s.Cfg.InContainer {
-		if ip := c.Container.IP[containerName(name)]; ip != "" {
-			return net.JoinHostPort(ip, "8080"), token, nil
-		}
-		return containerName(name) + ":8080", token, nil
+	port := "8080"
+	if s.Cfg.DesktopPort != 0 {
+		port = strconv.Itoa(s.Cfg.DesktopPort)
 	}
-	if c.Container.LocalPort == 0 {
-		return "", "", fmt.Errorf("%s has no published port", name)
+	if ip := c.Container.IP[containerName(name)]; ip != "" {
+		return net.JoinHostPort(ip, port), token, nil
 	}
-	return net.JoinHostPort("127.0.0.1", strconv.Itoa(c.Container.LocalPort)), token, nil
+	return net.JoinHostPort(containerName(name), port), token, nil
 }
 
 func isAlreadyConnected(err error) bool {

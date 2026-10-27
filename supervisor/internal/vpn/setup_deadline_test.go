@@ -46,7 +46,7 @@ func TestEnsureBoundsSetupWithoutCallerDeadline(t *testing.T) {
 			m.setupTimeout = 25 * time.Millisecond
 			done := make(chan error, 1)
 			go func() {
-				_, err := m.Ensure(context.Background(), strings.Repeat("8", 32), "desktop", c.ID, nil, false)
+				_, err := m.Ensure(context.Background(), strings.Repeat("8", 32), "desktop", c.ID, nil)
 				done <- err
 			}()
 			select {

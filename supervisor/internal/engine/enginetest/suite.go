@@ -30,11 +30,10 @@ func Run(t *testing.T, e engine.Engine) {
 		t.Fatalf("network: %v", err)
 	}
 	t.Cleanup(func() { _ = e.RemoveNetwork(context.Background(), name) })
-	port := 0
 	dir := t.TempDir()
 	id, err := e.Create(ctx, engine.ContainerSpec{
 		Name: name, Image: image, Labels: labels, Env: map[string]string{"HELLO": "world"},
-		Network: name, Aliases: []string{"probe"}, PublishLocal: &port,
+		Network: name, Aliases: []string{"probe"},
 		Cmd: []string{"sleep", "600"}, Devices: []string{"/dev/zero"},
 		Mounts: []engine.Mount{{Source: dir, Target: "/mnt/probe", ReadOnly: true}},
 	})
@@ -63,8 +62,8 @@ func Run(t *testing.T, e engine.Engine) {
 			t.Fatal(err)
 		}
 		c, _ := e.Inspect(ctx, id)
-		if !c.Running() || c.IP[name] == "" || c.LocalPort == 0 {
-			t.Fatalf("not running with an address and a port: %+v", c)
+		if !c.Running() || c.IP[name] == "" {
+			t.Fatalf("not running with an address: %+v", c)
 		}
 		out, errOut, code, err := engine.Output(ctx, e, id, engine.ExecSpec{
 			Cmd: []string{"sh", "-c", "id -u; echo oops >&2; exit 3"}, User: "1000",

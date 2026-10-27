@@ -123,7 +123,7 @@ func TestEnsurePullsPinnedImageOnFreshEngineAndSanitizesPullFailures(t *testing.
 			m, e, c := managerFixture(t)
 			e.imageMissing = true
 			e.failPull = fail
-			_, err := m.Ensure(context.Background(), strings.Repeat("1", 32), "desktop", c.ID, nil, false)
+			_, err := m.Ensure(context.Background(), strings.Repeat("1", 32), "desktop", c.ID, nil)
 			if e.pulls != 1 {
 				t.Fatalf("fresh engine pulls=%d", e.pulls)
 			}
@@ -156,7 +156,7 @@ func TestEnsureReadinessIsIndependentOfTunnelHealthAndReusesOnlyMatchingRuntime(
 	m, e, c := managerFixture(t)
 	ctx := context.Background()
 	id := strings.Repeat("c", 32)
-	runtime, err := m.Ensure(ctx, id, "desktop", c.ID, nil, true)
+	runtime, err := m.Ensure(ctx, id, "desktop", c.ID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,13 +166,14 @@ func TestEnsureReadinessIsIndependentOfTunnelHealthAndReusesOnlyMatchingRuntime(
 	if len(e.specs) != 1 {
 		t.Fatal(e.specs)
 	}
-	if _, err = m.Ensure(ctx, id, "desktop", c.ID, nil, true); err != nil || len(e.specs) != 1 {
+	if _, err = m.Ensure(ctx, id, "desktop", c.ID, nil); err != nil || len(e.specs) != 1 {
 		t.Fatalf("not idempotent: %v", err)
 	}
-	if _, err = m.Ensure(ctx, id, "desktop", c.ID, []Exception{{Destination: "10.213.0.18", Protocol: "tcp", Ports: []PortRange{{Start: 80}}}}, true); !errors.Is(err, ErrValidation) {
+	if _, err = m.Ensure(ctx, id, "desktop", c.ID, []Exception{{Destination: "10.213.0.18", Protocol: "tcp", Ports: []PortRange{{Start: 80}}}}); !errors.Is(err, ErrValidation) {
 		t.Fatalf("reserved overlap accepted: %v", err)
 	}
-	if _, err = m.Ensure(ctx, id, "desktop", c.ID, nil, false); !errors.Is(err, ErrConflict) {
+	// A different valid policy is a different runtime, which is never replaced unsafely.
+	if _, err = m.Ensure(ctx, id, "desktop", c.ID, []Exception{{Destination: "192.168.50.10", Protocol: "tcp", Ports: []PortRange{{Start: 80}}}}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("stale runtime replaced unsafely: %v", err)
 	}
 	for _, mount := range e.specs[0].Mounts {
@@ -191,12 +192,12 @@ func TestEnsureStartsStoppedMatchingRuntimeInPlace(t *testing.T) {
 	m, e, c := managerFixture(t)
 	ctx := context.Background()
 	id := strings.Repeat("c", 32)
-	first, err := m.Ensure(ctx, id, "desktop", c.ID, nil, true)
+	first, err := m.Ensure(ctx, id, "desktop", c.ID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	e.containers[0].State = "exited"
-	again, err := m.Ensure(ctx, id, "desktop", c.ID, nil, true)
+	again, err := m.Ensure(ctx, id, "desktop", c.ID, nil)
 	if err != nil {
 		t.Fatalf("stopped runtime not recovered: %v", err)
 	}
@@ -205,14 +206,14 @@ func TestEnsureStartsStoppedMatchingRuntimeInPlace(t *testing.T) {
 	}
 	e.containers[0].State = "exited"
 	e.failStart = true
-	if _, err = m.Ensure(ctx, id, "desktop", c.ID, nil, true); err == nil || strings.Contains(err.Error(), "secret") {
+	if _, err = m.Ensure(ctx, id, "desktop", c.ID, nil); err == nil || strings.Contains(err.Error(), "secret") {
 		t.Fatalf("failed start not reported safely: %v", err)
 	}
 }
 func TestEnsureCleansFailedOwnedRuntimeAndSanitizesError(t *testing.T) {
 	m, e, c := managerFixture(t)
 	e.failStart = true
-	_, err := m.Ensure(context.Background(), strings.Repeat("d", 32), "desktop", c.ID, nil, false)
+	_, err := m.Ensure(context.Background(), strings.Repeat("d", 32), "desktop", c.ID, nil)
 	if err == nil || strings.Contains(err.Error(), "secret") || len(e.removed) != 1 {
 		t.Fatalf("failed cleanup/redaction: %v %v", err, e.removed)
 	}
@@ -235,7 +236,7 @@ func TestInstanceScopesRuntimesByName(t *testing.T) {
 	m, e, c := managerFixture(t)
 	m.ForInstance("mine")
 	e.containers = []engine.Container{{ID: "theirs", Labels: map[string]string{LabelRole: runtimeRole, LabelEnvironment: "alice", LabelInstance: "theirs"}}}
-	if _, err := m.Ensure(context.Background(), "alice", "desktop", c.ID, nil, false); err != nil {
+	if _, err := m.Ensure(context.Background(), "alice", "desktop", c.ID, nil); err != nil {
 		t.Fatal(err)
 	}
 	spec := e.specs[len(e.specs)-1]
@@ -248,14 +249,14 @@ func TestInstanceScopesRuntimesByName(t *testing.T) {
 	if strings.Join(e.removed, ",") != spec.Name {
 		t.Fatalf("removed %v", e.removed)
 	}
-	if _, err := m.Ensure(context.Background(), "Alice/../x", "desktop", c.ID, nil, false); !errors.Is(err, ErrValidation) {
+	if _, err := m.Ensure(context.Background(), "Alice/../x", "desktop", c.ID, nil); !errors.Is(err, ErrValidation) {
 		t.Fatalf("invalid identity accepted: %v", err)
 	}
 }
 func TestStatusRequiresHealthAndVerifiedEgressCachesForFiveSeconds(t *testing.T) {
 	m, e, c := managerFixture(t)
 	id := strings.Repeat("a", 32)
-	_, err := m.Ensure(context.Background(), id, "desktop", c.ID, nil, false)
+	_, err := m.Ensure(context.Background(), id, "desktop", c.ID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +292,7 @@ func TestStatusRequiresHealthAndVerifiedEgressCachesForFiveSeconds(t *testing.T)
 func TestStatusDiscoveryFailureBecomesSanitizedBlockedObservation(t *testing.T) {
 	m, e, c := managerFixture(t)
 	id := strings.Repeat("9", 32)
-	if _, err := m.Ensure(context.Background(), id, "desktop", c.ID, nil, false); err != nil {
+	if _, err := m.Ensure(context.Background(), id, "desktop", c.ID, nil); err != nil {
 		t.Fatal(err)
 	}
 	e.containers[0].Health = "healthy"
@@ -313,7 +314,7 @@ func TestReservedNetworkConfigurationCopiesAndRejectsFutureDesktopOverlap(t *tes
 		t.Fatal(err)
 	}
 	prefixes[0] = netip.MustParsePrefix("192.168.0.0/16")
-	_, err := m.Ensure(context.Background(), strings.Repeat("2", 32), "desktop", c.ID, []Exception{{Destination: "10.213.240.10", Protocol: "tcp", Ports: []PortRange{{Start: 80}}}}, false)
+	_, err := m.Ensure(context.Background(), strings.Repeat("2", 32), "desktop", c.ID, []Exception{{Destination: "10.213.240.10", Protocol: "tcp", Ports: []PortRange{{Start: 80}}}})
 	if !errors.Is(err, ErrValidation) || len(e.specs) != 0 {
 		t.Fatalf("future desktop exception allowed: %v", err)
 	}
@@ -345,7 +346,7 @@ func TestSlowEnsureDoesNotBlockOtherDesktopStatus(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		_, err := m.Ensure(ctx, strings.Repeat("3", 32), "desktop", c.ID, nil, false)
+		_, err := m.Ensure(ctx, strings.Repeat("3", 32), "desktop", c.ID, nil)
 		done <- err
 	}()
 	<-e.entered
@@ -375,11 +376,11 @@ func TestEnsureReusesRuntimeWhenNewNetworkIsAlreadyReservedByPool(t *testing.T) 
 		t.Fatal(err)
 	}
 	id := strings.Repeat("5", 32)
-	if _, err := m.Ensure(context.Background(), id, "desktop", c.ID, nil, false); err != nil {
+	if _, err := m.Ensure(context.Background(), id, "desktop", c.ID, nil); err != nil {
 		t.Fatal(err)
 	}
 	e.networks = []engine.Network{{Name: "desktop", Subnet: "10.213.0.0/28"}, {Name: "other", Subnet: "10.213.0.16/28"}, {Name: "new", Subnet: "10.213.1.0/28"}}
-	if _, err := m.Ensure(context.Background(), id, "desktop", c.ID, nil, false); err != nil || len(e.specs) != 1 {
+	if _, err := m.Ensure(context.Background(), id, "desktop", c.ID, nil); err != nil || len(e.specs) != 1 {
 		t.Fatalf("covered network allocation forces unnecessary replacement: %v", err)
 	}
 }
@@ -389,7 +390,7 @@ func TestStatusDoesNotVerifyNonPublicOrMalformedEgressObservation(t *testing.T) 
 		t.Run(value, func(t *testing.T) {
 			m, e, c := managerFixture(t)
 			id := strings.Repeat("6", 32)
-			if _, err := m.Ensure(context.Background(), id, "desktop", c.ID, nil, false); err != nil {
+			if _, err := m.Ensure(context.Background(), id, "desktop", c.ID, nil); err != nil {
 				t.Fatal(err)
 			}
 			e.containers[0].Health = "healthy"
@@ -410,7 +411,7 @@ func TestStatusHonorsDeadlineWhileItsDesktopEnsureIsBusy(t *testing.T) {
 	defer cancel()
 	id := strings.Repeat("7", 32)
 	done := make(chan error, 1)
-	go func() { _, err := m.Ensure(ctx, id, "desktop", c.ID, nil, false); done <- err }()
+	go func() { _, err := m.Ensure(ctx, id, "desktop", c.ID, nil); done <- err }()
 	<-e.entered
 	statusCtx, stop := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer stop()

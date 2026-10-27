@@ -137,7 +137,7 @@ func TestVPNEndToEnd(t *testing.T) {
 	}
 	makeService := func() *environments.Service {
 		// Open reads the saved definitions, so a fresh service recovers from them.
-		ds, err := environments.Open(e, environments.Config{DataDir: layout.Data, Subnet: "10.219.0.0/16", InContainer: cfg.SelfID != "", SelfID: cfg.SelfID}, instance, log)
+		ds, err := environments.Open(e, environments.Config{DataDir: layout.Data, Subnet: "10.219.0.0/16", SelfID: cfg.SelfID}, instance, log)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -296,8 +296,8 @@ type e2eObservedRuntime struct {
 	t *testing.T
 }
 
-func (r e2eObservedRuntime) Ensure(ctx context.Context, name, network, connection string, exceptions []vpn.Exception, publish bool) (engine.Container, error) {
-	c, err := r.VPNRuntime.Ensure(ctx, name, network, connection, exceptions, publish)
+func (r e2eObservedRuntime) Ensure(ctx context.Context, name, network, connection string, exceptions []vpn.Exception) (engine.Container, error) {
+	c, err := r.VPNRuntime.Ensure(ctx, name, network, connection, exceptions)
 	if err != nil {
 		phase := "unclassified failure (private cause withheld)"
 		switch err.Error() {

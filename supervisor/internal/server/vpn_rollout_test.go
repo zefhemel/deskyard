@@ -91,7 +91,7 @@ type rolloutRuntime struct {
 }
 
 func (*rolloutRuntime) SetReservedNetworks([]netip.Prefix) error { return nil }
-func (r *rolloutRuntime) Ensure(ctx context.Context, _, _, _ string, _ []vpn.Exception, _ bool) (engine.Container, error) {
+func (r *rolloutRuntime) Ensure(ctx context.Context, _, _, _ string, _ []vpn.Exception) (engine.Container, error) {
 	if r.entered != nil {
 		close(r.entered)
 		select {

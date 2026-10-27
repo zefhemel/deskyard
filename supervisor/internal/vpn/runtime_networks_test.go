@@ -39,7 +39,7 @@ func TestEnsureIgnoresRedundantPrivateInventoryChurn(t *testing.T) {
 			}
 			ctx := context.Background()
 			id := strings.Repeat("8", 32)
-			original, err := m.Ensure(ctx, id, "desktop", c.ID, exceptions, false)
+			original, err := m.Ensure(ctx, id, "desktop", c.ID, exceptions)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -64,7 +64,7 @@ func TestEnsureIgnoresRedundantPrivateInventoryChurn(t *testing.T) {
 			churn := []engine.Network{{Name: "private-a", Subnet: "10.231.8.16/28"}, {Name: "private-b", Subnet: "172.20.0.0/24"}, {Name: "private-c", Subnet: "192.168.97.0/24"}}
 			for _, inventory := range [][]engine.Network{append(slices.Clone(base), churn...), append(slices.Clone(base), churn[1:]...), base} {
 				e.networks = inventory
-				got, err := m.Ensure(ctx, id, "desktop", c.ID, exceptions, false)
+				got, err := m.Ensure(ctx, id, "desktop", c.ID, exceptions)
 				if err != nil || got.ID != original.ID || len(e.specs) != 1 || len(e.removed) != 0 {
 					t.Fatalf("redundant private inventory replaced runtime: %v creates=%d removes=%d", err, len(e.specs), len(e.removed))
 				}
@@ -79,7 +79,7 @@ func TestEnsureIgnoresRedundantPrivateInventoryChurn(t *testing.T) {
 			if withException {
 				probes := len(observed.readiness)
 				e.networks = append(slices.Clone(base), engine.Network{Name: "new-control", Subnet: "192.168.50.0/24"})
-				if _, err := m.Ensure(ctx, id, "desktop", c.ID, exceptions, false); !errors.Is(err, ErrValidation) {
+				if _, err := m.Ensure(ctx, id, "desktop", c.ID, exceptions); !errors.Is(err, ErrValidation) {
 					t.Fatalf("full inventory overlap was ignored: %v", err)
 				}
 				if len(observed.readiness) != probes || len(e.specs) != 1 || len(e.removed) != 0 {
@@ -100,7 +100,7 @@ func TestEnsureRetainsNewMandatoryReservationChanges(t *testing.T) {
 			if err := m.SetReservedNetworks(configured); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := m.Ensure(ctx, id, "desktop", c.ID, nil, false); err != nil {
+			if _, err := m.Ensure(ctx, id, "desktop", c.ID, nil); err != nil {
 				t.Fatal(err)
 			}
 			switch change {
@@ -113,7 +113,7 @@ func TestEnsureRetainsNewMandatoryReservationChanges(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if _, err := m.Ensure(ctx, id, "desktop", c.ID, nil, false); !errors.Is(err, ErrConflict) {
+			if _, err := m.Ensure(ctx, id, "desktop", c.ID, nil); !errors.Is(err, ErrConflict) {
 				t.Fatalf("mandatory policy change did not require safe replacement: %v", err)
 			}
 			if len(e.specs) != 1 || len(e.removed) != 0 {

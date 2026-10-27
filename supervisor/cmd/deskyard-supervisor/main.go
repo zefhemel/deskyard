@@ -122,7 +122,7 @@ func run(log *slog.Logger) error {
 	}
 
 	comps, err := environments.Open(eng, environments.Config{
-		DataDir: cfg.DataDir, Subnet: cfg.Subnet.String(), InContainer: cfg.InContainer, SelfID: selfID,
+		DataDir: cfg.DataDir, Subnet: cfg.Subnet.String(), SelfID: selfID,
 	}, instance, log)
 	if err != nil {
 		return err

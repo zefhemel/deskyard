@@ -7,7 +7,7 @@ import (
 )
 
 func TestRuntimeConfigUsesPinnedImagePrivateSecretsAndAuthenticatedControl(t *testing.T) {
-	cfg, err := buildRuntime(runtimeInput{Environment: strings.Repeat("a", 32), Network: "alice-net", Connection: Connection{ID: strings.Repeat("b", 32), Provider: "nordvpn", Country: "Netherlands", Revision: 2}, Credentials: CredentialFiles{Username: "/private/user", Password: "/private/password"}, Directory: "/private/runtime", PublishLocal: true})
+	cfg, err := buildRuntime(runtimeInput{Environment: strings.Repeat("a", 32), Network: "alice-net", Connection: Connection{ID: strings.Repeat("b", 32), Provider: "nordvpn", Country: "Netherlands", Revision: 2}, Credentials: CredentialFiles{Username: "/private/user", Password: "/private/password"}, Directory: "/private/runtime"})
 	if err != nil {
 		t.Fatal(err)
 	}

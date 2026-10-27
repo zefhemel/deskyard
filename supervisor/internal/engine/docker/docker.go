@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/netip"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -63,8 +62,8 @@ func wrap(err error) error {
 var port8080 = network.MustParsePort("8080/tcp")
 
 func (d *Docker) Create(ctx context.Context, s engine.ContainerSpec) (string, error) {
-	if s.NetworkContainer != "" && (s.Network != "" || len(s.Aliases) != 0 || s.PublishLocal != nil) {
-		return "", errors.New("shared network namespace cannot attach networks, aliases or published ports")
+	if s.NetworkContainer != "" && (s.Network != "" || len(s.Aliases) != 0) {
+		return "", errors.New("shared network namespace cannot attach networks or aliases")
 	}
 	for _, m := range s.Mounts {
 		if !m.MustExist || !m.ReadOnly {
@@ -132,13 +131,6 @@ func (d *Docker) Create(ctx context.Context, s engine.ContainerSpec) (string, er
 	}
 	if s.NoNewPrivileges {
 		hc.SecurityOpt = append(hc.SecurityOpt, "no-new-privileges=true")
-	}
-	if s.PublishLocal != nil {
-		hostPort := ""
-		if *s.PublishLocal > 0 {
-			hostPort = strconv.Itoa(*s.PublishLocal)
-		}
-		hc.PortBindings = network.PortMap{port8080: {{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: hostPort}}}
 	}
 	if s.NetworkContainer != "" {
 		hc.NetworkMode = container.NetworkMode("container:" + s.NetworkContainer)
@@ -237,22 +229,18 @@ func (d *Docker) Inspect(ctx context.Context, id string) (engine.Container, erro
 		for _, d := range r.HostConfig.Devices {
 			c.Devices = append(c.Devices, d.PathOnHost)
 		}
-		if b := r.HostConfig.PortBindings[port8080]; len(b) > 0 {
-			c.LocalPort, _ = strconv.Atoi(b[0].HostPort)
-		}
 	}
 	for _, m := range r.Mounts {
-		c.Mounts = append(c.Mounts, engine.Mount{Source: m.Source, Target: m.Destination, ReadOnly: !m.RW})
+		em := engine.Mount{Source: m.Source, Target: m.Destination, ReadOnly: !m.RW}
+		if m.Type == mount.TypeVolume {
+			em.Volume = m.Name
+		}
+		c.Mounts = append(c.Mounts, em)
 	}
 	if r.NetworkSettings != nil {
 		for name, ep := range r.NetworkSettings.Networks {
 			if ep != nil && ep.IPAddress.IsValid() {
 				c.IP[name] = ep.IPAddress.String()
-			}
-		}
-		if b := r.NetworkSettings.Ports[port8080]; len(b) > 0 {
-			if p, err := strconv.Atoi(b[0].HostPort); err == nil && p > 0 {
-				c.LocalPort = p
 			}
 		}
 	}

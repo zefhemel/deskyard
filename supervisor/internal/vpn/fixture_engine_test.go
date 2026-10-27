@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/http"
 	"net/netip"
 	"os"
@@ -117,7 +118,7 @@ func TestControlledWireGuard(t *testing.T) {
 	f := &wireguardFixture{Endpoint: netip.MustParseAddr(endpoint), Port: 51820, PublicKey: serverPublic, PrivateKeyFile: keyfile, Address: "10.77.0.2/32"}
 	// Exercise the same full-inventory validation/canonical policy boundary as
 	// Manager, using this fixture's owned networks and configured endpoint deny.
-	fixtureConfig := func(exceptions []Exception, publish bool) runtimeConfig {
+	fixtureConfig := func(exceptions []Exception) runtimeConfig {
 		t.Helper()
 		networks, err := eng.Networks(ctx, map[string]string{"deskyard.vpn.fixture": id})
 		if err != nil {
@@ -137,13 +138,13 @@ func TestControlledWireGuard(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		config, err := buildRuntime(runtimeInput{Environment: id, Network: network, Directory: dir, Fixture: f, Reserved: reserved, Exceptions: exceptions, PublishLocal: publish})
+		config, err := buildRuntime(runtimeInput{Environment: id, Network: network, Directory: dir, Fixture: f, Reserved: reserved, Exceptions: exceptions})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return config
 	}
-	config := fixtureConfig(nil, true)
+	config := fixtureConfig(nil)
 	config.Spec.Labels["deskyard.vpn.fixture"] = id
 	config.Spec.Entrypoint = []string{"sh", "-ec", "ip route replace default via " + endpoint + " dev eth0; exec /gluetun-entrypoint"}
 	if err = prepareRuntime(config, dir); err != nil {
@@ -162,7 +163,7 @@ func TestControlledWireGuard(t *testing.T) {
 		t.Fatalf("readiness: %v\n%s", err, logs)
 	}
 	t.Log("PASS firewall and authenticated control ready independently of tunnel health")
-	checkInventoryChurn := func(exceptions []Exception, original runtimeConfig, publish bool) {
+	checkInventoryChurn := func(exceptions []Exception, original runtimeConfig) {
 		t.Helper()
 		churn := prefix + "-churn"
 		must("", "network", "create", "--label", label, churn)
@@ -170,7 +171,7 @@ func TestControlledWireGuard(t *testing.T) {
 			if !added {
 				must("", "network", "rm", churn)
 			}
-			current := fixtureConfig(exceptions, publish)
+			current := fixtureConfig(exceptions)
 			if current.Spec.Labels[labelPolicy] != original.Spec.Labels[labelPolicy] || current.Firewall.verification() != original.Firewall.verification() {
 				t.Fatal("unrelated private network changed actual policy identity")
 			}
@@ -179,7 +180,7 @@ func TestControlledWireGuard(t *testing.T) {
 			}
 		}
 	}
-	checkInventoryChurn(nil, config, true)
+	checkInventoryChurn(nil, config)
 	t.Log("PASS live unrelated private network add/remove preserves actual ready policy without exceptions")
 
 	// Moving an installed rule must invalidate readiness even if every rule is
@@ -216,7 +217,7 @@ func TestControlledWireGuard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hostURL := "http://127.0.0.1:" + strconv.Itoa(runtime.LocalPort)
+	hostURL := "http://" + net.JoinHostPort(runtime.IP[network], "8080")
 	local := func() bool {
 		client := http.Client{Timeout: 3 * time.Second}
 		resp, err := client.Get(hostURL)
@@ -226,14 +227,14 @@ func TestControlledWireGuard(t *testing.T) {
 		defer resp.Body.Close()
 		return resp.StatusCode == 200
 	}
-	eventually("host HTTP", local)
+	eventually("gateway HTTP", local)
 	if request("http://" + lan + ":631") {
 		t.Fatal("LAN allowed by default")
 	}
 	t.Log("PASS LAN denied by default")
 	// An explicit route and the same production policy permit only one port.
 	lanExceptions := []Exception{{Destination: lan, Protocol: "tcp", Ports: []PortRange{{Start: 631}}}}
-	configWithLAN := fixtureConfig(lanExceptions, false)
+	configWithLAN := fixtureConfig(lanExceptions)
 	must("", "exec", runtimeID, "iptables", "-I", "OUTPUT", "1", "-j", "DROP")
 	must("", "exec", runtimeID, "iptables", "-F", "DYVPN")
 	for i, r := range configWithLAN.Firewall.Output {
@@ -254,7 +255,7 @@ func TestControlledWireGuard(t *testing.T) {
 		t.Fatal("LAN exception broadened to another port")
 	}
 	t.Log("PASS LAN destination/port exception")
-	checkInventoryChurn(lanExceptions, configWithLAN, false)
+	checkInventoryChurn(lanExceptions, configWithLAN)
 	if !request("http://"+lan+":631") || request("http://"+lan+":632") {
 		t.Fatal("private inventory churn changed LAN reachability")
 	}

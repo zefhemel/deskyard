@@ -46,7 +46,7 @@ func TestEnsureReconcilesAmbiguousCreationByAttemptOwnership(t *testing.T) {
 			defer cancel()
 			e := &ambiguousRuntimeEngine{cancel: cancel, collision: collision}
 			m.eng = e
-			_, err := m.Ensure(ctx, strings.Repeat("9", 32), "desktop", c.ID, nil, false)
+			_, err := m.Ensure(ctx, strings.Repeat("9", 32), "desktop", c.ID, nil)
 			if err == nil {
 				t.Fatal("ambiguous creation succeeded")
 			}
@@ -65,7 +65,7 @@ func TestEnsureReportsSanitizedCleanupFailure(t *testing.T) {
 	defer cancel()
 	e := &ambiguousRuntimeEngine{cancel: cancel, failRemove: true}
 	m.eng = e
-	_, err := m.Ensure(ctx, strings.Repeat("a", 32), "desktop", c.ID, nil, false)
+	_, err := m.Ensure(ctx, strings.Repeat("a", 32), "desktop", c.ID, nil)
 	if err == nil || !strings.Contains(err.Error(), "cleanup") || strings.Contains(err.Error(), "secret") {
 		t.Fatalf("cleanup failure not sanitized/reported: %v", err)
 	}

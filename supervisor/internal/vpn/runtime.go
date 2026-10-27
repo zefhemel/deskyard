@@ -91,7 +91,7 @@ func (m *Manager) runtimeLabels(id string) map[string]string {
 	return labels
 }
 
-func (m *Manager) Ensure(ctx context.Context, environment, network, connectionID string, exceptions []Exception, publishLocal bool) (result engine.Container, resultErr error) {
+func (m *Manager) Ensure(ctx context.Context, environment, network, connectionID string, exceptions []Exception) (result engine.Container, resultErr error) {
 	ctx, cancel := context.WithTimeout(ctx, m.setupTimeout)
 	defer cancel()
 	if !validRuntime(environment) {
@@ -148,7 +148,7 @@ func (m *Manager) Ensure(ctx context.Context, environment, network, connectionID
 	if err != nil {
 		return engine.Container{}, err
 	}
-	config, err := m.buildRuntime(runtimeInput{Environment: environment, Instance: m.instance, Network: network, Connection: connection, Credentials: credentials, Directory: m.directory(environment), Exceptions: exceptions, Reserved: reserved, PublishLocal: publishLocal})
+	config, err := m.buildRuntime(runtimeInput{Environment: environment, Instance: m.instance, Network: network, Connection: connection, Credentials: credentials, Directory: m.directory(environment), Exceptions: exceptions, Reserved: reserved})
 	if err != nil {
 		return engine.Container{}, err
 	}

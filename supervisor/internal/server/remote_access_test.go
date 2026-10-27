@@ -19,6 +19,7 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 // remoteEngine is a running "alice" whose Chromium is served on port and
@@ -33,7 +34,7 @@ type remoteEngine struct {
 func (e *remoteEngine) running() engine.Container {
 	c := alice
 	c.State = "running"
-	c.LocalPort = e.port
+	c.IP = map[string]string{"deskyard-alice": "127.0.0.1"}
 	return c
 }
 
@@ -73,7 +74,7 @@ func (nopWriteCloser) Close() error                { return nil }
 func newRemoteServer(t *testing.T) (*Server, *httptest.Server, *remoteEngine) {
 	t.Helper()
 	e := &remoteEngine{}
-	s, ts := newTestServerWith(t, e)
+	s, ts := newTestServerCfg(t, e, environments.Config{Subnet: "10.0.0.0/16", DesktopPort: e.port})
 	observeAlice(t, s)
 	return s, ts, e
 }
@@ -317,7 +318,7 @@ func TestRemoteCDPRewritesURLs(t *testing.T) {
 	u, _ := url.Parse(upstream.URL)
 	port, _ := strconv.Atoi(u.Port())
 	e := &remoteEngine{port: port}
-	s, ts := newTestServerWith(t, e)
+	s, ts := newTestServerCfg(t, e, environments.Config{Subnet: "10.0.0.0/16", DesktopPort: port})
 	_, admin := issueCredential(t, s, accountNamed(t, s, "admin"))
 	host := strings.TrimPrefix(ts.URL, "http://")
 	for route, upstreamPath := range map[string]string{"/cdp": "/_cdp/json/version", "/cdp/json/list": "/_cdp/json/list"} {
