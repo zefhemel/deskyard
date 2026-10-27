@@ -177,7 +177,7 @@ def test_settings_change_recreates_and_keeps_folder(admin, desktop, name, superv
     assert c["revision"] == c["appliedRevision"] == revision + 1
     assert c["created"] == desktop["created"] and c["job"] is None
     assert c["settings"] == {
-        "memoryBytes": 2 << 30, "nanoCpus": 2_000_000_000, "mounts": [], "volumes": [],
+        "memoryBytes": 2 << 30, "nanoCpus": 2_000_000_000, "volumes": [],
         "vpnConnectionId": None, "lanExceptions": [], "dockerAccess": False,
     }
     assert in_desktop(name, "cat", "/workspace/probe.txt") == "hi"

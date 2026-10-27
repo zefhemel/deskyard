@@ -64,7 +64,7 @@ function VolumeCard({ volume: v, environments, onDelete }: { volume: Volume; env
       <div class="flex flex-wrap items-start gap-x-4 gap-y-2">
         <div class="mr-auto min-w-0">
           <h2 class="text-lg font-semibold">{v.name}</h2>
-          <p class="mono text-sm text-muted">/share/{v.name}</p>
+          <p class="text-sm text-muted">{v.kind === "host" ? "Host folder" : "In the data folder"}</p>
         </div>
         <Button onClick={onDelete}>Delete</Button>
       </div>
@@ -87,7 +87,7 @@ function VolumeCard({ volume: v, environments, onDelete }: { volume: Volume; env
             </>
           )}
         </dd>
-        <dt class="mt-2 text-muted sm:mt-0">Folder</dt>
+        <dt class="mt-2 text-muted sm:mt-0">{v.kind === "host" ? "Host folder" : "Folder"}</dt>
         <dd class="mono min-w-0 break-all">{v.folder}</dd>
         <dt class="mt-2 text-muted sm:mt-0">Environments</dt>
         <dd class="min-w-0">
@@ -98,6 +98,7 @@ function VolumeCard({ volume: v, environments, onDelete }: { volume: Volume; env
                 return (
                   <li key={g.name}>
                     <EnvironmentChip name={g.name} environment={c} href={`/environments/${g.name}?tab=settings&section=volumes`}>
+                      <span class="mono text-xs text-muted">{c?.settings.volumes.find((x) => x.name === v.name)?.path ?? ""}</span>
                       <Tag kind={g.readOnly ? "plain" : "ok"}>{g.readOnly ? "Read only" : "Read & write"}</Tag>
                     </EnvironmentChip>
                   </li>
@@ -115,16 +116,19 @@ function VolumeCard({ volume: v, environments, onDelete }: { volume: Volume; env
 
 function CreateVolume({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [name, setName] = useState("");
+  const [onHost, setOnHost] = useState(false);
+  const [hostPath, setHostPath] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [adopted, setAdopted] = useState<Volume | null>(null);
-  const valid = NAME.test(name);
+  const hostPathValid = !onHost || (hostPath.startsWith("/") && !hostPath.endsWith("/") && !hostPath.split("/").some((p) => p === "." || p === ".."));
+  const valid = NAME.test(name) && hostPathValid;
   const submit = async () => {
     if (!valid || busy) return;
     setBusy(true);
     setError(null);
     try {
-      const created = await api.createVolume(name);
+      const created = await api.createVolume(name, onHost ? hostPath : undefined);
       onCreated();
       if (created.adopted) {
         // Say which folder it took over before closing.
@@ -181,13 +185,37 @@ function CreateVolume({ onClose, onCreated }: { onClose: () => void; onCreated: 
             <span class="text-danger">Use 2–32 lowercase letters, digits and dashes, starting with a letter and not ending with a dash.</span>
           ) : (
             <>
-              Lowercase letters, digits and dashes; it can't be changed later.{valid && <> Environments see it at <span class="mono">/share/{name}</span>.</>}
+              Lowercase letters, digits and dashes; it can't be changed later.{NAME.test(name) && <> Environments see it at <span class="mono">/share/{name}</span> unless their grant names another path.</>}
             </>
           )
         }
       >
         <input id="volume-name" type="text" autocomplete="off" spellcheck={false} value={name} onInput={(e) => setName(e.currentTarget.value.toLowerCase())} />
       </Field>
+      <fieldset class="mb-4">
+        <legend class="mb-2 text-sm font-semibold">Where its files live</legend>
+        <label class="mb-1 flex items-center gap-2 text-sm">
+          <input type="radio" name="volume-where" checked={!onHost} onChange={() => setOnHost(false)} /> In the data folder, managed by Deskyard
+        </label>
+        <label class="flex items-center gap-2 text-sm">
+          <input type="radio" name="volume-where" checked={onHost} onChange={() => setOnHost(true)} /> An existing folder on the host
+        </label>
+      </fieldset>
+      {onHost && (
+        <Field
+          label="Host folder"
+          htmlFor="volume-host-path"
+          hint={
+            hostPath && !hostPathValid ? (
+              <span class="text-danger">Use an absolute path without a trailing slash, . or ..</span>
+            ) : (
+              "A folder on the machine running the container engine. It must exist; Deskyard never changes or deletes it."
+            )
+          }
+        >
+          <input id="volume-host-path" class="mono" type="text" autocomplete="off" spellcheck={false} placeholder="/srv/photos" value={hostPath} onInput={(e) => setHostPath(e.currentTarget.value)} />
+        </Field>
+      )}
       <ErrorText error={error} />
     </Dialog>
   );
@@ -242,6 +270,11 @@ function DeleteVolume({ volume: v, onClose, onDeleted }: { volume: Volume; onClo
           .
         </p>
       ) : (
+        v.kind === "host" ? (
+          <p class="mb-4 text-sm">
+            The volume is forgotten. Its host folder <span class="mono break-all">{v.folder}</span> is never touched.
+          </p>
+        ) : (
         <>
           <p class="mb-4 text-sm">
             {files ? "The volume and its files in " : "The volume is deleted. Its files stay in "}
@@ -252,6 +285,7 @@ function DeleteVolume({ volume: v, onClose, onDeleted }: { volume: Volume; onClo
             Everything stored in the volume. This can't be undone.
           </Check>
         </>
+        )
       )}
       {files && !refs.length && <Note danger>The files are deleted for good.</Note>}
       <ErrorText error={error} />

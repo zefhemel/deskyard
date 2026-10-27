@@ -23,22 +23,20 @@ export interface Stats {
   memLimit: number;
 }
 
-export interface HostMount {
-  source: string;
-  target: string;
-  readOnly: boolean;
-}
 
-/** A volume granted to an environment, mounted at /share/<name>. */
+/** A volume granted to an environment, mounted at path (by default /share/<name>). */
 export interface VolumeGrant {
   name: string;
+  path: string;
   readOnly: boolean;
 }
 /** A named volume; environments are those whose definitions grant it. */
 export interface Volume {
   name: string;
   created: string;
-  kind: "local";
+  kind: "local" | "host";
+  /** A host volume's folder on the engine host. */
+  hostPath?: string;
   folder: string;
   environments: VolumeGrant[];
 }
@@ -70,12 +68,11 @@ export interface VPNStatus {
 export interface VPNRollout { connection: VPNConnection; environments: (VPNReference & {error?: string})[] }
 export interface EnvironmentVPNSettings { vpnConnectionId: string | null; lanExceptions: LANException[] }
 export interface SettingsPatch extends Partial<EnvironmentVPNSettings> {
-  image?: string; memoryBytes?: number; nanoCpus?: number; dockerAccess?: boolean; mounts?: HostMount[]; volumes?: VolumeGrant[];
+  image?: string; memoryBytes?: number; nanoCpus?: number; dockerAccess?: boolean; volumes?: VolumeGrant[];
 }
 
 export interface Settings extends EnvironmentVPNSettings {
   dockerAccess: boolean;
-  mounts: HostMount[];
   volumes: VolumeGrant[];
   memoryBytes: number;
   nanoCpus: number;
@@ -405,7 +402,7 @@ export const api = {
   createTerminal: (name: string) => request<{ name: string }>("POST", `${c(name)}/terminal/sessions`),
   /** Ends a session for everyone attached to it. */
   endTerminal: (name: string, session: string) => request<void>("DELETE", `${c(name)}/terminal/sessions/${enc(session)}`),
-  createEnvironment: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: string[]; dockerAccess: boolean; mounts?: HostMount[]; volumes?: VolumeGrant[] } & EnvironmentVPNSettings) =>
+  createEnvironment: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: string[]; dockerAccess: boolean; volumes?: VolumeGrant[] } & EnvironmentVPNSettings) =>
     request<JobRef>("POST", "/api/environments", body),
   power: (name: string, action: "start" | "stop" | "restart") => request<void>("POST", `${c(name)}/${action}`),
   setMemoryPolicy: (name: string, memoryReclaim: boolean) => request<void>("PUT", `${c(name)}/memory-policy`, { memoryReclaim }),
@@ -464,7 +461,7 @@ export const api = {
   upgradeImage: (ref: string) => request<JobRef>("POST", "/api/images/upgrade", { ref }),
 
   volumes: () => request<{ volumes: Volume[] }>("GET", "/api/volumes"),
-  createVolume: (name: string) => request<{ volume: Volume; adopted: boolean }>("POST", "/api/volumes", { name }),
+  createVolume: (name: string, hostPath?: string) => request<{ volume: Volume; adopted: boolean }>("POST", "/api/volumes", hostPath ? { name, hostPath } : { name }),
   volumeUsage: (name: string) => request<VolumeUsage>("GET", `/api/volumes/${enc(name)}/usage`),
   deleteVolume: (name: string, deleteFiles: boolean) => request<void>("DELETE", `/api/volumes/${enc(name)}?deleteFiles=${deleteFiles}`),
 

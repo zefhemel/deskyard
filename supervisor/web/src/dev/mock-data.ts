@@ -45,7 +45,7 @@ function environment(c: Partial<Environment> & { name: string }): Environment {
     memoryReclaim: true,
     updateAvailable: null,
     vpn: {state:"disabled",changedAt:"0001-01-01T00:00:00Z",exitIpObservedAt:"0001-01-01T00:00:00Z",desiredRevision:0,appliedRevision:0,idle:false},
-    settings: { dockerAccess: false, memoryBytes: 0, nanoCpus: 0, vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: [] },
+    settings: { dockerAccess: false, memoryBytes: 0, nanoCpus: 0, vpnConnectionId: null, lanExceptions: [], volumes: [] },
     access: [],
     viewers: [],
     mics: [],
@@ -65,7 +65,7 @@ export const environments: Environment[] = [
     startedAt: iso(3 * DAY),
     imageVersion: "2026.10.15",
     updateAvailable: "2026.10.22",
-    settings: { dockerAccess: false, memoryBytes: 2 * GB, nanoCpus: 2e9, vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: [{ name: "photos", readOnly: false }] },
+    settings: { dockerAccess: false, memoryBytes: 2 * GB, nanoCpus: 2e9, vpnConnectionId: null, lanExceptions: [], volumes: [{ name: "photos", path: "/share/photos", readOnly: false }] },
     access: ["anna"],
     viewers: ["zef", "anna"],
     forwards: [
@@ -80,7 +80,7 @@ export const environments: Environment[] = [
   environment({
     name: "research",
     startedAt: iso(5 * HOUR),
-    settings: { dockerAccess: false, memoryBytes: 0, nanoCpus: 0, vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: [{ name: "photos", readOnly: true }] },
+    settings: { dockerAccess: false, memoryBytes: 0, nanoCpus: 0, vpnConnectionId: null, lanExceptions: [], volumes: [{ name: "photos", path: "/mnt/photos", readOnly: true }] },
     access: ["anna", "sam"],
     viewers: ["anna"],
     terminals: [{ name: "main", clients: 0, command: "bash" }],
@@ -89,7 +89,7 @@ export const environments: Environment[] = [
   environment({
     name: "build-bot",
     startedAt: iso(12 * 60 * 1000),
-    settings: { dockerAccess: false, memoryBytes: 4 * GB, nanoCpus: 4e9, vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: [] },
+    settings: { dockerAccess: false, memoryBytes: 4 * GB, nanoCpus: 4e9, vpnConnectionId: null, lanExceptions: [], volumes: [] },
     agents: [agent("a terminal", "", true, 1)],
     stats: { cpuPercent: 91, memBytes: 3.1 * GB, memLimit: 4 * GB },
   }),

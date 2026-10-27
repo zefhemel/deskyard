@@ -71,8 +71,26 @@ func TestLoadVolumesDefaultsKind(t *testing.T) {
 	}
 }
 
+func TestLoadVolumesHost(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "volumes.json")
+	if err := os.WriteFile(path, []byte(`{"version":1,"volumes":[{"name":"photos","created":"2026-10-26T10:00:00Z","kind":"host","hostPath":"/srv/photos"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	vols, err := LoadVolumes(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := vols.Get("photos"); !ok || v.Kind != VolumeHost || v.HostPath != "/srv/photos" {
+		t.Fatalf("got %+v %v", v, ok)
+	}
+}
+
 func TestLoadVolumesRejects(t *testing.T) {
 	for _, tc := range []struct{ name, file string }{
+		{"host without path", `{"version":1,"volumes":[{"name":"photos","created":"2026-10-26T10:00:00Z","kind":"host"}]}`},
+		{"relative host path", `{"version":1,"volumes":[{"name":"photos","created":"2026-10-26T10:00:00Z","kind":"host","hostPath":"srv/photos"}]}`},
+		{"unclean host path", `{"version":1,"volumes":[{"name":"photos","created":"2026-10-26T10:00:00Z","kind":"host","hostPath":"/srv/../etc"}]}`},
+		{"local with path", `{"version":1,"volumes":[{"name":"photos","created":"2026-10-26T10:00:00Z","kind":"local","hostPath":"/srv/photos"}]}`},
 		{"version", `{"version":2,"volumes":[]}`},
 		{"kind", `{"version":1,"volumes":[{"name":"photos","created":"2026-10-26T10:00:00Z","kind":"sftp"}]}`},
 		{"unknown field", `{"version":1,"volumes":[{"name":"photos","created":"2026-10-26T10:00:00Z","size":3}]}`},

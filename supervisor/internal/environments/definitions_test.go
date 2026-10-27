@@ -3,7 +3,6 @@ package environments
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -22,8 +21,7 @@ func testDefinition(name string) Definition {
 		Image:         ImageRef{Ref: "ghcr.io/zefhemel/deskyard-xfce:latest", ID: "sha256:abc"},
 		Limits:        Limits{MemoryBytes: 1 << 30, NanoCPUs: 2e9},
 		Network:       Network{Kind: NetworkIsolated},
-		Mounts:        []HostMount{{Source: "/srv/photos", Target: "/mnt/photos", ReadOnly: true}},
-		Volumes:       []VolumeGrant{},
+		Volumes:       []VolumeGrant{{Name: "photos", Path: "/mnt/photos", ReadOnly: true}},
 		MemoryReclaim: true,
 		Power:         PowerRunning,
 	}
@@ -69,12 +67,12 @@ func TestDefinitionsRoundTripSpecKeys(t *testing.T) {
 	if first["name"] != "alice" {
 		t.Fatalf("environments are saved sorted by name, got %v first", first["name"])
 	}
-	for _, key := range []string{"name", "created", "revision", "image", "limits", "network", "mounts", "volumes", "dockerAccess", "memoryReclaim", "power"} {
+	for _, key := range []string{"name", "created", "revision", "image", "limits", "network", "volumes", "dockerAccess", "memoryReclaim", "power"} {
 		if _, ok := first[key]; !ok {
 			t.Errorf("missing key %q in %s", key, b)
 		}
 	}
-	if len(first) != 11 {
+	if len(first) != 10 {
 		t.Errorf("unexpected keys in %v", first)
 	}
 	if img := first["image"].(map[string]any); img["ref"] != alice.Image.Ref || img["id"] != "sha256:abc" {
@@ -86,8 +84,8 @@ func TestDefinitionsRoundTripSpecKeys(t *testing.T) {
 	if n := first["network"].(map[string]any); len(n) != 1 || n["kind"] != "isolated" {
 		t.Errorf("isolated network = %v", n)
 	}
-	if m := first["mounts"].([]any)[0].(map[string]any); m["source"] != "/srv/photos" || m["target"] != "/mnt/photos" || m["readOnly"] != true {
-		t.Errorf("mounts = %v", m)
+	if m := first["volumes"].([]any)[0].(map[string]any); m["name"] != "photos" || m["path"] != "/mnt/photos" || m["readOnly"] != true {
+		t.Errorf("volumes = %v", m)
 	}
 	if first["created"] != "2026-10-26T10:00:00Z" || first["power"] != "running" {
 		t.Errorf("entry = %v", first)
@@ -124,7 +122,7 @@ func TestDefinitionsSpecExampleLoads(t *testing.T) {
       "image": {"ref": "ghcr.io/x/deskyard-xfce:latest", "id": "sha256:1"},
       "limits": {"memoryBytes": 0, "nanoCPUs": 0},
       "network": {"kind": "isolated"},
-      "mounts": [{"source": "/srv/photos", "target": "/mnt/photos", "readOnly": true}],
+      "volumes": [{"name": "photos", "path": "/mnt/photos", "readOnly": true}],
       "dockerAccess": false,
       "memoryReclaim": true,
       "power": "running"
@@ -139,7 +137,7 @@ func TestDefinitionsSpecExampleLoads(t *testing.T) {
 		t.Fatal(err)
 	}
 	d, ok := defs.Get("alice")
-	if !ok || d.Revision != 4 || !d.MemoryReclaim || d.Power != PowerRunning || len(d.Mounts) != 1 || !d.Mounts[0].ReadOnly {
+	if !ok || d.Revision != 4 || !d.MemoryReclaim || d.Power != PowerRunning || len(d.Volumes) != 1 || !d.Volumes[0].ReadOnly || d.Volumes[0].Path != "/mnt/photos" {
 		t.Fatalf("alice = %+v, %v", d, ok)
 	}
 }
@@ -188,6 +186,55 @@ func TestDefinitionsLoadDropsLegacyCamera(t *testing.T) {
 	}
 }
 
+// Host folders were replaced by host volumes without a migration: a
+// definition that still has them stops loading, naming the environment.
+func TestLoadDefinitionsRejectsHostFolders(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "environments.json")
+	def := `{"version": 1, "environments": [
+    {"name": "alice", "created": "2026-10-26T10:00:00Z", "revision": 1,
+     "image": {"ref": "img", "id": "sha256:1"},
+     "limits": {"memoryBytes": 0, "nanoCPUs": 0}, "network": {"kind": "isolated"},
+     "mounts": MOUNTS, "volumes": [], "dockerAccess": false,
+     "memoryReclaim": false, "power": "running"}]}`
+	write := func(mounts string) {
+		if err := os.WriteFile(path, []byte(strings.Replace(def, "MOUNTS", mounts, 1)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(`[{"source": "/srv/photos", "target": "/mnt/photos", "readOnly": true}]`)
+	if _, err := LoadDefinitions(path); err == nil || !strings.Contains(err.Error(), "alice") || !strings.Contains(err.Error(), "host volume") {
+		t.Fatalf("loaded host folders: %v", err)
+	}
+	for _, empty := range []string{`[]`, `null`} {
+		write(empty)
+		if _, err := LoadDefinitions(path); err != nil {
+			t.Fatalf("%s: %v", empty, err)
+		}
+	}
+}
+
+// A grant saved without a path is mounted at /share/<volume>, and gets that
+// path when loaded.
+func TestLoadDefinitionsDefaultsGrantPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "environments.json")
+	body := `{"version": 1, "environments": [
+    {"name": "alice", "created": "2026-10-26T10:00:00Z", "revision": 1,
+     "image": {"ref": "img", "id": "sha256:1"},
+     "limits": {"memoryBytes": 0, "nanoCPUs": 0}, "network": {"kind": "isolated"},
+     "volumes": [{"name": "photos", "readOnly": false}], "dockerAccess": false,
+     "memoryReclaim": false, "power": "running"}]}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	defs, err := LoadDefinitions(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d, _ := defs.Get("alice"); len(d.Volumes) != 1 || d.Volumes[0].Path != "/share/photos" {
+		t.Fatalf("%+v", d.Volumes)
+	}
+}
+
 func TestDefinitionsLoadRejectsUnknownVersion(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "environments.json")
 	for _, body := range []string{`{"version": 2, "environments": []}`, `{"environments": []}`} {
@@ -228,13 +275,13 @@ func TestDefinitionsLoadRejectsMalformedEntries(t *testing.T) {
 		"public exception": func(d *Definition) {
 			d.Network = Network{Kind: NetworkVPN, Connection: "c", LANExceptions: []vpn.Exception{{Destination: "8.8.8.8", Protocol: "tcp", Ports: []vpn.PortRange{{Start: 53}}}}}
 		},
-		"bad mount":     func(d *Definition) { d.Mounts = []HostMount{{Source: "relative", Target: "/mnt/x"}} },
+		"bad grant path": func(d *Definition) { d.Volumes = []VolumeGrant{{Name: "photos", Path: "relative"}} },
 		"unknown power": func(d *Definition) { d.Power = "paused" },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
 			d := valid
-			d.Mounts = append([]HostMount(nil), valid.Mounts...)
+			d.Volumes = append([]VolumeGrant(nil), valid.Volumes...)
 			mutate(&d)
 			path := filepath.Join(t.TempDir(), "environments.json")
 			b, _ := json.Marshal(definitionsFile{Version: 1, Environments: []Definition{d}})
@@ -347,11 +394,11 @@ func TestDefinitionsCopiesAreIndependent(t *testing.T) {
 	if err := defs.Put(d); err != nil {
 		t.Fatal(err)
 	}
-	d.Mounts[0].Target = "/mnt/changed"
+	d.Volumes[0].Path = "/mnt/changed"
 	got, _ := defs.Get("alice")
-	got.Mounts[0].Source = "/changed"
-	if again, _ := defs.Get("alice"); again.Mounts[0].Target != "/mnt/photos" || again.Mounts[0].Source != "/srv/photos" {
-		t.Fatalf("stored definition shares memory with callers: %+v", again.Mounts)
+	got.Volumes[0].Name = "changed"
+	if again, _ := defs.Get("alice"); again.Volumes[0].Path != "/mnt/photos" || again.Volumes[0].Name != "photos" {
+		t.Fatalf("stored definition shares memory with callers: %+v", again.Volumes)
 	}
 }
 
@@ -389,13 +436,14 @@ func TestDefinitionContainerAffecting(t *testing.T) {
 		"lan exceptions": func(d *Definition) {
 			d.Network = Network{Kind: NetworkVPN, Connection: "c", LANExceptions: []vpn.Exception{{Destination: "10.0.0.1/32", Protocol: "tcp", Ports: []vpn.PortRange{{Start: 22, End: 22}}}}}
 		},
-		"mounts":        func(d *Definition) { d.Mounts = nil },
-		"mount mode":    func(d *Definition) { d.Mounts = []HostMount{{Source: "/srv/photos", Target: "/mnt/photos"}} },
+		"grants":        func(d *Definition) { d.Volumes = nil },
+		"grant mode":    func(d *Definition) { d.Volumes = []VolumeGrant{{Name: "photos", Path: "/mnt/photos"}} },
+		"grant path":    func(d *Definition) { d.Volumes = []VolumeGrant{{Name: "photos", Path: "/mnt/other", ReadOnly: true}} },
 		"docker access": func(d *Definition) { d.DockerAccess = true },
 	}
 	for name, mutate := range affecting {
 		d := base
-		d.Mounts = append([]HostMount(nil), base.Mounts...)
+		d.Volumes = append([]VolumeGrant(nil), base.Volumes...)
 		mutate(&d)
 		if !ContainerAffecting(base, d) || !ContainerAffecting(d, base) {
 			t.Errorf("%s change is not container-affecting", name)
@@ -405,11 +453,15 @@ func TestDefinitionContainerAffecting(t *testing.T) {
 		"memoryReclaim": func(d *Definition) { d.MemoryReclaim = !d.MemoryReclaim },
 		"power":         func(d *Definition) { d.Power = PowerStopped },
 		"revision":      func(d *Definition) { d.Revision++ },
-		"empty mounts":  func(d *Definition) { d.Mounts = nil },
+		"empty grants":  func(d *Definition) { d.Volumes = nil },
+		"default path":  func(d *Definition) { d.Volumes = []VolumeGrant{{Name: "docs"}} },
 	} {
 		a, b := base, base
-		if name == "empty mounts" {
-			a.Mounts = []HostMount{}
+		switch name {
+		case "empty grants":
+			a.Volumes = []VolumeGrant{}
+		case "default path":
+			a.Volumes = []VolumeGrant{{Name: "docs", Path: "/share/docs"}}
 		}
 		mutate(&b)
 		if ContainerAffecting(a, b) {
@@ -430,13 +482,13 @@ func TestDefinitionSettings(t *testing.T) {
 	d.Network = Network{Kind: NetworkVPN, Connection: "conn-1", LANExceptions: []vpn.Exception{{Destination: "10.0.0.1/32", Protocol: "tcp", Ports: []vpn.PortRange{{Start: 22, End: 22}}}}}
 	d.DockerAccess = true
 	s := d.Settings()
-	want := Settings{Image: d.Image.Ref, MemoryBytes: 1 << 30, NanoCPUs: 2e9, VPNConnectionID: "conn-1", LANExceptions: d.Network.LANExceptions, Mounts: d.Mounts, Volumes: d.Volumes, DockerAccess: true}
+	want := Settings{Image: d.Image.Ref, MemoryBytes: 1 << 30, NanoCPUs: 2e9, VPNConnectionID: "conn-1", LANExceptions: d.Network.LANExceptions, Volumes: d.Volumes, DockerAccess: true}
 	if !reflect.DeepEqual(s, want) {
 		t.Fatalf("Settings() = %+v", s)
 	}
-	s.Mounts[0].Source = "/changed"
+	s.Volumes[0].Name = "changed"
 	s.LANExceptions[0].Ports[0].Start = 1
-	if d.Mounts[0].Source != "/srv/photos" || d.Network.LANExceptions[0].Ports[0].Start != 22 {
+	if d.Volumes[0].Name != "photos" || d.Network.LANExceptions[0].Ports[0].Start != 22 {
 		t.Fatal("Settings() shares memory with the definition")
 	}
 }
@@ -472,12 +524,7 @@ func TestValidateVolumeGrants(t *testing.T) {
 			t.Fatalf("%+v: %v", grants, err)
 		}
 	}
-	many := make([]VolumeGrant, 17)
-	for i := range many {
-		many[i] = VolumeGrant{Name: fmt.Sprintf("v%d", i)}
-	}
 	for name, grants := range map[string][]VolumeGrant{
-		"too many":  many,
 		"duplicate": {{Name: "photos"}, {Name: "photos", ReadOnly: true}},
 		"bad name":  {{Name: "A"}},
 		"no name":   {{}},

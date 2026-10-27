@@ -30,7 +30,7 @@ func (e *vpnMountEngine) DisconnectNetwork(ctx context.Context, name, id string)
 	return e.network.DisconnectNetwork(ctx, name, id)
 }
 
-func TestVPNHostMountPreflightPreservesRunningEnvironment(t *testing.T) {
+func TestVPNHostVolumePreflightPreservesRunningEnvironment(t *testing.T) {
 	s, e, _, conn := pairSetup(t)
 	ctx := context.Background()
 	if _, err := s.Create(ctx, "alice", Settings{Image: "img", VPNConnectionID: conn.ID}, noProgress); err != nil {
@@ -41,33 +41,33 @@ func TestVPNHostMountPreflightPreservesRunningEnvironment(t *testing.T) {
 	s.Eng = mounts
 	e.fakeEngine.port = e.port
 	set := before.Settings
-	set.Mounts = []HostMount{{Source: filepath.Join(t.TempDir(), "missing"), Target: "/mnt/photos", ReadOnly: true}}
+	set.Volumes = []VolumeGrant{hostVolume(t, s, "photos", filepath.Join(t.TempDir(), "missing"), "/mnt/photos", true)}
 	if _, err := s.Recreate(ctx, "alice", set, noProgress); err == nil {
 		t.Fatal("missing host source accepted")
 	}
 	after, err := s.Get(ctx, "alice")
-	if err != nil || !after.Container.Running() || mounts.stops != 0 || len(after.Settings.Mounts) != 0 {
+	if err != nil || !after.Container.Running() || mounts.stops != 0 || len(after.Settings.Volumes) != 0 {
 		t.Fatalf("mount preflight disturbed existing VPN environment: %+v err=%v stops=%d", after, err, mounts.stops)
 	}
 }
 
-func TestVPNRecoverySettingsOwnHostMounts(t *testing.T) {
-	original := Settings{Mounts: []HostMount{{Source: "/srv/photos", Target: "/mnt/photos", ReadOnly: true}}}
+func TestVPNRecoverySettingsOwnGrants(t *testing.T) {
+	original := Settings{Volumes: []VolumeGrant{{Name: "photos", Path: "/mnt/photos", ReadOnly: true}}}
 	cloned := cloneSettings(original)
-	cloned.Mounts[0].Source = "/srv/other"
-	if original.Mounts[0].Source != "/srv/photos" {
+	cloned.Volumes[0].Path = "/mnt/other"
+	if original.Volumes[0].Path != "/mnt/photos" {
 		t.Fatal("recovery snapshot shares mutable host mount settings")
 	}
 }
 
-func TestVPNHostMountsSurviveDisableAndRecreate(t *testing.T) {
+func TestVPNHostVolumesSurviveDisableAndRecreate(t *testing.T) {
 	s, e, _, conn := pairSetup(t)
 	mounts := &vpnMountEngine{mountEngine: &mountEngine{fakeEngine: e.fakeEngine, specs: map[string]engine.ContainerSpec{}}, network: e}
 	s.Eng = mounts
 	e.fakeEngine.port = e.port
 	ctx := context.Background()
-	want := []HostMount{{Source: t.TempDir(), Target: "/mnt/photos", ReadOnly: true}}
-	d, err := s.Create(ctx, "alice", Settings{Image: "img", VPNConnectionID: conn.ID, Mounts: want}, noProgress)
+	want := []VolumeGrant{hostVolume(t, s, "photos", t.TempDir(), "/mnt/photos", true)}
+	d, err := s.Create(ctx, "alice", Settings{Image: "img", VPNConnectionID: conn.ID, Volumes: want}, noProgress)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestVPNHostMountsSurviveDisableAndRecreate(t *testing.T) {
 			t.Fatal(err)
 		}
 		spec := mounts.specs["deskyard-alice"]
-		if !reflect.DeepEqual(d.Settings.Mounts, want) || len(spec.Mounts) != 2 || !spec.Mounts[1].MustExist || !spec.NoNewPrivileges {
+		if !reflect.DeepEqual(d.Settings.Volumes, want) || len(spec.Mounts) != 2 || !spec.Mounts[1].MustExist || !spec.NoNewPrivileges {
 			t.Fatalf("lost host folder safety: settings=%+v spec=%+v", d.Settings, spec)
 		}
 	}
@@ -94,7 +94,7 @@ func TestVPNSettingsKeepVolumes(t *testing.T) {
 	e.fakeEngine.port = e.port
 	ctx := context.Background()
 	addVolume(t, s, "photos")
-	want := []VolumeGrant{{Name: "photos", ReadOnly: true}}
+	want := []VolumeGrant{{Name: "photos", Path: "/share/photos", ReadOnly: true}}
 	d, err := s.Create(ctx, "alice", Settings{Image: "img", VPNConnectionID: conn.ID, Volumes: want}, noProgress)
 	if err != nil {
 		t.Fatal(err)

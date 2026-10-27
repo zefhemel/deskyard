@@ -9,7 +9,6 @@ import { notify } from "../../components/toast.tsx";
 import { Button, Check, cx, ErrorText, Field, Note, Seg } from "../../components/ui.tsx";
 import { useLive } from "../../live.tsx";
 import { useFetch } from "../../lib/use-fetch.ts";
-import { HostMountFields } from "../../components/host-mounts.tsx";
 import { VolumeGrantFields } from "../../components/volume-grants.tsx";
 import { UPGRADE_NOTE } from "../../dialogs/upgrade.tsx";
 
@@ -24,8 +23,6 @@ export function SettingsTab({ environment: c }: { environment: Environment }) {
   const [memory, setMemory] = useState(c.settings.memoryBytes);
   const [cpus, setCpus] = useState(c.settings.nanoCpus);
   const [dockerAccess, setDockerAccess] = useState(c.settings.dockerAccess ?? false);
-  const savedMounts = c.settings.mounts ?? [];
-  const [mounts, setMounts] = useState(savedMounts);
   const volumes = useFetch(() => api.volumes(), "volumes");
   const savedVolumes = c.settings.volumes ?? [];
   const [grants, setGrants] = useState(savedVolumes);
@@ -40,14 +37,14 @@ export function SettingsTab({ environment: c }: { environment: Environment }) {
     if (saving) progressPanel.current?.scrollIntoView({ block: "nearest" });
   }, [saving]);
 
-  const draft = { image, dockerAccess, memoryBytes: memory, nanoCpus: cpus, vpnConnectionId: vpnID, lan, mounts, volumes: grants };
+  const draft = { image, dockerAccess, memoryBytes: memory, nanoCpus: cpus, vpnConnectionId: vpnID, lan, volumes: grants };
   const { query, route } = useLocation();
   const section: Section = SECTIONS.find((x) => x.id === query.section)?.id ?? "general";
   const pick = (id: Section) => route(`/environments/${c.name}?tab=settings${id === "general" ? "" : `&section=${id}`}`, true);
   const edited: Record<Section, boolean> = {
     general: image !== c.image || memory !== c.settings.memoryBytes || cpus !== c.settings.nanoCpus || dockerAccess !== (c.settings.dockerAccess ?? false),
-    networking: environmentSettingsChanged(c, { ...draft, image: c.image, memoryBytes: c.settings.memoryBytes, nanoCpus: c.settings.nanoCpus, dockerAccess: c.settings.dockerAccess ?? false, mounts: savedMounts, volumes: savedVolumes }),
-    volumes: JSON.stringify(mounts) !== JSON.stringify(savedMounts) || JSON.stringify(grants) !== JSON.stringify(savedVolumes),
+    networking: environmentSettingsChanged(c, { ...draft, image: c.image, memoryBytes: c.settings.memoryBytes, nanoCpus: c.settings.nanoCpus, dockerAccess: c.settings.dockerAccess ?? false, volumes: savedVolumes }),
+    volumes: JSON.stringify(grants) !== JSON.stringify(savedVolumes),
   };
   const changed = environmentSettingsChanged(c, draft);
   const save = () => {
@@ -124,12 +121,8 @@ export function SettingsTab({ environment: c }: { environment: Environment }) {
                 )}
               </>
             )}
-            {section === "volumes" && (
-              <>
-                {volumes.data ? <VolumeGrantFields grants={grants} volumes={volumes.data.volumes} onChange={setGrants} /> : <ErrorText error={volumes.error} />}
-                <HostMountFields mounts={mounts} onChange={setMounts} />
-              </>
-            )}
+            {section === "volumes" &&
+              (volumes.data ? <VolumeGrantFields grants={grants} volumes={volumes.data.volumes} onChange={setGrants} /> : <ErrorText error={volumes.error} />)}
           </fieldset>
           {changed && (
             <Note>
@@ -153,7 +146,6 @@ export function SettingsTab({ environment: c }: { environment: Environment }) {
                   setVPNID(c.settings.vpnConnectionId ?? "");
                   setLAN(exceptionRows(c.settings.lanExceptions ?? []));
                   setVPNError(null);
-                  setMounts(savedMounts);
                   setGrants(savedVolumes);
                 }}
               >

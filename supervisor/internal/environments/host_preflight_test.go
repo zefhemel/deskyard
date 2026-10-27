@@ -92,10 +92,10 @@ func TestHostPreflightFailuresPreserveEnvironmentAndOwnCleanup(t *testing.T) {
 			}
 			s.Eng = e
 			// Exercise Recreate for failure cases to prove no stop or replacement occurs.
-			set := Settings{Image: "img", DockerAccess: true, Mounts: []HostMount{{Source: t.TempDir(), Target: "/mnt/data"}}}
+			set := Settings{Image: "img", DockerAccess: true, Volumes: []VolumeGrant{hostVolume(t, s, "data", t.TempDir(), "/mnt/data", false)}}
 			var err error
 			if stage == "success" {
-				err = s.checkHostSources(ctx, set.Mounts, true)
+				err = s.checkHostSources(ctx, s.hostSources(set.Volumes), true)
 			} else {
 				_, err = s.Recreate(ctx, "alice", set, noProgress)
 			}
@@ -195,7 +195,7 @@ func TestHostPreflightChecksBothSourceTypes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s, base := dockerAccessService(t)
 			s.Eng = &localPreflightEngine{dockerAccessEngine: base, folder: tt.folder, socket: tt.socket}
-			err := s.checkHostSources(context.Background(), []HostMount{{Source: tt.folder, Target: "/mnt/data"}}, true)
+			err := s.checkHostSources(context.Background(), []hostSource{{volume: "data", path: tt.folder}}, true)
 			if tt.want == "" {
 				if err != nil {
 					t.Fatal(err)

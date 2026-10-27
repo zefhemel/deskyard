@@ -294,7 +294,7 @@ func TestEnvironmentJSONHasVolumes(t *testing.T) {
 	}
 	waitJob(t, s, b)
 	code, b = send(admin, "GET", "/api/environments/alice", "")
-	if code != 200 || !strings.Contains(string(b), `"volumes":[{"name":"photos","readOnly":false}]`) {
+	if code != 200 || !strings.Contains(string(b), `"volumes":[{"name":"photos","path":"/share/photos","readOnly":false}]`) {
 		t.Fatalf("grant not exposed: %d %s", code, b)
 	}
 	// Omitting volumes keeps them.
@@ -304,7 +304,7 @@ func TestEnvironmentJSONHasVolumes(t *testing.T) {
 	}
 	waitJob(t, s, b)
 	c, _ := s.Environments.Get(context.Background(), "alice")
-	if want := []environments.VolumeGrant{{Name: "photos"}}; !reflect.DeepEqual(c.Settings.Volumes, want) {
+	if want := []environments.VolumeGrant{{Name: "photos", Path: "/share/photos"}}; !reflect.DeepEqual(c.Settings.Volumes, want) {
 		t.Fatalf("omitting volumes lost them: %+v", c.Settings.Volumes)
 	}
 }

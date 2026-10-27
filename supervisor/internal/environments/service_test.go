@@ -90,7 +90,7 @@ func TestStoppedEnvironmentWithoutContainerIsBuiltOnStart(t *testing.T) {
 	s, e, _ := definitionService(t)
 	ctx := context.Background()
 	source := t.TempDir()
-	set := Settings{Image: "img", MemoryBytes: 1 << 30, NanoCPUs: 2e9, Mounts: []HostMount{{Source: source, Target: "/mnt/data", ReadOnly: true}}}
+	set := Settings{Image: "img", MemoryBytes: 1 << 30, NanoCPUs: 2e9, Volumes: []VolumeGrant{hostVolume(t, s, "data", source, "/mnt/data", true)}}
 	created, err := s.Create(ctx, "alice", set, noProgress)
 	if err != nil {
 		t.Fatal(err)
@@ -137,7 +137,7 @@ func TestStoppedEnvironmentWithoutContainerIsBuiltOnStart(t *testing.T) {
 func TestContainerLabelsOnlyIdentify(t *testing.T) {
 	s, e, _ := definitionService(t)
 	ctx := context.Background()
-	if _, err := s.Create(ctx, "alice", Settings{Image: "img", MemoryBytes: 1 << 30, DockerAccess: true, Mounts: []HostMount{{Source: t.TempDir(), Target: "/mnt/data"}}}, noProgress); err != nil {
+	if _, err := s.Create(ctx, "alice", Settings{Image: "img", MemoryBytes: 1 << 30, DockerAccess: true, Volumes: []VolumeGrant{hostVolume(t, s, "data", t.TempDir(), "/mnt/data", false)}}, noProgress); err != nil {
 		t.Fatal(err)
 	}
 	want := map[string]string{LabelManaged: "true", LabelName: "alice", LabelRevision: "1", LabelInstance: "instance-a"}
@@ -482,10 +482,10 @@ func TestCreateContainerMountsVolumes(t *testing.T) {
 	if !slices.Equal(spec.Mounts, want) || !spec.NoNewPrivileges {
 		t.Fatalf("mounts %+v, no new privileges %v", spec.Mounts, spec.NoNewPrivileges)
 	}
-	if c, _ := s.Get(ctx, "alice"); !slices.Equal(c.Settings.Volumes, grants) {
+	if c, _ := s.Get(ctx, "alice"); !slices.Equal(c.Settings.Volumes, withGrantPaths(grants)) {
 		t.Fatalf("settings: %+v", c.Settings)
 	}
-	// Without host folders or volumes, privileges aren't restricted.
+	// Without volumes, privileges aren't restricted.
 	if err := s.seed(ctx, "bob", Settings{Image: "img"}); err != nil {
 		t.Fatal(err)
 	}

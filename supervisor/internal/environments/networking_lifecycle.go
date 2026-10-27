@@ -86,7 +86,7 @@ func (n *Networking) recreate(ctx context.Context, name string, set Settings, pr
 	if _, err = n.ValidateSettings(set); err != nil {
 		return Environment{}, err
 	}
-	if err = n.service.checkHostSources(ctx, set.Mounts, set.DockerAccess); err != nil {
+	if err = n.service.checkHostSources(ctx, n.service.hostSources(set.Volumes), set.DockerAccess); err != nil {
 		return Environment{}, err
 	}
 	// The old container is stopped below: refuse a change it couldn't be

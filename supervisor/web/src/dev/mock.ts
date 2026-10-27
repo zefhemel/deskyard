@@ -298,7 +298,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const c: Environment = {
       name, state: "creating", power: "running", revision: 1, appliedRevision: 0, error: "", conflict: "",
       startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/home/${name}`, image: img.ref, imageTitle: img.title,
-      memoryReclaim: true, imageVersion: img.version, updateAvailable: null, settings: { dockerAccess: b.dockerAccess === true, memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), vpnConnectionId: null, lanExceptions: [], mounts: [], volumes: (b.volumes as Environment["settings"]["volumes"]) ?? [] },
+      memoryReclaim: true, imageVersion: img.version, updateAvailable: null, settings: { dockerAccess: b.dockerAccess === true, memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), vpnConnectionId: null, lanExceptions: [], volumes: (b.volumes as Environment["settings"]["volumes"]) ?? [] },
       vpn: {state:"disabled",changedAt:"0001-01-01T00:00:00Z",exitIpObservedAt:"0001-01-01T00:00:00Z",desiredRevision:0,appliedRevision:0,idle:false},
       access: (b.access as string[]) ?? [], viewers: [], mics: [], terminal: true, terminals: [], forwards: [], agents: [], tokens: 0, stats: null,
     };
@@ -446,7 +446,6 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
       if (typeof b.memoryBytes === "number") c.settings.memoryBytes = b.memoryBytes;
       if (typeof b.nanoCpus === "number") c.settings.nanoCpus = b.nanoCpus;
       if (typeof b.dockerAccess === "boolean") c.settings.dockerAccess = b.dockerAccess;
-      if (Array.isArray(b.mounts)) c.settings.mounts = b.mounts as Environment["settings"]["mounts"];
       if (Array.isArray(b.volumes)) c.settings.volumes = b.volumes as Environment["settings"]["volumes"];
       if (typeof b.image === "string") c.image = b.image;
       changed(c);
