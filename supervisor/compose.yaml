@@ -27,6 +27,13 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # Any host folder, at /data: the supervisor finds its host path itself.
       - ${DESKYARD_DEV_DATA:-../test-instance}:/data
-      - ./bin/deskyard-supervisor-linux:/usr/local/bin/deskyard-supervisor:ro
+      # Long syntax, so a missing binary (no make linux yet) is an error
+      # rather than an empty folder created in its place.
+      - type: bind
+        source: ./bin/deskyard-supervisor-linux
+        target: /usr/local/bin/deskyard-supervisor
+        read_only: true
+        bind:
+          create_host_path: false
     ports:
       - "127.0.0.1:7343:7343"

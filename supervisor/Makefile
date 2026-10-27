@@ -34,9 +34,6 @@ DEV_DATA ?= $(abspath ../test-instance)
 DEV_PORT ?= 7343
 DEV_NAME ?= deskyard-dev
 
-# The Docker engine's architecture, which is the desktop of the container.
-ENGINE_ARCH := $(shell docker info -f '{{.Architecture}}' 2>/dev/null | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
-
 .PHONY: all web build linux dev test test-engine typecheck vet release image clean
 
 all: build
@@ -55,11 +52,20 @@ WEB_SOURCES := $(shell find web/src web/index.html web/package.json web/package-
 internal/web/dist/index.html: $(WEB_SOURCES)
 	$(MAKE) web
 
+# The binary's architecture is the Docker engine's, asked only here.
 linux: internal/web/dist/index.html
-	@test -n "$(ENGINE_ARCH)" || { echo "cannot read the engine's architecture: is Docker running?"; exit 1; }
-	CGO_ENABLED=0 GOOS=linux GOARCH=$(ENGINE_ARCH) $(GO) build -o bin/deskyard-supervisor-linux ./cmd/deskyard-supervisor
+	@arch=$$(docker info -f '{{.Architecture}}' 2>/dev/null) && test -n "$$arch" || \
+		{ echo "cannot read the engine's architecture: is Docker running?"; exit 1; }; \
+	case $$arch in \
+		x86_64|amd64) goarch=amd64 ;; \
+		aarch64|arm64) goarch=arm64 ;; \
+		*) echo "the engine's architecture $$arch is not supported: Deskyard runs on amd64 and arm64"; exit 1 ;; \
+	esac; \
+	echo "CGO_ENABLED=0 GOOS=linux GOARCH=$$goarch $(GO) build -o bin/deskyard-supervisor-linux ./cmd/deskyard-supervisor"; \
+	CGO_ENABLED=0 GOOS=linux GOARCH=$$goarch $(GO) build -o bin/deskyard-supervisor-linux ./cmd/deskyard-supervisor
 
 dev: linux
+	mkdir -p $(DEV_DATA)
 	docker build -q --target base -t deskyard:base .
 	-docker rm -f $(DEV_NAME)
 	docker run -d --name $(DEV_NAME) \
