@@ -94,6 +94,10 @@ func junk(name string) bool {
 	return b == ".DS_Store" || strings.HasPrefix(b, "._")
 }
 
+// Dropped reports whether name is a macOS metadata file, which the tree
+// accepts and never stores.
+func Dropped(name string) bool { return junk(name) }
+
 // hidden is left out of listings: junk, and unfinished writes.
 func hidden(base string) bool {
 	return junk(base) || strings.HasPrefix(base, partPrefix) && strings.HasSuffix(base, partSuffix)
@@ -203,16 +207,14 @@ func (f *FS) createPart(ctx context.Context, m *mount, rel string) (*part, error
 	if _, err := m.root.Stat(path.Dir(rel)); err != nil {
 		return nil, err // a missing parent is the caller's 409
 	}
-	b := make([]byte, 8)
-	_, _ = rand.Read(b)
-	partRel := path.Join(path.Dir(rel), partPrefix+hex.EncodeToString(b)+partSuffix)
+	partRel := path.Join(path.Dir(rel), partPrefix+randomHex()+partSuffix)
 	file, err := m.root.OpenFile(partRel, os.O_RDWR|os.O_CREATE|os.O_EXCL, mode)
 	if err != nil {
 		return nil, err
 	}
 	_ = file.Chmod(mode) // past the umask
 	f.owned(m.root, partRel)
-	return &part{File: file, root: m.root, rel: rel, partRel: partRel, upload: uploadOf(ctx)}, nil
+	return &part{File: file, root: m.root, rel: rel, partRel: partRel, upload: uploadOf(ctx), ctx: ctx}, nil
 }
 
 func (f *FS) RemoveAll(ctx context.Context, name string) error {
@@ -229,16 +231,26 @@ func (f *FS) RemoveAll(ctx context.Context, name string) error {
 	if _, err := m.root.Lstat(rel); err != nil {
 		return err
 	}
+	if r := replacementOf(ctx); r != nil && r.target == path.Clean("/"+name) && r.root == nil {
+		// Set aside rather than removed, until the copy or move replacing it succeeds.
+		stash := path.Join(path.Dir(rel), partPrefix+randomHex()+partSuffix)
+		if err := m.root.Rename(rel, stash); err != nil {
+			return err
+		}
+		r.root, r.rel, r.stash = m.root, rel, stash
+		return nil
+	}
 	return m.root.RemoveAll(rel)
 }
 
 // Rename moves within a mount, or copies to another mount and then removes
 // the source. A failed copy removes what it made and leaves the source.
+// Moving a macOS metadata file onto a real one, or the reverse, is refused.
 func (f *FS) Rename(ctx context.Context, oldName, newName string) error {
-	if junk(oldName) {
+	if junk(oldName) && junk(newName) {
 		return nil
 	}
-	if junk(newName) || !f.Writable(oldName) || !f.Writable(newName) {
+	if junk(oldName) || junk(newName) || !f.Writable(oldName) || !f.Writable(newName) {
 		return errReadOnly
 	}
 	src, srcRel, _, err := f.resolve(oldName)
@@ -259,7 +271,12 @@ func (f *FS) Rename(ctx context.Context, oldName, newName string) error {
 		_ = dst.root.RemoveAll(dstRel)
 		return err
 	}
-	return src.root.RemoveAll(srcRel)
+	// The move has arrived whole. What can't be removed of the source (in a
+	// read-only folder, say) stays behind rather than failing the move: a
+	// failed move would have its copy undone, and with it the files already
+	// removed from the source.
+	_ = src.root.RemoveAll(srcRel)
+	return nil
 }
 
 func (f *FS) copyTree(from *os.Root, fromRel string, to *os.Root, toRel string) error {
@@ -277,9 +294,11 @@ func (f *FS) copyTree(from *os.Root, fromRel string, to *os.Root, toRel string) 
 			return err
 		}
 	case fi.IsDir():
-		if err := to.Mkdir(toRel, fi.Mode().Perm()); err != nil {
+		// Writable while its children are copied, then the source's mode.
+		if err := to.Mkdir(toRel, 0o700); err != nil {
 			return err
 		}
+		defer to.Chmod(toRel, fi.Mode().Perm())
 		dir, err := from.Open(fromRel)
 		if err != nil {
 			return err
@@ -380,15 +399,19 @@ func uploadOf(ctx context.Context) *upload {
 // taken as complete.
 func WithUpload(ctx context.Context, body io.ReadCloser) (context.Context, io.ReadCloser) {
 	u := &upload{}
-	return context.WithValue(ctx, uploadKey{}, u), &uploadBody{ReadCloser: body, u: u}
+	return context.WithValue(ctx, uploadKey{}, u), &uploadBody{ReadCloser: body, u: u, ctx: ctx}
 }
 
 type uploadBody struct {
 	io.ReadCloser
-	u *upload
+	u   *upload
+	ctx context.Context
 }
 
 func (b *uploadBody) Read(p []byte) (int, error) {
+	if err := b.ctx.Err(); err != nil {
+		return 0, err
+	}
 	n, err := b.ReadCloser.Read(p)
 	if err == io.EOF {
 		b.u.complete.Store(true)
@@ -402,12 +425,13 @@ type part struct {
 	root         *os.Root
 	rel, partRel string
 	upload       *upload
+	ctx          context.Context
 }
 
 func (p *part) Close() error {
 	err := p.File.Close()
-	if err == nil && p.upload != nil && !p.upload.complete.Load() {
-		err = ErrIncomplete
+	if err == nil && (p.upload != nil && !p.upload.complete.Load() || p.ctx.Err() != nil) {
+		err = ErrIncomplete // cut short, or the request was cancelled (access revoked)
 	}
 	if err == nil {
 		err = p.root.Rename(p.partRel, p.rel)
@@ -416,6 +440,47 @@ func (p *part) Close() error {
 		_ = p.root.Remove(p.partRel)
 	}
 	return err
+}
+
+// --- replacing ------------------------------------------------------------------
+
+type replacement struct {
+	target     string // the destination, as a name in the tree
+	root       *os.Root
+	rel, stash string
+}
+
+type replacementKey struct{}
+
+func replacementOf(ctx context.Context) *replacement {
+	r, _ := ctx.Value(replacementKey{}).(*replacement)
+	return r
+}
+
+// WithReplacement makes a COPY or MOVE onto target, under the returned
+// context, set the existing target aside instead of removing it first.
+// done(true) then removes what was set aside; done(false) puts it back in
+// place of whatever the failed copy or move left.
+func WithReplacement(ctx context.Context, target string) (context.Context, func(ok bool) error) {
+	r := &replacement{target: path.Clean("/" + target)}
+	return context.WithValue(ctx, replacementKey{}, r), func(ok bool) error {
+		if r.root == nil {
+			return nil
+		}
+		if ok {
+			return r.root.RemoveAll(r.stash)
+		}
+		if err := r.root.RemoveAll(r.rel); err != nil {
+			return err
+		}
+		return r.root.Rename(r.stash, r.rel)
+	}
+}
+
+func randomHex() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 // --- listings -----------------------------------------------------------------

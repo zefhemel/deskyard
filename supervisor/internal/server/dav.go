@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +33,9 @@ const (
 	// clients send it with every request, and checking it costs an argon2id
 	// hash.
 	davPasswordTTL = 5 * time.Minute
+	// davMaxLock caps how long a WebDAV lock lasts without a refresh, so a
+	// client that forgets one doesn't block the others' writes for good.
+	davMaxLock = "Second-3600"
 )
 
 // davAllowed reports whether a may use name's files over WebDAV: a password
@@ -69,6 +73,27 @@ func (s *Server) serveDAV(w http.ResponseWriter, r *http.Request, name string) {
 	}
 	r = r.WithContext(ctx)
 	switch r.Method {
+	case "LOCK":
+		if t := r.Header.Get("Timeout"); t == "" || davLockTooLong(t) {
+			r.Header.Set("Timeout", davMaxLock)
+		}
+	case "COPY", "MOVE":
+		// As the handler reads Overwrite: a COPY overwrites unless told not to, a MOVE only when told to.
+		if overwrite := r.Header.Get("Overwrite"); r.Method == "COPY" && overwrite != "F" || overwrite == "T" {
+			// An existing destination is set aside, and put back if the copy or move fails.
+			if u, err := url.Parse(r.Header.Get("Destination")); err == nil && strings.HasPrefix(u.Path, prefix) {
+				dest := strings.TrimPrefix(u.Path, prefix)
+				ctx, done := davfs.WithReplacement(r.Context(), dest)
+				r = r.WithContext(ctx)
+				rec := &statusRecorder{ResponseWriter: w, code: http.StatusOK}
+				w = rec
+				defer func() {
+					if err := done(rec.code < 300); err != nil {
+						s.Log.Warn("webdav: settling a replaced destination", "path", dest, "err", err)
+					}
+				}()
+			}
+		}
 	case http.MethodGet, http.MethodHead:
 		h := w.Header()
 		h.Set("Content-Disposition", "attachment")
@@ -88,6 +113,33 @@ func (s *Server) serveDAV(w http.ResponseWriter, r *http.Request, name string) {
 		},
 	}
 	h.ServeHTTP(w, r)
+}
+
+// davLockTooLong reports whether a LOCK's Timeout header asks for longer
+// than davMaxLock (or forever).
+func davLockTooLong(t string) bool {
+	for _, v := range strings.Split(t, ",") {
+		v = strings.TrimSpace(v)
+		if s, ok := strings.CutPrefix(v, "Second-"); ok {
+			n, err := strconv.ParseUint(s, 10, 32)
+			return err != nil || n > 3600
+		}
+		if v != "" {
+			return true // Infinite, or nothing we read
+		}
+	}
+	return true
+}
+
+// statusRecorder notes the status a handler answered with.
+type statusRecorder struct {
+	http.ResponseWriter
+	code int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.code = code
+	r.ResponseWriter.WriteHeader(code)
 }
 
 // davMounts is the environment's tree: its home, and its local volumes at
@@ -113,8 +165,9 @@ func (s *Server) davWritable(r *http.Request, files *davfs.FS, prefix string) bo
 	case http.MethodPut, "MKCOL", http.MethodDelete, "PROPPATCH":
 		return files.Writable(target)
 	case "LOCK":
-		_, err := files.Stat(r.Context(), target)
-		return err == nil || files.Writable(target) // locking a new name creates it
+		// Clients lock what they write; not mounts, folders above them or
+		// read-only places, where a lock would only get in others' way.
+		return files.Writable(target)
 	case "MOVE", "COPY":
 		if r.Method == "MOVE" && !files.Writable(target) {
 			return false
@@ -124,7 +177,11 @@ func (s *Server) davWritable(r *http.Request, files *davfs.FS, prefix string) bo
 			return true // the handler refuses it
 		}
 		dest, ok := strings.CutPrefix(u.Path, prefix)
-		return !ok || files.Writable(dest)
+		if !ok {
+			return true // the handler refuses it
+		}
+		// A dropped macOS file can't stand in for a real one.
+		return files.Writable(dest) && (!davfs.Dropped(target) || davfs.Dropped(dest))
 	}
 	return true
 }
@@ -170,7 +227,8 @@ func (s *Server) davCheck(username, password string) (accounts.Account, *credent
 		return accounts.Account{}, nil, false
 	}
 	if s.hasDAVPassword(a.ID) {
-		return accounts.Account{}, nil, false // the WebDAV password replaces the account's
+		auth.CheckPassword(dummyHash, password) // same time as checking it
+		return accounts.Account{}, nil, false   // the WebDAV password replaces the account's
 	}
 	return a, nil, s.davPasswords.check(a, password)
 }

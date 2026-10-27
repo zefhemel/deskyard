@@ -348,3 +348,105 @@ func TestMountPathsMustBeClean(t *testing.T) {
 		}
 	}
 }
+
+func TestFailedOverwriteKeepsTheDestination(t *testing.T) {
+	f, d := newTree(t)
+	if os.Geteuid() == 0 {
+		t.Skip("root reads unreadable files")
+	}
+	write(t, filepath.Join(d.projects, "report.txt"), "old report")
+	write(t, filepath.Join(d.home, "report.txt"), "new report")
+	if err := os.Chmod(filepath.Join(d.home, "report.txt"), 0); err != nil {
+		t.Fatal(err)
+	}
+	// As x/net/webdav moves with Overwrite: T: remove the destination, then rename.
+	ctx, done := WithReplacement(context.Background(), "/share/projects/report.txt")
+	if err := f.RemoveAll(ctx, "/share/projects/report.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Rename(ctx, "/workspace/report.txt", "/share/projects/report.txt"); err == nil {
+		t.Fatal("the move succeeded")
+	}
+	if err := done(false); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, filepath.Join(d.projects, "report.txt")); got != "old report" {
+		t.Fatalf("destination = %q", got)
+	}
+	if got := list(t, f, "/share/projects"); !slices.Equal(got, []string{"report.txt"}) {
+		t.Fatalf("projects lists %v", got)
+	}
+
+	// A successful one replaces it and leaves nothing set aside.
+	if err := os.Chmod(filepath.Join(d.home, "report.txt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, done = WithReplacement(context.Background(), "/share/projects/report.txt")
+	if err := f.RemoveAll(ctx, "/share/projects/report.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Rename(ctx, "/workspace/report.txt", "/share/projects/report.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := done(true); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, filepath.Join(d.projects, "report.txt")); got != "new report" {
+		t.Fatalf("destination = %q", got)
+	}
+	if entries, _ := os.ReadDir(d.projects); len(entries) != 1 {
+		t.Fatalf("projects holds %v", entries)
+	}
+}
+
+func TestCrossMountMoveOfReadOnlyFolders(t *testing.T) {
+	f, d := newTree(t)
+	if err := os.MkdirAll(filepath.Join(d.home, "cache", "pkg"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(d.home, "cache", "pkg", "x.go"), "package x")
+	for _, p := range []string{filepath.Join(d.home, "cache", "pkg"), filepath.Join(d.home, "cache")} {
+		if err := os.Chmod(p, 0o555); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { _ = filepath.WalkDir(filepath.Dir(d.home), func(p string, e fs.DirEntry, _ error) error { return os.Chmod(p, 0o755) }) })
+	// The copy arrives whole with the folders' modes; what of the read-only
+	// source can't be removed stays, and the move still succeeds.
+	if err := f.Rename(context.Background(), "/workspace/cache", "/share/projects/cache"); err != nil {
+		t.Fatalf("the move failed: %v", err)
+	}
+	if got := read(t, filepath.Join(d.projects, "cache", "pkg", "x.go")); got != "package x" {
+		t.Fatalf("x.go = %q", got)
+	}
+	if fi, _ := os.Stat(filepath.Join(d.projects, "cache", "pkg")); fi == nil || fi.Mode().Perm() != 0o555 {
+		t.Fatalf("pkg = %v", fi)
+	}
+}
+
+func TestCancelledUploadDoesNotLand(t *testing.T) {
+	f, d := newTree(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	ctx, body := WithUpload(ctx, io.NopCloser(strings.NewReader("revoked")))
+	file, err := f.OpenFile(ctx, "/workspace/readme.txt", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o666)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(file, body); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	if err := file.Close(); !errors.Is(err, ErrIncomplete) {
+		t.Fatalf("close = %v", err)
+	}
+	if got := read(t, filepath.Join(d.home, "readme.txt")); got != "hello" {
+		t.Fatalf("readme.txt = %q", got)
+	}
+}
+
+func TestDroppedFilesDontReplaceRealOnes(t *testing.T) {
+	f, _ := newTree(t)
+	if err := f.Rename(context.Background(), "/workspace/._readme.txt", "/workspace/readme.txt"); !errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("rename = %v", err)
+	}
+}

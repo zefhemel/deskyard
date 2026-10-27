@@ -414,6 +414,7 @@ func (s *Server) environmentRemoved(name string) error {
 	}
 	s.sweep() // the environment's shares end with it
 	s.activity.ForgetDesktop(name)
+	s.davLocks.forget(name)
 	s.events.publish(event{kind: "removed", environment: name, data: map[string]string{"name": name}})
 	return err
 }

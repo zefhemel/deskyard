@@ -381,3 +381,71 @@ func tokenLogin(t *testing.T, s *Server, ts *httptest.Server, username string) *
 	jar.SetCookies(nil, rec.Result().Cookies())
 	return &http.Client{Jar: jar}
 }
+
+func TestDAVLocksAndOverwrites(t *testing.T) {
+	s, ts := davServer(t)
+	home := s.Environments.Layout.HomeOf("alice")
+	projects := s.Environments.Layout.VolumeOf("projects")
+	lockBody := `<?xml version="1.0" encoding="utf-8"?><D:lockinfo xmlns:D="DAV:"><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockinfo>`
+
+	// No locks on the tree's own folders or read-only places.
+	for _, p := range []string{"/alice/dav/", "/alice/dav/workspace", "/alice/dav/share/photos/x"} {
+		if got := dav(t, ts, "LOCK", p, "admin", "pw", lockBody, map[string]string{"Depth": "infinity"}).StatusCode; got != 403 {
+			t.Fatalf("LOCK %s: %d", p, got)
+		}
+	}
+	// A lock asked for forever lasts an hour.
+	code, body := davBodyWith(t, ts, "LOCK", "/alice/dav/workspace/new.txt", lockBody, map[string]string{"Timeout": "Infinite"})
+	if code != 200 && code != 201 || !strings.Contains(body, "Second-3600") {
+		t.Fatalf("LOCK: %d %s", code, body)
+	}
+
+	// MOVE onto an existing file in another mount replaces it, leaving nothing behind.
+	if err := os.WriteFile(filepath.Join(projects, "r.txt"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "r.txt"), []byte("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := dav(t, ts, "MOVE", "/alice/dav/workspace/r.txt", "admin", "pw", "", map[string]string{"Destination": ts.URL + "/alice/dav/share/projects/r.txt", "Overwrite": "T"}).StatusCode; got != 204 {
+		t.Fatalf("MOVE: %d", got)
+	}
+	if b, _ := os.ReadFile(filepath.Join(projects, "r.txt")); string(b) != "new" {
+		t.Fatalf("r.txt = %q", b)
+	}
+	if entries, _ := os.ReadDir(projects); len(entries) != 1 {
+		t.Fatalf("projects holds %v", entries)
+	}
+
+	// A dropped macOS file can't replace a real one.
+	if got := dav(t, ts, "MOVE", "/alice/dav/share/projects/._r.txt", "admin", "pw", "", map[string]string{"Destination": ts.URL + "/alice/dav/share/projects/r.txt", "Overwrite": "T"}).StatusCode; got != 403 {
+		t.Fatalf("MOVE ._r.txt: %d", got)
+	}
+	if b, _ := os.ReadFile(filepath.Join(projects, "r.txt")); string(b) != "new" {
+		t.Fatalf("r.txt = %q", b)
+	}
+}
+
+func davBodyWith(t *testing.T, ts *httptest.Server, method, path, body string, header map[string]string) (int, string) {
+	t.Helper()
+	req, _ := http.NewRequest(method, ts.URL+path, strings.NewReader(body))
+	req.SetBasicAuth("admin", "pw")
+	for k, v := range header {
+		req.Header.Set(k, v)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	b, _ := io.ReadAll(res.Body)
+	return res.StatusCode, string(b)
+}
+
+func TestDAVLockTimeouts(t *testing.T) {
+	for header, long := range map[string]bool{"Second-60": false, "Second-3600": false, "Second-3601": true, "Infinite": true, "Infinite, Second-60": true, "Second-x": true, " Second-30 ": false} {
+		if got := davLockTooLong(header); got != long {
+			t.Errorf("%q: %v", header, got)
+		}
+	}
+}
