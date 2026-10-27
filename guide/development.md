@@ -53,7 +53,8 @@ docs/               local copy of the SilverBullet project space (ignored by git
 ```
 
 CI: `.github/workflows/images.yml` builds all `docker-bake.hcl` targets together for
-amd64 and arm64 on native runners, weekly and on change;
+amd64 and arm64 on native runners, weekly and on change (of `supervisor/`, only
+changes to the `deskyard` command's packages count);
 `.github/workflows/supervisor.yml` tests the supervisor, publishes its image,
 builds the `deskyard` command binaries (the supervisor is released only as
 the image) and puts them in the `edge` pre-release (main) or the GitHub
