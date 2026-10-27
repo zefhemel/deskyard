@@ -27,9 +27,9 @@ Everyone can change their own password (password accounts), see their
 **Signed-in devices** and sign each out, and **Sign out everywhere**, which
 ends every browser login of the account (from the account menu).
 
-**Share** on an environment's **Sharing** tab (or `deskyard share create`)
-makes a token account with one grant, full or observe-only, with an optional
-time limit, and shows a link such as `https://host/link#dyl_…` to send through
+**Share** in the bar above an environment's desktop, on its **Sharing** tab,
+or `deskyard share create` makes a token account with one grant, full or
+observe-only, with an optional time limit, and shows a link such as `https://host/link#dyl_…` to send through
 a chat app. The link works once: opening it shows who it signs in as and a
 **Sign in** button, so link previews and scanners can't use it up. A used,
 replaced or revoked link answers "This link was already used or replaced".
