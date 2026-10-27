@@ -26,20 +26,23 @@ export function SharingTab({ environment: c }: { environment: Environment }) {
 
   return (
     <>
-      <div class="flex items-center gap-4 border-b border-line px-4 py-3.5 max-sm:flex-col max-sm:items-start">
-        <p class="m-0 flex-1 text-sm text-muted">
-          {me.share
-            ? `Everyone ${c.name} is shared with. Shares can't share it further.`
-            : `Share ${c.name} with someone through a link that signs them in once: full access or observe only, for as long as you like. They show up among the viewers, and Revoke cuts them off at once.`}
-        </p>
+      <div class="flex items-center gap-4 border-b border-line px-5 py-4 max-sm:flex-col max-sm:items-start">
+        <div class="flex-1">
+          <h2 class="mt-0 mb-1 text-base font-semibold">Shares</h2>
+          <p class="m-0 text-sm text-muted">
+            {me.share
+              ? `Everyone ${c.name} is shared with. Shares can't share it further.`
+              : `Share ${c.name} with someone through a link that signs them in once: full access or observe only, for as long as you like. They show up among the viewers, and Revoke cuts them off at once.`}
+          </p>
+        </div>
         {!me.share && (
           <Button variant="primary" onClick={() => setSharing(true)}>
             Share
           </Button>
         )}
       </div>
-      {shares.error && <p class="m-0 px-4 py-3.5 text-sm text-danger">{shares.error}</p>}
-      {shares.data && shares.data.length === 0 && <p class="m-0 px-4 py-3.5 text-sm text-muted">{c.name} isn't shared with anyone.</p>}
+      {shares.error && <p class="m-0 px-5 py-3.5 text-sm text-danger">{shares.error}</p>}
+      {shares.data && shares.data.length === 0 && <p class="m-0 px-5 py-3.5 text-sm text-muted">{c.name} isn't shared with anyone.</p>}
       {shares.data && shares.data.length > 0 && (
         <div class="overflow-x-auto">
           <table class="w-full border-collapse text-sm">

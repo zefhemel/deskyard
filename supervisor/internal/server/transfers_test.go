@@ -5,8 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -52,46 +50,6 @@ func transferClient(t *testing.T, s *Server, ts *httptest.Server, how string) (d
 
 // A download that is running ends when its access does: it doesn't stream
 // the rest of the file.
-func TestRevocationEndsRunningDownload(t *testing.T) {
-	for how, revoke := range transferRevocations {
-		t.Run(how, func(t *testing.T) {
-			s, ts, root := newFilesServer(t)
-			big := bytes.Repeat([]byte("0123456789abcdef"), 4<<20) // 64 MiB
-			if err := os.WriteFile(filepath.Join(root, "big.bin"), big, 0o644); err != nil {
-				t.Fatal(err)
-			}
-			do, cred := transferClient(t, s, ts, how)
-			req, _ := http.NewRequest("GET", ts.URL+"/api/environments/alice/download?path=big.bin", nil)
-			resp, err := do(req)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer resp.Body.Close()
-			if resp.StatusCode != 200 {
-				t.Fatalf("download: %d", resp.StatusCode)
-			}
-			if _, err := io.ReadFull(resp.Body, make([]byte, 1)); err != nil {
-				t.Fatal(err)
-			}
-			revoke(t, s, cred)
-			got := make(chan int64, 1)
-			go func() {
-				n, _ := io.Copy(io.Discard, resp.Body)
-				got <- n + 1
-			}()
-			select {
-			case n := <-got:
-				if n >= int64(len(big)) {
-					t.Errorf("the whole file came after %s", how)
-				}
-			case <-time.After(10 * time.Second):
-				t.Fatalf("the download went on after %s", how)
-			}
-		})
-	}
-}
-
-// An upload that is running ends when its access does: nothing lands.
 func TestRevocationEndsRunningUpload(t *testing.T) {
 	for how, revoke := range transferRevocations {
 		t.Run(how, func(t *testing.T) {

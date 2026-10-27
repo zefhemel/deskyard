@@ -273,3 +273,46 @@ def test_settings_sections_keep_unsaved_changes(mock_ui, width):
         expect(page.get_by_label("Path in the environment")).to_have_value("/srv/photos")
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         browser.close()
+
+
+def test_environment_bar_shares(mock_ui):
+    with sync_playwright() as p:
+        browser, page = mock_page(p, mock_ui, "/alice/")
+        bar = page.locator("[data-environment-bar]")
+        bar.get_by_role("button", name="Share", exact=True).click()
+        dialog = page.get_by_role("dialog").filter(has=page.get_by_role("heading", name="Share alice"))
+        dialog.get_by_label("Name").fill("guest")
+        dialog.get_by_role("button", name="Share", exact=True).click()
+        link = page.get_by_role("dialog").filter(has=page.get_by_role("heading", name="alice is shared with guest"))
+        expect(link.get_by_role("button", name="Copy link")).to_be_visible()
+        browser.close()
+
+
+def test_viewers_panel_revokes_a_share(mock_ui):
+    with sync_playwright() as p:
+        browser, page = mock_page(p, mock_ui, "/alice/")
+        toggle = page.locator("[data-viewers-toggle]")
+        toggle.click()
+        panel = page.locator("h3", has_text="Viewing").locator("..")
+        expect(panel).to_be_visible()
+        # The panel opens under its button, at the bar's right.
+        box, at = panel.bounding_box(), toggle.bounding_box()
+        assert box["x"] + box["width"] >= at["x"] + at["width"] - 20, (box, at)
+        # anna has full access through a grant, not a share: nothing to revoke.
+        expect(panel.get_by_role("button", name="Revoke anna")).to_have_count(0)
+        panel.get_by_role("button", name="Revoke sanne").click()
+        panel.get_by_role("button", name="Revoke now").click()
+        expect(page.get_by_text("Revoked sanne")).to_be_visible()
+        browser.close()
+
+
+def test_access_tab_has_accounts_and_shares(mock_ui):
+    with sync_playwright() as p:
+        # An old Sharing link opens Access, which now holds both.
+        browser, page = mock_page(p, mock_ui, "/environments/alice?tab=sharing")
+        expect(page.get_by_role("heading", name="Accounts")).to_be_visible()
+        expect(page.get_by_role("heading", name="Shares")).to_be_visible()
+        expect(page.get_by_role("button", name="Share", exact=True)).to_be_visible()
+        expect(page.get_by_role("button", name="Sharing", exact=True)).to_have_count(0)
+        expect(page.get_by_role("tab", name="Sharing", exact=True)).to_have_count(0)
+        browser.close()

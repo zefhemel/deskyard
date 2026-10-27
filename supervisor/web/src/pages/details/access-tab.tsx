@@ -45,6 +45,7 @@ export function AccessTab({ environment: c }: { environment: Environment }) {
     .map((g) => g.username);
   return (
     <div class="max-w-[620px] px-5 py-5">
+      <h2 class="mt-0 mb-1 text-base font-semibold">Accounts</h2>
       <p class="mt-0 mb-3.5 text-sm text-muted">
         Who can open {c.name}. Full access is everything: its desktop, terminals and files, starting and stopping it, the CLI and sharing it.
         Observe only is watching its desktop, nothing else. Changing this doesn't restart anything.

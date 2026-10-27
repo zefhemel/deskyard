@@ -46,8 +46,7 @@ keeps the files unless you tick "Delete the files", which isn't offered for a
 host folder. Removing an environment, even with its files, never touches
 volumes. If a volume's folder goes missing, the environment reports an error and
 doesn't start until the folder is back; Deskyard never recreates it. Volumes are
-outside the supervisor's Files and Download views, which browse only
-`/workspace`. There is no CLI for volumes yet; they are managed in the web UI
+never written by file uploads, which go into `/workspace/Desktop`. There is no CLI for volumes yet; they are managed in the web UI
 or through `/api/volumes`.
 
 Per-environment host folders were replaced by host volumes. A data folder whose

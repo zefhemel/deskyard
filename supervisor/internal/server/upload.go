@@ -23,6 +23,7 @@ import (
 // complete, so a half-written file never shows up on the desktop.
 
 const (
+	filesRoot     = "/workspace"
 	uploadDir     = "/workspace/Desktop"
 	maxUploadName = 200 // bytes; the .part name adds a dot, a random part and ".part"
 )
@@ -204,4 +205,32 @@ func (s *Server) dropPart(c environments.Environment, part string) {
 	if _, err := s.execOutput(ctx, c, "rm", "-f", "--", part); err != nil {
 		s.Log.Warn("couldn't remove an unfinished upload", "environment", c.Name, "part", part, "err", err)
 	}
+}
+
+// execStream runs cmd as the desktop's user and hands its stdout to fn. An exit
+// code above okUpTo is an error, as is fn's.
+func (s *Server) execStream(ctx context.Context, c environments.Environment, okUpTo int, cmd []string, fn func(stdout io.Reader) error) error {
+	result, err := engine.Run(ctx, s.Eng, c.Container.ID, engine.ExecSpec{Cmd: cmd, User: "user", WorkDir: filesRoot, Env: append([]string{"LC_ALL=C"}, execEnv...)}, engine.RunOptions{Consume: fn, StderrLimit: 4096})
+	if err != nil {
+		return err
+	}
+	if result.Code > okUpTo {
+		return &execError{result.Code, strings.TrimSpace(string(result.Stderr))}
+	}
+	return nil
+}
+
+// limitedWriter retains a prefix while draining uploads' diagnostic output.
+type limitedWriter struct {
+	w io.Writer
+	n int
+}
+
+func (l *limitedWriter) Write(p []byte) (int, error) {
+	if l.n > 0 {
+		k := min(len(p), l.n)
+		_, _ = l.w.Write(p[:k])
+		l.n -= k
+	}
+	return len(p), nil
 }

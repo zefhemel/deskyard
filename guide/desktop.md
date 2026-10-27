@@ -9,10 +9,11 @@ mic and gamepads. It resizes to fit your browser window (or keeps a locked
 size). The bar above it shows the connection as a dot and the VPN as a shield,
 and has icon buttons (with tooltips) for sound and mic, Display (lock size,
 resolution and quality), the clipboard, keys the browser would otherwise take
-(Ctrl+Alt+Del, Alt+Tab, ...) and a file download browser. Drop files on the
-screen to copy them into the environment. Badges show who has their mic on.
+(Ctrl+Alt+Del, Alt+Tab, ...), and **Share** for people with full access who
+didn't get in through a share. Drop files on the screen to copy them into the
+environment. Badges show who has their mic on.
 The bar's tabs show the desktop next to the environment's shared terminal
-sessions. On phones, Display, Keys and Download are in the scrollable More
+sessions. On phones, Display and Keys are in the scrollable More
 menu, and the tabs get a row of their own.
 
 The bar also shows terminal clients and programs working in the environment

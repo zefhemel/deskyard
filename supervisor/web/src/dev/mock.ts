@@ -3,7 +3,7 @@
 // closely enough to click through every page. Sign in as zef (admin), anna
 // (regular; she observes notes) or sam with any password; "wrong" fails.
 // sanne observes alice: sign in as her through a link from "New link" on
-// alice's Sharing tab. /link#dyl_5a17e0aa_mock-bob-link signs in as bob once,
+// alice's Access tab. /link#dyl_5a17e0aa_mock-bob-link signs in as bob once,
 // and /cli-login#mock-request is a pending `deskyard login`.
 import { createHash, randomBytes } from "node:crypto";
 import { readFileSync, existsSync } from "node:fs";
@@ -765,7 +765,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     for (const g of grants) {
       const a = accounts.find((x) => x.username === g.username);
       if (!a) return json(res, 400, { error: `no account ${g.username}` });
-      if (a.sharedBy) return json(res, 400, { error: `${g.username} is a share; change it on the Sharing tab` });
+      if (a.sharedBy) return json(res, 400, { error: `${g.username} is a share; change it under Shares on the Access tab` });
     }
     for (const a of accounts) {
       if (a.admin || a.sharedBy) continue;

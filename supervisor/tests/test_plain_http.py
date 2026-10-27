@@ -152,12 +152,11 @@ def test_plain_http_screen(supervisor, desktop, name, remote):
         browser.close()
 
 
-def test_plain_http_upload_and_download(supervisor, desktop, name, tmp_path):
+def test_plain_http_upload(supervisor, desktop, name):
     base = insecure_base(supervisor)
-    put(name, "docs/hello.txt", b"hello over http\n")
     with sync_playwright() as p:
         browser = launch(p)
-        page = sign_in(browser, base, accept_downloads=True)
+        page = sign_in(browser, base)
         open_desktop(page, base, name)
 
         # Upload: a drop on the screen lands in ~/Desktop.
@@ -166,16 +165,6 @@ def test_plain_http_upload_and_download(supervisor, desktop, name, tmp_path):
         expect(page.get_by_text(f"Drop to copy into {name}")).to_be_visible()
         assert page.evaluate(DRAG, ["overlay", "drop", files]) is True
         expect(page.get_by_text("Copied dropped-http.txt")).to_be_visible(timeout=20000)
-
-        # Download.
-        page.get_by_role("button", name="Download", exact=True).click()
-        dialog = page.get_by_role("dialog")
-        dialog.get_by_role("button", name="docs").click()
-        with page.expect_download() as d:
-            dialog.get_by_role("link", name="Download hello.txt").click()
-        path = tmp_path / "got.txt"
-        d.value.save_as(path)
-        assert path.read_bytes() == b"hello over http\n"
         browser.close()
     assert in_desktop(name, "cat", "/workspace/Desktop/dropped-http.txt") == "dropped over http\n"
 

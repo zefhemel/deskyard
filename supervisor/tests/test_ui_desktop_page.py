@@ -50,7 +50,7 @@ def test_desktop_page_shows_stream(supervisor, desktop, name, browser_name, tmp_
         assert visible == []
         expect(page.get_by_role("link", name="Environments", exact=True)).to_have_attribute("href", "/")
         xs = []
-        for n in ("Audio", "Display", "Clipboard", "Keys", "Download", "More"):
+        for n in ("Audio", "Display", "Clipboard", "Keys", "More"):
             b = page.get_by_role("button", name=n, exact=True)
             expect(b).to_be_visible()
             xs.append(b.bounding_box()["x"])
@@ -179,7 +179,7 @@ def test_phone_bar(supervisor, desktop, name, viewport):
         open_desktop(page, supervisor.base, name, status=False)
         # Below 640 wide these move into More; from 640 they stay in the bar.
         compact = viewport["width"] < 640
-        moved = ("Display", "Keys", "Download")
+        moved = ("Display", "Keys")
         for n in moved:
             b = page.get_by_role("button", name=n, exact=True)
             expect(b).to_be_hidden() if compact else expect(b).to_be_visible()
@@ -197,16 +197,15 @@ def test_phone_bar(supervisor, desktop, name, viewport):
         page.set_viewport_size({"width": viewport["width"], "height": 400})
         assert wait_until(menu_fits, 5), menu.bounding_box()
         if compact:
-            for n in ("Lock size", "Send Esc", "Quality: Low", "Download…"):
+            for n in ("Lock size", "Send Esc", "Quality: Low", "Quality: Lossless"):
                 expect(menu.get_by_text(n, exact=True)).to_be_visible()
             # The last action stays reachable even on a short landscape screen.
-            menu.get_by_role("menuitem", name="Download…", exact=True).click()
+            menu.get_by_text("Quality: Lossless", exact=True).click()
         else:
-            for n in ("Lock size", "Send Esc", "Quality: Low", "Download…"):
+            for n in ("Lock size", "Send Esc", "Quality: Low", "Quality: Lossless"):
                 expect(menu.get_by_text(n, exact=True)).to_be_hidden()
             page.keyboard.press("Escape")
-            page.get_by_role("button", name="Download", exact=True).click()
-        expect(page.get_by_role("dialog")).to_be_visible()
+        expect(menu).to_be_hidden()
         browser.close()
 
 

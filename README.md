@@ -15,7 +15,7 @@ it opens the same desktop, at the same time if they like.
 
 - **XFCE desktop in the browser**, streamed with
   [Selkies](https://github.com/selkies-project/selkies): picture, sound, your
-  mic, gamepads, clipboard, file upload and download, and touch controls on
+  mic, gamepads, clipboard, file upload, and touch controls on
   phones and tablets.
 - **Shared terminals** next to the desktop, joinable from the browser, the
   desktop itself or your own terminal.

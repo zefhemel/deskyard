@@ -21,7 +21,7 @@ import { SettingsTab } from "./details/settings-tab.tsx";
 import { SharingTab } from "./details/sharing-tab.tsx";
 import { BackupsPanel } from "../components/backups-panel.tsx";
 
-type Tab = "overview" | "processes" | "sharing" | "settings" | "access" | "backups";
+type Tab = "overview" | "processes" | "settings" | "access" | "backups";
 
 export function DetailsPage() {
   const { params } = useRoute();
@@ -66,21 +66,15 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
   const full = c.level !== "observe";
   const tabs: { id: Tab; label: string }[] = [
     { id: "overview", label: "Overview" },
-    ...(full
-      ? [
-          { id: "processes" as const, label: "Processes" },
-          { id: "sharing" as const, label: "Sharing" },
-        ]
-      : []),
-    ...(me.admin
-      ? [
-          { id: "settings" as const, label: "Settings" },
-          { id: "access" as const, label: "Access" },
-          { id: "backups" as const, label: "Backups" },
-        ]
-      : []),
+    ...(full ? [{ id: "processes" as const, label: "Processes" }] : []),
+    ...(me.admin ? [{ id: "settings" as const, label: "Settings" }] : []),
+    // Who can use it: accounts' grants (admins) and the shares (everyone with full access).
+    ...(full ? [{ id: "access" as const, label: "Access" }] : []),
+    ...(me.admin ? [{ id: "backups" as const, label: "Backups" }] : []),
   ];
-  const tab: Tab = tabs.find((t) => t.id === query.tab)?.id ?? "overview";
+  // The Sharing tab became part of Access.
+  const asked = query.tab === "sharing" ? "access" : query.tab;
+  const tab: Tab = tabs.find((t) => t.id === asked)?.id ?? "overview";
   const setTab = (t: Tab) =>
     route(`/environments/${c.name}${t === "overview" ? "" : `?tab=${t}`}`, true);
 
@@ -163,9 +157,15 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
       ) : (
         <div class="overflow-hidden rounded-[10px] border border-line bg-surface">
           {tab === "processes" && <ProcessesTab environment={c} />}
-          {tab === "sharing" && <SharingTab environment={c} />}
           {tab === "settings" && <SettingsTab environment={c} />}
-          {tab === "access" && <AccessTab environment={c} />}
+          {tab === "access" && (
+            <>
+              {me.admin && <AccessTab environment={c} />}
+              <div class={me.admin ? "border-t border-line" : undefined}>
+                <SharingTab environment={c} />
+              </div>
+            </>
+          )}
         </div>
       )}
     </Page>
@@ -288,7 +288,7 @@ function Facts({
             <dd class="m-0">{limits(c.settings)}</dd>
             <dt class="text-muted">Sharing</dt>
             <dd class="m-0">
-              <button type="button" class={link} onClick={() => onTab("sharing")}>
+              <button type="button" class={link} onClick={() => onTab("access")}>
                 Shares and links
               </button>
             </dd>

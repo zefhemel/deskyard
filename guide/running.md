@@ -33,7 +33,7 @@ serve it over https or accept what plain http costs.
 over http as insecure and turn features off. The desktop page says so in
 its bar ("Not secure: some features off"). What still works: the picture,
 keyboard and mouse, sound, the Clipboard button's text box (both ways),
-Lock size, Quality, upload, download and the CLI activity overlay. Gamepads
+Lock size, Quality, upload and the CLI activity overlay. Gamepads
 should too in Chromium and Safari, which keep the Gamepad API over http. What doesn't:
 
 - **Mic**: the browser has no `getUserMedia`. The Audio panel shows it off,

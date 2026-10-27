@@ -13,7 +13,7 @@ import { Menu, type MenuItem } from "../components/menu.tsx";
 import { ViewersPopover } from "../components/viewers-popover.tsx";
 import { notify, notifyError } from "../components/toast.tsx";
 import { Button, cx, Dialog, MORE } from "../components/ui.tsx";
-import { DownloadDialog } from "../dialogs/download.tsx";
+import { LinkDialog, ShareDialog } from "../dialogs/share.tsx";
 import { useEnvironment, useLive } from "../live.tsx";
 import { agentTitle } from "../lib/activity-format.ts";
 import { leftNeighbour, loadOrder, orderTabs, saveOrder, vanished } from "../lib/tab-order.ts";
@@ -23,7 +23,7 @@ import { isShell, needsConfirm, others } from "../terminal/sessions.ts";
 import { TouchControls, useVisibleViewport } from "./touch-controls.tsx";
 import { ZoomViewport } from "./zoom-viewport.tsx";
 import { AudioControl } from "./audio-panel.tsx";
-import { ClipboardIcon, DisplayIcon, FolderIcon, KeyboardIcon, ShieldIcon } from "./bar-icons.tsx";
+import { ClipboardIcon, DisplayIcon, KeyboardIcon, ShieldIcon } from "./bar-icons.tsx";
 import { barButton, type BarSlots, ConnDot, EnvironmentTabs, panelId, pressed, tabId, useTabHooks } from "./tabs.tsx";
 import { avSyncWanted, startAvSync } from "./avsync.ts";
 import { ClipboardPopover } from "./clipboard.tsx";
@@ -156,6 +156,10 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
   const [states, setStates] = useState<Record<string, string>>({});
   const [confirm, setConfirm] = useState<{ session: string; others: number; command: string } | null>(null);
   const [viewersOpen, setViewersOpen] = useState(false);
+  // Share, as under Shares on the environment's Access tab: full access, but not a share itself.
+  const canShare = !observing && !me.share;
+  const [sharing, setSharing] = useState(false);
+  const [shared, setShared] = useState<{ username: string; link: string } | null>(null);
   const seen = useRef(new Set<string>());
   const ending = useRef(new Set<string>());
   // A deep link's session the list hasn't shown: if it turns out ended, Desktop shows.
@@ -439,6 +443,11 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
         />
         <div class="ml-auto flex h-[46px] shrink-0 items-center gap-0.5">
           <span ref={setControls} class="contents" />
+          {canShare && (
+            <button type="button" class={cx(barButton, sharing && pressed)} title={`Share ${c.name} through a link`} onClick={() => setSharing(true)}>
+              Share
+            </button>
+          )}
           {present && (
             <button
               type="button"
@@ -466,8 +475,32 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
             )}
           />
         </div>
-        {viewersOpen && present && <ViewersPopover name={c.name} viewers={c.viewers} observers={c.observers} mics={c.mics} forwards={c.forwards} agents={c.agents} onClose={closeViewers} />}
+        {viewersOpen && present && <ViewersPopover name={c.name} viewers={c.viewers} observers={c.observers} mics={c.mics} forwards={c.forwards} agents={c.agents} canShare={canShare} onClose={closeViewers} />}
       </div>
+      {sharing && (
+        <ShareDialog
+          environment={c.name}
+          onClose={() => {
+            setSharing(false);
+            tabHooks.current?.refocus();
+          }}
+          onShared={(username, link) => {
+            setSharing(false);
+            setShared({ username, link });
+          }}
+        />
+      )}
+      {shared && (
+        <LinkDialog
+          username={shared.username}
+          link={shared.link}
+          title={`${c.name} is shared with ${shared.username}`}
+          onClose={() => {
+            setShared(null);
+            tabHooks.current?.refocus();
+          }}
+        />
+      )}
       <div class="relative flex min-h-0 flex-1 flex-col">
         <div role="tabpanel" id={panelId(null)} aria-labelledby={tabId(null)} hidden={active !== null} class={cx("relative min-h-0 flex-1 flex-col", active === null ? "flex" : "hidden")}>
           {active === null && <Desktop environment={c} slots={slots} />}
@@ -562,7 +595,6 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
   const [frameKey, setFrameKey] = useState(0);
   const [remoteClip, setRemoteClip] = useState<string | null>(null);
   const [clipOpen, setClipOpen] = useState(false);
-  const [downloadOpen, setDownloadOpen] = useState(false);
   const [quality, setQuality] = useState(() => stored(QUALITY_KEY, parseQuality, defaultQuality));
   const [locked, setLocked] = useState(() => stored<Size | null>(LOCK_SIZE_KEY, parseSize, null));
   // Whether this page owns the display (null until known), and the preset the
@@ -698,10 +730,6 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
     setClipOpen(false);
     refocus();
   }, [refocus]);
-  const closeDownload = useCallback(() => {
-    setDownloadOpen(false);
-    refocus();
-  }, [refocus]);
 
   const toggleKeyboard = () => screen?.keyboard?.(!keyboard);
   const chooseTouchMode = (next: boolean) => {
@@ -760,10 +788,8 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
           })),
         ]
       : []),
-    ...(running && !observing ? [{ label: "Download…", onSelect: () => setDownloadOpen(true), separated: true, class: compactOnly }] : []),
   ];
   useTabHooks(slots, true, { menu: () => moreItems, refocus });
-
 
   return (
     <>
@@ -813,9 +839,6 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
                   </button>
                 )}
               />
-              <button type="button" aria-haspopup="dialog" aria-label="Download" title="Download files" class={cx(barButton, "px-2 max-sm:hidden", downloadOpen && pressed)} onClick={() => setDownloadOpen(true)}>
-                <FolderIcon />
-              </button>
             </>
           )}
           {clipOpen && controlling && (
@@ -855,7 +878,6 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
       )}
       {running && !observing && <DropZone environment={c.name} frame={frame} frameKey={frameKey} />}
       {showing && zoom === 1 && <ActivityOverlay name={c.name} geometry={() => selkiesScreenGeometry(frame.current)} />}
-      {downloadOpen && running && <DownloadDialog environment={c} onClose={closeDownload} />}
     </>
   );
 }
