@@ -235,13 +235,6 @@ func TestVPNPowerTargetAndCachedStatus(t *testing.T) {
 	if err != nil || addr != "127.0.0.1:"+strconv.Itoa(s.Cfg.DesktopPort) || token == "" {
 		t.Fatalf("target %s %v", addr, err)
 	}
-	// Without the test port the proxy dials the desktop port.
-	s.Cfg.DesktopPort = 0
-	addr, _, err = s.Target(ctx, "alice")
-	if err != nil || addr != "127.0.0.1:8080" {
-		t.Fatalf("default port target %s %v", addr, err)
-	}
-	s.Cfg.DesktopPort = e.port
 	for range 5 {
 		s.List(ctx)
 		s.Get(ctx, "alice")
@@ -703,5 +696,23 @@ func TestVPNNeverDirectOnFailure(t *testing.T) {
 	direct("recovery")
 	if got, _ = s.Get(ctx, "alice"); !got.Container.Running() || got.Container.NetworkContainer != "gateway" {
 		t.Fatalf("not recovered into the namespace: %+v", got)
+	}
+}
+
+// Without the test seam the proxy dials the desktop's address on its own port:
+// the container's IP, or its name when the engine reported none.
+func TestTargetUsesContainerAddressAndDefaultPort(t *testing.T) {
+	s, e, _, _ := pairSetup(t)
+	ctx := context.Background()
+	if _, err := s.Create(ctx, "alice", Settings{Image: "img"}, noProgress); err != nil {
+		t.Fatal(err)
+	}
+	s.Cfg.DesktopPort = 0
+	if addr, _, err := s.Target(ctx, "alice"); err != nil || addr != "127.0.0.1:8080" {
+		t.Fatalf("with an address: %s %v", addr, err)
+	}
+	e.cs["deskyard-alice"].IP = map[string]string{}
+	if addr, _, err := s.Target(ctx, "alice"); err != nil || addr != "deskyard-alice:8080" {
+		t.Fatalf("without an address: %s %v", addr, err)
 	}
 }

@@ -1119,8 +1119,9 @@ func (s *Service) removed(name string) error {
 	return s.Removed(name)
 }
 
-// removeNetwork removes an environment's network. The supervisor joined it to reach the environment, and has to leave it first. A network of
-// its name that isn't this supervisor's is left alone (ErrConflict).
+// removeNetwork removes an environment's network. The supervisor joined it to
+// reach the environment, and has to leave it first. A network of its name that
+// isn't this supervisor's is left alone (ErrConflict).
 func (s *Service) removeNetwork(ctx context.Context, name string) error {
 	if err := s.network(ctx, name); err != nil {
 		return err

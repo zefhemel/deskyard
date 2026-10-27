@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -39,6 +41,48 @@ func testSubnet() string {
 	return "10.214.0.0/20"
 }
 
+// skipWithoutRouteToBridge skips a test that must reach a desktop by its
+// container IP when the test host can't: on macOS the engine's custom bridge
+// networks are not routable (Linux CI runs these tests). It probes a throwaway
+// container on a fresh network with a short TCP dial.
+func skipWithoutRouteToBridge(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "darwin" {
+		return
+	}
+	d, err := docker.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	name := "cct-route-" + randomHex(3)
+	labels := map[string]string{"deskyard.enginetest": name}
+	if err := d.CreateNetwork(ctx, name, "", labels); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = d.RemoveNetwork(context.Background(), name) }()
+	id, err := d.Create(ctx, engine.ContainerSpec{Name: name, Image: "alpine:3.22", Labels: labels, Network: name,
+		Cmd: []string{"nc", "-lk", "-p", "8080", "-e", "true"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = d.Remove(context.Background(), id) }()
+	if err := d.Start(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	c, err := d.Inspect(ctx, id)
+	if err != nil || c.IP[name] == "" {
+		t.Fatalf("probe container address: %+v %v", c.IP, err)
+	}
+	time.Sleep(time.Second) // let nc start listening
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(c.IP[name], "8080"), 2*time.Second)
+	if err != nil {
+		t.Skip("the macOS host can't route to the engine's custom bridge networks, so it can't reach a desktop by its IP; Linux CI runs this test")
+	}
+	conn.Close()
+}
+
 func newService(t *testing.T) *Service {
 	d, err := docker.New("")
 	if err != nil {
@@ -53,6 +97,7 @@ func newService(t *testing.T) *Service {
 }
 
 func TestLifecycle(t *testing.T) {
+	skipWithoutRouteToBridge(t)
 	s := newService(t)
 	ctx := context.Background()
 	name := "cct-" + randomHex(3)
@@ -145,6 +190,7 @@ func TestFailedCreateLeavesNothing(t *testing.T) {
 // lost container again with the same name, home, token, image and limits,
 // labelled for this instance only.
 func TestLostContainerRecreatedFromDefinition(t *testing.T) {
+	skipWithoutRouteToBridge(t)
 	s := newService(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -289,6 +335,7 @@ func TestFolderTar(t *testing.T) {
 // Recovery uses only the journal and the engine after the supervisor dies
 // between parking the old container and creating its replacement.
 func TestRecoverInterruptedReplacement(t *testing.T) {
+	skipWithoutRouteToBridge(t)
 	s := newService(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
