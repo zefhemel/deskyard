@@ -67,7 +67,7 @@ export function Dialog({ title, intro, onClose, onSubmit, footer, children, wide
   return (
     <div
       data-dialog-overlay
-      class="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-[rgba(23,34,49,.42)] px-4 pt-[72px] pb-8 max-sm:pt-6"
+      class="fixed inset-0 z-50 flex items-start justify-center bg-[rgba(23,34,49,.42)] px-4 pt-[72px] pb-8 max-sm:pt-6 max-sm:pb-6"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -75,21 +75,23 @@ export function Dialog({ title, intro, onClose, onSubmit, footer, children, wide
       <div
         role="dialog"
         aria-modal="true"
-        class={cx("w-full rounded-xl bg-surface shadow-[0_30px_60px_-20px_rgba(10,16,24,.5)]", wide ? "max-w-[620px]" : "max-w-[520px]")}
+        // A tall dialog keeps its title and buttons in view and scrolls its body.
+        class={cx("flex max-h-full w-full flex-col rounded-xl bg-surface shadow-[0_30px_60px_-20px_rgba(10,16,24,.5)]", wide ? "max-w-[620px]" : "max-w-[520px]")}
       >
       <form
         ref={ref}
+        class="flex min-h-0 flex-1 flex-col"
         onSubmit={(e) => {
           e.preventDefault();
           onSubmit?.();
         }}
       >
-        <header class="px-[26px] pt-[22px] pb-1.5">
+        <header class="flex-none px-[26px] pt-[22px] pb-1.5">
           <h2 class="text-xl leading-tight font-bold">{title}</h2>
           {intro && <p class="mt-1.5 text-muted">{intro}</p>}
         </header>
-        <div class="px-[26px] pt-3.5 pb-1.5">{children}</div>
-        <footer class="flex flex-wrap justify-end gap-2.5 px-[26px] pt-[18px] pb-[22px]">{footer}</footer>
+        <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-[26px] pt-3.5 pb-1.5">{children}</div>
+        <footer class="flex flex-none flex-wrap justify-end gap-2.5 px-[26px] pt-[18px] pb-[22px]">{footer}</footer>
       </form>
       </div>
     </div>
