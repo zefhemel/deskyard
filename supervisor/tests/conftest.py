@@ -344,9 +344,19 @@ def supervisor(tmp_path_factory):
     base = Path.home() / ".cache" / "deskyard-tests" / uuid.uuid4().hex[:8]
     base.mkdir(parents=True)
     sup = Supervisor(base)
-    sup.start()
-    yield sup
-    instance = sup.instance()  # before stop: it's read through the container
+    try:
+        sup.start()
+        yield sup
+    finally:
+        # Also when start() failed: its container, data and desktops go too.
+        remove_supervisor(sup, base)
+
+
+def remove_supervisor(sup: Supervisor, base: Path):
+    try:
+        instance = sup.instance()  # before stop: it's read through the container
+    except RuntimeError:
+        instance = ""  # a container that never ran: its desktops are found by mount
     sup.stop()
     # Remove what the tests created, and nothing else on the engine: this
     # supervisor's containers and networks carry its instance label, and any
