@@ -250,11 +250,6 @@ class Supervisor:
         rel = path.relative_to(self.data)
         return "/data" if rel == Path(".") else f"/data/{rel}"
 
-    def outside(self, path: str) -> Path:
-        """The data folder's path as the supervisor names it (/data/...), seen from here."""
-        rel = Path(path).relative_to("/data")
-        return self.data / rel
-
     def read(self, path: Path) -> str:
         """A file the supervisor wrote in its data folder (self.data/...),
         read through the container: on a Linux engine its files are UID

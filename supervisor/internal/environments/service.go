@@ -458,7 +458,7 @@ func (s *Service) FolderExists(name string) bool {
 
 // missingHome is the error of a defined environment without its home folder.
 func (s *Service) missingHome(name string) error {
-	return fmt.Errorf("%s's home folder %s is missing", name, s.Layout.HomeOf(name))
+	return fmt.Errorf("%s's home folder %s is missing", name, s.Layout.ToHost(s.Layout.HomeOf(name)))
 }
 
 // missingVolume is the error of the first of grants, name's, whose volume
@@ -476,7 +476,7 @@ func (s *Service) missingVolume(name string, grants []VolumeGrant) error {
 		}
 		folder := s.Layout.VolumeOf(g.Name)
 		if st, err := os.Stat(folder); err != nil || !st.IsDir() {
-			return fmt.Errorf("%s uses volume %s, whose folder %s is missing", name, g.Name, folder)
+			return fmt.Errorf("%s uses volume %s, whose folder %s is missing", name, g.Name, s.Layout.ToHost(folder))
 		}
 	}
 	return nil
@@ -1208,7 +1208,7 @@ func (s *Service) removeTree(ctx context.Context, root, child string) error {
 		return err
 	}
 	if _, err := os.Stat(folder); err == nil {
-		return fmt.Errorf("could not delete %s", folder)
+		return fmt.Errorf("could not delete %s", s.Layout.ToHost(folder))
 	}
 	return nil
 }

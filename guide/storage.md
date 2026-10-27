@@ -213,6 +213,8 @@ mostly affects development checkouts.
 The folder must be a bind mount, not a named volume. The supervisor finds its
 host path by inspecting its own container and translates the paths it hands the
 engine for environments' bind mounts, so the host path and `/data` can differ.
+The web interface and the API show homes' and volumes' folders by their host
+paths, where you find the files.
 `home/` and `volume/` folders it creates are owned by UID 1000; on first start
 with a data folder from an older version it re-owns the supervisor's files to
 1000:1000 once (marked by `state/owner`). A `DESKYARD_DATA_DIR` set to anything

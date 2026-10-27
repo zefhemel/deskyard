@@ -18,8 +18,8 @@ def up(client, name, fname, data, **kw):
 
 
 def desk(supervisor, desktop) -> Path:
-    """The desktop's ~/Desktop, seen from here (its folder is under /data)."""
-    return supervisor.outside(desktop["folder"]) / "Desktop"
+    """The desktop's ~/Desktop: the API names its folder as the host path."""
+    return Path(desktop["folder"]) / "Desktop"
 
 
 def test_two_files_land_owned_by_user_and_a_clash_gets_a_number(supervisor, admin, desktop, name):

@@ -74,7 +74,7 @@ func (s *Server) environmentJSON(ctx context.Context, c environments.Environment
 		Terminals:     s.terminalSessions.forEnvironment(c),
 		MemoryReclaim: c.MemoryReclaim,
 		WebDAV:        c.WebDAV,
-		Name:          c.Name, State: c.State, Folder: c.Folder, Image: c.Image,
+		Name:          c.Name, State: c.State, Folder: s.Environments.Layout.ToHost(c.Folder), Image: c.Image,
 		Revision: c.Revision, AppliedRevision: c.AppliedRevision, Power: c.Power, Error: c.Error, Conflict: c.Conflict,
 		ImageTitle: c.ImageLabels["org.opencontainers.image.title"], ImageVersion: c.ImageLabels["org.opencontainers.image.version"],
 		VPN:      c.VPN,
@@ -182,7 +182,7 @@ func (s *Server) handleFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	bytes, complete := s.Environments.FolderSize(c.Name)
-	out := map[string]any{"path": c.Folder, "bytes": bytes, "complete": complete}
+	out := map[string]any{"path": s.Environments.Layout.ToHost(c.Folder), "bytes": bytes, "complete": complete}
 	if free, size, ok := environments.DiskSpace(c.Folder); ok {
 		out["diskFree"], out["diskSize"] = free, size
 	}
@@ -226,7 +226,7 @@ func (s *Server) handleValidateName(w http.ResponseWriter, r *http.Request) {
 		res["ok"], res["error"] = false, "an environment with that name already exists"
 	} else {
 		res["folderExists"] = s.Environments.FolderExists(name)
-		res["folder"] = s.Environments.Layout.HomeOf(name)
+		res["folder"] = s.Environments.Layout.ToHost(s.Environments.Layout.HomeOf(name))
 	}
 	writeJSON(w, http.StatusOK, res)
 }

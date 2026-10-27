@@ -122,7 +122,7 @@ def test_volume_deletion_rules(supervisor, admin, name):
         # The same name takes the kept folder back as it is.
         r = admin.post("/api/volumes", json={"name": vol})
         assert r.status_code == 201, r.text
-        assert r.json()["adopted"] is True and r.json()["volume"]["folder"] == supervisor.inside(folder)
+        assert r.json()["adopted"] is True and r.json()["volume"]["folder"] == str(folder)
         apply(admin, name, volumes=[{"name": vol, "readOnly": False}])
         assert in_desktop(name, "cat", f"/share/{vol}/data.txt") == "precious\n"
         # Removing the environment with its files leaves the volume's alone.
@@ -150,10 +150,10 @@ def test_missing_volume_folder_blocks_start(supervisor, admin, name):
         assert admin.post(f"/api/environments/{name}/stop").status_code == 204
         rename(folder, aside)
         r = admin.post(f"/api/environments/{name}/start")
-        assert r.status_code >= 400 and supervisor.inside(folder) in r.text, r.text
+        assert r.status_code >= 400 and str(folder) in r.text, r.text
         assert not folder.exists()
         d = admin.desktop(name)
-        assert d["state"] != "running" and supervisor.inside(folder) in d.get("error", ""), d
+        assert d["state"] != "running" and str(folder) in d.get("error", ""), d
         rename(aside, folder)
         r = admin.post(f"/api/environments/{name}/start")
         assert r.status_code == 204, r.text

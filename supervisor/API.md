@@ -123,14 +123,14 @@ The `Environment` an observer receives has `level: "observe"` and its configurat
 | `GET /api/environments/{name}/screen.png` | `?full=1` for full size | PNG, 480 px wide by default; 409 when stopped |
 | `GET /api/environments/{name}/processes` | | `{"titles":[…],"rows":[[…]]}` (columns PID, USER, %CPU, RSS (KiB), ELAPSED, COMMAND) |
 | `GET /api/environments/{name}/stats` | | `{"history":[{"t":"…","cpuPercent":n,"memBytes":n}], "memLimit":n}` (15 min at 5 s) |
-| `GET /api/environments/{name}/folder` | | `{"path","bytes","complete","diskFree","diskSize"}`; `complete` is false when some directories couldn't be read, so `bytes` is a lower bound; `diskFree` and `diskSize` describe the disk holding the folder and are omitted when it can't be read |
+| `GET /api/environments/{name}/folder` | | `{"path","bytes","complete","diskFree","diskSize"}`; `path` is the home folder on the engine host; `complete` is false when some directories couldn't be read, so `bytes` is a lower bound; `diskFree` and `diskSize` describe the disk holding the folder and are omitted when it can't be read |
 | `GET /api/environments/{name}/activity` | | `Activity` (below) |
 | `GET /api/environments/{name}/screen-events` | | server-sent events (below) |
 | `POST /api/environments/{name}/upload` | `?name=<file name>`, the raw file as the body (one request per file; `Content-Length` or chunked) | `{"path":"/workspace/Desktop/<final name>","bytes":n}`. Written as `user` into `~/Desktop` through a hidden `.part` file, renamed when complete; a taken name becomes `name (2).ext`, `name (3).ext`… Names with `/` or NUL, empty, `.`/`..` or over 200 bytes: 400. Over 2 GB (declared or counted while streaming): 413. An error, a client that leaves, or access that ends during the upload (lowered or removed, the account deleted or expired, its browser sessions ended or its client credential deleted) removes the `.part`. Full access; a session (same-origin) or a client credential (the CLI uses `deskyard cp` over exec instead); 404 without access, 409 stopped |
 | `POST /api/environments/{name}/keys` | `{"keys":"ctrl+alt+Delete"}` (xdotool syntax) | 204 |
 | `POST /api/environments/{name}/mic` | `{"on":bool,"tab":id,"seq"?:n}` | 204; 400 without a valid `tab` or with a negative `seq`; 409 when the account has no stream open from that tab. Sets the mic badge of the stream opened with `?tab=<id>` (see Desktop page below); the badge goes when that stream closes. `seq` numbers a page's reports: one numbered no higher than the last applied is ignored (still 204), so a late report never undoes a newer one |
 | `POST /api/environments/{name}/upgrade` (admin) | | 202 `{"job": id}` |
-| `GET /api/validate-name?name=x` (admin) | | `{"ok":bool,"error"?:string,"folder":path,"folderExists":bool}`; `folder` is `home/<name>/`, and `folderExists` warns that creation will reuse it |
+| `GET /api/validate-name?name=x` (admin) | | `{"ok":bool,"error"?:string,"folder":path,"folderExists":bool}`; `folder` is `home/<name>/` in the data folder, as its path on the engine host, and `folderExists` warns that creation will reuse it |
 
 `Conflict` = `{"name","kind":"unknown"|"duplicate"|"misnamed","containers":[names],"message"}`: a container of this supervisor that it can't match to a definition. `unknown` claims a name with no definition, `duplicate` is several containers claiming one environment, and `misnamed` one claiming it under another container name. The supervisor neither adopts nor removes them; an administrator removes the extra containers. Conflicts come from the reconcile pass, which runs at startup, every 30 seconds and on engine `die`/`destroy`/`create` events. Other supervisors' containers on the same engine are ignored.
 
@@ -304,7 +304,7 @@ An approved or denied request is deleted when its answer is taken. For an accoun
 
 ### Volumes (admin)
 
-`Volume` = `{"name","created","kind":"local"|"host","hostPath"?,"folder","environments":[{"name","readOnly"}]}`. `folder` is `volume/<name>/` in the data folder for a local volume and `hostPath`, a folder on the engine host, for a host volume; `environments` lists the environments whose definitions grant the volume, running or not, sorted by name.
+`Volume` = `{"name","created","kind":"local"|"host","hostPath"?,"folder","environments":[{"name","readOnly"}]}`. `folder` is `volume/<name>/` in the data folder for a local volume, as its path on the engine host, and `hostPath`, a folder on the engine host, for a host volume; `environments` lists the environments whose definitions grant the volume, running or not, sorted by name.
 
 | Method and path | Body | Response |
 | --- | --- | --- |

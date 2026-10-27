@@ -405,3 +405,51 @@ func TestVolumeUsage(t *testing.T) {
 		t.Fatalf("usage: %s", b)
 	}
 }
+
+// TestFoldersShownAsHostPaths: the folders the API names are where the files
+// are on the engine host, not the supervisor's own /data paths.
+func TestFoldersShownAsHostPaths(t *testing.T) {
+	e := &volumeEngine{hostSettingsEngine{current: alice}}
+	e.current.Labels = maps.Clone(alice.Labels)
+	e.current.Image = "img"
+	e.current.Env = map[string]string{environments.TokenEnv: "token"}
+	s, ts := newTestServerCfg(t, e, environments.Config{Subnet: "10.0.0.0/16", DataHost: "/srv/deskyard"})
+	admin := login(t, ts, "admin")
+	get := func(path string, v any) {
+		t.Helper()
+		resp, err := admin.Get(ts.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("GET %s: %d", path, resp.StatusCode)
+		}
+		if err := json.NewDecoder(resp.Body).Decode(v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := s.Environments.CreateVolume(context.Background(), "photos", ""); err != nil {
+		t.Fatal(err)
+	}
+	var vols struct{ Volumes []volumeTest }
+	get("/api/volumes", &vols)
+	if len(vols.Volumes) != 1 || vols.Volumes[0].Folder != "/srv/deskyard/volume/photos" {
+		t.Errorf("volume folder: %+v", vols.Volumes)
+	}
+	var env struct{ Folder string }
+	get("/api/environments/alice", &env)
+	if env.Folder != "/srv/deskyard/home/alice" {
+		t.Errorf("environment folder: %q", env.Folder)
+	}
+	var folder struct{ Path string }
+	get("/api/environments/alice/folder", &folder)
+	if folder.Path != "/srv/deskyard/home/alice" {
+		t.Errorf("folder path: %q", folder.Path)
+	}
+	var check struct{ Folder string }
+	get("/api/validate-name?name=bob", &check)
+	if check.Folder != "/srv/deskyard/home/bob" {
+		t.Errorf("validate-name folder: %q", check.Folder)
+	}
+}
