@@ -15,8 +15,8 @@ Options:
                        default: the server -e SERVER/ENV names, else the
                        default server
 
-Prints: a table NAME LEVEL SHARED-BY EXPIRES LAST-SIGN-IN NOTE; with --json
-  the API's [Share]
+Prints: a table NAME LEVEL SHARED-BY EXPIRES LAST-USED NOTE; with --json the
+  API's [Share]
 
 Examples:
   deskyard share list alice

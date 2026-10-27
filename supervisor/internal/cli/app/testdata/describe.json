@@ -1619,7 +1619,7 @@
       ],
       "output": {
         "type": "text",
-        "description": "a table NAME LEVEL SHARED-BY EXPIRES LAST-SIGN-IN NOTE; with --json the API's [Share]"
+        "description": "a table NAME LEVEL SHARED-BY EXPIRES LAST-USED NOTE; with --json the API's [Share]"
       },
       "examples": [
         "deskyard share list alice"

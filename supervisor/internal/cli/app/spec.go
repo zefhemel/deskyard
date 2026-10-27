@@ -405,7 +405,7 @@ func init() {
 		{Name: "share list", Group: "sharing", Summary: "list an environment's shares",
 			Usage: "share list ENV [--json]", Desc: "Lists the shares of an environment: who it was shared with and by, at which level, until when, and whether they are connected now. Needs full access to it.",
 			Args: []Arg{{Name: "env", Type: "string", Required: true, Desc: "environment name"}}, Flags: []Flag{flagJSON, flagServer},
-			Output:   Output{Type: "text", Desc: "a table NAME LEVEL SHARED-BY EXPIRES LAST-SIGN-IN NOTE; with --json the API's [Share]"},
+			Output:   Output{Type: "text", Desc: "a table NAME LEVEL SHARED-BY EXPIRES LAST-USED NOTE; with --json the API's [Share]"},
 			Examples: []string{"deskyard share list alice"}, Where: whereServer, Exit: exitAdmin, run: runShareList},
 		{Name: "share create", Group: "sharing", Summary: "share an environment by link",
 			Usage: "share create ENV NAME [OPTIONS]",

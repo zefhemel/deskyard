@@ -58,6 +58,25 @@ func wantCall(t *testing.T, f *clitest.Fake, method, path, query, body string) {
 	}
 }
 
+// wantColumns checks that a table's header names the columns that the
+// command's description promises, in order.
+func wantColumns(t *testing.T, name, stdout string) {
+	t.Helper()
+	desc := findCommand(name).Output.Desc
+	_, cols, ok := strings.Cut(desc, "a table ")
+	if !ok {
+		t.Fatalf("%s: output %q names no table", name, desc)
+	}
+	cols, _, _ = strings.Cut(cols, ";")
+	cols, _, _ = strings.Cut(cols, "(")
+	header, _, _ := strings.Cut(stdout, "\n")
+	got := strings.ReplaceAll(strings.Join(strings.Fields(header), " "), "-", " ")
+	want := strings.ReplaceAll(strings.Join(strings.Fields(cols), " "), "-", " ")
+	if got != want {
+		t.Errorf("%s: header %q, its description promises %q", name, got, want)
+	}
+}
+
 func fixedNow(t *testing.T, now time.Time) {
 	old := timeNow
 	timeNow = func() time.Time { return now }
@@ -206,6 +225,7 @@ func TestAdminAccounts(t *testing.T) {
 	if r.code != 0 || !strings.Contains(r.stdout, "anna") || !strings.Contains(r.stdout, "bob (observe)") || !strings.Contains(r.stdout, "admin") {
 		t.Errorf("account list: %+v", r)
 	}
+	wantColumns(t, "account list", r.stdout)
 	wantCall(t, f, "GET", "/api/accounts", "", "")
 	if r = h.run("account", "list", "--json"); !strings.Contains(r.stdout, `"linkPending": true`) {
 		t.Errorf("account list --json: %+v", r)
@@ -290,6 +310,7 @@ func TestAdminSharing(t *testing.T) {
 		!strings.Contains(r.stdout, "LAST USED") || !strings.Contains(r.stdout, used) {
 		t.Errorf("share list: %+v", r)
 	}
+	wantColumns(t, "share list", r.stdout)
 	wantCall(t, f, "GET", "/api/environments/alice/shares", "", "")
 	if r = h.run("share", "list", "alice", "--json"); !strings.Contains(r.stdout, `"username": "sanne"`) {
 		t.Errorf("share list --json: %+v", r)
@@ -325,6 +346,7 @@ func TestAdminDevices(t *testing.T) {
 	if r.code != 0 || !strings.Contains(r.stdout, "0a1b2c3d") || !strings.Contains(r.stdout, "deskyard CLI on laptop") {
 		t.Errorf("device list: %+v", r)
 	}
+	wantColumns(t, "device list", r.stdout)
 	wantCall(t, f, "GET", "/api/me/credentials", "", "")
 	if r = h.run("device", "list", "--account", "anna", "--json"); !strings.Contains(r.stdout, `"current": true`) {
 		t.Errorf("device list --account: %+v", r)
