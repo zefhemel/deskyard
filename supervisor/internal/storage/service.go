@@ -51,6 +51,10 @@ type Service struct {
 	Loc     *time.Location
 	Now     func() time.Time
 	Log     *slog.Logger
+	// ForgetName, when set, is called under the reservation before an
+	// environment is restored under a new name, so what a removal of that
+	// name failed to purge (its grants) doesn't carry over.
+	ForgetName func(name string) error
 
 	layout config.Layout
 	opMu   sync.Mutex // one backup or restore at a time

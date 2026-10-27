@@ -231,6 +231,14 @@ func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snaps
 			return RestoreResult{}, fmt.Errorf("%s is busy: %w", name, err)
 		}
 		defer releaseName()
+		if _, ok := s.Env.Definition(name); ok {
+			return RestoreResult{}, fmt.Errorf("environment %q: %w", name, ErrExists)
+		}
+		if s.ForgetName != nil {
+			if err := s.ForgetName(name); err != nil {
+				return RestoreResult{}, err
+			}
+		}
 	}
 	var def environments.Definition
 	if it.Kind == KindEnvironment {

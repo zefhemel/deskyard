@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -383,5 +384,32 @@ func TestRestoreAsNewReservesName(t *testing.T) {
 	}
 	if _, err := os.Stat(env.layout.HomeOf("carol")); !os.IsNotExist(err) {
 		t.Fatal("made a folder for a busy name")
+	}
+}
+
+// Grants a failed removal of the name left behind must not carry over to the
+// environment restored under it: the restore forgets them under the
+// reservation, and stops when it can't.
+func TestRestoreAsNewForgetsTheNamesGrants(t *testing.T) {
+	f := &fakeRunner{}
+	s, env := testService(t, f)
+	f.reply = restoreReply(environments.Definition{Image: environments.ImageRef{Ref: "img"}}, nil)
+	var forgot []string
+	s.ForgetName = func(name string) error {
+		forgot = append(forgot, name+" after "+env.events())
+		return nil
+	}
+	if _, err := s.Restore(context.Background(), Item{KindEnvironment, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-copy"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(forgot) != 1 || forgot[0] != "alice-copy after reserve alice-copy" {
+		t.Fatalf("forgot %q", forgot)
+	}
+	s.ForgetName = func(string) error { return errors.New("disk full") }
+	if _, err := s.Restore(context.Background(), Item{KindEnvironment, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-two"}, nil); err == nil {
+		t.Fatal("restored although its grants couldn't be forgotten")
+	}
+	if _, ok := env.created["alice-two"]; ok || len(restoreCalls(f)) != 1 {
+		t.Fatal("restored anyway")
 	}
 }

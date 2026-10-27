@@ -150,6 +150,15 @@ func New(o Options) (*Server, error) {
 		return nil, err
 	}
 	s.Environments.ItemBusy = s.storage.Busy
+	// As creating one does: what a removal of the name failed to purge
+	// doesn't carry over to an environment restored under it.
+	s.storage.ForgetName = func(name string) error {
+		if err := s.forgetAccess(name); err != nil {
+			return err
+		}
+		s.activity.ForgetDesktop(name)
+		return nil
+	}
 	s.Environments.ConflictsChanged = s.events.refresh
 	s.Environments.Removed = s.environmentRemoved
 	// An environment whose pinned image was pulled again has a new revision.

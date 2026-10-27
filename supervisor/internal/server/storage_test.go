@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/storage"
 )
@@ -195,5 +196,23 @@ func TestRemoveRefusedDuringBackup(t *testing.T) {
 	defer release()
 	if code, b := send(admin, "DELETE", "/api/environments/alice", ""); code != 409 || !strings.Contains(string(b), "backing up") {
 		t.Fatalf("remove during backup: %d %s", code, b)
+	}
+}
+
+// A restore as a new environment forgets the grants a failed removal of its
+// name left behind, as creating one does.
+func TestRestoreAsNewForgetsLeftoverGrants(t *testing.T) {
+	s, _, _ := newStorageServer(t)
+	if err := s.Accounts.SetAccess("carol", fullAccess("anna")); err != nil {
+		t.Fatal(err)
+	}
+	if s.storage.ForgetName == nil {
+		t.Fatal("the restore doesn't forget the name's grants")
+	}
+	if err := s.storage.ForgetName("carol"); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := s.Accounts.Get("anna"); a.Level("carol") != auth.LevelNone {
+		t.Errorf("anna kept her grant of the removed carol: %v", a.Grants)
 	}
 }
