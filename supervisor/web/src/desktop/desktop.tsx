@@ -35,6 +35,7 @@ import {
   type DeskyardScreen,
   type Display,
   focusFrame,
+  frameAllow,
   frameSrc,
   httpsHelp,
   insecureContext,
@@ -653,6 +654,13 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
     if (running && !wasRunning.current) reconnect();
     wasRunning.current = running;
   }, [running]);
+  // And when the level changes: a loaded frame keeps the permissions it
+  // loaded with (an observer's has no microphone or clipboard).
+  const wasObserving = useRef(observing);
+  useEffect(() => {
+    if (observing !== wasObserving.current && running) reconnect();
+    wasObserving.current = observing;
+  }, [observing]);
 
   function reconnect() {
     setZoom(1);
@@ -837,7 +845,7 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
           ref={frame}
           src={frameSrc(c.name)}
           title={`${c.name}'s desktop`}
-          allow={observing ? "autoplay; speaker-selection" : "clipboard-read; clipboard-write; autoplay; microphone; speaker-selection"}
+          allow={frameAllow(observing)}
           tabIndex={observing ? -1 : undefined}
           class="block h-full w-full border-0"
           onLoad={onFrameLoad}

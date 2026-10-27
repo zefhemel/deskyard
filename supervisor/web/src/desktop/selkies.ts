@@ -126,6 +126,15 @@ export function frameSrc(name: string): string {
 }
 
 /**
+ * The frame's permissions policy: an observer's frame gets no microphone or
+ * clipboard. A frame keeps the policy it loaded with, so a new level needs a
+ * new frame.
+ */
+export function frameAllow(observing: boolean): string {
+  return observing ? "autoplay; speaker-selection" : "clipboard-read; clipboard-write; autoplay; microphone; speaker-selection";
+}
+
+/**
  * Whether this page is an insecure context: reached over plain http on an
  * address other than localhost. The browser then has no AudioWorklet, mic
  * or async clipboard, and Chromium and Firefox no WebCodecs: Selkies'

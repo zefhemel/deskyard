@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { qualitySettings, sendQuality } from "./selkies.ts";
+import { frameAllow, qualitySettings, sendQuality } from "./selkies.ts";
 
 test("plain HTTP browsers can use JPEG and are never asked for H.264", () => {
   const decoder = Object.getOwnPropertyDescriptor(globalThis, "VideoDecoder");
@@ -17,4 +17,14 @@ test("plain HTTP browsers can use JPEG and are never asked for H.264", () => {
     if (decoder) Object.defineProperty(globalThis, "VideoDecoder", decoder); else Reflect.deleteProperty(globalThis, "VideoDecoder");
     if (bitmap) Object.defineProperty(globalThis, "createImageBitmap", bitmap); else Reflect.deleteProperty(globalThis, "createImageBitmap");
   }
+});
+
+test("only a full user's frame may use the microphone and the clipboard", () => {
+  const full = frameAllow(false).split("; ");
+  const observer = frameAllow(true).split("; ");
+  for (const p of ["microphone", "clipboard-read", "clipboard-write"]) {
+    assert.ok(full.includes(p), p);
+    assert.ok(!observer.includes(p), p);
+  }
+  assert.ok(observer.includes("autoplay"));
 });
