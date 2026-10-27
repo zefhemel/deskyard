@@ -20,6 +20,7 @@ func (s *Server) routes() {
 	h := func(pattern string, fn http.HandlerFunc) { m.Handle(pattern, s.authed(fn)) }
 	h("GET /api/me", s.handleMe)
 	h("POST /api/me/password", s.handleOwnPassword)
+	h("POST /api/me/sign-out-everywhere", s.handleSignOutEverywhere)
 	h("GET /api/host", s.handleHost)
 	h("GET /api/events", s.handleEvents)
 	h("GET /api/jobs/{id}", s.handleJob)
@@ -119,9 +120,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusTooManyRequests, "too many attempts: wait a few seconds")
 		return
 	}
+	// Token accounts have no password and answer as unknown ones do.
 	a, ok := s.Accounts.Get(req.Username)
-	if !ok || !auth.CheckPassword(a.PasswordHash, req.Password) {
-		if !ok {
+	if !ok || !a.HasPassword() || !auth.CheckPassword(a.PasswordHash, req.Password) {
+		if !ok || !a.HasPassword() {
 			auth.CheckPassword(dummyHash, req.Password) // same time either way
 		}
 		s.Throttle.Fail(keys...)
@@ -132,7 +134,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if err := s.Accounts.TouchLogin(a.Username); err != nil {
 		s.Log.Warn("recording account login", "account", a.Username, "err", err)
 	}
-	s.Sessions.Issue(w, a.Username, a.SessionEpoch)
+	s.Sessions.Issue(w, a.Username, a.ID, a.SessionEpoch)
 	s.Log.Info("signed in", "account", a.Username, "ip", clientIP(r))
 	writeJSON(w, http.StatusOK, meJSON{a.Username, a.Admin})
 }
@@ -172,7 +174,21 @@ func (s *Server) handleOwnPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a, _ = s.Accounts.Get(a.Username)
-	s.Sessions.Issue(w, a.Username, a.SessionEpoch)
+	s.Sessions.Issue(w, a.Username, a.ID, a.SessionEpoch)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleSignOutEverywhere ends every browser session of the account and
+// signs this browser in again.
+func (s *Server) handleSignOutEverywhere(w http.ResponseWriter, r *http.Request) {
+	me, _ := s.account(r)
+	a, err := s.Accounts.BumpSessionEpoch(me.Username)
+	if err != nil {
+		writeError(w, errorStatus(err), err.Error())
+		return
+	}
+	s.Sessions.Issue(w, a.Username, a.ID, a.SessionEpoch)
+	s.Log.Info("signed out everywhere", "account", a.Username, "ip", clientIP(r))
 	w.WriteHeader(http.StatusNoContent)
 }
 

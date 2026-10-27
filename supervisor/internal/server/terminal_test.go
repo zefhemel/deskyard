@@ -349,9 +349,9 @@ func TestTerminalExpiry(t *testing.T) {
 	// Issue an otherwise valid cookie whose absolute expiry is shortly ahead.
 	s.Sessions.Now = func() time.Time { return time.Now().Add(-30*24*time.Hour + 2*time.Second) }
 	rec := httptest.NewRecorder()
-	s.Sessions.Issue(rec, "admin", 0)
-	s.Sessions.Now = nil
 	a, _ := s.Accounts.Get("admin")
+	s.Sessions.Issue(rec, "admin", a.ID, 0)
+	s.Sessions.Now = nil
 	if a.SessionEpoch != 0 {
 		t.Fatal("unexpected test epoch")
 	}

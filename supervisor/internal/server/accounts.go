@@ -168,7 +168,7 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	// Changing one's own password or role keeps this session.
 	if a.Username == me.Username {
-		s.Sessions.Issue(w, a.Username, a.SessionEpoch)
+		s.Sessions.Issue(w, a.Username, a.ID, a.SessionEpoch)
 	}
 	writeJSON(w, http.StatusOK, s.toAccountJSON(a))
 }

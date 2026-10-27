@@ -179,5 +179,6 @@ func (t *terminalConnections) shutdown() {
 }
 func (s *Server) terminalAllowed(c *terminalConnection) bool {
 	a, ok := s.Accounts.Get(c.claims.Username)
-	return ok && a.SessionEpoch == c.claims.Epoch && auth.Can(a, auth.View, c.environment) && time.Now().Before(c.claims.Expires)
+	return ok && a.ID == c.claims.AccountID && a.SessionEpoch == c.claims.Epoch && !a.Expired(time.Now()) &&
+		auth.Can(a, auth.View, c.environment) && time.Now().Before(c.claims.Expires)
 }

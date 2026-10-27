@@ -6,14 +6,15 @@ Remote control is available to people through the `deskyard` CLI, and to scripts
 
 ## Sessions (web UI)
 
-The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Strict). Every `/api/*` route except `POST /api/login` and `POST /api/logout` answers 401 without a session. State-changing requests (POST, PUT, PATCH, DELETE) must carry an `Origin` matching the supervisor's own (browsers' `fetch` does this); otherwise 403.
+The UI authenticates with the `deskyard_session` cookie (HttpOnly, SameSite=Strict). The cookie names the account by its ID and session epoch, so it stops working when the account is deleted (also when one of the same name is created again), expires, or bumps its epoch. Every `/api/*` route except `POST /api/login` and `POST /api/logout` answers 401 without a session. State-changing requests (POST, PUT, PATCH, DELETE) must carry an `Origin` matching the supervisor's own (browsers' `fetch` does this); otherwise 403.
 
 | Method and path | Body | Response |
 | --- | --- | --- |
-| `POST /api/login` | `{"username","password"}` | 200 `Me`, sets the cookie; 401 wrong; 429 throttled |
+| `POST /api/login` | `{"username","password"}` | 200 `Me`, sets the cookie; 401 wrong, also for accounts without a password; 429 throttled |
 | `POST /api/logout` | | 204, clears the cookie and closes this browser login’s terminals; requires same-origin Origin, including when already signed out |
 | `GET /api/me` | | `Me` = `{"username","admin":bool}` |
 | `POST /api/me/password` | `{"current","new"}` | 204 (signs out everywhere else; the response re-issues this session) |
+| `POST /api/me/sign-out-everywhere` | | 204; ends every browser session of the account, including other browsers' open terminals; the response re-issues this session |
 | `GET /api/host` | | `{"cpus":n,"memBytes":n,"running":n,"total":n,"memUsed":n}` (counts over environments the account can see) |
 
 `GET /api/host` also includes `memoryReclaim: {"enabled":bool,"reason"?:string}`, the cached startup capability result. The probe checks the full helper path using a disposable container, without reclaiming any existing environment. Failures disable the optional action and supply a reason; capability detection is retried on supervisor restart. A disabled action returns 501 immediately. Per-environment checks still run on enabled hosts and do not change the cached host status.

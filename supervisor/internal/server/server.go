@@ -204,14 +204,16 @@ func (s *Server) account(r *http.Request) (accounts.Account, bool) {
 }
 
 // withSession resolves the session cookie into the request context; it
-// refreshes cookies that are more than a day old.
+// refreshes cookies that are more than a day old. The cookie must name the
+// account by its ID and current session epoch, and the account must not
+// have expired.
 func (s *Server) withSession(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
 	claims, ok := s.Sessions.Claims(r)
 	if !ok {
 		return r, false
 	}
 	a, found := s.Accounts.Get(claims.Username)
-	if !found || a.SessionEpoch != claims.Epoch {
+	if !found || a.ID != claims.AccountID || a.SessionEpoch != claims.Epoch || a.Expired(time.Now()) {
 		return r, false
 	}
 	if claims.Refresh {

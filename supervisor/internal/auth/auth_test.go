@@ -36,21 +36,21 @@ func TestSessionRoundTripAndExpiry(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	s := &Sessions{Key: []byte("k"), Now: func() time.Time { return now }}
 	w := httptest.NewRecorder()
-	s.Issue(w, "zef", 3)
+	s.Issue(w, "zef", "acct1234", 3)
 	r := &http.Request{Header: http.Header{"Cookie": w.Header()["Set-Cookie"]}}
-	if u, e, refresh, ok := s.Read(r); !ok || u != "zef" || e != 3 || refresh {
-		t.Fatalf("%v %v %v %v", u, e, refresh, ok)
+	if c, ok := s.Claims(r); !ok || c.Username != "zef" || c.AccountID != "acct1234" || c.Epoch != 3 || c.Refresh {
+		t.Fatalf("%+v %v", c, ok)
 	}
 	now = now.Add(2 * 24 * time.Hour)
-	if _, _, refresh, ok := s.Read(r); !ok || !refresh {
+	if c, ok := s.Claims(r); !ok || !c.Refresh {
 		t.Fatal("should be valid and due for refresh")
 	}
 	now = now.Add(31 * 24 * time.Hour)
-	if _, _, _, ok := s.Read(r); ok {
+	if _, ok := s.Claims(r); ok {
 		t.Fatal("expired session accepted")
 	}
 	other := &Sessions{Key: []byte("other")}
-	if _, _, _, ok := other.Read(r); ok {
+	if _, ok := other.Claims(r); ok {
 		t.Fatal("cookie signed with another key accepted")
 	}
 }

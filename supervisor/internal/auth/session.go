@@ -17,8 +17,9 @@ const (
 	sessionTTL = 30 * 24 * time.Hour
 )
 
-// Sessions issues and reads signed session cookies carrying the username and
-// the account's session epoch; bumping the epoch signs the account out.
+// Sessions issues and reads signed session cookies carrying the username,
+// the account's ID and its session epoch; bumping the epoch signs the
+// account out, and a recreated account of the same name has another ID.
 type Sessions struct {
 	Key    []byte
 	Secure bool // HTTPS: mark cookies Secure
@@ -38,18 +39,18 @@ func (s *Sessions) sign(payload string) string {
 	return base64.RawURLEncoding.EncodeToString(m.Sum(nil))
 }
 
-func (s *Sessions) Issue(w http.ResponseWriter, username string, epoch int) {
+func (s *Sessions) Issue(w http.ResponseWriter, username, accountID string, epoch int) {
 	id := make([]byte, 24)
 	if _, err := rand.Read(id); err != nil {
 		panic(err)
 	}
-	s.Refresh(w, SessionClaims{Username: username, Epoch: epoch, ID: base64.RawURLEncoding.EncodeToString(id)})
+	s.Refresh(w, SessionClaims{Username: username, AccountID: accountID, Epoch: epoch, ID: base64.RawURLEncoding.EncodeToString(id)})
 }
 
 // Refresh preserves the browser login identity across sliding cookie renewal.
 func (s *Sessions) Refresh(w http.ResponseWriter, c SessionClaims) {
 	exp := s.now().Add(sessionTTL).Unix()
-	payload := fmt.Sprintf("%s|%d|%d|%s", c.Username, c.Epoch, exp, c.ID)
+	payload := fmt.Sprintf("%s|%d|%d|%s|%s", c.Username, c.Epoch, exp, c.ID, c.AccountID)
 	value := base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + s.sign(payload)
 	http.SetCookie(w, &http.Cookie{
 		Name: CookieName, Value: value, Path: "/", HttpOnly: true, Secure: s.Secure,
@@ -62,23 +63,19 @@ func (s *Sessions) Clear(w http.ResponseWriter) {
 		SameSite: http.SameSiteStrictMode, MaxAge: -1})
 }
 
-// SessionClaims contains verified identity and absolute cookie expiry.
+// SessionClaims contains verified identity and absolute cookie expiry. ID
+// identifies this browser login; AccountID the account it signed in to.
 type SessionClaims struct {
-	Username string
-	Epoch    int
-	ID       string
-	Expires  time.Time
-	Refresh  bool
+	Username  string
+	AccountID string
+	Epoch     int
+	ID        string
+	Expires   time.Time
+	Refresh   bool
 }
 
-// Read preserves the existing username/epoch/refresh interface.
-func (s *Sessions) Read(r *http.Request) (username string, epoch int, refresh, ok bool) {
-	c, ok := s.Claims(r)
-	return c.Username, c.Epoch, c.Refresh, ok
-}
-
-// Claims verifies the same signature and expiry as Read. Legacy cookies retain
-// their signed fingerprint as identity when refreshed into the new format.
+// Claims verifies the cookie's signature and expiry. Cookies without an
+// account ID are refused.
 func (s *Sessions) Claims(r *http.Request) (SessionClaims, bool) {
 	invalid := SessionClaims{}
 	c, err := r.Cookie(CookieName)
@@ -98,20 +95,14 @@ func (s *Sessions) Claims(r *http.Request) (SessionClaims, bool) {
 		return invalid, false
 	}
 	parts := strings.Split(payload, "|")
-	if len(parts) != 3 && len(parts) != 4 {
+	if len(parts) != 5 {
 		return invalid, false
 	}
 	epoch, e1 := strconv.Atoi(parts[1])
 	exp, e2 := strconv.ParseInt(parts[2], 10, 64)
-	if e1 != nil || e2 != nil || parts[0] == "" || s.now().Unix() >= exp {
+	if e1 != nil || e2 != nil || parts[0] == "" || parts[3] == "" || parts[4] == "" || s.now().Unix() >= exp {
 		return invalid, false
 	}
-	id := "legacy-" + sig
-	if len(parts) == 4 {
-		id = parts[3]
-		if id == "" {
-			return invalid, false
-		}
-	}
-	return SessionClaims{Username: parts[0], Epoch: epoch, ID: id, Expires: time.Unix(exp, 0), Refresh: len(parts) == 3 || time.Unix(exp, 0).Sub(s.now()) < sessionTTL-24*time.Hour}, true
+	return SessionClaims{Username: parts[0], AccountID: parts[4], Epoch: epoch, ID: parts[3], Expires: time.Unix(exp, 0),
+		Refresh: time.Unix(exp, 0).Sub(s.now()) < sessionTTL-24*time.Hour}, true
 }

@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -162,10 +163,18 @@ func login(t *testing.T, ts *httptest.Server, user string) *http.Client {
 	return c
 }
 
+// cookieJar keeps the latest cookie of each name, as a browser does.
 type cookieJar struct{ cookies []*http.Cookie }
 
-func (j *cookieJar) SetCookies(_ *url.URL, cs []*http.Cookie) { j.cookies = append(j.cookies, cs...) }
-func (j *cookieJar) Cookies(*url.URL) []*http.Cookie          { return j.cookies }
+func (j *cookieJar) SetCookies(_ *url.URL, cs []*http.Cookie) {
+	for _, c := range cs {
+		j.cookies = slices.DeleteFunc(j.cookies, func(o *http.Cookie) bool { return o.Name == c.Name })
+		if c.MaxAge >= 0 {
+			j.cookies = append(j.cookies, c)
+		}
+	}
+}
+func (j *cookieJar) Cookies(*url.URL) []*http.Cookie { return j.cookies }
 
 func status(t *testing.T, c *http.Client, method, url, origin string) int {
 	t.Helper()
@@ -245,5 +254,74 @@ func TestClientFilePathsStayInside(t *testing.T) {
 		if c := cleanClientPath(p); strings.Contains(c, "..") {
 			t.Errorf("%s → %s", p, c)
 		}
+	}
+}
+
+func TestCookieOfDeletedAccountRejectedAfterRecreate(t *testing.T) {
+	s, ts := newTestServer(t)
+	if _, err := s.Accounts.Create(accounts.NewAccount{Username: "bob", Password: "pw"}); err != nil {
+		t.Fatal(err)
+	}
+	bob := login(t, ts, "bob")
+	if err := s.Accounts.Delete("bob"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Accounts.Create(accounts.NewAccount{Username: "bob", Password: "pw"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := status(t, bob, "GET", ts.URL+"/api/me", ""); got != 401 {
+		t.Fatalf("old cookie on recreated bob: %d", got)
+	}
+}
+
+func TestTokenAccountCannotPasswordLogin(t *testing.T) {
+	s, ts := newTestServer(t)
+	if _, err := s.Accounts.Create(accounts.NewAccount{Username: "sanne"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, pw := range []string{"", "pw"} {
+		req, _ := http.NewRequest("POST", ts.URL+"/api/login", strings.NewReader(`{"username":"sanne","password":"`+pw+`"}`))
+		req.Header.Set("Origin", ts.URL)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != 401 || !strings.Contains(string(body), "wrong username or password") || len(resp.Cookies()) != 0 {
+			t.Fatalf("password %q: %d %s", pw, resp.StatusCode, body)
+		}
+	}
+}
+
+func TestExpiredAccountSessionRejected(t *testing.T) {
+	s, ts := newTestServer(t)
+	anna := login(t, ts, "anna")
+	past := time.Now().Add(-time.Minute)
+	if _, err := s.Accounts.Update("anna", func(a *accounts.Account) { a.Expires = &past }); err != nil {
+		t.Fatal(err)
+	}
+	if got := status(t, anna, "GET", ts.URL+"/api/me", ""); got != 401 {
+		t.Fatalf("expired account: %d", got)
+	}
+	if got := status(t, anna, "GET", ts.URL+"/", ""); got != 302 {
+		t.Fatalf("expired account's page: %d", got)
+	}
+}
+
+func TestSignOutEverywhere(t *testing.T) {
+	_, ts := newTestServer(t)
+	here, there := login(t, ts, "anna"), login(t, ts, "anna")
+	if got := status(t, here, "POST", ts.URL+"/api/me/sign-out-everywhere", ""); got != 403 {
+		t.Fatalf("no origin: %d", got)
+	}
+	if got := status(t, here, "POST", ts.URL+"/api/me/sign-out-everywhere", ts.URL); got != 204 {
+		t.Fatalf("sign out everywhere: %d", got)
+	}
+	if got := status(t, there, "GET", ts.URL+"/api/me", ""); got != 401 {
+		t.Fatalf("other browser still signed in: %d", got)
+	}
+	if got := status(t, here, "GET", ts.URL+"/api/me", ""); got != 200 {
+		t.Fatalf("this browser signed out: %d", got)
 	}
 }
