@@ -228,3 +228,40 @@ func TestUnsavedSignOutEverywhereEndsSessions(t *testing.T) {
 		t.Errorf("the other browser after the sign-out was saved: %d", code)
 	}
 }
+
+// A later sign-out everywhere, or a password or admin change, starts from
+// the session epoch held unsaved: sessions begun under it end as well.
+func TestSessionEpochBumpsStartFromTheHeldEpoch(t *testing.T) {
+	for _, change := range []string{"sign out everywhere", "own password", "admin password", "admin role"} {
+		t.Run(change, func(t *testing.T) {
+			s, ts := newTestServer(t)
+			admin, first := login(t, ts, "admin"), login(t, ts, "anna")
+			blockAccountsFile(t, s)
+			if code, body := send(t, first, "POST", ts.URL+"/api/me/sign-out-everywhere", ts.URL, ""); code != http.StatusInternalServerError {
+				t.Fatalf("sign out everywhere: %d %s", code, body)
+			}
+			// Signed in after it, under the held epoch.
+			later := login(t, ts, "anna")
+			unblockAccountsFile(t, s)
+			var code int
+			var body string
+			switch change {
+			case "sign out everywhere":
+				code, body = send(t, first, "POST", ts.URL+"/api/me/sign-out-everywhere", ts.URL, "")
+			case "own password":
+				code, body = send(t, first, "POST", ts.URL+"/api/me/password", ts.URL, `{"current":"pw","new":"pw2"}`)
+			case "admin password":
+				code, body = send(t, admin, "PATCH", ts.URL+"/api/accounts/anna", ts.URL, `{"password":"pw2"}`)
+			case "admin role":
+				code, body = send(t, admin, "PATCH", ts.URL+"/api/accounts/anna", ts.URL, `{"admin":true}`)
+			}
+			if code >= 300 {
+				t.Fatalf("%s: %d %s", change, code, body)
+			}
+			s.sweep()
+			if code := status(t, later, "GET", ts.URL+"/api/me", ""); code != http.StatusUnauthorized {
+				t.Errorf("a session begun under the held epoch after %s: %d", change, code)
+			}
+		})
+	}
+}

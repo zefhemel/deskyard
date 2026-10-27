@@ -174,6 +174,10 @@ func New(o Options) (*Server, error) {
 	// An environment whose pinned image was pulled again has a new revision.
 	s.Environments.Repinned = func([]environments.Repin) { s.events.refresh() }
 	o.Accounts.OnChange = s.accountsChanged
+	o.Accounts.HeldSessionEpoch = func(a accounts.Account) int {
+		a, _ = s.unsaved.apply(a)
+		return a.SessionEpoch
+	}
 	s.sweep() // links, credentials and shares left over from changes that didn't persist
 	s.detectMemoryReclaim(o.StartupContext)
 	s.routes()

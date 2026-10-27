@@ -197,6 +197,11 @@ type Store struct {
 	// OnChange is called (without the lock) after a change, with the usernames
 	// whose sessions or access changed, so open connections can be checked.
 	OnChange func(usernames ...string)
+	// HeldSessionEpoch, when set, is the session epoch the account's
+	// cookies may name although it isn't saved (a sign-out that couldn't be
+	// saved). Called with the lock held; a bump starts from it, so it ends
+	// those sessions too.
+	HeldSessionEpoch func(a Account) int
 }
 
 // Load reads dataDir/accounts.json (mode 0600: it holds password hashes).
@@ -392,6 +397,10 @@ func (s *Store) Create(n NewAccount) (Account, error) {
 // password or admin flag changes, and refuses to
 // leave no admin with a password. The ID and username don't change.
 func (s *Store) Update(username string, fn func(a *Account)) (Account, error) {
+	return s.update(username, fn, false)
+}
+
+func (s *Store) update(username string, fn func(a *Account), bump bool) (Account, error) {
 	s.mu.Lock()
 	i := s.index(username)
 	if i < 0 {
@@ -417,8 +426,12 @@ func (s *Store) Update(username string, fn func(a *Account)) (Account, error) {
 		s.mu.Unlock()
 		return Account{}, ErrLastAdmin
 	}
-	if a.PasswordHash != before.PasswordHash || a.Admin != before.Admin {
-		a.SessionEpoch = before.SessionEpoch + 1
+	if bump || a.PasswordHash != before.PasswordHash || a.Admin != before.Admin {
+		held := 0
+		if s.HeldSessionEpoch != nil {
+			held = s.HeldSessionEpoch(before)
+		}
+		a.SessionEpoch = max(a.SessionEpoch, before.SessionEpoch, held) + 1
 	}
 	next := s.next()
 	next[i] = a
@@ -433,7 +446,7 @@ func (s *Store) Update(username string, fn func(a *Account)) (Account, error) {
 
 // BumpSessionEpoch ends every browser session of the account.
 func (s *Store) BumpSessionEpoch(username string) (Account, error) {
-	return s.Update(username, func(a *Account) { a.SessionEpoch++ })
+	return s.update(username, func(*Account) {}, true)
 }
 
 func (s *Store) SetPassword(username, password string) error {

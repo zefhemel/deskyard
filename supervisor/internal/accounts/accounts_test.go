@@ -240,6 +240,22 @@ func TestLoweredGrantKeepsSessionEpoch(t *testing.T) {
 	}
 }
 
+// A bump starts from the session epoch held unsaved, when it is ahead.
+func TestBumpStartsFromHeldSessionEpoch(t *testing.T) {
+	s, _ := Load(t.TempDir())
+	_, _ = s.Create(NewAccount{Username: "bob", Password: "pw"})
+	s.HeldSessionEpoch = func(a Account) int { return 3 }
+	if a, _ := s.BumpSessionEpoch("bob"); a.SessionEpoch != 4 {
+		t.Errorf("sign out everywhere: epoch %d, want 4", a.SessionEpoch)
+	}
+	if a, _ := s.Update("bob", func(a *Account) { a.Admin = true }); a.SessionEpoch != 5 {
+		t.Errorf("admin change: epoch %d, want 5", a.SessionEpoch)
+	}
+	if a, _ := s.Update("bob", func(a *Account) { a.Description = "Bob" }); a.SessionEpoch != 5 {
+		t.Errorf("description change: epoch %d, want 5", a.SessionEpoch)
+	}
+}
+
 func TestLoweredLevels(t *testing.T) {
 	before := []Grant{{Environment: "alice", Level: auth.LevelFull}, {Environment: "beta", Level: auth.LevelFull}, {Environment: "carol", Level: auth.LevelObserve}}
 	after := []Grant{{Environment: "alice", Level: auth.LevelObserve}, {Environment: "beta", Level: auth.LevelFull}, {Environment: "dora", Level: auth.LevelFull}}
