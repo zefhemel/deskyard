@@ -209,7 +209,7 @@ def test_native_terminal_defaults(sandbox):
 import os, pty, subprocess, time
 socket='/run/workspace/deskyard-terminal/tmux.sock'
 def sessions():
-    return set(subprocess.check_output(['deskyard','terminal-list'],text=True).splitlines())
+    return {l.split('\t')[0] for l in subprocess.check_output(['deskyard','terminal-list'],text=True).splitlines()}
 def wait(f):
     end=time.monotonic()+15
     while time.monotonic()<end:
@@ -253,7 +253,7 @@ def test_emulator_shared_defaults_tabs_cwd_and_explicit_commands(sandbox):
     cwd_flag = '--working-directory'
     socket = '/run/workspace/deskyard-terminal/tmux.sock'
     def names():
-        return set(sandbox.exec('deskyard terminal-list').stdout.splitlines())
+        return {l.split('\t')[0] for l in sandbox.exec('deskyard terminal-list').stdout.splitlines()}
     def launch(cmd):
         sandbox.exec('setsid -f ' + cmd + ' >/dev/null 2>&1')
     # Simulate existing preferences before any emulator starts. Migration must
@@ -371,12 +371,12 @@ try:
     assert clients()[remote]==group,clients()
     assert wait(lambda:'build' in subprocess.check_output(['xdotool','getwindowname',window],text=True))
     # A chooser switch does not end the old shell or its jobs.
-    assert set(subprocess.check_output(['deskyard','terminal-list'],text=True).splitlines())=={original,'build'}
+    assert {l.split('\t')[0] for l in subprocess.check_output(['deskyard','terminal-list'],text=True).splitlines()}=={original,'build'}
     lease.stdin.close()
     lease.wait(timeout=10)
     wait(lambda:remote not in clients())
     assert clients()[native]=='build' and clients()[other]==original, clients()
-    assert set(subprocess.check_output(['deskyard','terminal-list'],text=True).splitlines())=={original,'build'}
+    assert {l.split('\t')[0] for l in subprocess.check_output(['deskyard','terminal-list'],text=True).splitlines()}=={original,'build'}
 finally:
     if lease and lease.stdin and not lease.stdin.closed:lease.stdin.close()
     subprocess.run(['tmux','-S',socket,'kill-server'],stderr=subprocess.DEVNULL)
