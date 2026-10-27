@@ -108,7 +108,7 @@ func (s *Server) handleDeleteVolume(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	ctx, cancel := timeout(r, 5*time.Minute)
+	ctx, cancel := removalContext(r)
 	defer cancel()
 	err := s.Environments.DeleteVolume(ctx, name, deleteFiles)
 	var inUse *environments.VolumeInUseError

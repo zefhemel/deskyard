@@ -433,7 +433,7 @@ func (s *Server) handleRemoveEnvironment(w http.ResponseWriter, r *http.Request)
 	}
 	defer release()
 	s.viewers.closeAll(c.Name)
-	ctx, cancel := timeout(r, 5*time.Minute)
+	ctx, cancel := removalContext(r)
 	defer cancel()
 	if err := s.Environments.Remove(ctx, c.Name, r.URL.Query().Get("files") == "1"); err != nil {
 		writeError(w, errorStatus(err), err.Error())

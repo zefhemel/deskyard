@@ -106,7 +106,16 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 // JSON sends in (when not nil) as JSON to the API route path and decodes a
 // 2xx answer into out (when not nil). Other answers come back as *APIError.
 func (c *Client) JSON(ctx context.Context, method, path string, in, out any) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	return c.JSONWithin(ctx, Timeout, method, path, in, out)
+}
+
+// Timeout is how long JSON waits for an answer.
+var Timeout = 30 * time.Second
+
+// JSONWithin is JSON waiting up to d, for a request the server works on for
+// longer.
+func (c *Client) JSONWithin(ctx context.Context, d time.Duration, method, path string, in, out any) error {
+	ctx, cancel := context.WithTimeout(ctx, d)
 	defer cancel()
 	var body io.Reader
 	if in != nil {

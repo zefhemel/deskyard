@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/cli/clitest"
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/remote"
 )
 
 // adminHarness signs in to a fake whose administrator routes answer from
@@ -379,5 +380,22 @@ func TestAdminServerChoice(t *testing.T) {
 	}
 	if r := h.run("volume"); r.code != 2 || !strings.Contains(r.stderr, "list") {
 		t.Errorf("volume: %+v", r)
+	}
+}
+
+// Removals that delete files wait for the server, which works on them for
+// longer than other requests may take: giving up would report a network
+// failure for a removal still going on.
+func TestRemovalsDeletingFilesWaitForTheServer(t *testing.T) {
+	h, f := adminHarness(t)
+	defer func(d time.Duration) { remote.Timeout = d }(remote.Timeout)
+	remote.Timeout = 50 * time.Millisecond
+	f.Answer("DELETE /api/environments/alice", clitest.Answer{Delay: 300 * time.Millisecond})
+	if r := h.run("env", "remove", "alice", "--delete-files"); r.code != 0 {
+		t.Errorf("env remove --delete-files: %+v", r)
+	}
+	f.Answer("DELETE /api/volumes/music", clitest.Answer{Delay: 300 * time.Millisecond})
+	if r := h.run("volume", "remove", "music", "--delete-files"); r.code != 0 {
+		t.Errorf("volume remove --delete-files: %+v", r)
 	}
 }

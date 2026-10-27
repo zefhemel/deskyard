@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -206,5 +207,21 @@ func TestEventsSendConflictsToAdmins(t *testing.T) {
 	}
 	if got := snapshot("anna"); got["environment"] == "" || got["conflicts"] != "" {
 		t.Fatalf("anna: %v", got)
+	}
+}
+
+// A removal goes on when its client leaves: stopping it partway would leave
+// the environment forgotten and its files half deleted.
+func TestRemovalOutlivesItsClient(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	r := httptest.NewRequest("DELETE", "/api/environments/alice?files=1", nil).WithContext(ctx)
+	removal, stop := removalContext(r)
+	defer stop()
+	cancel()
+	if removal.Err() != nil {
+		t.Fatal("the client leaving cancelled the removal")
+	}
+	if d, ok := removal.Deadline(); !ok || time.Until(d) > 5*time.Minute {
+		t.Errorf("deadline %v %v", d, ok)
 	}
 }

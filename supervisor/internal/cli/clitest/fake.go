@@ -102,6 +102,8 @@ type Answer struct {
 	// Events, when set, make the answer a server-sent event stream with
 	// one data: line per event, each encoded as JSON (a job's progress).
 	Events []any
+	// Delay is how long the server works on the request before answering.
+	Delay time.Duration
 }
 
 // Call is a request to a route answered from Answers.
@@ -267,6 +269,13 @@ func (f *Fake) answer(w http.ResponseWriter, r *http.Request) {
 	f.calls = append(f.calls, Call{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Body: string(body)})
 	a, ok := f.Answers[r.Method+" "+r.URL.Path]
 	f.mu.Unlock()
+	if a.Delay > 0 {
+		select {
+		case <-time.After(a.Delay):
+		case <-r.Context().Done():
+			return
+		}
+	}
 	switch {
 	case !ok:
 		writeErr(w, http.StatusNotFound, "no such route")

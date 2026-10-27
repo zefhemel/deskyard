@@ -450,6 +450,11 @@ func (a *App) followJob(ctx context.Context, cl *remote.Client, id string) error
 	return fmt.Errorf("lost the progress of %s before it finished: check with `deskyard env show %s`", cl.Label(), cl.Label())
 }
 
+// removalTimeout is how long a removal waits for the server, which allows
+// one 5 minutes (deleting files takes long); giving up sooner would report a
+// network failure for a removal still going on.
+const removalTimeout = 6 * time.Minute
+
 func runEnvRemove(a *App, c *call) error {
 	name := c.args[0]
 	cl, err := a.apiClient(c, name)
@@ -460,7 +465,7 @@ func runEnvRemove(a *App, c *call) error {
 	if c.bool("--delete-files") {
 		path += "?files=1"
 	}
-	if err := cl.JSON(c.ctx, http.MethodDelete, path, nil, nil); err != nil {
+	if err := cl.JSONWithin(c.ctx, removalTimeout, http.MethodDelete, path, nil, nil); err != nil {
 		return err
 	}
 	if c.bool("--delete-files") {
@@ -621,7 +626,7 @@ func runVolumeRemove(a *App, c *call) error {
 		return err
 	}
 	del := c.bool("--delete-files")
-	if err := cl.JSON(c.ctx, http.MethodDelete, "/volumes/"+url.PathEscape(c.args[0])+"?deleteFiles="+strconv.FormatBool(del), nil, nil); err != nil {
+	if err := cl.JSONWithin(c.ctx, removalTimeout, http.MethodDelete, "/volumes/"+url.PathEscape(c.args[0])+"?deleteFiles="+strconv.FormatBool(del), nil, nil); err != nil {
 		return err
 	}
 	if del {

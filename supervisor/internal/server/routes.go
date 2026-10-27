@@ -314,3 +314,10 @@ func errorStatus(err error) int {
 func timeout(r *http.Request, d time.Duration) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(r.Context(), d)
 }
+
+// removalContext is a removal's: 5 minutes, also when its client leaves,
+// as stopping it partway would leave the environment or volume forgotten
+// and its files half deleted.
+func removalContext(r *http.Request) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Minute)
+}
