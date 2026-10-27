@@ -5,18 +5,35 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"syscall"
 	"testing"
 )
 
-type chownLog struct{ paths []string }
+// chownLog records absolute paths of what reownOnce chowns.
+type chownLog struct {
+	data  string
+	paths []string
+}
 
-func (c *chownLog) chown(path string, uid, gid int) error {
+func (c *chownLog) chown(name string, uid, gid int) error {
 	if uid != UID || gid != GID {
 		panic("chown to the wrong owner")
 	}
-	c.paths = append(c.paths, path)
+	c.paths = append(c.paths, filepath.Join(c.data, name))
 	return nil
+}
+
+// reown runs reownOnce on l with a recording chown.
+func reown(t *testing.T, l Layout, c *chownLog) error {
+	t.Helper()
+	root, err := os.OpenRoot(l.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	c.data = l.Data
+	return reownOnce(root, c.chown)
 }
 
 func (c *chownLog) sorted() []string {
@@ -47,14 +64,14 @@ func oldLayout(t *testing.T) Layout {
 func TestReownOnceOwnsSupervisorFilesAndTopFolders(t *testing.T) {
 	l := oldLayout(t)
 	var c chownLog
-	if err := ReownOnce(l, c.chown); err != nil {
+	if err := reown(t, l, &c); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{
 		l.Data, filepath.Join(l.Data, "accounts.json"), filepath.Join(l.Data, "environments.json"),
 		l.Secret, filepath.Join(l.Secret, "key"), filepath.Join(l.Secret, "certmagic"),
 		filepath.Join(l.Secret, "certmagic/a"), filepath.Join(l.Secret, "certmagic/a/b"),
-		l.State, filepath.Join(l.State, "instance"), filepath.Join(l.State, "owner"),
+		l.State, filepath.Join(l.State, "instance"), filepath.Join(l.State, "owner.tmp"),
 		l.Cache, filepath.Join(l.Cache, "web"), filepath.Join(l.Cache, "web/x"),
 		l.Home, filepath.Join(l.Home, "alice"),
 		l.Volume, filepath.Join(l.Volume, "data"),
@@ -71,7 +88,35 @@ func TestReownOnceOwnsSupervisorFilesAndTopFolders(t *testing.T) {
 	}
 }
 
+// A planted symlink in place of home/, volume/, secret/ or a child must not
+// carry the re-own outside the data folder (say onto the Docker socket).
 func TestReownOnceDoesNotFollowSymlinks(t *testing.T) {
+	for _, dir := range []string{"home", "volume", "secret", "cache"} {
+		t.Run(dir, func(t *testing.T) {
+			l := oldLayout(t)
+			outside := t.TempDir()
+			touch(t, filepath.Join(outside, "child", "file"))
+			target := filepath.Join(l.Data, dir)
+			if err := os.RemoveAll(target); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(outside, target); err != nil {
+				t.Fatal(err)
+			}
+			var c chownLog
+			if err := reown(t, l, &c); err != nil {
+				t.Fatal(err)
+			}
+			for _, p := range c.paths {
+				if strings.HasPrefix(p, outside) || p == target || strings.HasPrefix(p, target+"/") {
+					t.Fatalf("chowned %s through the %s symlink", p, dir)
+				}
+			}
+		})
+	}
+}
+
+func TestReownOnceDoesNotFollowSymlinkedChildren(t *testing.T) {
 	l := oldLayout(t)
 	outside := t.TempDir()
 	touch(t, filepath.Join(outside, "file"))
@@ -79,20 +124,35 @@ func TestReownOnceDoesNotFollowSymlinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	var c chownLog
-	if err := ReownOnce(l, c.chown); err != nil {
+	if err := reown(t, l, &c); err != nil {
 		t.Fatal(err)
 	}
 	for _, p := range c.paths {
-		if p == filepath.Join(outside, "file") || p == outside {
+		if strings.HasPrefix(p, outside) {
 			t.Fatalf("followed a symlink to %s", p)
 		}
+	}
+}
+
+func TestReownOnceRefusesSymlinkedState(t *testing.T) {
+	l := NewLayout(t.TempDir())
+	outside := t.TempDir()
+	if err := os.Symlink(outside, l.State); err != nil {
+		t.Fatal(err)
+	}
+	var c chownLog
+	if err := reown(t, l, &c); err == nil {
+		t.Fatal("expected an error")
+	}
+	if len(c.paths) != 0 {
+		t.Fatalf("chowned %v", c.paths)
 	}
 }
 
 func TestReownOnceWritesMarkerAndSkipsNextTime(t *testing.T) {
 	l := oldLayout(t)
 	var c chownLog
-	if err := ReownOnce(l, c.chown); err != nil {
+	if err := reown(t, l, &c); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(filepath.Join(l.State, "owner"))
@@ -103,7 +163,7 @@ func TestReownOnceWritesMarkerAndSkipsNextTime(t *testing.T) {
 		t.Fatalf("marker mode %v", fi.Mode())
 	}
 	c.paths = nil
-	if err := ReownOnce(l, c.chown); err != nil {
+	if err := reown(t, l, &c); err != nil {
 		t.Fatal(err)
 	}
 	if len(c.paths) != 0 {
@@ -116,7 +176,7 @@ func TestReownOnceWritesMarkerAndSkipsNextTime(t *testing.T) {
 func TestReownOnceRerunsWithoutMarker(t *testing.T) {
 	l := oldLayout(t)
 	var c chownLog
-	if err := ReownOnce(l, c.chown); err != nil {
+	if err := reown(t, l, &c); err != nil {
 		t.Fatal(err)
 	}
 	first := len(c.paths)
@@ -124,7 +184,7 @@ func TestReownOnceRerunsWithoutMarker(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.paths = nil
-	if err := ReownOnce(l, c.chown); err != nil {
+	if err := reown(t, l, &c); err != nil {
 		t.Fatal(err)
 	}
 	if len(c.paths) != first {
@@ -138,7 +198,7 @@ func TestReownOnceRerunsWithoutMarker(t *testing.T) {
 func TestReownOnceOnFreshFolder(t *testing.T) {
 	l := NewLayout(t.TempDir())
 	var c chownLog
-	if err := ReownOnce(l, c.chown); err != nil {
+	if err := reown(t, l, &c); err != nil {
 		t.Fatal(err)
 	}
 	fi, err := os.Stat(l.State)
@@ -178,11 +238,9 @@ func TestSocketGroupStatsUnixSocket(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := int(fi.Sys().(*syscall.Stat_t).Gid)
-	for _, host := range []string{"unix://" + path} {
-		gid, ok, err := SocketGroup(host)
-		if err != nil || !ok || gid != want {
-			t.Fatalf("%s: got %d %v %v, want %d", host, gid, ok, err, want)
-		}
+	gid, ok, err := SocketGroup("unix://" + path)
+	if err != nil || !ok || gid != want {
+		t.Fatalf("got %d %v %v, want %d", gid, ok, err, want)
 	}
 }
 

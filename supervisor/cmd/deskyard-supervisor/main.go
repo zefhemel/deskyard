@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -82,8 +83,11 @@ func run(log *slog.Logger) error {
 			return err
 		}
 	}
-	if os.Getuid() != config.UID {
-		return fmt.Errorf("the supervisor must run as UID %d (or start as root to drop to it), not %d", config.UID, os.Getuid())
+	if os.Getuid() != config.UID || os.Getgid() != config.GID {
+		return fmt.Errorf("the supervisor must run as UID:GID %d:%d (or start as root to drop to it), not %d:%d", config.UID, config.GID, os.Getuid(), os.Getgid())
+	}
+	if err := checkSocketAccess(cfg.EngineHost); err != nil {
+		return err
 	}
 	// Before anything is written: an older layout is refused, not adopted.
 	if err := config.CheckLegacy(cfg.DataDir); err != nil {
@@ -188,6 +192,28 @@ func checkDataDir(dir string) error {
 	return nil
 }
 
+// checkSocketAccess explains a refused connection to the engine's unix
+// socket: a process started without root (--user) must have the socket's
+// group itself. A TCP engine host has no such check.
+func checkSocketAccess(engineHost string) error {
+	path, ok := config.SocketPath(engineHost)
+	if !ok {
+		return nil
+	}
+	c, err := net.DialTimeout("unix", path, 5*time.Second)
+	if err == nil {
+		return c.Close()
+	}
+	if !errors.Is(err, fs.ErrPermission) {
+		return nil // missing or down: the engine check reports it
+	}
+	group := ""
+	if gid, ok, gerr := config.SocketGroup(engineHost); gerr == nil && ok {
+		group = fmt.Sprintf(" (group %d)", gid)
+	}
+	return fmt.Errorf("this user may not use the container engine socket %s%s: add its group to the container (--group-add), or start as root, which adds it automatically", path, group)
+}
+
 // rootPhase runs while the supervisor is still root: it fixes the ownership
 // of a data folder an older, root supervisor made, finds the engine socket's
 // group, and drops to UID 1000 with that group.
@@ -195,7 +221,7 @@ func rootPhase(cfg config.Config) error {
 	if err := checkDataDir(cfg.DataDir); err != nil {
 		return err
 	}
-	if err := config.ReownOnce(cfg.Layout, os.Lchown); err != nil {
+	if err := config.ReownOnce(cfg.Layout); err != nil {
 		return fmt.Errorf("giving %s to UID %d: %w", cfg.DataDir, config.UID, err)
 	}
 	gid, hasSocket, err := config.SocketGroup(cfg.EngineHost)
