@@ -60,7 +60,9 @@ at once. Switching an environment to another image works the same way.
 Each definition pins the image ID its container was built from; if that image
 has disappeared from the engine when the container must be recreated, the
 supervisor pulls the image reference again and records the new ID as a new
-revision. Upgrades
+revision. This holds for VPN environments too. If the reference can't be
+pulled either, the environment is left as it is, with an error naming the
+image, until you upgrade it or switch it to another image. Upgrades
 go forward only: Chromium won't open a profile written by a newer version.
 During a settings save, progress appears above the image picker and scrolls
 into view. Image downloads show transferred MB and a percentage when available;

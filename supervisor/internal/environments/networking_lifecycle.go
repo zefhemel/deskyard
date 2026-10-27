@@ -183,6 +183,9 @@ func (n *Networking) apply(ctx context.Context, r networkTransition, progress fu
 	if phase := n.ensureNetwork(ctx, r); phase != "" {
 		return n.fail(r, phase)
 	}
+	if err := n.repin(ctx, r); err != nil {
+		return err
+	}
 	if c, err := s.Eng.Inspect(ctx, containerName(r.Name)); err == nil {
 		if !s.owns(c.Labels, r.Name) {
 			return n.fail(r, phaseIdentity)
@@ -232,6 +235,9 @@ func (n *Networking) apply(ctx context.Context, r networkTransition, progress fu
 		return n.fail(r, phaseSnapshot)
 	}
 	if err := s.createContainer(ctx, r.Name, def.Revision, def.Settings(), pinned(def), r.RuntimeID); err != nil {
+		// The cause is logged for the owner, never recorded: it may hold
+		// private host paths.
+		s.Log.Warn("creating the environment's container", "environment", r.Name, "err", err)
 		return n.fail(r, phaseCreate)
 	}
 	running := def.Power == PowerRunning
@@ -273,6 +279,32 @@ func (n *Networking) apply(ctx context.Context, r networkTransition, progress fu
 	}
 	s.setError(r.Name, "")
 	return nil
+}
+
+// repin makes sure the image r's environment is pinned to is on the engine
+// before apply tears anything down: one that is gone is pulled again by its
+// reference, as a new revision (Service.repin). One that can't be fails the
+// transition as a change, with the old pair left as it was; the poll leaves
+// it for a start or an upgrade, rather than pulling again every pass.
+func (n *Networking) repin(ctx context.Context, r networkTransition) error {
+	s := n.service
+	def, ok := s.Defs.Get(r.Name)
+	if !ok {
+		return n.fail(r, phaseDefinition)
+	}
+	if def.Image.ID == "" {
+		return nil
+	}
+	if _, err := s.Eng.ImageInspect(ctx, def.Image.ID); err == nil {
+		return nil
+	} else if !errors.Is(err, engine.ErrNotFound) {
+		return n.fail(r, phaseImage)
+	}
+	if _, err := s.repin(ctx, r.Name); err == nil {
+		return nil
+	}
+	r.Repair = false
+	return n.failWith(r, phaseImage, fmt.Sprintf("The image %s (%s) this environment is pinned to is gone from the engine and could not be pulled again; upgrade the environment or choose another image", def.Image.Ref, def.Image.ID))
 }
 
 // startable refuses a start of name that can't succeed, before its desired

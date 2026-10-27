@@ -19,6 +19,7 @@ const (
 	phaseConnection     recoveryPhase = "connection-read"
 	phaseSnapshot       recoveryPhase = "snapshot-write"
 	phaseDefinition     recoveryPhase = "definition-read"
+	phaseImage          recoveryPhase = "image"
 	phaseCreate         recoveryPhase = "consumer-create"
 	phaseStart          recoveryPhase = "consumer-start"
 	phaseReady          recoveryPhase = "local-ready"

@@ -3,6 +3,7 @@ package environments
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
@@ -55,6 +56,14 @@ func (e *definitionEngine) ImageInspect(ctx context.Context, ref string) (engine
 		img.ID = id
 	}
 	return img, err
+}
+
+// Create refuses a container from a missing image, as the engine does.
+func (e *definitionEngine) Create(ctx context.Context, spec engine.ContainerSpec) (string, error) {
+	if e.missing[spec.Image] {
+		return "", fmt.Errorf("No such image: %s", spec.Image)
+	}
+	return e.Engine.Create(ctx, spec)
 }
 func (e *definitionEngine) Start(ctx context.Context, id string) error {
 	if e.failStart {

@@ -214,12 +214,19 @@ func (n *Networking) target(name string) (engine.Container, bool) {
 
 // phase is an internal constant, never an engine/provider error or identifier.
 func (n *Networking) fail(r networkTransition, phase recoveryPhase) error {
-	n.service.Log.Warn("environment network recovery failed", "phase", string(phase))
-	r.Pending = true
-	r.Error = "VPN network transition failed at " + string(phase) + "; retry or repair the selected connection"
+	msg := "VPN network transition failed at " + string(phase) + "; retry or repair the selected connection"
 	if def, ok := n.service.Defs.Get(r.Name); ok && def.Network.Kind != NetworkVPN {
-		r.Error = "Network transition failed at " + string(phase) + "; retry to recover"
+		msg = "Network transition failed at " + string(phase) + "; retry to recover"
 	}
+	return n.failWith(r, phase, msg)
+}
+
+// failWith is fail with msg as the error: one of the supervisor's own,
+// never an engine/provider error.
+func (n *Networking) failWith(r networkTransition, phase recoveryPhase, msg string) error {
+	n.service.Log.Warn("environment network recovery failed", "environment", r.Name, "phase", string(phase))
+	r.Pending = true
+	r.Error = msg
 	if err := n.saveRecord(r); err != nil {
 		return errors.New("network recovery failed at " + string(phase) + "; recovery state could not be persisted")
 	}
