@@ -33,3 +33,12 @@ func TestDataHostPathRefusesNamedVolume(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestDataHostPathRefusesNonHostSource(t *testing.T) {
+	for _, src := range []string{"", "tmpfs", "relative/dir"} {
+		_, err := dataHostPath(engine.Container{Mounts: []engine.Mount{{Source: src, Target: "/data"}}})
+		if err == nil || !strings.Contains(err.Error(), "-v <host folder>:/data") {
+			t.Fatalf("source %q: err = %v", src, err)
+		}
+	}
+}

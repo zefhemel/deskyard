@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"path/filepath"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
@@ -18,6 +19,10 @@ func dataHostPath(self engine.Container) (string, error) {
 		}
 		if m.Volume != "" {
 			return "", errors.New("a named volume at /data isn't supported; mount a host folder (-v <host folder>:/data)")
+		}
+		// A tmpfs or similar has no host folder to translate to.
+		if !filepath.IsAbs(m.Source) {
+			break
 		}
 		return m.Source, nil
 	}
