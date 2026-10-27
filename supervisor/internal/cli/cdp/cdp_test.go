@@ -1,12 +1,16 @@
 package cdp
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -168,5 +172,53 @@ func TestProbeAndServe(t *testing.T) {
 	cancel()
 	if err := <-done; err != nil {
 		t.Errorf("serve: %v", err)
+	}
+}
+
+// TestForwarderRefusesDotSegments: the forwarder holds the account's
+// credential, so a path that climbs out of /cdp/ must never reach another
+// API route, directly or through the supervisor's redirect to the cleaned
+// path.
+func TestForwarderRefusesDotSegments(t *testing.T) {
+	var mu sync.Mutex
+	var leaked []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/environments/alice/cdp/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("{}"))
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		leaked = append(leaked, r.URL.Path)
+		mu.Unlock()
+		w.Write([]byte("secret"))
+	})
+	up := httptest.NewServer(mux)
+	t.Cleanup(up.Close)
+	fw := &Forwarder{Client: &remote.Client{Base: up.URL, Environment: "alice", Token: clitest.Credential}}
+	srv := httptest.NewServer(fw)
+	t.Cleanup(srv.Close)
+	fw.Local = strings.TrimPrefix(srv.URL, "http://")
+
+	for _, p := range []string{"/../../me", "/%2e%2e/%2e%2e/me", "/json/../../../me", "/./json", "/json/%2E%2E/x", "/json%2f..%2f..%2fme", "//json"} {
+		conn, err := net.Dial("tcp", fw.Local)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintf(conn, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", p, fw.Local)
+		resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+		if err != nil {
+			t.Fatalf("%s: %v", p, err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		conn.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s: status %d body %q, want 400", p, resp.StatusCode, body)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(leaked) > 0 {
+		t.Errorf("requests reached non-cdp routes: %v", leaked)
 	}
 }

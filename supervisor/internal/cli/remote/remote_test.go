@@ -3,6 +3,8 @@ package remote
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -243,5 +245,32 @@ func TestJSON(t *testing.T) {
 	}
 	if f.Valid(clitest.Credential) {
 		t.Errorf("credential still valid")
+	}
+}
+
+// TestDoDoesNotFollowRedirects: a redirect must never carry the credential
+// to another route.
+func TestDoDoesNotFollowRedirects(t *testing.T) {
+	var reached bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/environments/alice/x", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/api/me/credentials", http.StatusMovedPermanently)
+	})
+	mux.HandleFunc("/api/me/credentials", func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	for _, hc := range []*http.Client{nil, {}} {
+		c := &Client{Base: srv.URL, Environment: "alice", Token: clitest.Credential, HTTP: hc}
+		req, _ := http.NewRequest("GET", c.URL("/x"), nil)
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusMovedPermanently || reached {
+			t.Errorf("status %d, reached redirect target %v", resp.StatusCode, reached)
+		}
 	}
 }

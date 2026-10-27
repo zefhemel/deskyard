@@ -80,11 +80,15 @@ func (c *Client) Header() http.Header {
 	return h
 }
 
-func (c *Client) httpClient() *http.Client {
+// HTTPClient is c.HTTP (or the default client) with redirects not followed,
+// so a redirect never carries the credential to another route.
+func (c *Client) HTTPClient() *http.Client {
+	hc := http.Client{}
 	if c.HTTP != nil {
-		return c.HTTP
+		hc = *c.HTTP
 	}
-	return http.DefaultClient
+	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &hc
 }
 
 // Do sends a request with the credential, when there is one.
@@ -92,7 +96,7 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
-	resp, err := c.httpClient().Do(req)
+	resp, err := c.HTTPClient().Do(req)
 	if err != nil {
 		return nil, c.NetError(err)
 	}

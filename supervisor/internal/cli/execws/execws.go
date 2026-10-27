@@ -57,7 +57,7 @@ func Run(ctx context.Context, c *remote.Client, req Request, sio IO) (int, error
 
 	conn, resp, err := websocket.Dial(ctx, c.WSURL("/exec"), &websocket.DialOptions{
 		HTTPHeader: c.Header(),
-		HTTPClient: c.HTTP,
+		HTTPClient: c.HTTPClient(),
 	})
 	if err != nil {
 		if resp != nil && resp.StatusCode != http.StatusSwitchingProtocols {

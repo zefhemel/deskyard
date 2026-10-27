@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -61,11 +62,30 @@ func (f *Forwarder) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Host header is not localhost", http.StatusForbidden)
 		return
 	}
+	if !cleanPath(r.URL.Path) {
+		http.Error(w, "path is not clean", http.StatusBadRequest)
+		return
+	}
 	if isWebSocket(r) {
 		f.serveWS(w, r)
 		return
 	}
 	f.serveHTTP(w, r)
+}
+
+// cleanPath reports whether p (decoded, so %2e and %2f count) has no ".",
+// ".." or empty segments. The forwarder holds the account's credential: a
+// path that climbs out of /cdp/ would reach other API routes, directly or
+// through the supervisor's redirect to the cleaned path.
+func cleanPath(p string) bool {
+	if !strings.HasPrefix(p, "/") {
+		return false
+	}
+	c := path.Clean(p)
+	if strings.HasSuffix(p, "/") && c != "/" {
+		c += "/"
+	}
+	return c == p
 }
 
 func isWebSocket(r *http.Request) bool {
@@ -124,7 +144,7 @@ func (f *Forwarder) serveHTTP(w http.ResponseWriter, r *http.Request) {
 func (f *Forwarder) serveWS(w http.ResponseWriter, r *http.Request) {
 	up, resp, err := websocket.Dial(r.Context(), f.Client.WSURL(f.remotePath(r)), &websocket.DialOptions{
 		HTTPHeader: f.Client.Header(),
-		HTTPClient: f.Client.HTTP,
+		HTTPClient: f.Client.HTTPClient(),
 	})
 	if err != nil {
 		if resp != nil && resp.StatusCode != http.StatusSwitchingProtocols {

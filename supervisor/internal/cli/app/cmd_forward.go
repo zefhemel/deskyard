@@ -297,7 +297,7 @@ func (fw *forwarder) dial(ctx context.Context) (*websocket.Conn, error) {
 	defer cancel()
 	ws, resp, err := websocket.Dial(dctx, fw.cl.WSURL("/forward"), &websocket.DialOptions{
 		HTTPHeader: fw.cl.Header(),
-		HTTPClient: fw.cl.HTTP,
+		HTTPClient: fw.cl.HTTPClient(),
 	})
 	if err != nil {
 		if resp != nil && resp.StatusCode != http.StatusSwitchingProtocols {
