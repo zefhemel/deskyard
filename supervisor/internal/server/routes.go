@@ -18,6 +18,8 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/logout", s.handleLogout)
 	m.HandleFunc("POST /api/links/inspect", s.handleInspectLink)
 	m.HandleFunc("POST /api/links/redeem", s.handleRedeemLink)
+	m.HandleFunc("POST /api/cli-login", s.handleStartCLILogin)
+	m.HandleFunc("POST /api/cli-login/{id}/token", s.handleCLILoginToken)
 
 	h := func(pattern string, fn http.HandlerFunc) { m.Handle(pattern, s.authed(fn)) }
 	h("GET /api/me", s.handleMe)
@@ -25,6 +27,9 @@ func (s *Server) routes() {
 	h("POST /api/me/sign-out-everywhere", s.handleSignOutEverywhere)
 	h("GET /api/me/credentials", s.handleOwnCredentials)
 	h("DELETE /api/me/credentials/{id}", s.handleDeleteOwnCredential)
+	h("GET /api/cli-login/{id}", s.handleViewCLILogin)
+	h("POST /api/cli-login/{id}/approve", s.handleApproveCLILogin)
+	h("POST /api/cli-login/{id}/deny", s.handleDenyCLILogin)
 	h("GET /api/host", s.handleHost)
 	h("GET /api/events", s.handleEvents)
 	h("GET /api/jobs/{id}", s.handleJob)

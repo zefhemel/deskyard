@@ -54,6 +54,7 @@ type Server struct {
 	thumbs           *thumbnails
 	credentials      *credentialStore
 	links            *linkStore
+	cliLogins        *cliLogins // pending deskyard logins
 	images           *catalog
 	reconcile        chan struct{} // wakes the environments' reconcile loop
 
@@ -102,7 +103,7 @@ func New(o Options) (*Server, error) {
 		Layout: o.Layout, UI: o.UI,
 		jobs: newJobs(), events: newHub(), viewers: newViewers(), terminals: newTerminalConnections(), forwards: newForwards(), viewersPub: newThrottle(viewersInterval), streamDials: newDialGates(),
 		clients:     &clientFiles{eng: o.Eng, dir: filepath.Join(o.Layout.Cache, "client")},
-		activityPub: newThrottle(activityInterval), screenWatchers: newViewers(),
+		activityPub: newThrottle(activityInterval), screenWatchers: newViewers(), cliLogins: newCLILogins(),
 		reconcile: make(chan struct{}, 1),
 	}
 	s.activity = s.newActivity(o.ActivityPresence)
