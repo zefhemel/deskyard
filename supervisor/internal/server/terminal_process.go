@@ -12,6 +12,7 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/terminal"
 )
 
@@ -21,7 +22,7 @@ import (
 //
 // A join lease never creates the session: when it is missing, terminalProcess
 // returns terminal.ErrNoSession.
-func (s *Server) terminalProcess(parent context.Context, containerID, session string, join bool, cols, rows uint) (*engine.Process, error) {
+func (s *Server) terminalProcess(parent context.Context, c environments.Environment, session string, join bool, cols, rows uint) (*engine.Process, error) {
 	ctx, cancel := context.WithCancel(parent)
 	startup := time.AfterFunc(10*time.Second, cancel)
 	defer startup.Stop()
@@ -37,7 +38,7 @@ func (s *Server) terminalProcess(parent context.Context, containerID, session st
 	if join {
 		argv = append(argv, "join")
 	}
-	lease, err := s.Eng.Exec(ctx, containerID, engine.ExecSpec{Cmd: argv, User: "user", DesktopSession: true, WorkDir: "/workspace", Env: env, Stdin: true})
+	lease, err := s.Eng.Exec(ctx, c.Container.ID, c.DesktopExec(engine.ExecSpec{Cmd: argv, WorkDir: "/workspace", Env: env, Stdin: true}))
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +61,7 @@ func (s *Server) terminalProcess(parent context.Context, containerID, session st
 	if err != nil || line != "prepared\n" {
 		return nil, fmt.Errorf("shared terminal lease did not prepare")
 	}
-	attach, err := s.Eng.Exec(ctx, containerID, engine.ExecSpec{Cmd: []string{"deskyard", "terminal-attach", id}, User: "user", DesktopSession: true, WorkDir: "/workspace", Env: env, Tty: true, Stdin: true, Cols: cols, Rows: rows})
+	attach, err := s.Eng.Exec(ctx, c.Container.ID, c.DesktopExec(engine.ExecSpec{Cmd: []string{"deskyard", "terminal-attach", id}, WorkDir: "/workspace", Env: env, Tty: true, Stdin: true, Cols: cols, Rows: rows}))
 	if err != nil {
 		return nil, err
 	}

@@ -80,16 +80,13 @@ type Container struct {
 func (c Container) Running() bool { return c.State == "running" || c.State == "restarting" }
 
 type ExecSpec struct {
-	// DesktopSession joins the image's shared user/mount namespace when supported.
-	// Older images retain ordinary exec behavior. Callers must use the desktop user.
-	DesktopSession bool
-	Cmd            []string
-	User           string
-	WorkDir        string
-	Env            []string
-	Tty            bool
-	Stdin          bool
-	Cols, Rows     uint
+	Cmd        []string
+	User       string
+	WorkDir    string
+	Env        []string
+	Tty        bool
+	Stdin      bool
+	Cols, Rows uint
 }
 
 // Process is a running exec. With Tty, everything comes on Stdout.

@@ -280,26 +280,6 @@ func (d *Docker) List(ctx context.Context, labels map[string]string) ([]engine.C
 
 func (d *Docker) Exec(ctx context.Context, id string, s engine.ExecSpec) (*engine.Process, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	if s.DesktopSession {
-		if s.User != "user" {
-			cancel()
-			return nil, errors.New("desktop session exec requires user")
-		}
-		c, err := d.c.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
-		if err != nil {
-			cancel()
-			return nil, wrap(err)
-		}
-		if c.Container.Config.Labels["deskyard.fuse"] == "userns-v1" {
-			prefix := []string{"/usr/local/bin/workspace-exec"}
-			if s.WorkDir != "" {
-				// Portal paths only exist after entering the session mount namespace.
-				prefix = append(prefix, "/usr/bin/env", "--chdir="+s.WorkDir, "--")
-				s.WorkDir = "/"
-			}
-			s.Cmd = append(prefix, s.Cmd...)
-		}
-	}
 	opts := client.ExecCreateOptions{
 		User: s.User, WorkingDir: s.WorkDir, Env: s.Env, Cmd: s.Cmd, TTY: s.Tty,
 		AttachStdin: s.Stdin, AttachStdout: true, AttachStderr: true,

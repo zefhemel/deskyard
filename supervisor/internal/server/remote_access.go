@@ -176,12 +176,12 @@ func (s *Server) remoteExec(w http.ResponseWriter, r *http.Request, c environmen
 	var p *engine.Process
 	if session, shared := terminalSession(start.Argv, start.Tty); shared {
 		// `deskyard terminal NAME` is an explicit open: it creates the session.
-		p, err = s.terminalProcess(ctx, c.Container.ID, session, false, start.Cols, start.Rows)
+		p, err = s.terminalProcess(ctx, c, session, false, start.Cols, start.Rows)
 	} else {
-		p, err = s.Eng.Exec(ctx, c.Container.ID, engine.ExecSpec{
-			Cmd: start.Argv, User: "user", DesktopSession: true, WorkDir: start.Cwd, Env: execEnvFor(start.Env),
+		p, err = s.Eng.Exec(ctx, c.Container.ID, c.DesktopExec(engine.ExecSpec{
+			Cmd: start.Argv, WorkDir: start.Cwd, Env: execEnvFor(start.Env),
 			Tty: start.Tty, Stdin: true, Cols: start.Cols, Rows: start.Rows,
-		})
+		}))
 	}
 	if err != nil {
 		fail(err.Error())

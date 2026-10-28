@@ -564,7 +564,7 @@ func (s *Server) execOutput(ctx context.Context, c environments.Environment, cmd
 	if len(cmd) == 3 && cmd[0] == "deskyard" && cmd[1] == "screenshot" && cmd[2] == "-" {
 		limit = 32 << 20
 	}
-	result, err := engine.Run(ctx, s.Eng, c.Container.ID, engine.ExecSpec{Cmd: cmd, User: "user", DesktopSession: true, WorkDir: "/workspace", Env: execEnv}, engine.RunOptions{StdoutLimit: limit, StderrLimit: 4096})
+	result, err := engine.Run(ctx, s.Eng, c.Container.ID, c.DesktopExec(engine.ExecSpec{Cmd: cmd, WorkDir: "/workspace", Env: execEnv}), engine.RunOptions{StdoutLimit: limit, StderrLimit: 4096})
 	if err != nil {
 		return nil, err
 	}

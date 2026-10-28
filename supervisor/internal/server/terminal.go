@@ -132,7 +132,7 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 		fail("first message must contain valid cols (2–500) and rows (1–300)")
 		return
 	}
-	p, err := s.terminalProcess(ctx, c.Container.ID, session, !create, size.Cols, size.Rows)
+	p, err := s.terminalProcess(ctx, c, session, !create, size.Cols, size.Rows)
 	if errors.Is(err, terminal.ErrNoSession) {
 		ended()
 		return

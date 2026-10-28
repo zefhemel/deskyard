@@ -35,15 +35,14 @@ def wait_until(f, timeout: float = 15.0, every: float = 0.3):
 
 # --- the desktop's insides ---------------------------------------------------------------------
 
-def desktop_exec_prefix(name: str) -> list[str]:
-    """Join the desktop namespace when its image advertises the optional runtime."""
-    info = json.loads(docker("inspect", f"deskyard-{name}").stdout)[0]
-    return ["/usr/local/bin/workspace-exec"] if info["Config"]["Labels"].get("deskyard.fuse") == "userns-v1" else []
+# Images built from this checkout run the desktop session in its own namespace,
+# which commands join to see what the session sees.
+WORKSPACE_EXEC = "/usr/local/bin/workspace-exec"
 
 
 def in_desktop(name, *args, check=True) -> str:
     """Runs a command as the desktop's user, on its screen."""
-    r = subprocess.run(["docker", "exec", "-u", "user", "-e", "DISPLAY=:1", f"deskyard-{name}", *desktop_exec_prefix(name), *args],
+    r = subprocess.run(["docker", "exec", "-u", "user", "-e", "DISPLAY=:1", f"deskyard-{name}", WORKSPACE_EXEC, *args],
                        capture_output=True, text=True)
     if check:
         assert r.returncode == 0, r.stderr
@@ -52,16 +51,14 @@ def in_desktop(name, *args, check=True) -> str:
 
 def desktop_service(name: str, action: str, service: str, *, check=True) -> str:
     """Control a desktop service through the supervisor that owns it."""
-    prefix = desktop_exec_prefix(name)
-    config = ["-c", "/etc/workspace/user-services.conf"] if prefix else []
-    result = docker("exec", "-u", "user" if prefix else "root",
-                    f"deskyard-{name}", *prefix, "supervisorctl", *config, action, service, check=check)
+    result = docker("exec", "-u", "user", f"deskyard-{name}", WORKSPACE_EXEC,
+                    "supervisorctl", "-c", "/etc/workspace/user-services.conf", action, service, check=check)
     return result.stdout
 
 
 def user_sh(name: str, script: str) -> str:
     """A login shell script as the desktop's user; its output."""
-    r = docker("exec", "-u", "user", f"deskyard-{name}", *desktop_exec_prefix(name), "bash", "-lc", script, check=False)
+    r = docker("exec", "-u", "user", f"deskyard-{name}", WORKSPACE_EXEC, "bash", "-lc", script, check=False)
     assert r.returncode == 0, r.stdout + r.stderr
     return r.stdout
 
@@ -69,7 +66,7 @@ def user_sh(name: str, script: str) -> str:
 def put(name: str, rel: str, data: bytes) -> None:
     """Writes /workspace/rel in the desktop, as its user. (Not into the
     desktop's folder from here: on Linux that belongs to the desktop's user.)"""
-    r = subprocess.run(["docker", "exec", "-i", "-u", "user", f"deskyard-{name}", *desktop_exec_prefix(name), "sh", "-c",
+    r = subprocess.run(["docker", "exec", "-i", "-u", "user", f"deskyard-{name}", WORKSPACE_EXEC, "sh", "-c",
                         'mkdir -p "$(dirname "$1")" && cat > "$1"', "sh", f"/workspace/{rel}"],
                        input=data, capture_output=True)
     assert r.returncode == 0, r.stderr.decode()

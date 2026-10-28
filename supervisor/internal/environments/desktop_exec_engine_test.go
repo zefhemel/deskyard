@@ -1,6 +1,6 @@
 //go:build engine
 
-package docker
+package environments
 
 import (
 	"context"
@@ -11,10 +11,12 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/engine/docker"
 )
 
 // Opt in against an already built image; every mutation is confined to the
 // fresh container created here, without supervisor reconciliation or host binds.
+// The exec spec comes from the container's own labels, which carry the image's.
 func TestDesktopSessionExecFUSE(t *testing.T) {
 	image := os.Getenv("CC_FUSE_TEST_IMAGE")
 	if image == "" {
@@ -22,7 +24,7 @@ func TestDesktopSessionExecFUSE(t *testing.T) {
 	}
 	for _, nnp := range []bool{false, true} {
 		t.Run(map[bool]string{false: "ordinary", true: "no-new-privileges"}[nnp], func(t *testing.T) {
-			d, err := New("")
+			d, err := docker.New("")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -40,8 +42,16 @@ func TestDesktopSessionExecFUSE(t *testing.T) {
 			if err = d.Start(ctx, id); err != nil {
 				t.Fatal(err)
 			}
+			c, err := d.Inspect(ctx, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			env := Environment{Container: c}
+			if !env.SessionNamespace() {
+				t.Fatalf("container labels lack the session namespace: %v", c.Labels)
+			}
 			run := func(cwd string, argv ...string) (string, int, error) {
-				out, stderr, code, err := engine.Output(ctx, d, id, engine.ExecSpec{User: "user", DesktopSession: true, WorkDir: cwd, Cmd: argv})
+				out, stderr, code, err := engine.Output(ctx, d, id, env.DesktopExec(engine.ExecSpec{WorkDir: cwd, Cmd: argv}))
 				if err != nil || code != 0 {
 					return string(out) + string(stderr), code, err
 				}
