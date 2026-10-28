@@ -53,10 +53,14 @@ func (c *Client) Label() string {
 	return "the environment"
 }
 
-// URL is the environment's remote access route p (/exec, /cdp/…).
-func (c *Client) URL(p string) string {
-	return c.Base + "/api/environments/" + url.PathEscape(c.Environment) + p
+// EnvPath is the API route p (/status, /shares, or "") of the environment
+// name, for JSON and API.
+func EnvPath(name, p string) string {
+	return "/environments/" + url.PathEscape(name) + p
 }
+
+// URL is the environment's remote access route p (/exec, /cdp/…).
+func (c *Client) URL(p string) string { return c.API(EnvPath(c.Environment, p)) }
 
 // API is the supervisor API route p (/me, /accounts).
 func (c *Client) API(p string) string { return c.Base + "/api" + p }
@@ -152,23 +156,9 @@ func (c *Client) JSONWithin(ctx context.Context, d time.Duration, method, path s
 // Info fetches the environment's description and state; it also checks the
 // credential and the environment's name.
 func (c *Client) Info(ctx context.Context) (*Info, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.URL("/status"), nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := c.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.ResponseError(resp)
-	}
 	var info Info
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		return nil, fmt.Errorf("%s answered with something that isn't the Deskyard API (%v): check the URL", c.Base, err)
+	if err := c.JSON(ctx, http.MethodGet, EnvPath(c.Environment, "/status"), nil, &info); err != nil {
+		return nil, err
 	}
 	return &info, nil
 }

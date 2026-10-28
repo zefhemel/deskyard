@@ -48,9 +48,7 @@ func (a *App) apiClient(c *call, env string) (*remote.Client, error) {
 	if srv == nil {
 		return nil, a.noServer()
 	}
-	cl := remote.FromServer(srv, env)
-	cl.HTTP = a.HTTP
-	return cl, nil
+	return a.client(srv, env), nil
 }
 
 // printJSON prints an API answer as it came, indented.
@@ -223,7 +221,7 @@ func runEnvShow(a *App, c *call) error {
 		return err
 	}
 	var e envDetail
-	if done, err := getJSON(a, c, cl, "/environments/"+url.PathEscape(name), &e); done || err != nil {
+	if done, err := getJSON(a, c, cl, remote.EnvPath(name, ""), &e); done || err != nil {
 		return err
 	}
 	tw := tabwriter.NewWriter(a.Stdout, 0, 0, 1, ' ', 0)
@@ -461,7 +459,7 @@ func runEnvRemove(a *App, c *call) error {
 	if err != nil {
 		return err
 	}
-	path := "/environments/" + url.PathEscape(name)
+	path := remote.EnvPath(name, "")
 	if c.bool("--delete-files") {
 		path += "?files=1"
 	}
@@ -484,7 +482,7 @@ func runEnvPower(a *App, c *call) error {
 	if err != nil {
 		return err
 	}
-	if err := cl.JSON(c.ctx, http.MethodPost, "/environments/"+url.PathEscape(name)+"/"+action, nil, nil); err != nil {
+	if err := cl.JSON(c.ctx, http.MethodPost, remote.EnvPath(name, "/"+action), nil, nil); err != nil {
 		return err
 	}
 	done := map[string]string{"start": "Starting", "stop": "Stopping", "restart": "Restarting"}[action]
@@ -511,7 +509,7 @@ func runEnvAccess(a *App, c *call) error {
 	if err != nil {
 		return err
 	}
-	path := "/environments/" + url.PathEscape(name)
+	path := remote.EnvPath(name, "")
 	if len(changes) == 0 {
 		var e envDetail
 		if done, err := getJSON(a, c, cl, path, &e); done || err != nil {
@@ -918,7 +916,7 @@ func runShareList(a *App, c *call) error {
 		LinkPending bool    `json:"linkPending"`
 		Connected   bool    `json:"connected"`
 	}
-	if done, err := getJSON(a, c, cl, "/environments/"+url.PathEscape(env)+"/shares", &list); done || err != nil {
+	if done, err := getJSON(a, c, cl, remote.EnvPath(env, "/shares"), &list); done || err != nil {
 		return err
 	}
 	if len(list) == 0 {
@@ -964,7 +962,7 @@ func runShareCreate(a *App, c *call) error {
 	var ans struct {
 		Link string `json:"link"`
 	}
-	if err := cl.JSON(c.ctx, http.MethodPost, "/environments/"+url.PathEscape(env)+"/shares", body, &ans); err != nil {
+	if err := cl.JSON(c.ctx, http.MethodPost, remote.EnvPath(env, "/shares"), body, &ans); err != nil {
 		return err
 	}
 	what := "full access to"

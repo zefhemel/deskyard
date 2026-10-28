@@ -300,12 +300,12 @@ func runLogout(a *App, c *call) error {
 	if len(c.args) > 0 {
 		name = c.args[0]
 	}
-	srv := cfg.Servers[name]
-	if srv == nil {
-		if name == "" {
-			return errors.New("no server chosen: run `deskyard server list`, then `deskyard logout NAME`")
-		}
-		return fmt.Errorf("no server named %q: run `deskyard server list`", name)
+	if name == "" {
+		return errors.New("no server chosen: run `deskyard server list`, then `deskyard logout NAME`")
+	}
+	srv, err := savedServer(cfg, name)
+	if err != nil {
+		return err
 	}
 	note := "its credential is revoked"
 	err = a.revoke(c.ctx, srv.URL, srv.Credential)
@@ -378,8 +378,8 @@ func runServerDefault(a *App, c *call) error {
 		return nil
 	}
 	name := c.args[0]
-	if cfg.Servers[name] == nil {
-		return fmt.Errorf("no server named %q: run `deskyard server list`", name)
+	if _, err := savedServer(cfg, name); err != nil {
+		return err
 	}
 	cfg.Default = name
 	return cfg.Save(path)
@@ -399,19 +399,18 @@ func runEnvUse(a *App, c *call) error {
 	if name == "" {
 		name = cfg.Default
 	}
-	srv := cfg.Servers[name]
-	if srv == nil {
-		if name == "" {
-			return a.noServer()
-		}
-		return fmt.Errorf("no server named %q: run `deskyard server list`", name)
+	if name == "" {
+		return a.noServer()
 	}
-	cl := remote.FromServer(srv, env)
-	cl.HTTP = a.HTTP
+	srv, err := savedServer(cfg, name)
+	if err != nil {
+		return err
+	}
+	cl := a.client(srv, env)
 	var got struct {
 		Level string `json:"level"`
 	}
-	if err := cl.JSON(c.ctx, http.MethodGet, "/environments/"+url.PathEscape(env), nil, &got); err != nil {
+	if err := cl.JSON(c.ctx, http.MethodGet, remote.EnvPath(env, ""), nil, &got); err != nil {
 		return err
 	}
 	if got.Level != "full" {

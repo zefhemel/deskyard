@@ -400,9 +400,15 @@ func (a *App) resolve(sel string) (*remote.Client, error) {
 	if env == "" {
 		return nil, fmt.Errorf("no environment chosen on %s: use -e ENV, or choose a default with `deskyard env use ENV`", srv.Name)
 	}
+	return a.client(srv, env), nil
+}
+
+// client is the API client for srv and one of its environments (env may be
+// empty), using a.HTTP.
+func (a *App) client(srv *remote.Server, env string) *remote.Client {
 	c := remote.FromServer(srv, env)
 	c.HTTP = a.HTTP
-	return c, nil
+	return c
 }
 
 // server returns the named server, or for "" the default one: the server
@@ -420,6 +426,12 @@ func (a *App) server(name string) (*remote.Server, error) {
 	if name == "" {
 		return cfg.Servers[cfg.Default], nil
 	}
+	return savedServer(cfg, name)
+}
+
+// savedServer is the server saved as name in cfg, or an error saying which
+// servers there are.
+func savedServer(cfg *remote.Config, name string) (*remote.Server, error) {
 	if srv := cfg.Servers[name]; srv != nil {
 		return srv, nil
 	}
