@@ -22,6 +22,7 @@ import { names, notice } from "../lib/format.ts";
 import { isShell, needsConfirm, others } from "../terminal/sessions.ts";
 import { TouchControls, useVisibleViewport } from "./touch-controls.tsx";
 import { ZoomViewport } from "./zoom-viewport.tsx";
+import { installTabShortcuts } from "./tab-shortcuts.ts";
 import { FullscreenButton } from "./fullscreen.tsx";
 import { AudioControl } from "./audio-panel.tsx";
 import { ClipboardIcon, DisplayIcon, KeyboardIcon, ShieldIcon } from "./bar-icons.tsx";
@@ -191,6 +192,14 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
 
   const tabUrl = (s: string | null) => (s ? `/${c.name}/?terminal=${encodeURIComponent(s)}` : `/${c.name}/`);
   const show = (s: string | null) => latest.current.route(tabUrl(s), true);
+
+  const selectShortcut = useCallback((index: number) => {
+    const session = index === 0 ? null : latest.current.tabs[index - 1];
+    if (session === undefined || document.querySelector('[role="dialog"]')) return false;
+    show(session);
+    return true;
+  }, []);
+  useEffect(() => installTabShortcuts(window, selectShortcut), [selectShortcut]);
 
   /** Closes a session's tab; when it was the active one, moves left (or to Desktop) and maybe says so. */
   const closeTab = (s: string, say: boolean, toDesktop = false) => {
@@ -507,7 +516,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
       )}
       <div class="relative flex min-h-0 flex-1 flex-col">
         <div role="tabpanel" id={panelId(null)} aria-labelledby={tabId(null)} hidden={active !== null} class={cx("relative min-h-0 flex-1 flex-col", active === null ? "flex" : "hidden")}>
-          {active === null && <Desktop environment={c} slots={slots} />}
+          {active === null && <Desktop environment={c} slots={slots} selectShortcut={selectShortcut} />}
         </div>
         {opened
           .filter((s) => tabs.includes(s))
@@ -589,7 +598,7 @@ function EndSessionDialog({ session, others: n, command, onEnd, onClose }: { ses
  * frame takes the pointer, the frame never takes focus, the bar has no input
  * controls) and never asks to change the display.
  */
-function Desktop({ environment: c, slots }: { environment: Environment; slots: BarSlots }) {
+function Desktop({ environment: c, slots, selectShortcut }: { environment: Environment; slots: BarSlots; selectShortcut: (index: number) => boolean }) {
   const observing = c.level === "observe";
   const observingRef = useRef(observing);
   observingRef.current = observing;
@@ -633,6 +642,8 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
   const onFrameLoad = useCallback(() => {
     for (const f of unsubscribe.current) f();
     unsubscribe.current = [];
+    const frameWindow = frame.current?.contentWindow;
+    if (frameWindow) unsubscribe.current.push(installTabShortcuts(frameWindow, selectShortcut));
     const screen = screenOf(frame.current);
     setScreen(screen);
     setKeyboard(false);
@@ -684,7 +695,7 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
       }
       was = d;
     };
-    unsubscribe.current = [screen.on("deskyard.state", onState), screen.on("deskyard.display", onDisplay), onClipboard(screen, setRemoteClip), screen.on("deskyard.keyboard", setKeyboard)];
+    unsubscribe.current.push(screen.on("deskyard.state", onState), screen.on("deskyard.display", onDisplay), onClipboard(screen, setRemoteClip), screen.on("deskyard.keyboard", setKeyboard));
     if (avSyncWanted()) unsubscribe.current.push(startAvSync(screen));
     onState(screen.state());
     onDisplay(screen.display());

@@ -1,6 +1,7 @@
 import type { RefObject } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { uploadFile } from "../api.ts";
+import { copyText } from "../lib/clipboard.ts";
 import { notify } from "../components/toast.tsx";
 import { Button, Dialog, ErrorText, Field, errorMessage } from "../components/ui.tsx";
 
@@ -13,6 +14,10 @@ export function imageName(file: File, now = new Date()): string {
 
 export function validImageName(name: string): boolean {
   return name.length > 0 && name !== "." && name !== ".." && !/[\/\x00]/.test(name) && new TextEncoder().encode(name).length <= 200;
+}
+
+export function validImagePath(value: string): boolean {
+  return (value.startsWith("~/") || value.startsWith("/")) && !value.includes("\x00") && validImageName(value.split("/").at(-1) ?? "");
 }
 
 /** Listen on the page (terminal tabs) or just the desktop iframe. Capture
@@ -66,19 +71,20 @@ export function ImagePaste({ environment, frame, frameKey }: { environment: stri
 }
 
 function ImageUploadDialog({ environment, file, onClose }: { environment: string; file: File; onClose: () => void }) {
-  const [name, setName] = useState(() => imageName(file));
+  const [name, setName] = useState(() => `~/Desktop/${imageName(file)}`);
   const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const busy = useRef(false);
   const close = () => { if (!busy.current) onClose(); };
   const upload = async () => {
-    if (busy.current || !validImageName(name)) return;
+    if (busy.current || !validImagePath(name)) return;
     busy.current = true;
     setProgress(0);
     setError(null);
     try {
-      const result = await uploadFile(environment, new File([file], name, { type: file.type }), setProgress);
-      notify(`Saved image to ${result.path}`);
+      const result = await uploadFile(environment, file, setProgress, name);
+      const copied = await copyText(result.path);
+      notify(`Saved image to ${result.path}${copied ? " · Path copied" : " · Could not copy path"}`);
       onClose();
     } catch (error) {
       setError(errorMessage(error));
@@ -88,14 +94,14 @@ function ImageUploadDialog({ environment, file, onClose }: { environment: string
     }
   };
   return (
-    <Dialog title="Save pasted image" intro="Upload this image to the environment’s Desktop folder." onClose={close}
+    <Dialog title="Save pasted image" intro="Choose where to save this image in the environment. The saved path will be copied to your clipboard." onClose={close}
       onSubmit={() => void upload()} footer={<>
         <Button onClick={close} disabled={progress !== null}>Cancel</Button>
-        <Button type="submit" disabled={progress !== null || !validImageName(name)}>
+        <Button type="submit" disabled={progress !== null || !validImagePath(name)}>
           {progress === null ? "Upload image" : `Uploading… ${Math.round(progress * 100)}%`}
         </Button>
       </>}>
-      <Field label="File name" htmlFor="pasted-image-name" hint="An existing file is kept; a number is added to the new name if needed.">
+      <Field label="File path" htmlFor="pasted-image-name" hint="An existing file is kept; a number is added to the new name if needed.">
         <input id="pasted-image-name" value={name} disabled={progress !== null} onInput={(e) => setName(e.currentTarget.value)} />
       </Field>
       <ErrorText error={error} />

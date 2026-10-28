@@ -34,12 +34,12 @@ limited HTTP connections.
 ## Paste an image
 
 Paste a screenshot or copied image into the desktop view or a terminal tab
-(**⌘V** on Mac, or the browser’s image-capable Paste action). **Save pasted image** suggests a filename;
-edit it if you like, then choose **Upload image** to save it in `~/Desktop`.
+(**⌘V** on Mac, or the browser’s image-capable Paste action). **Save pasted image** suggests an editable full path under `~/Desktop/`;
+edit it if you like, then choose **Upload image** to save it at that path.
 Clipboard images with generic names get a timestamped `screenshot-….png`
 name (or the image's format). Existing files are kept: the upload adds a
 number if the name is taken. Cancel leaves the image unuploaded; a failed
-upload shows an error and lets you retry. The saved path appears after upload.
+upload shows an error and lets you retry. Use `~/` or an absolute path to choose another location writable by the desktop user. Missing parent folders are created. The final absolute path appears after upload and is copied to your clipboard; a copy failure is reported so you can copy it manually.
 
 This uses the image supplied by the browser's paste event. Ordinary text
 paste continues as before, and the terminal toolbar's Paste button still
@@ -118,3 +118,7 @@ while dragging on Linux/Windows, or Option on Mac. These terminal defaults need
 an updated desktop image; Mac Option selection also needs the updated supervisor. The font stays readable when clients have different sizes; a passive smaller client may show a cropped tmux view until it interacts.
 
 `deskyard -e alice terminal` joins the environment's shared Bash login shell in `/workspace`; `deskyard terminal build-2` selects another named shell. Inside the environment, ordinary terminal windows and tabs (including **Deskyard Terminal**, the default terminal shortcut and file-manager terminal actions) each open a new shared shell named `terminal-1`, `terminal-2`, and so on, preserving their starting directory. The window/tab title shows the session name, and the browser shows it as a tab. When sessions are already running, the desktop's **Deskyard Terminal** launcher first lists them with their attached clients and running program: type a number to join one, or press Enter for a new session. Within a native shared terminal, press **Ctrl-B then s** and choose its name; outside tmux, `deskyard terminal NAME` joins it. Browser clients switch tabs; remote CLI clients detach and reconnect with the chosen name. Saved emulator defaults migrate at desktop startup; explicit emulator command launches such as `xfce4-terminal -x PROGRAM` still run the requested program directly. Run `deskyard terminal` locally to join `main`. Session names contain 1–64 letters, digits, underscores or dashes and start with a letter or digit. Detach with Ctrl-B then D; reconnecting joins the same shell and running jobs. Sessions end when the environment stops or restarts. Existing environments need an updated image with tmux and the shared terminal helper.
+
+### Switch tabs with the keyboard
+
+Ctrl+Shift+1 selects Desktop; Ctrl+Shift+2–9 selects the first eight terminal tabs in the viewer’s current order. Use Control on Mac too. Shortcuts work with focus inside the desktop iframe or browser terminal, ignore composition and extra Alt/Meta modifiers, leave missing positions untouched, and pause while a dialog is open. Physical number-row keys are used so Shift-produced punctuation does not change the mapping. Tab tooltips and `aria-keyshortcuts` expose the bindings.

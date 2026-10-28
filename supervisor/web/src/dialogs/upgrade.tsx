@@ -1,7 +1,7 @@
 import type { ComponentChildren } from "preact";
 import type { JobRef } from "../api.ts";
 import { JobProgress, useJob } from "../components/job.tsx";
-import { Button, Dialog, ErrorText, Note } from "../components/ui.tsx";
+import { Button, Dialog, ErrorText } from "../components/ui.tsx";
 
 /** What survives an upgrade, as the Images page puts it. */
 export const UPGRADE_NOTE = (
@@ -43,7 +43,6 @@ export function UpgradeDialog({
         </>
       }
     >
-      <Note>{UPGRADE_NOTE}</Note>
       <JobProgress job={run.job} />
       <ErrorText error={run.error} />
     </Dialog>

@@ -721,11 +721,11 @@ export const api = {
   cancelJob: (id: string) => request<void>("POST", `/api/jobs/${enc(id)}/cancel`),
 };
 
-/** Uploads one file into the environment's ~/Desktop, reporting progress as 0..1. */
-export function uploadFile(environment: string, file: File, onProgress: (fraction: number) => void): Promise<Uploaded> {
+/** Uploads one file to the destination (default ~/Desktop), reporting progress as 0..1. */
+export function uploadFile(environment: string, file: File, onProgress: (fraction: number) => void, destination?: string): Promise<Uploaded> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${c(environment)}/upload?name=${enc(file.name)}`);
+    xhr.open("POST", `${c(environment)}/upload?name=${enc(file.name)}${destination ? `&path=${enc(destination)}` : ""}`);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total);
     };

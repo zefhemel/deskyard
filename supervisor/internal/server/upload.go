@@ -19,7 +19,7 @@ import (
 
 // Dropping files onto a desktop's screen: one POST per file, the raw file as
 // the body. The bytes stream into the desktop as `user`, into a hidden
-// ".part" file in ~/Desktop, and are renamed to their final name only when
+// ".part" file beside the destination, and are renamed to their final name only when
 // complete, so a half-written file never shows up on the desktop.
 
 const (
@@ -78,7 +78,19 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, environments.ErrStopped.Error())
 		return
 	}
+	dir := uploadDir
 	name := r.URL.Query().Get("name")
+	if destination := r.URL.Query().Get("path"); destination != "" {
+		if strings.HasPrefix(destination, "~/") {
+			destination = filesRoot + destination[1:]
+		}
+		if !path.IsAbs(destination) || strings.ContainsRune(destination, 0) || strings.HasSuffix(destination, "/") {
+			writeError(w, http.StatusBadRequest, "an absolute file path or ~/ path is required")
+			return
+		}
+		destination = path.Clean(destination)
+		dir, name = path.Dir(destination), path.Base(destination)
+	}
 	if err := uploadName(name); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -89,7 +101,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	var rnd [8]byte
 	_, _ = rand.Read(rnd[:])
-	part := uploadDir + "/." + name + "." + hex.EncodeToString(rnd[:]) + ".part"
+	part := dir + "/." + name + "." + hex.EncodeToString(rnd[:]) + ".part"
 
 	ctx, done := s.startTransfer(w, r, c.Name)
 	n, err := s.streamIn(ctx, c, part, r.Body)
@@ -120,7 +132,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		ext = ""
 	}
 	var final bytes.Buffer
-	err = s.execStream(ctx, c, 0, []string{"sh", "-c", finishUploadScript, "sh", uploadDir, part, strings.TrimSuffix(name, ext), ext},
+	err = s.execStream(ctx, c, 0, []string{"sh", "-c", finishUploadScript, "sh", dir, part, strings.TrimSuffix(name, ext), ext},
 		func(out io.Reader) error { _, err := io.Copy(&final, out); return err })
 	if err != nil {
 		s.dropPart(c, part)
@@ -128,14 +140,14 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Log.Info("upload", "environment", c.Name, "name", final.String(), "bytes", n)
-	writeJSON(w, http.StatusOK, map[string]any{"path": uploadDir + "/" + final.String(), "bytes": n})
+	writeJSON(w, http.StatusOK, map[string]any{"path": dir + "/" + final.String(), "bytes": n})
 }
 
-// streamIn copies body into the file at part (creating ~/Desktop first),
+// streamIn copies body into the file at part (creating its parent folder first),
 // counting against the cap.
 func (s *Server) streamIn(ctx context.Context, c environments.Environment, part string, body io.Reader) (int64, error) {
 	p, err := s.Eng.Exec(ctx, c.Container.ID, engine.ExecSpec{
-		Cmd:  []string{"sh", "-c", `mkdir -p "$1" && cat > "$2"`, "sh", uploadDir, part},
+		Cmd:  []string{"sh", "-c", `mkdir -p "$1" && cat > "$2"`, "sh", path.Dir(part), part},
 		User: "user", DesktopSession: true, WorkDir: filesRoot, Env: append([]string{"LC_ALL=C"}, execEnv...), Stdin: true,
 	})
 	if err != nil {

@@ -185,12 +185,12 @@ export function EnvironmentTabs({
     >
       <div role="tablist" aria-label="Desktop and terminals" class="flex flex-none items-center gap-0.5">
         <div role="presentation" class={cx(tab, active === null ? "bg-bar-hover text-white" : "text-bar-muted hover:bg-bar-hover hover:text-white")} {...dragProps(null)}>
-          <button {...tabButton(null)} title="Desktop" class="inline-flex h-full cursor-pointer items-center gap-1.5 rounded-[7px] border-0 bg-transparent px-2.5 text-inherit">
+          <button {...tabButton(null)} title="Desktop (Ctrl+Shift+1)" aria-keyshortcuts="Control+Shift+1" class="inline-flex h-full cursor-pointer items-center gap-1.5 rounded-[7px] border-0 bg-transparent px-2.5 text-inherit">
             <DisplayIcon />
             Desktop
           </button>
         </div>
-        {tabs.map((t) => (
+        {tabs.map((t, index) => (
           <div
             key={t.name}
             role="presentation"
@@ -214,8 +214,8 @@ export function EnvironmentTabs({
           >
             <button
               {...tabButton(t.name)}
-              aria-keyshortcuts="Delete Alt+Shift+ArrowLeft Alt+Shift+ArrowRight"
-              title={`${t.name}${t.others ? ` · ${t.others} other${t.others === 1 ? "" : "s"} attached` : ""} (Alt+Shift+← → to move, Delete to end)`}
+              aria-keyshortcuts={`Delete Alt+Shift+ArrowLeft Alt+Shift+ArrowRight${index < 8 ? ` Control+Shift+${index + 2}` : ""}`}
+              title={`${t.name}${t.others ? ` · ${t.others} other${t.others === 1 ? "" : "s"} attached` : ""} (${index < 8 ? `Ctrl+Shift+${index + 2} to switch, ` : ""}Alt+Shift+← → to move, Delete to end)`}
               class="inline-flex h-full max-w-[200px] cursor-pointer items-center gap-1.5 rounded-[7px] border-0 bg-transparent pr-1 pl-2.5 text-inherit"
             >
               <TerminalIcon />
