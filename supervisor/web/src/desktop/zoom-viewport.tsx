@@ -1,6 +1,6 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { DeskyardScreen } from "./selkies.ts";
+import type { DeskyardScreen } from "../selkies/screen.ts";
 import { zoomAt } from "./view-zoom.ts";
 
 /** Transform the whole client so its own screen/input coordinate mapping stays intact. */

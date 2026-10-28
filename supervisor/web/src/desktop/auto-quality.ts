@@ -1,4 +1,4 @@
-import type { DeskyardScreen } from "./selkies.ts";
+import type { DeskyardScreen } from "../selkies/screen.ts";
 
 /** Public presentation statistics from the pinned Selkies 2.1.0 client. */
 export interface StreamSample {

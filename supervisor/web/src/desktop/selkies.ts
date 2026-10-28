@@ -1,11 +1,12 @@
 /*
- * Driving Selkies' web client in the desktop page's frame.
+ * Driving Selkies' web client in the desktop page's frame: the parent-side
+ * helpers.
  *
  * The supervisor serves the client at /<name>/screen/ with our additions
  * (the typed selkies/adapter.ts, or screen_additions.js for old images), which give the frame
- * `window.deskyardScreen`: `tab`, `post(msg)`, `on(type, fn)`, `state()` and
- * `video()`. Both pages are on the supervisor's origin, so we reach it
- * through `frame.contentWindow`.
+ * `window.deskyardScreen`, typed in selkies/screen.ts: `tab`, `post(msg)`,
+ * `on(type, fn)`, `state()` and `video()`. Both pages are on the supervisor's
+ * origin, so we reach it through `frame.contentWindow`.
  *
  * Messages to the client (`post`), read from its pinned source (selkies-core,
  * the websockets-mode `window.postMessage` handler):
@@ -17,8 +18,7 @@
  *   apply to everyone watching it.
  * - {type: "setScaleLocally", value: true} then {type: "setManualResolution",
  *   width, height}: the remote screen keeps that size and the picture is
- *   scaled to fit the frame. {type: "resetResolutionToWindow"} undoes it.
- *   `window.manual_resolution` in the frame tells which mode it is in.
+ *   scaled to fit the frame.
  *
  * The display has an owner, the first page to connect: it sets the screen's
  * size and its stream settings stick. Later pages join beside it: their
@@ -60,66 +60,10 @@
  * size is the stream's (stream_resolution); the canvas buffer, which follows
  * the page's own window, is only a fallback before the stream says.
  */
+import type { Capture, DeskyardScreen, Size } from "../selkies/screen.ts";
 import type { ScreenGeometry } from "./screen-geometry.ts";
 
-export type ConnectionState = "connecting" | "connected" | "disconnected";
-
-/** The display, as the frame's connection knows it. */
-export interface Display {
-  /** Whether this page owns the display; null until the server has said. */
-  owner: boolean | null;
-  /** The size the display streams at; 0 until known. */
-  width: number;
-  height: number;
-  /** The stream settings the display runs with, when the server has told this page. */
-  settings: Record<string, unknown> | null;
-}
-
-/** Sound and mic, as the frame's client has them. */
-export interface Media {
-  /** The desktop sends this page its sound. */
-  sound: boolean;
-  /** The mic is captured and sent into the desktop. */
-  mic: boolean;
-  /** The playback is running (a browser holds it back until a click). */
-  playing: boolean;
-  /** When sound last arrived (performance.now() in the frame; 0 for never). */
-  soundAt: number;
-}
-
-export type Capture = "microphone";
-
-/** What our additions put on the frame's window. */
-export interface DeskyardScreen {
-  tab: string;
-  keyboard?(show: boolean): void;
-  setTouchMode?(trackpad: boolean): void;
-  setViewZoom?(zoom: number): void;
-  configureDisplay?(size: Size, dpi: number): void;
-  on(type: "deskyard.keyboard", fn: (visible: boolean) => void): () => void;
-  on(type: "deskyard.gesture", fn: (gesture: { kind: "zoom"; factor: number; x: number; y: number } | { kind: "pan"; dx: number; dy: number } | { kind: "cursor"; x: number; y: number }) => void): () => void;
-  /** The frame is an insecure context (plain http). */
-  insecure: boolean;
-  post(msg: object): void;
-  on(type: "deskyard.state", fn: (state: ConnectionState) => void): () => void;
-  on(type: "deskyard.display", fn: (display: Display) => void): () => void;
-  on(type: "deskyard.media", fn: (media: Media) => void): () => void;
-  on(type: "deskyard.alert", fn: (alert: { kind: Capture; text: string }) => void): () => void;
-  on(type: string, fn: (data: Record<string, unknown>) => void): () => void;
-  state(): ConnectionState;
-  display(): Display;
-  media(): Media;
-  setSound(on: boolean): void;
-  resumeSound(): void;
-  allowCapture(kind: Capture, on: boolean): void;
-  setMic(deviceId: string): void;
-  setOutput(deviceId: string): void;
-  watchSound(fn: (at: number, rms: number) => void): () => void;
-  micLevel(): number;
-  video(): HTMLVideoElement | HTMLCanvasElement | null;
-}
-
-type ScreenWindow = Window & { deskyardScreen?: DeskyardScreen; manual_resolution?: boolean };
+type ScreenWindow = Window & { deskyardScreen?: DeskyardScreen };
 
 /** The frame's URL for a desktop: Selkies' client, served by the supervisor. */
 export function frameSrc(name: string): string {
@@ -260,11 +204,6 @@ export function sendQuality(frame: HTMLIFrameElement | null, id: QualityId): voi
   if (settings) screenOf(frame)?.post({ type: "settings", settings });
 }
 
-export interface Size {
-  width: number;
-  height: number;
-}
-
 /** The size the display streams at, in remote pixels; null before it's known. */
 export function remoteSize(frame: HTMLIFrameElement | null): Size | null {
   const d = screenOf(frame)?.display();
@@ -286,11 +225,6 @@ export function lockSize(frame: HTMLIFrameElement | null, size: Size): void {
   const s = screenOf(frame);
   s?.post({ type: "setScaleLocally", value: true });
   s?.post({ type: "setManualResolution", width: size.width, height: size.height });
-}
-
-/** Back to the remote screen following the frame's size, if it isn't already. */
-export function unlockSize(frame: HTMLIFrameElement | null): void {
-  if (frameWindow(frame)?.manual_resolution) screenOf(frame)?.post({ type: "resetResolutionToWindow" });
 }
 
 /** Keys the browser would otherwise take, in xdotool syntax for /keys. */

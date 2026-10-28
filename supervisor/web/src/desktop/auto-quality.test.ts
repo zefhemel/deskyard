@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AutoFramerate, startAutoQuality, type StatsWindow } from "./auto-quality.ts";
-import { defaultQuality, isQualityId, qualityOf, qualitySettings, type DeskyardScreen } from "./selkies.ts";
+import type { DeskyardScreen } from "../selkies/screen.ts";
+import { defaultQuality, isQualityId, qualityOf, qualitySettings } from "./selkies.ts";
 
 function feed(policy: AutoFramerate) {
   let t = 1000, lost = 0;

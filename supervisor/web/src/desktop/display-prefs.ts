@@ -1,4 +1,4 @@
-import type { Size } from "./selkies.ts";
+import type { Size } from "../selkies/screen.ts";
 
 /**
  * A phone: a screen whose short side is below the 640px at which the bar

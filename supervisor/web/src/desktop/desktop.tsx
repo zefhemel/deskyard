@@ -33,11 +33,9 @@ import { ClipboardPopover } from "./clipboard.tsx";
 import { ActivityOverlay } from "./overlay.tsx";
 import { ImagePaste } from "./image-paste.tsx";
 import { DropZone } from "./upload.tsx";
+import type { ConnectionState, DeskyardScreen, Display, Size } from "../selkies/screen.ts";
 import {
-  type ConnectionState,
   defaultQuality,
-  type DeskyardScreen,
-  type Display,
   focusFrame,
   frameAllow,
   frameSrc,
@@ -56,7 +54,6 @@ import {
   selkiesScreenGeometry,
   sendClipboard,
   sendQuality,
-  type Size,
 } from "./selkies.ts";
 import { AUTO_FIT, initialLock, initialTrackpad, isPhone, parseScaling, displayScale, scaledSize, type Scaling } from "./display-prefs.ts";
 

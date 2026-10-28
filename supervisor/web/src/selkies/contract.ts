@@ -1,4 +1,4 @@
-import type { Capture } from "../desktop/selkies.ts";
+import type { Capture } from "./screen.ts";
 
 export const clientContract = 1;
 export function shouldSend(data: unknown): boolean {

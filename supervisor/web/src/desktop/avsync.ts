@@ -14,7 +14,7 @@
 //   beeps and flashes on whole seconds of the desktop's clock, and lag = when
 //   heard or seen here − the nearest whole second. It assumes the clocks are
 //   in sync (NTP; the same machine in tests).
-import type { DeskyardScreen } from "./selkies.ts";
+import type { DeskyardScreen } from "../selkies/screen.ts";
 
 /** Per paired beep: when it was heard (ms since the epoch), the sync offset, the sound's lag and the picture's. */
 export interface AvSyncData {

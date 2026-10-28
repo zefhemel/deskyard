@@ -11,7 +11,8 @@ import { notifyError } from "../components/toast.tsx";
 import { cx } from "../components/ui.tsx";
 import { Badges } from "./badges.ts";
 import { NeedsHttps } from "./needs-https.tsx";
-import { canChooseOutput, type Capture, type DeskyardScreen, insecureContext, type Media, setCapture, setVolume } from "./selkies.ts";
+import type { Capture, DeskyardScreen, Media } from "../selkies/screen.ts";
+import { canChooseOutput, insecureContext, setCapture, setVolume } from "./selkies.ts";
 
 // Remembered per browser. Sound is off on the first visit (sound may only
 // start with a click); the mic is never remembered: it's off on every load

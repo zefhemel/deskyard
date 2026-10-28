@@ -5,7 +5,7 @@ import type {
   DeskyardScreen,
   Display,
   Media,
-} from "../desktop/selkies.ts";
+} from "./screen.ts";
 import {
   captureGate,
   displayMessage,
