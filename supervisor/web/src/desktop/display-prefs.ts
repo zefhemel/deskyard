@@ -34,3 +34,19 @@ export function parseSize(v: string): Size | null {
     return null;
   }
 }
+
+/** Auto uses integer desktop scaling; browser zoom participates in the signal. */
+export type Scaling = "auto" | "1" | "2";
+export function parseScaling(value: string | null): Scaling {
+  return value === "1" || value === "2" ? value : "auto";
+}
+export function displayScale(value: Scaling, ratio: number): 1 | 2 {
+  return value === "2" || (value === "auto" && ratio >= 1.5) ? 2 : 1;
+}
+
+/** Presets are logical pixels. Fit within Xvfb's framebuffer, preserving aspect. */
+export function scaledSize(size: Size, scale: number): Size {
+  const fit = Math.min(scale, 3840 / size.width, 2160 / size.height);
+  const even = (n: number) => Math.max(2, Math.floor(n / 2) * 2);
+  return { width: even(size.width * fit), height: even(size.height * fit) };
+}

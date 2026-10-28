@@ -46,6 +46,26 @@ paste continues as before, and the terminal toolbar's Paste button still
 pastes text. Some plain-text paste shortcuts omit clipboard images. As with file drops, uploads require full access to a running
 environment.
 
+## Retina and display scaling
+
+The **Display** menu offers **Scaling: Auto**, **1×** and **2×**. Auto chooses
+2× when your browser reports a pixel density of at least 1.5, including Retina
+Macs, and follows changes as you move between displays. Browser zoom also
+influences this detection. Choose 1× or 2× to override it; the choice is saved
+in your browser. On narrow screens these choices are in **⋯ More**.
+
+At 2× the desktop renders twice as many pixels in each direction and XFCE
+scales its fonts, GTK controls, panel and cursor. Resolution presets describe
+logical dimensions: 1280×800 at 2× streams 2560×1600. Auto fit follows the
+available viewport. The stream fits proportionally within 3840×2160, so larger
+windows may not achieve a full two physical pixels per logical pixel.
+
+The first viewer controls resolution and scaling for the shared desktop.
+Other viewers fit that same picture to their windows. Some applications may
+need reopening to adopt a scale change. Full scaling support requires both an
+updated supervisor and an updated desktop image; upgrade existing environments
+from their image settings after the new image is available.
+
 ## Mobile controls
 
 The **Display** menu has **Lock size** and **Resolution:** choices that pick

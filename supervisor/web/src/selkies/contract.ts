@@ -103,3 +103,30 @@ export interface ClientHooks {
 export interface ScriptWorkletNode extends ScriptProcessorNode {
   port: MessagePort;
 }
+
+export interface DisplayRequest { width: number; height: number; dpi: number }
+
+/** Keep delayed upstream auto-sizing messages from replacing the owner's policy. */
+export function displayMessage<T>(data: T, owner: boolean | null, requested: DisplayRequest | null): T | string | null {
+  if (typeof data !== "string") return data;
+  const separator = data.indexOf(",", 2);
+  const suffix = separator < 0 ? "" : data.slice(separator);
+  if (data.startsWith("r,"))
+    return owner === false ? null : requested ? `r,${requested.width}x${requested.height}${suffix}` : data;
+  if (data.startsWith("s,"))
+    return owner && requested ? `s,${requested.dpi}${suffix}` : null;
+  if (!data.startsWith("SETTINGS,")) return data;
+  let settings: Record<string, unknown>;
+  try { settings = JSON.parse(data.slice(9)); } catch { return data; }
+  if (owner && requested) {
+    Object.assign(settings, { manual_resolution: true, manual_width: requested.width, manual_height: requested.height, scaling_dpi: requested.dpi });
+  } else {
+    delete settings.scaling_dpi;
+    if (owner === false) {
+      delete settings.manual_resolution;
+      delete settings.manual_width;
+      delete settings.manual_height;
+    }
+  }
+  return `SETTINGS,${JSON.stringify(settings)}`;
+}

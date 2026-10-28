@@ -56,13 +56,13 @@ import {
   sendClipboard,
   sendQuality,
   type Size,
-  unlockSize,
 } from "./selkies.ts";
-import { AUTO_FIT, initialLock, initialTrackpad, isPhone } from "./display-prefs.ts";
+import { AUTO_FIT, initialLock, initialTrackpad, isPhone, parseScaling, displayScale, scaledSize, type Scaling } from "./display-prefs.ts";
 
 // Remembered per browser.
 const QUALITY_KEY = "deskyard.quality";
 const LOCK_SIZE_KEY = "deskyard.lockSize";
+const SCALING_KEY = "deskyard.scaling";
 const TRACKPAD_KEY = "deskyard.trackpad";
 const resolutions: Size[] = [
   { width: 800, height: 600 },
@@ -623,6 +623,8 @@ function Desktop({ environment: c, slots, selectShortcut }: { environment: Envir
   const [clipOpen, setClipOpen] = useState(false);
   const [quality, setQuality] = useState(() => stored(QUALITY_KEY, parseQuality, defaultQuality));
   const [locked, setLocked] = useState(() => initialLock(storedRaw(LOCK_SIZE_KEY), isPhone(window.screen)));
+  const [scaling, setScaling] = useState(() => parseScaling(storedRaw(SCALING_KEY)));
+  const [ratio, setRatio] = useState(() => window.devicePixelRatio || 1);
   // Whether this page owns the display (null until known), and the preset the
   // display streams with (null when unknown or none of ours).
   const [owner, setOwner] = useState<boolean | null>(null);
@@ -630,8 +632,55 @@ function Desktop({ environment: c, slots, selectShortcut }: { environment: Envir
   const running = c.state === "running";
 
   // What this browser wants: applied when this page owns the display.
-  const prefs = useRef({ quality, locked });
-  prefs.current = { quality, locked };
+  const prefs = useRef({ quality, locked, scaling, ratio });
+  prefs.current = { quality, locked, scaling, ratio };
+
+  const appliedDisplay = useRef("");
+  const applyDisplay = useCallback(() => {
+    const element = frame.current;
+    if (!element || observingRef.current || !screenOf(element)?.display().owner) return;
+    const { locked, scaling, ratio } = prefs.current;
+    const scale = displayScale(scaling, ratio);
+    const size = locked ?? { width: element.clientWidth, height: element.clientHeight };
+    if (size.width <= 0 || size.height <= 0) return;
+    const physical = scaledSize(size, scale);
+    const key = `${scale}:${physical.width}x${physical.height}`;
+    if (appliedDisplay.current === key) return;
+    appliedDisplay.current = key;
+    const client = screenOf(element);
+    if (client?.configureDisplay) client.configureDisplay(physical, 96 * scale);
+    else client?.post({ type: "settings", settings: { scaling_dpi: 96 * scale } });
+    lockSize(element, physical);
+  }, []);
+
+  useEffect(() => {
+    let query: MediaQueryList;
+    const changed = () => {
+      query?.removeEventListener("change", changed);
+      setRatio(window.devicePixelRatio || 1);
+      query = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+      query.addEventListener("change", changed);
+    };
+    changed();
+    window.addEventListener("resize", changed);
+    return () => {
+      query.removeEventListener("change", changed);
+      window.removeEventListener("resize", changed);
+    };
+  }, []);
+
+  useEffect(() => {
+    applyDisplay();
+    const element = frame.current;
+    if (!element || !owner || observing) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const observer = new ResizeObserver(() => {
+      clearTimeout(timer);
+      timer = setTimeout(applyDisplay, 150);
+    });
+    observer.observe(element);
+    return () => { clearTimeout(timer); observer.disconnect(); };
+  }, [owner, observing, locked, scaling, ratio, screen, applyDisplay]);
 
   const refocus = useCallback(() => {
     // After the click that closed a menu has landed.
@@ -664,6 +713,7 @@ function Desktop({ environment: c, slots, selectShortcut }: { environment: Envir
     let was: Display = { owner: null, width: 0, height: 0, settings: null };
     const onDisplay = (d: Display) => {
       if (d.owner === null) was = d; // a new connection
+      if (!d.owner || !was.owner) appliedDisplay.current = "";
       setOwner(d.owner);
       if (d.settings) setLive(qualityOf(d.settings));
       if (observingRef.current) {
@@ -673,7 +723,7 @@ function Desktop({ environment: c, slots, selectShortcut }: { environment: Envir
         was = d;
         return;
       }
-      const { quality, locked } = prefs.current;
+      const { quality } = prefs.current;
       if (jpegOnly && d.settings && d.settings.encoder !== "jpeg") {
         // A display streaming a codec this browser can't decode (another
         // page chose H.264): JPEG, at this browser's quality, so this page
@@ -688,8 +738,7 @@ function Desktop({ environment: c, slots, selectShortcut }: { environment: Envir
           sendQuality(frame.current, quality);
           setLive(quality);
         }
-        if (locked) lockSize(frame.current, locked);
-        else unlockSize(frame.current);
+        applyDisplay();
       } else if (d.owner === false && d.width > 0 && (was.owner !== false || d.width !== was.width || d.height !== was.height)) {
         // Beside the owner: the picture at the stream's size, scaled to fit.
         lockSize(frame.current, { width: d.width, height: d.height });
@@ -743,15 +792,17 @@ function Desktop({ environment: c, slots, selectShortcut }: { environment: Envir
     setLocked(size);
     store(LOCK_SIZE_KEY, size ? JSON.stringify(size) : AUTO_FIT);
     setZoom(1);
-    if (size) lockSize(frame.current, size);
-    else unlockSize(frame.current);
+    // The display effect applies the committed preferences.
     refocus();
   };
   const toggleLock = () => {
     if (locked) chooseResolution(null);
     else {
       const size = remoteSize(frame.current);
-      if (size) chooseResolution(size);
+      if (size) {
+        const scale = displayScale(scaling, ratio);
+        chooseResolution({ width: size.width / scale, height: size.height / scale });
+      }
     }
   };
   const closeClip = useCallback(() => {
@@ -775,9 +826,20 @@ function Desktop({ environment: c, slots, selectShortcut }: { environment: Envir
       onSelect: () => chooseResolution(size),
     })),
   ];
+  const scalingItems: MenuItem[] = (["auto", "1", "2"] as Scaling[]).map((value) => ({
+    label: `Scaling: ${value === "auto" ? `Auto (${displayScale(value, ratio)}×)` : `${value}×`}`,
+    checked: scaling === value,
+    onSelect: () => {
+      if (!owner) return;
+      setScaling(value);
+      store(SCALING_KEY, value);
+      setZoom(1);
+      refocus();
+    },
+  }));
   const displayItems: MenuItem[] = [
     ...(owner
-      ? [{ label: "Lock size", checked: locked !== null, onSelect: toggleLock }, ...resolutionItems]
+      ? [{ label: "Lock size", checked: locked !== null, onSelect: toggleLock }, ...resolutionItems, ...scalingItems]
       : [{ label: owner === false ? "Screen size: set by the first viewer" : "Screen size: connecting…", disabled: true, onSelect: () => {} }]),
     ...qualities.map((q, i) => ({
       label: (
@@ -801,7 +863,7 @@ function Desktop({ environment: c, slots, selectShortcut }: { environment: Envir
       ? [
           ...(owner ? [
             { label: "Lock size", checked: locked !== null, onSelect: toggleLock, separated: true, class: compactOnly },
-            ...resolutionItems.map((item) => ({ ...item, class: compactOnly })),
+            ...[...resolutionItems, ...scalingItems].map((item) => ({ ...item, class: compactOnly })),
           ] : [{
             label: owner === false ? "Resolution: controlled by another viewer" : "Resolution: connecting…",
             disabled: true, onSelect: () => {}, separated: true, class: compactOnly,
@@ -839,7 +901,7 @@ function Desktop({ environment: c, slots, selectShortcut }: { environment: Envir
                 items={displayItems}
                 onClose={refocus}
                 trigger={({ toggle, open }) => (
-                  <button type="button" aria-label="Display" aria-haspopup="menu" aria-expanded={open} title="Display: screen size and quality" class={cx(barButton, "px-2", open && pressed)} onClick={toggle}>
+                  <button type="button" aria-label="Display" aria-haspopup="menu" aria-expanded={open} title="Display: screen size, scaling and quality" class={cx(barButton, "px-2", open && pressed)} onClick={toggle}>
                     <DisplayIcon />
                     <span aria-hidden="true" class="text-[10px]">▾</span>
                   </button>

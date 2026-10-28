@@ -1,4 +1,4 @@
--- Run with: sb --space "Container Computer" script --file scripts/check-docs.lua --json
+-- Run with: sb --space "docs" script --file scripts/check-docs.lua --json
 -- Uses SilverBullet's real object validator and editor lint event; creates no pages.
 local checks = 0
 local function check(kind, fields, valid)

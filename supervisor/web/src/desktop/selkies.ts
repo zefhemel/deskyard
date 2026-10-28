@@ -95,6 +95,7 @@ export interface DeskyardScreen {
   keyboard?(show: boolean): void;
   setTouchMode?(trackpad: boolean): void;
   setViewZoom?(zoom: number): void;
+  configureDisplay?(size: Size, dpi: number): void;
   on(type: "deskyard.keyboard", fn: (visible: boolean) => void): () => void;
   on(type: "deskyard.gesture", fn: (gesture: { kind: "zoom"; factor: number; x: number; y: number } | { kind: "pan"; dx: number; dy: number } | { kind: "cursor"; x: number; y: number }) => void): () => void;
   /** The frame is an insecure context (plain http). */

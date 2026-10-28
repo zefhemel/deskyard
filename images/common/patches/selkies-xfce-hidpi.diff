@@ -1,0 +1,22 @@
+--- a/selkies/display_utils.py
++++ b/selkies/display_utils.py
+@@ -2180,6 +2180,19 @@
+         "Failed to set XFCE DPI using xfconf-query"
+     ):
+         return False
++
++    # Deskyard: scale GTK widgets as well as fonts. UnscaledDPI prevents
++    # GTK3 applying the font density a second time after window scaling.
++    scale = 2 if dpi_value >= 144 else 1
++    for prop, value in (("/Gdk/WindowScalingFactor", scale),
++                        ("/Gdk/UnscaledDPI", round(dpi_value * 1024 / scale))):
++        if not await run_command(
++            ["xfconf-query", "-c", "xsettings", "-p", prop,
++             "-s", str(value), "--create", "-t", "int"],
++            f"Set XFCE {prop} to {value}.",
++            f"Failed to set XFCE {prop}"
++        ):
++            return False
+
+     cursor_size = int(round(dpi_value / 96 * 32))
+     logger.debug(f"Attempting to set cursor size to: {cursor_size} (based on DPI {dpi_value})")

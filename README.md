@@ -17,7 +17,7 @@ button keeps the tab bar and current view together.
 - **XFCE desktop in the browser**, streamed with
   [Selkies](https://github.com/selkies-project/selkies): picture, sound, your
   mic, gamepads, clipboard, file upload (including pasted screenshots), and touch controls on
-  phones and tablets.
+  phones and tablets, with automatic Retina scaling and a 1×/2× override.
 - **Shared terminals** next to the desktop, with trackpad scrolling through
   history and touch keyboard helpers that stay hidden by default on desktops, joinable from the
   browser, desktop or your own terminal. Switch views with Ctrl+Shift+1–9; rename a session or detach without ending it from its tab’s dropdown.

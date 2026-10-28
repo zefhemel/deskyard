@@ -47,3 +47,11 @@ source, or drop the ones that upstream has absorbed.
 `flatpak-openat2.diff` backports the upstream libglnx retry for transient `openat2()` `EAGAIN` failures into Debian trixie's security-patched Flatpak source. Without it, a valid GL-extension directory can intermittently produce `Extension org.freedesktop.Platform.GL.default has invalid merge-dirs`, preventing apps from starting. The upstream diagnosis and patch are in [Flatpak issue 6783](https://github.com/flatpak/flatpak/issues/6783). Only `EAGAIN` is retried; all resolution flags, permanent failures and Debian's security fixes remain intact.
 
 The `flatpak` stage builds the CLI and shared library together, runs the deterministic regression in `images/tests/native/flatpak-openat2.c`, and installs the resulting Debian packages into the common runtime. `git apply --check` requires an exact-context match before Debian's patch stack applies the fix. A future Debian source version containing the fix must remove this backport instead of silently dropping it. The image carries the complete corresponding Debian source package, including the added patch, under `/usr/share/doc/flatpak/deskyard-source/`.
+
+## XFCE HiDPI scaling
+
+`selkies-xfce-hidpi.diff` extends Selkies 2.1.0's XFCE DPI application to set
+`Gdk/WindowScalingFactor` and `Gdk/UnscaledDPI` alongside font DPI and cursor
+size. This makes GTK panels and widgets follow the viewer's 1×/2× desktop
+scaling without applying font scaling twice. It uses the existing session-bus
+lookup and bounded command execution, and reverses both settings at 1×.
