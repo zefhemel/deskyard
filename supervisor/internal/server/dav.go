@@ -57,7 +57,8 @@ func (s *Server) serveDAV(w http.ResponseWriter, r *http.Request, name string) {
 	defer files.Close()
 
 	prefix := "/" + c.Name + "/dav"
-	if !s.davWritable(r, files, prefix) {
+	req := parseDAVRequest(r, prefix)
+	if !davWritable(req, files) {
 		http.Error(w, "read-only", http.StatusForbidden)
 		return
 	}
@@ -80,21 +81,17 @@ func (s *Server) serveDAV(w http.ResponseWriter, r *http.Request, name string) {
 			r.Header.Set("Timeout", davMaxLock)
 		}
 	case "COPY", "MOVE":
-		// As the handler reads Overwrite: a COPY overwrites unless told not to, a MOVE only when told to.
-		if overwrite := r.Header.Get("Overwrite"); r.Method == "COPY" && overwrite != "F" || overwrite == "T" {
-			// An existing destination is set aside, and put back if the copy or move fails.
-			if u, err := url.Parse(r.Header.Get("Destination")); err == nil && strings.HasPrefix(u.Path, prefix) {
-				dest := strings.TrimPrefix(u.Path, prefix)
-				ctx, done := davfs.WithReplacement(r.Context(), dest)
-				r = r.WithContext(ctx)
-				rec := &statusRecorder{ResponseWriter: w, code: http.StatusOK}
-				w = rec
-				defer func() {
-					if err := done(rec.code < 300); err != nil {
-						s.Log.Warn("webdav: settling a replaced destination", "path", dest, "err", err)
-					}
-				}()
-			}
+		// An existing destination is set aside, and put back if the copy or move fails.
+		if req.hasDest && req.overwrite {
+			ctx, done := davfs.WithReplacement(r.Context(), req.dest)
+			r = r.WithContext(ctx)
+			rec := &statusRecorder{ResponseWriter: w, code: http.StatusOK}
+			w = rec
+			defer func() {
+				if err := done(rec.code < 300); err != nil {
+					s.Log.Warn("webdav: settling a replaced destination", "path", req.dest, "err", err)
+				}
+			}()
 		}
 	case http.MethodGet, http.MethodHead:
 		h := w.Header()
@@ -144,46 +141,65 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
-// davMounts is the environment's tree: its home, and its local volumes at
-// their paths. Host volumes are outside the data folder and left out.
+// davMounts is the environment's tree: its mount table, less the folders
+// on the engine host (host volumes), which the supervisor can't see.
 func (s *Server) davMounts(c environments.Environment) []davfs.Mount {
-	mounts := []davfs.Mount{{At: "/workspace", Folder: s.Environments.Layout.HomeOf(c.Name)}}
-	for _, g := range c.Settings.Volumes {
-		v, ok := s.Environments.Vols.Get(g.Name)
-		if !ok || v.Kind == environments.VolumeHost {
-			continue
+	table, _ := s.Environments.Mounts(c.Name, c.Settings.Volumes)
+	var mounts []davfs.Mount
+	for _, m := range table {
+		if !m.Folder.OnEngineHost {
+			mounts = append(mounts, davfs.Mount{At: m.Target, Folder: m.Folder.Path, ReadOnly: m.ReadOnly})
 		}
-		mounts = append(mounts, davfs.Mount{At: environments.GrantPath(g), Folder: s.Environments.Layout.VolumeOf(g.Name), ReadOnly: g.ReadOnly})
 	}
 	return mounts
+}
+
+// davRequest is what the checks before the WebDAV handler read of a
+// request: its method, its path below the prefix and, for a COPY or MOVE,
+// its destination below the prefix (when it has one there) and whether it
+// replaces what is there.
+type davRequest struct {
+	method    string
+	target    string
+	dest      string
+	hasDest   bool
+	overwrite bool
+}
+
+func parseDAVRequest(r *http.Request, prefix string) davRequest {
+	req := davRequest{method: r.Method, target: strings.TrimPrefix(r.URL.Path, prefix)}
+	if r.Method != "COPY" && r.Method != "MOVE" {
+		return req
+	}
+	// As the handler reads Overwrite: a COPY overwrites unless told not to, a MOVE only when told to.
+	overwrite := r.Header.Get("Overwrite")
+	req.overwrite = r.Method == "COPY" && overwrite != "F" || overwrite == "T"
+	if u, err := url.Parse(r.Header.Get("Destination")); err == nil {
+		req.dest, req.hasDest = strings.CutPrefix(u.Path, prefix)
+	}
+	return req
 }
 
 // davWritable refuses, before the WebDAV handler sees it, a change to a
 // read-only or synthesized place, which the handler would answer with 404
 // or 405 and Finder show as an I/O error.
-func (s *Server) davWritable(r *http.Request, files *davfs.FS, prefix string) bool {
-	target := strings.TrimPrefix(r.URL.Path, prefix)
-	switch r.Method {
+func davWritable(req davRequest, files *davfs.FS) bool {
+	switch req.method {
 	case http.MethodPut, "MKCOL", http.MethodDelete, "PROPPATCH":
-		return files.Writable(target)
+		return files.Writable(req.target)
 	case "LOCK":
 		// Clients lock what they write; not mounts, folders above them or
 		// read-only places, where a lock would only get in others' way.
-		return files.Writable(target)
+		return files.Writable(req.target)
 	case "MOVE", "COPY":
-		if r.Method == "MOVE" && !files.Writable(target) {
+		if req.method == "MOVE" && !files.Writable(req.target) {
 			return false
 		}
-		u, err := url.Parse(r.Header.Get("Destination"))
-		if err != nil {
-			return true // the handler refuses it
-		}
-		dest, ok := strings.CutPrefix(u.Path, prefix)
-		if !ok {
+		if !req.hasDest {
 			return true // the handler refuses it
 		}
 		// A dropped macOS file can't stand in for a real one.
-		return files.Writable(dest) && (!davfs.Dropped(target) || davfs.Dropped(dest))
+		return files.Writable(req.dest) && (!davfs.Dropped(req.target) || davfs.Dropped(req.dest))
 	}
 	return true
 }

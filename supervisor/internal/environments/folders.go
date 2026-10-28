@@ -27,6 +27,54 @@ type Folder struct {
 // HomeFolder is the home folder of the environment name.
 func (s *Service) HomeFolder(name string) Folder { return Folder{Path: s.Layout.HomeOf(name)} }
 
+// HomePath is where an environment's home folder is mounted.
+const HomePath = "/workspace"
+
+// MountKind is what a FolderMount holds: the home or a granted volume.
+type MountKind string
+
+const (
+	MountHome   MountKind = "home"
+	MountVolume MountKind = "volume"
+)
+
+// FolderMount is one folder of an environment's mount table: Folder, at
+// Target in the environment.
+type FolderMount struct {
+	Target   string
+	Folder   Folder
+	ReadOnly bool
+	Kind     MountKind
+	Volume   string // the granted volume's name, for MountVolume
+}
+
+// Mounts is the mount table of the environment name with grants: its home
+// at HomePath, then each granted volume's folder at its GrantPath. Grants
+// of volumes that don't exist are left out and named in missing. The
+// container and WebDAV both serve this table.
+func (s *Service) Mounts(name string, grants []VolumeGrant) (mounts []FolderMount, missing []string) {
+	mounts = []FolderMount{{Target: HomePath, Folder: s.HomeFolder(name), Kind: MountHome}}
+	for _, g := range grants {
+		v, ok := s.Vols.Get(g.Name)
+		if !ok {
+			missing = append(missing, g.Name)
+			continue
+		}
+		mounts = append(mounts, FolderMount{Target: GrantPath(g), Folder: s.VolumeFolder(v), ReadOnly: g.ReadOnly, Kind: MountVolume, Volume: g.Name})
+	}
+	return mounts, missing
+}
+
+// engineMounts are mounts as the engine takes them: strict, so the engine
+// never makes a missing home or volume folder on start.
+func engineMounts(mounts []FolderMount) []engine.Mount {
+	out := make([]engine.Mount, len(mounts))
+	for i, m := range mounts {
+		out[i] = engine.Mount{Source: m.Folder.Path, Target: m.Target, ReadOnly: m.ReadOnly, MustExist: true}
+	}
+	return out
+}
+
 // validChild refuses anything but one folder name.
 func validChild(child string) error {
 	if child == "" || child == "." || child == ".." || strings.ContainsRune(child, '/') {

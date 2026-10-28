@@ -575,6 +575,10 @@ func (s *Service) createContainer(ctx context.Context, name string, revision uin
 	if err := ValidateVolumeGrants(set.Volumes); err != nil {
 		return err
 	}
+	mounts, missing := s.Mounts(name, set.Volumes)
+	if len(missing) > 0 {
+		return fmt.Errorf("volume %s doesn't exist", missing[0])
+	}
 	token, err := s.proxyToken(name)
 	if err != nil {
 		return err
@@ -583,9 +587,8 @@ func (s *Service) createContainer(ctx context.Context, name string, revision uin
 	labels[LabelRevision] = strconv.FormatUint(revision, 10)
 	spec := engine.ContainerSpec{
 		Name: containerName(name), Image: imageID, Labels: labels,
-		Env: map[string]string{TokenEnv: token},
-		// Strict, so the engine never makes a missing home on start.
-		Mounts:  []engine.Mount{{Source: s.Layout.HomeOf(name), Target: "/workspace", MustExist: true}},
+		Env:     map[string]string{TokenEnv: token},
+		Mounts:  engineMounts(mounts),
 		Network: containerName(name), Aliases: []string{containerName(name)},
 		MemoryBytes: set.MemoryBytes, NanoCPUs: set.NanoCPUs, ShmBytes: shmBytes,
 		Flatpak: true, Restart: "unless-stopped", NoNewPrivileges: len(set.Volumes) > 0,
@@ -600,14 +603,6 @@ func (s *Service) createContainer(ctx context.Context, name string, revision uin
 	if set.DockerAccess {
 		spec.Mounts = append(spec.Mounts, engine.Mount{Source: dockerSocket, Target: dockerSocket, MustExist: true})
 		spec.Env["DESKYARD_DOCKER_ACCESS"] = "1"
-	}
-	// Strict too: a missing volume folder is an error, never made empty.
-	for _, g := range set.Volumes {
-		v, ok := s.Vols.Get(g.Name)
-		if !ok {
-			return fmt.Errorf("volume %s doesn't exist", g.Name)
-		}
-		spec.Mounts = append(spec.Mounts, engine.Mount{Source: s.VolumeFolder(v).Path, Target: GrantPath(g), ReadOnly: g.ReadOnly, MustExist: true})
 	}
 	if runtimeID != "" {
 		spec.NetworkContainer = runtimeID
