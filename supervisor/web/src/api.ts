@@ -199,13 +199,17 @@ export interface NameCheck {
   folder?: string;
 }
 
-export interface Job {
+/** What a finished job may answer with: a VPN test's status, a VPN rollout, or a restore's result. */
+export type JobResult = VPNStatus | VPNRollout | RestoreResult;
+
+/** A long operation; R is what it answers with once done (useJob<R> names it per job). */
+export interface Job<R = JobResult> {
   status: "running" | "done" | "failed";
   message: string;
   progress: number | null;
   error?: string;
   environment?: string;
-  result?: VPNStatus | VPNRollout | RestoreResult;
+  result?: R;
 }
 
 export interface Account {
@@ -389,17 +393,50 @@ export interface RemovedEvent {
   name: string;
 }
 
+/** What a storage conflict is ("" for any other error). */
+export type ApiErrorCode = "" | "needsKey" | "wrongKey" | "inUse" | "busy";
+const errorCodes: ApiErrorCode[] = ["needsKey", "wrongKey", "inUse", "busy"];
+
 export class ApiError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-    /** The environments a VPN or volume conflict names. */
-    readonly environments: VPNReference[] = [],
-    /** What a storage conflict is: needsKey, wrongKey, inUse or busy. */
-    readonly code = "",
-  ) {
+  readonly status: number;
+  /** The environments a VPN or volume conflict names. */
+  readonly environments: VPNReference[];
+  readonly code: ApiErrorCode;
+  constructor(status: number, message: string, environments: VPNReference[] = [], code: ApiErrorCode = "") {
     super(message);
+    this.status = status;
+    this.environments = environments;
+    this.code = code;
   }
+}
+
+/** The error an API answer that isn't ok means, from its status and its JSON body (if any). */
+export function parseError(status: number, statusText: string, data: unknown): ApiError {
+  let message = `${status} ${statusText}`;
+  let environments: VPNReference[] = [];
+  let code: ApiErrorCode = "";
+  if (data && typeof data === "object") {
+    if ("error" in data && typeof data.error === "string") message = data.error;
+    if ("environments" in data && Array.isArray(data.environments)) environments = data.environments as VPNReference[];
+    if ("code" in data) code = errorCodes.find((c) => c === data.code) ?? "";
+  }
+  return new ApiError(status, message, environments, code);
+}
+
+/** A 401 that means "sign in first": off to the login page. */
+function signedOut(): ApiError {
+  goToLogin();
+  return new ApiError(401, "Signed out");
+}
+
+async function responseError(res: Response): Promise<ApiError> {
+  let data: unknown;
+  try {
+    data = await res.json();
+  } catch {
+    // not JSON
+  }
+  return parseError(res.status, res.statusText, data);
 }
 
 /**
@@ -423,26 +460,8 @@ async function request<T>(method: string, path: string, body?: unknown, signal?:
     init.headers = { "Content-Type": "application/json" };
   }
   const res = await fetch(path, init);
-  if (res.status === 401 && !no401Redirect.has(path)) {
-    goToLogin();
-    throw new ApiError(401, "Signed out");
-  }
-  if (!res.ok) {
-    let message = `${res.status} ${res.statusText}`;
-    let environments: VPNReference[] = [];
-    let code = "";
-    try {
-      const data: unknown = await res.json();
-      if (data && typeof data === "object") {
-        if ("error" in data && typeof data.error === "string") message = data.error;
-        if ("environments" in data && Array.isArray(data.environments)) environments = data.environments as VPNReference[];
-        if ("code" in data && typeof data.code === "string") code = data.code;
-      }
-    } catch {
-      // not JSON
-    }
-    throw new ApiError(res.status, message, environments, code);
-  }
+  if (res.status === 401 && !no401Redirect.has(path)) throw signedOut();
+  if (!res.ok) throw await responseError(res);
   if (res.status === 204) return undefined as T;
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;
@@ -462,29 +481,22 @@ export interface MemoryReclaim {
 
 export type RemoteType = "s3" | "b2" | "sftp" | "webdav";
 
+/** Each type's own settings (as storage.Remote has them: empty ones are left out). */
+export type RemoteSettings =
+  | { type: "s3"; provider: string; endpoint?: string; region?: string; accessKeyId: string }
+  | { type: "b2"; keyId: string }
+  | { type: "sftp"; host: string; port?: number; user: string; hostKey?: string }
+  | { type: "webdav"; url: string; vendor?: string; user?: string };
+/** A remote as saved or tested: its name, a folder on it, and its type's settings. */
+export type RemoteInput = { name: string; root?: string } & RemoteSettings;
 /** A storage remote: an rclone connection, without its secrets. */
-export interface Remote {
-  name: string;
-  type: RemoteType;
+export type Remote = RemoteInput & {
   created: string;
-  root?: string;
-  provider?: string;
-  endpoint?: string;
-  region?: string;
-  accessKeyId?: string;
-  keyId?: string;
-  host?: string;
-  port?: number;
-  user?: string;
-  hostKey?: string;
-  url?: string;
-  vendor?: string;
   /** Which secrets are stored. */
   secretsSet: string[];
   /** The backup repositories on it. */
   repositories: string[];
-}
-export type RemoteInput = Omit<Remote, "created" | "secretsSet" | "repositories">;
+};
 /** Write-only: left out to keep the stored value. */
 export interface RemoteSecrets {
   secretAccessKey?: string;
@@ -538,15 +550,33 @@ export interface BackupItem {
   activity: string;
   nextRun: string | null;
 }
-export interface Snapshot {
+/** A snapshot as restic describes it, which the server passes on. */
+interface ResticSnapshot {
   id: string;
   short_id: string;
   time: string;
   hostname: string;
-  tags: string[];
+  tags: string[] | null;
   summary?: { data_added: number; total_bytes_processed: number };
   repository: string;
   reason: string;
+}
+/** A snapshot of an item, in this client's own spelling. */
+export interface Snapshot {
+  id: string;
+  shortId: string;
+  time: string;
+  hostname: string;
+  tags: string[];
+  summary?: { dataAdded: number; totalBytes: number };
+  repository: string;
+  reason: string;
+}
+function snapshot(s: ResticSnapshot): Snapshot {
+  return {
+    id: s.id, shortId: s.short_id, time: s.time, hostname: s.hostname, tags: s.tags ?? [], repository: s.repository, reason: s.reason,
+    summary: s.summary && { dataAdded: s.summary.data_added, totalBytes: s.summary.total_bytes_processed },
+  };
 }
 export interface SnapshotEntry {
   name: string;
@@ -596,7 +626,7 @@ export const api = {
   whoami: async (): Promise<Me | null> => {
     const res = await fetch("/api/me", { credentials: "same-origin" });
     if (res.status === 401) return null;
-    if (!res.ok) throw new ApiError(res.status, `${res.status} ${res.statusText}`);
+    if (!res.ok) throw await responseError(res);
     return (await res.json()) as Me;
   },
   changePassword: (current: string, next: string) => request<void>("POST", "/api/me/password", { current, new: next }),
@@ -711,7 +741,10 @@ export const api = {
   putPolicy: (kind: ItemKind, name: string, policy: PolicyInput) => request<BackupItem>("PUT", b(kind, name), policy),
   deletePolicy: (kind: ItemKind, name: string) => request<void>("DELETE", b(kind, name)),
   runBackup: (kind: ItemKind, name: string) => request<JobRef>("POST", `${b(kind, name)}/run`),
-  snapshots: (kind: ItemKind, name: string) => request<{ snapshots: Snapshot[] }>("GET", `${b(kind, name)}/snapshots`),
+  snapshots: async (kind: ItemKind, name: string): Promise<{ snapshots: Snapshot[] }> => {
+    const r = await request<{ snapshots: ResticSnapshot[] | null }>("GET", `${b(kind, name)}/snapshots`);
+    return { snapshots: (r.snapshots ?? []).map(snapshot) };
+  },
   snapshotFiles: (kind: ItemKind, name: string, repository: string, id: string, path: string) =>
     request<{ entries: SnapshotEntry[] }>("GET", `${b(kind, name)}/snapshots/${enc(id)}/files?repository=${enc(repository)}&path=${enc(path)}`),
   snapshotDownloadURL: (kind: ItemKind, name: string, repository: string, id: string, path: string, dir: boolean) =>
@@ -732,8 +765,7 @@ export function uploadFile(environment: string, file: File, onProgress: (fractio
     xhr.onerror = () => reject(new ApiError(0, "The upload was interrupted"));
     xhr.onload = () => {
       if (xhr.status === 401) {
-        goToLogin();
-        reject(new ApiError(401, "Signed out"));
+        reject(signedOut());
         return;
       }
       let data: unknown;
@@ -746,8 +778,7 @@ export function uploadFile(environment: string, file: File, onProgress: (fractio
         resolve(data as Uploaded);
         return;
       }
-      const message = data && typeof data === "object" && "error" in data && typeof data.error === "string" ? data.error : `${xhr.status} ${xhr.statusText}`;
-      reject(new ApiError(xhr.status, message));
+      reject(parseError(xhr.status, xhr.statusText, data));
     };
     xhr.send(file);
   });

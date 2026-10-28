@@ -12,10 +12,10 @@ function where(r: Remote): string {
     case "sftp":
       return `${r.user}@${r.host}${r.port ? `:${r.port}` : ""}:${r.root ?? ""}`;
     case "webdav":
-      return `${r.url ?? ""}${r.root ? ` · ${r.root}` : ""}`;
+      return `${r.url}${r.root ? ` · ${r.root}` : ""}`;
     case "s3":
       return `${r.provider}${r.endpoint ? ` (${r.endpoint})` : ""} · ${r.root ?? ""}`;
-    default:
+    case "b2":
       return r.root ?? "";
   }
 }
@@ -81,7 +81,8 @@ function RemoteDialog({ remote, onClose, onSaved }: { remote: Remote | null; onC
     setTested(false);
   };
   const shows = (key: string) => tried || touched.has(key);
-  const moved = remote && (d.host !== (remote.host ?? "") || d.root !== (remote.root ?? "") || d.url !== (remote.url ?? "") || d.endpoint !== (remote.endpoint ?? ""));
+  const saved = remote && draftFromRemote(remote);
+  const moved = saved && (d.host !== saved.host || d.root !== saved.root || d.url !== saved.url || d.endpoint !== saved.endpoint);
   const test = async () => {
     setBusy("test");
     setError(null);

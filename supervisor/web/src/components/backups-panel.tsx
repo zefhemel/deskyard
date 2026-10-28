@@ -94,7 +94,7 @@ export function BackupsPanel({ kind, name, stoppers, hostPath }: { kind: ItemKin
               <div class="mr-auto min-w-0">
                 <div class="font-semibold">{when(s.time)}</div>
                 <div class="text-sm text-muted">
-                  {[describeReason(s.reason), s.summary && bytes(s.summary.total_bytes_processed), manyRepos && s.repository].filter(Boolean).join(" · ")}
+                  {[describeReason(s.reason), s.summary && bytes(s.summary.totalBytes), manyRepos && s.repository].filter(Boolean).join(" · ")}
                 </div>
               </div>
               <div class="flex flex-wrap gap-2">
@@ -307,7 +307,7 @@ function BrowseDialog({ kind, name, snapshot: s, onClose }: { kind: ItemKind; na
   const [error, setError] = useState<string | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
   const [done, setDone] = useState<RestoreResult | null>(null);
-  const run = useJob((j) => setDone((j.result as RestoreResult) ?? {}));
+  const run = useJob<RestoreResult>((j) => setDone(j.result ?? {}));
   useEffect(() => {
     let live = true;
     setEntries(null);
@@ -461,7 +461,7 @@ export function RestoreNewDialog({ kind, name, snapshot: s, onClose }: { kind: I
   const [image, setImage] = useState("");
   const images = useFetch(() => (kind === "environment" ? api.images() : Promise.resolve([])), "images");
   const [result, setResult] = useState<RestoreResult | null>(null);
-  const run = useJob((j) => setResult((j.result as RestoreResult) ?? {}));
+  const run = useJob<RestoreResult>((j) => setResult(j.result ?? {}));
   const valid = NAME.test(newName);
   if (result) {
     const href = kind === "environment" ? `/environments/${result.created}` : `/volumes/${result.created}`;
