@@ -4,7 +4,7 @@ import { api } from "../api.ts";
 import { BackupsPanel } from "../components/backups-panel.tsx";
 import { Page, useTitle } from "../components/topbar.tsx";
 import { Button, ErrorText, Tag } from "../components/ui.tsx";
-import { useFetch } from "../lib/use-fetch.ts";
+import { useBackupItem, useFetch } from "../lib/use-fetch.ts";
 import { useLive } from "../live.tsx";
 import { BackupTag, DeleteVolume, VolumeCard } from "./volumes.tsx";
 
@@ -15,7 +15,8 @@ export function VolumeDetailsPage() {
   const name = params.name ?? "";
   const list = useFetch(() => api.volumes(), "volumes");
   const { environments } = useLive();
-  const backup = useFetch(() => api.backup("volume", name), `backup-volume-${name}`);
+  // The same source as the panel below: its polling and refreshes update the tag.
+  const backup = useBackupItem("volume", name);
   const [removing, setRemoving] = useState(false);
   const v = list.data?.volumes.find((x) => x.name === name);
   useTitle(name, "Storage");
