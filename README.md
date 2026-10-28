@@ -11,14 +11,16 @@ The supervisor is one Go binary with its web UI built in. You sign in with
 your own account and create, open, start, stop, upgrade and remove
 **environments**. An environment is one persistent Linux desktop with its own
 home folder, in the browser at `http://host/<name>/`; everyone with access to
-it opens the same desktop, at the same time if they like.
+it opens the same desktop, at the same time if they like. The fullscreen
+button keeps the tab bar and current view together.
 
 - **XFCE desktop in the browser**, streamed with
   [Selkies](https://github.com/selkies-project/selkies): picture, sound, your
   mic, gamepads, clipboard, file upload, and touch controls on
   phones and tablets.
 - **Shared terminals** next to the desktop, with trackpad scrolling through
-  history, joinable from the browser, desktop or your own terminal.
+  history and a compact single-row key bar on mobile, joinable from the
+  browser, desktop or your own terminal. Rename a session from its tab’s dropdown.
 - **One shared Chromium** whose tabs and sign-ins stay with the environment.
   It starts when you open it or connect through browser tools.
 - **Sharing by link**: full access or observe-only, optionally for a limited

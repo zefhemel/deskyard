@@ -2,7 +2,7 @@
 // shared terminal session in this viewer's order, then +. Also the pieces of
 // the bar that the active tab fills in (its dot, controls and ⋯ items).
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { MenuItem } from "../components/menu.tsx";
+import { Menu, type MenuItem } from "../components/menu.tsx";
 import { cx } from "../components/ui.tsx";
 import { moveTab, moveTabTo } from "../lib/tab-order.ts";
 import { DisplayIcon, TerminalIcon } from "./bar-icons.tsx";
@@ -77,6 +77,7 @@ export function EnvironmentTabs({
   canAdd,
   onSelect,
   onClose,
+  onRename,
   onAdd,
   onReorder,
 }: {
@@ -86,6 +87,7 @@ export function EnvironmentTabs({
   canAdd: boolean;
   onSelect: (session: string | null) => void;
   onClose: (session: string) => void;
+  onRename: (session: string) => void;
   onAdd: () => void;
   onReorder: (order: string[]) => void;
 }) {
@@ -227,6 +229,16 @@ export function EnvironmentTabs({
                 </>
               )}
             </button>
+            <Menu
+              portal
+              items={[{ label: "Rename session…", onSelect: () => onRename(t.name) }]}
+              trigger={({ open, toggle }) => (
+                <button type="button" aria-label={`Session menu for ${t.name}`} aria-haspopup="menu" aria-expanded={open}
+                  title={`Session menu for ${t.name}`}
+                  class="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-[5px] border-0 bg-transparent text-inherit opacity-70 hover:bg-[#3a4b63] hover:opacity-100"
+                  onClick={toggle}>⌄</button>
+              )}
+            />
             {/* Out of the Tab order: Delete on the focused tab does the same. */}
             <button
               type="button"

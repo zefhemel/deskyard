@@ -12,7 +12,7 @@ import { power } from "../components/environment-menu.tsx";
 import { Menu, type MenuItem } from "../components/menu.tsx";
 import { ViewersPopover } from "../components/viewers-popover.tsx";
 import { notify, notifyError } from "../components/toast.tsx";
-import { Button, cx, Dialog, MORE } from "../components/ui.tsx";
+import { Button, cx, Dialog, ErrorText, Field, MORE } from "../components/ui.tsx";
 import { LinkDialog, ShareDialog } from "../dialogs/share.tsx";
 import { useEnvironment, useLive } from "../live.tsx";
 import { agentTitle } from "../lib/activity-format.ts";
@@ -22,6 +22,7 @@ import { names, notice } from "../lib/format.ts";
 import { isShell, needsConfirm, others } from "../terminal/sessions.ts";
 import { TouchControls, useVisibleViewport } from "./touch-controls.tsx";
 import { ZoomViewport } from "./zoom-viewport.tsx";
+import { FullscreenButton } from "./fullscreen.tsx";
 import { AudioControl } from "./audio-panel.tsx";
 import { ClipboardIcon, DisplayIcon, KeyboardIcon, ShieldIcon } from "./bar-icons.tsx";
 import { barButton, type BarSlots, ConnDot, EnvironmentTabs, panelId, pressed, tabId, useTabHooks } from "./tabs.tsx";
@@ -151,6 +152,8 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
   const [opened, setOpened] = useState<string[]>([]);
   const [order, setOrder] = useState(() => loadOrder(c.name));
   const [states, setStates] = useState<Record<string, string>>({});
+  const [renameInFlight, setRenameInFlight] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ session: string; others: number; command: string } | null>(null);
   const [viewersOpen, setViewersOpen] = useState(false);
   // Share, as under Shares on the environment's Access tab: full access, but not a share itself.
@@ -166,7 +169,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
   const deleting = useRef(new Set<string>());
   const adding = useRef(false);
 
-  const shown = [...listed, ...Object.keys(pending).filter((s) => !listed.includes(s))].filter((s) => !gone.includes(s));
+  const shown = [...listed, ...(renameInFlight && !listed.includes(renameInFlight) ? [renameInFlight] : []), ...Object.keys(pending).filter((s) => !listed.includes(s))].filter((s) => !gone.includes(s));
   const tabs = orderTabs(shown, order);
   const tabsKey = tabs.join("\n");
   const active = query.terminal && tabs.includes(query.terminal) ? query.terminal : null;
@@ -246,7 +249,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
       seen.current.add(s);
       linked.current.delete(s);
     }
-    for (const s of vanished(seen.current, listed, Object.keys(pending))) {
+    for (const s of vanished(seen.current, listed, [...Object.keys(pending), ...(renameInFlight ? [renameInFlight] : [])])) {
       seen.current.delete(s);
       closeTab(s, running && !ending.current.has(s));
     }
@@ -432,6 +435,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
           active={active}
           canAdd={running && c.terminal && !observing}
           onSelect={show}
+          onRename={setRenaming}
           onClose={(s) => void requestEnd(s)}
           onAdd={() => void add()}
           onReorder={(next) => {
@@ -441,6 +445,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
         />
         <div class="ml-auto flex h-[46px] shrink-0 items-center gap-0.5">
           <span ref={setControls} class="contents" />
+          <FullscreenButton />
           {canShare && (
             <button type="button" class={cx(barButton, sharing && pressed)} title={`Share ${c.name} through a link`} onClick={() => setSharing(true)}>
               Share
@@ -520,6 +525,17 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
             </Suspense>
           ))}
       </div>
+      {renaming && <RenameSessionDialog session={renaming} environment={c.name} onStart={() => setRenameInFlight(renaming)} onFailure={() => setRenameInFlight(null)} onClose={() => setRenaming(null)} onRenamed={(next) => {
+        const old = renaming;
+        if (next === old) { setRenameInFlight(null); setRenaming(null); return; }
+        seen.current.delete(old);
+        setOpened((o) => o.filter((s) => s !== old));
+        setGone((g) => [...g, old]);
+        setOrder((order) => order.map((s) => s === old ? next : s));
+        openCreated(next);
+        setRenameInFlight(null);
+        setRenaming(null);
+      }} />}
       {confirm && (
         <EndSessionDialog
           {...confirm}
@@ -949,4 +965,25 @@ function useJoinToasts(viewers: string[], me: string) {
       }
     }
   }, [viewers.join(","), me]);
+}
+
+function RenameSessionDialog({ session, environment, onClose, onRenamed, onStart, onFailure }: { session: string; environment: string; onClose: () => void; onRenamed: (next: string) => void; onStart: () => void; onFailure: () => void }) {
+  const [name, setName] = useState(session);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const valid = validSession(name);
+  return <Dialog title={`Rename ${session}`} onClose={() => { if (!busy) onClose(); }} onSubmit={() => {
+    if (busy || !valid) return;
+    setBusy(true);
+    setError(null);
+    onStart();
+    api.renameTerminal(environment, session, name).then(({ name }) => onRenamed(name), (e: unknown) => {
+      onFailure();
+      setError(e instanceof Error ? e.message : String(e)); setBusy(false);
+    });
+  }} footer={<><Button onClick={onClose} disabled={busy}>Cancel</Button><Button type="submit" disabled={busy || !valid}>{busy ? "Renaming…" : "Rename"}</Button></>}>
+    <Field label="Session name" htmlFor="terminal-session-name"><input id="terminal-session-name" autoFocus value={name} maxLength={64} disabled={busy} onInput={(e) => setName(e.currentTarget.value)} /></Field>
+    <p class="text-sm text-muted">Use 1–64 letters, digits, underscores or dashes, starting with a letter or digit. The shell and its programs keep running.</p>
+    <ErrorText error={error} />
+  </Dialog>;
 }

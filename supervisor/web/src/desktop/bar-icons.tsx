@@ -43,3 +43,11 @@ export const TextSizeIcon = () => (
     <path d="M1.75 12.5 5 3.5l3.25 9M2.9 9.5h4.2M9.5 12.5l2.25-6 2.25 6M10.2 10.75h3.1" />
   </Icon>
 );
+
+export const FullscreenIcon = ({ active }: { active: boolean }) => (
+  <Icon>
+    <path d={active
+      ? "M1.5 5.5h4v-4M10.5 1.5v4h4M14.5 10.5h-4v4M5.5 14.5v-4h-4"
+      : "M5.5 1.5h-4v4M14.5 5.5v-4h-4M10.5 14.5h4v-4M1.5 10.5v4h4"} />
+  </Icon>
+);

@@ -64,6 +64,8 @@ func runTerminalRuntime(a *App, c *call) error {
 		return terminal.List(ctx, a.Stdout)
 	case "terminal-create":
 		return terminal.Create(ctx, a.Stdout)
+	case "terminal-rename":
+		return noSession(a, terminal.Rename(ctx, c.args[0], c.args[1]))
 	case "terminal-kill":
 		if !terminal.ValidSession(c.args[0]) {
 			return usagef(c.cmd, "invalid session name")

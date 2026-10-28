@@ -48,6 +48,8 @@ func (e *terminalSessionsEngine) Exec(ctx context.Context, id string, s engine.E
 		if e.listHook != nil {
 			defer e.listHook()
 		}
+	case "terminal-rename":
+		code = e.killCode
 	case "terminal-create":
 		out = e.created
 	case "terminal-kill":
@@ -538,5 +540,58 @@ func TestTerminalChangesCoalesce(t *testing.T) {
 	defer s.terminalSessions.mu.Unlock()
 	if len(s.terminalSessions.changing) != 0 {
 		t.Fatal("change refresh still marked running")
+	}
+}
+
+func TestRenameSessionRoute(t *testing.T) {
+	for _, tc := range []struct {
+		name, user, state, next string
+		code, want              int
+	}{
+		{"renamed", "admin", "running", "build", 0, 200},
+		{"invalid", "admin", "running", "bad.name", 0, 400},
+		{"no access", "anna", "running", "build", 0, 404},
+		{"stopped", "admin", "exited", "build", 0, 409},
+		{"missing", "admin", "running", "build", 3, 404},
+		{"collision", "admin", "running", "build", 1, 409},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newTerminalSessionsEngine()
+			e.state = tc.state
+			e.killCode = tc.code
+			_, ts := newTestServerWith(t, e)
+			req, _ := http.NewRequest("PATCH", ts.URL+"/api/environments/alice/terminal/sessions/main", strings.NewReader(fmt.Sprintf(`{"name":%q}`, tc.next)))
+			req.Header.Set("Origin", ts.URL)
+			resp, err := login(t, ts, tc.user).Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != tc.want {
+				b, _ := io.ReadAll(resp.Body)
+				t.Fatalf("%d: %s", resp.StatusCode, b)
+			}
+			ran := e.ran("deskyard", "terminal-rename", "main", tc.next)
+			if ran != (tc.user == "admin" && tc.state == "running" && tc.next == "build") {
+				t.Fatalf("unexpected helper invocation: %v", ran)
+			}
+		})
+	}
+}
+
+func TestRenamedTerminalConnectionEndsUnderNewName(t *testing.T) {
+	connections := newTerminalConnections()
+	c := &terminalConnection{environment: "alice", session: "main"}
+	if !connections.add(c) {
+		t.Fatal("register")
+	}
+	connections.rename("alice", "main", "build")
+	connections.beginEnding("alice", "main").finish(true)
+	if isClosed(c.end) {
+		t.Fatal("old name ended renamed attachment")
+	}
+	connections.beginEnding("alice", "build").finish(true)
+	if !isClosed(c.end) {
+		t.Fatal("new name did not end attachment")
 	}
 }

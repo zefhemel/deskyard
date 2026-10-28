@@ -617,6 +617,8 @@ export const api = {
   /** Starts the next free terminal-N, detached; the tab then opens it. */
   createTerminal: (name: string) => request<{ name: string }>("POST", `${c(name)}/terminal/sessions`),
   /** Ends a session for everyone attached to it. */
+  renameTerminal: (name: string, session: string, next: string) => request<{ name: string }>("PATCH", `${c(name)}/terminal/sessions/${enc(session)}`, { name: next }),
+
   endTerminal: (name: string, session: string) => request<void>("DELETE", `${c(name)}/terminal/sessions/${enc(session)}`),
   createEnvironment: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: AccessGrant[]; dockerAccess: boolean; volumes?: VolumeGrant[] } & EnvironmentVPNSettings) =>
     request<JobRef>("POST", "/api/environments", body),

@@ -719,6 +719,19 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     return json(res, 201, { name });
   }
   const ts = /^terminal\/sessions\/(.+)$/.exec(sub);
+  if (ts && method === "PATCH") {
+    const old = decodeURIComponent(ts[1]!);
+    const body = await readBody(req);
+    const name = String(body.name ?? "");
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(name)) return json(res, 400, { error: "invalid session name" });
+    if (c.state !== "running" || !c.terminal) return json(res, 409, { error: "Environment terminal unavailable" });
+    const session = c.terminals.find((t) => t.name === old);
+    if (!session) return json(res, 404, { error: "no such session" });
+    if (old !== name && c.terminals.some((t) => t.name === name)) return json(res, 409, { error: "name already in use" });
+    session.name = name;
+    changed(c);
+    return json(res, 200, { name });
+  }
   if (ts && method === "DELETE") {
     const name = decodeURIComponent(ts[1]!);
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(name)) return json(res, 400, { error: "invalid session name" });

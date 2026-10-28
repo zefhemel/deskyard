@@ -326,3 +326,33 @@ func (s *Server) handleEndTerminalSession(w http.ResponseWriter, r *http.Request
 		writeError(w, 502, "could not end the shared terminal; upgrade the desktop image if its helper is unavailable")
 	}
 }
+
+// handleRenameTerminalSession preserves the shell and attached tmux clients.
+func (s *Server) handleRenameTerminalSession(w http.ResponseWriter, r *http.Request) {
+	session := r.PathValue("session")
+	c, ok := s.terminalSessionsEnvironment(w, r, "renaming", &session)
+	if !ok {
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := readJSON(r, &body); err != nil || !terminal.ValidSession(body.Name) {
+		writeError(w, 400, "invalid terminal session name")
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
+	defer cancel()
+	result, err := engine.Run(ctx, s.Eng, c.Container.ID, engine.ExecSpec{Cmd: []string{"deskyard", "terminal-rename", session, body.Name}, User: "user", DesktopSession: true, WorkDir: "/workspace", Env: execEnv}, engine.RunOptions{StdoutLimit: 4096, StderrLimit: 4096})
+	if err != nil || result.Code != 0 {
+		if err == nil && result.Code == 3 {
+			writeError(w, 404, "no such terminal session")
+			return
+		}
+		writeError(w, 409, "could not rename terminal: choose an unused name and ensure the desktop image is up to date")
+		return
+	}
+	s.terminals.rename(c.ID, session, body.Name)
+	s.terminalSessions.refreshLater(r.Context(), c)
+	writeJSON(w, 200, map[string]string{"name": body.Name})
+}

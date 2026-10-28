@@ -16,6 +16,8 @@ The bar's tabs show the desktop next to the environment's shared terminal
 sessions. On phones, Display and Keys are in the scrollable More
 menu, and the tabs get a row of their own.
 
+**Enter fullscreen** (the expand icon in the top bar) fills the browser screen with the Deskyard tab bar and current desktop or terminal view. The same button becomes **Exit fullscreen**; the browser’s Escape action also exits. Switching tabs keeps fullscreen active, and menus and dialogs remain usable. Leaving the environment page exits fullscreen started with this button. The button appears only when the browser supports fullscreen; it needs no desktop image update.
+
 Mouse-wheel and two-finger trackpad gestures scroll the application under the
 pointer in the desktop. Small trackpad movements accumulate rather than being
 discarded; horizontal gestures scroll horizontally where the application supports
@@ -84,11 +86,13 @@ for the mic and automatic clipboard synchronization; see [On a LAN](running.md#o
 
 The environment's page (`http://host/alice/`) shows its desktop and its shared terminal sessions as tabs: **Desktop** first, then one tab per running session (including ones opened from the desktop's own terminal, the CLI or another browser; a session opened or ended anywhere shows up within about a second), then **+**. A terminal tab's address is `http://host/alice/?terminal=build-2`, and a small count on the tab shows how many others are attached. **+** opens a new session named `terminal-1`, `terminal-2`, and so on. Switching tabs keeps each terminal connected and its scrollback; leaving the Desktop tab stops its stream, and returning reconnects it. Drag a tab, or press Alt+Shift+← or → on it, to reorder; the order is remembered in this browser. A terminal tab's bar has Paste, Keys and Text size.
 
+The small **⌄** button immediately left of **×** opens **Rename session…**. Enter a valid, unused session name; its shell and programs keep running. This browser reconnects using the new name. Other browser tabs discover the renamed session in their session list; old bookmarked terminal URLs no longer join it. Renaming requires an updated desktop image with the rename helper.
+
 **×** on a tab ends that session for everyone: its shell, every program in it, and every other client's view. It asks first when a program other than the shell is running in it, or when anyone else is attached; otherwise it ends at once. A link or a reconnect only joins: a session that no longer exists opens the Desktop tab with a "session ended" note and is never recreated. Each running environment's card lists **Desktop** and its sessions (the first three and "+N more" when there are more than four), and **+** opens `main`, creating it if needed, or a new session when `main` already exists.
 
 The create/join walkthrough, screenshots, native keyboard evidence and known limits are in the project space's *Testing/Shared terminal 2026-10-23* page, and the tabs' checks in *Testing/Environment tabs 2026-10-26* (see [Project records](development.md#project-records)). The page reconnects after brief network interruptions without replaying disconnected input. Restarting an environment ends its shells and jobs.
 
-On phones, tap **Keyboard** to open the software keyboard. The scrollable key bar provides Ctrl+C/D/L, Esc, Tab, arrows, Home/End, PgUp/PgDn and Delete, plus one-shot Ctrl and Alt. Helper taps keep the keyboard open; paste and composition clear modifiers. On short keyboard viewports the bar moves into the key row as a horizontally scrollable strip. If the browser leaves less than the minimum space for a readable terminal row and 44px controls, the page asks you to rotate to portrait or dismiss the keyboard; the shell stays connected. **History** opens tmux history: use PgUp/PgDn, then Esc to return. Mouse-wheel and
+On phones, tap **Keyboard** to open the software keyboard. The compact, single-row key bar scrolls sideways and provides Ctrl+C/D/L, Esc, Tab, arrows, Home/End, PgUp/PgDn and Delete, plus one-shot Ctrl and Alt. Helper taps keep the keyboard open; paste and composition clear modifiers. On short keyboard viewports the environment toolbar shares the bottom key row as a horizontally scrollable strip. If the browser leaves less than the minimum space for a readable terminal row and 44px controls, the page asks you to rotate to portrait or dismiss the keyboard; the shell stays connected. **History** opens tmux history: use PgUp/PgDn, then Esc to return. Mouse-wheel and
 two-finger trackpad gestures over a terminal tab also scroll its shared tmux
 history; the first upward movement scrolls immediately. Mouse-aware applications
 (such as `less --mouse` or Vim with mouse support enabled) receive the wheel
