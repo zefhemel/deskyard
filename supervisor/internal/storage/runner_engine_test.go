@@ -15,6 +15,7 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine/docker"
+	"github.com/zefhemel/deskyard/supervisor/internal/helper"
 )
 
 // engineDirs makes a temporary folder the engine can mount (under /tmp, which
@@ -28,7 +29,7 @@ func engineDirs(t *testing.T, subs ...string) string {
 	t.Cleanup(func() {
 		// The helper wrote some of it as root.
 		d, _ := docker.New("")
-		r := &EngineRunner{Eng: d}
+		r := &EngineRunner{Helpers: &helper.Runner{Eng: d}}
 		_, _ = r.Run(context.Background(), Call{Mounts: []engine.Mount{{Source: root, Target: "/clean"}}, Args: []string{"sh", "-c", "rm -rf /clean/*"}})
 		os.RemoveAll(root)
 	})
@@ -51,7 +52,7 @@ func engineRunner(t *testing.T) *EngineRunner {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(bin) })
-	return &EngineRunner{Eng: d, BinDir: bin}
+	return &EngineRunner{Helpers: &helper.Runner{Eng: d}, BinDir: bin}
 }
 
 func TestEngineRunnerResticLocal(t *testing.T) {

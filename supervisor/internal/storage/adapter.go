@@ -13,14 +13,23 @@ type Environments interface {
 	Layout() config.Layout
 	Definition(name string) (environments.Definition, bool)
 	Volume(name string) (environments.Volume, bool)
-	VolumeFolder(v environments.Volume) string
+	VolumeFolder(v environments.Volume) environments.Folder
 	VolumeUsers(name string) []environments.VolumeUser
+	// RemoveTree and MakeFreeFolder change folders, as root through a
+	// helper where the supervisor can't.
+	RemoveTree(ctx context.Context, parent environments.Folder, child string) error
+	MakeFreeFolder(ctx context.Context, parent environments.Folder, base string) (string, error)
+
+	// HoldFiles and FilesActivity are the reservations of items' files.
+	HoldFiles(it environments.Item, what string, replacing bool) (func(), error)
+	FilesActivity(it environments.Item) string
 
 	Get(ctx context.Context, name string) (environments.Environment, error)
 	Reserve(name, state string) (func(), error)
 	Stop(ctx context.Context, name string) error
 	Start(ctx context.Context, name string) error
-	Create(ctx context.Context, name string, set environments.Settings, progress func(string, float64)) (environments.Environment, error)
+	ClaimName(name string) (func(), error)
+	CreateStopped(ctx context.Context, name string, set environments.Settings, progress func(string, float64)) (environments.Environment, error)
 	CreateVolume(ctx context.Context, name, hostPath string) (environments.Volume, bool, error)
 }
 

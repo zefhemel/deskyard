@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -23,8 +24,11 @@ type fakeEnv struct {
 	vols     map[string]environments.Volume
 	running  map[string]bool
 	reserved map[string]bool
+	held     map[environments.Item]string // files held, as the environments service holds them
+	replaced map[environments.Item]bool   // held files being replaced
 	log      []string
 	created  map[string]environments.Settings
+	claimErr error // ClaimName's, as of a failed NameClaimed
 }
 
 func newFakeEnv(t *testing.T) *fakeEnv {
@@ -34,7 +38,7 @@ func newFakeEnv(t *testing.T) *fakeEnv {
 		t.Fatal(err)
 	}
 	return &fakeEnv{layout: layout, defs: map[string]environments.Definition{}, vols: map[string]environments.Volume{},
-		running: map[string]bool{}, reserved: map[string]bool{}, created: map[string]environments.Settings{}}
+		running: map[string]bool{}, reserved: map[string]bool{}, held: map[environments.Item]string{}, replaced: map[environments.Item]bool{}, created: map[string]environments.Settings{}}
 }
 
 func (e *fakeEnv) addEnvironment(t *testing.T, name string, running bool, set environments.Settings) {
@@ -82,11 +86,11 @@ func (e *fakeEnv) Volume(name string) (environments.Volume, bool) {
 	v, ok := e.vols[name]
 	return v, ok
 }
-func (e *fakeEnv) VolumeFolder(v environments.Volume) string {
+func (e *fakeEnv) VolumeFolder(v environments.Volume) environments.Folder {
 	if v.Kind == environments.VolumeHost {
-		return v.HostPath
+		return environments.Folder{Path: v.HostPath, OnEngineHost: true}
 	}
-	return e.layout.VolumeOf(v.Name)
+	return environments.Folder{Path: e.layout.VolumeOf(v.Name)}
 }
 func (e *fakeEnv) VolumeUsers(name string) []environments.VolumeUser {
 	var out []environments.VolumeUser
@@ -98,6 +102,30 @@ func (e *fakeEnv) VolumeUsers(name string) []environments.VolumeUser {
 		}
 	}
 	return out
+}
+func (e *fakeEnv) RemoveTree(_ context.Context, parent environments.Folder, child string) error {
+	e.record("remove tree " + filepath.Join(parent.Path, child))
+	return os.RemoveAll(filepath.Join(parent.Path, child))
+}
+
+// MakeFreeFolder makes the folder as the environments service would,
+// recording that one on the engine host was made by a helper.
+func (e *fakeEnv) MakeFreeFolder(_ context.Context, parent environments.Folder, base string) (string, error) {
+	name := base
+	for n := 2; ; n++ {
+		err := os.Mkdir(filepath.Join(parent.Path, name), 0o755)
+		if err == nil {
+			break
+		}
+		if !os.IsExist(err) {
+			return "", err
+		}
+		name = fmt.Sprintf("%s (%d)", base, n)
+	}
+	if parent.OnEngineHost {
+		e.record("helper made " + filepath.Join(parent.Path, name))
+	}
+	return name, nil
 }
 func (e *fakeEnv) Get(_ context.Context, name string) (environments.Environment, error) {
 	if _, ok := e.defs[name]; !ok {
@@ -124,20 +152,77 @@ func (e *fakeEnv) Stop(_ context.Context, name string) error {
 	e.running[name] = false
 	return nil
 }
+func (e *fakeEnv) HoldFiles(it environments.Item, what string, replacing bool) (func(), error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if cur, ok := e.held[it]; ok {
+		return nil, fmt.Errorf("%w: %s is %s", environments.ErrItemBusy, it, cur)
+	}
+	e.held[it], e.replaced[it] = what, replacing
+	return sync.OnceFunc(func() {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		delete(e.held, it)
+		delete(e.replaced, it)
+	}), nil
+}
+func (e *fakeEnv) FilesActivity(it environments.Item) string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.held[it]
+}
+
+// Start refuses, as the environments service's does, while the files of the
+// environment or of a volume it is granted are being replaced.
 func (e *fakeEnv) Start(_ context.Context, name string) error {
+	e.mu.Lock()
+	busy := e.replaced[environments.Item{Kind: KindEnvironment, Name: name}]
+	for _, g := range e.defs[name].Volumes {
+		busy = busy || e.replaced[environments.Item{Kind: KindVolume, Name: g.Name}]
+	}
+	e.mu.Unlock()
+	if busy {
+		e.record("refused start " + name)
+		return environments.ErrItemBusy
+	}
 	e.record("start " + name)
 	e.running[name] = true
 	return nil
 }
-func (e *fakeEnv) Create(_ context.Context, name string, set environments.Settings, _ func(string, float64)) (environments.Environment, error) {
+
+// ClaimName reserves the name as the environments service does, then has
+// claimErr (or nothing) forget what it holds of the name.
+func (e *fakeEnv) ClaimName(name string) (func(), error) {
+	release, err := e.Reserve(name, "creating")
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := e.defs[name]; ok {
+		release()
+		return nil, environments.ErrExists
+	}
+	if e.claimErr != nil {
+		release()
+		return nil, e.claimErr
+	}
+	e.record("claim " + name)
+	return release, nil
+}
+func (e *fakeEnv) CreateStopped(_ context.Context, name string, set environments.Settings, _ func(string, float64)) (environments.Environment, error) {
 	if _, err := os.Stat(e.layout.HomeOf(name)); err != nil {
 		return environments.Environment{}, fmt.Errorf("no home: %w", err)
 	}
-	e.record("create " + name)
+	// As the environments service's preflight.
+	e.mu.Lock()
+	replaced := e.replaced[environments.Item{Kind: KindEnvironment, Name: name}]
+	e.mu.Unlock()
+	if replaced {
+		return environments.Environment{}, environments.ErrItemBusy
+	}
+	e.record("create stopped " + name)
 	e.created[name] = set
-	e.defs[name] = environments.Definition{Name: name}
-	e.running[name] = true
-	return environments.Environment{Name: name}, nil
+	e.defs[name] = environments.Definition{Name: name, Power: environments.PowerStopped}
+	return environments.Environment{Name: name, State: "stopped"}, nil
 }
 func (e *fakeEnv) CreateVolume(_ context.Context, name, hostPath string) (environments.Volume, bool, error) {
 	e.record("create volume " + name)
@@ -157,10 +242,10 @@ func testService(t *testing.T, f *fakeRunner) (*Service, *fakeEnv) {
 	}
 	s.Loc = time.UTC
 	v := validRemotes()[SFTP]
-	if err := s.Remotes.Add(v.r, v.sec); err != nil {
+	if err := s.remotes.Add(v.r, v.sec); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Store.AddRepository(Repository{Name: "home", Remote: "nas", Folder: DefaultFolder, Created: time.Now()}); err != nil {
+	if err := s.store.AddRepository(Repository{Name: "home", Remote: "nas", Folder: DefaultFolder, Created: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(s.keyDir("home"), 0o700); err != nil {

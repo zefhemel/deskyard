@@ -30,7 +30,7 @@ type volumeJSON struct {
 }
 
 func (s *Server) volumeJSON(v environments.Volume) volumeJSON {
-	j := volumeJSON{Name: v.Name, Created: v.Created, Kind: v.Kind, HostPath: v.HostPath, Folder: s.Environments.Layout.ToHost(s.Environments.VolumeFolder(v)), Environments: []volumeUserJSON{}}
+	j := volumeJSON{Name: v.Name, Created: v.Created, Kind: v.Kind, HostPath: v.HostPath, Folder: s.Environments.Layout.ToHost(s.Environments.VolumeFolder(v).Path), Environments: []volumeUserJSON{}}
 	for _, u := range s.Environments.VolumeUsers(v.Name) {
 		j.Environments = append(j.Environments, volumeUserJSON{Name: u.Environment, ReadOnly: u.ReadOnly})
 	}
@@ -178,8 +178,11 @@ func (s *Server) handleVolumeUsage(w http.ResponseWriter, r *http.Request) {
 	bytes, complete := s.Environments.VolumeSize(name)
 	out := map[string]any{"bytes": bytes, "complete": complete}
 	v, _ := s.Environments.Vols.Get(name)
-	if free, size, ok := environments.DiskSpace(s.Environments.VolumeFolder(v)); ok {
-		out["diskFree"], out["diskSize"] = free, size
+	// A host volume's disk is on the engine host, out of the supervisor's sight.
+	if folder := s.Environments.VolumeFolder(v); !folder.OnEngineHost {
+		if free, size, ok := environments.DiskSpace(folder.Path); ok {
+			out["diskFree"], out["diskSize"] = free, size
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }

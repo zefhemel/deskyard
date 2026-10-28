@@ -132,7 +132,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		ext = ""
 	}
 	var final bytes.Buffer
-	err = s.execStream(ctx, c, 0, []string{"sh", "-c", finishUploadScript, "sh", dir, part, strings.TrimSuffix(name, ext), ext},
+	err = s.execStream(ctx, c, []string{"sh", "-c", finishUploadScript, "sh", dir, part, strings.TrimSuffix(name, ext), ext},
 		func(out io.Reader) error { _, err := io.Copy(&final, out); return err })
 	if err != nil {
 		s.dropPart(c, part)
@@ -219,14 +219,14 @@ func (s *Server) dropPart(c environments.Environment, part string) {
 	}
 }
 
-// execStream runs cmd as the desktop's user and hands its stdout to fn. An exit
-// code above okUpTo is an error, as is fn's.
-func (s *Server) execStream(ctx context.Context, c environments.Environment, okUpTo int, cmd []string, fn func(stdout io.Reader) error) error {
+// execStream runs cmd as the desktop's user and hands its stdout to fn. A
+// non-zero exit code is an error, as is fn's.
+func (s *Server) execStream(ctx context.Context, c environments.Environment, cmd []string, fn func(stdout io.Reader) error) error {
 	result, err := engine.Run(ctx, s.Eng, c.Container.ID, engine.ExecSpec{Cmd: cmd, User: "user", DesktopSession: true, WorkDir: filesRoot, Env: append([]string{"LC_ALL=C"}, execEnv...)}, engine.RunOptions{Consume: fn, StderrLimit: 4096})
 	if err != nil {
 		return err
 	}
-	if result.Code > okUpTo {
+	if result.Code != 0 {
 		return &execError{result.Code, strings.TrimSpace(string(result.Stderr))}
 	}
 	return nil

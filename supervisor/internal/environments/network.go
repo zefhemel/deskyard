@@ -1,9 +1,13 @@
 package environments
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/netip"
 	"strings"
+
+	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 )
 
 // freeSubnet returns the first /28 inside pool that doesn't overlap any of
@@ -50,4 +54,76 @@ func netipParse(s string) (netip.Prefix, error) {
 
 func containsFold(s, sub string) bool {
 	return strings.Contains(strings.ToLower(s), strings.ToLower(sub))
+}
+
+// createNetwork gives name's network the first free subnet of the pool.
+// Choosing and creating are one step for this supervisor (subnetMu), so
+// environments created at once don't choose the same subnet; one that another
+// supervisor on the engine takes meanwhile is chosen again.
+func (s *Service) createNetwork(ctx context.Context, name string) error {
+	pool, err := netipParse(s.Cfg.Subnet)
+	if err != nil {
+		return err
+	}
+	s.subnetMu.Lock()
+	defer s.subnetMu.Unlock()
+	for attempt := 0; ; attempt++ {
+		nets, err := s.Eng.Networks(ctx, nil)
+		if err != nil {
+			return err
+		}
+		var used []string
+		for _, n := range nets {
+			if n.Subnet != "" {
+				used = append(used, n.Subnet)
+			}
+		}
+		subnet, err := freeSubnet(pool, used)
+		if err != nil {
+			return err
+		}
+		err = s.Eng.CreateNetwork(ctx, containerName(name), subnet.String(), s.ownLabels(name))
+		if !errors.Is(err, engine.ErrSubnetTaken) || attempt == 4 {
+			return err
+		}
+	}
+}
+
+// network checks name's network: engine.ErrNotFound when there is none,
+// ErrConflict when one of its name isn't this supervisor's.
+func (s *Service) network(ctx context.Context, name string) error {
+	nets, err := s.Eng.Networks(ctx, nil)
+	if err != nil {
+		return err
+	}
+	for _, n := range nets {
+		if n.Name == containerName(name) {
+			if !s.owns(n.Labels, name) {
+				return fmt.Errorf("network %s: %w", n.Name, ErrConflict)
+			}
+			return nil
+		}
+	}
+	return engine.ErrNotFound
+}
+
+// ensureNetwork creates name's network unless it is there.
+func (s *Service) ensureNetwork(ctx context.Context, name string) error {
+	if err := s.network(ctx, name); !errors.Is(err, engine.ErrNotFound) {
+		return err
+	}
+	return s.createNetwork(ctx, name)
+}
+
+// removeNetwork removes an environment's network. The supervisor joined it to
+// reach the environment, and has to leave it first. A network of its name that
+// isn't this supervisor's is left alone (ErrConflict).
+func (s *Service) removeNetwork(ctx context.Context, name string) error {
+	if err := s.network(ctx, name); err != nil {
+		return err
+	}
+	if s.Cfg.SelfID != "" {
+		_ = s.Eng.DisconnectNetwork(ctx, containerName(name), s.Cfg.SelfID)
+	}
+	return s.Eng.RemoveNetwork(ctx, containerName(name))
 }

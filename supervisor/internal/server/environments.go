@@ -272,25 +272,20 @@ func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request)
 		vpnError(w, err)
 		return
 	}
-	release, err := s.Environments.Reserve(req.Name, "creating")
-	if err != nil {
-		writeError(w, http.StatusConflict, err.Error())
-		return
-	}
-	// Grants a removal of this name failed to purge must not
-	// carry over to the new environment. Checked again under the
-	// reservation: one created meanwhile keeps its own.
-	if _, ok := s.Environments.Defs.Get(req.Name); ok {
-		release()
+	// Grants a removal of this name failed to purge don't carry over to
+	// the new environment (nameClaimed).
+	release, err := s.Environments.ClaimName(req.Name)
+	switch {
+	case errors.Is(err, environments.ErrExists):
 		writeError(w, http.StatusConflict, "an environment with that name already exists")
 		return
-	}
-	if err := s.forgetAccess(req.Name); err != nil {
-		release()
+	case errors.Is(err, environments.ErrBusy):
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	case err != nil:
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.activity.ForgetDesktop(req.Name)
 	id := s.jobs.start(a.Username, req.Name, func(ctx context.Context, progress func(string, float64)) error {
 		defer func() {
 			release()
@@ -396,6 +391,17 @@ func (s *Server) startRecreate(w http.ResponseWriter, a accounts.Account, name s
 	})
 	s.publishEnvironment(context.Background(), name)
 	writeJSON(w, http.StatusAccepted, map[string]string{"job": id})
+}
+
+// nameClaimed forgets, as a new environment's name is claimed
+// (Service.NameClaimed), what a removal of an earlier environment of the
+// name failed to purge: its grants and activity.
+func (s *Server) nameClaimed(name string) error {
+	if err := s.forgetAccess(name); err != nil {
+		return err
+	}
+	s.activity.ForgetDesktop(name)
+	return nil
 }
 
 // environmentRemoved purges what the server keeps of an environment whose

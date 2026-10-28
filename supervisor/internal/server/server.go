@@ -135,22 +135,12 @@ func New(o Options) (*Server, error) {
 	}
 	run := o.StorageRunner
 	if run == nil {
-		helpers := &storage.EngineRunner{Eng: o.Eng, BinDir: filepath.Join(o.Layout.Cache, "storage"), Instance: o.Environments.Instance}
-		run = helpers
+		run = &storage.EngineRunner{Helpers: o.Environments.Helpers(), BinDir: filepath.Join(o.Layout.Cache, "storage")}
 	}
 	if s.storage, err = storage.Open(o.Layout, o.Environments.Instance, run, storage.EnvironmentsOf(o.Environments), o.Log); err != nil {
 		return nil, err
 	}
-	s.Environments.ItemBusy = s.storage.Busy
-	// As creating one does: what a removal of the name failed to purge
-	// doesn't carry over to an environment restored under it.
-	s.storage.ForgetName = func(name string) error {
-		if err := s.forgetAccess(name); err != nil {
-			return err
-		}
-		s.activity.ForgetDesktop(name)
-		return nil
-	}
+	s.Environments.NameClaimed = s.nameClaimed
 	s.Environments.ConflictsChanged = s.events.refresh
 	s.Environments.Removed = s.environmentRemoved
 	// An environment whose pinned image was pulled again has a new revision.

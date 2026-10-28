@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
@@ -54,7 +56,7 @@ func TestRestoreHereEnvironmentStopsAndStarts(t *testing.T) {
 	f.reply = restoreReply(environments.Definition{}, nil)
 	env.addEnvironment(t, "alice", true, environments.Settings{Image: "img"})
 	it := Item{KindEnvironment, "alice"}
-	_ = s.Store.PutPolicy(policyOf(it))
+	_ = s.store.PutPolicy(policyOf(it))
 	if _, err := s.Restore(context.Background(), it, RestoreRequest{Snapshot: "e1", Mode: "here"}, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +101,7 @@ func TestRestoreHereFailureLeavesStopped(t *testing.T) {
 	f.reply = restoreReply(environments.Definition{}, &fail)
 	env.addEnvironment(t, "alice", true, environments.Settings{Image: "img"})
 	it := Item{KindEnvironment, "alice"}
-	_ = s.Store.PutPolicy(policyOf(it))
+	_ = s.store.PutPolicy(policyOf(it))
 	_, err := s.Restore(context.Background(), it, RestoreRequest{Snapshot: "e1", Mode: "here"}, nil)
 	if err == nil || !strings.Contains(err.Error(), "connection lost") || !strings.Contains(err.Error(), "stopped") {
 		t.Fatalf("got %v", err)
@@ -115,7 +117,7 @@ func TestRestoreHereBackupFirst(t *testing.T) {
 	f.reply = restoreReply(environments.Definition{}, nil)
 	env.addEnvironment(t, "alice", false, environments.Settings{Image: "img"})
 	it := Item{KindEnvironment, "alice"}
-	_ = s.Store.PutPolicy(policyOf(it))
+	_ = s.store.PutPolicy(policyOf(it))
 	if _, err := s.Restore(context.Background(), it, RestoreRequest{Snapshot: "e1", Mode: "here", BackupFirst: true}, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -156,6 +158,36 @@ func TestRestoreHereVolumeStopsUsers(t *testing.T) {
 	}
 }
 
+// While a volume's files are restored in place they are held as being
+// replaced, so no environment granted it meanwhile starts with them; they
+// are let go of before its users start again, also after a failed stop.
+func TestRestoreHereVolumeHoldsFilesUntilUsersStart(t *testing.T) {
+	f := &fakeRunner{}
+	s, env := testService(t, f)
+	inner := restoreReply(environments.Definition{}, nil)
+	photos := environments.Item{Kind: KindVolume, Name: "photos"}
+	var during string
+	f.reply = func(c Call) (string, Result, error) {
+		if c.Args[1] == "restore" {
+			env.mu.Lock()
+			during = fmt.Sprintf("%s %v", env.held[photos], env.replaced[photos])
+			env.mu.Unlock()
+		}
+		return inner(c)
+	}
+	env.addVolume(t, "photos")
+	env.addEnvironment(t, "alice", true, environments.Settings{Image: "img", Volumes: []environments.VolumeGrant{{Name: "photos"}}})
+	if _, err := s.Restore(context.Background(), Item{KindVolume, "photos"}, RestoreRequest{Repository: "home", Snapshot: "v1", Mode: "here"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if during != "restoring true" {
+		t.Fatalf("held as %q while restoring", during)
+	}
+	if got := env.events(); got != "reserve alice,stop alice,start alice" || s.Activity(Item{KindVolume, "photos"}) != "" {
+		t.Fatalf("lifecycle %s", got)
+	}
+}
+
 func TestRestoreAsNewEnvironmentDropsMachineSettings(t *testing.T) {
 	def := environments.Definition{Name: "alice", Image: environments.ImageRef{Ref: "ghcr.io/x/desk:1", ID: "sha256:1"}, Limits: environments.Limits{MemoryBytes: 2 << 30, NanoCPUs: 2e9},
 		Network: environments.Network{Kind: environments.NetworkVPN, Connection: "vpn-1"}, DockerAccess: true,
@@ -168,7 +200,7 @@ func TestRestoreAsNewEnvironmentDropsMachineSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := env.events(); got != "reserve alice-copy,create alice-copy,stop alice-copy" {
+	if got := env.events(); got != "reserve alice-copy,claim alice-copy,create stopped alice-copy" {
 		t.Fatalf("lifecycle %s", got)
 	}
 	set := env.created["alice-copy"]
@@ -326,15 +358,20 @@ func TestRestoreToFolderHostUsesHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var found bool
-	for _, c := range f.calls {
-		if c.Args[0] == "install" && slices.Contains(c.Args, "-o") && slices.Contains(c.Args, "1000") && c.Args[len(c.Args)-1] == "/item/"+res.Folder &&
-			len(c.Mounts) == 1 && c.Mounts[0].Source == host {
-			found = true
-		}
+	if got := env.events(); got != "helper made "+filepath.Join(host, res.Folder) {
+		t.Fatalf("not made by the root helper: %s", got)
 	}
-	if !found {
-		t.Fatalf("no install -d -o 1000 helper call: %+v", f.calls)
+	// Restoring again never merges into the first restore's folder.
+	again, err := s.Restore(context.Background(), Item{KindVolume, "photos"}, RestoreRequest{Repository: "home", Snapshot: "v1", Mode: "folder", Paths: []string{"a.txt"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Folder != res.Folder+" (2)" {
+		t.Fatalf("second restore into %q after %q", again.Folder, res.Folder)
+	}
+	rs := restoreCalls(f)
+	if target := rs[len(rs)-1].Mounts; !slices.ContainsFunc(target, func(m engine.Mount) bool { return m.Source == filepath.Join(host, again.Folder) }) {
+		t.Fatalf("restored into %+v", target)
 	}
 }
 
@@ -435,7 +472,7 @@ func TestRestoreAsNewReservesName(t *testing.T) {
 	if _, err := s.Restore(context.Background(), Item{KindEnvironment, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-copy"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := env.events(); got != "reserve alice-copy,create alice-copy,stop alice-copy" {
+	if got := env.events(); got != "reserve alice-copy,claim alice-copy,create stopped alice-copy" {
 		t.Fatalf("lifecycle %s", got)
 	}
 	release, _ := env.Reserve("carol", "creating")
@@ -448,29 +485,28 @@ func TestRestoreAsNewReservesName(t *testing.T) {
 	}
 }
 
-// Grants a failed removal of the name left behind must not carry over to the
-// environment restored under it: the restore forgets them under the
-// reservation, and stops when it can't.
-func TestRestoreAsNewForgetsTheNamesGrants(t *testing.T) {
+// What a failed removal of the name left behind is forgotten when the name
+// is claimed, before anything is restored; a claim that fails restores
+// nothing.
+func TestRestoreAsNewClaimsTheName(t *testing.T) {
 	f := &fakeRunner{}
 	s, env := testService(t, f)
 	f.reply = restoreReply(environments.Definition{Image: environments.ImageRef{Ref: "img"}}, nil)
-	var forgot []string
-	s.ForgetName = func(name string) error {
-		forgot = append(forgot, name+" after "+env.events())
-		return nil
+	env.claimErr = errors.New("disk full")
+	if _, err := s.Restore(context.Background(), Item{KindEnvironment, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-two"}, nil); err == nil || !strings.Contains(err.Error(), "disk full") {
+		t.Fatalf("restored although the name couldn't be claimed: %v", err)
 	}
-	if _, err := s.Restore(context.Background(), Item{KindEnvironment, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-copy"}, nil); err != nil {
+	if _, ok := env.created["alice-two"]; ok || len(restoreCalls(f)) != 0 {
+		t.Fatal("restored anyway")
+	}
+	if _, err := os.Stat(env.layout.HomeOf("alice-two")); !os.IsNotExist(err) {
+		t.Fatal("made a folder for an unclaimed name")
+	}
+	env.claimErr = nil
+	if _, err := s.Restore(context.Background(), Item{KindEnvironment, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-two"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if len(forgot) != 1 || forgot[0] != "alice-copy after reserve alice-copy" {
-		t.Fatalf("forgot %q", forgot)
-	}
-	s.ForgetName = func(string) error { return errors.New("disk full") }
-	if _, err := s.Restore(context.Background(), Item{KindEnvironment, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-two"}, nil); err == nil {
-		t.Fatal("restored although its grants couldn't be forgotten")
-	}
-	if _, ok := env.created["alice-two"]; ok || len(restoreCalls(f)) != 1 {
-		t.Fatal("restored anyway")
+	if env.running["alice-two"] || env.defs["alice-two"].Power != environments.PowerStopped {
+		t.Fatal("the restored environment runs")
 	}
 }

@@ -15,18 +15,22 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/helper"
 )
 
-// helperEngine plays the root helper container: on start it runs an
-// install -d or rm -rf on the host folder its mount maps, then exits.
+// helperEngine plays the root helper container: an exec in it runs an
+// install -d or rm -rf on the host folder its mount maps.
 type helperEngine struct {
 	*fakeEngine
 	hmu     sync.Mutex
 	helpers []engine.ContainerSpec
+	// code and stderr are every helper command's outcome.
+	code   int
+	stderr string
 }
 
 func (e *helperEngine) Create(ctx context.Context, s engine.ContainerSpec) (string, error) {
-	if s.Image == helperImage {
+	if s.Image == helper.Image {
 		e.hmu.Lock()
 		e.helpers = append(e.helpers, s)
 		e.hmu.Unlock()
@@ -34,14 +38,7 @@ func (e *helperEngine) Create(ctx context.Context, s engine.ContainerSpec) (stri
 	return e.fakeEngine.Create(ctx, s)
 }
 
-func (e *helperEngine) Start(ctx context.Context, id string) error {
-	if err := e.fakeEngine.Start(ctx, id); err != nil {
-		return err
-	}
-	c, _ := e.fakeEngine.Inspect(ctx, id)
-	if c.Image != helperImage {
-		return nil
-	}
+func (e *helperEngine) Exec(ctx context.Context, id string, x engine.ExecSpec) (*engine.Process, error) {
 	e.hmu.Lock()
 	var spec engine.ContainerSpec
 	for _, s := range e.helpers {
@@ -58,13 +55,13 @@ func (e *helperEngine) Start(ctx context.Context, id string) error {
 		}
 		return ""
 	}
-	switch target := spec.Cmd[len(spec.Cmd)-1]; spec.Cmd[0] {
+	switch target := x.Cmd[len(x.Cmd)-1]; x.Cmd[0] {
 	case "install":
 		_ = os.MkdirAll(host(target), 0o755)
 	case "rm":
 		_ = os.RemoveAll(host(target))
 	}
-	return e.fakeEngine.Stop(ctx, id, 0)
+	return &engine.Process{Stdout: strings.NewReader(""), Stderr: strings.NewReader(e.stderr), Wait: func() (int, error) { return e.code, nil }, Close: func() {}}, nil
 }
 
 func (e *helperEngine) ran() []engine.ContainerSpec {
@@ -454,18 +451,22 @@ func TestDeleteVolumeRefusedWhileItemBusy(t *testing.T) {
 	if _, _, err := s.CreateVolume(context.Background(), "photos", ""); err != nil {
 		t.Fatal(err)
 	}
-	busy := errors.New("a backup of volume photos is running")
-	s.ItemBusy = func(kind, name string) error {
-		if kind == "volume" && name == "photos" {
-			return busy
-		}
-		return nil
+	release, err := s.HoldFiles(Item{KindVolume, "photos"}, "backing up", false)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := s.DeleteVolume(context.Background(), "photos", true); !errors.Is(err, busy) {
+	if err := s.DeleteVolume(context.Background(), "photos", true); !errors.Is(err, ErrItemBusy) || !strings.Contains(err.Error(), "backing up") {
 		t.Fatalf("got %v", err)
 	}
 	if _, ok := s.Vols.Get("photos"); !ok {
 		t.Fatal("deleted while busy")
+	}
+	release()
+	if err := s.DeleteVolume(context.Background(), "photos", true); err != nil {
+		t.Fatal(err)
+	}
+	if a := s.FilesActivity(Item{KindVolume, "photos"}); a != "" {
+		t.Fatalf("the delete's hold stayed: %q", a)
 	}
 }
 
@@ -475,18 +476,112 @@ func TestRemoveRefusedWhileItemBusy(t *testing.T) {
 	if err := s.seed(ctx, "alice", Settings{Image: "img"}); err != nil {
 		t.Fatal(err)
 	}
-	busy := errors.New("a backup of alice is running")
-	s.ItemBusy = func(kind, name string) error {
-		if kind == "environment" && name == "alice" {
-			return busy
-		}
-		return nil
+	release, err := s.HoldFiles(Item{KindEnvironment, "alice"}, "backing up", false)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := s.Remove(ctx, "alice", true); !errors.Is(err, busy) {
+	if err := s.Remove(ctx, "alice", true); !errors.Is(err, ErrItemBusy) {
 		t.Fatalf("got %v", err)
 	}
 	if _, ok := s.Defs.Get("alice"); !ok {
 		t.Fatal("removed while busy")
+	}
+	if a := s.FilesActivity(Item{KindEnvironment, "alice"}); a != "backing up" {
+		t.Fatalf("the refused removal took the hold: %q", a)
+	}
+	release()
+}
+
+// One hold of an item's files at a time; a backup's hold leaves the
+// environment's operations and its volume's users alone.
+func TestHoldFiles(t *testing.T) {
+	s, _ := volumeService(t)
+	it := Item{KindVolume, "photos"}
+	release, err := s.HoldFiles(it, "backing up", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.HoldFiles(it, "restoring", true); !errors.Is(err, ErrItemBusy) {
+		t.Fatalf("second hold: %v", err)
+	}
+	if got := s.FilesActivity(it); got != "backing up" {
+		t.Fatalf("activity %q", got)
+	}
+	if err := s.Begin("photos", "starting"); err != nil {
+		t.Fatalf("an environment of the name is another item: %v", err)
+	}
+	s.Done("photos")
+	if err := s.replacing(itemsOf("alice", []VolumeGrant{{Name: "photos"}})); err != nil {
+		t.Fatalf("a backup blocks mounting: %v", err)
+	}
+	release()
+	release() // once only
+	if got := s.FilesActivity(it); got != "" || len(s.reserved) != 0 {
+		t.Fatalf("released: %q %v", got, s.reserved)
+	}
+	envRelease, err := s.HoldFiles(Item{KindEnvironment, "alice"}, "backing up", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer envRelease()
+	if err := s.Begin("alice", "starting"); err != nil {
+		t.Fatalf("a backup blocks the environment's operations: %v", err)
+	}
+	if b := s.Busy(); b["alice"] != "starting" || len(b) != 1 {
+		t.Fatalf("busy %v", b)
+	}
+	s.Done("alice")
+}
+
+// While a volume's files are replaced in place, no environment is granted
+// it and none granted it starts: before, only those granted it when the
+// restore began were held back.
+func TestReplacedVolumeIsNeitherGrantedNorMounted(t *testing.T) {
+	s, _ := mountService(t)
+	ctx := context.Background()
+	if err := s.Layout.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.CreateVolume(ctx, "photos", ""); err != nil {
+		t.Fatal(err)
+	}
+	grant := VolumeGrant{Name: "photos", Path: "/mnt/photos"}
+	if err := s.seed(ctx, "alice", Settings{Image: "img", Volumes: []VolumeGrant{grant}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.seed(ctx, "bob", Settings{Image: "img"}); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Stop(ctx, "alice")
+	release, err := s.HoldFiles(Item{KindVolume, "photos"}, "restoring", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Start(ctx, "alice"); !errors.Is(err, ErrItemBusy) {
+		t.Fatalf("started over files being restored: %v", err)
+	}
+	if _, err := s.Recreate(ctx, "bob", Settings{Image: "img", Volumes: []VolumeGrant{grant}}, noProgress); !errors.Is(err, ErrItemBusy) {
+		t.Fatalf("granted files being restored: %v", err)
+	}
+	if _, err := s.Defs.Update("bob", func(d *Definition) error { d.Volumes = []VolumeGrant{grant}; return nil }); !errors.Is(err, ErrItemBusy) {
+		t.Fatalf("saved a grant of files being restored: %v", err)
+	}
+	if _, err := s.Create(ctx, "carol", Settings{Image: "img", Volumes: []VolumeGrant{grant}}, noProgress); !errors.Is(err, ErrItemBusy) {
+		t.Fatalf("created with files being restored: %v", err)
+	}
+	if d, _ := s.Defs.Get("bob"); len(d.Volumes) != 0 {
+		t.Fatalf("bob was granted: %+v", d.Volumes)
+	}
+	// Other changes of an environment holding the grant still save.
+	if err := s.SetWebDAV("alice", true); err != nil {
+		t.Fatal(err)
+	}
+	release()
+	if err := s.Start(ctx, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Recreate(ctx, "bob", Settings{Image: "img", Volumes: []VolumeGrant{grant}}, noProgress); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -506,5 +601,38 @@ func TestCreateHostVolumeRefusesHostDataEntries(t *testing.T) {
 	}
 	if _, _, err := s.CreateVolume(context.Background(), "top", filepath.Join(host, "home")); err == nil {
 		t.Fatal("created a host volume of the data folder's homes")
+	}
+}
+
+// What the supervisor can't delete itself goes to the root helper, whose
+// failure is reported with its message.
+func TestRemoveTreeReportsHelperFailure(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root deletes the read-only folder itself")
+	}
+	s, eng := volumeService(t)
+	root := t.TempDir()
+	stuck := filepath.Join(root, "x", "ro")
+	if err := os.MkdirAll(stuck, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stuck, "f"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Chmod(stuck, 0o555)
+	t.Cleanup(func() { _ = os.Chmod(stuck, 0o755) })
+	eng.code, eng.stderr = 1, "rm: can't remove '/parent/x/ro/f': Permission denied\n"
+	err := s.RemoveTree(context.Background(), Folder{Path: root}, "x")
+	if err == nil || !strings.Contains(err.Error(), "Permission denied") {
+		t.Fatalf("got %v", err)
+	}
+	ran := eng.ran()
+	if len(ran) != 1 || ran[0].Mounts[0].Source != root || ran[0].Network != "none" || ran[0].Labels[helper.LabelHelper] != helper.Folders {
+		t.Fatalf("helpers %+v", ran)
+	}
+	for _, bad := range []string{"", ".", "..", "a/b"} {
+		if err := s.RemoveTree(context.Background(), Folder{Path: root}, bad); err == nil {
+			t.Errorf("removed %q", bad)
+		}
 	}
 }

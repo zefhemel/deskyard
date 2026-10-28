@@ -136,20 +136,15 @@ func (s *Service) applyDirect(ctx context.Context, name string, next Definition,
 	if c.Conflict != "" {
 		return fmt.Errorf("%w: %s", ErrConflict, c.Conflict)
 	}
-	hosts := s.hostSources(next.Volumes)
-	if len(hosts) > 0 {
-		progress("Checking host volumes", -1)
-	}
-	if err := s.checkHostSources(ctx, hosts, next.DockerAccess); err != nil {
-		return err
-	}
 	// A container can't be replaced without its folders, so that is refused
 	// before anything is saved; without one the change is only saved, and
 	// the start that builds it is refused instead.
+	folders := noFolders
 	if c.Container.ID != "" {
-		if err := s.missingFolder(name, next.Volumes); err != nil {
-			return err
-		}
+		folders = allFolders
+	}
+	if err := s.preflight(ctx, name, next.Volumes, next.DockerAccess, folders, progress); err != nil {
+		return err
 	}
 	img, err := s.EnsureImage(ctx, next.Image.Ref, progress)
 	if err != nil {
@@ -215,15 +210,10 @@ func (s *Service) revertSettings(name string, prev Definition) error {
 }
 
 // applyDefinition replaces c's container, built from an older revision, with
-// one built from its current definition. A pinned image gone from the engine
-// is first pulled again by its reference, as a new revision.
+// one built from its current definition, which the caller has preflighted.
+// A pinned image gone from the engine is first pulled again by its
+// reference, as a new revision.
 func (s *Service) applyDefinition(ctx context.Context, c Environment, progress func(string, float64)) error {
-	if err := s.checkFolders(c.Name); err != nil {
-		return err
-	}
-	if err := s.checkHostSources(ctx, s.hostSources(c.Settings.Volumes), c.Settings.DockerAccess); err != nil {
-		return s.applied(c.Name, err)
-	}
 	def, err := s.repin(ctx, c.Name)
 	if err != nil {
 		return s.applied(c.Name, err)

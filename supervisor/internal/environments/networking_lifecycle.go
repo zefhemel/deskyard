@@ -86,12 +86,9 @@ func (n *Networking) recreate(ctx context.Context, name string, set Settings, pr
 	if _, err = n.ValidateSettings(set); err != nil {
 		return Environment{}, err
 	}
-	if err = n.service.checkHostSources(ctx, n.service.hostSources(set.Volumes), set.DockerAccess); err != nil {
-		return Environment{}, err
-	}
 	// The old container is stopped below: refuse a change it couldn't be
 	// replaced by while it is still running.
-	if err = n.service.missingFolder(name, set.Volumes); err != nil {
+	if err = n.service.preflight(ctx, name, set.Volumes, set.DockerAccess, allFolders, nil); err != nil {
 		return Environment{}, err
 	}
 	img, err := n.service.EnsureImage(ctx, set.Image, progress)
@@ -402,7 +399,7 @@ func (n *Networking) finishRemove(ctx context.Context, r networkTransition) erro
 		return errors.New("could not remove environment network")
 	}
 	if r.DeleteFiles {
-		if err := s.removeTree(ctx, s.Layout.Home, r.Name); err != nil {
+		if err := s.removeTree(ctx, Folder{Path: s.Layout.Home}, r.Name); err != nil {
 			return err
 		}
 	}

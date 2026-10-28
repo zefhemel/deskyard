@@ -30,7 +30,10 @@ func (r *storageRunner) Run(_ context.Context, c storage.Call) (storage.Result, 
 		case "backup":
 			out = `{"message_type":"summary","snapshot_id":"snap1"}` + "\n"
 		case "snapshots":
-			out = `[{"time":"2026-10-27T03:00:00Z","hostname":"` + c.Env["HOST"] + `","tags":["deskyard","volume:photos","manual"],"id":"snap1","short_id":"snap1"}]`
+			out = `[{"time":"2026-10-27T03:00:00Z","hostname":"` + c.Env["HOST"] + `","tags":["deskyard","volume:photos","manual"],"id":"snap1","short_id":"snap1"},
+{"time":"2026-10-27T03:00:00Z","hostname":"elsewhere","tags":["deskyard","environment:alice","manual"],"id":"snap2","short_id":"snap2"}]`
+		case "dump":
+			out = `{"name":"alice","image":{"ref":"img"},"limits":{"memoryBytes":1073741824}}`
 		}
 	}
 	if c.Stdout != nil {
@@ -150,6 +153,39 @@ func TestBackupRunIsJob(t *testing.T) {
 	}
 }
 
+// Restoring as new through the environments service: an environment from
+// another machine's snapshot is defined stopped, with no container, and a
+// volume adopts its restored folder.
+func TestRestoreAsNewThroughEnvironments(t *testing.T) {
+	s, send, admin := newStorageServer(t)
+	setUpBackups(t, s, send, admin)
+	code, b := send(admin, "POST", "/api/backups/environment/alice/restore", `{"snapshot":"snap2","repository":"home","mode":"new","newName":"alice-copy"}`)
+	if code != 202 {
+		t.Fatalf("restore: %d %s", code, b)
+	}
+	waitJob(t, s, b)
+	def, ok := s.Environments.Defs.Get("alice-copy")
+	if !ok || def.Power != environments.PowerStopped || def.Image.Ref != "img" || def.Limits.MemoryBytes != 1<<30 {
+		t.Fatalf("restored definition %+v %v", def, ok)
+	}
+	if c, err := s.Environments.Get(context.Background(), "alice-copy"); err != nil || c.Container.ID != "" || c.State != "stopped" {
+		t.Fatalf("restored environment %+v %v", c, err)
+	}
+	code, b = send(admin, "POST", "/api/backups/volume/photos/restore", `{"snapshot":"snap1","mode":"new","newName":"photos-old"}`)
+	if code != 202 {
+		t.Fatalf("restore volume: %d %s", code, b)
+	}
+	waitJob(t, s, b)
+	if _, ok := s.Environments.Vols.Get("photos-old"); !ok {
+		t.Fatal("no restored volume")
+	}
+	for _, it := range []storage.Item{{Kind: storage.KindEnvironment, Name: "alice-copy"}, {Kind: storage.KindVolume, Name: "photos-old"}} {
+		if a := s.storage.Activity(it); a != "" {
+			t.Fatalf("%s still %s", it, a)
+		}
+	}
+}
+
 func TestRestorePathRejected(t *testing.T) {
 	s, send, admin := newStorageServer(t)
 	setUpBackups(t, s, send, admin)
@@ -172,24 +208,24 @@ func TestRestorePathRejected(t *testing.T) {
 func TestEnvironmentRemoveDeletesPolicy(t *testing.T) {
 	s, send, admin := newStorageServer(t)
 	setUpBackups(t, s, send, admin)
-	if err := s.storage.Store.PutPolicy(storage.Policy{Item: storage.Item{Kind: "environment", Name: "alice"}, Repository: "home", Enabled: true, Schedule: storage.DefaultSchedule, Retention: storage.DefaultRetention}); err != nil {
+	if err := s.storage.PutPolicy(storage.Policy{Item: storage.Item{Kind: "environment", Name: "alice"}, Repository: "home", Enabled: true, Schedule: storage.DefaultSchedule, Retention: storage.DefaultRetention}); err != nil {
 		t.Fatal(err)
 	}
 	_ = s.environmentRemoved("alice")
-	if _, ok := s.storage.Store.Policy(storage.Item{Kind: "environment", Name: "alice"}); ok {
+	if _, ok := s.storage.Policy(storage.Item{Kind: "environment", Name: "alice"}); ok {
 		t.Fatal("policy of a removed environment kept")
 	}
 	if code, b := send(admin, "DELETE", "/api/volumes/photos", ""); code != 204 {
 		t.Fatalf("delete volume: %d %s", code, b)
 	}
-	if _, ok := s.storage.Store.Policy(storage.Item{Kind: "volume", Name: "photos"}); ok {
+	if _, ok := s.storage.Policy(storage.Item{Kind: "volume", Name: "photos"}); ok {
 		t.Fatal("policy of a deleted volume kept")
 	}
 }
 
 func TestRemoveRefusedDuringBackup(t *testing.T) {
 	s, send, admin := newStorageServer(t)
-	release, err := s.storage.Hold(storage.Item{Kind: "environment", Name: "alice"}, "backing up")
+	release, err := s.Environments.HoldFiles(environments.Item{Kind: environments.KindEnvironment, Name: "alice"}, "backing up", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,19 +235,19 @@ func TestRemoveRefusedDuringBackup(t *testing.T) {
 	}
 }
 
-// A restore as a new environment forgets the grants a failed removal of its
-// name left behind, as creating one does.
+// Claiming a name for a new environment, as a restore as new does as well
+// as creating one, forgets the grants a failed removal of the name left
+// behind.
 func TestRestoreAsNewForgetsLeftoverGrants(t *testing.T) {
 	s, _, _ := newStorageServer(t)
 	if err := s.Accounts.SetAccess("carol", fullAccess("anna")); err != nil {
 		t.Fatal(err)
 	}
-	if s.storage.ForgetName == nil {
-		t.Fatal("the restore doesn't forget the name's grants")
-	}
-	if err := s.storage.ForgetName("carol"); err != nil {
+	release, err := s.Environments.ClaimName("carol")
+	if err != nil {
 		t.Fatal(err)
 	}
+	release()
 	if a, _ := s.Accounts.Get("anna"); a.Level("carol") != auth.LevelNone {
 		t.Errorf("anna kept her grant of the removed carol: %v", a.Grants)
 	}

@@ -11,33 +11,45 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/helper"
 )
 
 // volumeEngine is hostSettingsEngine whose helper containers make and
-// delete folders, as the real alpine helper would.
-type volumeEngine struct{ hostSettingsEngine }
+// delete folders, as the real root helper would.
+type volumeEngine struct {
+	hostSettingsEngine
+	helpers sync.Map // helper ID → its spec
+}
 
 func (e *volumeEngine) Create(ctx context.Context, s engine.ContainerSpec) (string, error) {
-	if s.Labels[environments.LabelManaged] != "true" && len(s.Mounts) == 1 && len(s.Cmd) > 0 {
-		root, target := s.Mounts[0].Source, s.Mounts[0].Target
-		path := filepath.Join(root, strings.TrimPrefix(s.Cmd[len(s.Cmd)-1], target))
-		switch s.Cmd[0] {
+	if s.Labels[helper.LabelHelper] != "" {
+		e.helpers.Store(s.Name, s)
+	}
+	return e.hostSettingsEngine.Create(ctx, s)
+}
+
+func (e *volumeEngine) Exec(ctx context.Context, id string, x engine.ExecSpec) (*engine.Process, error) {
+	if v, ok := e.helpers.Load(id); ok && len(v.(engine.ContainerSpec).Mounts) == 1 && len(x.Cmd) > 0 {
+		m := v.(engine.ContainerSpec).Mounts[0]
+		path := filepath.Join(m.Source, strings.TrimPrefix(x.Cmd[len(x.Cmd)-1], m.Target))
+		switch x.Cmd[0] {
 		case "install":
 			_ = os.MkdirAll(path, 0o755)
 		case "rm":
 			_ = os.RemoveAll(path)
 		}
 	}
-	return e.hostSettingsEngine.Create(ctx, s)
+	return e.hostSettingsEngine.Exec(ctx, id, x)
 }
 
 func newVolumeServer(t *testing.T) (*Server, *httptest.Server, func(client *http.Client, method, path, body string) (int, []byte)) {
-	e := &volumeEngine{hostSettingsEngine{current: alice}}
+	e := &volumeEngine{hostSettingsEngine: hostSettingsEngine{current: alice}}
 	e.current.Labels = maps.Clone(alice.Labels)
 	e.current.Image = "img"
 	e.current.Env = map[string]string{environments.TokenEnv: "token"}
@@ -409,7 +421,7 @@ func TestVolumeUsage(t *testing.T) {
 // TestFoldersShownAsHostPaths: the folders the API names are where the files
 // are on the engine host, not the supervisor's own /data paths.
 func TestFoldersShownAsHostPaths(t *testing.T) {
-	e := &volumeEngine{hostSettingsEngine{current: alice}}
+	e := &volumeEngine{hostSettingsEngine: hostSettingsEngine{current: alice}}
 	e.current.Labels = maps.Clone(alice.Labels)
 	e.current.Image = "img"
 	e.current.Env = map[string]string{environments.TokenEnv: "token"}
