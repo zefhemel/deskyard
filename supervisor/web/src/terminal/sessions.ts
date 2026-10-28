@@ -17,3 +17,6 @@ export function others(session: { clients: number }, attached: boolean): number 
 export function needsConfirm(session: { clients: number; command: string }, attached: boolean): boolean {
   return others(session, attached) > 0 || !isShell(session.command);
 }
+
+/** A session name: 1–64 letters, digits, underscores or dashes, starting with a letter or digit. */
+export const validSession = (s: string) => /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(s);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isShell, needsConfirm, others } from "./sessions.ts";
+import { isShell, needsConfirm, others, validSession } from "./sessions.ts";
 
 test("others leaves out this page's own attachment", () => {
   assert.equal(others({ clients: 0 }, false), 0);
@@ -23,4 +23,9 @@ test("ending asks first when someone else is attached or a program runs", () => 
   assert.equal(needsConfirm({ clients: 1, command: "bash" }, false), true);
   assert.equal(needsConfirm({ clients: 1, command: "sleep" }, true), true);
   assert.equal(needsConfirm({ clients: 0, command: "" }, false), true);
+});
+
+test("session names: 1-64 letters, digits, underscores or dashes, starting with a letter or digit", () => {
+  for (const ok of ["main", "terminal-1", "a", "9_x", "a".repeat(64)]) assert.ok(validSession(ok), ok);
+  for (const bad of ["", "-x", "_x", "a b", "a/b", "a".repeat(65)]) assert.ok(!validSession(bad), bad);
 });
