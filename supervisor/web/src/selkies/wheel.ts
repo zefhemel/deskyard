@@ -52,5 +52,5 @@ export function installWheelScrolling(element: HTMLElement): () => void {
     } finally { replaying = false; }
   };
   element.addEventListener("wheel", wheel, { capture: true, passive: false });
-  return () => element.removeEventListener("wheel", wheel, true);
+  return () => element.removeEventListener("wheel", wheel, { capture: true });
 }
