@@ -89,7 +89,7 @@ def test_second_viewer(cli, remote, supervisor, name):
             if page is b:
                 # Beside the owner: no size controls, a disabled note instead.
                 expect(menu.get_by_role("menuitemcheckbox", name="Lock size", exact=True)).to_have_count(0)
-                expect(menu.get_by_role("menuitem", name="Screen size: set by the first viewer", exact=True)).to_be_disabled()
+                expect(menu.get_by_role("menuitem", name="Resolution: controlled by another viewer", exact=True)).to_be_disabled()
             page.keyboard.press("Escape")
         # A narrow second viewer uses the compact toolbar's More menu.
         b.set_viewport_size({"width": 600, "height": 700})

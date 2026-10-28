@@ -29,6 +29,7 @@ import { FullscreenButton } from "./fullscreen.tsx";
 import { AudioControl } from "./audio-panel.tsx";
 import { hasStats, startAutoQuality } from "./auto-quality.ts";
 import { useDisplay } from "./use-display.ts";
+import { compactDisplayMenu, displayMenu, type DisplayMenuState } from "./display-menu.ts";
 import { ClipboardIcon, DisplayIcon, KeyboardIcon, ShieldIcon } from "./bar-icons.tsx";
 import { barButton, type BarSlots, ConnDot, EnvironmentTabs, panelId, pressed, tabId, useTabHooks } from "./tabs.tsx";
 import { avSyncWanted, startAvSync } from "./avsync.ts";
@@ -51,7 +52,6 @@ import {
   lockSize,
   onClipboard,
   presetOf,
-  qualityChoices,
   qualityOf,
   type PresetId,
   type QualityId,
@@ -62,22 +62,13 @@ import {
   sendQuality,
 } from "./selkies.ts";
 import { isPhone, useTouchCapable } from "./device.ts";
-import { AUTO_FIT, initialLock, initialTrackpad, parseScaling, displayScale, scaledSize, type Scaling } from "./display-prefs.ts";
+import { AUTO_FIT, initialLock, initialTrackpad, parseScaling, displayScale, scaledSize } from "./display-prefs.ts";
 
 // Remembered per browser.
 const QUALITY_KEY = "deskyard.quality";
 const LOCK_SIZE_KEY = "deskyard.lockSize";
 const SCALING_KEY = "deskyard.scaling";
 const TRACKPAD_KEY = "deskyard.trackpad";
-const resolutions: Size[] = [
-  { width: 800, height: 600 },
-  { width: 1024, height: 768 },
-  { width: 1280, height: 720 },
-  { width: 1280, height: 800 },
-  { width: 1920, height: 1080 },
-  { width: 600, height: 900 },
-  { width: 900, height: 1200 },
-];
 
 function stored<T>(key: string, parse: (v: string) => T | null, fallback: T): T {
   const v = storedRaw(key);
@@ -791,69 +782,29 @@ function Desktop({ environment: c, slots, selectShortcut, onFrame }: { environme
     refocus();
   };
   const keyItems: MenuItem[] = keyCombos.map((k) => ({ label: k.label, onSelect: () => sendKeys(k.keys) }));
-  const resolutionItems: MenuItem[] = [
-    { label: "Resolution: Auto fit", checked: locked === null, onSelect: () => chooseResolution(null) },
-    ...resolutions.map((size) => ({
-      label: `Resolution: ${size.width} × ${size.height}${size.height > size.width ? " (portrait)" : ""}`,
-      checked: locked?.width === size.width && locked?.height === size.height,
-      onSelect: () => chooseResolution(size),
-    })),
-  ];
-  const scalingItems: MenuItem[] = (["auto", "1", "2"] as Scaling[]).map((value) => ({
-    label: `Scaling: ${value === "auto" ? `Auto (${displayScale(value, ratio)}×)` : `${value}×`}`,
-    checked: scaling === value,
-    onSelect: () => {
+  const menu: DisplayMenuState = {
+    owner,
+    locked,
+    scaling,
+    ratio,
+    quality,
+    live,
+    onLock: toggleLock,
+    onResolution: chooseResolution,
+    onScaling: (value) => {
       if (!owner) return;
       setScaling(value);
       store(SCALING_KEY, value);
       setZoom(1);
       refocus();
     },
-  }));
-  // Auto, while it's this browser's choice; else the preset the display streams with.
-  const checkedQuality: QualityId | null = quality === "auto" ? "auto" : live;
-  const displayItems: MenuItem[] = [
-    ...(owner
-      ? [{ label: "Lock size", checked: locked !== null, onSelect: toggleLock }, ...resolutionItems, ...scalingItems]
-      : [{ label: owner === false ? "Screen size: set by the first viewer" : "Screen size: connecting…", disabled: true, onSelect: () => {} }]),
-    ...qualityChoices.map((q, i) => ({
-      label: (
-        <>
-          Quality: {q.label}
-          {q.hint && <span class="text-muted">, {q.hint}</span>}
-        </>
-      ),
-      checked: q.id === checkedQuality,
-      onSelect: () => chooseQuality(q.id),
-      separated: i === 0,
-    })),
-  ];
-  const compactOnly = "sm:hidden";
+    onQuality: chooseQuality,
+  };
   const showing = running;
   // The bar's input controls: none for an observer.
   const controlling = showing && !observing;
   // Phones and narrow tablets need these actions in ⋯.
-  const moreItems: MenuItem[] = [
-    ...(controlling
-      ? [
-          ...(owner ? [
-            { label: "Lock size", checked: locked !== null, onSelect: toggleLock, separated: true, class: compactOnly },
-            ...[...resolutionItems, ...scalingItems].map((item) => ({ ...item, class: compactOnly })),
-          ] : [{
-            label: owner === false ? "Resolution: controlled by another viewer" : "Resolution: connecting…",
-            disabled: true, onSelect: () => {}, separated: true, class: compactOnly,
-          }]),
-          ...keyItems.map((k, i) => ({ ...k, label: <>Send {k.label}</>, separated: i === 0 && !owner, class: compactOnly })),
-          ...qualityChoices.map((q, i) => ({
-            label: `Quality: ${q.label}`,
-            checked: q.id === checkedQuality,
-            onSelect: () => chooseQuality(q.id),
-            separated: i === 0,
-            class: compactOnly,
-          })),
-        ]
-      : []),
-  ];
+  const moreItems: MenuItem[] = controlling ? compactDisplayMenu(menu, keyItems.map((k) => ({ ...k, label: <>Send {k.label}</> }))) : [];
   useTabHooks(slots, true, { menu: () => moreItems, refocus });
 
   return (
@@ -873,7 +824,7 @@ function Desktop({ environment: c, slots, selectShortcut, onFrame }: { environme
               <AudioControl name={c.name} screen={screen} connected={conn === "connected"} />
               <Menu
                 class="max-sm:hidden"
-                items={displayItems}
+                items={displayMenu(menu)}
                 onClose={refocus}
                 trigger={({ toggle, open }) => (
                   <button type="button" aria-label="Display" aria-haspopup="menu" aria-expanded={open} title="Display: screen size, scaling and quality" class={cx(barButton, "px-2", open && pressed)} onClick={toggle}>
