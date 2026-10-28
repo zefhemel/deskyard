@@ -622,6 +622,12 @@
     post(msg) {
       window.postMessage(msg, location.origin);
     },
+    /** The client's latest presentation statistics, for Auto quality. */
+    stats: () => window.stream_stats?.latest ?? null,
+    /** Opens or closes the client's statistics, which keep stats() current. */
+    showStats(open) {
+      window.postMessage({ type: "statsOpen", open }, location.origin);
+    },
     /**
      * Calls fn with each message of that type from Selkies' client; returns a
      * function that stops it. The type "deskyard.state" gets each new state(),
