@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/storage"
 )
 
@@ -67,16 +66,14 @@ type remoteRequest struct {
 	Secrets storage.Secrets `json:"secrets"`
 }
 
-// admin reports whether the request is an administrator's, writing 403 if not.
-func (s *Server) admin(w http.ResponseWriter, r *http.Request) (string, bool) {
+// adminName is the username of the administrator making r: every storage
+// route is behind adminOnly.
+func (s *Server) adminName(r *http.Request) string {
 	a, _ := s.account(r)
-	return a.Username, allow(w, a, auth.ManageAccounts, "")
+	return a.Username
 }
 
 func (s *Server) handleListRemotes(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.admin(w, r); !ok {
-		return
-	}
 	out := []remoteJSON{}
 	for _, rem := range s.storage.Remotes() {
 		out = append(out, s.remoteJSON(rem))
@@ -85,9 +82,6 @@ func (s *Server) handleListRemotes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetRemote(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.admin(w, r); !ok {
-		return
-	}
 	rem, ok := s.storage.Remote(r.PathValue("name"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "no such remote")
@@ -97,10 +91,7 @@ func (s *Server) handleGetRemote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateRemote(w http.ResponseWriter, r *http.Request) {
-	user, ok := s.admin(w, r)
-	if !ok {
-		return
-	}
+	user := s.adminName(r)
 	var req remoteRequest
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad request")
@@ -118,10 +109,7 @@ func (s *Server) handleCreateRemote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateRemote(w http.ResponseWriter, r *http.Request) {
-	user, ok := s.admin(w, r)
-	if !ok {
-		return
-	}
+	user := s.adminName(r)
 	name := r.PathValue("name")
 	var req remoteRequest
 	if err := readJSON(r, &req); err != nil {
@@ -144,10 +132,7 @@ func (s *Server) handleUpdateRemote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteRemote(w http.ResponseWriter, r *http.Request) {
-	user, ok := s.admin(w, r)
-	if !ok {
-		return
-	}
+	user := s.adminName(r)
 	name := r.PathValue("name")
 	if err := s.storage.DeleteRemote(name); err != nil {
 		storageError(w, err)
@@ -160,9 +145,6 @@ func (s *Server) handleDeleteRemote(w http.ResponseWriter, r *http.Request) {
 // handleTestRemote tests an unsaved remote, or with a name, a saved one as
 // edited (secrets left out are the stored ones).
 func (s *Server) handleTestRemote(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.admin(w, r); !ok {
-		return
-	}
 	var req remoteRequest
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad request")
@@ -190,10 +172,7 @@ func (s *Server) handleTestRemote(w http.ResponseWriter, r *http.Request) {
 // --- repositories ---
 
 func (s *Server) handleCreateRepository(w http.ResponseWriter, r *http.Request) {
-	user, ok := s.admin(w, r)
-	if !ok {
-		return
-	}
+	user := s.adminName(r)
 	var req struct {
 		Name        string `json:"name"`
 		Remote      string `json:"remote"`
@@ -221,10 +200,7 @@ func (s *Server) handleCreateRepository(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleRemoveRepository(w http.ResponseWriter, r *http.Request) {
-	user, ok := s.admin(w, r)
-	if !ok {
-		return
-	}
+	user := s.adminName(r)
 	name := r.PathValue("name")
 	if err := s.storage.RemoveRepository(name); err != nil {
 		storageError(w, err)
@@ -235,10 +211,7 @@ func (s *Server) handleRemoveRepository(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleRecoveryKey(w http.ResponseWriter, r *http.Request) {
-	user, ok := s.admin(w, r)
-	if !ok {
-		return
-	}
+	user := s.adminName(r)
 	name := r.PathValue("name")
 	key, err := s.storage.RecoveryKey(name)
 	if err != nil {
@@ -275,9 +248,6 @@ func (s *Server) itemJSON(it storage.Item) itemJSON {
 }
 
 func (s *Server) handleBackups(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.admin(w, r); !ok {
-		return
-	}
 	items := []itemJSON{}
 	for _, p := range s.storage.Policies() {
 		items = append(items, s.itemJSON(p.Item))
@@ -306,19 +276,13 @@ func item(w http.ResponseWriter, r *http.Request) (storage.Item, bool) {
 }
 
 func (s *Server) handleGetBackup(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.admin(w, r); !ok {
-		return
-	}
 	if it, ok := item(w, r); ok {
 		writeJSON(w, http.StatusOK, s.itemJSON(it))
 	}
 }
 
 func (s *Server) handlePutBackup(w http.ResponseWriter, r *http.Request) {
-	user, ok := s.admin(w, r)
-	if !ok {
-		return
-	}
+	user := s.adminName(r)
 	it, ok := item(w, r)
 	if !ok {
 		return
@@ -338,10 +302,7 @@ func (s *Server) handlePutBackup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteBackup(w http.ResponseWriter, r *http.Request) {
-	user, ok := s.admin(w, r)
-	if !ok {
-		return
-	}
+	user := s.adminName(r)
 	it, ok := item(w, r)
 	if !ok {
 		return
@@ -355,10 +316,7 @@ func (s *Server) handleDeleteBackup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRunBackup(w http.ResponseWriter, r *http.Request) {
-	user, ok := s.admin(w, r)
-	if !ok {
-		return
-	}
+	user := s.adminName(r)
 	it, ok := item(w, r)
 	if !ok {
 		return
@@ -379,9 +337,6 @@ func (s *Server) handleRunBackup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSnapshots(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.admin(w, r); !ok {
-		return
-	}
 	it, ok := item(w, r)
 	if !ok {
 		return
@@ -400,9 +355,6 @@ func (s *Server) handleSnapshots(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSnapshotFiles(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.admin(w, r); !ok {
-		return
-	}
 	it, ok := item(w, r)
 	if !ok {
 		return
@@ -424,10 +376,7 @@ func (s *Server) handleSnapshotFiles(w http.ResponseWriter, r *http.Request) {
 // handleSnapshotDownload streams a file of a snapshot, or a folder as a zip
 // (dir=1). An error once it has started can only cut the download short.
 func (s *Server) handleSnapshotDownload(w http.ResponseWriter, r *http.Request) {
-	user, ok := s.admin(w, r)
-	if !ok {
-		return
-	}
+	user := s.adminName(r)
 	it, ok := item(w, r)
 	if !ok {
 		return
@@ -452,10 +401,7 @@ func (s *Server) handleSnapshotDownload(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
-	user, ok := s.admin(w, r)
-	if !ok {
-		return
-	}
+	user := s.adminName(r)
 	it, ok := item(w, r)
 	if !ok {
 		return

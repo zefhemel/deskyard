@@ -54,7 +54,17 @@ func TestRemotesAdminOnly(t *testing.T) {
 	s, ts, send := newVolumeServer(t)
 	s.storage.Tool.Run = &storageRunner{}
 	anna := login(t, ts, "anna")
-	for _, r := range [][2]string{{"GET", "/api/remotes"}, {"POST", "/api/remotes"}, {"GET", "/api/backups"}, {"POST", "/api/backups/repositories"}, {"GET", "/api/backups/volume/photos"}, {"POST", "/api/backups/volume/photos/run"}} {
+	// The handlers rely on the routes' adminOnly: every storage route is here.
+	for _, r := range [][2]string{
+		{"GET", "/api/remotes"}, {"POST", "/api/remotes"}, {"POST", "/api/remotes/test"},
+		{"GET", "/api/remotes/nas"}, {"PUT", "/api/remotes/nas"}, {"DELETE", "/api/remotes/nas"}, {"POST", "/api/remotes/nas/test"},
+		{"GET", "/api/backups"}, {"POST", "/api/backups/repositories"}, {"DELETE", "/api/backups/repositories/home"},
+		{"GET", "/api/backups/repositories/home/recovery-key"},
+		{"GET", "/api/backups/volume/photos"}, {"PUT", "/api/backups/volume/photos"}, {"DELETE", "/api/backups/volume/photos"},
+		{"POST", "/api/backups/volume/photos/run"}, {"GET", "/api/backups/volume/photos/snapshots"},
+		{"GET", "/api/backups/volume/photos/snapshots/abc/files"}, {"GET", "/api/backups/volume/photos/snapshots/abc/download"},
+		{"POST", "/api/backups/volume/photos/restore"},
+	} {
 		if code, b := send(anna, r[0], r[1], "{}"); code != 403 {
 			t.Errorf("%s %s: %d %s", r[0], r[1], code, b)
 		}
