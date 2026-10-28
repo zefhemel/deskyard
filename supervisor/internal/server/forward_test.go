@@ -117,18 +117,27 @@ func TestForwardRelayTracksListens(t *testing.T) {
 	go func() {
 		c, err := l.Accept()
 		if err == nil {
-			c.Write([]byte("hi"))
-			c.Close()
+			defer c.Close()
+			// Drain the peer's half-close before replying. A full stream
+			// Close while the peer can still write intentionally resets it.
+			if _, err := io.Copy(io.Discard, c); err == nil {
+				c.Write([]byte("hi"))
+			}
 		}
 	}()
 	c, err := net.Dial("tcp", "127.0.0.1:"+strconv.Itoa(port))
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, _ := io.ReadAll(c)
+	c.SetDeadline(time.Now().Add(5 * time.Second))
+	if err := c.(*net.TCPConn).CloseWrite(); err != nil {
+		c.Close()
+		t.Fatal(err)
+	}
+	b, err := io.ReadAll(c)
 	c.Close()
-	if string(b) != "hi" {
-		t.Errorf("read %q", b)
+	if err != nil || string(b) != "hi" {
+		t.Errorf("read %q, %v", b, err)
 	}
 	l.Close()
 	deadline := time.Now().Add(2 * time.Second)
