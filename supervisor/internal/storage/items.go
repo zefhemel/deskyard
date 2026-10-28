@@ -180,7 +180,7 @@ func (volumeKind) users(env Environments, name string) []string {
 // restoreAs makes a local volume of the restored folder, which it adopts.
 func (volumeKind) restoreAs(_ context.Context, s *Service, _ Repo, _ Snapshot, _ Item, name string, _ RestoreRequest) (func(context.Context, func(string, float64)) (RestoreResult, error), func(), error) {
 	return func(ctx context.Context, _ func(string, float64)) (RestoreResult, error) {
-		if _, _, err := s.Env.CreateVolume(ctx, name, ""); err != nil {
+		if _, _, err := s.Env.CreateHeldVolume(ctx, name); err != nil {
 			return RestoreResult{}, err
 		}
 		return RestoreResult{Created: name}, nil

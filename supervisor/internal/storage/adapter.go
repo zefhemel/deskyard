@@ -30,7 +30,9 @@ type Environments interface {
 	Start(ctx context.Context, name string) error
 	ClaimName(name string) (func(), error)
 	CreateStopped(ctx context.Context, name string, set environments.Settings, progress func(string, float64)) (environments.Environment, error)
-	CreateVolume(ctx context.Context, name, hostPath string) (environments.Volume, bool, error)
+	// CreateHeldVolume makes a local volume of the folder a restore, holding
+	// its files, restored.
+	CreateHeldVolume(ctx context.Context, name string) (environments.Volume, bool, error)
 }
 
 // EnvironmentsOf adapts the environments service.

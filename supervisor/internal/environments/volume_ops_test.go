@@ -174,6 +174,37 @@ func TestCreateVolumeAdoptsFolder(t *testing.T) {
 	}
 }
 
+// While a restore as new holds a volume name's files, a volume of that name
+// created through the API would adopt the folder being restored: it is
+// refused, and only the holder makes the volume.
+func TestCreateVolumeRefusedWhileFilesHeld(t *testing.T) {
+	s, _ := volumeService(t)
+	ctx := context.Background()
+	if _, _, err := s.CreateHeldVolume(ctx, "photos"); err == nil {
+		t.Fatal("made a held volume without a hold")
+	}
+	release, err := s.HoldFiles(Item{KindVolume, "photos"}, "restoring", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(s.Layout.VolumeOf("photos"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.CreateVolume(ctx, "photos", ""); !errors.Is(err, ErrItemBusy) {
+		t.Fatalf("created while held: %v", err)
+	}
+	if _, ok := s.Vols.Get("photos"); ok {
+		t.Fatal("the refused volume was saved")
+	}
+	if _, adopted, err := s.CreateHeldVolume(ctx, "photos"); err != nil || !adopted {
+		t.Fatalf("holder's create: adopted=%v %v", adopted, err)
+	}
+	release()
+	if _, _, err := s.CreateVolume(ctx, "photos", ""); !errors.Is(err, ErrExists) {
+		t.Fatalf("after release: %v", err)
+	}
+}
+
 func TestCreateVolumeInvalidOrDuplicate(t *testing.T) {
 	s, eng := volumeService(t)
 	ctx := context.Background()

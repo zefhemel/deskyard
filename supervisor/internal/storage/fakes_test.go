@@ -224,7 +224,10 @@ func (e *fakeEnv) CreateStopped(_ context.Context, name string, set environments
 	e.defs[name] = environments.Definition{Name: name, Power: environments.PowerStopped}
 	return environments.Environment{Name: name, State: "stopped"}, nil
 }
-func (e *fakeEnv) CreateVolume(_ context.Context, name, hostPath string) (environments.Volume, bool, error) {
+func (e *fakeEnv) CreateHeldVolume(_ context.Context, name string) (environments.Volume, bool, error) {
+	if e.FilesActivity(environments.Item{Kind: environments.KindVolume, Name: name}) == "" {
+		return environments.Volume{}, false, fmt.Errorf("volume %s: its files aren't held", name)
+	}
 	e.record("create volume " + name)
 	v := environments.Volume{Name: name, Kind: environments.VolumeLocal}
 	e.vols[name] = v

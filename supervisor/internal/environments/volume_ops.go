@@ -37,8 +37,21 @@ func (e *VolumeInUseError) Unwrap() error { return ErrConflict }
 // that existing engine-host folder, which is checked through the engine and
 // never created. Otherwise a folder volume/<name>/ that already exists, such
 // as one kept when a volume of that name was deleted, is adopted untouched,
-// or a new one is made for the desktop user.
+// or a new one is made for the desktop user. While something holds the
+// files of a volume of that name (HoldFiles), such as a restore making it
+// as new, it is refused with ErrItemBusy: it would adopt their folder.
 func (s *Service) CreateVolume(ctx context.Context, name, hostPath string) (v Volume, adopted bool, err error) {
+	return s.createVolume(ctx, name, hostPath, false)
+}
+
+// CreateHeldVolume adds the local volume name, adopting its folder, for the
+// caller holding its files (HoldFiles), as a restore as new does once it
+// has restored the folder. Without a hold it is refused.
+func (s *Service) CreateHeldVolume(ctx context.Context, name string) (v Volume, adopted bool, err error) {
+	return s.createVolume(ctx, name, "", true)
+}
+
+func (s *Service) createVolume(ctx context.Context, name, hostPath string, held bool) (v Volume, adopted bool, err error) {
 	if err := ValidName(name); err != nil {
 		return Volume{}, false, fmt.Errorf("invalid volume name: %w", err)
 	}
@@ -51,6 +64,13 @@ func (s *Service) CreateVolume(ctx context.Context, name, hostPath string) (v Vo
 	defer s.volMu.Unlock()
 	if _, ok := s.Vols.Get(name); ok {
 		return Volume{}, false, fmt.Errorf("volume %q: %w", name, ErrExists)
+	}
+	// Under volMu, which the volume's creation holds until it is saved.
+	switch what := s.FilesActivity(Item{KindVolume, name}); {
+	case !held && what != "":
+		return Volume{}, false, fmt.Errorf("%w: volume %s is %s", ErrItemBusy, name, what)
+	case held && what == "":
+		return Volume{}, false, fmt.Errorf("volume %s: its files aren't held", name)
 	}
 	if hostPath != "" {
 		v = Volume{Name: name, Created: time.Now().UTC(), Kind: VolumeHost, HostPath: hostPath}
