@@ -1,3 +1,4 @@
+import { startAutoQuality, type StatsWindow } from "./auto-quality.ts";
 // The environment page at /<name>/: a thin bar of ours with tabs for the
 // desktop and the environment's shared terminal sessions. The Desktop tab is
 // Selkies' web client in a frame (how we drive it is described in
@@ -445,6 +446,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
           active={active}
           canAdd={running && c.terminal && !observing}
           onSelect={show}
+          tabUrl={tabUrl}
           onRename={setRenaming}
           onDetach={(s) => closeTab(s, false)}
           onClose={(s) => void requestEnd(s)}
@@ -787,6 +789,11 @@ function Desktop({ environment: c, slots, selectShortcut }: { environment: Envir
     store(QUALITY_KEY, id);
     sendQuality(frame.current, id);
   };
+  useEffect(() => {
+    const target = frame.current?.contentWindow;
+    if (!screen || !target || quality !== "auto" || !owner || observing || conn !== "connected") return;
+    return startAutoQuality(screen, target as unknown as StatsWindow);
+  }, [screen, quality, owner, observing, conn]);
   const chooseResolution = (size: Size | null) => {
     if (!owner) return; // the display's owner sets its size
     setLocked(size);
@@ -848,7 +855,7 @@ function Desktop({ environment: c, slots, selectShortcut }: { environment: Envir
           {q.hint && <span class="text-muted">, {q.hint}</span>}
         </>
       ),
-      checked: q.id === live,
+      checked: quality === "auto" ? q.id === "auto" : q.id === live,
       onSelect: () => chooseQuality(q.id),
       separated: i === 0,
     })),
@@ -871,7 +878,7 @@ function Desktop({ environment: c, slots, selectShortcut }: { environment: Envir
           ...keyItems.map((k, i) => ({ ...k, label: <>Send {k.label}</>, separated: i === 0 && !owner, class: compactOnly })),
           ...qualities.map((q, i) => ({
             label: `Quality: ${q.label}`,
-            checked: q.id === live,
+            checked: quality === "auto" ? q.id === "auto" : q.id === live,
             onSelect: () => chooseQuality(q.id),
             separated: i === 0,
             class: compactOnly,

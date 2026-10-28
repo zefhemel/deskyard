@@ -13,7 +13,7 @@ resolution and quality), the clipboard, keys the browser would otherwise take
 didn't get in through a share. Drop files on the screen to copy them into the
 environment. Badges show who has their mic on.
 The bar's tabs show the desktop next to the environment's shared terminal
-sessions. On phones, Display and Keys are in the scrollable More
+sessions. Cmd-click (Mac), Ctrl-click (Linux/Windows), or middle-click a Desktop or terminal tab to open that view in another browser tab; Shift-click uses the browser’s new-window behavior. Terminal links join the existing session. On phones, Display and Keys are in the scrollable More
 menu, and the tabs get a row of their own.
 
 **Enter fullscreen** (the expand icon in the top bar) fills the browser screen with the Deskyard tab bar and current desktop or terminal view. The same button becomes **Exit fullscreen**; the browser’s Escape action also exits. Switching tabs keeps fullscreen active, and menus and dialogs remain usable. Leaving the environment page exits fullscreen started with this button. The button appears only when the browser supports fullscreen; it needs no desktop image update.
@@ -142,3 +142,9 @@ an updated desktop image; Mac Option selection also needs the updated supervisor
 ### Switch tabs with the keyboard
 
 Ctrl+Shift+1 selects Desktop; Ctrl+Shift+2–9 selects the first eight terminal tabs in the viewer’s current order. Use Control on Mac too. Shortcuts work with focus inside the desktop iframe or browser terminal, ignore composition and extra Alt/Meta modifiers, leave missing positions untouched, and pause while a dialog is open. Physical number-row keys are used so Shift-produced punctuation does not change the mapping. Tab tooltips and `aria-keyshortcuts` expose the bindings.
+
+## Automatic stream quality
+
+Display → **Quality: Auto** is the default when this browser has no saved quality choice. Existing manual choices are kept. Auto starts at Medium (H.264 up to 8 Mbit/s and 60 fps, or JPEG quality 50 and 30 fps where WebCodecs is unavailable). Selkies checks codec support and handles decoder backlog and network congestion; Auto also measures frames reaching the screen and lowers the frame rate after sustained presentation loss. It gradually raises it again under sustained healthy motion. Still screens do not count as slow playback or evidence of spare capacity.
+
+Only the first viewer, which owns the display, automatically adjusts its shared frame rate. Other viewers follow it. Auto preserves resolution, scaling and text paint-over quality. Manual Low through Lossless remain available, and choosing one stops Auto’s presentation adjustments; Selkies’ protective decoder and network adaptation still apply. Automatic measurements pause in background tabs and stop on disconnect or when leaving Desktop. No desktop image update is needed for the pinned Selkies 2.1.0 client.

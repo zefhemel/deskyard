@@ -76,6 +76,7 @@ export function EnvironmentTabs({
   active,
   canAdd,
   onSelect,
+  tabUrl,
   onClose,
   onRename,
   onDetach,
@@ -87,6 +88,7 @@ export function EnvironmentTabs({
   active: string | null;
   canAdd: boolean;
   onSelect: (session: string | null) => void;
+  tabUrl: (session: string | null) => string;
   onClose: (session: string) => void;
   onRename: (session: string) => void;
   onDetach: (session: string) => void;
@@ -113,6 +115,11 @@ export function EnvironmentTabs({
 
   const focusTab = (session: string | null) => strip.current?.querySelector<HTMLElement>(`[data-tab="${CSS.escape(session ?? "")}"]`)?.focus();
   const onKeyDown = (e: KeyboardEvent, session: string | null) => {
+    if (e.key === " " && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      onSelect(session);
+      return;
+    }
     if (e.key === "Delete" && session !== null) {
       e.preventDefault();
       onClose(session);
@@ -166,7 +173,8 @@ export function EnvironmentTabs({
 
   const tab = "group relative flex h-8 flex-none items-center rounded-[7px] text-[13.5px] font-semibold";
   const tabButton = (session: string | null) => ({
-    type: "button" as const,
+    href: tabUrl(session),
+    draggable: false,
     role: "tab" as const,
     id: tabId(session),
     "data-tab": session ?? "",
@@ -174,7 +182,11 @@ export function EnvironmentTabs({
     "aria-controls": panelId(session),
     // Roving focus: only the selected tab is in the Tab order; arrows move between tabs.
     tabIndex: active === session ? 0 : -1,
-    onClick: () => onSelect(session),
+    onClick: (e: MouseEvent) => {
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      onSelect(session);
+    },
     onKeyDown: (e: KeyboardEvent) => onKeyDown(e, session),
   });
   return (
@@ -187,10 +199,10 @@ export function EnvironmentTabs({
     >
       <div role="tablist" aria-label="Desktop and terminals" class="flex flex-none items-center gap-0.5">
         <div role="presentation" class={cx(tab, active === null ? "bg-bar-hover text-white" : "text-bar-muted hover:bg-bar-hover hover:text-white")} {...dragProps(null)}>
-          <button {...tabButton(null)} title="Desktop (Ctrl+Shift+1)" aria-keyshortcuts="Control+Shift+1" class="inline-flex h-full cursor-pointer items-center gap-1.5 rounded-[7px] border-0 bg-transparent px-2.5 text-inherit">
+          <a {...tabButton(null)} title="Desktop (Ctrl+Shift+1)" aria-keyshortcuts="Control+Shift+1" class="inline-flex h-full cursor-pointer items-center gap-1.5 rounded-[7px] border-0 bg-transparent px-2.5 text-inherit no-underline">
             <DisplayIcon />
             Desktop
-          </button>
+          </a>
         </div>
         {tabs.map((t, index) => (
           <div
@@ -214,11 +226,11 @@ export function EnvironmentTabs({
             }}
             {...dragProps(t.name)}
           >
-            <button
+            <a
               {...tabButton(t.name)}
               aria-keyshortcuts={`Delete Alt+Shift+ArrowLeft Alt+Shift+ArrowRight${index < 8 ? ` Control+Shift+${index + 2}` : ""}`}
               title={`${t.name}${t.others ? ` · ${t.others} other${t.others === 1 ? "" : "s"} attached` : ""} (${index < 8 ? `Ctrl+Shift+${index + 2} to switch, ` : ""}Alt+Shift+← → to move, Delete to end)`}
-              class="inline-flex h-full max-w-[200px] cursor-pointer items-center gap-1.5 rounded-[7px] border-0 bg-transparent pr-1 pl-2.5 text-inherit"
+              class="inline-flex h-full max-w-[200px] cursor-pointer items-center gap-1.5 rounded-[7px] border-0 bg-transparent pr-1 pl-2.5 text-inherit no-underline"
             >
               <TerminalIcon />
               <span class="truncate">{t.name}</span>
@@ -230,7 +242,7 @@ export function EnvironmentTabs({
                   <span class="sr-only">({t.others === 1 ? "1 other" : `${t.others} others`} attached)</span>
                 </>
               )}
-            </button>
+            </a>
             <Menu
               class="inline-flex h-6 items-center"
               portal

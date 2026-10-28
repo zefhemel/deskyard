@@ -193,7 +193,7 @@ export function onClipboard(screen: DeskyardScreen, fn: (text: string) => void):
   });
 }
 
-export type QualityId = "low" | "medium" | "high" | "extreme" | "lossless";
+export type QualityId = "auto" | "low" | "medium" | "high" | "extreme" | "lossless";
 
 /**
  * The Quality presets, as Selkies stream settings. All are H.264 (x264 on
@@ -216,6 +216,7 @@ export const qualities: {
   fullcolor: boolean;
   jpeg: { quality: number; framerate: number; paintOver: number };
 }[] = [
+  { id: "auto", label: "Auto", hint: "adapts to this browser and connection", bitrate: 8000, framerate: 60, encoder: "h264enc", fullcolor: false, jpeg: { quality: 50, framerate: 30, paintOver: 90 } },
   { id: "low", label: "Low", hint: "for slow connections", bitrate: 2000, framerate: 30, encoder: "h264enc", fullcolor: false, jpeg: { quality: 30, framerate: 15, paintOver: 90 } },
   { id: "medium", label: "Medium", hint: "", bitrate: 8000, framerate: 60, encoder: "h264enc", fullcolor: false, jpeg: { quality: 50, framerate: 30, paintOver: 90 } },
   { id: "high", label: "High", hint: "", bitrate: 16000, framerate: 60, encoder: "h264enc", fullcolor: false, jpeg: { quality: 70, framerate: 30, paintOver: 90 } },
@@ -223,7 +224,7 @@ export const qualities: {
   { id: "lossless", label: "Lossless", hint: "for fast networks", bitrate: 64000, framerate: 60, encoder: "h264enc", fullcolor: true, jpeg: { quality: 90, framerate: 60, paintOver: 100 } },
 ];
 
-export const defaultQuality: QualityId = "medium";
+export const defaultQuality: QualityId = "auto";
 
 export function isQualityId(v: unknown): v is QualityId {
   return qualities.some((q) => q.id === v);
@@ -232,14 +233,14 @@ export function isQualityId(v: unknown): v is QualityId {
 /** The preset a display's stream settings match, if any (H.264 or JPEG). */
 export function qualityOf(settings: Record<string, unknown>): QualityId | null {
   const encoder = String(settings.encoder);
-  const q = qualities.find((q) =>
+  const q = qualities.find((q) => q.id !== "auto" && (
     encoder === "jpeg"
       ? Number(settings.jpeg_quality) === q.jpeg.quality && Number(settings.framerate) === q.jpeg.framerate
       : Number(settings.video_bitrate) === q.bitrate &&
         Number(settings.framerate) === q.framerate &&
         encoder === q.encoder &&
         Boolean(settings.video_fullcolor) === q.fullcolor &&
-        (settings.rate_control_mode === undefined || settings.rate_control_mode === "cbr"),
+        (settings.rate_control_mode === undefined || settings.rate_control_mode === "cbr")),
   );
   return q?.id ?? null;
 }
