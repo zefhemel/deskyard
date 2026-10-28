@@ -657,14 +657,8 @@ func (s *Service) Create(ctx context.Context, name string, set Settings, progres
 	if err := ValidateVolumeGrants(set.Volumes); err != nil {
 		return Environment{}, err
 	}
-	if err := s.missingVolume(name, set.Volumes); err != nil {
-		return Environment{}, err
-	}
-	hosts := s.hostSources(set.Volumes)
-	if len(hosts) > 0 {
-		progress("Checking host volumes", -1)
-	}
-	if err := s.checkHostSources(ctx, hosts, set.DockerAccess); err != nil {
+	// The home is made below.
+	if err := s.preflight(ctx, name, set.Volumes, set.DockerAccess, grantFolders, progress); err != nil {
 		return Environment{}, err
 	}
 	img, err := s.EnsureImage(ctx, set.Image, progress)
@@ -964,42 +958,38 @@ func (s *Service) power(ctx context.Context, name, action string) error {
 	if err := s.blocked(name); err != nil {
 		return err
 	}
-	if s.Networking != nil && s.Networking.selected(name) {
-		// A start that is refused leaves the saved power as it was.
+	// A start that is refused leaves the saved power as it was.
+	viaVPN := s.Networking != nil && s.Networking.selected(name)
+	var c Environment
+	if viaVPN {
 		if err := s.Networking.startable(name); err != nil {
 			return err
 		}
-		if err := s.checkFolders(name); err != nil {
+	} else {
+		var err error
+		if c, err = s.Get(ctx, name); err != nil {
 			return err
 		}
-		if err := s.checkHostVolumes(ctx, name); err != nil {
-			return err
+		// A VPN environment never starts without its coordinator.
+		if c.Settings.VPNConnectionID != "" {
+			return errVPNUnavailable
 		}
-		if err := s.setPower(name, PowerRunning); err != nil {
-			return err
+		if c.Conflict != "" {
+			return fmt.Errorf("%w: %s", ErrConflict, c.Conflict)
 		}
-		return s.Networking.power(ctx, name, action)
 	}
-	c, err := s.Get(ctx, name)
-	if err != nil {
-		return err
+	def, ok := s.Defs.Get(name)
+	if !ok {
+		return ErrNotFound
 	}
-	// A start that is refused leaves the saved power as it was. A VPN
-	// environment never starts without its coordinator.
-	if c.Settings.VPNConnectionID != "" {
-		return errVPNUnavailable
-	}
-	if c.Conflict != "" {
-		return fmt.Errorf("%w: %s", ErrConflict, c.Conflict)
-	}
-	if err := s.checkFolders(name); err != nil {
-		return err
-	}
-	if err := s.checkHostVolumes(ctx, name); err != nil {
+	if err := s.preflight(ctx, name, def.Volumes, def.DockerAccess, savedFolders, nil); err != nil {
 		return err
 	}
 	if err := s.setPower(name, PowerRunning); err != nil {
 		return err
+	}
+	if viaVPN {
+		return s.Networking.power(ctx, name, action)
 	}
 	if c.Container.ID == "" {
 		if err := s.build(ctx, name); err != nil {
@@ -1016,6 +1006,7 @@ func (s *Service) power(ctx context.Context, name, action string) error {
 		}
 		return s.Eng.Start(ctx, containerName(name))
 	}
+	var err error
 	if action == "restart" {
 		err = s.Eng.Restart(ctx, containerName(name), stopTimeout)
 	} else {
@@ -1028,17 +1019,6 @@ func (s *Service) power(ctx context.Context, name, action string) error {
 	// what this start retries; an error of a failed change stays.
 	s.clearError(name, errNotReady)
 	return nil
-}
-
-// checkHostVolumes checks the folders of name's host volumes on the engine
-// host before a start, so a missing one is named rather than left to the
-// engine's bind error. Without host volumes it does nothing.
-func (s *Service) checkHostVolumes(ctx context.Context, name string) error {
-	def, ok := s.Defs.Get(name)
-	if !ok {
-		return nil
-	}
-	return s.checkHostSources(ctx, s.hostSources(def.Volumes), false)
 }
 
 // build creates the container of an environment that has none, from its

@@ -10,6 +10,47 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/helper"
 )
 
+// folderCheck is which of an environment's local folders preflight checks.
+type folderCheck int
+
+const (
+	// savedFolders: the home and volume folders of the saved definition,
+	// recorded on the environment while one is missing (checkFolders).
+	savedFolders folderCheck = iota
+	// allFolders: the home and the folders of the grants checked.
+	allFolders
+	// grantFolders: only the grants' folders, for a home still to be made.
+	grantFolders
+	// noFolders: none, for a change only saved until a start builds it.
+	noFolders
+)
+
+// preflight is what creating, starting or changing the container of the
+// environment name checks first, so that a missing folder or socket is
+// named rather than left to the engine's bind error, and nothing is changed
+// when one is: its local folders as folders says, and, with one helper on
+// the engine host, the folders of the host volumes among grants and, with
+// dockerAccess, the Docker socket. progress, when set, hears of the helper.
+func (s *Service) preflight(ctx context.Context, name string, grants []VolumeGrant, dockerAccess bool, folders folderCheck, progress func(string, float64)) error {
+	var err error
+	switch folders {
+	case savedFolders:
+		err = s.checkFolders(name)
+	case allFolders:
+		err = s.missingFolder(name, grants)
+	case grantFolders:
+		err = s.missingVolume(name, grants)
+	}
+	if err != nil {
+		return err
+	}
+	hosts := s.hostSources(grants)
+	if len(hosts) > 0 && progress != nil {
+		progress("Checking host volumes", -1)
+	}
+	return s.checkHostSources(ctx, hosts, dockerAccess)
+}
+
 // hostSource is a host volume's folder on the engine host.
 type hostSource struct{ volume, path string }
 

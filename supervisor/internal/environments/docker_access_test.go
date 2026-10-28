@@ -254,3 +254,55 @@ func TestHostPreflightCombinesFoldersAndSocket(t *testing.T) {
 		})
 	}
 }
+
+// A start preflights once: one helper checks the host volumes and the
+// Docker socket, also when the start replaces the container. A failed check
+// leaves the saved power as it was.
+func TestStartPreflightsOnce(t *testing.T) {
+	s, e := dockerAccessService(t)
+	ctx := context.Background()
+	set := Settings{Image: "img", DockerAccess: true, Volumes: []VolumeGrant{hostVolume(t, s, "data", t.TempDir(), "/mnt/data", false)}}
+	if err := s.seed(ctx, "alice", set); err != nil {
+		t.Fatal(err)
+	}
+	checks := func() (n int) {
+		for _, spec := range e.specs {
+			if spec.Labels[helper.LabelHelper] == helper.MountCheck {
+				n++
+			}
+		}
+		return n
+	}
+	before, probes := checks(), e.probes
+	if err := s.Start(ctx, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if checks()-before != 1 || e.probes-probes != 1 {
+		t.Fatalf("start ran %d helpers, %d socket probes", checks()-before, e.probes-probes)
+	}
+	if err := s.Stop(ctx, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Defs.Update("alice", func(d *Definition) error {
+		d.Limits.MemoryBytes = 1 << 30
+		d.Revision++
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before = checks()
+	if err := s.Start(ctx, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := s.Get(ctx, "alice"); c.AppliedRevision != c.Revision || checks()-before != 1 {
+		t.Fatalf("replacing start ran %d helpers: %+v", checks()-before, c)
+	}
+	_ = s.Stop(ctx, "alice")
+	e.socketAvailable = false
+	if err := s.Start(ctx, "alice"); err == nil || !strings.Contains(err.Error(), "Unix socket") {
+		t.Fatalf("started without the socket: %v", err)
+	}
+	if d, _ := s.Defs.Get("alice"); d.Power != PowerStopped {
+		t.Fatal("a refused start saved power running")
+	}
+}
