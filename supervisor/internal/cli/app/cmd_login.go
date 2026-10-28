@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/cli/remote"
@@ -338,20 +337,15 @@ func runServerList(a *App, c *call) error {
 		fmt.Fprintln(a.Stdout, "Not signed in to any server: "+loginHint+".")
 		return nil
 	}
-	tw := tabwriter.NewWriter(a.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "  NAME\tURL\tUSER\tENVIRONMENT\tCREDENTIAL")
+	var rows [][]string
 	for _, s := range cfg.Sorted() {
 		mark := " "
 		if s.Name == cfg.Default {
 			mark = "*"
 		}
-		env := s.Environment
-		if env == "" {
-			env = "-"
-		}
-		fmt.Fprintf(tw, "%s %s\t%s\t%s\t%s\t%s\n", mark, s.Name, s.URL, s.Username, env, remote.MaskCredential(s.Credential))
+		rows = append(rows, []string{mark + " " + s.Name, s.URL, s.Username, dash(s.Environment), remote.MaskCredential(s.Credential)})
 	}
-	return tw.Flush()
+	return table(a.Stdout, []string{"  NAME", "URL", "USER", "ENVIRONMENT", "CREDENTIAL"}, rows)
 }
 
 func runServerDefault(a *App, c *call) error {
