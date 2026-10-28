@@ -69,16 +69,8 @@ func (s *Server) handleListShares(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
-	c, me, ok := s.environmentFor(w, r, auth.Observe)
+	c, me, ok := s.environmentFor(w, r, auth.Share)
 	if !ok {
-		return
-	}
-	if me.IsShare() {
-		writeError(w, http.StatusForbidden, "shares can't share")
-		return
-	}
-	if !auth.Can(me, auth.Share, c.Name) {
-		writeError(w, http.StatusForbidden, "observe-only access can't do that")
 		return
 	}
 	var req struct {
@@ -128,7 +120,7 @@ func (s *Server) shareFor(w http.ResponseWriter, r *http.Request) (accounts.Acco
 		writeError(w, http.StatusNotFound, "no such share")
 		return a, me, false
 	}
-	if !me.Admin && a.SharedBy.ID != me.ID {
+	if !auth.Can(me, auth.ManageAccounts, "") && a.SharedBy.ID != me.ID {
 		writeError(w, http.StatusForbidden, "only the person who shared it or an admin can do that")
 		return a, me, false
 	}

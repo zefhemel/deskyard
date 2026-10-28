@@ -299,7 +299,7 @@ func TestShareAndExpiry(t *testing.T) {
 	if !a.IsShare() || !a.Expired(time.Now()) || a.Expired(past.Add(-time.Second)) {
 		t.Fatalf("share: %+v", a)
 	}
-	if names := a.GrantNames(); len(names) != 1 || names[0] != "alice" {
+	if names := a.Environments(); len(names) != 1 || names[0] != "alice" {
 		t.Fatal(names)
 	}
 }

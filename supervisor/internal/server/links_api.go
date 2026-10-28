@@ -3,17 +3,12 @@ package server
 import (
 	"errors"
 	"net/http"
-	"slices"
 	"time"
 	"unicode/utf8"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 )
-
-// errObserveOnly refuses a CLI sign-in to an account that may only watch:
-// the CLI can do nothing at observe level.
-var errObserveOnly = errors.New("observe-only access is for the browser")
 
 const defaultCredentialName = "deskyard CLI"
 
@@ -32,10 +27,11 @@ func (s *Server) baseURL(r *http.Request) string {
 	return scheme + "://" + r.Host
 }
 
-// canUseCLI reports whether the account may sign in a CLI: an admin, or one
-// with full access to some environment.
-func (s *Server) canUseCLI(a accounts.Account) bool {
-	return a.Admin || slices.ContainsFunc(s.definedGrants(a), func(g accounts.Grant) bool { return g.Level == auth.LevelFull })
+// checkCLI is auth.Check of a CLI for a, counting its grants of defined
+// environments only.
+func (s *Server) checkCLI(a accounts.Account) error {
+	a.Grants = s.definedGrants(a)
+	return auth.Check(a, auth.UseCLI, "")
 }
 
 type environmentLevel struct {
@@ -176,7 +172,7 @@ func (s *Server) handleRedeemLink(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, errLinkUsed):
 		s.linkGone(w, r)
 		return
-	case errors.Is(err, errObserveOnly):
+	case errors.Is(err, auth.ErrBrowserOnly):
 		writeError(w, http.StatusForbidden, err.Error())
 		return
 	case err != nil:
@@ -206,11 +202,11 @@ type cliSignIn struct {
 }
 
 // issueCLICredential makes a CLI credential named client for a as it is
-// now, refusing (errObserveOnly) an account the CLI is of no use to. link is
+// now, refusing (auth.ErrBrowserOnly) an account the CLI is of no use to. link is
 // the login link being redeemed, if one is.
 func (s *Server) issueCLICredential(a accounts.Account, client, link string) (cliSignIn, credential, error) {
-	if !s.canUseCLI(a) {
-		return cliSignIn{}, credential{}, errObserveOnly
+	if err := s.checkCLI(a); err != nil {
+		return cliSignIn{}, credential{}, err
 	}
 	c, bearer, err := s.credentials.add(credential{AccountID: a.ID, Username: a.Username, Kind: "cli", Name: client, Link: link})
 	if err != nil {

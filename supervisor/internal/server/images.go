@@ -467,10 +467,6 @@ func (s *Server) handleListImages(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAddImage(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(r)
-	if !auth.Can(a, auth.ManageAccounts, "") {
-		writeError(w, http.StatusForbidden, "only an admin can do that")
-		return
-	}
 	var req struct {
 		Ref string `json:"ref"`
 	}
@@ -488,9 +484,6 @@ func (s *Server) handleAddImage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleInstallImage(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(r)
-	if !requireAdmin(w, a) {
-		return
-	}
 	var req struct {
 		Ref string `json:"ref"`
 	}
@@ -522,11 +515,6 @@ func (s *Server) pullCatalogImage(username, ref string) string {
 }
 
 func (s *Server) handleRemoveImage(w http.ResponseWriter, r *http.Request) {
-	a, _ := s.account(r)
-	if !auth.Can(a, auth.ManageAccounts, "") {
-		writeError(w, http.StatusForbidden, "only an admin can do that")
-		return
-	}
 	ref := r.URL.Query().Get("ref")
 	if _, official := officialImageFor(ref); official {
 		writeError(w, http.StatusBadRequest, "official images remain available in the catalog")
@@ -558,20 +546,12 @@ func (s *Server) imageUser(ref string) string {
 
 func (s *Server) handleCheckImages(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(r)
-	if !auth.Can(a, auth.ManageAccounts, "") {
-		writeError(w, http.StatusForbidden, "only an admin can do that")
-		return
-	}
 	id := s.jobs.start(a.Username, "", s.checkImages)
 	writeJSON(w, http.StatusAccepted, map[string]string{"job": id})
 }
 
 func (s *Server) handleUpgradeImage(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(r)
-	if !auth.Can(a, auth.Manage, "") {
-		writeError(w, http.StatusForbidden, "only an admin can do that")
-		return
-	}
 	var req struct {
 		Ref string `json:"ref"`
 	}

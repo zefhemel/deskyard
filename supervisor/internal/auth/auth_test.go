@@ -106,14 +106,21 @@ func TestThrottle(t *testing.T) {
 }
 
 type subject struct {
-	admin  bool
-	share  bool
-	levels map[string]Level
+	admin, share, password bool
+	levels                 map[string]Level
 }
 
 func (s subject) IsAdmin() bool           { return s.admin }
 func (s subject) IsShare() bool           { return s.share }
+func (s subject) HasPassword() bool       { return s.password }
 func (s subject) Level(name string) Level { return s.levels[name] }
+func (s subject) Environments() []string {
+	var out []string
+	for name := range s.levels {
+		out = append(out, name)
+	}
+	return out
+}
 
 func TestCanMatchesThePermissionsTable(t *testing.T) {
 	admin := subject{admin: true}
@@ -174,5 +181,77 @@ func TestCanByLevel(t *testing.T) {
 	}
 	if !ValidLevel(LevelFull) || !ValidLevel(LevelObserve) {
 		t.Error("levels not valid")
+	}
+}
+
+// Check says why: environments without access look missing, and a refusal
+// full access would lift says so.
+func TestCheckReasons(t *testing.T) {
+	observer := subject{levels: map[string]Level{"alice": LevelObserve}}
+	full := subject{levels: map[string]Level{"alice": LevelFull}}
+	share := subject{share: true, levels: map[string]Level{"alice": LevelObserve}}
+	rows := []struct {
+		name   string
+		who    subject
+		action Action
+		env    string
+		want   error
+	}{
+		{"no grant", full, View, "bob", ErrNoAccess},
+		{"no grant, admin action", full, Manage, "bob", ErrNoAccess},
+		{"observer views", observer, View, "alice", ErrObserveOnly},
+		{"observer powers", observer, Power, "alice", ErrObserveOnly},
+		{"observer shares", observer, Share, "alice", ErrObserveOnly},
+		{"observer manages", observer, Manage, "alice", ErrAdminOnly},
+		{"full manages", full, Manage, "alice", ErrAdminOnly},
+		{"full manages accounts", full, ManageAccounts, "", ErrAdminOnly},
+		{"share shares", share, Share, "alice", ErrSharesCantShare},
+	}
+	for _, r := range rows {
+		if got := Check(r.who, r.action, r.env); got != r.want {
+			t.Errorf("%s: %v, want %v", r.name, got, r.want)
+		}
+	}
+}
+
+func TestUseCLIAndWebDAV(t *testing.T) {
+	observer := subject{password: true, levels: map[string]Level{"alice": LevelObserve}}
+	full := subject{password: true, levels: map[string]Level{"alice": LevelObserve, "beta": LevelFull}}
+	token := subject{levels: map[string]Level{"beta": LevelFull}}
+	share := subject{share: true, levels: map[string]Level{"beta": LevelFull}}
+	tokenAdmin := subject{admin: true}
+	if Check(observer, UseCLI, "") != ErrBrowserOnly || !Can(full, UseCLI, "") || !Can(tokenAdmin, UseCLI, "") || !Can(share, UseCLI, "") {
+		t.Error("UseCLI: an admin, or full somewhere")
+	}
+	rows := []struct {
+		name string
+		who  subject
+		env  string
+		want error
+	}{
+		{"full", full, "beta", nil},
+		{"at all", observer, "", nil},
+		{"observer", full, "alice", ErrObserveOnly},
+		{"no grant", full, "gamma", ErrNoAccess},
+		{"token account", token, "beta", ErrPasswordOnly},
+		{"share", share, "beta", ErrPasswordOnly},
+		{"token admin", tokenAdmin, "beta", ErrPasswordOnly},
+		{"password admin", subject{admin: true, password: true}, "beta", nil},
+	}
+	for _, r := range rows {
+		if got := Check(r.who, WebDAV, r.env); got != r.want {
+			t.Errorf("WebDAV %s: %v, want %v", r.name, got, r.want)
+		}
+	}
+}
+
+func TestLevelAtLeast(t *testing.T) {
+	order := []Level{LevelNone, LevelObserve, LevelFull}
+	for i, a := range order {
+		for j, b := range order {
+			if a.AtLeast(b) != (i >= j) {
+				t.Errorf("%q at least %q: %v", a, b, a.AtLeast(b))
+			}
+		}
 	}
 }

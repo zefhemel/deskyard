@@ -38,19 +38,13 @@ const (
 	davMaxLock = "Second-3600"
 )
 
-// davAllowed reports whether a may use name's files over WebDAV: a password
-// account, not a share, with full use of the environment.
-func davAllowed(a accounts.Account, name string) bool {
-	return a.HasPassword() && !a.IsShare() && auth.Can(a, auth.View, name)
-}
-
 func (s *Server) serveDAV(w http.ResponseWriter, r *http.Request, name string) {
 	a, cred, ok := s.davAccount(w, r)
 	if !ok {
 		return
 	}
 	c, err := s.Environments.Get(r.Context(), name)
-	if err != nil || !c.WebDAV || !davAllowed(a, c.Name) {
+	if err != nil || !c.WebDAV || !auth.Can(a, auth.WebDAV, c.Name) {
 		http.NotFound(w, r) // the same for missing, invisible and switched off
 		return
 	}
@@ -345,8 +339,8 @@ func (s *Server) handleWebDAVSetting(w http.ResponseWriter, r *http.Request) {
 // takes the account password.
 func (s *Server) handleCreateWebDAVPassword(w http.ResponseWriter, r *http.Request) {
 	me, _ := s.account(r)
-	if !me.HasPassword() || me.IsShare() {
-		writeError(w, http.StatusForbidden, "only accounts with a password can use WebDAV")
+	if err := auth.Check(me, auth.WebDAV, ""); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
 	c, password, err := s.credentials.create(me, davKind, "WebDAV password")

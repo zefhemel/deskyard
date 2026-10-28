@@ -214,10 +214,6 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleValidateName(w http.ResponseWriter, r *http.Request) {
-	a, _ := s.account(r)
-	if !requireAdmin(w, a) {
-		return
-	}
 	name := r.URL.Query().Get("name")
 	res := map[string]any{"ok": true, "folderExists": false}
 	if err := environments.ValidNewName(name); err != nil {
@@ -233,9 +229,6 @@ func (s *Server) handleValidateName(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(r)
-	if !requireAdmin(w, a) {
-		return
-	}
 	var req struct {
 		VPNConnectionID optionalVPN                `json:"vpnConnectionId"`
 		LANExceptions   []vpn.Exception            `json:"lanExceptions"`

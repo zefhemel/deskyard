@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 )
 
 // deskyard login is a device-authorisation flow (after RFC 8628): the CLI
@@ -155,7 +156,7 @@ func (cl *cliLogins) decide(id string, a *accounts.Account) error {
 // once after a denial, and once approved, issue's answer for the approving
 // account and the client's name. The request is gone after its answer is
 // taken; when issue fails to save (any error but errCLILoginExpired and
-// errObserveOnly) it stays approved, for the next poll to try again.
+// auth.ErrBrowserOnly) it stays approved, for the next poll to try again.
 // An unknown or expired request, or a wrong secret, is errCLILoginExpired;
 // a wrong secret leaves the request for the right one.
 func (cl *cliLogins) take(id, pollSecret string, issue func(a accounts.Account, client string) error) error {
@@ -173,7 +174,7 @@ func (cl *cliLogins) take(id, pollSecret string, issue func(a accounts.Account, 
 		return errCLILoginDenied
 	}
 	err := issue(*l.account, l.client)
-	if err == nil || errors.Is(err, errCLILoginExpired) || errors.Is(err, errObserveOnly) {
+	if err == nil || errors.Is(err, errCLILoginExpired) || errors.Is(err, auth.ErrBrowserOnly) {
 		delete(cl.all, id)
 	}
 	return err
@@ -233,8 +234,8 @@ func (s *Server) decideCLILogin(w http.ResponseWriter, r *http.Request, approve 
 	a, _ := s.account(r)
 	var approver *accounts.Account
 	if approve {
-		if !s.canUseCLI(a) {
-			writeError(w, http.StatusForbidden, errObserveOnly.Error())
+		if err := s.checkCLI(a); err != nil {
+			writeError(w, http.StatusForbidden, err.Error())
 			return
 		}
 		approver = &a
@@ -281,7 +282,7 @@ func (s *Server) handleCLILoginToken(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, errCLILoginDenied):
 		writeError(w, http.StatusForbidden, "denied")
 		return
-	case errors.Is(err, errObserveOnly):
+	case errors.Is(err, auth.ErrBrowserOnly):
 		writeError(w, http.StatusForbidden, err.Error())
 		return
 	case errors.Is(err, errCLILoginExpired):

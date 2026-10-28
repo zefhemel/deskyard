@@ -23,6 +23,8 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/cli-login/{id}/token", s.handleCLILoginToken)
 
 	h := func(pattern string, fn http.HandlerFunc) { m.Handle(pattern, s.authed(fn)) }
+	// Only for admins.
+	admin := func(pattern string, fn http.HandlerFunc) { m.Handle(pattern, s.authed(s.adminOnly(fn))) }
 	h("GET /api/me", s.handleMe)
 	h("POST /api/me/password", s.handleOwnPassword)
 	h("POST /api/me/sign-out-everywhere", s.handleSignOutEverywhere)
@@ -38,14 +40,14 @@ func (s *Server) routes() {
 	h("GET /api/jobs/{id}", s.handleJob)
 	h("POST /api/jobs/{id}/cancel", s.handleCancelJob)
 
-	h("GET /api/vpn/connections", s.handleListVPN)
-	h("POST /api/vpn/connections", s.handleCreateVPN)
-	h("PUT /api/vpn/connections/{id}", s.handleUpdateVPN)
-	h("DELETE /api/vpn/connections/{id}", s.handleDeleteVPN)
-	h("POST /api/vpn/test", s.handleTestVPN)
+	admin("GET /api/vpn/connections", s.handleListVPN)
+	admin("POST /api/vpn/connections", s.handleCreateVPN)
+	admin("PUT /api/vpn/connections/{id}", s.handleUpdateVPN)
+	admin("DELETE /api/vpn/connections/{id}", s.handleDeleteVPN)
+	admin("POST /api/vpn/test", s.handleTestVPN)
 	h("GET /api/environments", s.handleListEnvironments)
-	h("POST /api/environments", s.handleCreateEnvironment)
-	h("GET /api/validate-name", s.handleValidateName)
+	admin("POST /api/environments", s.handleCreateEnvironment)
+	admin("GET /api/validate-name", s.handleValidateName)
 	h("GET /api/environments/{name}/terminal", s.handleTerminal)
 	h("GET /api/environments/{name}/terminal/sessions", s.handleTerminalSessions)
 	h("POST /api/environments/{name}/terminal/sessions", s.handleCreateTerminalSession)
@@ -81,44 +83,44 @@ func (s *Server) routes() {
 	remote("/api/environments/{name}/cdp/{rest...}", s.handleRemoteCDP)
 
 	h("GET /api/accounts", s.handleListAccounts)
-	h("POST /api/accounts", s.handleCreateAccount)
-	h("PATCH /api/accounts/{username}", s.handleUpdateAccount)
-	h("DELETE /api/accounts/{username}", s.handleDeleteAccount)
-	h("POST /api/accounts/{username}/link", s.handleAccountLink)
-	h("GET /api/accounts/{username}/credentials", s.handleAccountCredentials)
-	h("DELETE /api/accounts/{username}/credentials/{id}", s.handleDeleteAccountCredential)
+	admin("POST /api/accounts", s.handleCreateAccount)
+	admin("PATCH /api/accounts/{username}", s.handleUpdateAccount)
+	admin("DELETE /api/accounts/{username}", s.handleDeleteAccount)
+	admin("POST /api/accounts/{username}/link", s.handleAccountLink)
+	admin("GET /api/accounts/{username}/credentials", s.handleAccountCredentials)
+	admin("DELETE /api/accounts/{username}/credentials/{id}", s.handleDeleteAccountCredential)
 
 	h("GET /api/images", s.handleListImages)
-	h("POST /api/images", s.handleAddImage)
-	h("POST /api/images/install", s.handleInstallImage)
-	h("DELETE /api/images", s.handleRemoveImage)
-	h("POST /api/images/check", s.handleCheckImages)
-	h("POST /api/images/upgrade", s.handleUpgradeImage)
+	admin("POST /api/images", s.handleAddImage)
+	admin("POST /api/images/install", s.handleInstallImage)
+	admin("DELETE /api/images", s.handleRemoveImage)
+	admin("POST /api/images/check", s.handleCheckImages)
+	admin("POST /api/images/upgrade", s.handleUpgradeImage)
 
-	h("GET /api/volumes", s.handleListVolumes)
-	h("POST /api/volumes", s.handleCreateVolume)
-	h("DELETE /api/volumes/{name}", s.handleDeleteVolume)
-	h("GET /api/volumes/{name}/usage", s.handleVolumeUsage)
+	admin("GET /api/volumes", s.handleListVolumes)
+	admin("POST /api/volumes", s.handleCreateVolume)
+	admin("DELETE /api/volumes/{name}", s.handleDeleteVolume)
+	admin("GET /api/volumes/{name}/usage", s.handleVolumeUsage)
 
-	h("GET /api/remotes", s.handleListRemotes)
-	h("POST /api/remotes", s.handleCreateRemote)
-	h("POST /api/remotes/test", s.handleTestRemote)
-	h("GET /api/remotes/{name}", s.handleGetRemote)
-	h("PUT /api/remotes/{name}", s.handleUpdateRemote)
-	h("DELETE /api/remotes/{name}", s.handleDeleteRemote)
-	h("POST /api/remotes/{name}/test", s.handleTestRemote)
-	h("GET /api/backups", s.handleBackups)
-	h("POST /api/backups/repositories", s.handleCreateRepository)
-	h("DELETE /api/backups/repositories/{name}", s.handleRemoveRepository)
-	h("GET /api/backups/repositories/{name}/recovery-key", s.handleRecoveryKey)
-	h("GET /api/backups/{kind}/{name}", s.handleGetBackup)
-	h("PUT /api/backups/{kind}/{name}", s.handlePutBackup)
-	h("DELETE /api/backups/{kind}/{name}", s.handleDeleteBackup)
-	h("POST /api/backups/{kind}/{name}/run", s.handleRunBackup)
-	h("GET /api/backups/{kind}/{name}/snapshots", s.handleSnapshots)
-	h("GET /api/backups/{kind}/{name}/snapshots/{id}/files", s.handleSnapshotFiles)
-	h("GET /api/backups/{kind}/{name}/snapshots/{id}/download", s.handleSnapshotDownload)
-	h("POST /api/backups/{kind}/{name}/restore", s.handleRestore)
+	admin("GET /api/remotes", s.handleListRemotes)
+	admin("POST /api/remotes", s.handleCreateRemote)
+	admin("POST /api/remotes/test", s.handleTestRemote)
+	admin("GET /api/remotes/{name}", s.handleGetRemote)
+	admin("PUT /api/remotes/{name}", s.handleUpdateRemote)
+	admin("DELETE /api/remotes/{name}", s.handleDeleteRemote)
+	admin("POST /api/remotes/{name}/test", s.handleTestRemote)
+	admin("GET /api/backups", s.handleBackups)
+	admin("POST /api/backups/repositories", s.handleCreateRepository)
+	admin("DELETE /api/backups/repositories/{name}", s.handleRemoveRepository)
+	admin("GET /api/backups/repositories/{name}/recovery-key", s.handleRecoveryKey)
+	admin("GET /api/backups/{kind}/{name}", s.handleGetBackup)
+	admin("PUT /api/backups/{kind}/{name}", s.handlePutBackup)
+	admin("DELETE /api/backups/{kind}/{name}", s.handleDeleteBackup)
+	admin("POST /api/backups/{kind}/{name}/run", s.handleRunBackup)
+	admin("GET /api/backups/{kind}/{name}/snapshots", s.handleSnapshots)
+	admin("GET /api/backups/{kind}/{name}/snapshots/{id}/files", s.handleSnapshotFiles)
+	admin("GET /api/backups/{kind}/{name}/snapshots/{id}/download", s.handleSnapshotDownload)
+	admin("POST /api/backups/{kind}/{name}/restore", s.handleRestore)
 
 	m.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such API route")
@@ -271,31 +273,40 @@ func (s *Server) handleSignOutEverywhere(w http.ResponseWriter, r *http.Request)
 
 // environmentFor resolves {name} for the signed-in account, writing 404 when it
 // doesn't exist or the account has no grant of it (at any level), and 403
-// when the action isn't allowed: an observer may only watch.
+// when the action isn't allowed.
 func (s *Server) environmentFor(w http.ResponseWriter, r *http.Request, action auth.Action) (environments.Environment, accounts.Account, bool) {
 	a, _ := s.account(r)
 	c, err := s.Environments.Get(r.Context(), r.PathValue("name"))
-	if err != nil || !auth.Can(a, auth.Observe, c.ID) {
-		writeError(w, http.StatusNotFound, "no such environment")
+	if err != nil {
+		writeError(w, http.StatusNotFound, auth.ErrNoAccess.Error())
 		return c, a, false
 	}
-	if !auth.Can(a, action, c.ID) {
-		msg := "only an admin can do that"
-		if a.Level(c.ID) == auth.LevelObserve && (action == auth.View || action == auth.Power || action == auth.Share) {
-			msg = "observe-only access can't do that" // full access would allow it
-		}
-		writeError(w, http.StatusForbidden, msg)
-		return c, a, false
-	}
-	return c, a, true
+	return c, a, allow(w, a, action, c.ID)
 }
 
-func requireAdmin(w http.ResponseWriter, a accounts.Account) bool {
-	if !a.Admin {
-		writeError(w, http.StatusForbidden, "only an admin can do that")
-		return false
+// allow reports whether auth.Check allows a the action on the named
+// environment, writing why not when it doesn't: 404 for an environment a
+// has no access to, as for one that doesn't exist, and 403 otherwise.
+func allow(w http.ResponseWriter, a accounts.Account, action auth.Action, name string) bool {
+	err := auth.Check(a, action, name)
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, auth.ErrNoAccess):
+		writeError(w, http.StatusNotFound, err.Error())
+	default:
+		writeError(w, http.StatusForbidden, err.Error())
 	}
-	return true
+	return false
+}
+
+// adminOnly lets only admins through to next.
+func (s *Server) adminOnly(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if a, _ := s.account(r); allow(w, a, auth.ManageAccounts, "") {
+			next(w, r)
+		}
+	}
 }
 
 func errorStatus(err error) int {

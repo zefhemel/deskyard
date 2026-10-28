@@ -72,8 +72,9 @@ func (a Account) HasPassword() bool { return a.PasswordHash != "" }
 // expired account is treated as deleted.
 func (a Account) Expired(now time.Time) bool { return a.Expires != nil && now.After(*a.Expires) }
 
-// GrantNames lists the environments the account has a grant of, at any level.
-func (a Account) GrantNames() []string {
+// Environments lists the environments the account has a grant of, at any
+// level.
+func (a Account) Environments() []string {
 	out := make([]string, len(a.Grants))
 	for i, g := range a.Grants {
 		out[i] = g.Environment
@@ -99,22 +100,12 @@ func withLevel(grants []Grant, name string, level auth.Level) []Grant {
 	return out
 }
 
-func rank(l auth.Level) int {
-	switch l {
-	case auth.LevelFull:
-		return 2
-	case auth.LevelObserve:
-		return 1
-	}
-	return 0
-}
-
 // Lowered maps the environments after grants less than before to their
 // new level (LevelNone: the grant is gone).
 func Lowered(before, after []Grant) map[string]auth.Level {
 	out := map[string]auth.Level{}
 	for _, g := range before {
-		if l := grantLevel(after, g.Environment); rank(l) < rank(g.Level) {
+		if l := grantLevel(after, g.Environment); !l.AtLeast(g.Level) {
 			out[g.Environment] = l
 		}
 	}
@@ -126,7 +117,7 @@ func Lowered(before, after []Grant) map[string]auth.Level {
 func Capped(grants []Grant, caps map[string]auth.Level) []Grant {
 	out := slices.Clone(grants)
 	for name, l := range caps {
-		if rank(grantLevel(out, name)) > rank(l) {
+		if !l.AtLeast(grantLevel(out, name)) {
 			out = withLevel(out, name, l)
 		}
 	}

@@ -99,7 +99,7 @@ func (o *optionalTime) UnmarshalJSON(b []byte) error {
 
 func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) {
 	me, _ := s.account(r)
-	if !me.Admin {
+	if !auth.Can(me, auth.ManageAccounts, "") {
 		// Invited accounts may know each other's usernames (avatars, who's
 		// viewing) and their own shares'; a share, an outsider, only its own.
 		out := []map[string]string{}
@@ -122,10 +122,6 @@ func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 	me, _ := s.account(r)
-	if !auth.Can(me, auth.ManageAccounts, "") {
-		writeError(w, http.StatusForbidden, "only an admin can do that")
-		return
-	}
 	var req struct {
 		Username, Password, Description string
 		Admin                           bool
@@ -154,10 +150,6 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 	me, _ := s.account(r)
-	if !auth.Can(me, auth.ManageAccounts, "") {
-		writeError(w, http.StatusForbidden, "only an admin can do that")
-		return
-	}
 	var req struct {
 		Password    *string           `json:"password"`
 		Admin       *bool             `json:"admin"`
@@ -253,10 +245,6 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 // connections.
 func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 	me, _ := s.account(r)
-	if !auth.Can(me, auth.ManageAccounts, "") {
-		writeError(w, http.StatusForbidden, "only an admin can do that")
-		return
-	}
 	if !s.deleteAccount(w, r.PathValue("username")) {
 		return
 	}
@@ -291,9 +279,6 @@ func (s *Server) deleteAccount(w http.ResponseWriter, username string) bool {
 // its unused one.
 func (s *Server) handleAccountLink(w http.ResponseWriter, r *http.Request) {
 	me, _ := s.account(r)
-	if !requireAdmin(w, me) {
-		return
-	}
 	a, ok := s.Accounts.Get(r.PathValue("username"))
 	if !ok {
 		writeError(w, http.StatusNotFound, accounts.ErrNotFound.Error())
@@ -365,12 +350,8 @@ func (s *Server) handleDeleteOwnCredential(w http.ResponseWriter, r *http.Reques
 	s.deleteCredential(w, me.ID, r.PathValue("id"))
 }
 
-// adminAccount resolves {username} for an admin.
+// adminAccount resolves {username} on an admin route.
 func (s *Server) adminAccount(w http.ResponseWriter, r *http.Request) (accounts.Account, bool) {
-	me, _ := s.account(r)
-	if !requireAdmin(w, me) {
-		return accounts.Account{}, false
-	}
 	a, ok := s.Accounts.Get(r.PathValue("username"))
 	if !ok {
 		writeError(w, http.StatusNotFound, accounts.ErrNotFound.Error())

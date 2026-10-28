@@ -43,10 +43,6 @@ func vpnError(w http.ResponseWriter, err error) {
 	}
 }
 func (s *Server) handleListVPN(w http.ResponseWriter, r *http.Request) {
-	a, _ := s.account(r)
-	if !requireAdmin(w, a) {
-		return
-	}
 	cs, err := s.Environments.Networking.Connections.List()
 	if err != nil {
 		vpnError(w, err)
@@ -63,10 +59,6 @@ func (s *Server) handleListVPN(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"connections": out, "countries": vpn.Countries()})
 }
 func (s *Server) handleCreateVPN(w http.ResponseWriter, r *http.Request) {
-	a, _ := s.account(r)
-	if !requireAdmin(w, a) {
-		return
-	}
 	var in vpn.Input
 	if readJSON(r, &in) != nil {
 		writeError(w, 400, "bad request")
@@ -80,10 +72,6 @@ func (s *Server) handleCreateVPN(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, c)
 }
 func (s *Server) handleDeleteVPN(w http.ResponseWriter, r *http.Request) {
-	a, _ := s.account(r)
-	if !requireAdmin(w, a) {
-		return
-	}
 	id := r.PathValue("id")
 	if err := s.Environments.Networking.DeleteConnection(id); err != nil {
 		if errors.Is(err, vpn.ErrConflict) {
@@ -97,9 +85,6 @@ func (s *Server) handleDeleteVPN(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) handleTestVPN(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(r)
-	if !requireAdmin(w, a) {
-		return
-	}
 	var req struct {
 		vpn.Input
 		ConnectionID string `json:"connectionId"`
@@ -132,9 +117,6 @@ func (s *Server) handleTestVPN(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) handleUpdateVPN(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(r)
-	if !requireAdmin(w, a) {
-		return
-	}
 	id := r.PathValue("id")
 	var req struct {
 		vpn.Input

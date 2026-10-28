@@ -38,10 +38,6 @@ func (s *Server) volumeJSON(v environments.Volume) volumeJSON {
 }
 
 func (s *Server) handleListVolumes(w http.ResponseWriter, r *http.Request) {
-	a, _ := s.account(r)
-	if !requireAdmin(w, a) {
-		return
-	}
 	out := []volumeJSON{}
 	for _, v := range s.Environments.Vols.List() {
 		out = append(out, s.volumeJSON(v))
@@ -51,9 +47,6 @@ func (s *Server) handleListVolumes(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateVolume(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(r)
-	if !requireAdmin(w, a) {
-		return
-	}
 	var req struct {
 		Name     string `json:"name"`
 		HostPath string `json:"hostPath"`
@@ -96,9 +89,6 @@ func (s *Server) handleCreateVolume(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteVolume(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(r)
-	if !requireAdmin(w, a) {
-		return
-	}
 	name := r.PathValue("name")
 	deleteFiles := false
 	if q := r.URL.Query().Get("deleteFiles"); q != "" {
@@ -180,10 +170,6 @@ func (s *Server) checkVolumeGrants(w http.ResponseWriter, cur, grants []environm
 // of its folder, and the space on the disk holding it. Free and size are
 // omitted when the disk can't be read.
 func (s *Server) handleVolumeUsage(w http.ResponseWriter, r *http.Request) {
-	a, _ := s.account(r)
-	if !requireAdmin(w, a) {
-		return
-	}
 	name := r.PathValue("name")
 	if _, ok := s.Environments.Vols.Get(name); !ok {
 		writeError(w, http.StatusNotFound, "no such volume")

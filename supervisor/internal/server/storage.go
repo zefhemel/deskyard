@@ -10,6 +10,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/storage"
 )
 
@@ -70,7 +71,7 @@ type remoteRequest struct {
 // admin reports whether the request is an administrator's, writing 403 if not.
 func (s *Server) admin(w http.ResponseWriter, r *http.Request) (string, bool) {
 	a, _ := s.account(r)
-	return a.Username, requireAdmin(w, a)
+	return a.Username, allow(w, a, auth.ManageAccounts, "")
 }
 
 func (s *Server) handleListRemotes(w http.ResponseWriter, r *http.Request) {
