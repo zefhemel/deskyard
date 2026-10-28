@@ -1,9 +1,9 @@
-import type { RefObject } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { uploadFile } from "../api.ts";
 import { notify, notifyLive } from "../components/toast.tsx";
 import { errorMessage } from "../components/ui.tsx";
 import { bytes } from "../lib/format.ts";
+import { useEventListener, useFrameWindowListener } from "../lib/use-event-listener.ts";
 
 const hasFiles = (e: DragEvent) => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes("Files");
 
@@ -29,90 +29,60 @@ const STALE_MS = 1000;
  * when dragover events stop coming (the pointer left the window, or Escape
  * ended the drag), and on drop or dragend.
  */
-export function DropZone({ environment, frame, frameKey, onDone }: { environment: string; frame: RefObject<HTMLIFrameElement | null>; frameKey: number; onDone?: () => void }) {
-  const [over, setOver] = useState(false);
+export function DropZone({ environment, frame, onDone }: { environment: string; frame: HTMLIFrameElement | null; onDone?: () => void }) {
+  const [dragging, setDragging] = useState(false);
   const lastSeen = useRef(0);
-  const environmentRef = useRef(environment);
-  environmentRef.current = environment;
 
   const upload = (dt: DataTransfer | null) => {
     if (!dt) return;
     const items = Array.from(dt.items);
     Array.from(dt.files).forEach((f, i) => {
       if (isFolder(items[i], f)) notify(`${f.name} is a folder: drop files, not folders`, { error: true, ms: 6000 });
-      else void send(environmentRef.current, f).then(onDone);
+      else void send(environment, f).then(onDone);
     });
   };
 
+  const seen = (e: DragEvent) => {
+    if (!hasFiles(e)) return false;
+    e.preventDefault(); // allow the drop, and keep the browser from opening the file
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    lastSeen.current = Date.now();
+    return true;
+  };
+  const over = (e: DragEvent) => {
+    if (seen(e)) setDragging(true);
+  };
+  const drop = (e: DragEvent) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    setDragging(false);
+    // A drop on the overlay is handled by the overlay; one that reached a window directly is handled here.
+    if (!(e.target instanceof Element && e.target.closest("[data-testid=drop-overlay]"))) upload(e.dataTransfer);
+  };
+  const end = () => setDragging(false);
+  // In the frame, before anything in it, and no further.
+  const first = (f: (e: DragEvent) => void) => (e: DragEvent) => {
+    if (hasFiles(e)) e.stopPropagation();
+    f(e);
+  };
   // Listeners on the page and on the frame's window.
-  useEffect(() => {
-    const seen = (e: DragEvent) => {
-      if (!hasFiles(e)) return false;
-      e.preventDefault(); // allow the drop, and keep the browser from opening the file
-      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-      lastSeen.current = Date.now();
-      return true;
-    };
-    const enter = (e: DragEvent) => {
-      if (seen(e)) setOver(true);
-    };
-    const move = (e: DragEvent) => {
-      if (seen(e)) setOver(true);
-    };
-    const drop = (e: DragEvent) => {
-      if (!hasFiles(e)) return;
-      e.preventDefault();
-      setOver(false);
-      // A drop on the overlay is handled by the overlay; one that reached a window directly is handled here.
-      if (!(e.target instanceof Element && e.target.closest("[data-testid=drop-overlay]"))) upload(e.dataTransfer);
-    };
-    const end = () => setOver(false);
-    // In the frame, before anything in it, and no further.
-    const first = (f: (e: DragEvent) => void) => (e: DragEvent) => {
-      if (hasFiles(e)) e.stopPropagation();
-      f(e);
-    };
-    const handlers: Record<string, (e: DragEvent) => void> = { dragenter: enter, dragover: move, drop, dragend: end };
-    const attach = (w: Window, inFrame: boolean) => {
-      const listeners = Object.entries(handlers).map(([type, f]) => [type, (inFrame ? first(f) : f) as EventListener] as const);
-      for (const [type, f] of listeners) w.addEventListener(type, f, inFrame);
-      return () => {
-        try {
-          for (const [type, f] of listeners) w.removeEventListener(type, f, inFrame);
-        } catch {
-          // the frame is gone
-        }
-      };
-    };
-    const detachPage = attach(window, false);
-    let detachFrame: (() => void) | undefined;
-    const iframe = frame.current;
-    const attachFrame = () => {
-      detachFrame?.();
-      detachFrame = undefined;
-      try {
-        if (iframe?.contentWindow) detachFrame = attach(iframe.contentWindow, true);
-      } catch {
-        // not same-origin: nothing to listen to
-      }
-    };
-    attachFrame();
-    iframe?.addEventListener("load", attachFrame);
-    return () => {
-      iframe?.removeEventListener("load", attachFrame);
-      detachFrame?.();
-      detachPage();
-    };
-  }, [frame, frameKey]);
+  useEventListener(window, "dragenter", over);
+  useEventListener(window, "dragover", over);
+  useEventListener(window, "drop", drop);
+  useEventListener(window, "dragend", end);
+  useFrameWindowListener(frame, "dragenter", first(over), true);
+  useFrameWindowListener(frame, "dragover", first(over), true);
+  useFrameWindowListener(frame, "drop", first(drop), true);
+  useFrameWindowListener(frame, "dragend", first(end), true);
 
   // Hide when the drag has gone quiet.
   useEffect(() => {
-    if (!over) return;
+    if (!dragging) return;
     const t = window.setInterval(() => {
-      if (Date.now() - lastSeen.current > STALE_MS) setOver(false);
+      if (Date.now() - lastSeen.current > STALE_MS) setDragging(false);
     }, 200);
     // Neither fires during a drag, so one means the drag is over.
-    const hide = () => setOver(false);
+    const hide = () => setDragging(false);
     window.addEventListener("pointerdown", hide);
     window.addEventListener("mousemove", hide);
     return () => {
@@ -120,9 +90,9 @@ export function DropZone({ environment, frame, frameKey, onDone }: { environment
       window.removeEventListener("pointerdown", hide);
       window.removeEventListener("mousemove", hide);
     };
-  }, [over]);
+  }, [dragging]);
 
-  if (!over) return null;
+  if (!dragging) return null;
   return (
     <div
       data-testid="drop-overlay"
@@ -134,7 +104,7 @@ export function DropZone({ environment, frame, frameKey, onDone }: { environment
       }}
       onDrop={(e) => {
         e.preventDefault();
-        setOver(false);
+        setDragging(false);
         upload(e.dataTransfer);
       }}
     >

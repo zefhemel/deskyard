@@ -4,14 +4,15 @@ export function tabShortcutIndex(e: Pick<KeyboardEvent, "ctrlKey" | "shiftKey" |
   return /^Digit[1-9]$/.test(e.code) ? Number(e.code.slice(-1)) - 1 : null;
 }
 
-/** Capture before terminal/desktop input handlers; unused positions pass through. */
-export function installTabShortcuts(target: Window, select: (index: number) => boolean): () => void {
-  const handle = (e: KeyboardEvent) => {
+/**
+ * A keydown listener for the tab shortcuts. Listen with capture, before
+ * terminal/desktop input handlers; unused positions pass through.
+ */
+export function tabShortcutListener(select: (index: number) => boolean): (e: KeyboardEvent) => void {
+  return (e) => {
     const index = tabShortcutIndex(e);
     if (index === null || !select(index)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
   };
-  target.addEventListener("keydown", handle, { capture: true });
-  return () => target.removeEventListener("keydown", handle, { capture: true });
 }

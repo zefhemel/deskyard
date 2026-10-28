@@ -1,20 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { installTabShortcuts, tabShortcutIndex } from "./tab-shortcuts.ts";
+import { tabShortcutIndex, tabShortcutListener } from "./tab-shortcuts.ts";
 const chord = { ctrlKey: true, shiftKey: true, altKey: false, metaKey: false, code: "Digit1", isComposing: false };
 test("number-row shortcuts use physical digits across shifted layouts", () => {
   assert.equal(tabShortcutIndex(chord), 0);
   assert.equal(tabShortcutIndex({ ...chord, code: "Digit9" }), 8);
   for (const change of [{ ctrlKey: false }, { shiftKey: false }, { altKey: true }, { metaKey: true }, { isComposing: true }, { code: "Digit0" }, { code: "Numpad1" }, { code: "KeyA" }]) assert.equal(tabShortcutIndex({ ...chord, ...change }), null);
 });
-test("handled tabs stop downstream input; absent tabs pass through; cleanup removes listener", () => {
+test("handled tabs stop downstream input; absent tabs pass through", () => {
   const target = new EventTarget();
   const selected: number[] = [];
-  const dispose = installTabShortcuts(target as unknown as Window, (index) => {
+  const listener = tabShortcutListener((index) => {
     if (index > 1) return false;
     selected.push(index);
     return true;
-  });
+  }) as EventListener;
+  target.addEventListener("keydown", listener, { capture: true });
   let forwarded = 0;
   target.addEventListener("keydown", () => forwarded++);
   const press = (code: string) => {
@@ -28,7 +29,4 @@ test("handled tabs stop downstream input; absent tabs pass through; cleanup remo
   assert.equal(forwarded, 0);
   assert.equal(press("Digit9"), false);
   assert.equal(forwarded, 1);
-  dispose();
-  assert.equal(press("Digit1"), false);
-  assert.equal(forwarded, 2);
 });

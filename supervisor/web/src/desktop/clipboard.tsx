@@ -2,6 +2,7 @@
 // frame's clipboardrx) with Copy, and a box to send text to it (clipboardsnd).
 import { useEffect, useRef, useState } from "preact/hooks";
 import { copyText } from "../lib/clipboard.ts";
+import { useEventListener, useFrameWindowListener } from "../lib/use-event-listener.ts";
 import { Button } from "../components/ui.tsx";
 import { NeedsHttps } from "./needs-https.tsx";
 import { insecureContext } from "./selkies.ts";
@@ -34,46 +35,27 @@ export function ClipboardPopover({
 
   useEffect(() => setCopied(false), [remote]);
 
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Node;
-      // The toggle button handles its own clicks.
-      if (ref.current && !ref.current.contains(t) && !(t instanceof Element && t.closest("[data-clipboard-toggle]"))) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    // Mobile keyboard/browser focus changes can blur the window too. Close
-    // only after focus actually enters the desktop frame, keeping the draft.
-    let blurTimer: number | undefined;
-    const onBlur = () => {
-      window.clearTimeout(blurTimer);
-      blurTimer = window.setTimeout(() => {
-        if (document.activeElement instanceof HTMLIFrameElement) onClose();
-      }, 0);
-    };
-    // Selkies prevents default touch focus, so a tap can leave the parent's
-    // textarea active. Observe the actual screen interaction as well as blur.
-    let screenWindow: Window | null | undefined;
-    const attach = () => {
-      screenWindow?.removeEventListener("pointerdown", onClose, true);
-      screenWindow = frame?.contentWindow;
-      screenWindow?.addEventListener("pointerdown", onClose, true);
-    };
-    attach();
-    frame?.addEventListener("load", attach);
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    window.addEventListener("blur", onBlur);
-    return () => {
-      frame?.removeEventListener("load", attach);
-      screenWindow?.removeEventListener("pointerdown", onClose, true);
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-      window.removeEventListener("blur", onBlur);
-      window.clearTimeout(blurTimer);
-    };
-  }, [frame, onClose]);
+  useEventListener(document, "mousedown", (e: MouseEvent) => {
+    const t = e.target as Node;
+    // The toggle button handles its own clicks.
+    if (ref.current && !ref.current.contains(t) && !(t instanceof Element && t.closest("[data-clipboard-toggle]"))) onClose();
+  });
+  useEventListener(document, "keydown", (e: KeyboardEvent) => {
+    if (e.key === "Escape") onClose();
+  });
+  // Mobile keyboard/browser focus changes can blur the window too. Close
+  // only after focus actually enters the desktop frame, keeping the draft.
+  const blurTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(blurTimer.current), []);
+  useEventListener(window, "blur", () => {
+    window.clearTimeout(blurTimer.current);
+    blurTimer.current = window.setTimeout(() => {
+      if (document.activeElement instanceof HTMLIFrameElement) onClose();
+    }, 0);
+  });
+  // Selkies prevents default touch focus, so a tap can leave the parent's
+  // textarea active. Observe the actual screen interaction as well as blur.
+  useFrameWindowListener(frame, "pointerdown", () => onClose(), true);
 
   const send = () => {
     drafts.delete(name);

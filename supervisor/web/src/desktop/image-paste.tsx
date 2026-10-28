@@ -1,7 +1,7 @@
-import type { RefObject } from "preact";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useRef, useState } from "preact/hooks";
 import { uploadFile } from "../api.ts";
 import { copyText } from "../lib/clipboard.ts";
+import { useEventListener, useFrameWindowListener } from "../lib/use-event-listener.ts";
 import { notify } from "../components/toast.tsx";
 import { Button, Dialog, ErrorText, Field, errorMessage } from "../components/ui.tsx";
 
@@ -20,48 +20,30 @@ export function validImagePath(value: string): boolean {
   return (value.startsWith("~/") || value.startsWith("/")) && !value.includes("\x00") && validImageName(value.split("/").at(-1) ?? "");
 }
 
-/** Listen on the page (terminal tabs) or just the desktop iframe. Capture
- * image pastes before xterm/Selkies consume them, without changing text paste. */
-export function ImagePaste({ environment, frame, frameKey }: { environment: string; frame?: RefObject<HTMLIFrameElement | null>; frameKey?: number }) {
+/**
+ * Pasting an image saves it into the environment. Listens on the page (the
+ * bar and terminal tabs) and on the desktop frame's window while there is
+ * one, capturing image pastes before xterm/Selkies consume them, without
+ * changing text paste. On the page, form fields and dialogs keep their own
+ * clipboard behavior.
+ */
+export function ImagePaste({ environment, frame }: { environment: string; frame: HTMLIFrameElement | null }) {
   const [file, setFile] = useState<File | null>(null);
   const occupied = useRef(false);
-  useEffect(() => {
-    const paste = (e: ClipboardEvent) => {
-      const target = e.target as Element | null;
-      // Form fields and dialogs retain their own clipboard behavior.
-      if (!frame && target?.closest?.('[role="dialog"], input, [contenteditable="true"], textarea:not(.xterm-helper-textarea)')) return;
-      const item = Array.from(e.clipboardData?.items ?? []).find((item) => item.kind === "file" && item.type.startsWith("image/"));
-      const image = item?.getAsFile();
-      if (!image) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      if (occupied.current) return;
-      occupied.current = true;
-      setFile(image);
-    };
-    if (!frame) {
-      window.addEventListener("paste", paste, true);
-      return () => window.removeEventListener("paste", paste, true);
-    }
-    const iframe = frame.current;
-    let attached: Window | null = null;
-    const attach = () => {
-      attached?.removeEventListener("paste", paste, true);
-      attached = null;
-      try {
-        if (iframe?.contentWindow?.document) {
-          attached = iframe.contentWindow;
-          attached.addEventListener("paste", paste, true);
-        }
-      } catch { /* Only same-origin desktop frames are accessible. */ }
-    };
-    attach();
-    iframe?.addEventListener("load", attach);
-    return () => {
-      iframe?.removeEventListener("load", attach);
-      attached?.removeEventListener("paste", paste, true);
-    };
-  }, [environment, frame, frameKey]);
+  const paste = (inFrame: boolean) => (e: ClipboardEvent) => {
+    const target = e.target as Element | null;
+    if (!inFrame && target?.closest?.('[role="dialog"], input, [contenteditable="true"], textarea:not(.xterm-helper-textarea)')) return;
+    const item = Array.from(e.clipboardData?.items ?? []).find((item) => item.kind === "file" && item.type.startsWith("image/"));
+    const image = item?.getAsFile();
+    if (!image) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (occupied.current) return;
+    occupied.current = true;
+    setFile(image);
+  };
+  useEventListener(window, "paste", paste(false), true);
+  useFrameWindowListener(frame, "paste", paste(true), true);
 
   if (!file) return null;
   return <ImageUploadDialog environment={environment} file={file} onClose={() => {

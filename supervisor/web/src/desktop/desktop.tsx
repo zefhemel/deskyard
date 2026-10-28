@@ -20,10 +20,12 @@ import { agentTitle } from "../lib/activity-format.ts";
 import { leftNeighbour, loadOrder, orderTabs, saveOrder, vanished } from "../lib/tab-order.ts";
 import { vpnPresentation } from "../lib/vpn-form.ts";
 import { names, notice } from "../lib/format.ts";
+import { useDevicePixelRatio } from "../lib/use-device-pixel-ratio.ts";
+import { useEventListener, useFrameWindowListener } from "../lib/use-event-listener.ts";
 import { isShell, needsConfirm, others } from "../terminal/sessions.ts";
 import { TouchControls, useVisibleViewport } from "./touch-controls.tsx";
 import { ZoomViewport } from "./zoom-viewport.tsx";
-import { installTabShortcuts } from "./tab-shortcuts.ts";
+import { tabShortcutListener } from "./tab-shortcuts.ts";
 import { FullscreenButton } from "./fullscreen.tsx";
 import { AudioControl } from "./audio-panel.tsx";
 import { ClipboardIcon, DisplayIcon, KeyboardIcon, ShieldIcon } from "./bar-icons.tsx";
@@ -160,6 +162,8 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
   const canShare = !observing && !me.share;
   const [sharing, setSharing] = useState(false);
   const [shared, setShared] = useState<{ username: string; link: string } | null>(null);
+  // The Desktop tab's frame while it is mounted, for image paste.
+  const [desktopFrame, setDesktopFrame] = useState<HTMLIFrameElement | null>(null);
   const seen = useRef(new Set<string>());
   const ending = useRef(new Set<string>());
   // A deep link's session the list hasn't shown: if it turns out ended, Desktop shows.
@@ -197,7 +201,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
     show(session);
     return true;
   }, []);
-  useEffect(() => installTabShortcuts(window, selectShortcut), [selectShortcut]);
+  useEventListener(window, "keydown", tabShortcutListener(selectShortcut), true);
 
   /** Closes a session's tab; when it was the active one, moves left (or to Desktop) and maybe says so. */
   const closeTab = (s: string, say: boolean, toDesktop = false) => {
@@ -516,7 +520,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
       )}
       <div class="relative flex min-h-0 flex-1 flex-col">
         <div role="tabpanel" id={panelId(null)} aria-labelledby={tabId(null)} hidden={active !== null} class={cx("relative min-h-0 flex-1 flex-col", active === null ? "flex" : "hidden")}>
-          {active === null && <Desktop environment={c} slots={slots} selectShortcut={selectShortcut} />}
+          {active === null && <Desktop environment={c} slots={slots} selectShortcut={selectShortcut} onFrame={setDesktopFrame} />}
         </div>
         {opened
           .filter((s) => tabs.includes(s))
@@ -535,7 +539,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
             </Suspense>
           ))}
       </div>
-      {running && !observing && <ImagePaste environment={c.name} />}
+      {running && !observing && <ImagePaste environment={c.name} frame={desktopFrame} />}
       {renaming && <RenameSessionDialog session={renaming} environment={c.name} onStart={() => setRenameInFlight(renaming)} onFailure={() => setRenameInFlight(null)} onClose={() => setRenaming(null)} onRenamed={(next) => {
         const old = renaming;
         if (next === old) { setRenameInFlight(null); setRenaming(null); return; }
@@ -598,22 +602,26 @@ function EndSessionDialog({ session, others: n, command, onEnd, onClose }: { ses
  * frame takes the pointer, the frame never takes focus, the bar has no input
  * controls) and never asks to change the display.
  */
-function Desktop({ environment: c, slots, selectShortcut }: { environment: Environment; slots: BarSlots; selectShortcut: (index: number) => boolean }) {
+function Desktop({ environment: c, slots, selectShortcut, onFrame }: { environment: Environment; slots: BarSlots; selectShortcut: (index: number) => boolean; onFrame: (frame: HTMLIFrameElement | null) => void }) {
   const observing = c.level === "observe";
   const observingRef = useRef(observing);
   observingRef.current = observing;
-  const frame = useRef<HTMLIFrameElement>(null);
+  const frame = useRef<HTMLIFrameElement | null>(null);
+  // The same frame, as state: listeners on its window follow it.
+  const [frameElement, setFrameElement] = useState<HTMLIFrameElement | null>(null);
+  const frameRef = useCallback((element: HTMLIFrameElement | null) => {
+    frame.current = element;
+    setFrameElement(element);
+    onFrame(element);
+  }, []);
+  useFrameWindowListener(frameElement, "keydown", tabShortcutListener(selectShortcut), true);
   const [trackpad, setTrackpad] = useState(() => initialTrackpad(storedRaw(TRACKPAD_KEY), isPhone(window.screen)));
   const trackpadRef = useRef(trackpad);
   trackpadRef.current = trackpad;
   const [keyboard, setKeyboard] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [touchControls, setTouchControls] = useState(() => navigator.maxTouchPoints > 0 || matchMedia("(pointer: coarse)").matches);
-  useEffect(() => {
-    const touched = () => setTouchControls(true);
-    window.addEventListener("touchstart", touched, { passive: true });
-    return () => window.removeEventListener("touchstart", touched);
-  }, []);
+  useEventListener(window, "touchstart", () => setTouchControls(true), { passive: true });
   const [conn, setConn] = useState<ConnectionState>("connecting");
   // The frame's client, for the Audio panel; null until it loads.
   const [screen, setScreen] = useState<DeskyardScreen | null>(null);
@@ -623,7 +631,7 @@ function Desktop({ environment: c, slots, selectShortcut }: { environment: Envir
   const [quality, setQuality] = useState(() => stored(QUALITY_KEY, parseQuality, defaultQuality));
   const [locked, setLocked] = useState(() => initialLock(storedRaw(LOCK_SIZE_KEY), isPhone(window.screen)));
   const [scaling, setScaling] = useState(() => parseScaling(storedRaw(SCALING_KEY)));
-  const [ratio, setRatio] = useState(() => window.devicePixelRatio || 1);
+  const ratio = useDevicePixelRatio();
   // Whether this page owns the display (null until known), and the preset the
   // display streams with (null when unknown or none of ours).
   const [owner, setOwner] = useState<boolean | null>(null);
@@ -653,22 +661,6 @@ function Desktop({ environment: c, slots, selectShortcut }: { environment: Envir
   }, []);
 
   useEffect(() => {
-    let query: MediaQueryList;
-    const changed = () => {
-      query?.removeEventListener("change", changed);
-      setRatio(window.devicePixelRatio || 1);
-      query = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
-      query.addEventListener("change", changed);
-    };
-    changed();
-    window.addEventListener("resize", changed);
-    return () => {
-      query.removeEventListener("change", changed);
-      window.removeEventListener("resize", changed);
-    };
-  }, []);
-
-  useEffect(() => {
     applyDisplay();
     const element = frame.current;
     if (!element || !owner || observing) return;
@@ -691,8 +683,6 @@ function Desktop({ environment: c, slots, selectShortcut }: { environment: Envir
   const onFrameLoad = useCallback(() => {
     for (const f of unsubscribe.current) f();
     unsubscribe.current = [];
-    const frameWindow = frame.current?.contentWindow;
-    if (frameWindow) unsubscribe.current.push(installTabShortcuts(frameWindow, selectShortcut));
     const screen = screenOf(frame.current);
     setScreen(screen);
     setKeyboard(false);
@@ -938,7 +928,7 @@ function Desktop({ environment: c, slots, selectShortcut }: { environment: Envir
           {clipOpen && controlling && (
             <ClipboardPopover
               name={c.name}
-              frame={frame.current}
+              frame={frameElement}
               remote={remoteClip}
               onClose={closeClip}
               onSend={(text) => {
@@ -959,7 +949,7 @@ function Desktop({ environment: c, slots, selectShortcut }: { environment: Envir
         <ZoomViewport screen={screen} frame={frame} zoom={zoom} onZoom={setZoom}>
         <iframe
           key={frameKey}
-          ref={frame}
+          ref={frameRef}
           src={frameSrc(c.name)}
           title={`${c.name}'s desktop`}
           allow={frameAllow(observing)}
@@ -970,8 +960,7 @@ function Desktop({ environment: c, slots, selectShortcut }: { environment: Envir
         {observing && <div data-observer-cover class="absolute inset-0 cursor-default" aria-hidden="true" />}
         </ZoomViewport>
       )}
-      {running && !observing && <DropZone environment={c.name} frame={frame} frameKey={frameKey} />}
-      {running && !observing && <ImagePaste environment={c.name} frame={frame} frameKey={frameKey} />}
+      {running && !observing && <DropZone environment={c.name} frame={frameElement} />}
       {showing && zoom === 1 && <ActivityOverlay name={c.name} geometry={() => selkiesScreenGeometry(frame.current)} />}
     </>
   );
