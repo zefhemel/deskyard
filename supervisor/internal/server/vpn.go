@@ -151,7 +151,7 @@ func (s *Server) handleUpdateVPN(w http.ResponseWriter, r *http.Request) {
 				return err
 			}
 			for _, ref := range refs {
-				s.viewers.closeAll(ref.Name)
+				s.conns.closeAll(ref.Name)
 			}
 			return nil
 		})

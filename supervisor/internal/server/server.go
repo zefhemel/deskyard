@@ -43,7 +43,7 @@ type Server struct {
 	vpnTests  vpnTester
 	jobs      *jobs
 	events    *hub
-	viewers   *viewers
+	conns     *connections // live connections, with the desktops' viewers
 	terminals *terminalConnections
 	// terminalSessions caches running environments' shared terminal sessions.
 	terminalSessions *terminalSessions
@@ -66,11 +66,9 @@ type Server struct {
 	davLocks     davLockSystems    // each environment's WebDAV locks
 	davPasswords *davPasswordCache // account passwords WebDAV clients sent that checked out
 
-	activity       *activity.Tracker
-	activityPub    *throttle
-	screenWatchers *viewers   // screen-events streams, closed on revoke like viewers
-	transfers      *transfers // file uploads, closed on revoke
-	seen           *lastSeen  // browser requests, by account ID
+	activity    *activity.Tracker
+	activityPub *throttle
+	seen        *lastSeen // browser requests, by account ID
 
 	api *http.ServeMux
 }
@@ -111,9 +109,9 @@ func New(o Options) (*Server, error) {
 		Log:      o.Log, Eng: o.Eng, Environments: o.Environments, Accounts: o.Accounts,
 		Sessions: &auth.Sessions{Key: key, Secure: o.Secure}, Throttle: &auth.Throttle{},
 		Layout: o.Layout, UI: o.UI,
-		jobs: newJobs(), events: newHub(), viewers: newViewers(), terminals: newTerminalConnections(), forwards: newForwards(), viewersPub: newThrottle(viewersInterval), streamDials: newDialGates(),
+		jobs: newJobs(), events: newHub(), conns: newConnections(), terminals: newTerminalConnections(), forwards: newForwards(), viewersPub: newThrottle(viewersInterval), streamDials: newDialGates(),
 		clients:     &clientFiles{eng: o.Eng, dir: filepath.Join(o.Layout.Cache, "client")},
-		activityPub: newThrottle(activityInterval), screenWatchers: newViewers(), transfers: newTransfers(), cliLogins: newCLILogins(), seen: &lastSeen{at: map[string]time.Time{}},
+		activityPub: newThrottle(activityInterval), cliLogins: newCLILogins(), seen: &lastSeen{at: map[string]time.Time{}},
 		reconcile: make(chan struct{}, 1), davPasswords: newDAVPasswordCache(),
 	}
 	s.activity = s.newActivity(o.ActivityPresence)
@@ -142,6 +140,7 @@ func New(o Options) (*Server, error) {
 		return nil, fmt.Errorf("dropping grants of removed environments: %w", err)
 	}
 	s.credentials.onGone = func(c credential) { s.activity.Forget(c.ID) }
+	s.credentials.closed = s.conns.closeCredential
 	if s.images, err = loadCatalog(o.Layout.Data, o.DefaultImage); err != nil {
 		return nil, err
 	}
@@ -279,29 +278,9 @@ func (l *lastSeen) get(accountID string) time.Time {
 
 // signedIn reports whether the request's sign-in still holds for a, the
 // account as it is now: a browser login ends when a's session epoch moves
-// on. A credential's revocation closes what it opened (trackStream).
+// on. A credential's revocation closes what it opened (track).
 func (p principal) signedIn(a accounts.Account) bool {
 	return p.epoch() == noSession || p.epoch() == a.SessionEpoch
-}
-
-// trackStream registers a long-lived stream opened with a client credential
-// under it, so deleting the credential closes it; the stream checks its
-// account's access itself. The returned request carries the stream's
-// context, and the function unregisters it.
-func (s *Server) trackStream(r *http.Request) (*http.Request, func()) {
-	c, ok := s.credentialOf(r)
-	if !ok {
-		return r, func() {}
-	}
-	ctx, cancel := context.WithCancel(r.Context())
-	untrack := s.credentials.track(c.ID, "", cancel)
-	if !s.credentials.has(c.ID) { // deleted before it was registered
-		cancel()
-	}
-	return r.WithContext(ctx), func() {
-		untrack()
-		cancel()
-	}
 }
 
 // account returns the signed-in account of the request, if any.
@@ -479,22 +458,10 @@ func (s *Server) writeIndex(w http.ResponseWriter) {
 }
 
 // accountsChanged closes the connections of accounts whose access or
-// sessions changed that their level no longer allows, sweeps the shares,
-// links and credentials that depended on them, and refreshes event streams.
+// sessions changed that they no longer allow, sweeps the shares, links and
+// credentials that depended on them, and refreshes event streams.
 func (s *Server) accountsChanged(usernames ...string) {
-	now := time.Now()
-	for _, u := range usernames {
-		a, ok := s.Accounts.Get(u)
-		level := levelOf(a, ok, now)
-		s.terminals.revalidate(s, u)
-		s.transfers.revalidate(s, u)
-		s.viewers.revoke(u, level)
-		s.screenWatchers.revoke(u, level)
-		if ok {
-			s.viewers.endSessions(u, a.ID, a.SessionEpoch)
-			s.screenWatchers.endSessions(u, a.ID, a.SessionEpoch)
-		}
-	}
+	s.revalidate(usernames...)
 	s.sweep()
 	s.events.refresh()
 }

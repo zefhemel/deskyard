@@ -160,27 +160,6 @@ func (t *terminalConnections) logout(c auth.SessionClaims) {
 		}
 	}
 }
-func (t *terminalConnections) revalidate(s *Server, username string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	for c := range t.active {
-		if c.claims.Username == username && !s.terminalAllowed(c) {
-			c.cancel()
-		}
-	}
-}
-
-// closeAccount closes every terminal of the account, as when it should be
-// gone but deleting it failed.
-func (t *terminalConnections) closeAccount(username string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	for c := range t.active {
-		if c.claims.Username == username {
-			c.cancel()
-		}
-	}
-}
 func (t *terminalConnections) shutdown() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -188,11 +167,6 @@ func (t *terminalConnections) shutdown() {
 	for c := range t.active {
 		c.cancel()
 	}
-}
-func (s *Server) terminalAllowed(c *terminalConnection) bool {
-	a, ok := s.Accounts.Usable(c.claims.Username, c.claims.AccountID, time.Now())
-	return ok && a.SessionEpoch == c.claims.Epoch &&
-		auth.Can(a, auth.View, c.environment) && time.Now().Before(c.claims.Expires)
 }
 
 // rename keeps end-session bookkeeping tied to the renamed public session.

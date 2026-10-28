@@ -188,7 +188,7 @@ func TestTerminalWireAndExit(t *testing.T) {
 	if !strings.Contains(strings.Join(spec.Env, " "), "DESKYARD_ACTIVITY=off") {
 		t.Fatal(spec.Env)
 	}
-	if n, _ := s.viewers.snapshot("alice"); n != 1 {
+	if n, _ := s.conns.snapshot("alice"); n != 1 {
 		t.Fatal("missing viewer")
 	}
 	terminalWrite(t, ws, websocket.MessageBinary, "\x00hello\x03")
@@ -251,7 +251,7 @@ func TestTerminalCancellation(t *testing.T) {
 			case "password":
 				s.Accounts.SetPassword("admin", "new")
 			case "stop":
-				s.viewers.closeAll("alice")
+				s.conns.closeAll("alice")
 			case "malformed ack":
 				terminalWrite(t, ws, websocket.MessageText, `{"ack":1}`)
 			}
@@ -262,7 +262,7 @@ func TestTerminalCancellation(t *testing.T) {
 			}
 			deadline := time.Now().Add(time.Second)
 			for {
-				n, _ := s.viewers.snapshot("alice")
+				n, _ := s.conns.snapshot("alice")
 				if n == 0 {
 					break
 				}

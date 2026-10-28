@@ -62,8 +62,15 @@ func (s *Server) serveDAV(w http.ResponseWriter, r *http.Request, name string) {
 	}
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
+	live := &conn{username: a.Username, accountID: a.ID, epoch: noSession, environment: c.Name, need: auth.WebDAV, cancel: cancel}
 	if cred != nil {
-		defer s.credentials.track(cred.ID, c.Name, cancel)()
+		live.credential = cred.ID
+	}
+	done, ok := s.open(live)
+	defer done()
+	if !ok {
+		http.NotFound(w, r)
+		return
 	}
 	r = r.WithContext(ctx)
 	switch r.Method {

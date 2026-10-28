@@ -275,12 +275,12 @@ func TestRevokeShareClosesStream(t *testing.T) {
 		t.Fatalf("credentials %+v", creds)
 	}
 	exec, cancelExec := context.WithCancel(context.Background())
-	defer s.credentials.track(creds[0].ID, "alice", cancelExec)()
+	defer trackConn(s, creds[0], "alice", cancelExec)()
 	stream, cancelStream := context.WithCancel(context.Background())
 	defer cancelStream()
-	cn := &conn{username: "sanne", environment: "alice", level: auth.LevelFull, cancel: cancelStream}
-	s.viewers.add("alice", cn)
-	defer s.viewers.remove("alice", cn)
+	cn := &conn{username: "sanne", environment: "alice", viewer: true, level: auth.LevelFull, cancel: cancelStream}
+	s.conns.add(cn)
+	defer s.conns.remove(cn)
 
 	var shares []shareJSON
 	if getJSON(t, bob, ts.URL+"/api/environments/alice/shares", &shares); len(shares) != 1 || !shares[0].Connected {

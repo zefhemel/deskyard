@@ -179,11 +179,11 @@ func TestCredentialRemoveClosesTrackedConnections(t *testing.T) {
 	s, _ := newTestServer(t)
 	c, _ := issueCredential(t, s, createBob(t, s))
 	ctx, cancel := context.WithCancel(context.Background())
-	defer s.credentials.track(c.ID, "alice", cancel)()
+	defer trackConn(s, c, "alice", cancel)()
 	other, otherCancel := context.WithCancel(context.Background())
 	defer otherCancel()
 	d, _ := issueCredential(t, s, createAccount(t, s, "carol"))
-	defer s.credentials.track(d.ID, "alice", otherCancel)()
+	defer trackConn(s, d, "alice", otherCancel)()
 	if err := s.credentials.remove(func(o credential) bool { return o.ID == c.ID }); err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestCredentialRemoveClosesTrackedConnections(t *testing.T) {
 
 	// A failed write still closes live access, and reports the error.
 	ctx, cancel = context.WithCancel(context.Background())
-	defer s.credentials.track(d.ID, "alice", cancel)()
+	defer trackConn(s, d, "alice", cancel)()
 	s.credentials.path = blockedStatePath(t)
 	if err := s.credentials.remove(func(o credential) bool { return o.ID == d.ID }); err == nil {
 		t.Fatal("remove reported success without persisting")
@@ -206,17 +206,43 @@ func TestCredentialRemoveClosesTrackedConnections(t *testing.T) {
 	}
 }
 
-func TestCredentialCloseWhere(t *testing.T) {
+// trackConn registers a live connection made with credential c to the
+// environment, as exec does; the function unregisters it.
+func trackConn(s *Server, c credential, environment string, cancel context.CancelFunc) func() {
+	cn := &conn{username: c.Username, accountID: c.AccountID, epoch: noSession, credential: c.ID, environment: environment, cancel: cancel}
+	s.conns.add(cn)
+	return func() { s.conns.remove(cn) }
+}
+
+func TestRevalidateClosesWhatIsNoLongerAllowed(t *testing.T) {
 	s, _ := newTestServer(t)
-	c, _ := issueCredential(t, s, createBob(t, s))
+	bob := createBob(t, s)
+	if err := s.Accounts.SetAccess("alice", fullAccess("bob")); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := issueCredential(t, s, accountNamed(t, s, "bob"))
 	onAlice, cancelAlice := context.WithCancel(context.Background())
-	defer s.credentials.track(c.ID, "alice", cancelAlice)()
+	defer cancelAlice()
+	defer trackConn(s, c, "alice", cancelAlice)()
 	onBeta, cancelBeta := context.WithCancel(context.Background())
 	defer cancelBeta()
-	defer s.credentials.track(c.ID, "beta", cancelBeta)()
-	s.credentials.closeWhere(c.ID, func(env string) bool { return env == "alice" })
-	if onAlice.Err() == nil || onBeta.Err() != nil {
-		t.Fatalf("closeWhere alice: alice %v, beta %v", onAlice.Err(), onBeta.Err())
+	defer trackConn(s, c, "beta", cancelBeta)()
+	stream, cancelStream := context.WithCancel(context.Background())
+	defer cancelStream()
+	defer trackConn(s, c, "", cancelStream)()
+	s.revalidate()
+	if onAlice.Err() != nil || onBeta.Err() == nil || stream.Err() != nil {
+		t.Fatalf("revalidate: alice %v, beta %v, stream %v", onAlice.Err(), onBeta.Err(), stream.Err())
+	}
+	s.revalidate("someone-else")
+	if onAlice.Err() != nil {
+		t.Fatal("revalidating another account closed bob's connection")
+	}
+	if err := s.Accounts.Delete(bob.Username); err != nil {
+		t.Fatal(err)
+	}
+	if onAlice.Err() == nil || stream.Err() == nil {
+		t.Fatalf("bob's connections after his deletion: alice %v, stream %v", onAlice.Err(), stream.Err())
 	}
 }
 
@@ -226,7 +252,7 @@ func TestCredentialRetain(t *testing.T) {
 	keep, _ := issueCredential(t, s, bob)
 	drop, _ := issueCredential(t, s, createAccount(t, s, "carol"))
 	ctx, cancel := context.WithCancel(context.Background())
-	defer s.credentials.track(drop.ID, "alice", cancel)()
+	defer trackConn(s, drop, "alice", cancel)()
 	if err := s.credentials.retain(func(c credential) bool { return c.AccountID == bob.ID }); err != nil {
 		t.Fatal(err)
 	}

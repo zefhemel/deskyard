@@ -63,7 +63,7 @@ func TestShareEndsWhenSharerLosesAccess(t *testing.T) {
 	}
 	share, c := createShare(t, s, bob, "sanne", auth.LevelObserve)
 	ctx, cancel := context.WithCancel(context.Background())
-	defer s.credentials.track(c.ID, "alice", cancel)()
+	defer trackConn(s, c, "alice", cancel)()
 	admin, _ := s.Accounts.Get("admin")
 	byAdmin, _ := createShare(t, s, admin, "carla", auth.LevelFull)
 
@@ -156,7 +156,7 @@ func TestSweepClosesCredentialConnectionsTheLevelNoLongerAllows(t *testing.T) {
 	}
 	c, _ := issueCredential(t, s, bob)
 	ctx, cancel := context.WithCancel(context.Background())
-	defer s.credentials.track(c.ID, "alice", cancel)()
+	defer trackConn(s, c, "alice", cancel)()
 	if err := s.Accounts.SetAccess("alice", map[string]auth.Level{"bob": auth.LevelObserve}); err != nil {
 		t.Fatal(err)
 	}
@@ -173,12 +173,12 @@ func TestExpiredShareDeletedAndConnectionsClosed(t *testing.T) {
 	admin, _ := s.Accounts.Get("admin")
 	share, c := createShare(t, s, admin, "sanne", auth.LevelFull)
 	ctx, cancel := context.WithCancel(context.Background())
-	defer s.credentials.track(c.ID, "alice", cancel)()
+	defer trackConn(s, c, "alice", cancel)()
 	stream, cancelStream := context.WithCancel(context.Background())
 	defer cancelStream()
-	cn := &conn{username: "sanne", environment: "alice", level: auth.LevelFull, cancel: cancelStream}
-	s.viewers.add("alice", cn)
-	defer s.viewers.remove("alice", cn)
+	cn := &conn{username: "sanne", environment: "alice", viewer: true, level: auth.LevelFull, cancel: cancelStream}
+	s.conns.add(cn)
+	defer s.conns.remove(cn)
 	expire(t, s, "sanne")
 	if ctx.Err() != nil || stream.Err() != nil {
 		t.Fatal("the connections closed before the expiry tick")
@@ -195,12 +195,12 @@ func TestExpiryClosesConnectionsWhenTheDeletionFails(t *testing.T) {
 	admin, _ := s.Accounts.Get("admin")
 	_, c := createShare(t, s, admin, "sanne", auth.LevelFull)
 	ctx, cancel := context.WithCancel(context.Background())
-	defer s.credentials.track(c.ID, "alice", cancel)()
+	defer trackConn(s, c, "alice", cancel)()
 	stream, cancelStream := context.WithCancel(context.Background())
 	defer cancelStream()
-	cn := &conn{username: "sanne", environment: "alice", level: auth.LevelFull, cancel: cancelStream}
-	s.viewers.add("alice", cn)
-	defer s.viewers.remove("alice", cn)
+	cn := &conn{username: "sanne", environment: "alice", viewer: true, level: auth.LevelFull, cancel: cancelStream}
+	s.conns.add(cn)
+	defer s.conns.remove(cn)
 	expire(t, s, "sanne")
 	blockAccountsFile(t, s)
 	if ctx.Err() != nil || stream.Err() != nil {
@@ -315,6 +315,11 @@ func TestDowngradeClosesViewerStream(t *testing.T) {
 		t.Fatal("the terminal wasn't registered")
 	}
 	defer s.terminals.remove(tc)
+	// As handleTerminal does: the terminal is a viewer of its desktop.
+	viewer := &conn{username: "bob", accountID: bob.ID, epoch: bob.SessionEpoch, expires: tc.claims.Expires, environment: "alice",
+		level: auth.LevelFull, viewer: true, cancel: cancelTerm}
+	s.conns.add(viewer)
+	defer s.conns.remove(viewer)
 	if _, err := s.Accounts.Update("bob", func(a *accounts.Account) { a.Description = "colleague" }); err != nil {
 		t.Fatal(err)
 	}
@@ -323,14 +328,14 @@ func TestDowngradeClosesViewerStream(t *testing.T) {
 	}
 	full, cancelFull := context.WithCancel(context.Background())
 	defer cancelFull()
-	stream := &conn{username: "bob", environment: "alice", level: auth.LevelFull, cancel: cancelFull}
-	s.viewers.add("alice", stream)
-	defer s.viewers.remove("alice", stream)
+	stream := &conn{username: "bob", environment: "alice", viewer: true, level: auth.LevelFull, cancel: cancelFull}
+	s.conns.add(stream)
+	defer s.conns.remove(stream)
 	watch, cancelWatch := context.WithCancel(context.Background())
 	defer cancelWatch()
 	watcher := &conn{username: "bob", environment: "alice", level: auth.LevelFull, cancel: cancelWatch}
-	s.screenWatchers.add("alice", watcher)
-	defer s.screenWatchers.remove("alice", watcher)
+	s.conns.add(watcher)
+	defer s.conns.remove(watcher)
 	if err := s.Accounts.SetAccess("alice", map[string]auth.Level{"bob": auth.LevelObserve}); err != nil {
 		t.Fatal(err)
 	}
@@ -342,16 +347,16 @@ func TestDowngradeClosesViewerStream(t *testing.T) {
 	observing, cancelObserving := context.WithCancel(context.Background())
 	defer cancelObserving()
 	bob, _ = s.Accounts.Get("bob")
-	obs := &conn{username: "bob", accountID: bob.ID, epoch: bob.SessionEpoch, environment: "alice", level: auth.LevelObserve, cancel: cancelObserving}
-	s.viewers.add("alice", obs)
-	defer s.viewers.remove("alice", obs)
+	obs := &conn{username: "bob", accountID: bob.ID, epoch: bob.SessionEpoch, environment: "alice", viewer: true, level: auth.LevelObserve, cancel: cancelObserving}
+	s.conns.add(obs)
+	defer s.conns.remove(obs)
 	if _, err := s.Accounts.Update("bob", func(a *accounts.Account) { a.Description = "a colleague" }); err != nil {
 		t.Fatal(err)
 	}
 	if observing.Err() != nil {
 		t.Fatal("an unrelated change closed an observer's stream")
 	}
-	if got := s.viewers.observers("alice"); len(got) != 1 || got[0] != "bob" {
+	if got := s.conns.observers("alice"); len(got) != 1 || got[0] != "bob" {
 		t.Fatalf("observers %v", got)
 	}
 }
@@ -460,7 +465,7 @@ func TestRemovalWhoseFolderDeletionFailsStillPurgesAccess(t *testing.T) {
 	}
 	c, _ := issueCredential(t, s, accountNamed(t, s, "anna"))
 	conn, cancel := context.WithCancel(context.Background())
-	defer s.credentials.track(c.ID, "alice", cancel)()
+	defer trackConn(s, c, "alice", cancel)()
 	s.activity.Inside(activity.Ref{Name: "alice", ID: "alice"}, activity.Event{Agent: "terminal", Kind: "cmd-start", ID: "cmd", Cmd: "sleep", T: time.Now()})
 	if len(s.activity.Present("alice")) == 0 {
 		t.Fatal("test did not record activity")
@@ -554,7 +559,7 @@ func trackCredential(t *testing.T, s *Server, a accounts.Account, environment st
 	c, _ := issueCredential(t, s, a)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	t.Cleanup(s.credentials.track(c.ID, environment, cancel))
+	t.Cleanup(trackConn(s, c, environment, cancel))
 	return ctx
 }
 

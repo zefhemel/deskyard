@@ -9,25 +9,12 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
-	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 )
 
-// levelOf is how far the account (ok: it exists) may use the named
-// environment now; an expired account may use nothing.
-func levelOf(a accounts.Account, ok bool, now time.Time) func(environment string) auth.Level {
-	return func(environment string) auth.Level {
-		if !ok || a.Expired(now) {
-			return auth.LevelNone
-		}
-		return a.Level(environment)
-	}
-}
-
 // sweep makes links, credentials and shares follow the accounts: it deletes
-// the shares whose sharer lost them, the links and credentials whose account
-// is gone (also when one of the same name replaced it), and closes the
-// connections credentials hold to environments their account may no longer
-// use fully. It runs on every account change and once at startup, and first
+// the shares whose sharer lost them and the links and credentials whose
+// account is gone (also when one of the same name replaced it), and closes
+// the live connections their accounts no longer allow. It runs on every account change and once at startup, and first
 // retries saving the revocations the accounts hold unsaved. Failed writes
 // are logged; an orphaned share is refused (and held deleted) all the same.
 func (s *Server) sweep() {
@@ -50,26 +37,9 @@ func (s *Server) sweep() {
 	if err := s.credentials.retain(func(c credential) bool { return current(c.Username, c.AccountID) }); err != nil {
 		s.Log.Error("deleting client credentials of deleted accounts", "err", err)
 	}
-	for _, c := range s.credentials.list("") {
-		a, ok := s.Accounts.Usable(c.Username, c.AccountID, now)
-		level := levelOf(a, ok, now)
-		s.credentials.closeWhere(c.ID, func(environment string) bool { return environment != "" && level(environment) != auth.LevelFull })
-	}
-}
-
-// closeAccount closes every live connection of the account, when it should
-// be gone but deleting it failed.
-func (s *Server) closeAccount(username string) {
-	none := func(string) auth.Level { return auth.LevelNone }
-	s.viewers.revoke(username, none)
-	s.screenWatchers.revoke(username, none)
-	s.terminals.closeAccount(username)
-	s.transfers.closeAccount(username)
-	for _, c := range s.credentials.list("") {
-		if c.Username == username {
-			s.credentials.closeWhere(c.ID, func(string) bool { return true })
-		}
-	}
+	// Shares orphaned or expired by others' changes, and accounts expired
+	// by time, may have connections of their own.
+	s.revalidate()
 }
 
 // expireLoop deletes accounts as they expire, which ends their access, and

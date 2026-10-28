@@ -29,8 +29,8 @@ type remoteHandler func(w http.ResponseWriter, r *http.Request, c environments.E
 
 // remote authenticates a remote access route (exec, forward, CDP, status):
 // a client credential only, since a browser has no use for them. The
-// connection is registered under the credential before access is checked,
-// so a revocation at any point after the check closes it.
+// connection is registered, and its access checked again, before it is
+// served, so a revocation at any point after the first check closes it.
 func (s *Server) remote(next remoteHandler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		bearer, ok := bearerOf(r)
@@ -42,19 +42,15 @@ func (s *Server) remote(next remoteHandler) http.Handler {
 			}
 			return
 		}
-		id, _, ok := auth.ParseBearer(credentialPrefix, bearer)
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "the credential is unknown, revoked or expired")
-			return
-		}
 		ctx, cancel := context.WithCancel(r.Context())
 		defer cancel()
-		defer s.credentials.track(id, r.PathValue("name"), cancel)()
 		rr, c, cred, ok := s.remoteTarget(w, r.WithContext(ctx), bearer)
 		if !ok {
 			return
 		}
-		if ctx.Err() != nil {
+		done, ok := s.open(s.connOf(rr, c.Name, cancel))
+		defer done()
+		if !ok {
 			// Revoked while the environment was looked up: answer as the
 			// request would now.
 			if _, _, _, ok := s.remoteTarget(w, r, bearer); ok {

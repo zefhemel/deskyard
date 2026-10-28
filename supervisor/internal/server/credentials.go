@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"crypto/subtle"
 	"errors"
 	"io/fs"
@@ -34,25 +33,20 @@ type credential struct {
 	Link string `json:"link,omitempty"`
 }
 
-// credentialConn is a live connection made with a credential.
-type credentialConn struct {
-	environment string
-	cancel      context.CancelFunc
-}
-
 type credentialStore struct {
-	mu     sync.Mutex
-	path   string
-	all    []credential
-	open   map[string]map[int]credentialConn // credential ID → its live connections
-	nextID int
+	mu   sync.Mutex
+	path string
+	all  []credential
 
 	// onGone is called, with no lock held, for every credential deleted.
 	onGone func(credential)
+	// closed is called, with no lock held, with every credential removed,
+	// also when that couldn't be saved: its live connections close.
+	closed func(id string)
 }
 
 func loadCredentials(dataDir string) (*credentialStore, error) {
-	cs := &credentialStore{path: filepath.Join(dataDir, "credentials.json"), open: map[string]map[int]credentialConn{}}
+	cs := &credentialStore{path: filepath.Join(dataDir, "credentials.json")}
 	var f struct {
 		Credentials []credential `json:"credentials"`
 	}
@@ -161,13 +155,12 @@ func (cs *credentialStore) remove(fn func(credential) bool) error {
 	if err == nil {
 		cs.all = keep
 	}
-	for _, c := range gone {
-		for _, conn := range cs.open[c.ID] {
-			conn.cancel()
-		}
-		delete(cs.open, c.ID)
-	}
 	cs.mu.Unlock()
+	if cs.closed != nil {
+		for _, c := range gone {
+			cs.closed(c.ID)
+		}
+	}
 	if err == nil && cs.onGone != nil {
 		for _, c := range gone {
 			cs.onGone(c)
@@ -181,58 +174,9 @@ func (cs *credentialStore) retain(valid func(c credential) bool) error {
 	return cs.remove(func(c credential) bool { return !valid(c) })
 }
 
-// track registers a live connection of credential id to the environment so
-// revocation closes it; the returned function unregisters it. A connection
-// to no environment ("") closes only when the credential or its account
-// goes: it checks its access itself.
-func (cs *credentialStore) track(id, environment string, cancel context.CancelFunc) func() {
-	cs.mu.Lock()
-	cs.nextID++
-	n := cs.nextID
-	if cs.open[id] == nil {
-		cs.open[id] = map[int]credentialConn{}
-	}
-	cs.open[id][n] = credentialConn{environment: environment, cancel: cancel}
-	cs.mu.Unlock()
-	return func() {
-		cs.mu.Lock()
-		defer cs.mu.Unlock()
-		delete(cs.open[id], n)
-		if len(cs.open[id]) == 0 {
-			delete(cs.open, id)
-		}
-	}
-}
-
 // has reports whether credential id is still on file.
 func (cs *credentialStore) has(id string) bool {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	return slices.ContainsFunc(cs.all, func(c credential) bool { return c.ID == id })
-}
-
-// closeWhere closes the connections of credential id to the environments fn
-// accepts, such as those its account lost access to.
-func (cs *credentialStore) closeWhere(id string, fn func(environment string) bool) {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
-	for n, conn := range cs.open[id] {
-		if fn(conn.environment) {
-			conn.cancel()
-			delete(cs.open[id], n)
-		}
-	}
-}
-
-// connected reports whether any credential of the account with this ID has
-// a live connection open.
-func (cs *credentialStore) connected(accountID string) bool {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
-	for _, c := range cs.all {
-		if c.AccountID == accountID && len(cs.open[c.ID]) > 0 {
-			return true
-		}
-	}
-	return false
 }

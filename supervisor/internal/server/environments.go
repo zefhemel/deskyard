@@ -80,8 +80,8 @@ func (s *Server) environmentJSON(ctx context.Context, c environments.Environment
 		VPN:      c.VPN,
 		Settings: settingsJSON{MemoryBytes: c.Settings.MemoryBytes, NanoCPUs: c.Settings.NanoCPUs, LANExceptions: c.Settings.LANExceptions, DockerAccess: c.Settings.DockerAccess, Volumes: c.Settings.Volumes},
 		Level:    a.Level(c.Name),
-		Access:   []accessGrant{}, Viewers: s.viewers.names(c.Name), Observers: s.viewers.observers(c.Name),
-		Mics: s.viewers.mics(c.Name), Forwards: s.forwards.list(c.Name), Agents: s.activity.Present(c.Name),
+		Access:   []accessGrant{}, Viewers: s.conns.names(c.Name), Observers: s.conns.observers(c.Name),
+		Mics: s.conns.mics(c.Name), Forwards: s.forwards.list(c.Name), Agents: s.activity.Present(c.Name),
 	}
 	if c.Settings.VPNConnectionID != "" {
 		id := c.Settings.VPNConnectionID
@@ -387,7 +387,7 @@ func (s *Server) startRecreate(w http.ResponseWriter, a accounts.Account, name s
 			release()
 			s.publishEnvironment(ctx, name)
 		}()
-		s.viewers.closeAll(name)
+		s.conns.closeAll(name)
 		_, err := s.Environments.Recreate(ctx, name, set, progress)
 		if err == nil {
 			s.Log.Info("recreated", "environment", name, "image", set.Image, "by", a.Username)
@@ -432,7 +432,7 @@ func (s *Server) handleRemoveEnvironment(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	defer release()
-	s.viewers.closeAll(c.Name)
+	s.conns.closeAll(c.Name)
 	ctx, cancel := removalContext(r)
 	defer cancel()
 	if err := s.Environments.Remove(ctx, c.Name, r.URL.Query().Get("files") == "1"); err != nil {
@@ -479,10 +479,10 @@ func (s *Server) handlePower(w http.ResponseWriter, r *http.Request) {
 	case "start":
 		err = s.Environments.Start(ctx, c.Name)
 	case "stop":
-		s.viewers.closeAll(c.Name)
+		s.conns.closeAll(c.Name)
 		err = s.Environments.Stop(ctx, c.Name)
 	case "restart":
-		s.viewers.closeAll(c.Name)
+		s.conns.closeAll(c.Name)
 		err = s.Environments.Restart(ctx, c.Name)
 	}
 	if err != nil {

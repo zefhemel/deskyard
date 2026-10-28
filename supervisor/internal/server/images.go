@@ -585,7 +585,7 @@ func (s *Server) handleUpgradeImage(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			s.publishEnvironment(ctx, c.Name)
-			s.viewers.closeAll(c.Name)
+			s.conns.closeAll(c.Name)
 			_, err = s.Environments.Recreate(ctx, c.Name, c.Settings, func(msg string, _ float64) {
 				progress(c.Name+": "+msg, float64(i)/float64(len(behind)))
 			})

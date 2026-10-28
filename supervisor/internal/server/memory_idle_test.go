@@ -38,8 +38,9 @@ func TestIdleMemoryReclaim(t *testing.T) {
 			v := &conn{username: "admin"}
 			switch blocker {
 			case "viewer":
-				s.viewers.add("bob", v)
-				s.viewers.remove("bob", v)
+				v.environment, v.viewer = "bob", true
+				s.conns.add(v)
+				s.conns.remove(v)
 			case "operation":
 				if err := s.Environments.Begin("bob", ""); err != nil {
 					t.Fatal(err)
@@ -113,8 +114,9 @@ func TestIdleMemoryViewerAndRestartReset(t *testing.T) {
 		t.Fatal("first attempt missing")
 	}
 	viewer := &conn{}
-	s.viewers.add("bob", viewer)
-	s.viewers.remove("bob", viewer)
+	viewer.environment, viewer.viewer = "bob", true
+	s.conns.add(viewer)
+	s.conns.remove(viewer)
 	tick()
 	now = now.Add(14 * time.Minute)
 	tick()
