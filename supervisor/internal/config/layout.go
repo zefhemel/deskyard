@@ -20,7 +20,7 @@ import (
 type Layout struct {
 	Data   string
 	Secret string // 0700: session key, proxy tokens, VPN credentials, TLS storage
-	State  string // 0700: instance ID, recovery and network journals, VPN scratch
+	State  string // 0700: instance ID, recovery/network journals, VPN scratch, mounted CLI builds
 	Cache  string // disposable: Selkies web clients extracted from images
 	Home   string // home/<name>: each environment's /workspace
 	Volume string // volume/<name>: each named volume's data

@@ -19,6 +19,7 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/config"
+	"github.com/zefhemel/deskyard/supervisor/internal/desktopcli"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine/docker"
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
@@ -129,6 +130,9 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	if err := cfg.Layout.Prepare(); err != nil {
+		return err
+	}
+	if err := desktopcli.Publish(desktopcli.Source, cfg.Layout.State); err != nil {
 		return err
 	}
 	instance, err := config.InstanceID(cfg.Layout)

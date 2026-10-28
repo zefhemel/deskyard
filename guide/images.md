@@ -46,7 +46,7 @@ conditions, viewer/browser measurements and screenshots. New registry tags
 become available after the image workflow publishes from `main`; local Bake
 builds use `deskyard-debian-xfce:dev`.
 
-CI rebuilds it weekly (Debian security updates) and on every change, tagged `latest` and with the date
+CI rebuilds it weekly (Debian security updates) and when desktop image inputs change, tagged `latest` and with the date
 (`2026.10.22`). The supervisor pulls updates for downloaded registry images daily, or when you
 choose **Pull updates**. Images not yet downloaded stay undownloaded, and
 legacy locally built catalog entries are skipped. The Images page shows a
@@ -86,6 +86,14 @@ keep working across Debian versions; if one breaks, reinstall it.
 Any image can be added to the catalog if it follows the image contract
 (label `deskyard.contract=3`, user `user` with home `/workspace`,
 Selkies behind Caddy on 8080); see [Custom images](#custom-images).
+
+Current desktop images receive `deskyard` from the supervisor through a read-only
+runtime mount (`deskyard.cli=runtime-v1`), selected by the image's architecture.
+CLI changes therefore require updating or restarting the supervisor, without a
+desktop image rebuild. Older images keep their baked-in CLI until a one-time
+image **Upgrade** recreates their container with the runtime mount. Runtime-capable
+images require an updated supervisor. When running one directly with Docker,
+supply the CLI directory yourself; see [Development](development.md).
 
 Images this project builds carry the label `deskyard.kind`: `desktop` for
 the desktop image and `supervisor` for the supervisor. List them with

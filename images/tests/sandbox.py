@@ -120,7 +120,11 @@ def run_args(image: str, *, home: str, env: dict[str, str] | None = None,
             "-v", f"{home}:/workspace", "-p", "127.0.0.1::8080",
             "--security-opt", f"seccomp={SECCOMP}", "--security-opt", "apparmor=unconfined",
             "--security-opt", "systempaths=unconfined"]
-    if json.loads(docker("image", "inspect", image).stdout)[0]["Config"]["Labels"].get("deskyard.fuse") == "userns-v1":
+    info = json.loads(docker("image", "inspect", image).stdout)[0]
+    if info["Config"]["Labels"].get("deskyard.cli") == "runtime-v1":
+        cli = ROOT / "supervisor" / "bin" / "desktop-cli" / f"linux-{info['Architecture']}"
+        argv += ["--mount", f"type=bind,src={cli},dst=/opt/deskyard/cli,readonly"]
+    if info["Config"]["Labels"].get("deskyard.fuse") == "userns-v1":
         argv += ["--device", "/dev/fuse"]
     for k, v in (DEFAULT_ENV if env is None else env).items():
         argv += ["-e", f"{k}={v}"]

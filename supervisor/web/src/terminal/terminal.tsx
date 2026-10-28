@@ -19,6 +19,7 @@ import {
 } from "./keys.ts";
 import { KeyBar, terminalKeys } from "./key-bar.tsx";
 import { terminalLayout } from "./viewport.ts";
+import { installTouchScroll } from "./touch-scroll.ts";
 
 // Text size, remembered per browser and shared by every open terminal tab.
 const FONT_KEY = "deskyard.terminal.fontSize";
@@ -156,6 +157,7 @@ export function TerminalPane({ name, session, active, create, slots, alive, onSt
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host.current);
+    const disposeTouchScroll = installTouchScroll(term.element!);
     terminal.current = term;
     term.textarea?.setAttribute("aria-label", "Terminal input");
     // Consume OSC 52 before any clipboard integration. No link addon or title handler.
@@ -284,6 +286,7 @@ export function TerminalPane({ name, session, active, create, slots, alive, onSt
       data.dispose();
       binary.dispose();
       clipboard.dispose();
+      disposeTouchScroll();
       term.dispose();
       terminal.current = null;
       connection.current = null;

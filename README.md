@@ -19,7 +19,7 @@ button keeps the tab bar and current view together.
   mic, gamepads, clipboard, file upload (including pasted screenshots), and touch controls on
   phones and tablets, with automatic stream quality, Retina scaling and a 1×/2× override.
 - **Shared terminals** next to the desktop, with trackpad scrolling through
-  history and touch keyboard helpers that stay hidden by default on desktops, joinable from the
+  history, finger swiping on phones, and touch keyboard helpers that stay hidden by default on desktops, joinable from the
   browser, desktop or your own terminal. Switch views with Ctrl+Shift+1–9; rename a session or detach without ending it from its tab’s dropdown.
 - **One shared Chromium** whose tabs and sign-ins stay with the environment.
   It starts when you open it or connect through browser tools.
@@ -111,7 +111,7 @@ on <http://localhost:7343>, with the data folder `test-instance/` next to
 `supervisor/`. Run it again after every edit: it takes a few seconds and needs
 no image build. `DEV_DATA`, `DEV_PORT` and `DEV_NAME` choose another data
 folder, port and container name, for a second instance. Compose users run
-`make linux` and then `docker compose up -d` with
+`make linux` and then `docker compose up -d --force-recreate` with
 [`supervisor/compose.yaml`](supervisor/compose.yaml).
 
 To build a desktop image from the checkout, run `docker buildx bake --load` in
@@ -121,7 +121,8 @@ the **Images** page. Tests and the rest of the workflow:
 
 ## The `deskyard` command
 
-Inside an environment it's already there. On your own Linux or macOS machine:
+Inside an environment it's already there, supplied by the supervisor at runtime
+so CLI updates need no desktop image rebuild. On your own Linux or macOS machine:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/zefhemel/deskyard/main/install.sh | sh

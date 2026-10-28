@@ -225,7 +225,8 @@ class Supervisor:
         docker("rm", "-f", self.container, check=False)  # one that crashed or was killed
         args = ["run", "-d", "--name", self.container, "-p", f"127.0.0.1:{self.port}:7343",
                 "-v", "/var/run/docker.sock:/var/run/docker.sock", "-v", f"{self.data}:/data",
-                "-v", f"{SUPERVISOR_BIN}:/usr/local/bin/deskyard-supervisor:ro"]
+                "-v", f"{SUPERVISOR_BIN}:/usr/local/bin/deskyard-supervisor:ro",
+                "-v", f"{BIN / 'desktop-cli'}:/opt/deskyard/cli:ro"]
         for k, v in env.items():
             args += ["-e", f"{k}={v}"]
         docker(*args, SUPERVISOR_IMAGE)

@@ -295,6 +295,7 @@ func TestVPNPairedEngineLifecycle(t *testing.T) {
 	cfg := Config{DataDir: dir, Subnet: "10.217.0.0/16"}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	s := New(e, cfg, log)
+	publishTestCLI(t, s)
 	s.Instance = "test-" + e.scope[:8]
 	state := s.Layout.State
 	store, err := vpn.NewStore(filepath.Join(dir, "networks.json"), s.Layout.Secret)
