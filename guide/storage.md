@@ -131,9 +131,8 @@ listed as a warning. Each snapshot can be:
   **Back up the current files first** (on by default) makes it undoable. An
   environment's settings don't change;
 - **restored as new**: a new environment (left stopped, getting its container on
-  its first start, with the saved image and
-  resources; VPN, Docker access and grants of missing volumes are dropped) or
-  volume, leaving the original alone.
+  its first start, with the saved image and resources; VPN, Docker access and
+  grants of missing volumes are dropped) or volume, leaving the original alone.
 
 **Other backups** on the Backups tab lists what the repositories hold besides
 this Deskyard's current environments and volumes (removed ones, other
