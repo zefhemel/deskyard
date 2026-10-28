@@ -1,11 +1,9 @@
 package server
 
 import (
-	"archive/tar"
 	"bytes"
 	"context"
 	"io"
-	"io/fs"
 	"log/slog"
 	"net/http/httptest"
 	"os"
@@ -27,8 +25,7 @@ import (
 // resolve for real.
 type filesEngine struct {
 	fakeEngine
-	root    string // the folder standing in for /workspace, symlinks resolved
-	tarExit int    // tar's exit code after a complete archive (1: "file changed as we read it")
+	root string // the folder standing in for /workspace, symlinks resolved
 }
 
 func (e *filesEngine) Inspect(ctx context.Context, id string) (engine.Container, error) {
@@ -117,52 +114,6 @@ func (e *filesEngine) Exec(_ context.Context, _ string, spec engine.ExecSpec) (*
 			break
 		}
 		out.Write(b)
-	case "tar": // tar [flags] -C DIR -cf - .
-		var dir string
-		flags := map[string]bool{}
-		for i := 1; i < len(spec.Cmd); i++ {
-			if spec.Cmd[i] == "-C" {
-				dir = e.host(spec.Cmd[i+1])
-				i++
-			} else {
-				flags[spec.Cmd[i]] = true
-			}
-		}
-		tw := tar.NewWriter(&out)
-		var seen []os.FileInfo
-		_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-			rel, _ := filepath.Rel(dir, p)
-			fi, _ := os.Lstat(p)
-			if d.Name() == "unreadable" {
-				if !flags["--ignore-failed-read"] {
-					code, stderr = 2, "tar: unreadable: Permission denied"
-				}
-				return nil
-			}
-			h, _ := tar.FileInfoHeader(fi, "")
-			h.Name = "./" + rel
-			if rel == "." {
-				h.Name = "./"
-			}
-			if fi.Mode().IsRegular() && !flags["--hard-dereference"] {
-				for k, o := range seen { // GNU tar's second name of a hard link is a header only
-					if os.SameFile(o, fi) {
-						h.Typeflag, h.Linkname, h.Size = tar.TypeLink, "./"+strconv.Itoa(k), 0
-					}
-				}
-				seen = append(seen, fi)
-			}
-			_ = tw.WriteHeader(h)
-			if fi.Mode().IsRegular() && h.Typeflag == tar.TypeReg {
-				b, _ := os.ReadFile(p)
-				_, _ = tw.Write(b)
-			}
-			return nil
-		})
-		_ = tw.Close()
-		if code == 0 {
-			code = e.tarExit
-		}
 	case "rm": // rm -f -- PATH
 		_ = os.Remove(e.host(args[len(args)-1]))
 	case "sh": // sh -c SCRIPT sh ARGS...: run for real, with /workspace paths mapped to the stand-in folder

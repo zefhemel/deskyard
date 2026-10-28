@@ -3,10 +3,8 @@
 package environments
 
 import (
-	"archive/tar"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -15,7 +13,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -272,81 +269,6 @@ func waitFor(t *testing.T, ok func() bool) {
 	t.Fatal("timed out")
 }
 
-func TestFolderTar(t *testing.T) {
-	s := newService(t)
-	ctx := context.Background()
-	name := "cct-" + randomHex(3)
-	folder := s.Layout.HomeOf(name)
-	_ = os.MkdirAll(filepath.Join(folder, ".config/app"), 0o755)
-	_ = os.WriteFile(filepath.Join(folder, ".config/app/settings.json"), []byte("hi"), 0o644)
-	_ = os.WriteFile(filepath.Join(folder, "private"), []byte("secret"), 0o600)
-	_ = os.Symlink("/etc/passwd", filepath.Join(folder, "link"))
-
-	rc, err := s.FolderTar(ctx, name)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := map[string]string{}
-	tr := tar.NewReader(rc)
-	for {
-		h, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		b, _ := io.ReadAll(tr)
-		got[h.Name] = string(b) + h.Linkname
-	}
-	if err := rc.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if got["./.config/app/settings.json"] != "hi" || got["./private"] != "secret" || got["./link"] != "/etc/passwd" {
-		t.Errorf("tar: %v", got)
-	}
-	// The helper is gone, and the folder is as it was (mounted read-only).
-	cs, _ := s.Eng.List(ctx, nil)
-	for _, c := range cs {
-		if strings.HasPrefix(c.Name, "deskyard-read-") {
-			t.Errorf("helper %s left behind", c.Name)
-		}
-	}
-	if _, err := s.FolderTar(ctx, "cct-missing"); err == nil {
-		t.Error("a missing folder read without error")
-	}
-
-	// Some paths only, in that order; a second name is a hard link.
-	if err := os.Link(filepath.Join(folder, "private"), filepath.Join(folder, "again")); err != nil {
-		t.Fatal(err)
-	}
-	rc, err = s.FolderTar(ctx, name, "private", "./.config/app/settings.json", "again")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var names []string
-	tr = tar.NewReader(rc)
-	for {
-		h, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		b, _ := io.ReadAll(tr)
-		names = append(names, fmt.Sprintf("%s %c %s%s", h.Name, h.Typeflag, b, h.Linkname))
-	}
-	if err := rc.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if want := []string{"./private 0 secret", "./.config/app/settings.json 0 hi", "./again 1 ./private"}; !slices.Equal(names, want) {
-		t.Errorf("paths: %q, want %q", names, want)
-	}
-}
-
-// Recovery uses only the journal and the engine after the supervisor dies
-// between parking the old container and creating its replacement.
 func TestRecoverInterruptedReplacement(t *testing.T) {
 	skipWithoutRouteToBridge(t)
 	s := newService(t)

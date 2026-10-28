@@ -35,7 +35,7 @@ func TestExecStreamCancellationReleasesConsumerAndStderr(t *testing.T) {
 			defer cancel()
 			done := make(chan error, 1)
 			go func() {
-				done <- s.execStream(ctx, environments.Environment{}, 0, []string{"query"}, func(r io.Reader) error {
+				done <- s.execStream(ctx, environments.Environment{}, []string{"query"}, func(r io.Reader) error {
 					close(entered)
 					if mode == "stderr" {
 						return nil

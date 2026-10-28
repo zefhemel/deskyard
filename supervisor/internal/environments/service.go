@@ -12,7 +12,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -1270,107 +1269,6 @@ func (s *Service) ensureHelper(ctx context.Context) error {
 		return s.Eng.Pull(ctx, helperImage, nil)
 	}
 	return nil
-}
-
-// FolderTar streams an environment's folder as a tar archive (names relative to
-// the folder, starting with "./"), read in a helper container of alpine as
-// root, for when the supervisor can't read the files itself. The folder is
-// mounted read-only, and the helper has no network. Close removes the helper, and reports a failed or
-// incomplete read.
-//
-// With paths (relative to the folder, as "./a/b" or "a/b"), only those go in
-// the archive, in that order. Names with a newline can't be asked for.
-//
-// A file with several names in the archive has its content once, at the
-// first; the others are hard links (tar.TypeLink) to it.
-func (s *Service) FolderTar(ctx context.Context, name string, paths ...string) (io.ReadCloser, error) {
-	var list strings.Builder
-	for _, p := range paths {
-		if strings.Contains(p, "\n") {
-			return nil, fmt.Errorf("can't read %q: a newline in its name", p)
-		}
-		list.WriteString("./" + strings.TrimPrefix(p, "./") + "\n")
-	}
-	folder := s.Layout.HomeOf(name)
-	if st, err := os.Stat(folder); err != nil || !st.IsDir() {
-		return nil, fmt.Errorf("%s has no folder", name)
-	}
-	if err := s.ensureHelper(ctx); err != nil {
-		return nil, err
-	}
-	hname := "deskyard-read-" + randomHex(4)
-	if _, err := s.Eng.Create(ctx, engine.ContainerSpec{
-		Name: hname, Image: helperImage, Cmd: []string{"sleep", "86400"}, Network: "none",
-		Mounts: []engine.Mount{{Source: folder, Target: "/home-src", ReadOnly: true}},
-	}); err != nil {
-		return nil, err
-	}
-	remove := func() { _ = s.Eng.Remove(context.WithoutCancel(ctx), hname) }
-	if err := s.Eng.Start(ctx, hname); err != nil {
-		remove()
-		return nil, err
-	}
-	spec := engine.ExecSpec{Cmd: []string{"tar", "-C", "/home-src", "-cf", "-", "."}}
-	if len(paths) > 0 {
-		spec = engine.ExecSpec{Cmd: []string{"tar", "-C", "/home-src", "-cf", "-", "-T", "-"}, Stdin: true}
-	}
-	p, err := s.Eng.Exec(ctx, hname, spec)
-	if err != nil {
-		remove()
-		return nil, err
-	}
-	if len(paths) > 0 {
-		go func() {
-			_, _ = io.WriteString(p.Stdin, list.String())
-			_ = p.Stdin.Close()
-		}()
-	}
-	// Drain stderr while stdout is read (the streams share one connection).
-	var errOut bytes.Buffer
-	errDone := make(chan struct{})
-	go func() {
-		defer close(errDone)
-		if p.Stderr != nil {
-			_, _ = io.Copy(&limitWriter{&errOut, 4096}, p.Stderr)
-		}
-	}()
-	return &helperRead{Reader: p.Stdout, close: func() error {
-		// Whatever wasn't read yet: the archive's end, or the rest after an error.
-		_, _ = io.Copy(io.Discard, p.Stdout)
-		<-errDone
-		code, err := p.Wait()
-		p.Close()
-		remove()
-		if err == nil && code != 0 {
-			err = fmt.Errorf("reading %s failed: %s", name, strings.TrimSpace(errOut.String()))
-		}
-		return err
-	}}, nil
-}
-
-type helperRead struct {
-	io.Reader
-	close func() error
-	once  sync.Once
-	err   error
-}
-
-func (h *helperRead) Close() error {
-	h.once.Do(func() { h.err = h.close() })
-	return h.err
-}
-
-// limitWriter keeps the first n bytes and drops the rest.
-type limitWriter struct {
-	b *bytes.Buffer
-	n int
-}
-
-func (w *limitWriter) Write(p []byte) (int, error) {
-	if room := w.n - w.b.Len(); room > 0 {
-		w.b.Write(p[:min(room, len(p))])
-	}
-	return len(p), nil
 }
 
 // Target is where the proxy reaches a running environment's port 8080, and the
