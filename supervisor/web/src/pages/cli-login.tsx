@@ -4,7 +4,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { api, ApiError, type CliLoginRequest, type Me } from "../api.ts";
 import { Button, errorMessage } from "../components/ui.tsx";
-import { cliLoginId } from "../lib/access.ts";
+import { cliLoginId } from "../lib/links.ts";
 import { ago } from "../lib/format.ts";
 import { Card } from "./link.tsx";
 

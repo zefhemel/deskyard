@@ -5,6 +5,8 @@ import { EnvironmentMenu } from "./environment-menu.tsx";
 import { notifyError } from "./toast.tsx";
 import { loadOrder, orderTabs } from "../lib/tab-order.ts";
 import { Monitor } from "./screen.tsx";
+import { useLive } from "../live.tsx";
+import { can } from "../lib/permissions.ts";
 import { cx, Meter, Status, Tag } from "./ui.tsx";
 
 export function Meters({ environment: c }: { environment: Environment }) {
@@ -78,6 +80,7 @@ export function VolumesLine({ environment: c, admin }: { environment: Environmen
  * viewer's tab order (joining, never creating), and + to open a terminal.
  */
 function SessionLinks({ environment: c }: { environment: Environment }) {
+  const { me } = useLive();
   const sessions = c.terminals ?? [];
   const order = orderTabs(sessions.map((t) => t.name), loadOrder(c.name));
   const shown = order.length > 4 ? order.slice(0, 3) : order;
@@ -92,7 +95,7 @@ function SessionLinks({ environment: c }: { environment: Environment }) {
       notifyError(err);
     }
   };
-  if (c.level === "observe") {
+  if (can(me, c).observeOnly) {
     return (
       <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm" aria-label="Open">
         <a href={`/${c.name}/`}>Watch desktop</a>

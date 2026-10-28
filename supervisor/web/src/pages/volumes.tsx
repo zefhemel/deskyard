@@ -4,13 +4,14 @@ import { api, ApiError, type BackupItem, type Environment, type Volume, type Vol
 import { Page, PageHead } from "../components/topbar.tsx";
 import { notify } from "../components/toast.tsx";
 import { EnvironmentChip } from "../components/environment-chip.tsx";
-import { Button, Check, Dialog, ErrorText, Field, Meter, Note, Seg, Tag, errorMessage } from "../components/ui.tsx";
+import { Button, Card, Check, Dialog, ErrorText, Field, Meter, Note, Seg, Tabs, Tag, errorMessage } from "../components/ui.tsx";
 import { bytes } from "../lib/format.ts";
-import { useFetch } from "../lib/use-fetch.ts";
-import { cx } from "../components/ui.tsx";
+import { RESOURCE_NAME, resourceNameHint } from "../lib/names.ts";
+import { useBackups, useFetch } from "../lib/use-fetch.ts";
 import { backupStatus } from "../lib/backup-policy.ts";
 import { BackupsTab } from "./storage/backups-tab.tsx";
 import { RemotesTab } from "./storage/remotes-tab.tsx";
+import { useLive } from "../live.tsx";
 
 type StorageTab = "volumes" | "remotes" | "backups";
 const TABS: { id: StorageTab; label: string }[] = [
@@ -26,23 +27,7 @@ export function StoragePage() {
   return (
     <Page>
       <PageHead title="Storage" tab={TABS.find((t) => t.id === tab)?.label} />
-      <nav class="mb-6 flex gap-1 overflow-x-auto border-b border-line [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="tablist">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={t.id === tab}
-            onClick={() => route(`/volumes${t.id === "volumes" ? "" : `?tab=${t.id}`}`, true)}
-            class={cx(
-              "-mb-px cursor-pointer border-0 border-b-2 bg-transparent px-3.5 py-2.5 text-sm font-semibold",
-              t.id === tab ? "border-ink text-ink" : "border-transparent text-muted hover:text-ink",
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
+      <Tabs tabs={TABS} value={tab} onChange={(id) => route(`/volumes${id === "volumes" ? "" : `?tab=${id}`}`, true)} />
       {tab === "volumes" && <VolumesTab />}
       {tab === "remotes" && <RemotesTab />}
       {tab === "backups" && <BackupsTab />}
@@ -50,12 +35,10 @@ export function StoragePage() {
   );
 }
 
-const NAME = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
-
 function VolumesTab() {
   const list = useFetch(() => api.volumes(), "volumes");
-  const envs = useFetch(() => api.environments(), "environments");
-  const backups = useFetch(() => api.backups(), "backups");
+  const { environments } = useLive();
+  const backups = useBackups();
   const [creating, setCreating] = useState(false);
   const [removing, setRemoving] = useState<Volume | null>(null);
   const volumes = list.data?.volumes;
@@ -79,7 +62,7 @@ function VolumesTab() {
       ) : (
         <div class="grid gap-3">
           {volumes.map((v) => (
-            <VolumeCard key={v.name} volume={v} environments={envs.data?.environments} backup={backups.data?.items.find((i) => i.item === `volume:${v.name}`)} onDelete={() => setRemoving(v)} />
+            <VolumeCard key={v.name} volume={v} environments={environments ?? undefined} backup={backups.data?.items.find((i) => i.item === `volume:${v.name}`)} onDelete={() => setRemoving(v)} />
           ))}
         </div>
       )}
@@ -108,19 +91,22 @@ export function VolumeCard({ volume: v, environments, backup, onDelete, bare }: 
   }, [v.name]);
   const disk = usage?.diskSize ? usage : null;
   return (
-    <article id={`volume-${v.name}`} class="scroll-mt-20 rounded-[10px] border border-line bg-surface p-5 target:outline-3 target:outline-offset-2 target:outline-accent">
-      {!bare && (
-        <div class="mb-4 flex flex-wrap items-start gap-x-4 gap-y-2">
-          <h2 class="mr-auto min-w-0 text-lg font-semibold">
+    <Card
+      id={`volume-${v.name}`}
+      class="scroll-mt-20 target:outline-3 target:outline-offset-2 target:outline-accent"
+      title={
+        !bare && (
+          <>
             <a href={`/volumes/${v.name}`}>{v.name}</a> {v.kind === "host" && <Tag>Host folder</Tag>} <BackupTag backup={backup} />
-          </h2>
-          <Button onClick={onDelete}>Delete</Button>
-        </div>
-      )}
-      <dl class="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[7.5rem_1fr] sm:gap-y-3">
-        <dt class="text-muted">Size</dt>
-        <dd class="min-w-0" aria-label="Size">
-          {!usage ? (
+          </>
+        )
+      }
+      actions={!bare && <Button onClick={onDelete}>Delete</Button>}
+      facts={[
+        {
+          label: "Size",
+          valueLabel: "Size",
+          value: !usage ? (
             <span class="text-muted">Measuring…</span>
           ) : (
             <>
@@ -134,13 +120,12 @@ export function VolumeCard({ volume: v, environments, backup, onDelete, bare }: 
                 </>
               )}
             </>
-          )}
-        </dd>
-        <dt class="mt-2 text-muted sm:mt-0">{v.kind === "host" ? "Host folder" : "Folder"}</dt>
-        <dd class="mono min-w-0 break-all">{v.folder}</dd>
-        <dt class="mt-2 text-muted sm:mt-0">Environments</dt>
-        <dd class="min-w-0">
-          {v.environments.length ? (
+          ),
+        },
+        { label: v.kind === "host" ? "Host folder" : "Folder", value: v.folder, mono: true },
+        {
+          label: "Environments",
+          value: v.environments.length ? (
             <ul class="m-0 flex list-none flex-wrap gap-2 p-0" aria-label={`Environments using ${v.name}`}>
               {v.environments.map((g) => {
                 const c = environments?.find((e) => e.name === g.name);
@@ -156,10 +141,10 @@ export function VolumeCard({ volume: v, environments, backup, onDelete, bare }: 
             </ul>
           ) : (
             <span class="text-muted">None. Grant it in an environment's settings.</span>
-          )}
-        </dd>
-      </dl>
-    </article>
+          ),
+        },
+      ]}
+    />
   );
 }
 
@@ -171,7 +156,7 @@ function CreateVolume({ onClose, onCreated }: { onClose: () => void; onCreated: 
   const [busy, setBusy] = useState(false);
   const [adopted, setAdopted] = useState<Volume | null>(null);
   const hostPathValid = !onHost || (hostPath.startsWith("/") && !hostPath.endsWith("/") && !hostPath.split("/").some((p) => p === "." || p === ".."));
-  const valid = NAME.test(name) && hostPathValid;
+  const valid = RESOURCE_NAME.test(name) && hostPathValid;
   const submit = async () => {
     if (!valid || busy) return;
     setBusy(true);
@@ -231,7 +216,7 @@ function CreateVolume({ onClose, onCreated }: { onClose: () => void; onCreated: 
         htmlFor="volume-name"
         hint={
           name && !valid ? (
-            <span class="text-danger">Use 2–32 lowercase letters, digits and dashes, starting with a letter.</span>
+            <span class="text-danger">{resourceNameHint}</span>
           ) : (
             "Can't be changed later."
           )

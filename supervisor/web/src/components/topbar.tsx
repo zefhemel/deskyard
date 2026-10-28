@@ -4,6 +4,7 @@ import { useLocation } from "preact-iso";
 import { api } from "../api.ts";
 import { useLive } from "../live.tsx";
 import { gb } from "../lib/format.ts";
+import { accountCan } from "../lib/permissions.ts";
 import { ChangePasswordDialog } from "../dialogs/change-password.tsx";
 import { SignOutEverywhereDialog } from "../dialogs/sign-out-everywhere.tsx";
 import { Avatar } from "./avatar.tsx";
@@ -21,6 +22,7 @@ const nav = [
 
 export function TopBar() {
   const { me, host } = useLive();
+  const admin = accountCan(me).administer;
   const { path, route } = useLocation();
   const [changing, setChanging] = useState(false);
   const [everywhere, setEverywhere] = useState(false);
@@ -37,7 +39,7 @@ export function TopBar() {
         <Logo size={24} />
         Deskyard
       </a>
-      {me.admin && (
+      {admin && (
         <nav class="ml-3 flex gap-1 max-[900px]:order-last max-[900px]:ml-0 max-[900px]:w-full max-[900px]:flex-wrap">
           {nav.map((n) => (
             <a
@@ -54,7 +56,7 @@ export function TopBar() {
         </nav>
       )}
       <div class="ml-auto flex items-center gap-6 text-sm text-muted">
-        {me.admin && host && (
+        {admin && host && (
           <>
             <span class="whitespace-nowrap max-sm:hidden">
               <strong class="font-semibold text-ink">{host.running}</strong> of {host.total} running
@@ -83,7 +85,7 @@ export function TopBar() {
             >
               <Avatar name={me.username} />
               {me.username}
-              {me.admin && <span class="font-medium text-muted max-sm:hidden">admin</span>}
+              {admin && <span class="font-medium text-muted max-sm:hidden">admin</span>}
             </button>
           )}
         />

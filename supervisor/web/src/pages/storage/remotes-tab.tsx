@@ -1,8 +1,9 @@
 import { useState } from "preact/hooks";
 import { api, type Remote, type RemoteType } from "../../api.ts";
 import { notify } from "../../components/toast.tsx";
-import { Button, Dialog, ErrorText, Field, Note, Tag, errorMessage } from "../../components/ui.tsx";
-import { blankDraft, draftFromRemote, fieldsFor, REMOTE_TYPES, remoteDraftErrors, toRemoteInput, type RemoteDraft } from "../../lib/remote-form.ts";
+import { useAction } from "../../components/use-action.ts";
+import { Button, Card, Dialog, ErrorText, Field, Note, Tag, errorMessage } from "../../components/ui.tsx";
+import { blankDraft, draftFromRemote, fieldsFor, REMOTE_TYPES, remoteDraftErrors, toRemoteInput, type RemoteChoices, type RemoteDraft } from "../../lib/remote-form.ts";
 import { useFetch } from "../../lib/use-fetch.ts";
 
 const typeLabel = (t: RemoteType) => REMOTE_TYPES.find((x) => x.type === t)?.label ?? t;
@@ -12,10 +13,10 @@ function where(r: Remote): string {
     case "sftp":
       return `${r.user}@${r.host}${r.port ? `:${r.port}` : ""}:${r.root ?? ""}`;
     case "webdav":
-      return `${r.url ?? ""}${r.root ? ` · ${r.root}` : ""}`;
+      return `${r.url}${r.root ? ` · ${r.root}` : ""}`;
     case "s3":
       return `${r.provider}${r.endpoint ? ` (${r.endpoint})` : ""} · ${r.root ?? ""}`;
-    default:
+    case "b2":
       return r.root ?? "";
   }
 }
@@ -28,7 +29,7 @@ export function RemotesTab() {
   return (
     <>
       <div class="mb-4 flex justify-end">
-        <Button variant="primary" onClick={() => setEditing("new")}>
+        <Button variant="primary" disabled={!list.data} onClick={() => setEditing("new")}>
           Add remote
         </Button>
       </div>
@@ -40,31 +41,34 @@ export function RemotesTab() {
       ) : (
         <div class="grid gap-3">
           {remotes.map((r) => (
-            <article key={r.name} class="rounded-[10px] border border-line bg-surface p-5">
-              <div class="mb-4 flex flex-wrap items-start gap-x-4 gap-y-2">
-                <h2 class="mr-auto min-w-0 text-lg font-semibold">
+            <Card
+              key={r.name}
+              title={
+                <>
                   {r.name} <Tag>{typeLabel(r.type)}</Tag>
-                </h2>
-                <Button onClick={() => setEditing(r)}>Edit</Button>
-                <Button onClick={() => setRemoving(r)}>Delete</Button>
-              </div>
-              <dl class="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[7.5rem_1fr] sm:gap-y-3">
-                <dt class="text-muted">Location</dt>
-                <dd class="mono min-w-0 break-all">{where(r)}</dd>
-                <dt class="mt-2 text-muted sm:mt-0">Repositories</dt>
-                <dd class="min-w-0">{r.repositories.length ? r.repositories.join(", ") : <span class="text-muted">None</span>}</dd>
-              </dl>
-            </article>
+                </>
+              }
+              actions={
+                <>
+                  <Button onClick={() => setEditing(r)}>Edit</Button>
+                  <Button onClick={() => setRemoving(r)}>Delete</Button>
+                </>
+              }
+              facts={[
+                { label: "Location", value: where(r), mono: true },
+                { label: "Repositories", value: r.repositories.length ? r.repositories.join(", ") : <span class="text-muted">None</span> },
+              ]}
+            />
           ))}
         </div>
       )}
-      {editing && <RemoteDialog remote={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={list.reload} />}
+      {editing && list.data && <RemoteDialog remote={editing === "new" ? null : editing} choices={list.data} onClose={() => setEditing(null)} onSaved={list.reload} />}
       {removing && <DeleteRemote remote={removing} onClose={() => setRemoving(null)} onDeleted={list.reload} />}
     </>
   );
 }
 
-function RemoteDialog({ remote, onClose, onSaved }: { remote: Remote | null; onClose: () => void; onSaved: () => void }) {
+function RemoteDialog({ remote, choices, onClose, onSaved }: { remote: Remote | null; choices: RemoteChoices; onClose: () => void; onSaved: () => void }) {
   const creating = remote === null;
   const [d, setD] = useState<RemoteDraft>(remote ? draftFromRemote(remote) : blankDraft("s3"));
   const [busy, setBusy] = useState<"" | "test" | "save">("");
@@ -81,7 +85,8 @@ function RemoteDialog({ remote, onClose, onSaved }: { remote: Remote | null; onC
     setTested(false);
   };
   const shows = (key: string) => tried || touched.has(key);
-  const moved = remote && (d.host !== (remote.host ?? "") || d.root !== (remote.root ?? "") || d.url !== (remote.url ?? "") || d.endpoint !== (remote.endpoint ?? ""));
+  const saved = remote && draftFromRemote(remote);
+  const moved = saved && (d.host !== saved.host || d.root !== saved.root || d.url !== saved.url || d.endpoint !== saved.endpoint);
   const test = async () => {
     setBusy("test");
     setError(null);
@@ -164,9 +169,9 @@ function RemoteDialog({ remote, onClose, onSaved }: { remote: Remote | null; onC
         const hint = err ? <span class="text-danger">{err}</span> : keep ? "Leave empty to keep the saved one." : f.hint;
         return (
           <Field key={f.key} label={f.label} htmlFor={id} hint={hint}>
-            {f.options ? (
+            {f.choices ? (
               <select id={id} value={value} onChange={(e) => set({ [f.key]: e.currentTarget.value })}>
-                {f.options.map((o) => (
+                {choices[f.choices].map((o) => (
                   <option key={o} value={o}>
                     {o}
                   </option>
@@ -193,17 +198,13 @@ function RemoteDialog({ remote, onClose, onSaved }: { remote: Remote | null; onC
 }
 
 function DeleteRemote({ remote: r, onClose, onDeleted }: { remote: Remote; onClose: () => void; onDeleted: () => void }) {
-  const [error, setError] = useState<string | null>(null);
-  const remove = async () => {
-    try {
-      await api.deleteRemote(r.name);
-      notify(`Deleted remote ${r.name}`);
+  const { run: remove, error } = useAction(() => api.deleteRemote(r.name), {
+    success: `Deleted remote ${r.name}`,
+    onDone: () => {
       onDeleted();
       onClose();
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  };
+    },
+  });
   return (
     <Dialog
       title={`Delete ${r.name}?`}

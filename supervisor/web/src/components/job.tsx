@@ -1,27 +1,28 @@
 // Running a long operation (create, settings change, upgrade, image pull)
 // from a dialog: start it, follow /api/jobs/{id}, show its progress.
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
-import type { Job, JobRef } from "../api.ts";
+import type { Job, JobRef, JobResult } from "../api.ts";
 import { useLive } from "../live.tsx";
 import { notify } from "./toast.tsx";
 import { errorMessage, Progress } from "./ui.tsx";
 
-export interface JobRun {
+export interface JobRun<R = JobResult> {
   /** null before starting. */
-  job: Job | null;
+  job: Job<R> | null;
   running: boolean;
   error: string | null;
   start: (begin: () => Promise<JobRef>) => Promise<void>;
 }
 
-/** `onDone` runs once the job finishes successfully. */
-export function useJob(onDone: (job: Job) => void, environment?: string): JobRun {
+/** `onDone` runs once the job finishes successfully; R is what the job answers with. */
+export function useJob<R = JobResult>(onDone: (job: Job<R>) => void, environment?: string): JobRun<R> {
   const { jobTracker } = useLive();
   const [id, setID] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
-  const job: Job | null = starting
+  // The tracker keeps every kind of job; this one's result is the caller's R.
+  const job = (starting
     ? { status: "running", message: "Starting", progress: null }
-    : environment ? jobTracker.forEnvironment(environment) : id ? jobTracker.get(id) : null;
+    : environment ? jobTracker.forEnvironment(environment) : id ? jobTracker.get(id) : null) as Job<R> | null;
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
   const done = useRef(onDone);
@@ -47,7 +48,7 @@ export function useJob(onDone: (job: Job) => void, environment?: string): JobRun
             if (j.status === "failed") notify(j.error || j.message || "A job failed", { error: true, ms: 8000 });
             return;
           }
-          if (j.status === "done") done.current(j);
+          if (j.status === "done") done.current(j as Job<R>);
         }, environment);
       } catch (e) {
         setError(errorMessage(e));
@@ -62,7 +63,7 @@ export function useJob(onDone: (job: Job) => void, environment?: string): JobRun
 }
 
 /** The progress block shown in a dialog while its job runs. */
-export function JobProgress({ job }: { job: Job | null }) {
+export function JobProgress({ job }: { job: Job<unknown> | null }) {
   if (!job || job.status !== "running") return null;
   return (
     <div class="mb-[18px] rounded-lg bg-bezel px-4 py-3.5 text-sm text-[#c5cdd8]">

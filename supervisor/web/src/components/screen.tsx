@@ -5,6 +5,8 @@ import { useState } from "preact/hooks";
 import { api, type AgentPresence, type Environment, type Job } from "../api.ts";
 import { badgeLabel } from "../lib/activity-format.ts";
 import { Avatars } from "./avatar.tsx";
+import { useLive } from "../live.tsx";
+import { can } from "../lib/permissions.ts";
 import { Button, cx, errorMessage, Progress } from "./ui.tsx";
 
 const glassRing = "rgba(15,21,29,.78)";
@@ -45,6 +47,7 @@ interface MonitorProps {
 }
 
 export function Monitor({ environment: c, job, now, big, href }: MonitorProps) {
+  const { me } = useLive();
   const [startError, setStartError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [broken, setBroken] = useState(false);
@@ -115,7 +118,7 @@ export function Monitor({ environment: c, job, now, big, href }: MonitorProps) {
     inner = (
       <div class={blank}>
         Stopped
-        {c.level !== "observe" && (
+        {can(me, c).use && (
           <Button variant="primary" class="h-8!" disabled={starting} onClick={start}>
             {starting ? "Starting…" : "Start"}
           </Button>

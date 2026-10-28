@@ -4,18 +4,16 @@
 // see another account's devices on the Accounts page through DeviceList.
 import { useState } from "preact/hooks";
 import { api, type Credential } from "../api.ts";
+import { copySecret, SecretReveal } from "../components/secret-reveal.tsx";
 import { Page, PageHead } from "../components/topbar.tsx";
-import { notify, notifyError } from "../components/toast.tsx";
-import { Button, ErrorText, Note, Tag } from "../components/ui.tsx";
+import { useAction } from "../components/use-action.ts";
+import { Button, card, ErrorText, Note, Tag, td, th } from "../components/ui.tsx";
 import { SignOutEverywhereDialog } from "../dialogs/sign-out-everywhere.tsx";
 import { useLive } from "../live.tsx";
 import { ago, day } from "../lib/format.ts";
 import { useFetch } from "../lib/use-fetch.ts";
-import { copyText } from "../lib/clipboard.ts";
+import { accountCan, can } from "../lib/permissions.ts";
 import { davAddress, davInTheClear } from "../lib/webdav.ts";
-
-const th = "border-b border-line px-4 py-[11px] text-left text-[13px] font-semibold text-muted";
-const td = "border-b border-hairline px-4 py-[13px] align-middle";
 
 export function DevicesPage() {
   const { me } = useLive();
@@ -32,7 +30,7 @@ export function DevicesPage() {
         </p>
         <DeviceList devices={devices.data} error={devices.error} revoke={(id) => api.revokeCredential(id)} onChanged={devices.reload} />
       </section>
-      {me.kind === "password" && !me.share && <WebDAVSection devices={devices.data} onChanged={devices.reload} />}
+      {accountCan(me).webdavPassword && <WebDAVSection devices={devices.data} onChanged={devices.reload} />}
       <section>
         <h2 class="mb-1 text-lg font-semibold">Browsers</h2>
         <p class="mb-3.5 text-sm text-muted">
@@ -62,7 +60,7 @@ export function DeviceList({
   if (!devices) return <p class="text-sm text-muted">Loading…</p>;
   if (!devices.length) return <p class="text-sm text-muted">No signed-in devices.</p>;
   return (
-    <div class="overflow-x-auto rounded-[10px] border border-line bg-surface">
+    <div class={`overflow-x-auto ${card}`}>
       <table class="w-full border-collapse text-sm">
         <thead>
           <tr>
@@ -83,18 +81,7 @@ export function DeviceList({
 }
 
 function DeviceRow({ device: d, revoke, onChanged }: { device: Credential; revoke: (id: string) => Promise<void>; onChanged: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const signOut = async () => {
-    setBusy(true);
-    try {
-      await revoke(d.id);
-      notify(`Signed out ${d.name}`);
-      onChanged();
-    } catch (e) {
-      notifyError(e);
-      setBusy(false);
-    }
-  };
+  const signOut = useAction(() => revoke(d.id), { success: `Signed out ${d.name}`, toastErrors: true, onDone: onChanged });
   return (
     <tr class="last:[&>td]:border-b-0">
       <td class={td}>
@@ -103,7 +90,7 @@ function DeviceRow({ device: d, revoke, onChanged }: { device: Credential; revok
       <td class={`${td} whitespace-nowrap`}>{day(d.created)}</td>
       <td class={`${td} whitespace-nowrap`}>{ago(d.lastUsed)}</td>
       <td class={`${td} text-right whitespace-nowrap`}>
-        <Button class="h-[30px]! px-[11px]!" disabled={busy} onClick={() => void signOut()}>
+        <Button size="sm" disabled={signOut.busy} onClick={() => void signOut.run()}>
           Sign out
         </Button>
       </td>
@@ -115,28 +102,24 @@ function DeviceRow({ device: d, revoke, onChanged }: { device: Credential; revok
 function WebDAVSection({ devices, onChanged }: { devices: Credential[] | undefined; onChanged: () => void }) {
   const { me, environments } = useLive();
   const [password, setPassword] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const drives = (environments ?? []).filter((c) => c.webdav && c.level === "full").map((c) => c.name);
+  const drives = (environments ?? []).filter((c) => c.webdav && can(me, c).use).map((c) => c.name);
   const has = devices?.some((d) => d.kind === "webdav") ?? false;
-  const change = async (make: boolean) => {
-    setBusy(true);
-    try {
-      if (make) {
-        setPassword((await api.createWebDAVPassword()).password);
-      } else {
-        await api.removeWebDAVPassword();
-        setPassword(null);
-        notify("Removed the WebDAV password");
-      }
+  const make = useAction(() => api.createWebDAVPassword(), {
+    toastErrors: true,
+    onDone: (r) => {
+      setPassword(r.password);
       onChanged();
-    } catch (e) {
-      notifyError(e);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const copy = async (text: string, what: string) =>
-    (await copyText(text)) ? notify(`Copied the ${what}`) : notify("Couldn't copy; select it and copy it instead", { error: true });
+    },
+  });
+  const remove = useAction(() => api.removeWebDAVPassword(), {
+    success: "Removed the WebDAV password",
+    toastErrors: true,
+    onDone: () => {
+      setPassword(null);
+      onChanged();
+    },
+  });
+  const busy = make.busy || remove.busy;
   return (
     <section class="mb-8">
       <h2 class="mb-1 text-lg font-semibold">WebDAV</h2>
@@ -150,7 +133,7 @@ function WebDAVSection({ devices, onChanged }: { devices: Credential[] | undefin
           {drives.map((name) => (
             <li key={name} class="flex flex-wrap items-center gap-2">
               <span class="mono min-w-0 break-all">{davAddress(name)}</span>
-              <Button class="h-[30px]! px-[11px]!" onClick={() => void copy(davAddress(name), "address")}>
+              <Button size="sm" onClick={() => void copySecret(davAddress(name), "the address")}>
                 Copy
               </Button>
             </li>
@@ -161,22 +144,20 @@ function WebDAVSection({ devices, onChanged }: { devices: Credential[] | undefin
       )}
       {davInTheClear() && <Note danger>This page is on plain HTTP, so a password given to a WebDAV client crosses the network readable. Windows refuses to connect this way.</Note>}
       {password && (
-        <div class="mb-3.5 rounded-lg border border-line bg-surface p-3.5">
-          <div class="flex flex-wrap items-center gap-2">
-            <code class="mono min-w-0 flex-1 break-all text-sm" aria-label="WebDAV password">
-              {password}
-            </code>
-            <Button onClick={() => void copy(password, "WebDAV password")}>Copy</Button>
-          </div>
-          <p class="mt-2 text-[13px] text-muted">Shown only now. Keep it in your WebDAV client or a password manager.</p>
-        </div>
+        <SecretReveal
+          class="mb-3.5 bg-surface"
+          secret={password}
+          label="WebDAV password"
+          what="the WebDAV password"
+          note="Shown only now. Keep it in your WebDAV client or a password manager."
+        />
       )}
       <div class="flex flex-wrap gap-2">
-        <Button disabled={busy} onClick={() => void change(true)}>
+        <Button disabled={busy} onClick={() => void make.run()}>
           {has ? "Replace the WebDAV password" : "Make a WebDAV password"}
         </Button>
         {has && (
-          <Button disabled={busy} onClick={() => void change(false)}>
+          <Button disabled={busy} onClick={() => void remove.run()}>
             Remove it
           </Button>
         )}

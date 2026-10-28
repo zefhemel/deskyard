@@ -7,7 +7,8 @@ import { useEffect, useState } from "preact/hooks";
 import { api, ApiError, type LinkInfo, type Me } from "../api.ts";
 import { Logo } from "../components/logo.tsx";
 import { Button, errorMessage } from "../components/ui.tsx";
-import { grantsLine, parseLinkFragment, safeNext } from "../lib/access.ts";
+import { grantsLine } from "../lib/grants.ts";
+import { parseLinkFragment, safeNext } from "../lib/links.ts";
 import { day } from "../lib/format.ts";
 
 export const usedLink = "This link was already used or replaced. Ask the person who shared it for a new one.";

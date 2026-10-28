@@ -3,7 +3,7 @@ import { api, ApiError } from "../api.ts";
 import { Logo } from "../components/logo.tsx";
 import { useTitle } from "../components/topbar.tsx";
 import { Button, Field } from "../components/ui.tsx";
-import { safeNext } from "../lib/access.ts";
+import { safeNext } from "../lib/links.ts";
 
 /** A small drawn screen: a window on a desktop, or a dark (stopped) one. */
 function Mini({ dark, wide }: { dark?: boolean; wide?: boolean }) {

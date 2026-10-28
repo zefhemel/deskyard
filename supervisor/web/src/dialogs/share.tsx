@@ -2,14 +2,12 @@
 // the dialog that shows a login link once.
 import { useState } from "preact/hooks";
 import { api, type Level } from "../api.ts";
+import { useCopied } from "../components/secret-reveal.tsx";
 import { Button, Dialog, ErrorText, errorMessage, Field, Seg } from "../components/ui.tsx";
-import { expiresAt, isoDate, levelLabel, type TimeLimit, timeLimits } from "../lib/access.ts";
-import { copyText } from "../lib/clipboard.ts";
+import { levelLabel } from "../lib/grants.ts";
+import { expiresAt, isoDate, type TimeLimit, timeLimits } from "../lib/time-limits.ts";
+import { USERNAME, usernameHint } from "../lib/names.ts";
 import { day, until } from "../lib/format.ts";
-
-export const USERNAME = /^[a-z][a-z0-9._-]{0,31}$/;
-
-export const usernameHint = "Lowercase letters, digits, dots, dashes and underscores, starting with a letter.";
 
 const levels: { value: Level; label: string }[] = [
   { value: "full", label: levelLabel("full") },
@@ -145,12 +143,9 @@ export function ShareDialog({ environment, onClose, onShared }: { environment: s
   );
 }
 
-/** A login link, shown once, with Copy. */
+/** A login link, shown once, with Copy (in the footer, saying when it worked). */
 export function LinkDialog({ username, link, onClose, title }: { username: string; link: string; onClose: () => void; title?: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    setCopied(await copyText(link));
-  };
+  const { copied, copy } = useCopied(link);
   return (
     <Dialog
       title={title ?? `A link for ${username}`}

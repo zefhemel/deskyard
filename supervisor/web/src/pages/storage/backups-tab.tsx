@@ -1,37 +1,26 @@
 import { useState } from "preact/hooks";
 import { api, ApiError, type BackupsOverview, type CatalogItem, type Repository } from "../../api.ts";
-import { RestoreNewDialog } from "../../components/backups-panel.tsx";
+import { RestoreNewDialog } from "../../components/backups/restore-dialogs.tsx";
+import { SecretReveal } from "../../components/secret-reveal.tsx";
 import { notify } from "../../components/toast.tsx";
-import { Button, Dialog, ErrorText, Field, Note, Tag, errorMessage } from "../../components/ui.tsx";
-import { backupStatus, describeSchedule, isTime, splitItem } from "../../lib/backup-policy.ts";
+import { useAction } from "../../components/use-action.ts";
+import { Button, Card, card, Dialog, ErrorText, Field, Note, Tag, errorMessage } from "../../components/ui.tsx";
+import { backupStatus, describeSchedule, isTime, itemCopy, splitItem } from "../../lib/backup-policy.ts";
 import { ago, day } from "../../lib/format.ts";
-import { useFetch } from "../../lib/use-fetch.ts";
-
-const NAME = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
+import { RESOURCE_NAME, resourceNameHint } from "../../lib/names.ts";
+import { useBackups, useFetch } from "../../lib/use-fetch.ts";
 
 function itemHref(item: string): string {
-  const [kind, name] = splitItem(item);
-  return kind === "environment" ? `/environments/${name}?tab=backups` : `/volumes/${name}`;
+  return itemCopy(...splitItem(item)).page;
 }
 
 export function BackupsTab() {
-  const overview = useFetch(() => api.backups(), "backups");
+  const overview = useBackups();
   const remotes = useFetch(() => api.remotes(), "remotes");
   const [creating, setCreating] = useState(false);
   const [catalog, setCatalog] = useState<BackupsOverview | null>(null);
-  const [looking, setLooking] = useState(false);
-  const [lookError, setLookError] = useState<string | null>(null);
-  const look = async () => {
-    setLooking(true);
-    setLookError(null);
-    try {
-      setCatalog(await api.backups(true));
-    } catch (e) {
-      setLookError(errorMessage(e));
-    } finally {
-      setLooking(false);
-    }
-  };
+  const look = useAction(() => api.backups(true), { onDone: setCatalog });
+  const looking = look.busy;
   const o = overview.data;
   return (
     <>
@@ -60,7 +49,7 @@ export function BackupsTab() {
         <h2 class="mb-2 text-lg font-semibold">Backed up</h2>
         {o && !o.items.length && <p class="text-sm text-muted">Nothing yet. Set up backups on an environment's Backups tab or a volume's page.</p>}
         {!!o?.items.length && (
-          <ul class="m-0 list-none divide-y divide-hairline rounded-[10px] border border-line bg-surface p-0">
+          <ul class={`m-0 list-none divide-y divide-hairline p-0 ${card}`}>
             {o.items.map((i) => (
               <li key={i.item} class="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
                 <span class="mr-auto min-w-0">
@@ -92,11 +81,11 @@ export function BackupsTab() {
             <h2 class="text-lg font-semibold">Other backups</h2>
             <p class="text-sm text-muted">Of removed environments and volumes, and other machines.</p>
           </div>
-          <Button disabled={looking || !o?.repositories.length} onClick={() => void look()}>
+          <Button disabled={looking || !o?.repositories.length} onClick={() => void look.run()}>
             {looking ? "Looking…" : catalog ? "Refresh" : "Show"}
           </Button>
         </div>
-        <ErrorText error={lookError} />
+        <ErrorText error={look.error} />
         {catalog && <Catalog overview={catalog} />}
       </section>
       {creating && remotes.data && <CreateRepository remotes={remotes.data.remotes.map((r) => r.name)} onClose={() => setCreating(false)} onCreated={overview.reload} />}
@@ -115,7 +104,7 @@ function Catalog({ overview: o }: { overview: BackupsOverview }) {
       {!items.length ? (
         <p class="text-sm text-muted">None.</p>
       ) : (
-        <ul class="m-0 list-none divide-y divide-hairline rounded-[10px] border border-line bg-surface p-0">
+        <ul class={`m-0 list-none divide-y divide-hairline p-0 ${card}`}>
           {items.map((c) => (
             <li key={`${c.repository} ${c.host} ${c.item}`} class="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
               <div class="mr-auto min-w-0">
@@ -156,47 +145,36 @@ function RepositoryCard({ repository: r, used, onRemoved }: { repository: Reposi
     }
   };
   return (
-    <article class="rounded-[10px] border border-line bg-surface p-5">
-      <div class="mb-4 flex flex-wrap items-start gap-x-4 gap-y-2">
-        <h3 class="mr-auto min-w-0 text-lg font-semibold">{r.name}</h3>
-        <Button onClick={() => (key ? setKey(null) : void reveal())}>{key ? "Hide recovery key" : "Recovery key"}</Button>
-        <Button onClick={() => setRemoving(true)}>Remove</Button>
-      </div>
-      <dl class="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[7.5rem_1fr] sm:gap-y-3">
-        <dt class="text-muted">Location</dt>
-        <dd class="mono min-w-0 break-all">
-          {r.remote}:{r.folder}
-        </dd>
-        <dt class="mt-2 text-muted sm:mt-0">Backs up</dt>
-        <dd class="min-w-0">{used.length ? used.join(", ") : <span class="text-muted">Nothing yet</span>}</dd>
-      </dl>
+    <Card
+      heading="h3"
+      title={r.name}
+      actions={
+        <>
+          <Button onClick={() => (key ? setKey(null) : void reveal())}>{key ? "Hide recovery key" : "Recovery key"}</Button>
+          <Button onClick={() => setRemoving(true)}>Remove</Button>
+        </>
+      }
+      facts={[
+        { label: "Location", value: `${r.remote}:${r.folder}`, mono: true },
+        { label: "Backs up", value: used.length ? used.join(", ") : <span class="text-muted">Nothing yet</span> },
+      ]}
+    >
       {key && <KeyPanel recoveryKey={key} />}
       <ErrorText error={error} />
       {removing && <RemoveRepository repository={r} onClose={() => setRemoving(false)} onRemoved={onRemoved} />}
-    </article>
+    </Card>
   );
 }
 
 function KeyPanel({ recoveryKey }: { recoveryKey: string }) {
   return (
-    <div class="mt-3 rounded-lg border border-line bg-white p-3.5">
-      <div class="flex flex-wrap items-center gap-2">
-        <code class="mono min-w-0 flex-1 break-all text-sm" aria-label="Recovery key">
-          {recoveryKey}
-        </code>
-        <Button
-          onClick={() =>
-            void navigator.clipboard.writeText(recoveryKey).then(
-              () => notify("Copied the recovery key"),
-              () => notify("Couldn't copy; select the key and copy it instead", { error: true }),
-            )
-          }
-        >
-          Copy
-        </Button>
-      </div>
-      <p class="mt-2 text-[13px] text-muted">Without this key the backups can't be read. Keep it in a password manager.</p>
-    </div>
+    <SecretReveal
+      class="mt-3 bg-white"
+      secret={recoveryKey}
+      label="Recovery key"
+      what="the recovery key"
+      note="Without this key the backups can't be read. Keep it in a password manager."
+    />
   );
 }
 
@@ -209,7 +187,7 @@ function CreateRepository({ remotes, onClose, onCreated }: { remotes: string[]; 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ repository: Repository; recoveryKey?: string } | null>(null);
-  const valid = NAME.test(name) && !!remote && !!folder.trim() && (!needsKey || !!key.trim());
+  const valid = RESOURCE_NAME.test(name) && !!remote && !!folder.trim() && (!needsKey || !!key.trim());
   const submit = async () => {
     setBusy(true);
     setError(null);
@@ -254,7 +232,7 @@ function CreateRepository({ remotes, onClose, onCreated }: { remotes: string[]; 
         </>
       }
     >
-      <Field label="Name" htmlFor="repo-name" hint={name && !NAME.test(name) ? <span class="text-danger">Use 2–32 lowercase letters, digits and dashes.</span> : undefined}>
+      <Field label="Name" htmlFor="repo-name" hint={name && !RESOURCE_NAME.test(name) ? <span class="text-danger">{resourceNameHint}</span> : undefined}>
         <input type="text" id="repo-name" value={name} autocomplete="off" spellcheck={false} onInput={(e) => setName(e.currentTarget.value.toLowerCase())} />
       </Field>
       <Field label="Remote" htmlFor="repo-remote">
@@ -280,17 +258,13 @@ function CreateRepository({ remotes, onClose, onCreated }: { remotes: string[]; 
 }
 
 function RemoveRepository({ repository: r, onClose, onRemoved }: { repository: Repository; onClose: () => void; onRemoved: () => void }) {
-  const [error, setError] = useState<string | null>(null);
-  const remove = async () => {
-    try {
-      await api.removeRepository(r.name);
-      notify(`Removed repository ${r.name}`);
+  const { run: remove, error } = useAction(() => api.removeRepository(r.name), {
+    success: `Removed repository ${r.name}`,
+    onDone: () => {
       onRemoved();
       onClose();
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  };
+    },
+  });
   return (
     <Dialog
       title={`Remove ${r.name}?`}

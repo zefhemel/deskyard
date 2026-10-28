@@ -11,19 +11,29 @@ import { NoticeLine } from "../components/tile.tsx";
 import { useReclaimMemoryItem } from "../components/reclaim-memory.tsx";
 import { ForwardLines } from "../components/viewers-popover.tsx";
 import { Page, useTitle } from "../components/topbar.tsx";
-import { btnClass, Button, cx, Meter, Status, Tag } from "../components/ui.tsx";
+import { btnClass, Button, card, Meter, Status, Tabs, Tag } from "../components/ui.tsx";
 import { UpgradeDialog } from "../dialogs/upgrade.tsx";
 import { useEnvironment, useLive, useNow } from "../live.tsx";
 import { bytes, day, limits, names, statusKind, statusLine } from "../lib/format.ts";
 import { AccessTab } from "./details/access-tab.tsx";
 import { WebDAVAccess } from "./details/webdav-access.tsx";
-import { davView } from "../lib/webdav.ts";
+import { can, type EnvironmentPermissions } from "../lib/permissions.ts";
 import { ProcessesTab } from "./details/processes-tab.tsx";
 import { SettingsTab } from "./details/settings-tab.tsx";
 import { SharingTab } from "./details/sharing-tab.tsx";
-import { BackupsPanel } from "../components/backups-panel.tsx";
+import { BackupsPanel } from "../components/backups/panel.tsx";
 
 type Tab = "overview" | "processes" | "settings" | "access" | "backups";
+
+/** The tabs, each shown to those it is for. */
+const TABS: { id: Tab; label: string; shown: (p: EnvironmentPermissions) => boolean }[] = [
+  { id: "overview", label: "Overview", shown: () => true },
+  { id: "processes", label: "Processes", shown: (p) => p.use },
+  { id: "settings", label: "Settings", shown: (p) => p.configure },
+  // Who can use it: accounts' grants (admins) and the shares (everyone with full access).
+  { id: "access", label: "Access", shown: (p) => p.seeShares },
+  { id: "backups", label: "Backups", shown: (p) => p.configure },
+];
 
 export function DetailsPage() {
   const { params } = useRoute();
@@ -65,15 +75,9 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
   const { query, route } = useLocation();
   const now = useNow(10000);
   // Observers watch the desktop and nothing else: no other tabs, no actions.
-  const full = c.level !== "observe";
-  const tabs: { id: Tab; label: string }[] = [
-    { id: "overview", label: "Overview" },
-    ...(full ? [{ id: "processes" as const, label: "Processes" }] : []),
-    ...(me.admin ? [{ id: "settings" as const, label: "Settings" }] : []),
-    // Who can use it: accounts' grants (admins) and the shares (everyone with full access).
-    ...(full ? [{ id: "access" as const, label: "Access" }] : []),
-    ...(me.admin ? [{ id: "backups" as const, label: "Backups" }] : []),
-  ];
+  const may = can(me, c);
+  const full = may.use;
+  const tabs = TABS.filter((t) => t.shown(may));
   // The Sharing tab became part of Access.
   const asked = query.tab === "sharing" ? "access" : query.tab;
   const tab: Tab = tabs.find((t) => t.id === asked)?.id ?? "overview";
@@ -111,7 +115,7 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
               Start
             </Button>
           )}
-          {full && me.admin && <Button onClick={() => setTab("settings")}>Settings</Button>}
+          {may.configure && <Button onClick={() => setTab("settings")}>Settings</Button>}
           {full && (
             <EnvironmentMenu
               environment={c}
@@ -125,49 +129,28 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
       </div>
 
       <NoticeLine environment={c} class="-mt-3 mb-5" />
-      <nav
-        class="mb-6 flex gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden border-b border-line"
-        role="tablist"
-      >
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={t.id === tab}
-            onClick={() => setTab(t.id)}
-            class={cx(
-              "-mb-px cursor-pointer border-0 border-b-2 bg-transparent px-3.5 py-2.5 text-sm font-semibold",
-              t.id === tab
-                ? "border-ink text-ink"
-                : "border-transparent text-muted hover:text-ink",
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
+      <Tabs tabs={tabs} value={tab} onChange={setTab} />
       {tab === "overview" ? (
         <div class="grid grid-cols-[minmax(0,1.55fr)_minmax(320px,1fr)] items-start gap-8 max-[900px]:grid-cols-1">
           <Monitor environment={c} job={jobs[c.name]} now={now} big />
           <div class="flex flex-col gap-4">
             <ViewersPanel viewers={c.viewers} observers={c.observers} mics={c.mics} forwards={c.forwards} agents={c.agents} observing={!full} />
-            {full && <div class="rounded-[10px] border border-line bg-surface px-5 py-[18px]"><VPNStatus vpn={c.vpn} /></div>}
+            {full && <div class={`${card} px-5 py-[18px]`}><VPNStatus vpn={c.vpn} /></div>}
             <ChartsPanel environment={c} />
-            <Facts environment={c} admin={me.admin} full={full} onTab={setTab} />
+            <Facts environment={c} may={may} onTab={setTab} />
           </div>
         </div>
       ) : tab === "backups" ? (
         <BackupsPanel kind="environment" name={c.name} stoppers={c.state === "running" ? [c.name] : []} />
       ) : (
-        <div class="overflow-hidden rounded-[10px] border border-line bg-surface">
+        <div class={`${card} overflow-hidden`}>
           {tab === "processes" && <ProcessesTab environment={c} />}
           {tab === "settings" && <SettingsTab environment={c} />}
           {tab === "access" && (
             <>
-              {me.admin && <AccessTab environment={c} />}
+              {may.configure && <AccessTab environment={c} />}
               <WebDAVAccess environment={c} />
-              <div class={me.admin || davView(c, me) ? "border-t border-line" : undefined}>
+              <div class={may.configure || may.webdav ? "border-t border-line" : undefined}>
                 <SharingTab environment={c} />
               </div>
             </>
@@ -196,7 +179,7 @@ function ViewersPanel({
 }) {
   const watching = observers.filter((o) => viewers.includes(o));
   return (
-    <div class="flex items-center gap-2.5 rounded-[10px] border border-line bg-surface px-5 py-[18px] text-sm">
+    <div class={`${card} flex items-center gap-2.5 px-5 py-[18px] text-sm`}>
       {(viewers.length > 0 || agents.length > 0) && <Avatars names={viewers} mics={mics} agents={agents} />}
       <div>
         <b class="font-semibold">
@@ -225,23 +208,15 @@ function ViewersPanel({
   );
 }
 
-function Facts({
-  environment: c,
-  admin,
-  full,
-  onTab,
-}: {
-  environment: Environment;
-  admin: boolean;
-  /** Observers aren't told the environment's configuration. */
-  full: boolean;
-  onTab: (t: Tab) => void;
-}) {
+function Facts({ environment: c, may, onTab }: { environment: Environment; may: EnvironmentPermissions; onTab: (t: Tab) => void }) {
+  // Observers aren't told the environment's configuration.
+  const full = may.use;
+  const admin = may.configure;
   const [upgrading, setUpgrading] = useState(false);
   const link =
     "cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-accent hover:underline";
   return (
-    <div class="rounded-[10px] border border-line bg-surface px-5 py-[18px]">
+    <div class={`${card} px-5 py-[18px]`}>
       <dl class="m-0 grid grid-cols-[max-content_1fr] gap-x-[18px] gap-y-[9px] text-sm">
         <dt class="text-muted">Desktop</dt>
         <dd class="m-0 min-w-0">

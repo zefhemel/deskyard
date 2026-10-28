@@ -1,25 +1,27 @@
 import { useState } from "preact/hooks";
-import { api, type Conflict } from "../api.ts";
-import { useFetch } from "../lib/use-fetch.ts";
+import type { Conflict } from "../api.ts";
+import { useBackups } from "../lib/use-fetch.ts";
 import { backupStatus } from "../lib/backup-policy.ts";
 import { Page, PageHead } from "../components/topbar.tsx";
 import { Tile } from "../components/tile.tsx";
 import { Button } from "../components/ui.tsx";
 import { NewEnvironmentDialog } from "../dialogs/new-environment.tsx";
 import { useLive, useNow } from "../live.tsx";
+import { accountCan } from "../lib/permissions.ts";
 
 export function EnvironmentsPage() {
   const { me, environments, conflicts, jobs } = useLive();
+  const admin = accountCan(me).administer;
   const now = useNow(10000);
   const [creating, setCreating] = useState(false);
   // Backups whose last run failed, shown on their tiles (admins only).
-  const backups = useFetch(() => (me.admin ? api.backups() : Promise.resolve(null)), "backups");
+  const backups = useBackups(admin);
   const failing = new Set((backups.data?.items ?? []).filter((i) => backupStatus(i)?.kind === "danger").map((i) => i.item));
 
   return (
     <Page>
-      <PageHead title="Environments" sub={me.admin ? undefined : "The environments you can use. Ask an admin for more."}>
-        {me.admin && (
+      <PageHead title="Environments" sub={admin ? undefined : "The environments you can use. Ask an admin for more."}>
+        {admin && (
           <Button variant="primary" onClick={() => setCreating(true)}>
             New environment
           </Button>
@@ -29,11 +31,11 @@ export function EnvironmentsPage() {
       {environments === null ? (
         <p class="text-muted">Loading…</p>
       ) : environments.length === 0 ? (
-        <Empty admin={me.admin} onCreate={() => setCreating(true)} />
+        <Empty admin={admin} onCreate={() => setCreating(true)} />
       ) : (
         <div class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-x-6 gap-y-7 max-sm:grid-cols-1">
           {environments.map((c) => (
-            <Tile key={c.name} environment={c} job={jobs[c.name]} now={now} admin={me.admin} backupFailed={failing.has(`environment:${c.name}`)} />
+            <Tile key={c.name} environment={c} job={jobs[c.name]} now={now} admin={admin} backupFailed={failing.has(`environment:${c.name}`)} />
           ))}
         </div>
       )}

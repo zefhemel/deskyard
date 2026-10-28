@@ -74,6 +74,11 @@ export function day(iso: string): string {
   return d.toLocaleDateString("en-GB", opts);
 }
 
+/** "28 Oct 2026, 14:05" in the browser's locale: a snapshot's or a run's time. */
+export function dateTime(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
 /** "in 26 days" */
 export function until(iso: string, now = Date.now()): string {
   return `in ${duration(Math.max(0, (Date.parse(iso) - now) / 1000))}`;

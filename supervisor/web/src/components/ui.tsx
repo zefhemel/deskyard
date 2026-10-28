@@ -1,7 +1,7 @@
 // Small building blocks in the mockups' style: buttons, dialogs, fields,
 // segmented controls, tags, status dots and meters.
-import type { ButtonHTMLAttributes, ComponentChildren } from "preact";
-import { useEffect, useRef } from "preact/hooks";
+import { Fragment, type ButtonHTMLAttributes, type ComponentChildren } from "preact";
+import { useEffect, useRef, useState } from "preact/hooks";
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(" ");
@@ -23,19 +23,173 @@ export function btnClass(variant: Variant = "default", extra?: string): string {
   return cx(btnBase, variants[variant], extra);
 }
 
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant };
+/** sm: the smaller buttons of table rows and cards. */
+export type Size = "md" | "sm";
 
-export function Button({ variant = "default", class: extra, type = "button", ...rest }: ButtonProps) {
-  return <button type={type} class={btnClass(variant, typeof extra === "string" ? extra : undefined)} {...rest} />;
+type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size };
+
+export function Button({ variant = "default", size = "md", class: extra, type = "button", ...rest }: ButtonProps) {
+  return <button type={type} class={btnClass(variant, cx(size === "sm" && "h-[30px]! px-[11px]!", typeof extra === "string" && extra))} {...rest} />;
 }
 
-export function IconButton({ class: extra, ...rest }: ButtonHTMLAttributes<HTMLButtonElement>) {
+export function IconButton({ size = "md", class: extra, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { size?: Size }) {
   return (
     <button
       type="button"
-      class={cx(btnBase, variants.default, "w-[34px] px-0! text-lg leading-none text-muted", typeof extra === "string" ? extra : undefined)}
+      class={cx(btnBase, variants.default, "w-[34px] px-0! text-lg leading-none text-muted", size === "sm" && "h-[30px]! w-[30px]!", typeof extra === "string" ? extra : undefined)}
       {...rest}
     />
+  );
+}
+
+/** A tab bar: one button per tab, the chosen one underlined. */
+export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: T; label: string }[]; value: T; onChange: (id: T) => void }) {
+  return (
+    <nav class="mb-6 flex gap-1 overflow-x-auto border-b border-line [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="tablist">
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          role="tab"
+          aria-selected={t.id === value}
+          onClick={() => onChange(t.id)}
+          class={cx(
+            "-mb-px cursor-pointer border-0 border-b-2 bg-transparent px-3.5 py-2.5 text-sm font-semibold",
+            t.id === value ? "border-ink text-ink" : "border-transparent text-muted hover:text-ink",
+          )}
+        >
+          {t.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+/** The header and body cells of the pages' tables (accounts, devices, shares). */
+export const th = "border-b border-line px-4 py-[11px] text-left text-[13px] font-semibold text-muted";
+export const td = "border-b border-hairline px-4 py-[13px] align-middle";
+
+/** The bordered white panel most content sits in. */
+export const card = "rounded-[10px] border border-line bg-surface";
+
+/** A fact on a card: a label and its value (mono for paths and addresses). */
+export interface Fact {
+  label: ComponentChildren;
+  value: ComponentChildren;
+  mono?: boolean;
+  /** The value's accessible name, when it needs one. */
+  valueLabel?: string;
+}
+
+/**
+ * A card: a title with actions at its right, its facts as a label column
+ * and a value column, and anything else after them. Without a title or
+ * actions there is no header.
+ */
+export function Card({
+  title,
+  actions,
+  facts,
+  heading: H = "h2",
+  id,
+  class: extra,
+  children,
+}: {
+  title?: ComponentChildren;
+  actions?: ComponentChildren;
+  facts?: Fact[];
+  heading?: "h2" | "h3";
+  id?: string;
+  class?: string;
+  children?: ComponentChildren;
+}) {
+  return (
+    <article id={id} class={cx(card, "p-5", extra)}>
+      {(title || actions) && (
+        <div class="mb-4 flex flex-wrap items-start gap-x-4 gap-y-2">
+          <H class="mr-auto min-w-0 text-lg font-semibold">{title}</H>
+          {actions}
+        </div>
+      )}
+      {facts && (
+        <dl class="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[7.5rem_1fr] sm:gap-y-3">
+          {facts.map((f, i) => (
+            <Fragment key={i}>
+              <dt class={i ? "mt-2 text-muted sm:mt-0" : "text-muted"}>{f.label}</dt>
+              <dd class={cx(f.mono && "mono", "min-w-0", f.mono && "break-all")} aria-label={f.valueLabel}>
+                {f.value}
+              </dd>
+            </Fragment>
+          ))}
+        </dl>
+      )}
+      {children}
+    </article>
+  );
+}
+
+const compactBtn = "flex-none cursor-pointer rounded-md border-0 px-2 py-0.5 text-[12px] font-semibold";
+
+/**
+ * An action that asks again in place: `label` turns into `cancel` and
+ * `confirm`. `children` are the row's other actions, hidden while it asks.
+ * `compact` is the viewers popover's small text buttons.
+ */
+export function ConfirmInline({
+  label,
+  confirm,
+  cancel = "Cancel",
+  busy,
+  onConfirm,
+  compact,
+  triggerLabel,
+  triggerTitle,
+  children,
+}: {
+  label: string;
+  confirm: string;
+  cancel?: string;
+  busy?: boolean;
+  onConfirm: () => void;
+  compact?: boolean;
+  /** The trigger's accessible name, when its label alone isn't enough. */
+  triggerLabel?: string;
+  triggerTitle?: string;
+  children?: ComponentChildren;
+}) {
+  const [asking, setAsking] = useState(false);
+  if (compact) {
+    return asking ? (
+      <span class="flex items-center gap-1">
+        <button type="button" class={`${compactBtn} bg-transparent text-muted hover:bg-hairline`} onClick={() => setAsking(false)}>
+          {cancel}
+        </button>
+        <button type="button" class={`${compactBtn} bg-danger text-white`} disabled={busy} onClick={onConfirm}>
+          {confirm}
+        </button>
+      </span>
+    ) : (
+      <button type="button" class={`${compactBtn} bg-transparent text-danger hover:bg-hairline`} aria-label={triggerLabel} title={triggerTitle} onClick={() => setAsking(true)}>
+        {label}
+      </button>
+    );
+  }
+  return asking ? (
+    <span class="inline-flex gap-1.5">
+      <Button variant="quiet" size="sm" onClick={() => setAsking(false)}>
+        {cancel}
+      </Button>
+      <Button variant="danger" size="sm" disabled={busy} onClick={onConfirm}>
+        {confirm}
+      </Button>
+    </span>
+  ) : (
+    <span class="inline-flex gap-1.5">
+      {children}
+      <Button size="sm" aria-label={triggerLabel} title={triggerTitle} onClick={() => setAsking(true)}>
+        {label}
+      </Button>
+    </span>
   );
 }
 

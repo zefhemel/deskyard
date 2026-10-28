@@ -1,10 +1,11 @@
 import { useState } from "preact/hooks";
 import { useLocation, useRoute } from "preact-iso";
 import { api } from "../api.ts";
-import { BackupsPanel } from "../components/backups-panel.tsx";
+import { BackupsPanel } from "../components/backups/panel.tsx";
 import { Page, useTitle } from "../components/topbar.tsx";
 import { Button, ErrorText, Tag } from "../components/ui.tsx";
-import { useFetch } from "../lib/use-fetch.ts";
+import { useBackupItem, useFetch } from "../lib/use-fetch.ts";
+import { useLive } from "../live.tsx";
 import { BackupTag, DeleteVolume, VolumeCard } from "./volumes.tsx";
 
 /** One volume: its folder, usage and grants, and its backups. */
@@ -13,8 +14,9 @@ export function VolumeDetailsPage() {
   const { route } = useLocation();
   const name = params.name ?? "";
   const list = useFetch(() => api.volumes(), "volumes");
-  const envs = useFetch(() => api.environments(), "environments");
-  const backup = useFetch(() => api.backup("volume", name), `backup-volume-${name}`);
+  const { environments } = useLive();
+  // The same source as the panel below: its polling and refreshes update the tag.
+  const backup = useBackupItem("volume", name);
   const [removing, setRemoving] = useState(false);
   const v = list.data?.volumes.find((x) => x.name === name);
   useTitle(name, "Storage");
@@ -37,13 +39,13 @@ export function VolumeDetailsPage() {
               Delete
             </Button>
           </div>
-          <VolumeCard volume={v} environments={envs.data?.environments} bare />
+          <VolumeCard volume={v} environments={environments ?? undefined} bare />
           <h2 class="mt-8 mb-3 text-xl font-bold">Backups</h2>
           <BackupsPanel
             kind="volume"
             name={v.name}
             hostPath={v.kind === "host" ? v.folder : undefined}
-            stoppers={v.environments.filter((g) => envs.data?.environments.find((e) => e.name === g.name)?.state === "running").map((g) => g.name)}
+            stoppers={v.environments.filter((g) => environments?.find((e) => e.name === g.name)?.state === "running").map((g) => g.name)}
           />
           {removing && <DeleteVolume volume={v} onClose={() => setRemoving(false)} onDeleted={() => route("/volumes")} />}
         </>
