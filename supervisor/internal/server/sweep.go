@@ -13,9 +13,11 @@ import (
 
 // sweep makes shares and live connections follow the accounts: it deletes
 // the shares whose sharer lost them, and closes the live connections their
-// accounts no longer allow. (Links and credentials go with their account.) It runs on every account change and once at startup, and first
-// retries saving the revocations the accounts hold unsaved. Failed writes
-// are logged; an orphaned share is refused (and held deleted) all the same.
+// accounts no longer allow (links and credentials go with their account).
+// It runs on every account change, every expiry tick and once at startup,
+// and first retries saving the revocations the accounts hold unsaved.
+// Failed writes are logged; an orphaned share is refused (and held
+// deleted) all the same.
 func (s *Server) sweep() {
 	if err := s.Accounts.Flush(); err != nil {
 		s.Log.Error("saving the accounts' revocations", "err", err)

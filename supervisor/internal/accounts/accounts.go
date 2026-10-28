@@ -433,6 +433,18 @@ func (s *Store) Usable(username, id string, now time.Time) (Account, bool) {
 	return clone(s.list[i]), true
 }
 
+// UsableNamed is Usable for whichever account has the name now, as a
+// password sign-in names it.
+func (s *Store) UsableNamed(username string, now time.Time) (Account, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	i := s.index(username)
+	if i < 0 || s.usable(username, s.list[i].ID, now) < 0 {
+		return Account{}, false
+	}
+	return clone(s.list[i]), true
+}
+
 // usable is the index of the account Usable returns, or -1. The lock is
 // held.
 func (s *Store) usable(username, id string, now time.Time) int {

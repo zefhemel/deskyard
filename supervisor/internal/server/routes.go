@@ -77,10 +77,10 @@ func (s *Server) routes() {
 	// Remote access: client credentials only.
 	remote := func(pattern string, fn remoteHandler) { m.Handle(pattern, s.remote(fn)) }
 	remote("GET /api/environments/{name}/status", s.handleRemoteStatus)
-	remote("GET /api/environments/{name}/exec", s.handleRemoteExec)
-	remote("GET /api/environments/{name}/forward", s.handleRemoteForward)
-	remote("GET /api/environments/{name}/cdp", s.handleRemoteCDPRoot)
-	remote("/api/environments/{name}/cdp/{rest...}", s.handleRemoteCDP)
+	remote("GET /api/environments/{name}/exec", whileRunning(s.remoteExec))
+	remote("GET /api/environments/{name}/forward", whileRunning(s.remoteForward))
+	remote("GET /api/environments/{name}/cdp", whileRunning(s.remoteCDP))
+	remote("/api/environments/{name}/cdp/{rest...}", whileRunning(s.remoteCDP))
 
 	h("GET /api/accounts", s.handleListAccounts)
 	admin("POST /api/accounts", s.handleCreateAccount)

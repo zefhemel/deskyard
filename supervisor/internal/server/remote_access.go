@@ -78,38 +78,15 @@ func (s *Server) remoteTarget(w http.ResponseWriter, r *http.Request, bearer str
 	return r, c, cred, true
 }
 
-// running writes 409 unless the environment runs.
-func running(w http.ResponseWriter, c environments.Environment) bool {
-	if !c.Running() {
-		writeError(w, http.StatusConflict, c.Name+" is stopped; someone with access can start it")
-		return false
-	}
-	return true
-}
-
-func (s *Server) handleRemoteExec(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
-	if running(w, c) {
-		s.remoteExec(w, r, c, cred)
-	}
-}
-
-func (s *Server) handleRemoteForward(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
-	if running(w, c) {
-		s.remoteForward(w, r, c, cred)
-	}
-}
-
-// handleRemoteCDP serves /cdp/{rest...}, and handleRemoteCDPRoot /cdp
-// (Chromium's /json/version).
-func (s *Server) handleRemoteCDP(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
-	if running(w, c) {
-		s.remoteCDP(w, r, c, cred, "/"+r.PathValue("rest"))
-	}
-}
-
-func (s *Server) handleRemoteCDPRoot(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
-	if running(w, c) {
-		s.remoteCDP(w, r, c, cred, "")
+// whileRunning serves next only while the environment runs, and writes 409
+// otherwise.
+func whileRunning(next remoteHandler) remoteHandler {
+	return func(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
+		if !c.Running() {
+			writeError(w, http.StatusConflict, c.Name+" is stopped; someone with access can start it")
+			return
+		}
+		next(w, r, c, cred)
 	}
 }
 
@@ -314,15 +291,17 @@ func (s *Server) remoteExec(w http.ResponseWriter, r *http.Request, c environmen
 }
 
 // remoteCDP proxies the shared Chromium's DevTools protocol through the
-// desktop's Caddy (/_cdp/), pointing /json URLs back through this route.
-func (s *Server) remoteCDP(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential, rest string) {
+// desktop's Caddy (/_cdp/), pointing /json URLs back through this route:
+// /cdp/{rest...} to /_cdp/{rest...}, and /cdp to Chromium's /json/version.
+func (s *Server) remoteCDP(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
+	rest := "/json/version"
+	if strings.HasSuffix(r.Pattern, "{rest...}") {
+		rest = "/" + r.PathValue("rest")
+	}
 	addr, tok, err := s.Environments.Target(r.Context(), c.Name)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
-	}
-	if rest == "" {
-		rest = "/json/version"
 	}
 	wsScheme := "ws"
 	if r.TLS != nil {
