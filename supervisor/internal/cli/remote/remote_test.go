@@ -42,6 +42,19 @@ func TestParseURL(t *testing.T) {
 			t.Errorf("ParseURL(%q) succeeded, want an error", bad)
 		}
 	}
+	// Other pages of the web UI, or below one, name no environment.
+	for page, server := range map[string]string{
+		"https://host/accounts":         "https://host",
+		"https://host/cc/link":          "https://host/cc",
+		"https://host/volumes/photos":   "https://host",
+		"https://host/cc/volumes/music": "https://host/cc",
+		"https://host/environments":     "https://host",
+	} {
+		_, err := ParseURL(page)
+		if err == nil || !strings.Contains(err.Error(), "isn't an environment") || !strings.Contains(err.Error(), "address "+server+",") {
+			t.Errorf("ParseURL(%q) = %v, want a page error naming %s", page, err, server)
+		}
+	}
 	if u := (Target{Base: "https://h/p", Environment: "a"}).URL(); u != "https://h/p/a" {
 		t.Errorf("URL() = %q", u)
 	}
