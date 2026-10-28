@@ -229,7 +229,7 @@ func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, c environme
 	// Registered, a revoke closes the stream; one while it waited its turn
 	// (a downgrade to observe, or the browser login's end, included)
 	// refuses it.
-	if acct, ok := s.accountNow(a.Username, a.ID, time.Now()); !ok || acct.Level(c.ID) != cn.level || !who.signedIn(acct) {
+	if acct, ok := s.Accounts.Usable(a.Username, a.ID, time.Now()); !ok || acct.Level(c.ID) != cn.level || !who.signedIn(acct) {
 		s.viewers.remove(c.Name, cn)
 		writeError(w, http.StatusNotFound, "no such environment")
 		return

@@ -184,7 +184,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Token accounts have no password and answer as unknown ones do.
-	a, ok := s.accountState(req.Username)
+	a, ok := s.Accounts.Get(req.Username)
 	if !ok || !a.HasPassword() || !auth.CheckPassword(a.PasswordHash, req.Password) {
 		if !ok || !a.HasPassword() {
 			auth.CheckPassword(dummyHash, req.Password) // same time either way
@@ -246,17 +246,12 @@ func (s *Server) handleOwnPassword(w http.ResponseWriter, r *http.Request) {
 // signs this browser in again.
 func (s *Server) handleSignOutEverywhere(w http.ResponseWriter, r *http.Request) {
 	me, _ := s.account(r)
-	s.revoking.Lock()
-	defer s.revoking.Unlock()
 	a, err := s.Accounts.BumpSessionEpoch(me.Username)
 	if err != nil {
-		// The other sessions end although the new epoch isn't saved; this
-		// browser keeps its sign-in under it.
-		if errors.Is(err, accounts.ErrNotSaved) {
-			s.revokeUnsaved(unsavedRevocation{username: me.Username, id: me.ID, epoch: me.SessionEpoch + 1})
-			if a, ok := s.accountState(me.Username); ok {
-				s.reissueSession(w, r, a)
-			}
+		// The other sessions end although the new epoch isn't saved (the
+		// store holds it); this browser keeps its sign-in under it.
+		if a, ok := s.Accounts.Usable(me.Username, me.ID, time.Now()); ok && errors.Is(err, accounts.ErrNotSaved) {
+			s.reissueSession(w, r, a)
 		}
 		writeError(w, errorStatus(err), err.Error())
 		return

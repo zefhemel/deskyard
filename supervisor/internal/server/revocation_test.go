@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 )
 
@@ -15,6 +16,25 @@ func unblockAccountsFile(t *testing.T, s *Server) {
 	t.Helper()
 	if err := os.RemoveAll(filepath.Join(s.Layout.Data, "accounts.json")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// savedAccount is the named account as accounts.json has it.
+func savedAccount(t *testing.T, s *Server, username string) (accounts.Account, bool) {
+	t.Helper()
+	saved, err := accounts.Load(s.Layout.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return saved.Get(username)
+}
+
+// requireUnsaved fails the test unless the accounts hold a revocation they
+// couldn't save.
+func requireUnsaved(t *testing.T, s *Server) {
+	t.Helper()
+	if !s.Accounts.Unsaved() {
+		t.Fatal("the test's change was saved")
 	}
 }
 
@@ -33,9 +53,7 @@ func TestUnsavedDeleteKeepsTheAccountOut(t *testing.T) {
 	if code := status(t, admin, "DELETE", ts.URL+"/api/accounts/anna", ts.URL); code != http.StatusInternalServerError {
 		t.Fatalf("delete: %d", code)
 	}
-	if _, ok := s.Accounts.Get("anna"); !ok {
-		t.Fatal("test's delete was saved")
-	}
+	requireUnsaved(t, s)
 	if conn.Err() == nil {
 		t.Error("the connection stayed open")
 	}
@@ -50,11 +68,8 @@ func TestUnsavedDeleteKeepsTheAccountOut(t *testing.T) {
 	}
 	unblockAccountsFile(t, s)
 	s.sweep()
-	if _, ok := s.Accounts.Get("anna"); ok {
+	if _, ok := savedAccount(t, s, "anna"); ok || s.Accounts.Unsaved() {
 		t.Error("the sweep didn't save the delete")
-	}
-	if len(s.unsaved.list()) != 0 {
-		t.Error("the saved delete is still held")
 	}
 }
 
@@ -77,13 +92,11 @@ func TestUnsavedGrantChangesHold(t *testing.T) {
 			if code, body := send(t, admin, tc.method, ts.URL+tc.path, ts.URL, tc.body); code != http.StatusInternalServerError {
 				t.Fatalf("change: %d %s", code, body)
 			}
-			if a := accountNamed(t, s, "anna"); a.Level("alice") != auth.LevelFull {
-				t.Fatal("test's change was saved")
-			}
+			requireUnsaved(t, s)
 			if conn.Err() == nil {
 				t.Error("the full connection stayed open")
 			}
-			if a, ok := s.accountNow("anna", accountNamed(t, s, "anna").ID, time.Now()); !ok || a.Level("alice") != auth.LevelObserve {
+			if a, ok := s.Accounts.Usable("anna", accountNamed(t, s, "anna").ID, time.Now()); !ok || a.Level("alice") != auth.LevelObserve {
 				t.Errorf("anna now: %v %v", ok, a.Grants)
 			}
 			if code, _, _ := bearerRequest(t, "GET", ts.URL+"/api/environments/alice/processes", bearer); code != http.StatusForbidden {
@@ -91,7 +104,7 @@ func TestUnsavedGrantChangesHold(t *testing.T) {
 			}
 			unblockAccountsFile(t, s)
 			s.sweep()
-			if a := accountNamed(t, s, "anna"); a.Level("alice") != auth.LevelObserve {
+			if a, _ := savedAccount(t, s, "anna"); a.Level("alice") != auth.LevelObserve {
 				t.Errorf("the sweep didn't save the downgrade: %v", a.Grants)
 			}
 			// A later grant decides anew.
@@ -99,7 +112,7 @@ func TestUnsavedGrantChangesHold(t *testing.T) {
 				t.Fatalf("upgrade: %d %s", code, body)
 			}
 			s.sweep()
-			if a, _ := s.accountNow("anna", accountNamed(t, s, "anna").ID, time.Now()); a.Level("alice") != auth.LevelFull {
+			if a, _ := s.Accounts.Usable("anna", accountNamed(t, s, "anna").ID, time.Now()); a.Level("alice") != auth.LevelFull {
 				t.Errorf("the upgrade didn't hold: %v", a.Grants)
 			}
 		})
@@ -123,7 +136,7 @@ func TestRefusedChangeKeepsUnsavedRevocation(t *testing.T) {
 		`{"grants":[{"environment":"alice","level":"full"},{"environment":"alice","level":"full"}]}`); code != http.StatusBadRequest {
 		t.Fatalf("refused change: %d %s", code, body)
 	}
-	if a, _ := s.accountNow("anna", accountNamed(t, s, "anna").ID, time.Now()); a.Level("alice") != auth.LevelNone {
+	if a, _ := s.Accounts.Usable("anna", accountNamed(t, s, "anna").ID, time.Now()); a.Level("alice") != auth.LevelNone {
 		t.Errorf("a refused change restored the revoked access: %v", a.Grants)
 	}
 }
@@ -142,7 +155,7 @@ func TestUnsavedAccessChangeKeepsEarlierRevocation(t *testing.T) {
 			t.Fatalf("%s: %d %s", level, code, body)
 		}
 	}
-	if a, _ := s.accountNow("anna", accountNamed(t, s, "anna").ID, time.Now()); a.Level("alice") != auth.LevelObserve {
+	if a, _ := s.Accounts.Usable("anna", accountNamed(t, s, "anna").ID, time.Now()); a.Level("alice") != auth.LevelObserve {
 		t.Errorf("anna now: %v", a.Grants)
 	}
 }
@@ -178,32 +191,6 @@ func TestEditorsShowUnsavedRevocations(t *testing.T) {
 	}
 }
 
-// The sweep doesn't save a held revocation while a change is deciding the
-// account's access anew: that change's decision would be overwritten.
-func TestRetryWaitsForAChangeDecidingAnew(t *testing.T) {
-	s, ts := newTestServer(t)
-	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
-		t.Fatal(err)
-	}
-	admin := login(t, ts, "admin")
-	blockAccountsFile(t, s)
-	if code, body := send(t, admin, "PATCH", ts.URL+"/api/accounts/anna", ts.URL, `{"grants":[]}`); code != http.StatusInternalServerError {
-		t.Fatalf("removal: %d %s", code, body)
-	}
-	unblockAccountsFile(t, s)
-	s.revoking.Lock()
-	s.sweep()
-	if a := accountNamed(t, s, "anna"); a.Level("alice") != auth.LevelFull {
-		s.revoking.Unlock()
-		t.Fatalf("the sweep saved a revocation while a change was deciding anew: %v", a.Grants)
-	}
-	s.revoking.Unlock()
-	s.sweep()
-	if a := accountNamed(t, s, "anna"); a.Level("alice") != auth.LevelNone {
-		t.Errorf("the sweep didn't save the revocation after: %v", a.Grants)
-	}
-}
-
 // Signing out everywhere ends the other sessions although the new session
 // epoch can't be saved, and keeps this browser signed in.
 func TestUnsavedSignOutEverywhereEndsSessions(t *testing.T) {
@@ -221,8 +208,8 @@ func TestUnsavedSignOutEverywhereEndsSessions(t *testing.T) {
 	}
 	unblockAccountsFile(t, s)
 	s.sweep()
-	if len(s.unsaved.list()) != 0 {
-		t.Error("the saved sign-out is still held")
+	if s.Accounts.Unsaved() {
+		t.Error("the sweep didn't save the sign-out")
 	}
 	if code := status(t, second, "GET", ts.URL+"/api/me", ""); code != http.StatusUnauthorized {
 		t.Errorf("the other browser after the sign-out was saved: %d", code)

@@ -104,28 +104,24 @@ func withLevel(grants []Grant, name string, level auth.Level) []Grant {
 	return out
 }
 
-// Lowered maps the environments after grants less than before to their
-// new level (LevelNone: the grant is gone).
-func Lowered(before, after []Grant) map[string]auth.Level {
-	out := map[string]auth.Level{}
-	for _, g := range before {
-		if l := grantLevel(after, g.Environment); !l.AtLeast(g.Level) {
-			out[g.Environment] = l
+// narrowed is what after revokes of before, the same account (by ID) as
+// after a change: before, no longer an admin when after isn't, and each
+// grant at most at after's level. With epoch, its session epoch moves on to
+// after's too, ending its browser sessions. Nothing else changes: it never
+// gains anything.
+func narrowed(before, after Account, epoch bool) Account {
+	a := clone(before)
+	a.Admin = before.Admin && after.Admin
+	a.Grants = slices.DeleteFunc(a.Grants, func(g Grant) bool { return grantLevel(after.Grants, g.Environment) == auth.LevelNone })
+	for i, g := range a.Grants {
+		if l := grantLevel(after.Grants, g.Environment); !l.AtLeast(g.Level) {
+			a.Grants[i].Level = l
 		}
 	}
-	return out
-}
-
-// Capped is grants with each environment in caps at most at its level
-// there; LevelNone drops the grant.
-func Capped(grants []Grant, caps map[string]auth.Level) []Grant {
-	out := slices.Clone(grants)
-	for name, l := range caps {
-		if !l.AtLeast(grantLevel(out, name)) {
-			out = withLevel(out, name, l)
-		}
+	if epoch {
+		a.SessionEpoch = max(before.SessionEpoch, after.SessionEpoch)
 	}
-	return out
+	return a
 }
 
 func validGrants(grants []Grant) error {
@@ -149,7 +145,8 @@ var (
 	// ErrAdminExpires keeps the last-admin guard whole: an admin with a
 	// password never expires, so the expiry sweep can't remove one.
 	ErrAdminExpires = errors.New("admins with a password can't expire")
-	// ErrNotSaved marks a failure to write the accounts: nothing changed.
+	// ErrNotSaved marks a failure to write the accounts: of the change, only
+	// what it revokes holds, in memory until a later write saves it.
 	ErrNotSaved = errors.New("the accounts couldn't be saved")
 	usernameRE  = regexp.MustCompile(`^[a-z][a-z0-9._-]{0,31}$`)
 )
@@ -179,18 +176,19 @@ type loaded struct {
 }
 
 // Store is safe for concurrent use; every change is written to disk at once.
+// It fails closed: when writing a change fails, what the change revokes
+// (accounts deleted, admin roles taken, grants lowered, session epochs moved
+// on) holds anyway, in memory, and is saved by the next write or Flush; the
+// rest of the change is dropped.
 type Store struct {
 	mu   sync.Mutex
 	path string
 	list []Account
+	// unsaved: list holds revocations the file doesn't have yet.
+	unsaved bool
 	// OnChange is called (without the lock) after a change, with the usernames
 	// whose sessions or access changed, so open connections can be checked.
 	OnChange func(usernames ...string)
-	// HeldSessionEpoch, when set, is the session epoch the account's
-	// cookies may name although it isn't saved (a sign-out that couldn't be
-	// saved). Called with the lock held; a bump starts from it, so it ends
-	// those sessions too.
-	HeldSessionEpoch func(a Account) int
 }
 
 // Load reads dataDir/accounts.json (mode 0600: it holds password hashes).
@@ -228,19 +226,65 @@ func Load(dataDir string) (*Store, error) {
 		s.list = append(s.list, a)
 	}
 	if changed {
-		if err := s.publish(s.list); err != nil {
+		if err := store.WriteJSON(s.path, file{Accounts: s.list}); err != nil {
 			return nil, err
 		}
 	}
 	return s, nil
 }
 
-func (s *Store) publish(next []Account) error {
+// commit saves next as the accounts and makes it theirs. When saving fails,
+// only what next revokes takes effect (narrowed; epoch: session epochs
+// too), and the store holds it unsaved; commit then returns ErrNotSaved
+// with the usernames whose access changed all the same. The lock is held.
+func (s *Store) commit(next []Account, epoch bool) (revoked []string, err error) {
 	if err := store.WriteJSON(s.path, file{Accounts: next}); err != nil {
-		return notSaved{err}
+		after := map[string]Account{}
+		for _, a := range next {
+			after[a.ID] = a
+		}
+		held := []Account{}
+		for _, a := range s.list {
+			n, ok := after[a.ID]
+			if !ok {
+				revoked = append(revoked, a.Username)
+				s.unsaved = true
+				continue
+			}
+			if n = narrowed(a, n, epoch); !equalAccess(a, n) {
+				revoked = append(revoked, a.Username)
+				s.unsaved = true
+			}
+			held = append(held, n)
+		}
+		s.list = held
+		return revoked, notSaved{err}
 	}
-	s.list = next
-	return nil
+	s.list, s.unsaved = next, false
+	return nil, nil
+}
+
+// equalAccess reports whether a and b, the same account, may use the same.
+func equalAccess(a, b Account) bool {
+	return a.Admin == b.Admin && a.SessionEpoch == b.SessionEpoch && slices.Equal(a.Grants, b.Grants)
+}
+
+// Flush saves the revocations held unsaved, if any.
+func (s *Store) Flush() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.unsaved {
+		return nil
+	}
+	_, err := s.commit(s.next(), false)
+	return err
+}
+
+// Unsaved reports whether the store holds revocations it couldn't save yet.
+func (s *Store) Unsaved() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.unsaved
 }
 
 func (s *Store) next() []Account {
@@ -252,7 +296,7 @@ func (s *Store) next() []Account {
 }
 
 func (s *Store) notify(names ...string) {
-	if s.OnChange != nil {
+	if s.OnChange != nil && len(names) > 0 {
 		s.OnChange(names...)
 	}
 }
@@ -274,7 +318,7 @@ func (s *Store) EnsureAdmin(username, password string) (generated string, err er
 	}
 	next := []Account{{ID: auth.RandomID(16), Username: username, PasswordHash: auth.HashPassword(password), Admin: true,
 		Grants: []Grant{}, Created: time.Now().UTC()}}
-	if err := s.publish(next); err != nil {
+	if _, err := s.commit(next, false); err != nil {
 		return "", err
 	}
 	return generated, nil
@@ -300,6 +344,39 @@ func (s *Store) Get(username string) (Account, bool) {
 	return clone(s.list[i]), true
 }
 
+// Usable is the named account while it is the one with this ID and may use
+// anything now: it hasn't expired, and isn't a share whose sharer lost it.
+// Requests and the connections they hold check it.
+func (s *Store) Usable(username, id string, now time.Time) (Account, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	i := s.index(username)
+	if i < 0 || s.list[i].ID != id || s.list[i].Expired(now) || s.orphaned(s.list[i], now) {
+		return Account{}, false
+	}
+	return clone(s.list[i]), true
+}
+
+// orphaned reports whether a is a share that lost its reason to exist: its
+// environment is gone (it has no grant), or its sharer (by ID) is gone,
+// expired or no longer full on the environment. Admins are full everywhere,
+// so their shares stay while they are admins. The lock is held.
+func (s *Store) orphaned(a Account, now time.Time) bool {
+	if a.SharedBy == nil {
+		return false
+	}
+	g, ok := a.ShareGrant()
+	if !ok {
+		return true
+	}
+	i := s.index(a.SharedBy.Username)
+	if i < 0 {
+		return true
+	}
+	sharer := s.list[i]
+	return sharer.ID != a.SharedBy.ID || sharer.Expired(now) || sharer.Level(g.Environment) != auth.LevelFull
+}
+
 func clone(a Account) Account {
 	a.Grants = slices.Clone(a.Grants)
 	if a.SharedBy != nil {
@@ -316,10 +393,7 @@ func clone(a Account) Account {
 func (s *Store) List() []Account {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := make([]Account, len(s.list))
-	for i, a := range s.list {
-		out[i] = clone(a)
-	}
+	out := s.next()
 	sort.Slice(out, func(i, j int) bool { return out[i].Username < out[j].Username })
 	return out
 }
@@ -376,7 +450,7 @@ func (s *Store) Create(n NewAccount) (Account, error) {
 		sharer := *n.SharedBy
 		a.SharedBy = &sharer
 	}
-	if err := s.publish(append(s.next(), a)); err != nil {
+	if _, err := s.commit(append(s.next(), a), false); err != nil {
 		return Account{}, err
 	}
 	return clone(a), nil
@@ -416,24 +490,24 @@ func (s *Store) update(username string, fn func(a *Account), bump bool) (Account
 		return Account{}, ErrLastAdmin
 	}
 	if bump || a.PasswordHash != before.PasswordHash || a.Admin != before.Admin {
-		held := 0
-		if s.HeldSessionEpoch != nil {
-			held = s.HeldSessionEpoch(before)
-		}
-		a.SessionEpoch = max(a.SessionEpoch, before.SessionEpoch, held) + 1
+		a.SessionEpoch = max(a.SessionEpoch, before.SessionEpoch) + 1
 	}
 	next := s.next()
 	next[i] = a
-	err := s.publish(next)
+	// Only a sign-out's epoch holds unsaved: a password or role change
+	// that isn't saved leaves the sessions as they were.
+	revoked, err := s.commit(next, bump)
 	s.mu.Unlock()
 	if err != nil {
+		s.notify(revoked...)
 		return Account{}, err
 	}
 	s.notify(a.Username)
 	return clone(a), nil
 }
 
-// BumpSessionEpoch ends every browser session of the account.
+// BumpSessionEpoch ends every browser session of the account. Unsaved, it
+// holds in memory all the same.
 func (s *Store) BumpSessionEpoch(username string) (Account, error) {
 	return s.update(username, func(*Account) {}, true)
 }
@@ -460,17 +534,29 @@ func (s *Store) Delete(username string) error {
 // token accounts never count for that.
 func (s *Store) DeleteWhere(fn func(Account) bool) ([]string, error) {
 	s.mu.Lock()
+	return s.deleteWhere(func(a Account) bool { return fn(clone(a)) })
+}
+
+// DeleteOrphans deletes the shares whose sharer lost them by now (see
+// Usable), and returns their usernames.
+func (s *Store) DeleteOrphans(now time.Time) ([]string, error) {
+	s.mu.Lock()
+	return s.deleteWhere(func(a Account) bool { return s.orphaned(a, now) })
+}
+
+// deleteWhere is DeleteWhere, called with the lock held, which it releases.
+func (s *Store) deleteWhere(fn func(Account) bool) ([]string, error) {
 	var gone []string
 	var keep []Account
 	removed := 0
-	for _, a := range s.next() {
-		if fn(clone(a)) {
+	for _, a := range s.list {
+		if fn(a) {
 			gone = append(gone, a.Username)
 			if passwordAdmin(a) {
 				removed++
 			}
 		} else {
-			keep = append(keep, a)
+			keep = append(keep, clone(a))
 		}
 	}
 	if len(gone) == 0 {
@@ -484,12 +570,12 @@ func (s *Store) DeleteWhere(fn func(Account) bool) ([]string, error) {
 	if keep == nil {
 		keep = []Account{}
 	}
-	err := s.publish(keep)
+	_, err := s.commit(keep, false)
 	s.mu.Unlock()
+	s.notify(gone...) // deleted, saved or not
 	if err != nil {
 		return nil, err
 	}
-	s.notify(gone...)
 	return gone, nil
 }
 
@@ -499,7 +585,8 @@ func (s *Store) TouchLogin(username string) error {
 	if i := s.index(username); i >= 0 {
 		next := s.next()
 		next[i].LastLogin = time.Now().UTC()
-		return s.publish(next)
+		_, err := s.commit(next, false)
+		return err
 	}
 	return nil
 }
@@ -528,11 +615,12 @@ func (s *Store) SetAccess(name string, levels map[string]auth.Level) error {
 			changed = append(changed, a.Username)
 		}
 	}
-	err := s.publish(next)
+	revoked, err := s.commit(next, false)
 	s.mu.Unlock()
-	if err == nil && len(changed) > 0 {
-		s.notify(changed...)
+	if err != nil {
+		changed = revoked
 	}
+	s.notify(changed...)
 	return err
 }
 
@@ -570,7 +658,8 @@ func (s *Store) Retain(keep func(name string) bool) error {
 	if !changed {
 		return nil
 	}
-	return s.publish(next)
+	_, err := s.commit(next, false)
+	return err
 }
 
 func (a Account) IsAdmin() bool { return a.Admin }

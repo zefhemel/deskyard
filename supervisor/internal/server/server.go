@@ -70,12 +70,7 @@ type Server struct {
 	activityPub    *throttle
 	screenWatchers *viewers   // screen-events streams, closed on revoke like viewers
 	transfers      *transfers // file uploads, closed on revoke
-	unsaved        *unsavedRevocations
-	// revoking is held by a change that decides an account's access or
-	// sessions, from its save to holding or forgetting what couldn't be
-	// saved, and by the sweep saving those; neither undoes the other.
-	revoking sync.Mutex
-	seen     *lastSeen // browser requests, by account ID
+	seen           *lastSeen  // browser requests, by account ID
 
 	api *http.ServeMux
 }
@@ -118,7 +113,7 @@ func New(o Options) (*Server, error) {
 		Layout: o.Layout, UI: o.UI,
 		jobs: newJobs(), events: newHub(), viewers: newViewers(), terminals: newTerminalConnections(), forwards: newForwards(), viewersPub: newThrottle(viewersInterval), streamDials: newDialGates(),
 		clients:     &clientFiles{eng: o.Eng, dir: filepath.Join(o.Layout.Cache, "client")},
-		activityPub: newThrottle(activityInterval), screenWatchers: newViewers(), transfers: newTransfers(), cliLogins: newCLILogins(), unsaved: newUnsavedRevocations(), seen: &lastSeen{at: map[string]time.Time{}},
+		activityPub: newThrottle(activityInterval), screenWatchers: newViewers(), transfers: newTransfers(), cliLogins: newCLILogins(), seen: &lastSeen{at: map[string]time.Time{}},
 		reconcile: make(chan struct{}, 1), davPasswords: newDAVPasswordCache(),
 	}
 	s.activity = s.newActivity(o.ActivityPresence)
@@ -178,10 +173,6 @@ func New(o Options) (*Server, error) {
 	// An environment whose pinned image was pulled again has a new revision.
 	s.Environments.Repinned = func([]environments.Repin) { s.events.refresh() }
 	o.Accounts.OnChange = s.accountsChanged
-	o.Accounts.HeldSessionEpoch = func(a accounts.Account) int {
-		a, _ = s.unsaved.apply(a)
-		return a.SessionEpoch
-	}
 	s.sweep() // links, credentials and shares left over from changes that didn't persist
 	s.detectMemoryReclaim(o.StartupContext)
 	s.routes()
@@ -362,13 +353,13 @@ func (s *Server) reissueSession(w http.ResponseWriter, r *http.Request, a accoun
 // withSession resolves the session cookie into the request context; it
 // refreshes cookies that are more than a day old. The cookie must name the
 // account by its ID and current session epoch, and the account must still
-// be usable (accountNow).
+// be usable (accounts.Store.Usable).
 func (s *Server) withSession(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
 	claims, ok := s.Sessions.Claims(r)
 	if !ok {
 		return r, false
 	}
-	a, found := s.accountNow(claims.Username, claims.AccountID, time.Now())
+	a, found := s.Accounts.Usable(claims.Username, claims.AccountID, time.Now())
 	if !found || a.SessionEpoch != claims.Epoch {
 		return r, false
 	}
@@ -391,13 +382,13 @@ func bearerOf(r *http.Request) (string, bool) {
 }
 
 // withCredential resolves a client credential into the request context. Its
-// account must be the one it was issued to, still usable (accountNow).
+// account must be the one it was issued to, still usable (accounts.Store.Usable).
 func (s *Server) withCredential(r *http.Request, bearer string) (*http.Request, bool) {
 	c, ok := s.credentials.check(bearer)
 	if !ok || c.Kind == davKind { // a WebDAV password opens only WebDAV
 		return r, false
 	}
-	a, found := s.accountNow(c.Username, c.AccountID, time.Now())
+	a, found := s.Accounts.Usable(c.Username, c.AccountID, time.Now())
 	if !found {
 		return r, false
 	}
@@ -493,7 +484,7 @@ func (s *Server) writeIndex(w http.ResponseWriter) {
 func (s *Server) accountsChanged(usernames ...string) {
 	now := time.Now()
 	for _, u := range usernames {
-		a, ok := s.accountState(u)
+		a, ok := s.Accounts.Get(u)
 		level := levelOf(a, ok, now)
 		s.terminals.revalidate(s, u)
 		s.transfers.revalidate(s, u)

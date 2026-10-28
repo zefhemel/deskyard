@@ -128,7 +128,7 @@ func (s *Server) handleScreenEvents(w http.ResponseWriter, r *http.Request) {
 	level := a.Level(c.ID)
 	who, _ := s.principal(r)
 	allowed := func() bool {
-		acct, ok := s.accountNow(a.Username, a.ID, time.Now())
+		acct, ok := s.Accounts.Usable(a.Username, a.ID, time.Now())
 		return ok && acct.Level(c.ID) == level && who.signedIn(acct)
 	}
 	r, untrack := s.trackStream(r)

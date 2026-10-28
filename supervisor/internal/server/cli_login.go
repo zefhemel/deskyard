@@ -267,7 +267,7 @@ func (s *Server) handleCLILoginToken(w http.ResponseWriter, r *http.Request) {
 	var cli cliSignIn
 	err := s.cliLogins.take(id, req.PollSecret, func(approver accounts.Account, client string) error {
 		var ok bool
-		if a, ok = s.accountNow(approver.Username, approver.ID, time.Now()); !ok {
+		if a, ok = s.Accounts.Usable(approver.Username, approver.ID, time.Now()); !ok {
 			return errCLILoginExpired
 		}
 		// The approver may have lost since what the CLI needs.

@@ -242,9 +242,17 @@ func TestLoweredGrantKeepsSessionEpoch(t *testing.T) {
 
 // A bump starts from the session epoch held unsaved, when it is ahead.
 func TestBumpStartsFromHeldSessionEpoch(t *testing.T) {
-	s, _ := Load(t.TempDir())
+	dir := t.TempDir()
+	s, _ := Load(dir)
 	_, _ = s.Create(NewAccount{Username: "bob", Password: "pw"})
-	s.HeldSessionEpoch = func(a Account) int { return 3 }
+	path := s.path
+	s.path = blocked(t, dir)
+	for range 3 {
+		if _, err := s.BumpSessionEpoch("bob"); err == nil {
+			t.Fatal("saved")
+		}
+	}
+	s.path = path
 	if a, _ := s.BumpSessionEpoch("bob"); a.SessionEpoch != 4 {
 		t.Errorf("sign out everywhere: epoch %d, want 4", a.SessionEpoch)
 	}
@@ -256,16 +264,21 @@ func TestBumpStartsFromHeldSessionEpoch(t *testing.T) {
 	}
 }
 
-func TestLoweredLevels(t *testing.T) {
-	before := []Grant{{Environment: "alice", Level: auth.LevelFull}, {Environment: "beta", Level: auth.LevelFull}, {Environment: "carol", Level: auth.LevelObserve}}
-	after := []Grant{{Environment: "alice", Level: auth.LevelObserve}, {Environment: "beta", Level: auth.LevelFull}, {Environment: "dora", Level: auth.LevelFull}}
-	got := Lowered(before, after)
-	if len(got) != 2 || got["alice"] != auth.LevelObserve || got["carol"] != auth.LevelNone {
-		t.Fatalf("lowered %v", got)
+func TestNarrowed(t *testing.T) {
+	before := Account{ID: "a", Admin: true, SessionEpoch: 2, Description: "before",
+		Grants: []Grant{{Environment: "alice", Level: auth.LevelFull}, {Environment: "beta", Level: auth.LevelFull}, {Environment: "carol", Level: auth.LevelObserve}}}
+	after := Account{ID: "a", SessionEpoch: 3, Description: "after",
+		Grants: []Grant{{Environment: "alice", Level: auth.LevelObserve}, {Environment: "beta", Level: auth.LevelFull}, {Environment: "dora", Level: auth.LevelFull}}}
+	got := narrowed(before, after, false)
+	if got.Admin || got.SessionEpoch != 2 || got.Description != "before" || len(got.Grants) != 2 ||
+		got.Level("alice") != auth.LevelObserve || got.Level("beta") != auth.LevelFull || got.Level("carol") != auth.LevelNone || got.Level("dora") != auth.LevelNone {
+		t.Fatalf("narrowed %+v", got)
 	}
-	capped := Capped(after, map[string]auth.Level{"beta": auth.LevelObserve, "dora": auth.LevelNone})
-	if grantLevel(capped, "alice") != auth.LevelObserve || grantLevel(capped, "beta") != auth.LevelObserve || grantLevel(capped, "dora") != auth.LevelNone || len(after) != 3 {
-		t.Fatalf("capped %v (from %v)", capped, after)
+	if got := narrowed(before, after, true); got.SessionEpoch != 3 {
+		t.Fatalf("narrowed with the epoch: %d", got.SessionEpoch)
+	}
+	if len(before.Grants) != 3 || before.Grants[0].Level != auth.LevelFull {
+		t.Fatalf("narrowed changed before: %+v", before.Grants)
 	}
 }
 

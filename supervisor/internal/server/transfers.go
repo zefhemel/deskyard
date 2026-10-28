@@ -53,7 +53,7 @@ func (t *transfers) closeAccount(username string) {
 }
 
 func (s *Server) transferAllowed(c *fileTransfer) bool {
-	a, ok := s.accountNow(c.username, c.accountID, time.Now())
+	a, ok := s.Accounts.Usable(c.username, c.accountID, time.Now())
 	return ok && (c.epoch == noSession || a.SessionEpoch == c.epoch) && auth.Can(a, auth.View, c.environment)
 }
 

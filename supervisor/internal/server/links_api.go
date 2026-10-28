@@ -83,7 +83,7 @@ func (s *Server) linkGone(w http.ResponseWriter, r *http.Request) {
 // linkAccount is the account a link signs in as, while it is the account
 // the link was issued to and may use anything.
 func (s *Server) linkAccount(l link) (accounts.Account, bool) {
-	return s.accountNow(l.Username, l.AccountID, time.Now())
+	return s.Accounts.Usable(l.Username, l.AccountID, time.Now())
 }
 
 // handleInspectLink shows what a link signs in as, without using it.

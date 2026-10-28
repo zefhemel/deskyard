@@ -35,9 +35,6 @@ func accountKind(a accounts.Account) string {
 
 // toAccountJSON shows a with its grants of defined environments.
 func (s *Server) toAccountJSON(a accounts.Account) accountJSON {
-	if held, ok := s.unsaved.apply(a); ok {
-		a = held
-	}
 	return accountJSON{Username: a.Username, Kind: accountKind(a), Admin: a.Admin, Description: a.Description,
 		Grants: s.definedGrants(a), SharedBy: a.SharedBy, Expires: a.Expires, LinkPending: s.links.pending(a.ID),
 		Created: a.Created, LastLogin: since(a.LastLogin)}
@@ -111,10 +108,8 @@ func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
-	// As access stands, so what the Edit dialog saves back keeps what
-	// couldn't be saved.
 	out := []accountJSON{}
-	for _, a := range s.accountStates() {
+	for _, a := range s.Accounts.List() {
 		out = append(out, s.toAccountJSON(a))
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -186,8 +181,6 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 	if req.Expires.Set && !checkExpiry(w, req.Expires.Time) {
 		return
 	}
-	s.revoking.Lock()
-	defer s.revoking.Unlock()
 	a, err := s.Accounts.Update(current.Username, func(a *accounts.Account) {
 		if req.Password != nil {
 			a.PasswordHash = auth.HashPassword(*req.Password)
@@ -206,31 +199,11 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 		}
 	})
 	if err != nil {
-		// What it revokes ends although it isn't saved.
-		if r := (unsavedRevocation{username: current.Username, id: current.ID}); errors.Is(err, accounts.ErrNotSaved) {
-			r.demoted = req.Admin != nil && !*req.Admin && current.Admin
-			if req.Grants != nil {
-				r.caps = accounts.Lowered(current.Grants, *req.Grants)
-			}
-			if r.demoted || len(r.caps) > 0 {
-				s.revokeUnsaved(r)
-			}
-		}
+		// Unsaved, what it revokes holds all the same (accounts.Store).
 		writeError(w, errorStatus(err), err.Error())
 		return
 	}
-	// Saved, this change decides the account's grants and role anew: what
-	// an earlier one that couldn't be saved revoked of them no longer
-	// applies.
 	if req.Grants != nil || req.Admin != nil {
-		s.unsaved.forget(current.Username, func(u *unsavedRevocation) {
-			if req.Grants != nil {
-				u.caps = nil
-			}
-			if req.Admin != nil {
-				u.demoted = false
-			}
-		})
 		s.events.refresh()
 	}
 	// Changing one's own password or role keeps this session.
@@ -253,25 +226,18 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 }
 
 // deleteAccount deletes the named account, writing the error when it
-// can't. When the deletion isn't saved the account ends anyway: it is held
-// deleted in memory, which closes its live connections and refuses its
-// reconnects, until the sweep saves the deletion.
+// can't. When the deletion isn't saved the account ends anyway: the store
+// holds it deleted, which closes its live connections and refuses its
+// reconnects, until a later write saves the deletion.
 func (s *Server) deleteAccount(w http.ResponseWriter, username string) bool {
-	s.revoking.Lock()
-	defer s.revoking.Unlock()
-	before, _ := s.Accounts.Get(username)
 	err := s.Accounts.Delete(username)
-	switch {
-	case err == nil:
+	if err == nil {
 		return true
-	case errors.Is(err, accounts.ErrNotFound), errors.Is(err, accounts.ErrLastAdmin):
-		writeError(w, errorStatus(err), err.Error())
-	default:
-		s.Log.Error("deleting account", "account", username, "err", err)
-		s.revokeUnsaved(unsavedRevocation{username: before.Username, id: before.ID, deleted: true})
-		s.closeAccount(username)
-		writeError(w, http.StatusInternalServerError, err.Error())
 	}
+	if errors.Is(err, accounts.ErrNotSaved) {
+		s.Log.Error("deleting account", "account", username, "err", err)
+	}
+	writeError(w, errorStatus(err), err.Error())
 	return false
 }
 

@@ -207,9 +207,9 @@ func (s *Server) davAccount(w http.ResponseWriter, r *http.Request) (accounts.Ac
 }
 
 func (s *Server) davCheck(username, password string) (accounts.Account, *credential, bool) {
-	a, found := s.accountState(username)
+	a, found := s.Accounts.Get(username)
 	if found {
-		a, found = s.accountNow(a.Username, a.ID, time.Now())
+		a, found = s.Accounts.Usable(a.Username, a.ID, time.Now())
 	}
 	if strings.HasPrefix(password, credentialPrefix) {
 		if c, ok := s.credentials.check(password); ok && found && c.Kind == davKind && c.AccountID == a.ID {

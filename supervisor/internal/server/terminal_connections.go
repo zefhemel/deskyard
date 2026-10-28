@@ -190,7 +190,7 @@ func (t *terminalConnections) shutdown() {
 	}
 }
 func (s *Server) terminalAllowed(c *terminalConnection) bool {
-	a, ok := s.accountNow(c.claims.Username, c.claims.AccountID, time.Now())
+	a, ok := s.Accounts.Usable(c.claims.Username, c.claims.AccountID, time.Now())
 	return ok && a.SessionEpoch == c.claims.Epoch &&
 		auth.Can(a, auth.View, c.environment) && time.Now().Before(c.claims.Expires)
 }

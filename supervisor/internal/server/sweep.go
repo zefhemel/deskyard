@@ -23,70 +23,25 @@ func levelOf(a accounts.Account, ok bool, now time.Time) func(environment string
 	}
 }
 
-// accountNow is the named account as it stands now (with the revocations
-// that couldn't be saved), while it is still the one with id and may use
-// anything: it hasn't expired and isn't a share whose sharer lost it, as
-// when deleting it failed. Requests and the connections
-// they hold check it, so revocation holds even when persisting it failed.
-func (s *Server) accountNow(username, id string, now time.Time) (accounts.Account, bool) {
-	a, ok := s.accountState(username)
-	if !ok || a.ID != id || a.Expired(now) {
-		return accounts.Account{}, false
-	}
-	if a.SharedBy != nil {
-		sharers := map[string]accounts.Account{}
-		if sharer, ok := s.accountState(a.SharedBy.Username); ok {
-			sharers[sharer.Username] = sharer
-		}
-		if orphanedShare(a, sharers, now) {
-			return accounts.Account{}, false
-		}
-	}
-	return a, true
-}
-
-// orphanedShare reports whether share has lost its reason to exist: its
-// environment is gone (it has no grant), or its sharer (by ID, from
-// sharers) is gone, expired or no longer full on the environment. Admins
-// are full everywhere, so their shares stay while they are admins.
-func orphanedShare(share accounts.Account, sharers map[string]accounts.Account, now time.Time) bool {
-	if share.SharedBy == nil {
-		return false
-	}
-	g, ok := share.ShareGrant()
-	if !ok {
-		return true
-	}
-	sharer, ok := sharers[share.SharedBy.Username]
-	return !ok || sharer.ID != share.SharedBy.ID || levelOf(sharer, true, now)(g.Environment) != auth.LevelFull
-}
-
 // sweep makes links, credentials and shares follow the accounts: it deletes
 // the shares whose sharer lost them, the links and credentials whose account
 // is gone (also when one of the same name replaced it), and closes the
 // connections credentials hold to environments their account may no longer
 // use fully. It runs on every account change and once at startup, and first
-// retries saving the revocations that couldn't be saved. Failed writes are
-// logged and the connections are closed anyway.
+// retries saving the revocations the accounts hold unsaved. Failed writes
+// are logged; an orphaned share is refused (and held deleted) all the same.
 func (s *Server) sweep() {
-	s.retryUnsaved()
-	now := time.Now()
-	byName := map[string]accounts.Account{}
-	for _, a := range s.accountStates() {
-		byName[a.Username] = a
+	if err := s.Accounts.Flush(); err != nil {
+		s.Log.Error("saving the accounts' revocations", "err", err)
 	}
+	now := time.Now()
 	// The deletion notifies accountsChanged, which closes the shares'
 	// browser connections and sweeps again for their links and credentials.
-	if _, err := s.Accounts.DeleteWhere(func(a accounts.Account) bool { return orphanedShare(a, byName, now) }); err != nil {
+	if _, err := s.Accounts.DeleteOrphans(now); err != nil {
 		s.Log.Error("deleting shares whose sharer lost access", "err", err)
-		for _, a := range byName {
-			if orphanedShare(a, byName, now) {
-				s.closeAccount(a.Username)
-			}
-		}
 	}
 	current := func(username, id string) bool {
-		a, ok := s.accountState(username)
+		a, ok := s.Accounts.Get(username)
 		return ok && a.ID == id
 	}
 	if err := s.links.retain(func(l link) bool { return current(l.Username, l.AccountID) }); err != nil {
@@ -96,8 +51,8 @@ func (s *Server) sweep() {
 		s.Log.Error("deleting client credentials of deleted accounts", "err", err)
 	}
 	for _, c := range s.credentials.list("") {
-		a, ok := s.accountState(c.Username)
-		level := levelOf(a, ok && a.ID == c.AccountID && !orphanedShare(a, byName, now), now)
+		a, ok := s.Accounts.Usable(c.Username, c.AccountID, now)
+		level := levelOf(a, ok, now)
 		s.credentials.closeWhere(c.ID, func(environment string) bool { return environment != "" && level(environment) != auth.LevelFull })
 	}
 }
@@ -134,8 +89,7 @@ func (s *Server) expireLoop(ctx context.Context) {
 }
 
 // expireAccounts deletes the accounts expired by now. Their access already
-// ended (requests check the expiry); when the deletion fails their
-// connections are closed anyway.
+// ended (requests check the expiry).
 func (s *Server) expireAccounts(now time.Time) {
 	var expired []string
 	for _, a := range s.Accounts.List() {
@@ -146,9 +100,9 @@ func (s *Server) expireAccounts(now time.Time) {
 	if len(expired) == 0 {
 		return
 	}
+	// Unsaved, the store holds them deleted all the same.
 	if _, err := s.Accounts.DeleteWhere(func(a accounts.Account) bool { return a.Expired(now) }); err != nil {
 		s.Log.Error("deleting expired accounts", "accounts", expired, "err", err)
-		s.accountsChanged(expired...) // expired accounts may use nothing
 	}
 }
 

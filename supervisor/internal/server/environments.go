@@ -106,7 +106,7 @@ func (s *Server) environmentJSON(ctx context.Context, c environments.Environment
 		}
 	}
 	if a.Admin && c.Revision != 0 { // defined, not still being created
-		levels := s.accessOf(c.Name)
+		levels := s.Accounts.WithAccess(c.Name)
 		for _, u := range slices.Sorted(maps.Keys(levels)) {
 			j.Access = append(j.Access, accessGrant{Username: u, Level: levels[u]})
 		}
@@ -541,44 +541,14 @@ func (s *Server) handleSetAccess(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.revoking.Lock()
-	defer s.revoking.Unlock()
-	before := map[string]accounts.Account{}
-	for _, a := range s.Accounts.List() {
-		before[a.Username] = a
-	}
+	// Unsaved, what it revokes holds all the same (accounts.Store).
 	if err := s.Accounts.SetAccess(c.Name, access); err != nil {
-		// What it revokes ends although it isn't saved.
-		for u, a := range before {
-			if want := access[u]; !a.Admin && !a.IsShare() && len(accounts.Lowered(a.Grants, accounts.Capped(a.Grants, map[string]auth.Level{c.Name: want}))) > 0 {
-				s.revokeUnsaved(unsavedRevocation{username: u, id: a.ID, caps: map[string]auth.Level{c.Name: want}})
-			}
-		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
-	}
-	// Saved, these levels decide the environment's grants anew: what an
-	// earlier change that couldn't be saved revoked of them no longer
-	// applies.
-	for u := range before {
-		s.unsaved.forget(u, func(u *unsavedRevocation) { delete(u.caps, c.Name) })
 	}
 	s.events.refresh()
 	s.publishEnvironment(r.Context(), c.Name)
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// accessOf maps the regular accounts (not admins, not shares) with access to
-// the named environment to their level, as their access stands: with what
-// couldn't be saved applied, so what the Access tab saves back keeps it.
-func (s *Server) accessOf(name string) map[string]auth.Level {
-	out := map[string]auth.Level{}
-	for _, a := range s.accountStates() {
-		if l := a.Level(name); !a.Admin && !a.IsShare() && l != auth.LevelNone {
-			out[a.Username] = l
-		}
-	}
-	return out
 }
 
 // execOutput runs a command as the environment's user and returns its stdout.

@@ -132,7 +132,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	// session epoch; the page reconnects with its new cookie), and once its
 	// credential is deleted.
 	sendAll := func() bool {
-		acct, ok := s.accountNow(a.Username, a.ID, time.Now())
+		acct, ok := s.Accounts.Usable(a.Username, a.ID, time.Now())
 		if !ok || !who.signedIn(acct) {
 			return false
 		}
@@ -166,7 +166,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case e := <-sub.c:
-			acct, ok := s.accountNow(a.Username, a.ID, time.Now())
+			acct, ok := s.Accounts.Usable(a.Username, a.ID, time.Now())
 			if !ok {
 				return
 			}

@@ -207,9 +207,7 @@ func TestExpiryClosesConnectionsWhenTheDeletionFails(t *testing.T) {
 		t.Fatal("the connections closed before the expiry tick")
 	}
 	s.expireAccounts(time.Now())
-	if _, ok := s.Accounts.Get("sanne"); !ok {
-		t.Fatal("deleted the expired account although writing accounts.json fails")
-	}
+	requireUnsaved(t, s)
 	if ctx.Err() == nil || stream.Err() == nil {
 		t.Fatalf("an expired account's connections stayed open when its deletion failed: exec %v, stream %v", ctx.Err(), stream.Err())
 	}
@@ -279,9 +277,7 @@ func TestOrphanedShareRefusedWhenTheDeletionFails(t *testing.T) {
 	s.Accounts.OnChange = s.accountsChanged
 	blockAccountsFile(t, s)
 	s.sweep()
-	if _, ok := s.Accounts.Get("sanne"); !ok {
-		t.Fatal("deleted the share although writing accounts.json fails")
-	}
+	requireUnsaved(t, s)
 	for _, path := range []string{"/api/me", "/api/environments/alice"} {
 		if code, _, _ := bearerRequest(t, "GET", ts.URL+path, bearer); code != http.StatusUnauthorized {
 			t.Errorf("the orphaned share's GET %s: %d", path, code)
