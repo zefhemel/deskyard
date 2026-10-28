@@ -10,6 +10,18 @@ def test_git_and_ssh_are_installed(sandbox):
     sandbox.exec("git --version && ssh -V")
 
 
+def test_user_supervisor_controls_desktop_services(sandbox):
+    ctl = "supervisorctl -c /etc/workspace/user-services.conf"
+    assert "RUNNING" in sandbox.exec(f"{ctl} status selkies").stdout
+    sandbox.exec(f"{ctl} stop selkies")
+    try:
+        assert "STOPPED" in sandbox.exec(f"{ctl} status selkies", check=False).stdout
+    finally:
+        sandbox.exec(f"{ctl} start selkies")
+    assert "RUNNING" in sandbox.exec(f"{ctl} status selkies").stdout
+    assert sandbox.exec("stat -c %U:%a /run/workspace/user-supervisor.sock").stdout.strip() == "user:600"
+
+
 def test_resolution_env(make_sandbox):
     sb = make_sandbox(env={**DEFAULT_ENV, "WORKSPACE_RESOLUTION": "1024x768"})
     assert "1024x768" in sb.exec("xdpyinfo -display :1 | grep dimensions").stdout

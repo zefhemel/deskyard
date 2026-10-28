@@ -9,5 +9,5 @@ if [ /proc/self/ns/user -ef "/proc/$namespace_pid/ns/user" ] &&
     exec /usr/bin/setpriv --inh-caps=-all --ambient-caps=-all -- "$@"
 fi
 exec /usr/bin/nsenter --target "$namespace_pid" --user --mount \
-    --preserve-credentials --keep-caps -- \
+    --wd="$(pwd -P)" --preserve-credentials --keep-caps -- \
     /usr/bin/setpriv --inh-caps=-all --ambient-caps=-all -- "$@"

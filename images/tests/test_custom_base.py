@@ -89,7 +89,9 @@ def test_remote_with_bad_name_is_skipped(make_sandbox, derive):
 def test_base_node_resolves_to_runtimes_not_mise(sandbox):
     for login in (True, False):
         assert sandbox.exec("which node", login=login).stdout.strip() == "/opt/runtimes/node/bin/node"
-    assert sandbox.exec("stat -c %U:%a /opt/deskyard/bin").stdout.strip() == "root:755"
+    # Image ownership is inspected outside the user namespace, where only the
+    # desktop user's UID is mapped and root therefore appears as nobody.
+    assert sandbox.exec("stat -c %U:%a /opt/deskyard/bin", join_session=False).stdout.strip() == "root:755"
 
 
 @pytest.mark.network

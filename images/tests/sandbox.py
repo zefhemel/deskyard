@@ -77,7 +77,7 @@ class Sandbox:
         return res.stdout + res.stderr
 
     def restart(self) -> None:
-        docker("restart", "-t", "5", self.name)
+        docker("restart", "-t", "45", self.name)
         self.wait_ready()
 
     def wait_ready(self, timeout: float = 90) -> None:
@@ -97,7 +97,7 @@ class Sandbox:
         assert self.get("/", timeout=3).status_code == 200
 
     def stop(self) -> None:
-        docker("stop", "-t", "10", self.name)
+        docker("stop", "-t", "45", self.name)
 
     def remove(self) -> None:
         docker("rm", "-f", "-v", self.name, check=False)

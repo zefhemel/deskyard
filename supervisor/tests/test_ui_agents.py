@@ -7,7 +7,7 @@ import time
 from playwright.sync_api import expect, sync_playwright
 
 from conftest import docker, free_port
-from helpers import PICTURE, SCREEN, SHOWING, connected, open_desktop, open_display_menu, signed_in, to_page
+from helpers import desktop_service, PICTURE, SCREEN, SHOWING, connected, open_desktop, open_display_menu, signed_in, to_page
 
 
 def test_forwards_shown(cli, remote, forwards, supervisor, name):
@@ -81,7 +81,7 @@ def test_open_popover_stays_open_when_the_stream_connects(cli, remote, superviso
     remote("-e", name, "exec", "--", "true")  # an agent, so the popover has a row before anyone views
     busy = subprocess.Popen([cli, "-e", name, "exec", "--", "sleep", "600"], env=remote.env,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    docker("exec", f"deskyard-{name}", "supervisorctl", "stop", "selkies")
+    desktop_service(name, "stop", "selkies")
     try:
         with sync_playwright() as pw:
             browser, page = signed_in(pw, supervisor.base)
@@ -92,14 +92,14 @@ def test_open_popover_stays_open_when_the_stream_connects(cli, remote, superviso
             agents = page.get_by_role("heading", name="CLI activity")
             expect(agents).to_be_visible()
             expect(connected(page)).to_be_hidden()
-            docker("exec", f"deskyard-{name}", "supervisorctl", "start", "selkies")
+            desktop_service(name, "start", "selkies")
             expect(connected(page)).to_be_visible(timeout=30000)
             page.wait_for_function(SHOWING, timeout=30000)
             time.sleep(0.5)
             expect(agents).to_be_visible()
             browser.close()
     finally:
-        docker("exec", f"deskyard-{name}", "supervisorctl", "start", "selkies", check=False)
+        desktop_service(name, "start", "selkies", check=False)
         busy.terminate()
         busy.wait(10)
 

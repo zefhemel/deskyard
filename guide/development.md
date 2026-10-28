@@ -137,3 +137,5 @@ AC_IMAGE=deskyard-debian-xfce:dev uv run pytest -m "not slow and not network"
 For shared-engine VPN verification, use the [scoped VPN test guide](../supervisor/tests/VPN.md). Its `vpnintegration` test binary protects existing resources with a unique ownership label. Do not start an ordinary production supervisor or the full-main Python fixture against a Docker engine holding unrelated environments.
 
 For UI development against an existing test supervisor, run `DESKYARD_API=http://<supervisor>:7343 npm run dev` in `supervisor/web`. The Vite proxy rewrites both Host and Origin to the supervisor for API and desktop stream requests, so login and other same-origin checks work through the development URL. Without `DESKYARD_API`, Vite uses mock data.
+
+In current desktop images, control a user service as the desktop user with `/usr/local/bin/workspace-exec supervisorctl -c /etc/workspace/user-services.conf stop selkies` (or `start selkies`). The root supervisor controls system services; the user control socket is private. Allow at least 45 seconds when stopping disposable desktop containers to observe the complete ordered shutdown.

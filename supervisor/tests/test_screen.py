@@ -13,7 +13,7 @@ import websockets
 
 import netchange
 from conftest import docker
-from helpers import FAKE_MEDIA, make_account, open_desktop, read_events, sign_in, signed_in, wait_loaded, wait_until, ws_handshake
+from helpers import desktop_service, FAKE_MEDIA, make_account, open_desktop, read_events, sign_in, signed_in, wait_loaded, wait_until, ws_handshake
 
 
 def ws_url(client, name, tab=None):
@@ -147,7 +147,7 @@ def test_reconnect_probe_and_other_selkies_api(admin, desktop, name):
 def test_client_comes_from_the_image_not_the_desktop(admin, desktop, name):
     # With Selkies stopped inside the desktop, the client still loads: it was
     # never proxied.
-    docker("exec", f"deskyard-{name}", "supervisorctl", "stop", "selkies")
+    desktop_service(name, "stop", "selkies")
     try:
         assert wait_until(lambda: admin.get(f"/{name}/screen/api/websockets").status_code == 503)
         page = admin.get(f"/{name}/screen/")
@@ -166,7 +166,7 @@ def test_client_comes_from_the_image_not_the_desktop(admin, desktop, name):
         assert js.status_code == 200 and js.headers["Cache-Control"] == "no-store" and "deskyardScreen" in js.text
         assert js.headers["Content-Type"].startswith("text/javascript")
     finally:
-        docker("exec", f"deskyard-{name}", "supervisorctl", "start", "selkies")
+        desktop_service(name, "start", "selkies")
 
 
 def test_mic_badge_follows_the_stream(admin, desktop, name):

@@ -50,6 +50,15 @@ def in_desktop(name, *args, check=True) -> str:
     return r.stdout
 
 
+def desktop_service(name: str, action: str, service: str, *, check=True) -> str:
+    """Control a desktop service through the supervisor that owns it."""
+    prefix = desktop_exec_prefix(name)
+    config = ["-c", "/etc/workspace/user-services.conf"] if prefix else []
+    result = docker("exec", "-u", "user" if prefix else "root",
+                    f"deskyard-{name}", *prefix, "supervisorctl", *config, action, service, check=check)
+    return result.stdout
+
+
 def user_sh(name: str, script: str) -> str:
     """A login shell script as the desktop's user; its output."""
     r = docker("exec", "-u", "user", f"deskyard-{name}", *desktop_exec_prefix(name), "bash", "-lc", script, check=False)
