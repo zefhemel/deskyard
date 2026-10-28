@@ -3,10 +3,12 @@ package environments
 import (
 	"bytes"
 	"context"
-	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/helper"
 )
 
 type dockerAccessEngine struct {
@@ -232,7 +234,7 @@ func TestHostPreflightCombinesFoldersAndSocket(t *testing.T) {
 						t.Fatalf("created %d new container specs, want %d (one shared preflight)", got, want)
 					}
 					for id, spec := range e.specs {
-						if spec.Image != helperImage {
+						if spec.Image != helper.Image {
 							continue
 						}
 						if len(spec.Mounts) != 2 {

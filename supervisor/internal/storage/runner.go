@@ -3,9 +3,6 @@ package storage
 import (
 	"archive/tar"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -14,15 +11,15 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/helper"
 )
 
 // The helper's images, pinned. restic is taken out of its image into
-// containers of rclone's, so Deskyard publishes no image of its own.
+// helpers of rclone's, so Deskyard publishes no image of its own.
 const (
-	RcloneImage = "rclone/rclone:1.75.2"
+	RcloneImage = helper.Image
 	ResticImage = "restic/restic:0.19.1"
 	resticPath  = "/usr/bin/restic" // in ResticImage
 )
@@ -47,18 +44,15 @@ type Runner interface {
 	Run(ctx context.Context, c Call) (Result, error)
 }
 
-// EngineRunner runs each Call in a new helper container of RcloneImage,
-// removed when the call returns. restic comes from ResticImage: extracted
-// once into BinDir (a host folder) and mounted read-only, or, without a
-// BinDir, copied into each container.
+// EngineRunner runs each Call in a new storage helper of RcloneImage
+// (helper.Runner), removed when the call returns. restic comes from
+// ResticImage: extracted once into BinDir (a host folder) and mounted
+// read-only, or, without a BinDir, copied into each helper.
 type EngineRunner struct {
-	Eng    engine.Engine
-	BinDir string
-	// Instance labels the helpers as this supervisor's, for RemoveStale.
-	Instance string
+	Helpers *helper.Runner
+	BinDir  string
 
-	pullMu    sync.Mutex
-	cleanOnce sync.Once
+	binMu sync.Mutex
 }
 
 // resticBinary is the restic binary extracted into BinDir, made on first use.
@@ -67,7 +61,7 @@ func (r *EngineRunner) resticBinary(ctx context.Context) (string, error) {
 	if st, err := os.Stat(path); err == nil && st.Mode().IsRegular() {
 		return path, nil
 	}
-	rc, err := r.Eng.CopyFromImage(ctx, ResticImage, resticPath)
+	rc, err := r.Helpers.Eng.CopyFromImage(ctx, ResticImage, resticPath)
 	if err != nil {
 		return "", err
 	}
@@ -104,106 +98,36 @@ func (r *EngineRunner) resticBinary(ctx context.Context) (string, error) {
 	}
 }
 
-func (r *EngineRunner) ensureImages(ctx context.Context) error {
-	r.pullMu.Lock()
-	defer r.pullMu.Unlock()
-	for _, ref := range []string{RcloneImage, ResticImage} {
-		if _, err := r.Eng.ImageInspect(ctx, ref); errors.Is(err, engine.ErrNotFound) {
-			if err := r.Eng.Pull(ctx, ref, nil); err != nil {
-				return fmt.Errorf("pulling %s: %w", ref, err)
-			}
-		} else if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (r *EngineRunner) Run(ctx context.Context, c Call) (Result, error) {
-	r.cleanOnce.Do(func() { r.RemoveStale(ctx) })
-	if err := r.ensureImages(ctx); err != nil {
+	if err := r.Helpers.Ensure(ctx, ResticImage); err != nil {
 		return Result{}, err
 	}
-	mounts := slices.Clone(c.Mounts)
+	spec := helper.Spec{Purpose: helper.Storage, Image: RcloneImage, Mounts: slices.Clone(c.Mounts), Cmd: c.Args, Stdout: c.Stdout}
 	if r.BinDir != "" {
-		r.pullMu.Lock()
+		r.binMu.Lock()
 		bin, err := r.resticBinary(ctx)
-		r.pullMu.Unlock()
+		r.binMu.Unlock()
 		if err != nil {
 			return Result{}, fmt.Errorf("preparing restic: %w", err)
 		}
-		mounts = append(mounts, engine.Mount{Source: bin, Target: "/usr/local/bin/restic", ReadOnly: true, MustExist: true})
-	}
-	raw := make([]byte, 4)
-	_, _ = rand.Read(raw)
-	name := "deskyard-storage-" + hex.EncodeToString(raw)
-	if _, err := r.Eng.Create(ctx, engine.ContainerSpec{
-		Name: name, Image: RcloneImage, Entrypoint: []string{"sleep"}, Cmd: []string{"86400"},
-		Mounts: mounts, NoHealthcheck: true, Restart: "no", Labels: r.labels(),
-	}); err != nil {
-		return Result{}, err
-	}
-	defer func() {
-		cleanup, done := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-		defer done()
-		_ = r.Eng.Remove(cleanup, name)
-	}()
-	if r.BinDir == "" {
-		bin, err := r.Eng.CopyFromImage(ctx, ResticImage, resticPath)
-		if err != nil {
-			return Result{}, fmt.Errorf("copying restic: %w", err)
-		}
-		err = r.Eng.CopyToContainer(ctx, name, "/usr/local/bin", bin)
-		bin.Close()
-		if err != nil {
-			return Result{}, fmt.Errorf("copying restic: %w", err)
+		spec.Mounts = append(spec.Mounts, engine.Mount{Source: bin, Target: "/usr/local/bin/restic", ReadOnly: true, MustExist: true})
+	} else {
+		spec.Prepare = func(ctx context.Context, id string) error {
+			bin, err := r.Helpers.Eng.CopyFromImage(ctx, ResticImage, resticPath)
+			if err != nil {
+				return fmt.Errorf("copying restic: %w", err)
+			}
+			defer bin.Close()
+			if err := r.Helpers.Eng.CopyToContainer(ctx, id, "/usr/local/bin", bin); err != nil {
+				return fmt.Errorf("copying restic: %w", err)
+			}
+			return nil
 		}
 	}
-	if err := r.Eng.Start(ctx, name); err != nil {
-		return Result{}, err
-	}
-	env := make([]string, 0, len(c.Env))
 	for k, v := range c.Env {
-		env = append(env, k+"="+v)
+		spec.Env = append(spec.Env, k+"="+v)
 	}
-	sort.Strings(env)
-	out := c.Stdout
-	if out == nil {
-		out = io.Discard
-	}
-	res, err := engine.Run(ctx, r.Eng, name, engine.ExecSpec{Cmd: slices.Clone(c.Args), User: "0", Env: env}, engine.RunOptions{
-		StderrLimit: 1 << 20,
-		Consume: func(rd io.Reader) error {
-			_, err := io.Copy(out, rd)
-			return err
-		},
-	})
-	if err != nil {
-		return Result{}, err
-	}
-	return Result{Code: res.Code, Stderr: tail(string(res.Stderr), 8<<10)}, nil
-}
-
-func (r *EngineRunner) labels() map[string]string {
-	return map[string]string{"deskyard.helper": "storage", "deskyard.instance": r.Instance}
-}
-
-// RemoveStale removes this supervisor's helpers that a crash or kill left
-// running, which would otherwise keep folders mounted and repository locks
-// held. Run calls it once, before this supervisor's first helper.
-func (r *EngineRunner) RemoveStale(ctx context.Context) {
-	cs, err := r.Eng.List(ctx, r.labels())
-	if err != nil {
-		return
-	}
-	for _, c := range cs {
-		_ = r.Eng.Remove(ctx, c.ID)
-	}
-}
-
-func tail(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[len(s)-n:]
+	sort.Strings(spec.Env)
+	res, err := r.Helpers.Run(ctx, spec)
+	return Result{Code: res.Code, Stderr: res.Stderr}, err
 }

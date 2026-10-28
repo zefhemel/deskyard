@@ -63,18 +63,6 @@ func (s *Service) repoFor(it Item, name string) (string, error) {
 	return "", fmt.Errorf("say which repository %s's snapshot is in", it)
 }
 
-// helper runs a plain command as root in a helper, with mounts.
-func (s *Service) helper(ctx context.Context, what string, mounts []engine.Mount, args ...string) error {
-	res, err := s.Tool.Run.Run(ctx, Call{Mounts: mounts, Args: args})
-	if err != nil {
-		return fmt.Errorf("%s: %w", what, err)
-	}
-	if res.Code != 0 {
-		return failure(what, res)
-	}
-	return nil
-}
-
 // itemFolder is the host folder holding the item's files.
 func (s *Service) itemFolder(it Item) (string, error) {
 	if it.Kind == KindEnvironment {
@@ -257,8 +245,7 @@ func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snaps
 		return RestoreResult{}, err
 	}
 	removeFolder := func() {
-		_ = s.helper(context.WithoutCancel(ctx), "removing "+folder, []engine.Mount{{Source: filepath.Dir(folder), Target: "/parent"}}, "rm", "-rf", "/parent/"+filepath.Base(folder))
-		_ = os.RemoveAll(folder)
+		_ = s.Env.RemoveTree(context.WithoutCancel(ctx), filepath.Dir(folder), filepath.Base(folder))
 	}
 	progress("Restoring", 0)
 	target := engine.Mount{Source: folder, MustExist: true}
@@ -352,7 +339,7 @@ func (s *Service) restoreFolder(ctx context.Context, it Item, repo Repo, snap Sn
 	// belongs to the host's user), so the root helper makes the folder
 	// there. Homes and local volumes are the supervisor's own.
 	if v, ok := s.Env.Volume(it.Name); it.Kind == KindVolume && ok && v.Kind == environments.VolumeHost {
-		if err := s.helper(ctx, "making "+name, []engine.Mount{{Source: folder, Target: "/item", MustExist: true}}, "install", "-d", "-o", "1000", "-g", "1000", "-m", "0755", "/item/"+name); err != nil {
+		if err := s.Env.MakeUserFolder(ctx, folder, name); err != nil {
 			return RestoreResult{}, err
 		}
 	} else if err := os.Mkdir(filepath.Join(folder, name), 0o755); err != nil {

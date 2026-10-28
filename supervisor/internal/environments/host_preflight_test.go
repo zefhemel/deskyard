@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/helper"
 )
 
 // Faults are injected at the remote engine boundary, preserving real service
@@ -137,7 +138,7 @@ func TestHostPreflightFailuresPreserveEnvironmentAndOwnCleanup(t *testing.T) {
 			}
 			if e.removeErr == nil && stage != "create" {
 				for id, spec := range e.specs {
-					if spec.Image == helperImage {
+					if spec.Image == helper.Image {
 						if _, exists := e.cs[id]; exists {
 							t.Fatalf("helper leaked: %s", id)
 						}

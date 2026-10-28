@@ -26,6 +26,7 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/helper"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 )
@@ -150,6 +151,9 @@ type Service struct {
 	// volMu serialises creating and deleting volumes, folders included. Lock
 	// order: volMu, then Defs.mu, then Vols.mu.
 	volMu sync.Mutex
+
+	helpersOnce sync.Once
+	helpers     *helper.Runner
 }
 
 // New makes a service with no definitions or volumes yet (saved to
@@ -1209,66 +1213,6 @@ func treeSize(dir string) (bytes int64, complete bool) {
 		return nil
 	})
 	return bytes, complete
-}
-
-// removeTree removes the folder child of root, such as a workspace folder
-// in home/. Its files belong to UID 1000 (and Flatpak leaves read-only
-// directories), so the removal runs in a helper container of alpine, as root.
-func (s *Service) removeTree(ctx context.Context, root, child string) error {
-	if child == "" || child == "." || child == ".." || strings.ContainsRune(child, '/') {
-		return fmt.Errorf("not a folder name: %q", child)
-	}
-	folder := filepath.Join(root, child)
-	if err := os.RemoveAll(folder); err == nil {
-		return nil
-	}
-	if err := s.runHelper(ctx, "deskyard-remove-", root, "/remove-root", "rm", "-rf", "/remove-root/"+child); err != nil {
-		return err
-	}
-	if _, err := os.Stat(folder); err == nil {
-		return fmt.Errorf("could not delete %s", s.Layout.ToHost(folder))
-	}
-	return nil
-}
-
-// runHelper runs cmd as root in a helper container with the host folder root
-// mounted at target, and waits (up to a minute) for it to finish. It reports
-// only failures to run it: callers check the outcome on disk.
-func (s *Service) runHelper(ctx context.Context, prefix, root, target string, cmd ...string) error {
-	if err := s.ensureHelper(ctx); err != nil {
-		return err
-	}
-	hname := prefix + randomHex(4)
-	_, err := s.Eng.Create(ctx, engine.ContainerSpec{
-		Name: hname, Image: helperImage, Cmd: cmd,
-		Mounts: []engine.Mount{{Source: root, Target: target}},
-	})
-	if err != nil {
-		return err
-	}
-	defer func() { _ = s.Eng.Remove(context.WithoutCancel(ctx), hname) }()
-	if err := s.Eng.Start(ctx, hname); err != nil {
-		return err
-	}
-	for i := 0; i < 600; i++ {
-		c, err := s.Eng.Inspect(ctx, hname)
-		if err != nil || !c.Running() {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return nil
-}
-
-// helperImage runs as root over environment folders whose files the supervisor
-// itself can't read or delete (they belong to UID 1000).
-const helperImage = "alpine:3.22"
-
-func (s *Service) ensureHelper(ctx context.Context) error {
-	if _, err := s.Eng.ImageInspect(ctx, helperImage); errors.Is(err, engine.ErrNotFound) {
-		return s.Eng.Pull(ctx, helperImage, nil)
-	}
-	return nil
 }
 
 // Target is where the proxy reaches a running environment's port 8080, and the

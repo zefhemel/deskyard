@@ -15,6 +15,9 @@ type Environments interface {
 	Volume(name string) (environments.Volume, bool)
 	VolumeFolder(v environments.Volume) string
 	VolumeUsers(name string) []environments.VolumeUser
+	// RemoveTree and MakeUserFolder change folders as root, through a helper.
+	RemoveTree(ctx context.Context, root, child string) error
+	MakeUserFolder(ctx context.Context, parent, child string) error
 
 	Get(ctx context.Context, name string) (environments.Environment, error)
 	Reserve(name, state string) (func(), error)

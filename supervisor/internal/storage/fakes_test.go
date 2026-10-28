@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -98,6 +99,14 @@ func (e *fakeEnv) VolumeUsers(name string) []environments.VolumeUser {
 		}
 	}
 	return out
+}
+func (e *fakeEnv) RemoveTree(_ context.Context, root, child string) error {
+	e.record("remove tree " + filepath.Join(root, child))
+	return os.RemoveAll(filepath.Join(root, child))
+}
+func (e *fakeEnv) MakeUserFolder(_ context.Context, parent, child string) error {
+	e.record("make user folder " + filepath.Join(parent, child))
+	return os.Mkdir(filepath.Join(parent, child), 0o755)
 }
 func (e *fakeEnv) Get(_ context.Context, name string) (environments.Environment, error) {
 	if _, ok := e.defs[name]; !ok {

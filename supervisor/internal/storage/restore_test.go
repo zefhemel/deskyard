@@ -326,15 +326,8 @@ func TestRestoreToFolderHostUsesHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var found bool
-	for _, c := range f.calls {
-		if c.Args[0] == "install" && slices.Contains(c.Args, "-o") && slices.Contains(c.Args, "1000") && c.Args[len(c.Args)-1] == "/item/"+res.Folder &&
-			len(c.Mounts) == 1 && c.Mounts[0].Source == host {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("no install -d -o 1000 helper call: %+v", f.calls)
+	if got := env.events(); got != "make user folder "+filepath.Join(host, res.Folder) {
+		t.Fatalf("not made by the root helper: %s", got)
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/helper"
 )
 
 // helperFakeEngine records what an EngineRunner asks of the engine; exec
@@ -99,7 +100,7 @@ func (e *helperFakeEngine) Remove(_ context.Context, id string) error {
 
 func TestEngineRunnerSpecCarriesNoSecrets(t *testing.T) {
 	e := &helperFakeEngine{out: "listing\n", code: 3}
-	r := &EngineRunner{Eng: e}
+	r := &EngineRunner{Helpers: &helper.Runner{Eng: e}}
 	mounts := []engine.Mount{{Source: "/data/secret/remotes/nas", Target: RemoteMount, ReadOnly: true}}
 	env := map[string]string{"RCLONE_CONFIG": RemoteMount + "/rclone.conf"}
 	var out bytes.Buffer
@@ -128,14 +129,14 @@ func TestEngineRunnerSpecCarriesNoSecrets(t *testing.T) {
 	if len(e.removed) != 1 || e.removed[0] != s.Name {
 		t.Fatalf("helper not removed: %v", e.removed)
 	}
-	if strings.Join(e.pulled, ",") != RcloneImage+","+ResticImage {
+	if strings.Join(e.pulled, ",") != ResticImage+","+RcloneImage {
 		t.Fatalf("pulled %v", e.pulled)
 	}
 }
 
 func TestEngineRunnerRemovesHelperWhenExecFails(t *testing.T) {
 	e := &helperFakeEngine{execErr: errors.New("exec broke")}
-	if _, err := (&EngineRunner{Eng: e}).Run(context.Background(), Call{Args: []string{"restic", "version"}}); err == nil {
+	if _, err := (&EngineRunner{Helpers: &helper.Runner{Eng: e}}).Run(context.Background(), Call{Args: []string{"restic", "version"}}); err == nil {
 		t.Fatal("no error")
 	}
 	if len(e.removed) != 1 {
@@ -146,7 +147,7 @@ func TestEngineRunnerRemovesHelperWhenExecFails(t *testing.T) {
 func TestEngineRunnerMountsCachedRestic(t *testing.T) {
 	e := &helperFakeEngine{}
 	bin := t.TempDir()
-	r := &EngineRunner{Eng: e, BinDir: bin}
+	r := &EngineRunner{Helpers: &helper.Runner{Eng: e}, BinDir: bin}
 	for range 2 {
 		if _, err := r.Run(context.Background(), Call{Args: []string{"restic", "version"}}); err != nil {
 			t.Fatal(err)
@@ -169,23 +170,23 @@ func TestEngineRunnerMountsCachedRestic(t *testing.T) {
 	}
 }
 
-// Helpers carry this supervisor's instance, so ones a crash left behind are
-// removed when it starts again, and other supervisors' are left alone.
+// Storage helpers are labelled as this supervisor's, so ones a crash left
+// behind are removed before its first helper, and other supervisors' are
+// left alone.
 func TestEngineRunnerRemovesStaleHelpers(t *testing.T) {
 	e := &helperFakeEngine{}
-	mine := &EngineRunner{Eng: e, Instance: "aaa"}
-	if _, err := mine.Run(context.Background(), Call{Args: []string{"restic", "version"}}); err != nil {
-		t.Fatal(err)
-	}
-	if l := e.specs[0].Labels; l["deskyard.helper"] != "storage" || l["deskyard.instance"] != "aaa" {
-		t.Fatalf("labels %v", l)
-	}
 	e.specs = append(e.specs,
 		engine.ContainerSpec{Name: "deskyard-storage-left", Labels: map[string]string{"deskyard.helper": "storage", "deskyard.instance": "aaa"}},
 		engine.ContainerSpec{Name: "deskyard-storage-other", Labels: map[string]string{"deskyard.helper": "storage", "deskyard.instance": "bbb"}})
-	e.removed = nil
-	mine.RemoveStale(context.Background())
-	if strings.Join(e.removed, ",") != e.specs[0].Name+",deskyard-storage-left" {
+	mine := &EngineRunner{Helpers: &helper.Runner{Eng: e, Instance: "aaa"}}
+	if _, err := mine.Run(context.Background(), Call{Args: []string{"restic", "version"}}); err != nil {
+		t.Fatal(err)
+	}
+	run := e.specs[len(e.specs)-1]
+	if l := run.Labels; l["deskyard.helper"] != "storage" || l["deskyard.instance"] != "aaa" {
+		t.Fatalf("labels %v", l)
+	}
+	if strings.Join(e.removed, ",") != "deskyard-storage-left,"+run.Name {
 		t.Fatalf("removed %v", e.removed)
 	}
 }

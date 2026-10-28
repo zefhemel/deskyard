@@ -15,18 +15,22 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/helper"
 )
 
-// helperEngine plays the root helper container: on start it runs an
-// install -d or rm -rf on the host folder its mount maps, then exits.
+// helperEngine plays the root helper container: an exec in it runs an
+// install -d or rm -rf on the host folder its mount maps.
 type helperEngine struct {
 	*fakeEngine
 	hmu     sync.Mutex
 	helpers []engine.ContainerSpec
+	// code and stderr are every helper command's outcome.
+	code   int
+	stderr string
 }
 
 func (e *helperEngine) Create(ctx context.Context, s engine.ContainerSpec) (string, error) {
-	if s.Image == helperImage {
+	if s.Image == helper.Image {
 		e.hmu.Lock()
 		e.helpers = append(e.helpers, s)
 		e.hmu.Unlock()
@@ -34,14 +38,7 @@ func (e *helperEngine) Create(ctx context.Context, s engine.ContainerSpec) (stri
 	return e.fakeEngine.Create(ctx, s)
 }
 
-func (e *helperEngine) Start(ctx context.Context, id string) error {
-	if err := e.fakeEngine.Start(ctx, id); err != nil {
-		return err
-	}
-	c, _ := e.fakeEngine.Inspect(ctx, id)
-	if c.Image != helperImage {
-		return nil
-	}
+func (e *helperEngine) Exec(ctx context.Context, id string, x engine.ExecSpec) (*engine.Process, error) {
 	e.hmu.Lock()
 	var spec engine.ContainerSpec
 	for _, s := range e.helpers {
@@ -58,13 +55,13 @@ func (e *helperEngine) Start(ctx context.Context, id string) error {
 		}
 		return ""
 	}
-	switch target := spec.Cmd[len(spec.Cmd)-1]; spec.Cmd[0] {
+	switch target := x.Cmd[len(x.Cmd)-1]; x.Cmd[0] {
 	case "install":
 		_ = os.MkdirAll(host(target), 0o755)
 	case "rm":
 		_ = os.RemoveAll(host(target))
 	}
-	return e.fakeEngine.Stop(ctx, id, 0)
+	return &engine.Process{Stdout: strings.NewReader(""), Stderr: strings.NewReader(e.stderr), Wait: func() (int, error) { return e.code, nil }, Close: func() {}}, nil
 }
 
 func (e *helperEngine) ran() []engine.ContainerSpec {
@@ -506,5 +503,38 @@ func TestCreateHostVolumeRefusesHostDataEntries(t *testing.T) {
 	}
 	if _, _, err := s.CreateVolume(context.Background(), "top", filepath.Join(host, "home")); err == nil {
 		t.Fatal("created a host volume of the data folder's homes")
+	}
+}
+
+// What the supervisor can't delete itself goes to the root helper, whose
+// failure is reported with its message.
+func TestRemoveTreeReportsHelperFailure(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root deletes the read-only folder itself")
+	}
+	s, eng := volumeService(t)
+	root := t.TempDir()
+	stuck := filepath.Join(root, "x", "ro")
+	if err := os.MkdirAll(stuck, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stuck, "f"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Chmod(stuck, 0o555)
+	t.Cleanup(func() { _ = os.Chmod(stuck, 0o755) })
+	eng.code, eng.stderr = 1, "rm: can't remove '/parent/x/ro/f': Permission denied\n"
+	err := s.RemoveTree(context.Background(), root, "x")
+	if err == nil || !strings.Contains(err.Error(), "Permission denied") {
+		t.Fatalf("got %v", err)
+	}
+	ran := eng.ran()
+	if len(ran) != 1 || ran[0].Mounts[0].Source != root || ran[0].Network != "none" || ran[0].Labels[helper.LabelHelper] != helper.Folders {
+		t.Fatalf("helpers %+v", ran)
+	}
+	for _, bad := range []string{"", ".", "..", "a/b"} {
+		if err := s.RemoveTree(context.Background(), root, bad); err == nil {
+			t.Errorf("removed %q", bad)
+		}
 	}
 }
