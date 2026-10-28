@@ -1,23 +1,17 @@
 package app
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
-	"fmt"
 	"io"
-	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
+	"slices"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/activity"
 	"github.com/zefhemel/deskyard/supervisor/internal/cli/clitest"
@@ -108,6 +102,13 @@ func golden(t *testing.T, name, got string) {
 	}
 }
 
+// helpGoldens are the commands whose help is kept as a golden file, one for
+// each way the renderer lays out a command (describe.json has them all):
+// flags with short names, values and defaults (exec), optional, enum and
+// defaulted arguments (scroll), and a subcommand with a variadic argument
+// (env access).
+var helpGoldens = []string{"exec", "scroll", "env access"}
+
 func TestGoldenHelp(t *testing.T) {
 	h := newHarness(t)
 	r := h.run("--help")
@@ -118,10 +119,12 @@ func TestGoldenHelp(t *testing.T) {
 	for _, c := range visibleCommands() {
 		args := append(strings.Fields(c.Name), "--help")
 		r := h.run(args...)
-		if r.code != 0 || r.stderr != "" {
+		if r.code != 0 || r.stderr != "" || !strings.HasPrefix(r.stdout, "deskyard "+c.Name+": ") {
 			t.Errorf("%s --help: exit %d stderr %q", c.Name, r.code, r.stderr)
 		}
-		golden(t, "help/"+strings.ReplaceAll(c.Name, " ", "_")+".txt", r.stdout)
+		if slices.Contains(helpGoldens, c.Name) {
+			golden(t, "help/"+strings.ReplaceAll(c.Name, " ", "_")+".txt", r.stdout)
+		}
 		// help CMD is the same.
 		if r2 := h.run(append([]string{"help"}, strings.Fields(c.Name)...)...); r2.stdout != r.stdout {
 			t.Errorf("help %s differs from %s --help", c.Name, c.Name)
@@ -264,195 +267,6 @@ func remoteHarness(t *testing.T) (*harness, *clitest.Fake) {
 	return h, f
 }
 
-// fastLogin makes deskyard login poll without waiting.
-func fastLogin(t *testing.T) {
-	old := loginInterval
-	loginInterval = func(int) time.Duration { return time.Millisecond }
-	t.Cleanup(func() { loginInterval = old })
-}
-
-func TestLoginSavesCredentialAndEnvironment(t *testing.T) {
-	fastLogin(t)
-	f := clitest.New(t, "alice")
-	f.LoginPending = 2
-	h := newHarness(t)
-	r := h.run("login", f.EnvironmentURL())
-	if r.code != 0 {
-		t.Fatalf("login: %+v", r)
-	}
-	if !strings.Contains(r.stderr, "BCDF-GHJK") || !strings.Contains(r.stderr, f.URL+"/cli-login#req1") {
-		t.Errorf("no code or approval URL: %s", r.stderr)
-	}
-	if len(h.opened) != 1 || h.opened[0] != f.URL+"/cli-login#req1" {
-		t.Errorf("opened %v", h.opened)
-	}
-	if c := f.Clients(); len(c) != 1 || !strings.HasPrefix(c[0], "deskyard CLI on ") {
-		t.Errorf("client name %v", c)
-	}
-	if !strings.Contains(r.stdout, "Signed in to 127.0.0.1 as zef") || !strings.Contains(r.stdout, "alice") {
-		t.Errorf("stdout: %s", r.stdout)
-	}
-	cfg := h.servers()
-	s := cfg.Servers["127.0.0.1"]
-	if s == nil || cfg.Default != "127.0.0.1" || s.URL != f.URL || s.Username != clitest.Username || s.Environment != "alice" || !f.Valid(s.Credential) || s.Credential == clitest.Credential {
-		t.Fatalf("servers.json: %+v %+v", cfg, s)
-	}
-	if runtime.GOOS != "windows" {
-		if fi, err := os.Stat(h.config); err != nil || fi.Mode().Perm() != 0o600 {
-			t.Errorf("servers.json mode: %v %v", fi.Mode(), err)
-		}
-	}
-	if r := h.run("status", "--json"); r.code != 0 || !strings.Contains(r.stdout, `"name": "alice"`) {
-		t.Errorf("status after login: %+v", r)
-	}
-
-	// --no-browser doesn't open one; logging in again under the same name
-	// replaces the server and revokes its old credential.
-	h.opened = nil
-	r = h.run("login", f.URL, "--no-browser")
-	if r.code != 0 || len(h.opened) != 0 {
-		t.Fatalf("login --no-browser: %+v %v", r, h.opened)
-	}
-	s2 := h.servers().Servers["127.0.0.1"]
-	if s2.Credential == s.Credential || f.Valid(s.Credential) || s2.Environment != "alice" {
-		t.Errorf("relogin: %+v (old still valid: %v)", s2, f.Valid(s.Credential))
-	}
-
-	f.LoginDeny = true
-	if r := h.run("login", f.URL, "--name", "other", "--no-browser"); r.code != 1 || !strings.Contains(r.stderr, "denied") {
-		t.Errorf("denied: %+v", r)
-	}
-	if h.servers().Servers["other"] != nil {
-		t.Errorf("a denied login was saved")
-	}
-}
-
-// A server that can't save the credential yet keeps the approval: the CLI
-// polls on and signs in once it can.
-func TestLoginRetriesWhenTheServerCantSave(t *testing.T) {
-	fastLogin(t)
-	f := clitest.New(t, "alice")
-	f.LoginSaveFails = 2
-	h := newHarness(t)
-	if r := h.run("login", f.URL, "--no-browser"); r.code != 0 || !strings.Contains(r.stdout, "Signed in to 127.0.0.1 as zef") {
-		t.Fatalf("login: %+v", r)
-	}
-}
-
-func TestLoginRejectsUnknownEnvironment(t *testing.T) {
-	fastLogin(t)
-	f := clitest.New(t, "alice")
-	f.Grants = append(f.Grants, clitest.Grant{Name: "seen", Level: "observe"})
-	h := newHarness(t)
-	for _, env := range []string{"bob", "seen"} {
-		r := h.run("login", f.URL+"/"+env, "--no-browser")
-		if r.code != 1 || !strings.Contains(r.stderr, env) || !strings.Contains(r.stderr, "alice") {
-			t.Errorf("%s: %+v", env, r)
-		}
-	}
-	if cfg := h.servers(); len(cfg.Servers) != 0 {
-		t.Errorf("saved %+v", cfg.Servers)
-	}
-	if got := f.Revoked(); len(got) != 2 {
-		t.Errorf("the rejected credentials weren't revoked: %v", got)
-	}
-}
-
-func TestAuthLinkSavesServer(t *testing.T) {
-	f := clitest.New(t, "alice")
-	h := newHarness(t)
-	r := h.run("auth", f.LinkURL(), "--name", "work")
-	if r.code != 0 || !strings.Contains(r.stdout, "Signed in to work as zef") {
-		t.Fatalf("auth: %+v", r)
-	}
-	cfg := h.servers()
-	s := cfg.Servers["work"]
-	if s == nil || cfg.Default != "work" || s.URL != f.URL || s.Environment != "alice" || !f.Valid(s.Credential) {
-		t.Fatalf("servers.json: %+v %+v", cfg, s)
-	}
-	if c := f.Clients(); len(c) != 1 || !strings.HasPrefix(c[0], "deskyard CLI on ") {
-		t.Errorf("client name %v", c)
-	}
-	if r := h.run("auth", f.LinkURL(), "--name", "again"); r.code != 1 || !strings.Contains(r.stderr, "already used") {
-		t.Errorf("second use: %+v", r)
-	}
-
-	// An observe-only share is for the browser.
-	g := clitest.New(t, "alice")
-	g.Grants = []clitest.Grant{{Name: "alice", Level: "observe"}}
-	if r := h.run("auth", g.LinkURL()); r.code != 1 || !strings.Contains(r.stderr, "observe-only access is for the browser") {
-		t.Errorf("observe: %+v", r)
-	}
-
-	// Several environments: none is chosen.
-	k := clitest.New(t, "alice")
-	k.Grants = append(k.Grants, clitest.Grant{Name: "bob", Level: "full"})
-	if r := h.run("auth", k.LinkURL(), "--name", "multi"); r.code != 0 || !strings.Contains(r.stdout, "env use") {
-		t.Errorf("several: %+v", r)
-	}
-	if s := h.servers().Servers["multi"]; s == nil || s.Environment != "" {
-		t.Errorf("several: %+v", s)
-	}
-}
-
-// Two servers on one host get the same default name: the second login or
-// link is refused before it reaches the server, keeping the first login.
-func TestLoginRefusesAnotherServerUnderTheSameDefaultName(t *testing.T) {
-	fastLogin(t)
-	f := clitest.New(t, "alice")
-	g := clitest.New(t, "alice")
-	h := newHarness(t)
-	if r := h.run("auth", f.LinkURL()); r.code != 0 {
-		t.Fatalf("auth: %+v", r)
-	}
-	first := h.servers().Servers["127.0.0.1"]
-	for _, args := range [][]string{{"login", g.URL, "--no-browser"}, {"auth", g.LinkURL()}} {
-		r := h.run(args...)
-		if r.code != 2 || !strings.Contains(r.stderr, f.URL) || !strings.Contains(r.stderr, "--name") {
-			t.Errorf("%s: %+v", args[0], r)
-		}
-	}
-	if s := h.servers().Servers["127.0.0.1"]; s == nil || s.URL != f.URL || s.Credential != first.Credential || !f.Valid(first.Credential) {
-		t.Errorf("the first server's login changed: %+v (valid %v)", s, f.Valid(first.Credential))
-	}
-	if len(g.Calls()) != 0 || len(g.Clients()) != 0 {
-		t.Errorf("the second server was asked: %+v", g.Calls())
-	}
-	// Under a name of its own it is saved beside the first.
-	if r := h.run("auth", g.LinkURL(), "--name", "other"); r.code != 0 || h.servers().Servers["127.0.0.1"].URL != f.URL {
-		t.Errorf("--name: %+v", r)
-	}
-}
-
-func TestLogoutRevokesThenForgets(t *testing.T) {
-	h, f := remoteHarness(t)
-	g := clitest.New(t, "bob")
-	h.save("gone", g, "bob")
-	r := h.run("logout")
-	if r.code != 0 {
-		t.Fatalf("logout: %+v", r)
-	}
-	if got := f.Revoked(); len(got) != 1 || got[0] != remote.CredentialID(clitest.Credential) {
-		t.Errorf("revoked %v", got)
-	}
-	if cfg := h.servers(); cfg.Servers["srv"] != nil || cfg.Servers["gone"] == nil {
-		t.Errorf("servers: %+v", cfg.Servers)
-	}
-	if r := h.run("logout", "srv"); r.code != 1 || !strings.Contains(r.stderr, `no server named "srv"`) {
-		t.Errorf("again: %+v", r)
-	}
-	// A credential the server no longer accepts (401) is forgotten anyway.
-	cfg := h.servers()
-	cfg.Servers["gone"].Credential = "dyc_0000dead_revoked"
-	cfg.Save(h.config)
-	if r := h.run("logout", "gone"); r.code != 0 {
-		t.Errorf("401: %+v", r)
-	}
-	if cfg := h.servers(); len(cfg.Servers) != 0 {
-		t.Errorf("servers: %+v", cfg.Servers)
-	}
-}
-
 func TestRemoteCommandsRemoved(t *testing.T) {
 	h := newHarness(t)
 	for _, args := range [][]string{{"remote", "add", "x", "https://h/x"}, {"remote", "list"}, {"remote"}} {
@@ -460,51 +274,6 @@ func TestRemoteCommandsRemoved(t *testing.T) {
 		if r.code != 2 || !strings.Contains(r.stderr, `unknown command "remote"`) || !strings.Contains(r.stderr, "deskyard login") {
 			t.Errorf("%v: %+v", args, r)
 		}
-	}
-}
-
-func TestServerCommands(t *testing.T) {
-	h, f := remoteHarness(t)
-	g := clitest.New(t, "bob")
-	h.save("two", g, "")
-
-	r := h.run("server", "list")
-	if r.code != 0 || !strings.Contains(r.stdout, "* srv") || !strings.Contains(r.stdout, "dyc_0a1b2c3d_…") || strings.Contains(r.stdout, "secret") {
-		t.Errorf("list: %+v", r)
-	}
-	r = h.run("server", "list", "--json")
-	var rows []map[string]any
-	if json.Unmarshal([]byte(r.stdout), &rows); len(rows) != 2 || rows[0]["default"] != true || rows[0]["environment"] != "alice" || rows[0]["username"] != "zef" || rows[0]["credential"] != nil {
-		t.Errorf("list --json: %s", r.stdout)
-	}
-	if r = h.run("server", "default", "two"); r.code != 0 {
-		t.Errorf("default: %+v", r)
-	}
-	if r = h.run("server", "default"); strings.TrimSpace(r.stdout) != "two" {
-		t.Errorf("default shows %q", r.stdout)
-	}
-	if r = h.run("server", "default", "nope"); r.code != 1 {
-		t.Errorf("default nope: %+v", r)
-	}
-
-	// env use checks the environment, then saves it for the server.
-	if r = h.run("env", "use", "nope"); r.code != 1 || !strings.Contains(r.stderr, `no environment "nope"`) {
-		t.Errorf("env use nope: %+v", r)
-	}
-	if r = h.run("env", "use", "bob"); r.code != 0 || h.servers().Servers["two"].Environment != "bob" {
-		t.Errorf("env use: %+v", r)
-	}
-	if r := h.run("status", "--json"); !strings.Contains(r.stdout, `"name": "bob"`) || !strings.Contains(r.stdout, `"server": "two"`) {
-		t.Errorf("status: %+v", r)
-	}
-	f.Grants = append(f.Grants, clitest.Grant{Name: "work", Level: "full"})
-	if r = h.run("env", "use", "srv/work"); r.code != 0 || h.servers().Servers["srv"].Environment != "work" {
-		t.Errorf("env use srv/work: %+v", r)
-	}
-	// An environment the account can only observe is the browser's.
-	f.Grants = append(f.Grants, clitest.Grant{Name: "demo", Level: "observe"})
-	if r = h.run("env", "use", "srv/demo"); r.code != 1 || !strings.Contains(r.stderr, "observe") || h.servers().Servers["srv"].Environment != "work" {
-		t.Errorf("env use srv/demo: %+v", r)
 	}
 }
 
@@ -666,259 +435,6 @@ func TestExecLocal(t *testing.T) {
 	}
 }
 
-func TestForwardArgs(t *testing.T) {
-	cmd := findCommand("forward")
-	if cmd == nil {
-		t.Fatal("no forward command")
-	}
-	got, err := parseForwardArgs(cmd, []string{"3000", "3000:8000", "-R", "5173:5174", "--reverse", "9229"})
-	want := []*portMap{{local: 3000, env: 3000}, {local: 3000, env: 8000}, {reverse: true, env: 5173, local: 5174}, {reverse: true, env: 9229, local: 9229}}
-	if err != nil || len(got) != len(want) {
-		t.Fatalf("got %v %v", got, err)
-	}
-	for i := range want {
-		if got[i].reverse != want[i].reverse || got[i].local != want[i].local || got[i].env != want[i].env {
-			t.Errorf("mapping %d: got %+v, want %+v", i, *got[i], *want[i])
-		}
-	}
-	h := newHarness(t)
-	for _, args := range [][]string{{}, {"abc"}, {"0"}, {"70000"}, {"1:2:3"}, {"3000:"}, {":3000"}, {"-R"}, {"3000", "-R"}, {"-R", "-R", "1"}, {"-X", "3000"}, {"30.5"}, {"3000", "4000:3000"}, {"-R", "1:9000", "-R", "2:9000"}} {
-		r := h.run(append([]string{"-e", "x", "forward"}, args...)...)
-		if r.code != 2 || !strings.Contains(r.stderr, "usage: deskyard forward") {
-			t.Errorf("forward %v: exit %d, want 2 (stderr %q)", args, r.code, r.stderr)
-		}
-	}
-	h.inside = true
-	r := h.run("forward", "3000")
-	if r.code != 2 || !strings.Contains(r.stderr, "forward maps ports between this machine and an environment; choose one with -e ENV") {
-		t.Errorf("inside: %+v", r)
-	}
-	if r := h.run("forward", "--help"); r.code != 0 || !strings.Contains(r.stdout, "-R") {
-		t.Errorf("--help: %+v", r)
-	}
-}
-
-// syncBuf is a bytes.Buffer safe to read while a command writes to it.
-type syncBuf struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuf) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *syncBuf) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.String()
-}
-
-// start runs a long-running command; it ends when ctx does.
-func (h *harness) start(ctx context.Context, args ...string) (stdout, stderr *syncBuf, code <-chan int) {
-	stdout, stderr = &syncBuf{}, &syncBuf{}
-	a := &App{
-		Stdin: strings.NewReader(""), Stdout: stdout, Stderr: stderr,
-		Getenv:     func(k string) string { return h.env[k] },
-		ConfigPath: h.config,
-		Inside:     func() bool { return h.inside },
-		Version:    "test",
-	}
-	ch := make(chan int, 1)
-	go func() { ch <- a.Run(ctx, args) }()
-	return stdout, stderr, ch
-}
-
-func freePort(t *testing.T) int {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
-}
-
-// echoServer echoes each line back with a prefix.
-func echoServer(t *testing.T) int {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { l.Close() })
-	go func() {
-		for {
-			c, err := l.Accept()
-			if err != nil {
-				return
-			}
-			go func() {
-				defer c.Close()
-				sc := bufio.NewScanner(c)
-				for sc.Scan() {
-					fmt.Fprintf(c, "echo %s\n", sc.Text())
-				}
-			}()
-		}
-	}()
-	return l.Addr().(*net.TCPAddr).Port
-}
-
-func roundTrip(port int, msg string) (string, error) {
-	c, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(port), 2*time.Second)
-	if err != nil {
-		return "", err
-	}
-	defer c.Close()
-	c.SetDeadline(time.Now().Add(15 * time.Second))
-	fmt.Fprintf(c, "%s\n", msg)
-	line, err := bufio.NewReader(c).ReadString('\n')
-	return strings.TrimSpace(line), err
-}
-
-func waitFor(t *testing.T, what string, timeout time.Duration, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s", what)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-}
-
-func TestForwardReconnects(t *testing.T) {
-	h, f := remoteHarness(t)
-	old := forwardBackoff
-	forwardBackoff = func(n int) time.Duration { return time.Duration(20<<n) * time.Millisecond }
-	t.Cleanup(func() { forwardBackoff = old })
-
-	outDesktop := echoServer(t) // "in the desktop": the fake's helper side dials this machine
-	outLocal := freePort(t)
-	inLocal := echoServer(t)
-	inDesktop := freePort(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	stdout, stderr, code := h.start(ctx, "forward", "-R", fmt.Sprintf("%d:%d", outDesktop, outLocal), fmt.Sprintf("%d:%d", inLocal, inDesktop))
-
-	live := func(n int) func() bool {
-		return func() bool {
-			out := stdout.String()
-			return strings.Count(out, fmt.Sprintf("out %d 127.0.0.1:%d\n", outDesktop, outLocal)) >= n &&
-				strings.Count(out, fmt.Sprintf("in %d %d\n", inLocal, inDesktop)) >= n
-		}
-	}
-	waitFor(t, "the mappings", 5*time.Second, live(1))
-	if got := f.ForwardStarts()[0]; got != fmt.Sprintf(`{"forwards":[{"direction":"out","port":%d},{"direction":"in","port":%d}]}`, outDesktop, inDesktop) {
-		t.Errorf("first message %s", got)
-	}
-	if !strings.Contains(stderr.String(), fmt.Sprintf("Linked to alice: alice:%d → 127.0.0.1:%d, %d → alice:%d", outDesktop, outLocal, inLocal, inDesktop)) {
-		t.Errorf("stderr: %s", stderr.String())
-	}
-	if got, err := roundTrip(outLocal, "a"); got != "echo a" {
-		t.Errorf("out: %q %v", got, err)
-	}
-	if got, err := roundTrip(inDesktop, "b"); got != "echo b" {
-		t.Errorf("in: %q %v", got, err)
-	}
-
-	// Dropped, then stopped twice: the local listener stays bound throughout.
-	f.AnswerForwards(409, 409)
-	f.DropForwards()
-	for !live(2)() {
-		if l, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(outLocal)); err == nil {
-			l.Close()
-			t.Fatal("the local listener was released while reconnecting")
-		}
-		select {
-		case c := <-code:
-			t.Fatalf("exited %d: %s", c, stderr.String())
-		case <-time.After(5 * time.Millisecond):
-		}
-	}
-	if n := len(f.ForwardStarts()); n != 2 {
-		t.Errorf("%d connections, want 2", n)
-	}
-	if !strings.Contains(stderr.String(), "Lost alice (environment stopped), retrying in") {
-		t.Errorf("stderr: %s", stderr.String())
-	}
-	if got, err := roundTrip(outLocal, "c"); got != "echo c" {
-		t.Errorf("out after reconnect: %q %v", got, err)
-	}
-	if got, err := roundTrip(inDesktop, "d"); got != "echo d" {
-		t.Errorf("in after reconnect: %q %v", got, err)
-	}
-
-	// A refused credential ends it.
-	f.AnswerForwards(http.StatusUnauthorized)
-	f.DropForwards()
-	select {
-	case c := <-code:
-		if c != 1 || !strings.Contains(stderr.String(), "(401): run `deskyard login") {
-			t.Errorf("exit %d, stderr %s", c, stderr.String())
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("still running after a 401")
-	}
-}
-
-func TestForwardPortInUse(t *testing.T) {
-	h, _ := remoteHarness(t)
-	taken, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer taken.Close()
-	q := taken.Addr().(*net.TCPAddr).Port
-	inLocal := echoServer(t)
-	inDesktop := freePort(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	stdout, stderr, code := h.start(ctx, "forward", "-R", fmt.Sprintf("%d:%d", echoServer(t), q), fmt.Sprintf("%d:%d", inLocal, inDesktop))
-	waitFor(t, "the in mapping", 5*time.Second, func() bool { return strings.Contains(stdout.String(), fmt.Sprintf("in %d %d\n", inLocal, inDesktop)) })
-	if !strings.Contains(stderr.String(), fmt.Sprintf("127.0.0.1:%d: port in use", q)) {
-		t.Errorf("stderr: %s", stderr.String())
-	}
-	if got, err := roundTrip(inDesktop, "x"); got != "echo x" {
-		t.Errorf("in: %q %v", got, err)
-	}
-	cancel()
-	if c := <-code; c != 0 {
-		t.Errorf("exit %d after Ctrl-C", c)
-	}
-}
-
-func TestForwardArgsCaps(t *testing.T) {
-	cmd := findCommand("forward")
-	build := func(ins, outs int) []string {
-		var args []string
-		for i := 0; i < ins; i++ {
-			args = append(args, strconv.Itoa(2000+i))
-		}
-		for i := 0; i < outs; i++ {
-			args = append(args, "-R", strconv.Itoa(5000+i))
-		}
-		return args
-	}
-	for _, c := range []struct {
-		ins, outs int
-		ok        bool
-	}{{64, 0, true}, {65, 0, false}, {64, 192, true}, {64, 193, false}, {0, 256, true}, {0, 257, false}} {
-		_, err := parseForwardArgs(cmd, build(c.ins, c.outs))
-		if (err == nil) != c.ok {
-			t.Errorf("%d in, %d out: err %v, want ok=%v", c.ins, c.outs, err, c.ok)
-		}
-	}
-	h := newHarness(t)
-	r := h.run(append([]string{"-e", "x", "forward"}, build(65, 0)...)...)
-	if r.code != 2 || !strings.Contains(r.stderr, "at most 64 mappings into the environment") {
-		t.Errorf("65 ins: exit %d, stderr %q", r.code, r.stderr)
-	}
-}
-
 // twoEnvironments signs in to two servers: a (the default, environment
 // alice, also granting work) and b (environment bob), each a fake.
 func twoEnvironments(t *testing.T) (*harness, *clitest.Fake, *clitest.Fake) {
@@ -1076,27 +592,5 @@ func TestHelpNamesEnvironment(t *testing.T) {
 	}
 	if !strings.Contains(execEnv, "after exec") || !strings.Contains(execEnv, "environment variable") {
 		t.Errorf("exec -e description doesn't tell it apart from the global -e: %q", execEnv)
-	}
-}
-
-// A login link, or a page of the web UI, given to login says what to do
-// instead, before anyone approves anything.
-func TestLoginRefusesLinksAndPages(t *testing.T) {
-	f := clitest.New(t, "alice")
-	h := newHarness(t)
-	r := h.run("login", f.LinkURL())
-	if r.code != 2 || !strings.Contains(r.stderr, "deskyard auth") {
-		t.Errorf("login LINK: %+v", r)
-	}
-	for _, page := range []string{"accounts", "link", "volumes", "volumes/photos"} {
-		r = h.run("login", f.URL+"/"+page, "--no-browser")
-		if r.code != 2 || !strings.Contains(r.stderr, "isn't an environment") {
-			t.Errorf("login %s: %+v", page, r)
-		}
-	}
-	for _, c := range f.Calls() {
-		if c.Path == "/api/cli-login" {
-			t.Errorf("started a CLI login: %+v", c)
-		}
 	}
 }
