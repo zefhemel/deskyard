@@ -6,7 +6,7 @@ import { useState } from "preact/hooks";
 import { api, type Credential } from "../api.ts";
 import { copySecret, SecretReveal } from "../components/secret-reveal.tsx";
 import { Page, PageHead } from "../components/topbar.tsx";
-import { notify, notifyError } from "../components/toast.tsx";
+import { useAction } from "../components/use-action.ts";
 import { Button, ErrorText, Note, Tag } from "../components/ui.tsx";
 import { SignOutEverywhereDialog } from "../dialogs/sign-out-everywhere.tsx";
 import { useLive } from "../live.tsx";
@@ -84,18 +84,7 @@ export function DeviceList({
 }
 
 function DeviceRow({ device: d, revoke, onChanged }: { device: Credential; revoke: (id: string) => Promise<void>; onChanged: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const signOut = async () => {
-    setBusy(true);
-    try {
-      await revoke(d.id);
-      notify(`Signed out ${d.name}`);
-      onChanged();
-    } catch (e) {
-      notifyError(e);
-      setBusy(false);
-    }
-  };
+  const signOut = useAction(() => revoke(d.id), { success: `Signed out ${d.name}`, toastErrors: true, onDone: onChanged });
   return (
     <tr class="last:[&>td]:border-b-0">
       <td class={td}>
@@ -104,7 +93,7 @@ function DeviceRow({ device: d, revoke, onChanged }: { device: Credential; revok
       <td class={`${td} whitespace-nowrap`}>{day(d.created)}</td>
       <td class={`${td} whitespace-nowrap`}>{ago(d.lastUsed)}</td>
       <td class={`${td} text-right whitespace-nowrap`}>
-        <Button class="h-[30px]! px-[11px]!" disabled={busy} onClick={() => void signOut()}>
+        <Button class="h-[30px]! px-[11px]!" disabled={signOut.busy} onClick={() => void signOut.run()}>
           Sign out
         </Button>
       </td>
@@ -116,26 +105,24 @@ function DeviceRow({ device: d, revoke, onChanged }: { device: Credential; revok
 function WebDAVSection({ devices, onChanged }: { devices: Credential[] | undefined; onChanged: () => void }) {
   const { me, environments } = useLive();
   const [password, setPassword] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const drives = (environments ?? []).filter((c) => c.webdav && can(me, c).use).map((c) => c.name);
   const has = devices?.some((d) => d.kind === "webdav") ?? false;
-  const change = async (make: boolean) => {
-    setBusy(true);
-    try {
-      if (make) {
-        setPassword((await api.createWebDAVPassword()).password);
-      } else {
-        await api.removeWebDAVPassword();
-        setPassword(null);
-        notify("Removed the WebDAV password");
-      }
+  const make = useAction(() => api.createWebDAVPassword(), {
+    toastErrors: true,
+    onDone: (r) => {
+      setPassword(r.password);
       onChanged();
-    } catch (e) {
-      notifyError(e);
-    } finally {
-      setBusy(false);
-    }
-  };
+    },
+  });
+  const remove = useAction(() => api.removeWebDAVPassword(), {
+    success: "Removed the WebDAV password",
+    toastErrors: true,
+    onDone: () => {
+      setPassword(null);
+      onChanged();
+    },
+  });
+  const busy = make.busy || remove.busy;
   return (
     <section class="mb-8">
       <h2 class="mb-1 text-lg font-semibold">WebDAV</h2>
@@ -169,11 +156,11 @@ function WebDAVSection({ devices, onChanged }: { devices: Credential[] | undefin
         />
       )}
       <div class="flex flex-wrap gap-2">
-        <Button disabled={busy} onClick={() => void change(true)}>
+        <Button disabled={busy} onClick={() => void make.run()}>
           {has ? "Replace the WebDAV password" : "Make a WebDAV password"}
         </Button>
         {has && (
-          <Button disabled={busy} onClick={() => void change(false)}>
+          <Button disabled={busy} onClick={() => void remove.run()}>
             Remove it
           </Button>
         )}

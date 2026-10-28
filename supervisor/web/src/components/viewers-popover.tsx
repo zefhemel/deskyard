@@ -10,7 +10,7 @@ import { mayManageShare } from "../lib/permissions.ts";
 import { AgentAvatar } from "./agent-avatar.tsx";
 import { AgentSummary, useActivity } from "./agent-summary.tsx";
 import { Avatar } from "./avatar.tsx";
-import { notify, notifyError } from "./toast.tsx";
+import { RevokeShare } from "./revoke-share.tsx";
 
 /** One line per token, "deploy-bot: 3000 in · 5173 out", in first-seen order. */
 export function forwardLines(forwards: Forward[]): { token: string; text: string }[] {
@@ -141,7 +141,7 @@ export function ViewersPopover({
                     {[...(observers.includes(v) ? ["observing"] : []), ...(mics.includes(v) ? ["mic on"] : [])].join(", ")}
                   </span>
                 )}
-                {revocable.has(v) && <RevokeShare username={v} />}
+                {revocable.has(v) && <RevokeShare username={v} compact />}
               </span>
             </li>
           ))}
@@ -182,35 +182,4 @@ function useRevocableShares(name: string, enabled: boolean): Set<string> {
     };
   }, [name, enabled, me.admin, me.username]);
   return names;
-}
-
-/** Revoke, then Revoke now: ends the share and cuts it off at once. */
-function RevokeShare({ username }: { username: string }) {
-  const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const button = "flex-none cursor-pointer rounded-md border-0 px-2 py-0.5 text-[12px] font-semibold";
-  const revoke = async () => {
-    setBusy(true);
-    try {
-      await api.revokeShare(username);
-      notify(`Revoked ${username}`);
-    } catch (e) {
-      notifyError(e);
-      setBusy(false);
-    }
-  };
-  return confirming ? (
-    <span class="flex items-center gap-1">
-      <button type="button" class={`${button} bg-transparent text-muted hover:bg-hairline`} onClick={() => setConfirming(false)}>
-        Cancel
-      </button>
-      <button type="button" class={`${button} bg-danger text-white`} disabled={busy} onClick={() => void revoke()}>
-        Revoke now
-      </button>
-    </span>
-  ) : (
-    <button type="button" class={`${button} bg-transparent text-danger hover:bg-hairline`} aria-label={`Revoke ${username}`} title={`End ${username}'s share and cut them off`} onClick={() => setConfirming(true)}>
-      Revoke
-    </button>
-  );
 }

@@ -2,9 +2,9 @@ import { useState } from "preact/hooks";
 import { api, type Account } from "../api.ts";
 import { Avatar } from "../components/avatar.tsx";
 import { Menu, type MenuItem } from "../components/menu.tsx";
-import { notifyError } from "../components/toast.tsx";
+import { useAction } from "../components/use-action.ts";
 import { Page, PageHead } from "../components/topbar.tsx";
-import { Button, Dialog, ErrorText, errorMessage, IconButton, MORE, Tag } from "../components/ui.tsx";
+import { Button, Dialog, ErrorText, IconButton, MORE, Tag } from "../components/ui.tsx";
 import { AccountDialog } from "../dialogs/account.tsx";
 import { Expiry, LinkDialog } from "../dialogs/share.tsx";
 import { useLive } from "../live.tsx";
@@ -23,14 +23,13 @@ export function AccountsPage() {
   const [devices, setDevices] = useState<Account | null>(null);
   const [link, setLink] = useState<{ username: string; link: string } | null>(null);
 
-  const newLink = async (a: Account) => {
-    try {
-      setLink({ username: a.username, link: (await api.accountLink(a.username)).link });
+  const newLink = useAction((a: Account) => api.accountLink(a.username).then((r) => ({ username: a.username, link: r.link })), {
+    toastErrors: true,
+    onDone: (l) => {
+      setLink(l);
       accounts.reload();
-    } catch (e) {
-      notifyError(e);
-    }
-  };
+    },
+  });
 
   return (
     <Page>
@@ -55,7 +54,7 @@ export function AccountsPage() {
             <tbody>
               {accounts.data.map((a) => {
                 const items: MenuItem[] = [
-                  ...(a.kind === "token" ? [{ label: a.linkPending ? "New login link (replaces the unused one)" : "New login link", onSelect: () => void newLink(a) }] : []),
+                  ...(a.kind === "token" ? [{ label: a.linkPending ? "New login link (replaces the unused one)" : "New login link", onSelect: () => void newLink.run(a) }] : []),
                   { label: "Signed-in devices…", onSelect: () => setDevices(a) },
                   { label: a.sharedBy ? "Revoke…" : "Delete…", danger: true, separated: true, onSelect: () => setDeleting(a) },
                 ];
@@ -167,19 +166,12 @@ function AccountDevicesDialog({ account: a, onClose }: { account: Account; onClo
 }
 
 function DeleteAccountDialog({ account: a, self, onClose, onDeleted }: { account: Account; self: boolean; onClose: () => void; onDeleted: () => void }) {
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const submit = async () => {
-    setBusy(true);
-    try {
-      await api.deleteAccount(a.username);
-      if (self) location.href = "/login";
-      else onDeleted();
-    } catch (e) {
-      setError(errorMessage(e));
-      setBusy(false);
-    }
-  };
+  // A share is revoked the way its environment's Access tab revokes it.
+  const remove = useAction(() => (a.sharedBy ? api.revokeShare(a.username) : api.deleteAccount(a.username)), {
+    success: a.sharedBy ? `Revoked ${a.username}` : undefined,
+    onDone: () => (self ? (location.href = "/login") : onDeleted()),
+  });
+  const { busy, error } = remove;
   const verb = a.sharedBy ? "Revoke" : "Delete";
   return (
     <Dialog
@@ -192,7 +184,7 @@ function DeleteAccountDialog({ account: a, self, onClose, onDeleted }: { account
         </>
       }
       onClose={onClose}
-      onSubmit={() => void submit()}
+      onSubmit={() => void remove.run()}
       footer={
         <>
           <Button variant="quiet" onClick={onClose}>

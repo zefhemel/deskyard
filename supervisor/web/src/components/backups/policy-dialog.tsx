@@ -2,8 +2,8 @@
 import { useState } from "preact/hooks";
 import { api, type BackupItem, type ItemKind, type PolicyInput, type Repository } from "../../api.ts";
 import { DAYS, policyDefaults, policyErrors } from "../../lib/backup-policy.ts";
-import { notify } from "../toast.tsx";
-import { Button, Check, Dialog, ErrorText, Field, Seg, errorMessage } from "../ui.tsx";
+import { Button, Check, Dialog, ErrorText, Field, Seg } from "../ui.tsx";
+import { useAction } from "../use-action.ts";
 
 export function PolicyDialog({
   kind,
@@ -21,37 +21,16 @@ export function PolicyDialog({
   onSaved: () => void;
 }) {
   const [p, setP] = useState<PolicyInput>(item.policy ?? policyDefaults(repositories));
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const errs = policyErrors(p);
   const valid = Object.keys(errs).length === 0;
-  const save = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await api.putPolicy(kind, name, p);
-      notify(`Saved ${name}'s backups`);
-      onSaved();
-      onClose();
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
+  const done = () => {
+    onSaved();
+    onClose();
   };
-  const remove = async () => {
-    setBusy(true);
-    try {
-      await api.deletePolicy(kind, name);
-      notify(`${name} is no longer backed up; its snapshots are kept`);
-      onSaved();
-      onClose();
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const save = useAction(() => api.putPolicy(kind, name, p), { success: `Saved ${name}'s backups`, onDone: done });
+  const remove = useAction(() => api.deletePolicy(kind, name), { success: `${name} is no longer backed up; its snapshots are kept`, onDone: done });
+  const busy = save.busy || remove.busy;
+  const error = save.error || remove.error;
   const num = (k: keyof PolicyInput["retention"], label: string) => (
     <label class="flex flex-col gap-1 text-sm">
       {label}
@@ -69,11 +48,11 @@ export function PolicyDialog({
       title={`Back up ${name}`}
       wide
       onClose={onClose}
-      onSubmit={() => valid && void save()}
+      onSubmit={() => valid && void save.run()}
       footer={
         <>
           {item.policy && (
-            <Button variant="quiet" class="mr-auto" disabled={busy} onClick={() => void remove()}>
+            <Button variant="quiet" class="mr-auto" disabled={busy} onClick={() => void remove.run()}>
               Stop backing up
             </Button>
           )}

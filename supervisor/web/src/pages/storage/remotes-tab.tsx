@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 import { api, type Remote, type RemoteType } from "../../api.ts";
 import { notify } from "../../components/toast.tsx";
+import { useAction } from "../../components/use-action.ts";
 import { Button, Dialog, ErrorText, Field, Note, Tag, errorMessage } from "../../components/ui.tsx";
 import { blankDraft, draftFromRemote, fieldsFor, REMOTE_TYPES, remoteDraftErrors, toRemoteInput, type RemoteChoices, type RemoteDraft } from "../../lib/remote-form.ts";
 import { useFetch } from "../../lib/use-fetch.ts";
@@ -194,17 +195,13 @@ function RemoteDialog({ remote, choices, onClose, onSaved }: { remote: Remote | 
 }
 
 function DeleteRemote({ remote: r, onClose, onDeleted }: { remote: Remote; onClose: () => void; onDeleted: () => void }) {
-  const [error, setError] = useState<string | null>(null);
-  const remove = async () => {
-    try {
-      await api.deleteRemote(r.name);
-      notify(`Deleted remote ${r.name}`);
+  const { run: remove, error } = useAction(() => api.deleteRemote(r.name), {
+    success: `Deleted remote ${r.name}`,
+    onDone: () => {
       onDeleted();
       onClose();
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  };
+    },
+  });
   return (
     <Dialog
       title={`Delete ${r.name}?`}

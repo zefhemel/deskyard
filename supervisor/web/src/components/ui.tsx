@@ -1,7 +1,7 @@
 // Small building blocks in the mockups' style: buttons, dialogs, fields,
 // segmented controls, tags, status dots and meters.
 import type { ButtonHTMLAttributes, ComponentChildren } from "preact";
-import { useEffect, useRef } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(" ");
@@ -36,6 +36,72 @@ export function IconButton({ class: extra, ...rest }: ButtonHTMLAttributes<HTMLB
       class={cx(btnBase, variants.default, "w-[34px] px-0! text-lg leading-none text-muted", typeof extra === "string" ? extra : undefined)}
       {...rest}
     />
+  );
+}
+
+const small = "h-[30px]! px-[11px]!";
+const compactBtn = "flex-none cursor-pointer rounded-md border-0 px-2 py-0.5 text-[12px] font-semibold";
+
+/**
+ * An action that asks again in place: `label` turns into `cancel` and
+ * `confirm`. `children` are the row's other actions, hidden while it asks.
+ * `compact` is the viewers popover's small text buttons.
+ */
+export function ConfirmInline({
+  label,
+  confirm,
+  cancel = "Cancel",
+  busy,
+  onConfirm,
+  compact,
+  triggerLabel,
+  triggerTitle,
+  children,
+}: {
+  label: string;
+  confirm: string;
+  cancel?: string;
+  busy?: boolean;
+  onConfirm: () => void;
+  compact?: boolean;
+  /** The trigger's accessible name, when its label alone isn't enough. */
+  triggerLabel?: string;
+  triggerTitle?: string;
+  children?: ComponentChildren;
+}) {
+  const [asking, setAsking] = useState(false);
+  if (compact) {
+    return asking ? (
+      <span class="flex items-center gap-1">
+        <button type="button" class={`${compactBtn} bg-transparent text-muted hover:bg-hairline`} onClick={() => setAsking(false)}>
+          {cancel}
+        </button>
+        <button type="button" class={`${compactBtn} bg-danger text-white`} disabled={busy} onClick={onConfirm}>
+          {confirm}
+        </button>
+      </span>
+    ) : (
+      <button type="button" class={`${compactBtn} bg-transparent text-danger hover:bg-hairline`} aria-label={triggerLabel} title={triggerTitle} onClick={() => setAsking(true)}>
+        {label}
+      </button>
+    );
+  }
+  return asking ? (
+    <span class="inline-flex gap-1.5">
+      <Button variant="quiet" class={small} onClick={() => setAsking(false)}>
+        {cancel}
+      </Button>
+      <Button variant="danger" class={small} disabled={busy} onClick={onConfirm}>
+        {confirm}
+      </Button>
+    </span>
+  ) : (
+    <span class="inline-flex gap-1.5">
+      {children}
+      <Button class={small} aria-label={triggerLabel} title={triggerTitle} onClick={() => setAsking(true)}>
+        {label}
+      </Button>
+    </span>
   );
 }
 

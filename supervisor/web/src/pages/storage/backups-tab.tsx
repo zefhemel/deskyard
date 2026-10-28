@@ -3,6 +3,7 @@ import { api, ApiError, type BackupsOverview, type CatalogItem, type Repository 
 import { RestoreNewDialog } from "../../components/backups/restore-dialogs.tsx";
 import { SecretReveal } from "../../components/secret-reveal.tsx";
 import { notify } from "../../components/toast.tsx";
+import { useAction } from "../../components/use-action.ts";
 import { Button, Dialog, ErrorText, Field, Note, Tag, errorMessage } from "../../components/ui.tsx";
 import { backupStatus, describeSchedule, isTime, itemCopy, splitItem } from "../../lib/backup-policy.ts";
 import { ago, day } from "../../lib/format.ts";
@@ -18,19 +19,8 @@ export function BackupsTab() {
   const remotes = useFetch(() => api.remotes(), "remotes");
   const [creating, setCreating] = useState(false);
   const [catalog, setCatalog] = useState<BackupsOverview | null>(null);
-  const [looking, setLooking] = useState(false);
-  const [lookError, setLookError] = useState<string | null>(null);
-  const look = async () => {
-    setLooking(true);
-    setLookError(null);
-    try {
-      setCatalog(await api.backups(true));
-    } catch (e) {
-      setLookError(errorMessage(e));
-    } finally {
-      setLooking(false);
-    }
-  };
+  const look = useAction(() => api.backups(true), { onDone: setCatalog });
+  const looking = look.busy;
   const o = overview.data;
   return (
     <>
@@ -91,11 +81,11 @@ export function BackupsTab() {
             <h2 class="text-lg font-semibold">Other backups</h2>
             <p class="text-sm text-muted">Of removed environments and volumes, and other machines.</p>
           </div>
-          <Button disabled={looking || !o?.repositories.length} onClick={() => void look()}>
+          <Button disabled={looking || !o?.repositories.length} onClick={() => void look.run()}>
             {looking ? "Looking…" : catalog ? "Refresh" : "Show"}
           </Button>
         </div>
-        <ErrorText error={lookError} />
+        <ErrorText error={look.error} />
         {catalog && <Catalog overview={catalog} />}
       </section>
       {creating && remotes.data && <CreateRepository remotes={remotes.data.remotes.map((r) => r.name)} onClose={() => setCreating(false)} onCreated={overview.reload} />}
@@ -268,17 +258,13 @@ function CreateRepository({ remotes, onClose, onCreated }: { remotes: string[]; 
 }
 
 function RemoveRepository({ repository: r, onClose, onRemoved }: { repository: Repository; onClose: () => void; onRemoved: () => void }) {
-  const [error, setError] = useState<string | null>(null);
-  const remove = async () => {
-    try {
-      await api.removeRepository(r.name);
-      notify(`Removed repository ${r.name}`);
+  const { run: remove, error } = useAction(() => api.removeRepository(r.name), {
+    success: `Removed repository ${r.name}`,
+    onDone: () => {
       onRemoved();
       onClose();
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  };
+    },
+  });
   return (
     <Dialog
       title={`Remove ${r.name}?`}

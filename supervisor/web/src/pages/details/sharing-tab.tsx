@@ -1,7 +1,8 @@
 import { useEffect, useState } from "preact/hooks";
 import { api, type Environment, type Share } from "../../api.ts";
 import { Avatar } from "../../components/avatar.tsx";
-import { notify, notifyError } from "../../components/toast.tsx";
+import { RevokeShare } from "../../components/revoke-share.tsx";
+import { useAction } from "../../components/use-action.ts";
 import { Button, Tag } from "../../components/ui.tsx";
 import { Expiry, LinkDialog, ShareDialog } from "../../dialogs/share.tsx";
 import { useLive } from "../../live.tsx";
@@ -89,31 +90,13 @@ export function SharingTab({ environment: c }: { environment: Environment }) {
 }
 
 function ShareRow({ share: s, canManage, onLink, onChanged }: { share: Share; canManage: boolean; onLink: (link: string) => void; onChanged: () => void }) {
-  const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
-
-  const revoke = async () => {
-    setBusy(true);
-    try {
-      await api.revokeShare(s.username);
-      notify(`Revoked ${s.username}`);
+  const newLink = useAction(() => api.newShareLink(s.username), {
+    toastErrors: true,
+    onDone: (r) => {
+      onLink(r.link);
       onChanged();
-    } catch (e) {
-      notifyError(e);
-      setBusy(false);
-    }
-  };
-  const newLink = async () => {
-    setBusy(true);
-    try {
-      onLink((await api.newShareLink(s.username)).link);
-      onChanged();
-    } catch (e) {
-      notifyError(e);
-    } finally {
-      setBusy(false);
-    }
-  };
+    },
+  });
 
   return (
     <tr class="last:[&>td]:border-b-0">
@@ -131,31 +114,18 @@ function ShareRow({ share: s, canManage, onLink, onChanged }: { share: Share; ca
       </td>
       <td class={`${td} whitespace-nowrap`}>{ago(s.lastUsed)}</td>
       <td class={`${td} text-right whitespace-nowrap`}>
-        {canManage &&
-          (confirming ? (
-            <span class="inline-flex gap-1.5">
-              <Button variant="quiet" class="h-[30px]! px-[11px]!" onClick={() => setConfirming(false)}>
-                Keep
-              </Button>
-              <Button variant="danger" class="h-[30px]! px-[11px]!" disabled={busy} onClick={() => void revoke()}>
-                Revoke now
-              </Button>
-            </span>
-          ) : (
-            <span class="inline-flex gap-1.5">
-              <Button
-                class="h-[30px]! px-[11px]!"
-                disabled={busy}
-                title={s.linkPending ? "Replaces the unused link" : undefined}
-                onClick={() => void newLink()}
-              >
-                New link
-              </Button>
-              <Button class="h-[30px]! px-[11px]!" onClick={() => setConfirming(true)}>
-                Revoke
-              </Button>
-            </span>
-          ))}
+        {canManage && (
+          <RevokeShare username={s.username} onRevoked={onChanged}>
+            <Button
+              class="h-[30px]! px-[11px]!"
+              disabled={newLink.busy}
+              title={s.linkPending ? "Replaces the unused link" : undefined}
+              onClick={() => void newLink.run()}
+            >
+              New link
+            </Button>
+          </RevokeShare>
+        )}
       </td>
     </tr>
   );
