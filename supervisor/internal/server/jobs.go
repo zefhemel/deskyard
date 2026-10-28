@@ -84,7 +84,7 @@ func (js *jobs) startCommittedResult(owner string, fn func(context.Context, func
 	return js.runCommittedResult(owner, "", true, fn)
 }
 func (js *jobs) runCommittedResult(owner, environment string, cancellable bool, fn func(context.Context, func(string, float64), func(func() error) error) (any, error)) string {
-	id := randomID(8)
+	id := auth.RandomID(8)
 	ctx, cancel := context.WithCancel(context.Background())
 	j := &job{owner: owner, environment: environment, cancellable: cancellable, cancel: cancel,
 		done: make(chan struct{}), changed: make(chan struct{})}

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 )
 
 func newLinkStore(t *testing.T) *linkStore {
@@ -35,7 +36,7 @@ func TestLinkRedeemsOnce(t *testing.T) {
 	ls := newLinkStore(t)
 	bob := accounts.Account{ID: "bob-id", Username: "bob"}
 	code := issueLink(t, ls, bob)
-	if id, _, ok := parseBearer(linkPrefix, code); !ok || len(id) != 8 {
+	if id, _, ok := auth.ParseBearer(linkPrefix, code); !ok || len(id) != 8 {
 		t.Fatalf("code %q", code)
 	}
 	if !ls.pending(bob.ID) {
@@ -59,7 +60,7 @@ func TestLinkRedeemsOnce(t *testing.T) {
 func TestBadLinkCodesRejected(t *testing.T) {
 	ls := newLinkStore(t)
 	code := issueLink(t, ls, accounts.Account{ID: "bob-id", Username: "bob"})
-	id, _, _ := parseBearer(linkPrefix, code)
+	id, _, _ := auth.ParseBearer(linkPrefix, code)
 	for _, c := range []string{"", "nonsense", "dyl_" + id + "_wrong", "dyl_" + id, "dyc_" + strings.TrimPrefix(code, "dyl_")} {
 		if _, ok := ls.peek(c); ok {
 			t.Errorf("peek %q found a link", c)
@@ -170,7 +171,7 @@ func TestLinksSurviveRestart(t *testing.T) {
 	if err != nil || st.Mode().Perm() != 0o600 {
 		t.Fatalf("links.json: %v %v", st, err)
 	}
-	_, secret, _ := parseBearer(linkPrefix, code)
+	_, secret, _ := auth.ParseBearer(linkPrefix, code)
 	if b, _ := os.ReadFile(ls.path); strings.Contains(string(b), secret) {
 		t.Fatal("links.json holds the secret")
 	}
@@ -239,7 +240,7 @@ func TestRestartDeletesCredentialOfUnfinishedRedemption(t *testing.T) {
 	s, _ := newTestServer(t)
 	bob := createBob(t, s)
 	code := issueLink(t, s.links, bob)
-	id, _, _ := parseBearer(linkPrefix, code)
+	id, _, _ := auth.ParseBearer(linkPrefix, code)
 	unfinished, _, err := s.credentials.createRedeeming(bob, defaultCredentialName, id)
 	if err != nil {
 		t.Fatal(err)
@@ -274,7 +275,7 @@ func TestRedeemingAgainDeletesCredentialOfFailedRedemption(t *testing.T) {
 			s, ts := newTestServer(t)
 			bob := fullOnAlice(t, s)
 			code := issueLink(t, s.links, bob)
-			id, _, _ := parseBearer(linkPrefix, code)
+			id, _, _ := auth.ParseBearer(linkPrefix, code)
 			leftover, _, err := s.credentials.createRedeeming(bob, defaultCredentialName, id)
 			if err != nil {
 				t.Fatal(err)

@@ -54,14 +54,14 @@ func TestPasswordChangeBumpsEpochAndAccess(t *testing.T) {
 		t.Fatal("epoch not bumped")
 	}
 	_ = s.SetAccess("c1", map[string]auth.Level{"anna": auth.LevelFull})
-	if a, _ := s.Get("anna"); !a.HasAccess("c1") || a.HasAccess("c2") {
+	if a, _ := s.Get("anna"); a.Level("c1") != auth.LevelFull || a.Level("c2") == auth.LevelFull {
 		t.Fatal("access")
 	}
 	if got := s.WithAccess("c1"); len(got) != 1 || got["anna"] != auth.LevelFull {
 		t.Fatal(got)
 	}
 	_ = s.Forget("c1")
-	if a, _ := s.Get("anna"); a.HasAccess("c1") {
+	if a, _ := s.Get("anna"); a.Level("c1") == auth.LevelFull {
 		t.Fatal("forget")
 	}
 	if len(notified) < 2 {
@@ -81,7 +81,7 @@ func TestRetainDropsGrantsOfUndefinedEnvironments(t *testing.T) {
 	}
 	reloaded, _ := Load(dir)
 	a, _ := reloaded.Get("anna")
-	if !a.HasAccess("alice") || a.HasAccess("gone") {
+	if a.Level("alice") != auth.LevelFull || a.Level("gone") == auth.LevelFull {
 		t.Fatalf("grants after retain: %v", a.Grants)
 	}
 	if !strings.Contains(readFile(t, dir), `"grants"`) {
@@ -128,7 +128,7 @@ func TestTokenAccountHasNoPassword(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.HasPassword() || a.PasswordHash != "" || a.ID == "" || a.Level("alice") != auth.LevelObserve || a.HasAccess("alice") {
+	if a.HasPassword() || a.PasswordHash != "" || a.ID == "" || a.Level("alice") != auth.LevelObserve {
 		t.Fatalf("token account: %+v", a)
 	}
 	if _, err := s.Create(NewAccount{Username: "piet", Grants: []Grant{{Environment: "alice", Level: "admin"}}}); err == nil {
@@ -192,7 +192,7 @@ func TestSetAccessLevels(t *testing.T) {
 	if err := s.SetAccess("alice", map[string]auth.Level{"bob": auth.LevelObserve}); err != nil {
 		t.Fatal(err)
 	}
-	if a, _ := s.Get("bob"); a.Level("alice") != auth.LevelObserve || a.HasAccess("alice") {
+	if a, _ := s.Get("bob"); a.Level("alice") != auth.LevelObserve {
 		t.Fatalf("observe: %+v", a)
 	}
 	if got := s.WithAccess("alice"); len(got) != 1 || got["bob"] != auth.LevelObserve {
@@ -201,7 +201,7 @@ func TestSetAccessLevels(t *testing.T) {
 	if err := s.SetAccess("alice", map[string]auth.Level{"bob": auth.LevelFull}); err != nil {
 		t.Fatal(err)
 	}
-	if a, _ := s.Get("bob"); !a.HasAccess("alice") || len(a.Grants) != 1 {
+	if a, _ := s.Get("bob"); a.Level("alice") != auth.LevelFull || len(a.Grants) != 1 {
 		t.Fatalf("full: %+v", a)
 	}
 	if err := s.SetAccess("alice", map[string]auth.Level{}); err != nil {

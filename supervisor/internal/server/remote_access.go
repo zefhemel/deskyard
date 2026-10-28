@@ -42,7 +42,7 @@ func (s *Server) remote(next remoteHandler) http.Handler {
 			}
 			return
 		}
-		id, _, ok := parseBearer(credentialPrefix, bearer)
+		id, _, ok := auth.ParseBearer(credentialPrefix, bearer)
 		if !ok {
 			writeError(w, http.StatusUnauthorized, "the credential is unknown, revoked or expired")
 			return
@@ -226,7 +226,7 @@ func (s *Server) remoteExec(w http.ResponseWriter, r *http.Request, c environmen
 	if act, ok := activity.ParseScreenArgv(start.Argv); ok {
 		s.activity.Screen(ref, agent, act)
 	} else if !isCopy {
-		id := randomID(8)
+		id := auth.RandomID(8)
 		s.activity.CmdStart(ref, agent, id, activity.DisplayCommand(start.Argv))
 		var once sync.Once
 		ended = func(exit *int) { once.Do(func() { s.activity.CmdEnd(ref, agent, id, exit) }) }

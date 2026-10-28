@@ -100,9 +100,9 @@ func (cl *cliLogins) start(client, ip string) (id, code, pollSecret string) {
 		return "", "", ""
 	}
 	for id == "" || cl.all[id] != nil {
-		id = randomID(16)
+		id = auth.RandomID(16)
 	}
-	cl.all[id] = &cliLogin{client: client, ip: ip, code: code, pollHash: hashSecret(pollSecret), created: cl.now().UTC()}
+	cl.all[id] = &cliLogin{client: client, ip: ip, code: code, pollHash: auth.HashSecret(pollSecret), created: cl.now().UTC()}
 	return id, code, pollSecret
 }
 
@@ -163,7 +163,7 @@ func (cl *cliLogins) take(id, pollSecret string, issue func(a accounts.Account, 
 	cl.mu.Lock()
 	defer cl.mu.Unlock()
 	l, ok := cl.get(id)
-	if !ok || subtle.ConstantTimeCompare([]byte(l.pollHash), []byte(hashSecret(pollSecret))) != 1 {
+	if !ok || subtle.ConstantTimeCompare([]byte(l.pollHash), []byte(auth.HashSecret(pollSecret))) != 1 {
 		return errCLILoginExpired
 	}
 	if !l.decided {

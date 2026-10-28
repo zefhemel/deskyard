@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 )
 
@@ -58,7 +59,7 @@ func (ls *linkStore) write(next []link) error {
 // issue makes a new link for a, replacing its unused one, and returns the
 // code, which is never available again.
 func (ls *linkStore) issue(a accounts.Account, by string) (string, error) {
-	id, code, hash := newSecret(linkPrefix)
+	id, code, hash := auth.NewSecret(linkPrefix)
 	l := link{ID: id, Username: a.Username, AccountID: a.ID, CreatedBy: by, Hash: hash, Created: time.Now().UTC()}
 	ls.mu.Lock()
 	defer ls.mu.Unlock()
@@ -73,11 +74,11 @@ func (ls *linkStore) issue(a accounts.Account, by string) (string, error) {
 
 // find returns the index of the link the code names, or -1. ls.mu is held.
 func (ls *linkStore) find(code string) int {
-	id, secret, ok := parseBearer(linkPrefix, code)
+	id, secret, ok := auth.ParseBearer(linkPrefix, code)
 	if !ok {
 		return -1
 	}
-	hash := hashSecret(secret)
+	hash := auth.HashSecret(secret)
 	for i, l := range ls.all {
 		if l.ID == id {
 			if subtle.ConstantTimeCompare([]byte(l.Hash), []byte(hash)) != 1 {

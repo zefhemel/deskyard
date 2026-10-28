@@ -53,11 +53,12 @@ func orphanedShare(share accounts.Account, sharers map[string]accounts.Account, 
 	if share.SharedBy == nil {
 		return false
 	}
-	if len(share.Grants) == 0 {
+	g, ok := share.ShareGrant()
+	if !ok {
 		return true
 	}
 	sharer, ok := sharers[share.SharedBy.Username]
-	return !ok || sharer.ID != share.SharedBy.ID || levelOf(sharer, true, now)(share.Grants[0].Environment) != auth.LevelFull
+	return !ok || sharer.ID != share.SharedBy.ID || levelOf(sharer, true, now)(g.Environment) != auth.LevelFull
 }
 
 // sweep makes links, credentials and shares follow the accounts: it deletes

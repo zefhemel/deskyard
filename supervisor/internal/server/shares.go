@@ -42,8 +42,8 @@ func (s *Server) toShareJSON(a accounts.Account) shareJSON {
 		}
 	}
 	j.LastUsed = since(used)
-	if len(a.Grants) > 0 {
-		j.Environment, j.Level = a.Grants[0].Environment, a.Grants[0].Level
+	if g, ok := a.ShareGrant(); ok {
+		j.Environment, j.Level = g.Environment, g.Level
 		j.Connected = slices.Contains(s.viewers.names(j.Environment), a.Username) || s.credentials.connected(a.ID)
 	}
 	return j
@@ -53,7 +53,7 @@ func (s *Server) toShareJSON(a accounts.Account) shareJSON {
 func (s *Server) sharesOf(name string) []shareJSON {
 	out := []shareJSON{}
 	for _, a := range s.Accounts.List() {
-		if a.IsShare() && len(a.Grants) > 0 && a.Grants[0].Environment == name {
+		if g, ok := a.ShareGrant(); ok && g.Environment == name {
 			out = append(out, s.toShareJSON(a))
 		}
 	}

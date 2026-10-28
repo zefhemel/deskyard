@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 )
 
@@ -81,7 +82,7 @@ func (cs *credentialStore) createRedeeming(a accounts.Account, name, link string
 }
 
 func (cs *credentialStore) add(c credential) (credential, string, error) {
-	id, bearer, hash := newSecret(credentialPrefix)
+	id, bearer, hash := auth.NewSecret(credentialPrefix)
 	c.ID, c.Hash, c.Created = id, hash, time.Now().UTC()
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
@@ -97,11 +98,11 @@ func (cs *credentialStore) add(c credential) (credential, string, error) {
 // still exists with the same ID is the caller's to check. Last use is
 // recorded at most once a minute, best effort.
 func (cs *credentialStore) check(bearer string) (credential, bool) {
-	id, secret, ok := parseBearer(credentialPrefix, bearer)
+	id, secret, ok := auth.ParseBearer(credentialPrefix, bearer)
 	if !ok {
 		return credential{}, false
 	}
-	hash := hashSecret(secret)
+	hash := auth.HashSecret(secret)
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	for i, c := range cs.all {

@@ -4,8 +4,6 @@
 package accounts
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -62,11 +60,17 @@ func (a Account) Level(name string) auth.Level {
 	return grantLevel(a.Grants, name)
 }
 
-// HasAccess reports whether the account has full use of the named environment.
-func (a Account) HasAccess(name string) bool { return a.Level(name) == auth.LevelFull }
-
 func (a Account) IsShare() bool     { return a.SharedBy != nil }
 func (a Account) HasPassword() bool { return a.PasswordHash != "" }
+
+// ShareGrant is a share's one grant, of the environment it shares; false
+// for an account that isn't a share, or a share whose environment is gone.
+func (a Account) ShareGrant() (Grant, bool) {
+	if a.SharedBy == nil || len(a.Grants) == 0 {
+		return Grant{}, false
+	}
+	return a.Grants[0], true
+}
 
 // Expired reports whether the account's time limit has passed by now; an
 // expired account is treated as deleted.
@@ -138,12 +142,6 @@ func validGrants(grants []Grant) error {
 	return nil
 }
 
-func randomID() string {
-	b := make([]byte, 8)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
-}
-
 var (
 	ErrNotFound  = errors.New("no such account")
 	ErrExists    = errors.New("an account with that name already exists")
@@ -213,7 +211,7 @@ func Load(dataDir string) (*Store, error) {
 	for _, l := range f.Accounts {
 		a := l.Account
 		if a.ID == "" {
-			a.ID = randomID()
+			a.ID = auth.RandomID(16)
 			changed = true
 		}
 		if l.Environments != nil {
@@ -274,7 +272,7 @@ func (s *Store) EnsureAdmin(username, password string) (generated string, err er
 		password = auth.RandomPassword()
 		generated = password
 	}
-	next := []Account{{ID: randomID(), Username: username, PasswordHash: auth.HashPassword(password), Admin: true,
+	next := []Account{{ID: auth.RandomID(16), Username: username, PasswordHash: auth.HashPassword(password), Admin: true,
 		Grants: []Grant{}, Created: time.Now().UTC()}}
 	if err := s.publish(next); err != nil {
 		return "", err
@@ -366,7 +364,7 @@ func (s *Store) Create(n NewAccount) (Account, error) {
 	if n.Admin && n.Password != "" && n.Expires != nil {
 		return Account{}, ErrAdminExpires
 	}
-	a := Account{ID: randomID(), Username: username, Description: n.Description, Admin: n.Admin,
+	a := Account{ID: auth.RandomID(16), Username: username, Description: n.Description, Admin: n.Admin,
 		Grants: slices.Clone(n.Grants), Expires: n.Expires, Created: time.Now().UTC()}
 	if n.Password != "" {
 		a.PasswordHash = auth.HashPassword(n.Password)

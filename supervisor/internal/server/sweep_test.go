@@ -396,7 +396,7 @@ func TestStartupDropsGrantsOfUndefinedEnvironments(t *testing.T) {
 	}
 	restarted := restart(t, s)
 	a, _ := restarted.Accounts.Get("anna")
-	if a.HasAccess("carol") || !a.HasAccess("alice") {
+	if a.Level("carol") == auth.LevelFull || a.Level("alice") != auth.LevelFull {
 		t.Fatalf("grants after startup: %v", a.Grants)
 	}
 }
@@ -438,7 +438,7 @@ func TestCreateDropsLeftoverGrantsOfTheName(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("create job timed out")
 	}
-	if a, _ := s.Accounts.Get("anna"); a.HasAccess("carol") {
+	if a, _ := s.Accounts.Get("anna"); a.Level("carol") == auth.LevelFull {
 		t.Fatal("new environment inherited the removed one's grant")
 	}
 }
@@ -489,7 +489,7 @@ func TestRemovalWhoseFolderDeletionFailsStillPurgesAccess(t *testing.T) {
 	if _, ok := s.Environments.Defs.Get("alice"); ok {
 		t.Fatal("test did not delete the definition")
 	}
-	if a, _ := s.Accounts.Get("anna"); a.HasAccess("alice") {
+	if a, _ := s.Accounts.Get("anna"); a.Level("alice") == auth.LevelFull {
 		t.Error("removal kept the grant")
 	}
 	if conn.Err() == nil {
@@ -546,7 +546,7 @@ func TestCreateFailureKeepingTheEnvironmentAppliesAccess(t *testing.T) {
 	if _, ok := s.Environments.Defs.Get("carol"); !ok {
 		t.Fatal("test's failed creation did not keep the definition")
 	}
-	if a, _ := s.Accounts.Get("anna"); !a.HasAccess("carol") {
+	if a, _ := s.Accounts.Get("anna"); a.Level("carol") != auth.LevelFull {
 		t.Error("environment kept for recovery lost its requested access")
 	}
 }
