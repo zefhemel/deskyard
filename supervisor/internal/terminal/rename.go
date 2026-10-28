@@ -22,6 +22,13 @@ func Rename(ctx context.Context, name, next string) error {
 	if name == next {
 		return nil
 	}
+	reserved, err := groupNameExists(ctx, next)
+	if err != nil {
+		return err
+	}
+	if reserved {
+		return fmt.Errorf("session name %q is reserved by an existing terminal attachment group", next)
+	}
 	// Keep title changes before the rename so an error cannot report a failed rename after it succeeded.
 	if err := tmuxCommand(ctx, "set-option", "-t", id, "set-titles-string", "#{session_name}").Run(); err != nil {
 		return err

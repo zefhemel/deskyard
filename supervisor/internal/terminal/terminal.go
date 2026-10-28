@@ -71,6 +71,13 @@ func createNext(ctx context.Context, cwd string) (string, error) {
 	// same candidate makes us try the next number, never join its shell.
 	for n := 1; n <= 10000; n++ {
 		name := fmt.Sprintf("terminal-%d", n)
+		reserved, err := groupNameExists(ctx, name)
+		if err != nil {
+			return "", err
+		}
+		if reserved {
+			continue
+		}
 		run := func(args ...string) error {
 			return exec.CommandContext(startup, "tmux", append(append([]string{}, base...), args...)...).Run()
 		}
@@ -145,6 +152,13 @@ func ensureSessionAt(ctx context.Context, name, cwd string) ([]string, error) {
 	}
 	target := "=" + name
 	if err := run("has-session", "-t", target); err != nil {
+		reserved, err := groupNameExists(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		if reserved {
+			return nil, fmt.Errorf("session name %q is reserved by an existing terminal attachment group", name)
+		}
 		if err := run("new-session", "-d", "-s", name, "-c", cwd, "bash", "-l"); err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()

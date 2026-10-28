@@ -78,6 +78,7 @@ export function EnvironmentTabs({
   onSelect,
   onClose,
   onRename,
+  onDetach,
   onAdd,
   onReorder,
 }: {
@@ -88,6 +89,7 @@ export function EnvironmentTabs({
   onSelect: (session: string | null) => void;
   onClose: (session: string) => void;
   onRename: (session: string) => void;
+  onDetach: (session: string) => void;
   onAdd: () => void;
   onReorder: (order: string[]) => void;
 }) {
@@ -232,7 +234,10 @@ export function EnvironmentTabs({
             <Menu
               class="inline-flex h-6 items-center"
               portal
-              items={[{ label: "Rename session…", onSelect: () => onRename(t.name) }]}
+              items={[
+                { label: "Rename session…", onSelect: () => onRename(t.name) },
+                { label: "Detach", onSelect: () => onDetach(t.name) },
+              ]}
               trigger={({ open, toggle }) => (
                 <button type="button" aria-label={`Session menu for ${t.name}`} aria-haspopup="menu" aria-expanded={open}
                   title={`Session menu for ${t.name}`}

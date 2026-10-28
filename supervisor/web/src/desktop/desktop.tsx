@@ -446,6 +446,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
           canAdd={running && c.terminal && !observing}
           onSelect={show}
           onRename={setRenaming}
+          onDetach={(s) => closeTab(s, false)}
           onClose={(s) => void requestEnd(s)}
           onAdd={() => void add()}
           onReorder={(next) => {

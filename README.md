@@ -20,7 +20,7 @@ button keeps the tab bar and current view together.
   phones and tablets.
 - **Shared terminals** next to the desktop, with trackpad scrolling through
   history and touch keyboard helpers that stay hidden by default on desktops, joinable from the
-  browser, desktop or your own terminal. Switch views with Ctrl+Shift+1–9; rename a session from its tab’s dropdown.
+  browser, desktop or your own terminal. Switch views with Ctrl+Shift+1–9; rename a session or detach without ending it from its tab’s dropdown.
 - **One shared Chromium** whose tabs and sign-ins stay with the environment.
   It starts when you open it or connect through browser tools.
 - **Sharing by link**: full access or observe-only, optionally for a limited
