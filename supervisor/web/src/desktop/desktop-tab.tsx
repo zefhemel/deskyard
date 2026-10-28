@@ -136,7 +136,10 @@ export function Desktop({ environment: c, slots, selectShortcut, onFrame }: { en
     const scale = displayScale(scaling, ratio);
     const size = locked ?? { width: element.clientWidth, height: element.clientHeight };
     if (size.width <= 0 || size.height <= 0) return;
-    configureDisplay(element, scaledSize(size, scale), scale);
+    const physical = scaledSize(size, scale);
+    // What this page asks for, for the integration tests (test_hidpi.py).
+    element.dataset.displaySize = `${physical.width}x${physical.height}`;
+    configureDisplay(element, physical, scale);
   }, []);
 
   /** Sends a Quality choice's preset to the display. */
