@@ -11,6 +11,7 @@ import { cx } from "../components/ui.tsx";
 import { backupStatus } from "../lib/backup-policy.ts";
 import { BackupsTab } from "./storage/backups-tab.tsx";
 import { RemotesTab } from "./storage/remotes-tab.tsx";
+import { useLive } from "../live.tsx";
 
 type StorageTab = "volumes" | "remotes" | "backups";
 const TABS: { id: StorageTab; label: string }[] = [
@@ -54,7 +55,7 @@ const NAME = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
 
 function VolumesTab() {
   const list = useFetch(() => api.volumes(), "volumes");
-  const envs = useFetch(() => api.environments(), "environments");
+  const { environments } = useLive();
   const backups = useFetch(() => api.backups(), "backups");
   const [creating, setCreating] = useState(false);
   const [removing, setRemoving] = useState<Volume | null>(null);
@@ -79,7 +80,7 @@ function VolumesTab() {
       ) : (
         <div class="grid gap-3">
           {volumes.map((v) => (
-            <VolumeCard key={v.name} volume={v} environments={envs.data?.environments} backup={backups.data?.items.find((i) => i.item === `volume:${v.name}`)} onDelete={() => setRemoving(v)} />
+            <VolumeCard key={v.name} volume={v} environments={environments ?? undefined} backup={backups.data?.items.find((i) => i.item === `volume:${v.name}`)} onDelete={() => setRemoving(v)} />
           ))}
         </div>
       )}
