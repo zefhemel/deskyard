@@ -12,6 +12,6 @@ export function installTabShortcuts(target: Window, select: (index: number) => b
     e.preventDefault();
     e.stopImmediatePropagation();
   };
-  target.addEventListener("keydown", handle, true);
-  return () => target.removeEventListener("keydown", handle, true);
+  target.addEventListener("keydown", handle, { capture: true });
+  return () => target.removeEventListener("keydown", handle, { capture: true });
 }
