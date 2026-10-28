@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
@@ -326,8 +327,20 @@ func TestRestoreToFolderHostUsesHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := env.events(); got != "make user folder "+filepath.Join(host, res.Folder) {
+	if got := env.events(); got != "helper made "+filepath.Join(host, res.Folder) {
 		t.Fatalf("not made by the root helper: %s", got)
+	}
+	// Restoring again never merges into the first restore's folder.
+	again, err := s.Restore(context.Background(), Item{KindVolume, "photos"}, RestoreRequest{Repository: "home", Snapshot: "v1", Mode: "folder", Paths: []string{"a.txt"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Folder != res.Folder+" (2)" {
+		t.Fatalf("second restore into %q after %q", again.Folder, res.Folder)
+	}
+	rs := restoreCalls(f)
+	if target := rs[len(rs)-1].Mounts; !slices.ContainsFunc(target, func(m engine.Mount) bool { return m.Source == filepath.Join(host, again.Folder) }) {
+		t.Fatalf("restored into %+v", target)
 	}
 }
 

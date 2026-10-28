@@ -391,7 +391,7 @@ func (s *Service) itemSource(it Item) (root string, mounts []engine.Mount, clean
 			return "", nil, cleanup, fmt.Errorf("volume %s doesn't exist", it.Name)
 		}
 		root = "/deskyard/volume/" + it.Name
-		return root, []engine.Mount{{Source: s.Env.VolumeFolder(v), Target: root, ReadOnly: true, MustExist: true}}, cleanup, nil
+		return root, []engine.Mount{{Source: s.Env.VolumeFolder(v).Path, Target: root, ReadOnly: true, MustExist: true}}, cleanup, nil
 	}
 }
 

@@ -63,17 +63,17 @@ func (s *Service) repoFor(it Item, name string) (string, error) {
 	return "", fmt.Errorf("say which repository %s's snapshot is in", it)
 }
 
-// itemFolder is the host folder holding the item's files.
-func (s *Service) itemFolder(it Item) (string, error) {
+// itemFolder is the folder holding the item's files.
+func (s *Service) itemFolder(it Item) (environments.Folder, error) {
 	if it.Kind == KindEnvironment {
 		if _, ok := s.Env.Definition(it.Name); !ok {
-			return "", fmt.Errorf("environment %s: %w", it.Name, ErrNotFound)
+			return environments.Folder{}, fmt.Errorf("environment %s: %w", it.Name, ErrNotFound)
 		}
-		return s.Env.Layout().HomeOf(it.Name), nil
+		return environments.Folder{Path: s.Env.Layout().HomeOf(it.Name)}, nil
 	}
 	v, ok := s.Env.Volume(it.Name)
 	if !ok {
-		return "", fmt.Errorf("volume %s: %w", it.Name, ErrNotFound)
+		return environments.Folder{}, fmt.Errorf("volume %s: %w", it.Name, ErrNotFound)
 	}
 	return s.Env.VolumeFolder(v), nil
 }
@@ -164,7 +164,7 @@ func (s *Service) restoreHere(ctx context.Context, it Item, repo Repo, snap Snap
 	}
 	defer s.useRemote(repo.Remote)()
 	progress("Restoring", 0)
-	if err := s.Tool.Restore(ctx, repo, snap.ID, itemRoot(it), engine.Mount{Source: folder, MustExist: true}, nil, true, func(frac float64, msg string) {
+	if err := s.Tool.Restore(ctx, repo, snap.ID, itemRoot(it), engine.Mount{Source: folder.Path, MustExist: true}, nil, true, func(frac float64, msg string) {
 		progress("Restoring: "+msg, frac)
 	}); err != nil {
 		if len(restart) > 0 {
@@ -245,7 +245,7 @@ func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snaps
 		return RestoreResult{}, err
 	}
 	removeFolder := func() {
-		_ = s.Env.RemoveTree(context.WithoutCancel(ctx), filepath.Dir(folder), filepath.Base(folder))
+		_ = s.Env.RemoveTree(context.WithoutCancel(ctx), environments.Folder{Path: filepath.Dir(folder)}, filepath.Base(folder))
 	}
 	progress("Restoring", 0)
 	target := engine.Mount{Source: folder, MustExist: true}
@@ -324,29 +324,17 @@ func (s *Service) restoreFolder(ctx context.Context, it Item, repo Repo, snap Sn
 		return RestoreResult{}, err
 	}
 	defer release()
-	base := "Restored " + snap.Time.In(s.Loc).Format("2006-01-02 1504")
-	name := base
-	for n := 2; ; n++ {
-		if _, err := os.Lstat(filepath.Join(folder, name)); errors.Is(err, os.ErrNotExist) {
-			break
-		}
-		name = fmt.Sprintf("%s (%d)", base, n)
-	}
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
 	defer s.useRemote(repo.Remote)()
-	// A host volume's folder may be one the supervisor can't write in (it
-	// belongs to the host's user), so the root helper makes the folder
-	// there. Homes and local volumes are the supervisor's own.
-	if v, ok := s.Env.Volume(it.Name); it.Kind == KindVolume && ok && v.Kind == environments.VolumeHost {
-		if err := s.Env.MakeUserFolder(ctx, folder, name); err != nil {
-			return RestoreResult{}, err
-		}
-	} else if err := os.Mkdir(filepath.Join(folder, name), 0o755); err != nil {
+	// The first free name, taken where it is made: on a host volume, whose
+	// folder the supervisor can't see, by the root helper.
+	name, err := s.Env.MakeFreeFolder(ctx, folder, "Restored "+snap.Time.In(s.Loc).Format("2006-01-02 1504"))
+	if err != nil {
 		return RestoreResult{}, err
 	}
 	progress("Restoring", 0)
-	if err := s.Tool.Restore(ctx, repo, snap.ID, itemRoot(it), engine.Mount{Source: filepath.Join(folder, name), MustExist: true}, includes, false, func(frac float64, msg string) {
+	if err := s.Tool.Restore(ctx, repo, snap.ID, itemRoot(it), engine.Mount{Source: filepath.Join(folder.Path, name), MustExist: true}, includes, false, func(frac float64, msg string) {
 		progress("Restoring: "+msg, frac)
 	}); err != nil {
 		return RestoreResult{}, err

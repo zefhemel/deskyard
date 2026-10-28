@@ -13,11 +13,12 @@ type Environments interface {
 	Layout() config.Layout
 	Definition(name string) (environments.Definition, bool)
 	Volume(name string) (environments.Volume, bool)
-	VolumeFolder(v environments.Volume) string
+	VolumeFolder(v environments.Volume) environments.Folder
 	VolumeUsers(name string) []environments.VolumeUser
-	// RemoveTree and MakeUserFolder change folders as root, through a helper.
-	RemoveTree(ctx context.Context, root, child string) error
-	MakeUserFolder(ctx context.Context, parent, child string) error
+	// RemoveTree and MakeFreeFolder change folders, as root through a
+	// helper where the supervisor can't.
+	RemoveTree(ctx context.Context, parent environments.Folder, child string) error
+	MakeFreeFolder(ctx context.Context, parent environments.Folder, base string) (string, error)
 
 	Get(ctx context.Context, name string) (environments.Environment, error)
 	Reserve(name, state string) (func(), error)

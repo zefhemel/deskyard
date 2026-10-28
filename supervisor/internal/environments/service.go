@@ -878,7 +878,7 @@ func (s *Service) createContainer(ctx context.Context, name string, revision uin
 		if !ok {
 			return fmt.Errorf("volume %s doesn't exist", g.Name)
 		}
-		spec.Mounts = append(spec.Mounts, engine.Mount{Source: s.VolumeFolder(v), Target: GrantPath(g), ReadOnly: g.ReadOnly, MustExist: true})
+		spec.Mounts = append(spec.Mounts, engine.Mount{Source: s.VolumeFolder(v).Path, Target: GrantPath(g), ReadOnly: g.ReadOnly, MustExist: true})
 	}
 	if runtimeID != "" {
 		spec.NetworkContainer = runtimeID
@@ -1143,7 +1143,7 @@ func (s *Service) Remove(ctx context.Context, name string, deleteFiles bool) err
 	}
 	var folderErr error
 	if deleteFiles {
-		folderErr = s.removeTree(ctx, s.Layout.Home, name)
+		folderErr = s.removeTree(ctx, Folder{Path: s.Layout.Home}, name)
 	}
 	return errors.Join(folderErr, s.removed(name))
 }
@@ -1177,19 +1177,19 @@ func (s *Service) FolderSize(name string) (bytes int64, complete bool) {
 	return treeSize(s.Layout.HomeOf(name))
 }
 
-// VolumeSize is FolderSize for the folder of the volume name: for a host
-// volume, when the supervisor can read that path itself (it runs on the
-// engine host); otherwise 0 and incomplete.
+// VolumeSize is FolderSize for the folder of the volume name. A host
+// volume's folder is on the engine host, which the supervisor can't see:
+// its size is 0 and incomplete.
 func (s *Service) VolumeSize(name string) (bytes int64, complete bool) {
 	v, ok := s.Vols.Get(name)
 	if !ok {
 		return 0, false
 	}
 	folder := s.VolumeFolder(v)
-	if st, err := os.Stat(folder); v.Kind == VolumeHost && (err != nil || !st.IsDir()) {
+	if folder.OnEngineHost {
 		return 0, false
 	}
-	return treeSize(folder)
+	return treeSize(folder.Path)
 }
 
 func treeSize(dir string) (bytes int64, complete bool) {

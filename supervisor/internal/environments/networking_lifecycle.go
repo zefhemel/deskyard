@@ -402,7 +402,7 @@ func (n *Networking) finishRemove(ctx context.Context, r networkTransition) erro
 		return errors.New("could not remove environment network")
 	}
 	if r.DeleteFiles {
-		if err := s.removeTree(ctx, s.Layout.Home, r.Name); err != nil {
+		if err := s.removeTree(ctx, Folder{Path: s.Layout.Home}, r.Name); err != nil {
 			return err
 		}
 	}

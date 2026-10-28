@@ -524,7 +524,7 @@ func TestRemoveTreeReportsHelperFailure(t *testing.T) {
 	_ = os.Chmod(stuck, 0o555)
 	t.Cleanup(func() { _ = os.Chmod(stuck, 0o755) })
 	eng.code, eng.stderr = 1, "rm: can't remove '/parent/x/ro/f': Permission denied\n"
-	err := s.RemoveTree(context.Background(), root, "x")
+	err := s.RemoveTree(context.Background(), Folder{Path: root}, "x")
 	if err == nil || !strings.Contains(err.Error(), "Permission denied") {
 		t.Fatalf("got %v", err)
 	}
@@ -533,7 +533,7 @@ func TestRemoveTreeReportsHelperFailure(t *testing.T) {
 		t.Fatalf("helpers %+v", ran)
 	}
 	for _, bad := range []string{"", ".", "..", "a/b"} {
-		if err := s.RemoveTree(context.Background(), root, bad); err == nil {
+		if err := s.RemoveTree(context.Background(), Folder{Path: root}, bad); err == nil {
 			t.Errorf("removed %q", bad)
 		}
 	}

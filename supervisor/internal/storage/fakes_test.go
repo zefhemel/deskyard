@@ -83,11 +83,11 @@ func (e *fakeEnv) Volume(name string) (environments.Volume, bool) {
 	v, ok := e.vols[name]
 	return v, ok
 }
-func (e *fakeEnv) VolumeFolder(v environments.Volume) string {
+func (e *fakeEnv) VolumeFolder(v environments.Volume) environments.Folder {
 	if v.Kind == environments.VolumeHost {
-		return v.HostPath
+		return environments.Folder{Path: v.HostPath, OnEngineHost: true}
 	}
-	return e.layout.VolumeOf(v.Name)
+	return environments.Folder{Path: e.layout.VolumeOf(v.Name)}
 }
 func (e *fakeEnv) VolumeUsers(name string) []environments.VolumeUser {
 	var out []environments.VolumeUser
@@ -100,13 +100,29 @@ func (e *fakeEnv) VolumeUsers(name string) []environments.VolumeUser {
 	}
 	return out
 }
-func (e *fakeEnv) RemoveTree(_ context.Context, root, child string) error {
-	e.record("remove tree " + filepath.Join(root, child))
-	return os.RemoveAll(filepath.Join(root, child))
+func (e *fakeEnv) RemoveTree(_ context.Context, parent environments.Folder, child string) error {
+	e.record("remove tree " + filepath.Join(parent.Path, child))
+	return os.RemoveAll(filepath.Join(parent.Path, child))
 }
-func (e *fakeEnv) MakeUserFolder(_ context.Context, parent, child string) error {
-	e.record("make user folder " + filepath.Join(parent, child))
-	return os.Mkdir(filepath.Join(parent, child), 0o755)
+
+// MakeFreeFolder makes the folder as the environments service would,
+// recording that one on the engine host was made by a helper.
+func (e *fakeEnv) MakeFreeFolder(_ context.Context, parent environments.Folder, base string) (string, error) {
+	name := base
+	for n := 2; ; n++ {
+		err := os.Mkdir(filepath.Join(parent.Path, name), 0o755)
+		if err == nil {
+			break
+		}
+		if !os.IsExist(err) {
+			return "", err
+		}
+		name = fmt.Sprintf("%s (%d)", base, n)
+	}
+	if parent.OnEngineHost {
+		e.record("helper made " + filepath.Join(parent.Path, name))
+	}
+	return name, nil
 }
 func (e *fakeEnv) Get(_ context.Context, name string) (environments.Environment, error) {
 	if _, ok := e.defs[name]; !ok {

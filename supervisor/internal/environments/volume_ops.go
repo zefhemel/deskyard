@@ -134,7 +134,7 @@ func (s *Service) DeleteVolume(ctx context.Context, name string, deleteFiles boo
 	if err != nil || !deleteFiles {
 		return err
 	}
-	return s.removeTree(ctx, s.Layout.Volume, name)
+	return s.removeTree(ctx, Folder{Path: s.Layout.Volume}, name)
 }
 
 // volumeMounters returns the environments, sorted by name, with a container
@@ -144,9 +144,14 @@ func (s *Service) volumeMounters(ctx context.Context, v Volume) ([]string, error
 	if err != nil {
 		return nil, err
 	}
-	folders := []string{filepath.Clean(s.VolumeFolder(v))}
-	if real, err := filepath.EvalSymlinks(folders[0]); err == nil && real != folders[0] {
-		folders = append(folders, real)
+	folder := s.VolumeFolder(v)
+	folders := []string{filepath.Clean(folder.Path)}
+	// Links resolve only in the supervisor's own folders: a host volume's
+	// path is on the engine host, where the engine already resolved it.
+	if !folder.OnEngineHost {
+		if real, err := filepath.EvalSymlinks(folders[0]); err == nil && real != folders[0] {
+			folders = append(folders, real)
+		}
 	}
 	var out []string
 	for _, c := range cs {
@@ -160,13 +165,13 @@ func (s *Service) volumeMounters(ctx context.Context, v Volume) ([]string, error
 	return out, nil
 }
 
-// VolumeFolder is the folder holding v's files: its host path, or
-// volume/<name>/ in the data folder.
-func (s *Service) VolumeFolder(v Volume) string {
+// VolumeFolder is the folder holding v's files: its host path on the engine
+// host, or volume/<name>/ in the data folder.
+func (s *Service) VolumeFolder(v Volume) Folder {
 	if v.Kind == VolumeHost {
-		return v.HostPath
+		return Folder{Path: v.HostPath, OnEngineHost: true}
 	}
-	return s.Layout.VolumeOf(v.Name)
+	return Folder{Path: s.Layout.VolumeOf(v.Name)}
 }
 
 // VolumeUsers returns the environments whose definitions grant the volume
