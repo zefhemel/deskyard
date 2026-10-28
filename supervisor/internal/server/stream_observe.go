@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	"encoding/binary"
 	"io"
 	"slices"
 	"strconv"
@@ -40,7 +39,7 @@ type observeFilter struct {
 
 	frame [maxHeldFrame]byte // the current frame's header so far, then the whole of a held frame
 	n     int                // bytes of it so far
-	need  int                // its header's length, then the whole frame's, once known
+	need  int                // the whole frame's length, once it is held
 	head  int                // its header's length, once the frame is held
 	hold  bool               // the header is in and the frame is held
 	skip  uint64             // payload bytes of a dropped frame still to come
@@ -119,32 +118,11 @@ func (d *downstream) feed(p []byte) {
 // decide passes or drops the held frame once enough of it is in.
 func (d *downstream) decide() {
 	h := d.held
-	if len(h) < 2 {
+	hdr, ok := parseWSHeader(h)
+	if !ok {
 		return
 	}
-	head := 2
-	switch h[1] & 0x7f {
-	case 126:
-		head += 2
-	case 127:
-		head += 8
-	}
-	if h[1]&0x80 != 0 {
-		head += 4
-	}
-	if len(h) < head {
-		return
-	}
-	var length uint64
-	switch n := h[1] & 0x7f; n {
-	case 126:
-		length = uint64(binary.BigEndian.Uint16(h[2:]))
-	case 127:
-		length = binary.BigEndian.Uint64(h[2:])
-	default:
-		length = uint64(n)
-	}
-	fin, opcode, masked := h[0]&0x80 != 0, h[0]&0x0f, h[1]&0x80 != 0
+	head, length, fin, opcode, masked := hdr.size, hdr.length, hdr.fin, hdr.opcode, hdr.masked
 	drop := false
 	switch {
 	case opcode == wsText && fin && !masked:
@@ -197,22 +175,11 @@ func (f *observeFilter) Write(p []byte) (int, error) {
 		f.n++
 		i++
 		if !f.hold {
-			if f.n == 2 {
-				f.need = 2
-				switch f.frame[1] & 0x7f {
-				case 126:
-					f.need += 2
-				case 127:
-					f.need += 8
-				}
-				if f.frame[1]&0x80 != 0 {
-					f.need += 4
-				}
-			}
-			if f.n < 2 || f.n < f.need {
+			h, ok := parseWSHeader(f.frame[:f.n])
+			if !ok {
 				continue
 			}
-			f.header()
+			f.header(h)
 		}
 		if f.hold && f.n == f.need {
 			if f.forward() {
@@ -227,35 +194,24 @@ func (f *observeFilter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// header decides on a frame whose header is complete: held until its end,
+// header decides on the frame whose header h is in: held until its end,
 // or skipped.
-func (f *observeFilter) header() {
-	h := f.frame[:f.n]
-	fin, rsv, opcode, masked := h[0]&0x80 != 0, h[0]&0x70, h[0]&0x0f, h[1]&0x80 != 0
-	var length uint64
-	switch n := h[1] & 0x7f; n {
-	case 126:
-		length = uint64(binary.BigEndian.Uint16(h[2:]))
-	case 127:
-		length = binary.BigEndian.Uint64(h[2:])
-	default:
-		length = uint64(n)
-	}
+func (f *observeFilter) header(h wsHeader) {
 	var held bool
-	switch opcode {
+	switch h.opcode {
 	case 0x8, 0x9, 0xA: // close, ping, pong
-		held = fin && rsv == 0 && length <= 125
+		held = h.fin && h.rsv == 0 && h.length <= 125
 	case wsText:
 		// Not a fragment (fragmented messages, continuations included, go
 		// whole), not compressed, masked as every browser frame is.
-		held = fin && rsv == 0 && masked && length <= maxObservedText
+		held = h.fin && h.rsv == 0 && h.masked && h.length <= maxObservedText
 	}
 	if !held {
-		f.n, f.skip = 0, length
+		f.n, f.skip = 0, h.length
 		return
 	}
-	f.hold, f.head = true, f.n
-	f.need = f.n + int(length)
+	f.hold, f.head = true, h.size
+	f.need = h.size + int(h.length)
 }
 
 // forward decides on a complete held frame.

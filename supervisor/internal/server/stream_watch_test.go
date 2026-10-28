@@ -242,3 +242,26 @@ func TestStreamWatchClosedNeverRestarts(t *testing.T) {
 	case <-time.After(150 * time.Millisecond):
 	}
 }
+
+func TestParseWSHeader(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		b    []byte
+		want wsHeader
+	}{
+		{"short unmasked text", []byte{0x81, 5}, wsHeader{fin: true, opcode: wsText, length: 5, size: 2}},
+		{"masked", []byte{0x81, 0x85, 1, 2, 3, 4}, wsHeader{fin: true, opcode: wsText, masked: true, mask: [4]byte{1, 2, 3, 4}, length: 5, size: 6}},
+		{"16-bit length, continuation", []byte{0x00, 126, 1, 0}, wsHeader{length: 256, size: 4}},
+		{"64-bit length, RSV1 binary", []byte{0xC2, 127, 0, 0, 0, 0, 0, 1, 0, 0}, wsHeader{fin: true, rsv: 0x40, opcode: 2, length: 65536, size: 10}},
+	} {
+		got, ok := parseWSHeader(tc.b)
+		if !ok || got != tc.want {
+			t.Errorf("%s: %+v %v, want %+v", tc.name, got, ok, tc.want)
+		}
+		for n := range len(tc.b) {
+			if _, ok := parseWSHeader(tc.b[:n]); ok {
+				t.Errorf("%s: complete with %d of %d bytes", tc.name, n, len(tc.b))
+			}
+		}
+	}
+}
