@@ -6,7 +6,7 @@ import { notify } from "../components/toast.tsx";
 import { EnvironmentChip } from "../components/environment-chip.tsx";
 import { Button, Check, Dialog, ErrorText, Field, Meter, Note, Seg, Tag, errorMessage } from "../components/ui.tsx";
 import { bytes } from "../lib/format.ts";
-import { useFetch } from "../lib/use-fetch.ts";
+import { useBackups, useFetch } from "../lib/use-fetch.ts";
 import { cx } from "../components/ui.tsx";
 import { backupStatus } from "../lib/backup-policy.ts";
 import { BackupsTab } from "./storage/backups-tab.tsx";
@@ -56,7 +56,7 @@ const NAME = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
 function VolumesTab() {
   const list = useFetch(() => api.volumes(), "volumes");
   const { environments } = useLive();
-  const backups = useFetch(() => api.backups(), "backups");
+  const backups = useBackups();
   const [creating, setCreating] = useState(false);
   const [removing, setRemoving] = useState<Volume | null>(null);
   const volumes = list.data?.volumes;

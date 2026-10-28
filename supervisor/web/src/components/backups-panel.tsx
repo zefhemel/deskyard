@@ -4,7 +4,7 @@ import { useEffect, useState } from "preact/hooks";
 import { api, type BackupItem, type ItemKind, type PolicyInput, type Repository, type RestoreResult, type Snapshot, type SnapshotEntry } from "../api.ts";
 import { describeReason, describeRetention, describeSchedule, isTime, policyDefaults, retentionErrors } from "../lib/backup-policy.ts";
 import { ago, bytes, day } from "../lib/format.ts";
-import { useFetch } from "../lib/use-fetch.ts";
+import { useBackupItem, useBackups, useFetch } from "../lib/use-fetch.ts";
 import { JobProgress, useJob } from "./job.tsx";
 import { notify } from "./toast.tsx";
 import { Button, Check, Dialog, ErrorText, Field, Note, Seg, errorMessage } from "./ui.tsx";
@@ -17,8 +17,8 @@ function when(iso: string): string {
 
 /** `stoppers` are the environments a restore here stops: the environment itself, or those granted the volume. */
 export function BackupsPanel({ kind, name, stoppers, hostPath }: { kind: ItemKind; name: string; stoppers: string[]; hostPath?: string }) {
-  const item = useFetch(() => api.backup(kind, name), `backup-${kind}-${name}`);
-  const overview = useFetch(() => api.backups(), "backups");
+  const item = useBackupItem(kind, name);
+  const overview = useBackups();
   const snaps = useFetch(() => api.snapshots(kind, name), `snapshots-${kind}-${name}`);
   const [editing, setEditing] = useState(false);
   const [browsing, setBrowsing] = useState<Snapshot | null>(null);
@@ -26,6 +26,7 @@ export function BackupsPanel({ kind, name, stoppers, hostPath }: { kind: ItemKin
   const refresh = () => {
     item.reload();
     snaps.reload();
+    overview.reload();
   };
   const run = useJob(() => {
     notify(`Backed up ${name}`);

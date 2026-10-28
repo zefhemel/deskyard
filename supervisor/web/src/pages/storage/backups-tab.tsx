@@ -6,7 +6,7 @@ import { Button, Dialog, ErrorText, Field, Note, Tag, errorMessage } from "../..
 import { backupStatus, describeSchedule, isTime, splitItem } from "../../lib/backup-policy.ts";
 import { copyText } from "../../lib/clipboard.ts";
 import { ago, day } from "../../lib/format.ts";
-import { useFetch } from "../../lib/use-fetch.ts";
+import { useBackups, useFetch } from "../../lib/use-fetch.ts";
 
 const NAME = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
 
@@ -16,7 +16,7 @@ function itemHref(item: string): string {
 }
 
 export function BackupsTab() {
-  const overview = useFetch(() => api.backups(), "backups");
+  const overview = useBackups();
   const remotes = useFetch(() => api.remotes(), "remotes");
   const [creating, setCreating] = useState(false);
   const [catalog, setCatalog] = useState<BackupsOverview | null>(null);
