@@ -48,8 +48,10 @@ import {
   keyCombos,
   lockSize,
   onClipboard,
-  qualities,
+  presetOf,
+  qualityChoices,
   qualityOf,
+  type PresetId,
   type QualityId,
   remoteSize,
   screenOf,
@@ -635,7 +637,7 @@ function Desktop({ environment: c, slots, selectShortcut, onFrame }: { environme
   // Whether this page owns the display (null until known), and the preset the
   // display streams with (null when unknown or none of ours).
   const [owner, setOwner] = useState<boolean | null>(null);
-  const [live, setLive] = useState<QualityId | null>(null);
+  const [live, setLive] = useState<PresetId | null>(null);
   const running = c.state === "running";
 
   // What this browser wants: applied when this page owns the display.
@@ -718,14 +720,14 @@ function Desktop({ environment: c, slots, selectShortcut, onFrame }: { environme
         // page chose H.264): JPEG, at this browser's quality, so this page
         // sees it too. Everyone's browser decodes JPEG.
         sendQuality(frame.current, quality);
-        setLive(quality);
+        setLive(presetOf(quality).id);
       }
       if (d.owner && !was.owner) {
         // The first page on the display: this browser's choices apply. (A
         // page handed the display later keeps the quality it streams with.)
         if (was.owner === null) {
           sendQuality(frame.current, quality);
-          setLive(quality);
+          setLive(presetOf(quality).id);
         }
         applyDisplay();
       } else if (d.owner === false && d.width > 0 && (was.owner !== false || d.width !== was.width || d.height !== was.height)) {
@@ -772,7 +774,7 @@ function Desktop({ environment: c, slots, selectShortcut, onFrame }: { environme
   };
   const chooseQuality = (id: QualityId) => {
     setQuality(id);
-    setLive(id);
+    setLive(presetOf(id).id);
     store(QUALITY_KEY, id);
     sendQuality(frame.current, id);
   };
@@ -831,18 +833,20 @@ function Desktop({ environment: c, slots, selectShortcut, onFrame }: { environme
       refocus();
     },
   }));
+  // Auto, while it's this browser's choice; else the preset the display streams with.
+  const checkedQuality: QualityId | null = quality === "auto" ? "auto" : live;
   const displayItems: MenuItem[] = [
     ...(owner
       ? [{ label: "Lock size", checked: locked !== null, onSelect: toggleLock }, ...resolutionItems, ...scalingItems]
       : [{ label: owner === false ? "Screen size: set by the first viewer" : "Screen size: connecting…", disabled: true, onSelect: () => {} }]),
-    ...qualities.map((q, i) => ({
+    ...qualityChoices.map((q, i) => ({
       label: (
         <>
           Quality: {q.label}
           {q.hint && <span class="text-muted">, {q.hint}</span>}
         </>
       ),
-      checked: quality === "auto" ? q.id === "auto" : q.id === live,
+      checked: q.id === checkedQuality,
       onSelect: () => chooseQuality(q.id),
       separated: i === 0,
     })),
@@ -863,9 +867,9 @@ function Desktop({ environment: c, slots, selectShortcut, onFrame }: { environme
             disabled: true, onSelect: () => {}, separated: true, class: compactOnly,
           }]),
           ...keyItems.map((k, i) => ({ ...k, label: <>Send {k.label}</>, separated: i === 0 && !owner, class: compactOnly })),
-          ...qualities.map((q, i) => ({
+          ...qualityChoices.map((q, i) => ({
             label: `Quality: ${q.label}`,
-            checked: quality === "auto" ? q.id === "auto" : q.id === live,
+            checked: q.id === checkedQuality,
             onSelect: () => chooseQuality(q.id),
             separated: i === 0,
             class: compactOnly,

@@ -137,7 +137,25 @@ export function onClipboard(screen: DeskyardScreen, fn: (text: string) => void):
   });
 }
 
-export type QualityId = "auto" | "low" | "medium" | "high" | "extreme" | "lossless";
+export type PresetId = "low" | "medium" | "high" | "extreme" | "lossless";
+
+/**
+ * A Quality choice, as this browser stores it: a preset, or "auto", which
+ * streams with autoPreset and adapts its frame rate to what this browser
+ * shows (auto-quality.ts).
+ */
+export type QualityId = "auto" | PresetId;
+
+export interface Preset {
+  id: PresetId;
+  label: string;
+  hint: string;
+  bitrate: number;
+  framerate: number;
+  encoder: string;
+  fullcolor: boolean;
+  jpeg: { quality: number; framerate: number; paintOver: number };
+}
 
 /**
  * The Quality presets, as Selkies stream settings. All are H.264 (x264 on
@@ -150,17 +168,7 @@ export type QualityId = "auto" | "low" | "medium" | "high" | "extreme" | "lossle
  * preset's `jpeg`: a JPEG quality and frame rate, with a still screen
  * re-sent at the paint-over quality (Selkies' default 90; 100 for Lossless).
  */
-export const qualities: {
-  id: QualityId;
-  label: string;
-  hint: string;
-  bitrate: number;
-  framerate: number;
-  encoder: string;
-  fullcolor: boolean;
-  jpeg: { quality: number; framerate: number; paintOver: number };
-}[] = [
-  { id: "auto", label: "Auto", hint: "adapts to this browser and connection", bitrate: 8000, framerate: 60, encoder: "h264enc", fullcolor: false, jpeg: { quality: 50, framerate: 30, paintOver: 90 } },
+export const qualities: Preset[] = [
   { id: "low", label: "Low", hint: "for slow connections", bitrate: 2000, framerate: 30, encoder: "h264enc", fullcolor: false, jpeg: { quality: 30, framerate: 15, paintOver: 90 } },
   { id: "medium", label: "Medium", hint: "", bitrate: 8000, framerate: 60, encoder: "h264enc", fullcolor: false, jpeg: { quality: 50, framerate: 30, paintOver: 90 } },
   { id: "high", label: "High", hint: "", bitrate: 16000, framerate: 60, encoder: "h264enc", fullcolor: false, jpeg: { quality: 70, framerate: 30, paintOver: 90 } },
@@ -168,31 +176,42 @@ export const qualities: {
   { id: "lossless", label: "Lossless", hint: "for fast networks", bitrate: 64000, framerate: 60, encoder: "h264enc", fullcolor: true, jpeg: { quality: 90, framerate: 60, paintOver: 100 } },
 ];
 
+/** The preset Auto streams with. */
+export const autoPreset: PresetId = "medium";
+
+/** The Quality menu's choices: Auto, then the presets. */
+export const qualityChoices: { id: QualityId; label: string; hint: string }[] = [{ id: "auto", label: "Auto", hint: "adapts to this browser and connection" }, ...qualities];
+
 export const defaultQuality: QualityId = "auto";
 
 export function isQualityId(v: unknown): v is QualityId {
-  return qualities.some((q) => q.id === v);
+  return qualityChoices.some((q) => q.id === v);
+}
+
+/** The preset a choice streams with. */
+export function presetOf(id: QualityId): Preset {
+  const preset = id === "auto" ? autoPreset : id;
+  return qualities.find((q) => q.id === preset)!;
 }
 
 /** The preset a display's stream settings match, if any (H.264 or JPEG). */
-export function qualityOf(settings: Record<string, unknown>): QualityId | null {
+export function qualityOf(settings: Record<string, unknown>): PresetId | null {
   const encoder = String(settings.encoder);
-  const q = qualities.find((q) => q.id !== "auto" && (
+  const q = qualities.find((q) =>
     encoder === "jpeg"
       ? Number(settings.jpeg_quality) === q.jpeg.quality && Number(settings.framerate) === q.jpeg.framerate
       : Number(settings.video_bitrate) === q.bitrate &&
         Number(settings.framerate) === q.framerate &&
         encoder === q.encoder &&
         Boolean(settings.video_fullcolor) === q.fullcolor &&
-        (settings.rate_control_mode === undefined || settings.rate_control_mode === "cbr")),
+        (settings.rate_control_mode === undefined || settings.rate_control_mode === "cbr"),
   );
   return q?.id ?? null;
 }
 
-/** A preset as the stream settings this browser sends: JPEG where it has no WebCodecs. */
-export function qualitySettings(id: QualityId, jpeg = jpegOnly): Record<string, unknown> | null {
-  const q = qualities.find((x) => x.id === id);
-  if (!q) return null;
+/** A choice's preset as the stream settings this browser sends: JPEG where it has no WebCodecs. */
+export function qualitySettings(id: QualityId, jpeg = jpegOnly): Record<string, unknown> {
+  const q = presetOf(id);
   if (jpeg) {
     return { encoder: "jpeg", jpeg_quality: q.jpeg.quality, framerate: q.jpeg.framerate, paint_over_jpeg_quality: q.jpeg.paintOver, use_paint_over_quality: true };
   }
@@ -200,8 +219,7 @@ export function qualitySettings(id: QualityId, jpeg = jpegOnly): Record<string, 
 }
 
 export function sendQuality(frame: HTMLIFrameElement | null, id: QualityId): void {
-  const settings = qualitySettings(id);
-  if (settings) screenOf(frame)?.post({ type: "settings", settings });
+  screenOf(frame)?.post({ type: "settings", settings: qualitySettings(id) });
 }
 
 /** The size the display streams at, in remote pixels; null before it's known. */

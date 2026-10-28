@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AutoFramerate, startAutoQuality, type StatsWindow } from "./auto-quality.ts";
 import type { DeskyardScreen } from "../selkies/screen.ts";
-import { defaultQuality, isQualityId, qualityOf, qualitySettings } from "./selkies.ts";
+import { autoPreset, defaultQuality, isQualityId, qualities, qualityOf, qualitySettings } from "./selkies.ts";
 
 function feed(policy: AutoFramerate) {
   let t = 1000, lost = 0;
@@ -12,12 +12,14 @@ function feed(policy: AutoFramerate) {
   };
 }
 
-test("Auto starts with readable Medium settings, preserving manual preset recognition", () => {
+test("Auto is a choice, not a preset: it streams with Medium, recognised as Medium", () => {
   assert.equal(defaultQuality, "auto");
-  assert.ok(isQualityId("auto"));
+  assert.ok(isQualityId("auto"), "a stored auto still means Auto");
+  assert.equal(autoPreset, "medium");
+  assert.ok(qualities.every((q) => (q.id as string) !== "auto"));
   for (const jpeg of [true, false]) {
     assert.deepEqual(qualitySettings("auto", jpeg), qualitySettings("medium", jpeg));
-    assert.equal(qualityOf(qualitySettings("auto", jpeg)!), "medium");
+    assert.equal(qualityOf(qualitySettings("auto", jpeg)), "medium");
   }
 });
 
