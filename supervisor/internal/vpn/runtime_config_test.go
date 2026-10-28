@@ -3,6 +3,7 @@ package vpn
 import (
 	"net/netip"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -160,17 +161,21 @@ func TestRuntimePolicyIdentityCoversSpec(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		covered := map[string]bool{"Name": true, "Image": true, "Network": true, "Restart": true, "CapAdd": true, "Devices": true, "Env": true, "Labels": true, "Mounts": true}
-		v := reflect.ValueOf(cfg.Spec)
-		for i := range v.NumField() {
-			if name := v.Type().Field(i).Name; !v.Field(i).IsZero() && !covered[name] {
-				t.Errorf("ContainerSpec.%s is set but not in the policy identity", name)
-			}
-		}
+		uncovered(t, cfg.Spec, "Name", "Image", "Network", "Restart", "CapAdd", "Devices", "Env", "Labels", "Mounts")
 		for _, m := range cfg.Spec.Mounts {
-			if m.Volume != "" || m.MustExist {
-				t.Errorf("mount %+v sets a field not in the policy identity", m)
-			}
+			uncovered(t, m, "Source", "Target", "ReadOnly")
+		}
+	}
+}
+
+// uncovered fails t for each field of the struct v that is set but not
+// named in covered.
+func uncovered(t *testing.T, v any, covered ...string) {
+	t.Helper()
+	rv := reflect.ValueOf(v)
+	for i := range rv.NumField() {
+		if name := rv.Type().Field(i).Name; !rv.Field(i).IsZero() && !slices.Contains(covered, name) {
+			t.Errorf("%s.%s is set but not in the policy identity", rv.Type().Name(), name)
 		}
 	}
 }
