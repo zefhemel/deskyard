@@ -1,5 +1,5 @@
 // Fake data for the dev-server mock (mock.ts). Never part of the build.
-import type { Account, ActivityEvent, AgentPresence, AgentSummary, CatalogImage, Conflict, Credential, Environment } from "../api.ts";
+import type { Account, ActivityEvent, AgentPresence, AgentSummary, BackupItem, CatalogImage, CatalogItem, Conflict, Credential, Environment, Remote, Repository, SnapshotEntry } from "../api.ts";
 
 const GB = 1024 ** 3;
 const HOUR = 3600 * 1000;
@@ -277,3 +277,82 @@ function summaryOf(a: AgentPresence): AgentSummary {
 export function activityOf(c: Environment): ActivityEvent {
   return { name: c.name, agents: c.agents.map(summaryOf) };
 }
+
+// Storage: remotes, backup repositories, the items backed up and their
+// snapshots, canned so every Storage and Backups view can be clicked through.
+
+/** Remotes as remotes.json holds them; the repositories on each are filled in from `repositories` when asked. */
+export const remotes: Remote[] = [
+  { name: "nas", type: "sftp", created: iso(40 * DAY), host: "nas.local", user: "backup", root: "/volume1/deskyard", secretsSet: ["password"], repositories: [] },
+  { name: "b2-offsite", type: "b2", created: iso(12 * DAY), keyId: "0012ab34cd56", root: "zef-deskyard/backups", secretsSet: ["applicationKey"], repositories: [] },
+  { name: "cloud", type: "webdav", created: iso(3 * DAY), url: "https://cloud.example.com/remote.php/dav/files/zef", vendor: "nextcloud", user: "zef", secretsSet: ["password"], repositories: [] },
+];
+export const s3Providers = ["AWS", "Cloudflare", "Minio", "Wasabi", "Other"];
+export const webdavVendors = ["nextcloud", "owncloud", "other"];
+
+export const repositories: Repository[] = [
+  { name: "home", remote: "nas", folder: "deskyard-backups", created: iso(40 * DAY) },
+  { name: "offsite", remote: "b2-offsite", folder: "deskyard", created: iso(12 * DAY) },
+];
+
+/** Recovery keys by repository; "existing" on any remote is a folder that already holds one. */
+export const recoveryKeys: Record<string, string> = {
+  home: "dyr_mock_home_7Hc2QmXv9pLk4tWz8sNb3Rf6",
+  offsite: "dyr_mock_offsite_Jx3vT9pLr7KzA1mYc5Qe",
+};
+
+const schedule = (every: "hourly" | "daily" | "weekly", at: string, weekday = 0) => ({ every, at, weekday });
+const keep = { last: 0, hourly: 0, daily: 7, weekly: 4, monthly: 12, yearly: 0 };
+
+/** Backed-up items: alice is fine, research's last run failed, photos is overdue; the rest have no policy. */
+export const backupItems: BackupItem[] = [
+  {
+    item: "environment:alice", activity: "", nextRun: new Date(now + 9 * HOUR).toISOString(),
+    policy: { item: "environment:alice", repository: "home", enabled: true, schedule: schedule("daily", "03:00"), retention: keep, updated: iso(30 * DAY) },
+    state: { lastAttempt: iso(15 * HOUR), lastSuccess: iso(15 * HOUR), snapshot: "a1b2c3d4" },
+  },
+  {
+    item: "environment:research", activity: "", nextRun: new Date(now + 2 * DAY).toISOString(),
+    policy: { item: "environment:research", repository: "offsite", enabled: true, schedule: schedule("weekly", "22:30", 6), retention: keep, updated: iso(10 * DAY) },
+    state: { lastAttempt: iso(5 * DAY), lastSuccess: iso(12 * DAY), error: "b2: 401 unauthorized: the application key was revoked" },
+  },
+  {
+    item: "volume:photos", activity: "", nextRun: iso(5 * HOUR),
+    policy: { item: "volume:photos", repository: "home", enabled: true, schedule: schedule("daily", "04:00"), retention: keep, updated: iso(20 * DAY) },
+    state: { lastAttempt: iso(29 * HOUR), lastSuccess: iso(29 * HOUR), warnings: ["Pictures/locked.heic"] },
+  },
+];
+
+/** Snapshots by item, as restic describes them (newest first). */
+export function snapshotsOf(item: string): object[] {
+  const b = backupItems.find((i) => i.item === item);
+  if (!b?.policy) return [];
+  const reasons = ["scheduled", "manual", "scheduled", "pre-restore", "scheduled"];
+  return reasons.map((reason, i) => {
+    const id = `${item.length.toString(16)}${i}f3e9c2a7b1d4`.padEnd(64, "0");
+    return {
+      id, short_id: id.slice(0, 8), time: iso((i * 26 + 15) * HOUR), hostname: "zef-mbp", tags: [item, reason], repository: b.policy!.repository, reason,
+      summary: { data_added: (i + 1) * 12 * 1024 ** 2, total_bytes_processed: (3.1 + i * 0.05) * GB },
+    };
+  });
+}
+
+/** A snapshot's folders: the same small tree for every snapshot. */
+export function snapshotFiles(path: string): SnapshotEntry[] {
+  const t = iso(3 * DAY);
+  const tree: Record<string, [string, "dir" | "file", number][]> = {
+    "": [["Desktop", "dir", 0], ["Documents", "dir", 0], ["Pictures", "dir", 0], [".bashrc", "file", 3771]],
+    Desktop: [["notes.txt", "file", 1240], ["screenshot.png", "file", 812_000]],
+    Documents: [["report.pdf", "file", 2_400_000], ["drafts", "dir", 0]],
+    "Documents/drafts": [["idea.md", "file", 512]],
+    Pictures: [["holiday.jpg", "file", 4_100_000]],
+  };
+  return (tree[path] ?? []).map(([name, type, size]) => ({ name, type, size, path: path ? `${path}/${name}` : name, mtime: t }));
+}
+
+/** Backups in the repositories that no environment or volume here has: a removed one, and another machine's. */
+export const catalog: CatalogItem[] = [
+  { repository: "home", host: "zef-mbp", item: "environment:old-project", snapshots: 14, latest: iso(40 * DAY), latestId: "f00dfeed", local: false },
+  { repository: "offsite", host: "studio-mini", item: "volume:music", snapshots: 3, latest: iso(8 * DAY), latestId: "beadcafe", local: false },
+  { repository: "home", host: "zef-mbp", item: "environment:alice", snapshots: 5, latest: iso(15 * HOUR), latestId: "a1b2c3d4", local: true },
+];
