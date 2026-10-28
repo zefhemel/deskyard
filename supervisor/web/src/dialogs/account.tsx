@@ -6,7 +6,8 @@ import { LevelPicks } from "../components/environment-fields.tsx";
 import { notifyError } from "../components/toast.tsx";
 import { Button, Check, Dialog, ErrorText, errorMessage, Field, Seg } from "../components/ui.tsx";
 import { useLive } from "../live.tsx";
-import { expiresAt, expiryChange, levelLabel, type TimeLimit } from "../lib/access.ts";
+import { levelLabel } from "../lib/grants.ts";
+import { expiresAt, expiryChange, type TimeLimit } from "../lib/time-limits.ts";
 import { Expiry, TimeLimitField } from "./share.tsx";
 import { USERNAME, usernameHint } from "../lib/names.ts";
 

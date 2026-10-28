@@ -5,7 +5,8 @@ import { notify, notifyError } from "../../components/toast.tsx";
 import { Button, Tag } from "../../components/ui.tsx";
 import { Expiry, LinkDialog, ShareDialog } from "../../dialogs/share.tsx";
 import { useLive } from "../../live.tsx";
-import { levelLabel } from "../../lib/access.ts";
+import { can } from "../../lib/permissions.ts";
+import { levelLabel } from "../../lib/grants.ts";
 import { ago } from "../../lib/format.ts";
 import { useFetch } from "../../lib/use-fetch.ts";
 
@@ -14,6 +15,7 @@ const td = "border-b border-hairline px-4 py-[13px] align-middle";
 
 export function SharingTab({ environment: c }: { environment: Environment }) {
   const { me } = useLive();
+  const may = can(me, c);
   const shares = useFetch(() => api.shares(c.name), c.name);
   const [sharing, setSharing] = useState(false);
   const [link, setLink] = useState<{ username: string; link: string } | null>(null);
@@ -30,12 +32,12 @@ export function SharingTab({ environment: c }: { environment: Environment }) {
         <div class="flex-1">
           <h2 class="mt-0 mb-1 text-base font-semibold">Shares</h2>
           <p class="m-0 text-sm text-muted">
-            {me.share
+            {!may.share
               ? `Everyone ${c.name} is shared with. Shares can't share it further.`
               : `Share ${c.name} with someone through a link that signs them in once: full access or observe only, for as long as you like. They show up among the viewers, and Revoke cuts them off at once.`}
           </p>
         </div>
-        {!me.share && (
+        {may.share && (
           <Button variant="primary" onClick={() => setSharing(true)}>
             Share
           </Button>
@@ -61,7 +63,7 @@ export function SharingTab({ environment: c }: { environment: Environment }) {
                 <ShareRow
                   key={s.username}
                   share={s}
-                  canManage={me.admin || s.sharedBy.username === me.username}
+                  canManage={may.manageShare(s)}
                   onLink={(l) => setLink({ username: s.username, link: l })}
                   onChanged={shares.reload}
                 />

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { LocationProvider, Route, Router, useLocation } from "preact-iso";
 import { api, type Me } from "./api.ts";
+import { accountCan } from "./lib/permissions.ts";
 import { Toaster } from "./components/toast.tsx";
 import { LiveProvider } from "./live.tsx";
 import { AccountsPage } from "./pages/accounts.tsx";
@@ -58,6 +59,7 @@ function SignedIn() {
   if (!me) return null;
 
   const desktop = desktopName(url.split("?")[0] ?? "");
+  const admin = accountCan(me).administer;
   return (
     <LiveProvider me={me}>
       {desktop ? (
@@ -67,11 +69,11 @@ function SignedIn() {
           <Route path="/" component={EnvironmentsPage} />
           <Route path="/environments/:name" component={DetailsPage} />
           <Route path="/account" component={DevicesPage} />
-          <Route path="/_vpn" component={me.admin ? VPNPage : NotFound} />
-          <Route path="/images" component={me.admin ? ImagesPage : NotFound} />
-          <Route path="/volumes" component={me.admin ? StoragePage : NotFound} />
-          <Route path="/volumes/:name" component={me.admin ? VolumeDetailsPage : NotFound} />
-          <Route path="/accounts" component={me.admin ? AccountsPage : NotFound} />
+          <Route path="/_vpn" component={admin ? VPNPage : NotFound} />
+          <Route path="/images" component={admin ? ImagesPage : NotFound} />
+          <Route path="/volumes" component={admin ? StoragePage : NotFound} />
+          <Route path="/volumes/:name" component={admin ? VolumeDetailsPage : NotFound} />
+          <Route path="/accounts" component={admin ? AccountsPage : NotFound} />
           <Route default component={NotFound} />
         </Router>
       )}

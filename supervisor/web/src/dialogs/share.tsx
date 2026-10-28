@@ -4,7 +4,8 @@ import { useState } from "preact/hooks";
 import { api, type Level } from "../api.ts";
 import { useCopied } from "../components/secret-reveal.tsx";
 import { Button, Dialog, ErrorText, errorMessage, Field, Seg } from "../components/ui.tsx";
-import { expiresAt, isoDate, levelLabel, type TimeLimit, timeLimits } from "../lib/access.ts";
+import { levelLabel } from "../lib/grants.ts";
+import { expiresAt, isoDate, type TimeLimit, timeLimits } from "../lib/time-limits.ts";
 import { USERNAME, usernameHint } from "../lib/names.ts";
 import { day, until } from "../lib/format.ts";
 

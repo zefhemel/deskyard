@@ -12,6 +12,7 @@ import { SignOutEverywhereDialog } from "../dialogs/sign-out-everywhere.tsx";
 import { useLive } from "../live.tsx";
 import { ago, day } from "../lib/format.ts";
 import { useFetch } from "../lib/use-fetch.ts";
+import { accountCan, can } from "../lib/permissions.ts";
 import { davAddress, davInTheClear } from "../lib/webdav.ts";
 
 const th = "border-b border-line px-4 py-[11px] text-left text-[13px] font-semibold text-muted";
@@ -32,7 +33,7 @@ export function DevicesPage() {
         </p>
         <DeviceList devices={devices.data} error={devices.error} revoke={(id) => api.revokeCredential(id)} onChanged={devices.reload} />
       </section>
-      {me.kind === "password" && !me.share && <WebDAVSection devices={devices.data} onChanged={devices.reload} />}
+      {accountCan(me).webdavPassword && <WebDAVSection devices={devices.data} onChanged={devices.reload} />}
       <section>
         <h2 class="mb-1 text-lg font-semibold">Browsers</h2>
         <p class="mb-3.5 text-sm text-muted">
@@ -116,7 +117,7 @@ function WebDAVSection({ devices, onChanged }: { devices: Credential[] | undefin
   const { me, environments } = useLive();
   const [password, setPassword] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const drives = (environments ?? []).filter((c) => c.webdav && c.level === "full").map((c) => c.name);
+  const drives = (environments ?? []).filter((c) => c.webdav && can(me, c).use).map((c) => c.name);
   const has = devices?.some((d) => d.kind === "webdav") ?? false;
   const change = async (make: boolean) => {
     setBusy(true);

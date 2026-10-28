@@ -6,14 +6,16 @@ import { api, type Environment } from "../../api.ts";
 import { notify } from "../../components/toast.tsx";
 import { Check, ErrorText, Note } from "../../components/ui.tsx";
 import { useLive } from "../../live.tsx";
-import { davAddress, davInTheClear, davView } from "../../lib/webdav.ts";
+import { can } from "../../lib/permissions.ts";
+import { davAddress, davInTheClear } from "../../lib/webdav.ts";
 
 export function WebDAVAccess({ environment: c }: { environment: Environment }) {
   const { me } = useLive();
-  const view = davView(c, me);
+  const view = can(me, c).webdav;
   if (!view) return null;
   return (
-    <div class={me.admin ? "border-t border-line" : undefined}>
+    // Under the account grants, which only those who switch it see.
+    <div class={view === "switch" ? "border-t border-line" : undefined}>
       <div class="max-w-[620px] px-5 py-5">
         <h2 class="mt-0 mb-1 text-base font-semibold">WebDAV</h2>
         {view === "switch" ? (

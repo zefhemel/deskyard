@@ -17,13 +17,23 @@ import { useEnvironment, useLive, useNow } from "../live.tsx";
 import { bytes, day, limits, names, statusKind, statusLine } from "../lib/format.ts";
 import { AccessTab } from "./details/access-tab.tsx";
 import { WebDAVAccess } from "./details/webdav-access.tsx";
-import { davView } from "../lib/webdav.ts";
+import { can, type EnvironmentPermissions } from "../lib/permissions.ts";
 import { ProcessesTab } from "./details/processes-tab.tsx";
 import { SettingsTab } from "./details/settings-tab.tsx";
 import { SharingTab } from "./details/sharing-tab.tsx";
 import { BackupsPanel } from "../components/backups/panel.tsx";
 
 type Tab = "overview" | "processes" | "settings" | "access" | "backups";
+
+/** The tabs, each shown to those it is for. */
+const TABS: { id: Tab; label: string; shown: (p: EnvironmentPermissions) => boolean }[] = [
+  { id: "overview", label: "Overview", shown: () => true },
+  { id: "processes", label: "Processes", shown: (p) => p.use },
+  { id: "settings", label: "Settings", shown: (p) => p.configure },
+  // Who can use it: accounts' grants (admins) and the shares (everyone with full access).
+  { id: "access", label: "Access", shown: (p) => p.seeShares },
+  { id: "backups", label: "Backups", shown: (p) => p.configure },
+];
 
 export function DetailsPage() {
   const { params } = useRoute();
@@ -65,15 +75,9 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
   const { query, route } = useLocation();
   const now = useNow(10000);
   // Observers watch the desktop and nothing else: no other tabs, no actions.
-  const full = c.level !== "observe";
-  const tabs: { id: Tab; label: string }[] = [
-    { id: "overview", label: "Overview" },
-    ...(full ? [{ id: "processes" as const, label: "Processes" }] : []),
-    ...(me.admin ? [{ id: "settings" as const, label: "Settings" }] : []),
-    // Who can use it: accounts' grants (admins) and the shares (everyone with full access).
-    ...(full ? [{ id: "access" as const, label: "Access" }] : []),
-    ...(me.admin ? [{ id: "backups" as const, label: "Backups" }] : []),
-  ];
+  const may = can(me, c);
+  const full = may.use;
+  const tabs = TABS.filter((t) => t.shown(may));
   // The Sharing tab became part of Access.
   const asked = query.tab === "sharing" ? "access" : query.tab;
   const tab: Tab = tabs.find((t) => t.id === asked)?.id ?? "overview";
@@ -111,7 +115,7 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
               Start
             </Button>
           )}
-          {full && me.admin && <Button onClick={() => setTab("settings")}>Settings</Button>}
+          {may.configure && <Button onClick={() => setTab("settings")}>Settings</Button>}
           {full && (
             <EnvironmentMenu
               environment={c}
@@ -154,7 +158,7 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
             <ViewersPanel viewers={c.viewers} observers={c.observers} mics={c.mics} forwards={c.forwards} agents={c.agents} observing={!full} />
             {full && <div class="rounded-[10px] border border-line bg-surface px-5 py-[18px]"><VPNStatus vpn={c.vpn} /></div>}
             <ChartsPanel environment={c} />
-            <Facts environment={c} admin={me.admin} full={full} onTab={setTab} />
+            <Facts environment={c} may={may} onTab={setTab} />
           </div>
         </div>
       ) : tab === "backups" ? (
@@ -165,9 +169,9 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
           {tab === "settings" && <SettingsTab environment={c} />}
           {tab === "access" && (
             <>
-              {me.admin && <AccessTab environment={c} />}
+              {may.configure && <AccessTab environment={c} />}
               <WebDAVAccess environment={c} />
-              <div class={me.admin || davView(c, me) ? "border-t border-line" : undefined}>
+              <div class={may.configure || may.webdav ? "border-t border-line" : undefined}>
                 <SharingTab environment={c} />
               </div>
             </>
@@ -225,18 +229,10 @@ function ViewersPanel({
   );
 }
 
-function Facts({
-  environment: c,
-  admin,
-  full,
-  onTab,
-}: {
-  environment: Environment;
-  admin: boolean;
-  /** Observers aren't told the environment's configuration. */
-  full: boolean;
-  onTab: (t: Tab) => void;
-}) {
+function Facts({ environment: c, may, onTab }: { environment: Environment; may: EnvironmentPermissions; onTab: (t: Tab) => void }) {
+  // Observers aren't told the environment's configuration.
+  const full = may.use;
+  const admin = may.configure;
   const [upgrading, setUpgrading] = useState(false);
   const link =
     "cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-accent hover:underline";

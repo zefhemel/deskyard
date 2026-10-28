@@ -4,6 +4,7 @@ import { useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { api, type Environment } from "../api.ts";
 import { useLive } from "../live.tsx";
+import { can } from "../lib/permissions.ts";
 import { RemoveDialog } from "../dialogs/remove-environment.tsx";
 import { Menu, type MenuItem } from "./menu.tsx";
 import { notifyError } from "./toast.tsx";
@@ -32,15 +33,16 @@ export function EnvironmentMenu({
   const { route } = useLocation();
   const [removing, setRemoving] = useState(false);
 
+  const may = can(me, c);
   const items: MenuItem[] = [];
   // Observers can't start or stop it.
-  const powered = withPower && c.level !== "observe";
+  const powered = withPower && may.use;
   if (powered && c.state === "running") {
     items.push({ label: "Restart", onSelect: () => power(c.name, "restart") });
     items.push({ label: "Stop", onSelect: () => power(c.name, "stop") });
   }
   if (powered && c.state === "stopped") items.push({ label: "Start", onSelect: () => power(c.name, "start") });
-  if (me.admin) {
+  if (may.configure) {
     if (settings) items.push({ label: "Settings", onSelect: () => route(`/environments/${c.name}?tab=settings`) });
     items.push(...adminItems);
     items.push({ label: "Remove…", danger: true, separated: true, onSelect: () => setRemoving(true) });

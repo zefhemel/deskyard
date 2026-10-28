@@ -6,6 +6,7 @@ import { api, type AgentPresence, type Forward } from "../api.ts";
 import { useLive } from "../live.tsx";
 import { agentTitle } from "../lib/activity-format.ts";
 import { selfFirst } from "../lib/format.ts";
+import { mayManageShare } from "../lib/permissions.ts";
 import { AgentAvatar } from "./agent-avatar.tsx";
 import { AgentSummary, useActivity } from "./agent-summary.tsx";
 import { Avatar } from "./avatar.tsx";
@@ -93,7 +94,7 @@ export function ViewersPopover({
   mics: string[];
   forwards: Forward[];
   agents: AgentPresence[];
-  /** Whether the reader may see the environment's shares (full access, not a share). */
+  /** Whether the reader may make shares (can(me, environment).share), so may manage some. */
   canShare?: boolean;
   onClose: () => void;
 }) {
@@ -173,7 +174,7 @@ function useRevocableShares(name: string, enabled: boolean): Set<string> {
     if (!enabled) return;
     let live = true;
     api.shares(name).then(
-      (shares) => live && setNames(new Set(shares.filter((s) => me.admin || s.sharedBy.username === me.username).map((s) => s.username))),
+      (shares) => live && setNames(new Set(shares.filter((s) => mayManageShare(me, s)).map((s) => s.username))),
       () => undefined,
     );
     return () => {
