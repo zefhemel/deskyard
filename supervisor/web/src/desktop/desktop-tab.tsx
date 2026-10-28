@@ -8,7 +8,9 @@ import { power } from "../components/environment-menu.tsx";
 import { Menu, type MenuItem } from "../components/menu.tsx";
 import { notify, notifyError } from "../components/toast.tsx";
 import { Button, cx } from "../components/ui.tsx";
+import { useLive } from "../live.tsx";
 import { notice } from "../lib/format.ts";
+import { can } from "../lib/permissions.ts";
 import { useDevicePixelRatio } from "../lib/use-device-pixel-ratio.ts";
 import { useFrameWindowListener } from "../lib/use-event-listener.ts";
 import type { ConnectionState, DeskyardScreen, Display, Size } from "../selkies/screen.ts";
@@ -93,8 +95,9 @@ export function Centered({ children }: { children: ComponentChildren }) {
  * controls) and never asks to change the display.
  */
 export function Desktop({ environment: c, slots, selectShortcut, onFrame }: { environment: Environment; slots: BarSlots; selectShortcut: (index: number) => boolean; onFrame: (frame: HTMLIFrameElement | null) => void }) {
+  const { me } = useLive();
   // Fixed for this Desktop: a new level mounts a new one.
-  const observing = c.level === "observe";
+  const observing = can(me, c).observeOnly;
   const frame = useRef<HTMLIFrameElement | null>(null);
   // The same frame, as state: listeners on its window follow it.
   const [frameElement, setFrameElement] = useState<HTMLIFrameElement | null>(null);
@@ -417,13 +420,14 @@ function NotSecure() {
 }
 
 function Stopped({ environment: c }: { environment: Environment }) {
+  const { me } = useLive();
   const problem = notice(c);
   if (c.state === "stopped") {
     return (
       <Centered>
         <p class="text-lg font-semibold text-white">{c.name} is stopped</p>
         {problem && <p class={cx("max-w-[480px] text-center text-sm", problem.kind === "error" ? "text-[#f0a49b]" : "text-[#9aa6b5]")}>{problem.text}</p>}
-        {c.level === "observe" ? (
+        {can(me, c).observeOnly ? (
           <p class="text-sm text-[#9aa6b5]">You can watch it once someone with full access starts it.</p>
         ) : (
           <Button variant="primary" onClick={() => power(c.name, "start")}>

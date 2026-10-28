@@ -15,6 +15,7 @@ import { cx, MORE } from "../components/ui.tsx";
 import { LinkDialog, ShareDialog } from "../dialogs/share.tsx";
 import { useEnvironment, useLive } from "../live.tsx";
 import { agentTitle } from "../lib/activity-format.ts";
+import { can } from "../lib/permissions.ts";
 import { vpnPresentation } from "../lib/vpn-form.ts";
 import { names } from "../lib/format.ts";
 import { useEventListener } from "../lib/use-event-listener.ts";
@@ -62,13 +63,13 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
   const { me } = useLive();
   const { query, route } = useLocation();
   const running = c.state === "running";
+  const may = can(me, c);
   // Observers watch the desktop: no terminals, no input, no power actions.
-  const observing = c.level === "observe";
+  const observing = may.observeOnly;
   const t = useTerminalTabs(c, query, route);
   const { tabs, active } = t;
   const [viewersOpen, setViewersOpen] = useState(false);
-  // Share, as under Shares on the environment's Access tab: full access, but not a share itself.
-  const canShare = !observing && !me.share;
+  const canShare = may.share;
   const [sharing, setSharing] = useState(false);
   const [shared, setShared] = useState<{ username: string; link: string } | null>(null);
   // The Desktop tab's frame while it is mounted, for image paste.
@@ -101,7 +102,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
         ]
       : []),
     { label: "Details", onSelect: () => route(`/environments/${c.name}`), separated: running },
-    ...(me.admin ? [{ label: "Settings", onSelect: () => route(`/environments/${c.name}?tab=settings`) }] : []),
+    ...(may.configure ? [{ label: "Settings", onSelect: () => route(`/environments/${c.name}?tab=settings`) }] : []),
   ];
   const present = c.viewers.length > 0 || c.forwards.length > 0 || c.agents.length > 0;
 
