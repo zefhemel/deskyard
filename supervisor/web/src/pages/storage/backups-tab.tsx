@@ -4,6 +4,7 @@ import { RestoreNewDialog } from "../../components/backups-panel.tsx";
 import { notify } from "../../components/toast.tsx";
 import { Button, Dialog, ErrorText, Field, Note, Tag, errorMessage } from "../../components/ui.tsx";
 import { backupStatus, describeSchedule, isTime, splitItem } from "../../lib/backup-policy.ts";
+import { copyText } from "../../lib/clipboard.ts";
 import { ago, day } from "../../lib/format.ts";
 import { useFetch } from "../../lib/use-fetch.ts";
 
@@ -186,9 +187,8 @@ function KeyPanel({ recoveryKey }: { recoveryKey: string }) {
         </code>
         <Button
           onClick={() =>
-            void navigator.clipboard.writeText(recoveryKey).then(
-              () => notify("Copied the recovery key"),
-              () => notify("Couldn't copy; select the key and copy it instead", { error: true }),
+            void copyText(recoveryKey).then((ok) =>
+              ok ? notify("Copied the recovery key") : notify("Couldn't copy; select the key and copy it instead", { error: true }),
             )
           }
         >
