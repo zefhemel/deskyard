@@ -189,7 +189,7 @@ func TestEnvironmentRemoveDeletesPolicy(t *testing.T) {
 
 func TestRemoveRefusedDuringBackup(t *testing.T) {
 	s, send, admin := newStorageServer(t)
-	release, err := s.storage.Hold(storage.Item{Kind: "environment", Name: "alice"}, "backing up")
+	release, err := s.Environments.HoldFiles(environments.Item{Kind: environments.KindEnvironment, Name: "alice"}, "backing up", false)
 	if err != nil {
 		t.Fatal(err)
 	}

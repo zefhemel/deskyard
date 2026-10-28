@@ -30,8 +30,13 @@ const (
 // named rather than left to the engine's bind error, and nothing is changed
 // when one is: its local folders as folders says, and, with one helper on
 // the engine host, the folders of the host volumes among grants and, with
-// dockerAccess, the Docker socket. progress, when set, hears of the helper.
+// dockerAccess, the Docker socket. Files being replaced, its own or a
+// granted volume's, refuse it with ErrItemBusy. progress, when set, hears of
+// the helper.
 func (s *Service) preflight(ctx context.Context, name string, grants []VolumeGrant, dockerAccess bool, folders folderCheck, progress func(string, float64)) error {
+	if err := s.replacing(itemsOf(name, grants)); err != nil {
+		return err
+	}
 	var err error
 	switch folders {
 	case savedFolders:

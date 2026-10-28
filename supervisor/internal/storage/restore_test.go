@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -154,6 +155,36 @@ func TestRestoreHereVolumeStopsUsers(t *testing.T) {
 	args := strings.Join(restoreCalls(f)[0].Args, " ")
 	if !strings.Contains(args, "--delete") || !strings.HasSuffix(args, "v1:/deskyard/volume/photos") {
 		t.Fatalf("args %s", args)
+	}
+}
+
+// While a volume's files are restored in place they are held as being
+// replaced, so no environment granted it meanwhile starts with them; they
+// are let go of before its users start again, also after a failed stop.
+func TestRestoreHereVolumeHoldsFilesUntilUsersStart(t *testing.T) {
+	f := &fakeRunner{}
+	s, env := testService(t, f)
+	inner := restoreReply(environments.Definition{}, nil)
+	photos := environments.Item{Kind: KindVolume, Name: "photos"}
+	var during string
+	f.reply = func(c Call) (string, Result, error) {
+		if c.Args[1] == "restore" {
+			env.mu.Lock()
+			during = fmt.Sprintf("%s %v", env.held[photos], env.replaced[photos])
+			env.mu.Unlock()
+		}
+		return inner(c)
+	}
+	env.addVolume(t, "photos")
+	env.addEnvironment(t, "alice", true, environments.Settings{Image: "img", Volumes: []environments.VolumeGrant{{Name: "photos"}}})
+	if _, err := s.Restore(context.Background(), Item{KindVolume, "photos"}, RestoreRequest{Repository: "home", Snapshot: "v1", Mode: "here"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if during != "restoring true" {
+		t.Fatalf("held as %q while restoring", during)
+	}
+	if got := env.events(); got != "reserve alice,stop alice,start alice" || s.Activity(Item{KindVolume, "photos"}) != "" {
+		t.Fatalf("lifecycle %s", got)
 	}
 }
 

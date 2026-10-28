@@ -134,14 +134,10 @@ type Service struct {
 	// removal, and even when deleting its files then failed. Its error is
 	// the removal's.
 	Removed func(name string) error
-	// ItemBusy, when set, refuses to remove an environment or delete a
-	// volume while a backup or restore uses it: kind is "environment" or
-	// "volume". nil means it isn't busy.
-	ItemBusy func(kind, name string) error
 
 	mu         sync.Mutex
-	subnetMu   sync.Mutex        // choosing and creating a network's subnet
-	busy       map[string]string // name → transient state
+	subnetMu   sync.Mutex // choosing and creating a network's subnet
+	reserved   map[Item]reservation
 	errs       map[string]string // name → why its last change failed
 	folderErrs map[string]string // name → its missing home or volume folder, shown over errs
 	failed     map[string]bool   // names without a container whose build failed
@@ -162,9 +158,9 @@ type Service struct {
 func New(e engine.Engine, cfg Config, log *slog.Logger) *Service {
 	layout := config.NewLayout(cfg.DataDir).WithHost(cfg.DataHost)
 	s := &Service{Eng: e, Cfg: cfg, Layout: layout, Log: log,
-		Defs: &Definitions{path: definitionsPath(layout), defs: map[string]Definition{}},
-		Vols: &Volumes{path: volumesPath(layout), layout: layout, vols: map[string]Volume{}},
-		busy: map[string]string{}, errs: map[string]string{}, folderErrs: map[string]string{},
+		Defs:     &Definitions{path: definitionsPath(layout), defs: map[string]Definition{}},
+		Vols:     &Volumes{path: volumesPath(layout), layout: layout, vols: map[string]Volume{}},
+		reserved: map[Item]reservation{}, errs: map[string]string{}, folderErrs: map[string]string{},
 		failed: map[string]bool{}, imgInfo: map[string]engine.Image{}}
 	s.Defs.checkGrants = s.checkGrants
 	return s
@@ -208,35 +204,6 @@ func (s *Service) ownFilter() map[string]string {
 		f[LabelInstance] = s.Instance
 	}
 	return f
-}
-
-// Begin marks an environment busy for an operation; Done clears it. An empty state
-// reserves the slot without overriding the engine's live state.
-func (s *Service) Begin(name, state string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.busy[name]; ok {
-		return ErrBusy
-	}
-	s.busy[name] = state
-	return nil
-}
-
-func (s *Service) Done(name string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.busy, name)
-}
-
-// Busy returns the transient states of environments in the middle of a long operation.
-func (s *Service) Busy() map[string]string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := make(map[string]string, len(s.busy))
-	for k, v := range s.busy {
-		out[k] = v
-	}
-	return out
 }
 
 // setError records why a change to name failed; "" clears it, and that its
@@ -1091,11 +1058,13 @@ func (s *Service) Remove(ctx context.Context, name string, deleteFiles bool) err
 	if err := s.blocked(name); err != nil {
 		return err
 	}
-	if s.ItemBusy != nil {
-		if err := s.ItemBusy("environment", name); err != nil {
-			return err
-		}
+	// Its files are held for the removal: no backup or restore starts on
+	// them meanwhile, and none that runs is removed under.
+	release, err := s.HoldFiles(Item{KindEnvironment, name}, "removing", true)
+	if err != nil {
+		return err
 	}
+	defer release()
 	if s.Networking != nil && s.Networking.selected(name) {
 		return s.Networking.remove(ctx, name, deleteFiles)
 	}

@@ -162,7 +162,6 @@ func New(o Options) (*Server, error) {
 	if s.storage, err = storage.Open(o.Layout, o.Environments.Instance, run, storage.EnvironmentsOf(o.Environments), o.Log); err != nil {
 		return nil, err
 	}
-	s.Environments.ItemBusy = s.storage.Busy
 	// As creating one does: what a removal of the name failed to purge
 	// doesn't carry over to an environment restored under it.
 	s.storage.ForgetName = func(name string) error {

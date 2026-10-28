@@ -208,24 +208,72 @@ func TestBackUpForgetsAndPrunesWeekly(t *testing.T) {
 }
 
 func TestHoldRefusesSecondOperation(t *testing.T) {
-	f := &fakeRunner{reply: resticReply}
+	f := &fakeRunner{reply: restoreReply(environments.Definition{}, nil)}
 	s, env := testService(t, f)
 	env.addVolume(t, "photos")
 	it := Item{KindVolume, "photos"}
-	release, err := s.Hold(it, "backing up")
+	release, err := s.hold(it, "backing up", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Busy(KindVolume, "photos"); !errors.Is(err, ErrBusy) {
-		t.Fatalf("busy: %v", err)
+	if got := s.Activity(it); got != "backing up" {
+		t.Fatalf("activity %q", got)
 	}
-	if _, err := s.Hold(it, "restoring"); !errors.Is(err, ErrBusy) {
-		t.Fatalf("second hold: %v", err)
+	if err := s.BackUp(context.Background(), it, ReasonManual, nil); !errors.Is(err, ErrBusy) {
+		t.Fatalf("second backup: %v", err)
+	}
+	if _, err := s.Restore(context.Background(), it, RestoreRequest{Repository: "home", Snapshot: "v1", Mode: "here"}, nil); !errors.Is(err, ErrBusy) {
+		t.Fatalf("restore: %v", err)
 	}
 	release()
-	if err := s.Busy(KindVolume, "photos"); err != nil {
-		t.Fatalf("released: %v", err)
+	if got := s.Activity(it); got != "" {
+		t.Fatalf("released: %q", got)
 	}
+}
+
+// A remote being changed is held from its connection test until it is
+// saved: a backup can't start on it meanwhile and have its rclone config
+// rewritten under it. One in use isn't changed.
+func TestRemoteChangeHoldsOffBackups(t *testing.T) {
+	testing, done := make(chan struct{}), make(chan struct{})
+	f := &fakeRunner{}
+	f.reply = func(c Call) (string, Result, error) {
+		if c.Args[0] == "rclone" {
+			close(testing)
+			<-done
+		}
+		return resticReply(c)
+	}
+	s, env := testService(t, f)
+	env.addVolume(t, "photos")
+	it := Item{KindVolume, "photos"}
+	_ = s.Store.PutPolicy(policyOf(it))
+	v := validRemotes()[SFTP]
+	updated := make(chan error, 1)
+	go func() { updated <- s.UpdateRemote(context.Background(), "nas", v.r, Secrets{}) }()
+	<-testing
+	if err := s.BackUp(context.Background(), it, ReasonManual, nil); !errors.Is(err, ErrBusy) {
+		t.Fatalf("backed up while the remote was changed: %v", err)
+	}
+	if err := s.DeleteRemote("nas"); !errors.Is(err, ErrBusy) {
+		t.Fatalf("deleted while it was changed: %v", err)
+	}
+	close(done)
+	if err := <-updated; err != nil {
+		t.Fatal(err)
+	}
+	f.reply = resticReply
+	if err := s.BackUp(context.Background(), it, ReasonManual, nil); err != nil {
+		t.Fatal(err)
+	}
+	use, err := s.useRemote("nas")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateRemote(context.Background(), "nas", v.r, Secrets{}); !errors.Is(err, ErrBusy) {
+		t.Fatalf("changed while in use: %v", err)
+	}
+	use()
 }
 
 func TestSchedulerRunsDueOnce(t *testing.T) {

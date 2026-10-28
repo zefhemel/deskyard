@@ -375,8 +375,8 @@ func (s *Server) handleRunBackup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("%s has no backup policy", it))
 		return
 	}
-	if err := s.storage.Busy(it.Kind, it.Name); err != nil {
-		storageError(w, err)
+	if what := s.storage.Activity(it); what != "" {
+		storageError(w, fmt.Errorf("%w: %s is %s", storage.ErrBusy, it, what))
 		return
 	}
 	id := s.jobs.start(user, jobEnvironment(it), func(ctx context.Context, progress func(string, float64)) error {

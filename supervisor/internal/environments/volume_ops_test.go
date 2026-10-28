@@ -451,18 +451,22 @@ func TestDeleteVolumeRefusedWhileItemBusy(t *testing.T) {
 	if _, _, err := s.CreateVolume(context.Background(), "photos", ""); err != nil {
 		t.Fatal(err)
 	}
-	busy := errors.New("a backup of volume photos is running")
-	s.ItemBusy = func(kind, name string) error {
-		if kind == "volume" && name == "photos" {
-			return busy
-		}
-		return nil
+	release, err := s.HoldFiles(Item{KindVolume, "photos"}, "backing up", false)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := s.DeleteVolume(context.Background(), "photos", true); !errors.Is(err, busy) {
+	if err := s.DeleteVolume(context.Background(), "photos", true); !errors.Is(err, ErrItemBusy) || !strings.Contains(err.Error(), "backing up") {
 		t.Fatalf("got %v", err)
 	}
 	if _, ok := s.Vols.Get("photos"); !ok {
 		t.Fatal("deleted while busy")
+	}
+	release()
+	if err := s.DeleteVolume(context.Background(), "photos", true); err != nil {
+		t.Fatal(err)
+	}
+	if a := s.FilesActivity(Item{KindVolume, "photos"}); a != "" {
+		t.Fatalf("the delete's hold stayed: %q", a)
 	}
 }
 
@@ -472,18 +476,112 @@ func TestRemoveRefusedWhileItemBusy(t *testing.T) {
 	if err := s.seed(ctx, "alice", Settings{Image: "img"}); err != nil {
 		t.Fatal(err)
 	}
-	busy := errors.New("a backup of alice is running")
-	s.ItemBusy = func(kind, name string) error {
-		if kind == "environment" && name == "alice" {
-			return busy
-		}
-		return nil
+	release, err := s.HoldFiles(Item{KindEnvironment, "alice"}, "backing up", false)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := s.Remove(ctx, "alice", true); !errors.Is(err, busy) {
+	if err := s.Remove(ctx, "alice", true); !errors.Is(err, ErrItemBusy) {
 		t.Fatalf("got %v", err)
 	}
 	if _, ok := s.Defs.Get("alice"); !ok {
 		t.Fatal("removed while busy")
+	}
+	if a := s.FilesActivity(Item{KindEnvironment, "alice"}); a != "backing up" {
+		t.Fatalf("the refused removal took the hold: %q", a)
+	}
+	release()
+}
+
+// One hold of an item's files at a time; a backup's hold leaves the
+// environment's operations and its volume's users alone.
+func TestHoldFiles(t *testing.T) {
+	s, _ := volumeService(t)
+	it := Item{KindVolume, "photos"}
+	release, err := s.HoldFiles(it, "backing up", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.HoldFiles(it, "restoring", true); !errors.Is(err, ErrItemBusy) {
+		t.Fatalf("second hold: %v", err)
+	}
+	if got := s.FilesActivity(it); got != "backing up" {
+		t.Fatalf("activity %q", got)
+	}
+	if err := s.Begin("photos", "starting"); err != nil {
+		t.Fatalf("an environment of the name is another item: %v", err)
+	}
+	s.Done("photos")
+	if err := s.replacing(itemsOf("alice", []VolumeGrant{{Name: "photos"}})); err != nil {
+		t.Fatalf("a backup blocks mounting: %v", err)
+	}
+	release()
+	release() // once only
+	if got := s.FilesActivity(it); got != "" || len(s.reserved) != 0 {
+		t.Fatalf("released: %q %v", got, s.reserved)
+	}
+	envRelease, err := s.HoldFiles(Item{KindEnvironment, "alice"}, "backing up", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer envRelease()
+	if err := s.Begin("alice", "starting"); err != nil {
+		t.Fatalf("a backup blocks the environment's operations: %v", err)
+	}
+	if b := s.Busy(); b["alice"] != "starting" || len(b) != 1 {
+		t.Fatalf("busy %v", b)
+	}
+	s.Done("alice")
+}
+
+// While a volume's files are replaced in place, no environment is granted
+// it and none granted it starts: before, only those granted it when the
+// restore began were held back.
+func TestReplacedVolumeIsNeitherGrantedNorMounted(t *testing.T) {
+	s, _ := mountService(t)
+	ctx := context.Background()
+	if err := s.Layout.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.CreateVolume(ctx, "photos", ""); err != nil {
+		t.Fatal(err)
+	}
+	grant := VolumeGrant{Name: "photos", Path: "/mnt/photos"}
+	if err := s.seed(ctx, "alice", Settings{Image: "img", Volumes: []VolumeGrant{grant}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.seed(ctx, "bob", Settings{Image: "img"}); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Stop(ctx, "alice")
+	release, err := s.HoldFiles(Item{KindVolume, "photos"}, "restoring", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Start(ctx, "alice"); !errors.Is(err, ErrItemBusy) {
+		t.Fatalf("started over files being restored: %v", err)
+	}
+	if _, err := s.Recreate(ctx, "bob", Settings{Image: "img", Volumes: []VolumeGrant{grant}}, noProgress); !errors.Is(err, ErrItemBusy) {
+		t.Fatalf("granted files being restored: %v", err)
+	}
+	if _, err := s.Defs.Update("bob", func(d *Definition) error { d.Volumes = []VolumeGrant{grant}; return nil }); !errors.Is(err, ErrItemBusy) {
+		t.Fatalf("saved a grant of files being restored: %v", err)
+	}
+	if _, err := s.Create(ctx, "carol", Settings{Image: "img", Volumes: []VolumeGrant{grant}}, noProgress); !errors.Is(err, ErrItemBusy) {
+		t.Fatalf("created with files being restored: %v", err)
+	}
+	if d, _ := s.Defs.Get("bob"); len(d.Volumes) != 0 {
+		t.Fatalf("bob was granted: %+v", d.Volumes)
+	}
+	// Other changes of an environment holding the grant still save.
+	if err := s.SetWebDAV("alice", true); err != nil {
+		t.Fatal(err)
+	}
+	release()
+	if err := s.Start(ctx, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Recreate(ctx, "bob", Settings{Image: "img", Volumes: []VolumeGrant{grant}}, noProgress); err != nil {
+		t.Fatal(err)
 	}
 }
 

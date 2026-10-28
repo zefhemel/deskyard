@@ -24,6 +24,8 @@ type fakeEnv struct {
 	vols     map[string]environments.Volume
 	running  map[string]bool
 	reserved map[string]bool
+	held     map[environments.Item]string // files held, as the environments service holds them
+	replaced map[environments.Item]bool   // held files being replaced
 	log      []string
 	created  map[string]environments.Settings
 }
@@ -35,7 +37,7 @@ func newFakeEnv(t *testing.T) *fakeEnv {
 		t.Fatal(err)
 	}
 	return &fakeEnv{layout: layout, defs: map[string]environments.Definition{}, vols: map[string]environments.Volume{},
-		running: map[string]bool{}, reserved: map[string]bool{}, created: map[string]environments.Settings{}}
+		running: map[string]bool{}, reserved: map[string]bool{}, held: map[environments.Item]string{}, replaced: map[environments.Item]bool{}, created: map[string]environments.Settings{}}
 }
 
 func (e *fakeEnv) addEnvironment(t *testing.T, name string, running bool, set environments.Settings) {
@@ -149,7 +151,39 @@ func (e *fakeEnv) Stop(_ context.Context, name string) error {
 	e.running[name] = false
 	return nil
 }
+func (e *fakeEnv) HoldFiles(it environments.Item, what string, replacing bool) (func(), error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if cur, ok := e.held[it]; ok {
+		return nil, fmt.Errorf("%w: %s is %s", environments.ErrItemBusy, it, cur)
+	}
+	e.held[it], e.replaced[it] = what, replacing
+	return sync.OnceFunc(func() {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		delete(e.held, it)
+		delete(e.replaced, it)
+	}), nil
+}
+func (e *fakeEnv) FilesActivity(it environments.Item) string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.held[it]
+}
+
+// Start refuses, as the environments service's does, while the files of the
+// environment or of a volume it is granted are being replaced.
 func (e *fakeEnv) Start(_ context.Context, name string) error {
+	e.mu.Lock()
+	busy := e.replaced[environments.Item{Kind: KindEnvironment, Name: name}]
+	for _, g := range e.defs[name].Volumes {
+		busy = busy || e.replaced[environments.Item{Kind: KindVolume, Name: g.Name}]
+	}
+	e.mu.Unlock()
+	if busy {
+		e.record("refused start " + name)
+		return environments.ErrItemBusy
+	}
 	e.record("start " + name)
 	e.running[name] = true
 	return nil

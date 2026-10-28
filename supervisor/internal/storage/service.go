@@ -19,12 +19,14 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 )
 
 var (
-	// ErrBusy: another backup or restore holds the item, or the remote.
-	ErrBusy = errors.New("a backup or restore is running")
+	// ErrBusy: another backup, restore or removal holds the item's files,
+	// or a remote is in use or being changed.
+	ErrBusy = environments.ErrItemBusy
 	// ErrNeedsKey: a repository is already there; connecting needs its key.
 	ErrNeedsKey = errors.New("a backup repository is already there: enter its recovery key to connect it")
 )
@@ -60,8 +62,7 @@ type Service struct {
 	opMu   sync.Mutex // one backup or restore at a time
 
 	mu       sync.Mutex
-	held     map[Item]string // item → what holds it
-	remoteOp map[string]int  // remote → operations using it
+	remoteOp map[string]int // remote → operations using it; -1 while it is changed
 	listings map[string]listing
 }
 
@@ -92,7 +93,7 @@ func Open(layout config.Layout, instance string, run Runner, env Environments, l
 	return &Service{
 		Remotes: remotes, Store: st, State: state, Env: env, Loc: time.Local, Now: time.Now, Log: log,
 		Tool:   Tool{Run: run, Host: "deskyard-" + host, CacheDir: filepath.Join(layout.Cache, "restic")},
-		layout: layout, held: map[Item]string{}, remoteOp: map[string]int{}, listings: map[string]listing{},
+		layout: layout, remoteOp: map[string]int{}, listings: map[string]listing{},
 	}, nil
 }
 
@@ -113,57 +114,48 @@ func (s *Service) repo(name string) (Repo, Repository, error) {
 	return Repo{Remote: remote.Name, Path: joinPath(remote.Root, r.Folder), ConfigDir: s.Remotes.ConfigDir(remote.Name), KeyDir: s.keyDir(name)}, r, nil
 }
 
-// Hold marks it busy with what until release; ErrBusy when it already is.
-func (s *Service) Hold(it Item, what string) (release func(), err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if cur, ok := s.held[it]; ok {
-		return nil, fmt.Errorf("%w: %s is %s", ErrBusy, it, cur)
-	}
-	s.held[it] = what
-	return sync.OnceFunc(func() {
-		s.mu.Lock()
-		delete(s.held, it)
-		s.mu.Unlock()
-	}), nil
+// hold holds it's files for what, through the environments service, which
+// owns every reservation of environments and volumes; replacing says the
+// files are being replaced, so nothing may mount them meanwhile.
+func (s *Service) hold(it Item, what string, replacing bool) (release func(), err error) {
+	return s.Env.HoldFiles(environments.Item(it), what, replacing)
 }
 
-// Busy reports, for the environments service, whether an item is held.
-func (s *Service) Busy(kind, name string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if what, ok := s.held[Item{kind, name}]; ok {
-		return fmt.Errorf("%w: %s %s is %s", ErrBusy, kind, name, what)
-	}
-	return nil
-}
-
-// Activity is what holds it ("" when nothing does).
+// Activity is what holds it's files ("" when nothing does).
 func (s *Service) Activity(it Item) string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.held[it]
+	return s.Env.FilesActivity(environments.Item(it))
 }
 
-// useRemote counts an operation on the repository's remote until done.
-func (s *Service) useRemote(remote string) (done func()) {
+// useRemote counts an operation on the remote until done; ErrBusy while the
+// remote is being changed.
+func (s *Service) useRemote(remote string) (done func(), err error) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.remoteOp[remote] < 0 {
+		return nil, fmt.Errorf("%w: remote %s is being changed", ErrBusy, remote)
+	}
 	s.remoteOp[remote]++
-	s.mu.Unlock()
 	return sync.OnceFunc(func() {
 		s.mu.Lock()
 		s.remoteOp[remote]--
 		s.mu.Unlock()
-	})
+	}), nil
 }
 
-func (s *Service) remoteBusy(remote string) error {
+// changeRemote holds the remote for a change until done, so that no
+// operation starts on it meanwhile; ErrBusy while one uses it.
+func (s *Service) changeRemote(remote string) (done func(), err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.remoteOp[remote] > 0 {
-		return fmt.Errorf("%w on remote %s", ErrBusy, remote)
+	if s.remoteOp[remote] != 0 {
+		return nil, fmt.Errorf("%w on remote %s", ErrBusy, remote)
 	}
-	return nil
+	s.remoteOp[remote] = -1
+	return sync.OnceFunc(func() {
+		s.mu.Lock()
+		delete(s.remoteOp, remote)
+		s.mu.Unlock()
+	}), nil
 }
 
 func (s *Service) forgetListings(repo string) {
@@ -219,11 +211,14 @@ func (s *Service) CreateRemote(ctx context.Context, r Remote, sec Secrets) error
 }
 
 // UpdateRemote saves changes to name after a successful connection test,
-// refusing while a backup or restore uses it.
+// refusing while a backup or restore uses it. None starts on it from the
+// test until the change is saved.
 func (s *Service) UpdateRemote(ctx context.Context, name string, r Remote, sec Secrets) error {
-	if err := s.remoteBusy(name); err != nil {
+	done, err := s.changeRemote(name)
+	if err != nil {
 		return err
 	}
+	defer done()
 	if err := s.TestSavedRemote(ctx, name, r, sec); err != nil {
 		return err
 	}
@@ -231,13 +226,16 @@ func (s *Service) UpdateRemote(ctx context.Context, name string, r Remote, sec S
 	return s.Remotes.Update(name, r, sec)
 }
 
-// DeleteRemote forgets name, refusing while a repository is on it.
+// DeleteRemote forgets name, refusing while a repository is on it, or a
+// backup or restore uses it.
 func (s *Service) DeleteRemote(name string) error {
+	done, err := s.changeRemote(name)
+	if err != nil {
+		return err
+	}
+	defer done()
 	if repos := s.Store.RepositoriesOnRemote(name); len(repos) > 0 {
 		return fmt.Errorf("%w: backup repositories %s are on remote %s", ErrInUse, strings.Join(repos, ", "), name)
-	}
-	if err := s.remoteBusy(name); err != nil {
-		return err
 	}
 	return s.Remotes.Delete(name)
 }
@@ -283,7 +281,11 @@ func (s *Service) CreateRepository(ctx context.Context, name, remote, folder, ke
 	if err := os.Chmod(tmp, 0o700); err != nil {
 		return "", err
 	}
-	defer s.useRemote(remote)()
+	done, err := s.useRemote(remote)
+	if err != nil {
+		return "", err
+	}
+	defer done()
 	r := Repo{Remote: rem.Name, Path: joinPath(rem.Root, repo.Folder), ConfigDir: s.Remotes.ConfigDir(rem.Name), KeyDir: tmp}
 	switch err := s.Tool.CheckRepo(ctx, r); {
 	case err == nil && generated:
@@ -399,7 +401,7 @@ func (s *Service) itemSource(it Item) (root string, mounts []engine.Mount, clean
 // beyond the policy's retention and, at most weekly, prunes the repository.
 // The outcome is recorded in the run state.
 func (s *Service) BackUp(ctx context.Context, it Item, reason string, progress func(string, float64)) error {
-	release, err := s.Hold(it, "backing up")
+	release, err := s.hold(it, "backing up", false)
 	if err != nil {
 		return err
 	}
@@ -437,7 +439,11 @@ func (s *Service) backUp(ctx context.Context, it Item, reason string, progress f
 	}
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
-	defer s.useRemote(repo.Remote)()
+	done, err := s.useRemote(repo.Remote)
+	if err != nil {
+		return err
+	}
+	defer done()
 	defer s.forgetListings(p.Repository)
 	root, mounts, cleanup, err := s.itemSource(it)
 	defer cleanup()

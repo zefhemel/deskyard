@@ -93,8 +93,8 @@ func (s *Service) CreateVolume(ctx context.Context, name, hostPath string) (v Vo
 // replaced, and a failed replacement keeps the old container. Its folder is
 // kept unless deleteFiles; an error deleting the files leaves the volume
 // deleted. A host volume's folder is never deleted: deleteFiles is refused.
-// While ItemBusy reports the volume busy (a backup or restore), it is refused
-// with that error.
+// While a backup or restore holds its files, it is refused with
+// ErrItemBusy; its files are held while it is deleted.
 func (s *Service) DeleteVolume(ctx context.Context, name string, deleteFiles bool) error {
 	s.volMu.Lock()
 	defer s.volMu.Unlock()
@@ -105,13 +105,13 @@ func (s *Service) DeleteVolume(ctx context.Context, name string, deleteFiles boo
 	if deleteFiles && v.Kind == VolumeHost {
 		return fmt.Errorf("%w: %s is a host volume; Deskyard never deletes its folder %s", ErrConflict, name, v.HostPath)
 	}
-	if s.ItemBusy != nil {
-		if err := s.ItemBusy("volume", name); err != nil {
-			return err
-		}
+	release, err := s.HoldFiles(Item{KindVolume, name}, "deleting", true)
+	if err != nil {
+		return err
 	}
+	defer release()
 	// Under Defs' lock, so no grant of it can be saved in between.
-	err := s.Defs.Hold(func(defs []Definition) error {
+	err = s.Defs.Hold(func(defs []Definition) error {
 		if users := volumeUsers(defs, name); len(users) > 0 {
 			envs := make([]string, len(users))
 			for i, u := range users {
@@ -193,15 +193,18 @@ func volumeUsers(defs []Definition, name string) []VolumeUser {
 	return out
 }
 
-// checkGrants refuses grants of volumes that aren't in volumes.json. It runs
-// with Defs' lock held, as Definitions.checkGrants.
+// checkGrants refuses grants of volumes that aren't in volumes.json, or
+// whose files are being replaced (by a restore in place). It runs with
+// Defs' lock held, as Definitions.checkGrants: a restore holds the files
+// before it looks for the definitions granting them, so none is granted
+// them after it looked.
 func (s *Service) checkGrants(grants []VolumeGrant) error {
 	for _, g := range grants {
 		if _, ok := s.Vols.Get(g.Name); !ok {
 			return fmt.Errorf("volume %q doesn't exist", g.Name)
 		}
 	}
-	return nil
+	return s.replacing(itemsOf("", grants))
 }
 
 // makeVolumeFolder makes volume/<name>/ with mode 0755. The supervisor runs

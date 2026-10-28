@@ -20,6 +20,10 @@ type Environments interface {
 	RemoveTree(ctx context.Context, parent environments.Folder, child string) error
 	MakeFreeFolder(ctx context.Context, parent environments.Folder, base string) (string, error)
 
+	// HoldFiles and FilesActivity are the reservations of items' files.
+	HoldFiles(it environments.Item, what string, replacing bool) (func(), error)
+	FilesActivity(it environments.Item) string
+
 	Get(ctx context.Context, name string) (environments.Environment, error)
 	Reserve(name, state string) (func(), error)
 	Stop(ctx context.Context, name string) error

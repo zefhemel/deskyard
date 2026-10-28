@@ -111,7 +111,9 @@ func (s *Service) restoreHere(ctx context.Context, it Item, repo Repo, snap Snap
 	if err != nil {
 		return err
 	}
-	release, err := s.Hold(it, "restoring")
+	// Its files are replaced: no environment is granted them or starts with
+	// them until the restore is done.
+	release, err := s.hold(it, "restoring", true)
 	if err != nil {
 		return err
 	}
@@ -134,6 +136,11 @@ func (s *Service) restoreHere(ctx context.Context, it Item, repo Repo, snap Snap
 	// After any backup that holds the lock, so nothing sits stopped waiting.
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
+	done, err := s.useRemote(repo.Remote)
+	if err != nil {
+		return err
+	}
+	defer done()
 	// Every one is reserved before any is stopped, so a busy one stops none.
 	for _, name := range envs {
 		release, err := s.Env.Reserve(name, "restoring")
@@ -143,7 +150,10 @@ func (s *Service) restoreHere(ctx context.Context, it Item, repo Repo, snap Snap
 		defer release()
 	}
 	var restart []string
+	// The files are let go of first: environments using them don't start
+	// while they are held.
 	startAgain := func() {
+		release()
 		for _, name := range restart {
 			_ = s.Env.Start(context.WithoutCancel(ctx), name)
 		}
@@ -162,7 +172,6 @@ func (s *Service) restoreHere(ctx context.Context, it Item, repo Repo, snap Snap
 			return fmt.Errorf("stopping %s: %w", name, err)
 		}
 	}
-	defer s.useRemote(repo.Remote)()
 	progress("Restoring", 0)
 	if err := s.Tool.Restore(ctx, repo, snap.ID, itemRoot(it), engine.Mount{Source: folder.Path, MustExist: true}, nil, true, func(frac float64, msg string) {
 		progress("Restoring: "+msg, frac)
@@ -172,6 +181,7 @@ func (s *Service) restoreHere(ctx context.Context, it Item, repo Repo, snap Snap
 		}
 		return err
 	}
+	release()
 	for _, name := range restart {
 		progress("Starting "+name, -1)
 		if err := s.Env.Start(ctx, name); err != nil {
@@ -206,7 +216,7 @@ func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snaps
 		return RestoreResult{}, fmt.Errorf("%w: %s is in the way; remove it or choose another name", ErrExists, folder)
 	}
 	newItem := Item{it.Kind, name}
-	release, err := s.Hold(newItem, "restoring")
+	release, err := s.hold(newItem, "restoring", true)
 	if err != nil {
 		return RestoreResult{}, err
 	}
@@ -240,7 +250,11 @@ func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snaps
 	}
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
-	defer s.useRemote(repo.Remote)()
+	done, err := s.useRemote(repo.Remote)
+	if err != nil {
+		return RestoreResult{}, err
+	}
+	defer done()
 	if err := os.Mkdir(folder, 0o755); err != nil {
 		return RestoreResult{}, err
 	}
@@ -319,14 +333,18 @@ func (s *Service) restoreFolder(ctx context.Context, it Item, repo Repo, snap Sn
 	if err != nil {
 		return RestoreResult{}, err
 	}
-	release, err := s.Hold(it, "restoring files")
+	release, err := s.hold(it, "restoring files", false)
 	if err != nil {
 		return RestoreResult{}, err
 	}
 	defer release()
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
-	defer s.useRemote(repo.Remote)()
+	done, err := s.useRemote(repo.Remote)
+	if err != nil {
+		return RestoreResult{}, err
+	}
+	defer done()
 	// The first free name, taken where it is made: on a host volume, whose
 	// folder the supervisor can't see, by the root helper.
 	name, err := s.Env.MakeFreeFolder(ctx, folder, "Restored "+snap.Time.In(s.Loc).Format("2006-01-02 1504"))
