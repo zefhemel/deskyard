@@ -162,15 +162,7 @@ func New(o Options) (*Server, error) {
 	if s.storage, err = storage.Open(o.Layout, o.Environments.Instance, run, storage.EnvironmentsOf(o.Environments), o.Log); err != nil {
 		return nil, err
 	}
-	// As creating one does: what a removal of the name failed to purge
-	// doesn't carry over to an environment restored under it.
-	s.storage.ForgetName = func(name string) error {
-		if err := s.forgetAccess(name); err != nil {
-			return err
-		}
-		s.activity.ForgetDesktop(name)
-		return nil
-	}
+	s.Environments.NameClaimed = s.nameClaimed
 	s.Environments.ConflictsChanged = s.events.refresh
 	s.Environments.Removed = s.environmentRemoved
 	// An environment whose pinned image was pulled again has a new revision.

@@ -28,7 +28,8 @@ type Environments interface {
 	Reserve(name, state string) (func(), error)
 	Stop(ctx context.Context, name string) error
 	Start(ctx context.Context, name string) error
-	Create(ctx context.Context, name string, set environments.Settings, progress func(string, float64)) (environments.Environment, error)
+	ClaimName(name string) (func(), error)
+	CreateStopped(ctx context.Context, name string, set environments.Settings, progress func(string, float64)) (environments.Environment, error)
 	CreateVolume(ctx context.Context, name, hostPath string) (environments.Volume, bool, error)
 }
 

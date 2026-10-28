@@ -82,6 +82,33 @@ func (s *Service) Busy() map[string]string {
 	return out
 }
 
+// ClaimName reserves name for a new environment, as being created, until
+// release: invalid names, those of defined environments and those reserved
+// for another operation are refused. Under the reservation NameClaimed, when
+// set, forgets what a removal of an earlier environment of the name failed
+// to purge; its error refuses the claim.
+func (s *Service) ClaimName(name string) (release func(), err error) {
+	if err := ValidNewName(name); err != nil {
+		return nil, err
+	}
+	release, err = s.Reserve(name, "creating")
+	if err != nil {
+		return nil, err
+	}
+	// Checked under the reservation: one created meanwhile keeps its own.
+	if _, ok := s.Defs.Get(name); ok {
+		release()
+		return nil, ErrExists
+	}
+	if s.NameClaimed != nil {
+		if err := s.NameClaimed(name); err != nil {
+			release()
+			return nil, err
+		}
+	}
+	return release, nil
+}
+
 // HoldFiles holds it's files for what (such as "backing up") until release,
 // refusing with ErrItemBusy while something else holds them. While files
 // being replaced (as by a restore in place) are held, no environment using

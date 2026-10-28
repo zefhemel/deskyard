@@ -199,19 +199,19 @@ func TestRemoveRefusedDuringBackup(t *testing.T) {
 	}
 }
 
-// A restore as a new environment forgets the grants a failed removal of its
-// name left behind, as creating one does.
+// Claiming a name for a new environment, as a restore as new does as well
+// as creating one, forgets the grants a failed removal of the name left
+// behind.
 func TestRestoreAsNewForgetsLeftoverGrants(t *testing.T) {
 	s, _, _ := newStorageServer(t)
 	if err := s.Accounts.SetAccess("carol", fullAccess("anna")); err != nil {
 		t.Fatal(err)
 	}
-	if s.storage.ForgetName == nil {
-		t.Fatal("the restore doesn't forget the name's grants")
-	}
-	if err := s.storage.ForgetName("carol"); err != nil {
+	release, err := s.Environments.ClaimName("carol")
+	if err != nil {
 		t.Fatal(err)
 	}
+	release()
 	if a, _ := s.Accounts.Get("anna"); a.Level("carol") != auth.LevelNone {
 		t.Errorf("anna kept her grant of the removed carol: %v", a.Grants)
 	}

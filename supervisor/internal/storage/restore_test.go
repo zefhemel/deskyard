@@ -200,7 +200,7 @@ func TestRestoreAsNewEnvironmentDropsMachineSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := env.events(); got != "reserve alice-copy,create alice-copy,stop alice-copy" {
+	if got := env.events(); got != "reserve alice-copy,claim alice-copy,create stopped alice-copy" {
 		t.Fatalf("lifecycle %s", got)
 	}
 	set := env.created["alice-copy"]
@@ -472,7 +472,7 @@ func TestRestoreAsNewReservesName(t *testing.T) {
 	if _, err := s.Restore(context.Background(), Item{KindEnvironment, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-copy"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := env.events(); got != "reserve alice-copy,create alice-copy,stop alice-copy" {
+	if got := env.events(); got != "reserve alice-copy,claim alice-copy,create stopped alice-copy" {
 		t.Fatalf("lifecycle %s", got)
 	}
 	release, _ := env.Reserve("carol", "creating")
@@ -485,29 +485,28 @@ func TestRestoreAsNewReservesName(t *testing.T) {
 	}
 }
 
-// Grants a failed removal of the name left behind must not carry over to the
-// environment restored under it: the restore forgets them under the
-// reservation, and stops when it can't.
-func TestRestoreAsNewForgetsTheNamesGrants(t *testing.T) {
+// What a failed removal of the name left behind is forgotten when the name
+// is claimed, before anything is restored; a claim that fails restores
+// nothing.
+func TestRestoreAsNewClaimsTheName(t *testing.T) {
 	f := &fakeRunner{}
 	s, env := testService(t, f)
 	f.reply = restoreReply(environments.Definition{Image: environments.ImageRef{Ref: "img"}}, nil)
-	var forgot []string
-	s.ForgetName = func(name string) error {
-		forgot = append(forgot, name+" after "+env.events())
-		return nil
+	env.claimErr = errors.New("disk full")
+	if _, err := s.Restore(context.Background(), Item{KindEnvironment, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-two"}, nil); err == nil || !strings.Contains(err.Error(), "disk full") {
+		t.Fatalf("restored although the name couldn't be claimed: %v", err)
 	}
-	if _, err := s.Restore(context.Background(), Item{KindEnvironment, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-copy"}, nil); err != nil {
+	if _, ok := env.created["alice-two"]; ok || len(restoreCalls(f)) != 0 {
+		t.Fatal("restored anyway")
+	}
+	if _, err := os.Stat(env.layout.HomeOf("alice-two")); !os.IsNotExist(err) {
+		t.Fatal("made a folder for an unclaimed name")
+	}
+	env.claimErr = nil
+	if _, err := s.Restore(context.Background(), Item{KindEnvironment, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-two"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if len(forgot) != 1 || forgot[0] != "alice-copy after reserve alice-copy" {
-		t.Fatalf("forgot %q", forgot)
-	}
-	s.ForgetName = func(string) error { return errors.New("disk full") }
-	if _, err := s.Restore(context.Background(), Item{KindEnvironment, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-two"}, nil); err == nil {
-		t.Fatal("restored although its grants couldn't be forgotten")
-	}
-	if _, ok := env.created["alice-two"]; ok || len(restoreCalls(f)) != 1 {
-		t.Fatal("restored anyway")
+	if env.running["alice-two"] || env.defs["alice-two"].Power != environments.PowerStopped {
+		t.Fatal("the restored environment runs")
 	}
 }

@@ -223,20 +223,15 @@ func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snaps
 	defer release()
 	if it.Kind == KindEnvironment {
 		// As the create API does, so reconcile and other operations leave the
-		// name alone while its home is restored and it is created.
-		releaseName, err := s.Env.Reserve(name, "creating")
-		if err != nil {
+		// name alone while its home is restored and it is created, and what
+		// a removal of the name failed to purge doesn't carry over.
+		releaseName, err := s.Env.ClaimName(name)
+		if errors.Is(err, environments.ErrExists) {
+			return RestoreResult{}, fmt.Errorf("environment %q: %w", name, ErrExists)
+		} else if err != nil {
 			return RestoreResult{}, fmt.Errorf("%s is busy: %w", name, err)
 		}
 		defer releaseName()
-		if _, ok := s.Env.Definition(name); ok {
-			return RestoreResult{}, fmt.Errorf("environment %q: %w", name, ErrExists)
-		}
-		if s.ForgetName != nil {
-			if err := s.ForgetName(name); err != nil {
-				return RestoreResult{}, err
-			}
-		}
 	}
 	var def environments.Definition
 	if it.Kind == KindEnvironment {
@@ -279,12 +274,10 @@ func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snaps
 	}
 	set, dropped := s.settingsFrom(def, req.NewImage)
 	res.Dropped = dropped
-	if _, err := s.Env.Create(ctx, name, set, progress); err != nil {
+	// Created stopped: the restored desktop never runs before it is asked to.
+	if _, err := s.Env.CreateStopped(ctx, name, set, progress); err != nil {
 		removeFolder()
 		return RestoreResult{}, err
-	}
-	if err := s.Env.Stop(ctx, name); err != nil {
-		return res, fmt.Errorf("created %s, but stopping it failed: %w", name, err)
 	}
 	return res, nil
 }

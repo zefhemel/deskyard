@@ -129,6 +129,10 @@ type Service struct {
 	// Repinned, when set, hears the pinned images a reconcile pass found
 	// gone and pulled again, each recorded as a new revision.
 	Repinned func([]Repin)
+	// NameClaimed, when set, hears under ClaimName's reservation that name
+	// is claimed for a new environment, to forget what a removal of an
+	// earlier one of the name failed to purge (its grants).
+	NameClaimed func(name string) error
 	// Removed, when set, hears that a removal deleted name's definition,
 	// whether from Remove or from the poll or recovery finishing a VPN
 	// removal, and even when deleting its files then failed. Its error is
@@ -581,6 +585,21 @@ func pinned(def Definition) string {
 // touched; on failure nothing is left behind but a folder that was already
 // there.
 func (s *Service) Create(ctx context.Context, name string, set Settings, progress func(string, float64)) (Environment, error) {
+	return s.create(ctx, name, set, PowerRunning, progress)
+}
+
+// CreateStopped is Create of an environment that stays stopped: only its
+// definition is saved, and its container is built when it is started. It
+// has no VPN connection, whose coordinator always starts what it creates.
+func (s *Service) CreateStopped(ctx context.Context, name string, set Settings, progress func(string, float64)) (Environment, error) {
+	if set.VPNConnectionID != "" {
+		return Environment{}, errors.New("an environment with a VPN connection is created running")
+	}
+	return s.create(ctx, name, set, PowerStopped, progress)
+}
+
+// create is Create, or CreateStopped with power stopped.
+func (s *Service) create(ctx context.Context, name string, set Settings, power Power, progress func(string, float64)) (Environment, error) {
 	if s.Networking != nil {
 		unlock, err := s.Networking.lock(ctx, name)
 		if err != nil {
@@ -647,12 +666,15 @@ func (s *Service) Create(ctx context.Context, name string, set Settings, progres
 			_ = os.Remove(folder) // only if still empty
 		}
 	}
-	def := withSettings(Definition{Name: name, Created: time.Now().UTC(), MemoryReclaim: true, Power: PowerRunning}, set, img.ID)
+	def := withSettings(Definition{Name: name, Created: time.Now().UTC(), MemoryReclaim: true, Power: power}, set, img.ID)
 	def.Revision = 1
 	if err := s.Defs.Put(def); err != nil {
 		_ = s.forget(name)
 		removeFolder()
 		return Environment{}, err
+	}
+	if power == PowerStopped {
+		return s.Get(ctx, name)
 	}
 	if viaVPN {
 		env, err := s.Networking.create(ctx, name, progress)

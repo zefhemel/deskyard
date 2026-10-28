@@ -28,6 +28,7 @@ type fakeEnv struct {
 	replaced map[environments.Item]bool   // held files being replaced
 	log      []string
 	created  map[string]environments.Settings
+	claimErr error // ClaimName's, as of a failed NameClaimed
 }
 
 func newFakeEnv(t *testing.T) *fakeEnv {
@@ -188,15 +189,33 @@ func (e *fakeEnv) Start(_ context.Context, name string) error {
 	e.running[name] = true
 	return nil
 }
-func (e *fakeEnv) Create(_ context.Context, name string, set environments.Settings, _ func(string, float64)) (environments.Environment, error) {
+
+// ClaimName reserves the name as the environments service does, then has
+// claimErr (or nothing) forget what it holds of the name.
+func (e *fakeEnv) ClaimName(name string) (func(), error) {
+	release, err := e.Reserve(name, "creating")
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := e.defs[name]; ok {
+		release()
+		return nil, environments.ErrExists
+	}
+	if e.claimErr != nil {
+		release()
+		return nil, e.claimErr
+	}
+	e.record("claim " + name)
+	return release, nil
+}
+func (e *fakeEnv) CreateStopped(_ context.Context, name string, set environments.Settings, _ func(string, float64)) (environments.Environment, error) {
 	if _, err := os.Stat(e.layout.HomeOf(name)); err != nil {
 		return environments.Environment{}, fmt.Errorf("no home: %w", err)
 	}
-	e.record("create " + name)
+	e.record("create stopped " + name)
 	e.created[name] = set
-	e.defs[name] = environments.Definition{Name: name}
-	e.running[name] = true
-	return environments.Environment{Name: name}, nil
+	e.defs[name] = environments.Definition{Name: name, Power: environments.PowerStopped}
+	return environments.Environment{Name: name, State: "stopped"}, nil
 }
 func (e *fakeEnv) CreateVolume(_ context.Context, name, hostPath string) (environments.Volume, bool, error) {
 	e.record("create volume " + name)
