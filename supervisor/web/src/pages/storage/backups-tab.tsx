@@ -1,9 +1,9 @@
 import { useState } from "preact/hooks";
 import { api, ApiError, type BackupsOverview, type CatalogItem, type Repository } from "../../api.ts";
-import { RestoreNewDialog } from "../../components/backups-panel.tsx";
+import { RestoreNewDialog } from "../../components/backups/restore-dialogs.tsx";
 import { notify } from "../../components/toast.tsx";
 import { Button, Dialog, ErrorText, Field, Note, Tag, errorMessage } from "../../components/ui.tsx";
-import { backupStatus, describeSchedule, isTime, splitItem } from "../../lib/backup-policy.ts";
+import { backupStatus, describeSchedule, isTime, itemCopy, splitItem } from "../../lib/backup-policy.ts";
 import { copyText } from "../../lib/clipboard.ts";
 import { ago, day } from "../../lib/format.ts";
 import { useBackups, useFetch } from "../../lib/use-fetch.ts";
@@ -11,8 +11,7 @@ import { useBackups, useFetch } from "../../lib/use-fetch.ts";
 const NAME = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
 
 function itemHref(item: string): string {
-  const [kind, name] = splitItem(item);
-  return kind === "environment" ? `/environments/${name}?tab=backups` : `/volumes/${name}`;
+  return itemCopy(...splitItem(item)).page;
 }
 
 export function BackupsTab() {

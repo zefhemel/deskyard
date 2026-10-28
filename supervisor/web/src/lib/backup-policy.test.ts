@@ -58,3 +58,28 @@ test("an item's backup status: failed, overdue, with files left out, or fine", a
   assert.deepEqual(backupStatus(item({ lastSuccess: "2026-10-25T03:00:00Z" }, { nextRun: "2026-10-27T03:00:00Z" }), now), { label: "Backup overdue", kind: "danger" });
   assert.deepEqual(backupStatus(item({ lastSuccess: "2026-10-25T03:00:00Z" }, { nextRun: "2026-10-27T03:00:00Z", activity: "backing up" }), now), { label: "Backing up", kind: "update" });
 });
+
+test("a policy needs a repository, a time and something to keep", async () => {
+  const { policyErrors, policyDefaults } = await import("./backup-policy.ts");
+  const ok = policyDefaults([{ name: "home" }]);
+  assert.deepEqual(policyErrors(ok), {});
+  assert.deepEqual(Object.keys(policyErrors({ ...ok, repository: "" })), ["repository"]);
+  assert.deepEqual(Object.keys(policyErrors({ ...ok, schedule: { ...ok.schedule, at: "3:00" } })), ["at"]);
+  assert.equal(policyErrors({ ...ok, retention: { last: 0, hourly: 0, daily: 0, weekly: 0, monthly: 0, yearly: 0 } }).retention, "Keep at least one snapshot.");
+});
+
+test("an item's copy names its parts and places", async () => {
+  const { itemCopy, splitItem } = await import("./backup-policy.ts");
+  const env = itemCopy("environment", "alice");
+  assert.equal(env.page, "/environments/alice?tab=backups");
+  assert.equal(env.pageOf("alice-2"), "/environments/alice-2");
+  assert.equal(env.replaced("/srv/x"), "alice's home folder");
+  assert.equal(env.jobEnvironment, "alice");
+  const vol = itemCopy("volume", "photos");
+  assert.equal(vol.page, "/volumes/photos");
+  assert.equal(vol.root, "photos");
+  assert.equal(vol.replaced(), "The volume photos");
+  assert.equal(vol.replaced("/srv/photos"), "The host folder /srv/photos");
+  assert.equal(vol.jobEnvironment, undefined);
+  assert.deepEqual(splitItem("volume:a:b"), ["volume", "a:b"]);
+});

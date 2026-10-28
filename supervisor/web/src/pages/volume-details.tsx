@@ -1,7 +1,7 @@
 import { useState } from "preact/hooks";
 import { useLocation, useRoute } from "preact-iso";
 import { api } from "../api.ts";
-import { BackupsPanel } from "../components/backups-panel.tsx";
+import { BackupsPanel } from "../components/backups/panel.tsx";
 import { Page, useTitle } from "../components/topbar.tsx";
 import { Button, ErrorText, Tag } from "../components/ui.tsx";
 import { useBackupItem, useFetch } from "../lib/use-fetch.ts";

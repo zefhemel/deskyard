@@ -21,7 +21,7 @@ import { davView } from "../lib/webdav.ts";
 import { ProcessesTab } from "./details/processes-tab.tsx";
 import { SettingsTab } from "./details/settings-tab.tsx";
 import { SharingTab } from "./details/sharing-tab.tsx";
-import { BackupsPanel } from "../components/backups-panel.tsx";
+import { BackupsPanel } from "../components/backups/panel.tsx";
 
 type Tab = "overview" | "processes" | "settings" | "access" | "backups";
 
