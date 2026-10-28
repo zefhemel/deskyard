@@ -154,20 +154,59 @@ type envDetail struct {
 	Conflict     string  `json:"conflict"`
 	Created      *string `json:"created"`
 	Settings     struct {
-		MemoryBytes int64 `json:"memoryBytes"`
-		NanoCPUs    int64 `json:"nanoCpus"`
-		Volumes     []struct {
-			Name     string `json:"name"`
-			ReadOnly bool   `json:"readOnly"`
-		} `json:"volumes"`
+		MemoryBytes int64   `json:"memoryBytes"`
+		NanoCPUs    int64   `json:"nanoCpus"`
+		Volumes     []mount `json:"volumes"`
 	} `json:"settings"`
-	Access  []accessGrant `json:"access"`
-	Viewers []string      `json:"viewers"`
+	Access  []grant  `json:"access"`
+	Viewers []string `json:"viewers"`
 }
 
-type accessGrant struct {
-	Username string `json:"username"`
-	Level    string `json:"level"`
+// grant is a level of access: an account's in an environment's access list
+// (Username), or one to an environment in an account's grants (Environment).
+type grant struct {
+	Username    string `json:"username,omitempty"`
+	Environment string `json:"environment,omitempty"`
+	Level       string `json:"level"`
+}
+
+func userGrant(user, level string) grant { return grant{Username: user, Level: level} }
+func envGrant(env, level string) grant   { return grant{Environment: env, Level: level} }
+
+// name is whom or what the grant is for.
+func (g grant) name() string { return g.Username + g.Environment }
+
+// formatGrants lists grants as "anna, bob (observe)".
+func formatGrants(gs []grant) string {
+	var out []string
+	for _, g := range gs {
+		if g.Level == "full" {
+			out = append(out, g.name())
+		} else {
+			out = append(out, g.name()+" ("+g.Level+")")
+		}
+	}
+	return strings.Join(out, ", ")
+}
+
+// mount is a volume granted to an environment, the same both ways round
+// (an environment's volumes, a volume's environments).
+type mount struct {
+	Name     string `json:"name"`
+	ReadOnly bool   `json:"readOnly"`
+}
+
+// formatMounts lists mounts as "photos (read-only), music", "-" for none.
+func formatMounts(ms []mount) string {
+	var out []string
+	for _, m := range ms {
+		if m.ReadOnly {
+			out = append(out, m.Name+" (read-only)")
+		} else {
+			out = append(out, m.Name)
+		}
+	}
+	return dash(strings.Join(out, ", "))
 }
 
 func runEnvList(a *App, c *call) error {
@@ -242,18 +281,10 @@ func runEnvShow(a *App, c *call) error {
 		}
 		fmt.Fprintf(tw, "memory:\t%s\n", mem)
 		fmt.Fprintf(tw, "cpus:\t%s\n", cpus)
-		var vols []string
-		for _, v := range e.Settings.Volumes {
-			if v.ReadOnly {
-				vols = append(vols, v.Name+" (read-only)")
-			} else {
-				vols = append(vols, v.Name)
-			}
-		}
-		fmt.Fprintf(tw, "volumes:\t%s\n", dash(strings.Join(vols, ", ")))
+		fmt.Fprintf(tw, "volumes:\t%s\n", formatMounts(e.Settings.Volumes))
 	}
 	if len(e.Access) > 0 {
-		fmt.Fprintf(tw, "access:\t%s\n", formatAccess(e.Access))
+		fmt.Fprintf(tw, "access:\t%s\n", formatGrants(e.Access))
 	}
 	fmt.Fprintf(tw, "viewers:\t%s\n", dash(strings.Join(e.Viewers, ", ")))
 	fmt.Fprintf(tw, "created:\t%s\n", when(e.Created))
@@ -265,18 +296,6 @@ func runEnvShow(a *App, c *call) error {
 	}
 	fmt.Fprintf(tw, "url:\t%s\n", (&remote.Target{Base: cl.Base, Environment: e.Name}).URL())
 	return tw.Flush()
-}
-
-func formatAccess(grants []accessGrant) string {
-	var out []string
-	for _, g := range grants {
-		if g.Level == "full" {
-			out = append(out, g.Username)
-		} else {
-			out = append(out, g.Username+" ("+g.Level+")")
-		}
-	}
-	return strings.Join(out, ", ")
 }
 
 // parseBytes reads --memory: bytes, or a number with K, M, G or T (powers
@@ -324,18 +343,14 @@ func runEnvCreate(a *App, c *call) error {
 	if image == "" {
 		return usagef(c.cmd, "--image is required: the image reference, e.g. ghcr.io/zefhemel/deskyard-debian-xfce:latest (see the Images page)")
 	}
-	type volumeGrant struct {
-		Name     string `json:"name"`
-		ReadOnly bool   `json:"readOnly"`
-	}
 	body := struct {
-		Name        string        `json:"name"`
-		Image       string        `json:"image"`
-		MemoryBytes int64         `json:"memoryBytes"`
-		NanoCPUs    int64         `json:"nanoCpus"`
-		Access      []accessGrant `json:"access"`
-		Volumes     []volumeGrant `json:"volumes,omitempty"`
-	}{Name: name, Image: image, Access: []accessGrant{}}
+		Name        string  `json:"name"`
+		Image       string  `json:"image"`
+		MemoryBytes int64   `json:"memoryBytes"`
+		NanoCPUs    int64   `json:"nanoCpus"`
+		Access      []grant `json:"access"`
+		Volumes     []mount `json:"volumes,omitempty"`
+	}{Name: name, Image: image, Access: []grant{}}
 	if s := c.str("--memory", ""); s != "" {
 		n, ok := parseBytes(s)
 		if !ok {
@@ -355,14 +370,14 @@ func runEnvCreate(a *App, c *call) error {
 		if err != nil {
 			return err
 		}
-		body.Access = append(body.Access, accessGrant{user, level})
+		body.Access = append(body.Access, userGrant(user, level))
 	}
 	for _, v := range c.flags["--volume"] {
 		vol, mode, _ := strings.Cut(v, ":")
 		if vol == "" || (mode != "" && mode != "ro") {
 			return usagef(c.cmd, "--volume wants NAME or NAME:ro, got %q", v)
 		}
-		body.Volumes = append(body.Volumes, volumeGrant{vol, mode == "ro"})
+		body.Volumes = append(body.Volumes, mount{vol, mode == "ro"})
 	}
 	cl, err := a.apiClient(c, name)
 	if err != nil {
@@ -532,7 +547,7 @@ func runEnvAccess(a *App, c *call) error {
 	}
 	// The PUT replaces every regular account's grant: keep the ones not
 	// named, then apply the changes in the order given.
-	grants := []accessGrant{}
+	grants := []grant{}
 	for _, g := range e.Access {
 		if _, named := changes[g.Username]; !named {
 			grants = append(grants, g)
@@ -540,7 +555,7 @@ func runEnvAccess(a *App, c *call) error {
 	}
 	for _, user := range order {
 		if l := changes[user]; l != "none" {
-			grants = append(grants, accessGrant{user, l})
+			grants = append(grants, userGrant(user, l))
 		}
 	}
 	if err := cl.JSON(c.ctx, http.MethodPut, path+"/access", map[string]any{"grants": grants}, nil); err != nil {
@@ -549,7 +564,7 @@ func runEnvAccess(a *App, c *call) error {
 	if len(grants) == 0 {
 		fmt.Fprintf(a.Stdout, "Only administrators can use %s now.\n", name)
 	} else {
-		fmt.Fprintf(a.Stdout, "Access to %s: %s.\n", name, formatAccess(grants))
+		fmt.Fprintf(a.Stdout, "Access to %s: %s.\n", name, formatGrants(grants))
 	}
 	return nil
 }
@@ -566,10 +581,7 @@ func runVolumeList(a *App, c *call) error {
 			Name         string  `json:"name"`
 			Folder       string  `json:"folder"`
 			Created      *string `json:"created"`
-			Environments []struct {
-				Name     string `json:"name"`
-				ReadOnly bool   `json:"readOnly"`
-			} `json:"environments"`
+			Environments []mount `json:"environments"`
 		} `json:"volumes"`
 	}
 	if done, err := getJSON(a, c, cl, "/volumes", &list); done || err != nil {
@@ -582,15 +594,7 @@ func runVolumeList(a *App, c *call) error {
 	tw := tabwriter.NewWriter(a.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "NAME\tENVIRONMENTS\tFOLDER\tCREATED")
 	for _, v := range list.Volumes {
-		var envs []string
-		for _, e := range v.Environments {
-			if e.ReadOnly {
-				envs = append(envs, e.Name+" (read-only)")
-			} else {
-				envs = append(envs, e.Name)
-			}
-		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", v.Name, dash(strings.Join(envs, ", ")), v.Folder, when(v.Created))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", v.Name, formatMounts(v.Environments), v.Folder, when(v.Created))
 	}
 	return tw.Flush()
 }
@@ -637,11 +641,6 @@ func runVolumeRemove(a *App, c *call) error {
 
 // ---- accounts
 
-type grant struct {
-	Environment string `json:"environment"`
-	Level       string `json:"level"`
-}
-
 type account struct {
 	Username    string  `json:"username"`
 	Kind        string  `json:"kind"`
@@ -656,16 +655,12 @@ type account struct {
 	LastLogin   *string `json:"lastLogin"`
 }
 
-func formatGrants(gs []grant) string {
-	var out []string
-	for _, g := range gs {
-		if g.Level == "full" {
-			out = append(out, g.Environment)
-		} else {
-			out = append(out, g.Environment+" ("+g.Level+")")
-		}
+// access is what an account may use, for tables: "-" for nothing.
+func (ac account) access() string {
+	if ac.Admin {
+		return "admin (everything)"
 	}
-	return strings.Join(out, ", ")
+	return dash(formatGrants(ac.Grants))
 }
 
 func runAccountList(a *App, c *call) error {
@@ -689,10 +684,6 @@ func runAccountList(a *App, c *call) error {
 	tw := tabwriter.NewWriter(a.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "USER\tKIND\tACCESS\tEXPIRES\tLAST SIGN-IN\tNOTE")
 	for _, ac := range list {
-		access := formatGrants(ac.Grants)
-		if ac.Admin {
-			access = "admin (everything)"
-		}
 		var note []string
 		if ac.SharedBy != nil {
 			note = append(note, "shared by "+ac.SharedBy.Username)
@@ -703,7 +694,7 @@ func runAccountList(a *App, c *call) error {
 		if ac.Description != "" {
 			note = append(note, ac.Description)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", ac.Username, dash(ac.Kind), dash(access), when(ac.Expires), when(ac.LastLogin), dash(strings.Join(note, "; ")))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", ac.Username, dash(ac.Kind), ac.access(), when(ac.Expires), when(ac.LastLogin), dash(strings.Join(note, "; ")))
 	}
 	return tw.Flush()
 }
@@ -747,7 +738,7 @@ func runAccountCreate(a *App, c *call) error {
 		if err != nil {
 			return err
 		}
-		body.Grants = append(body.Grants, grant{env, level})
+		body.Grants = append(body.Grants, envGrant(env, level))
 	}
 	if s := c.str("--expires", ""); s != "" {
 		t, err := parseWhen(c, s)
@@ -859,7 +850,7 @@ func runAccountUpdate(a *App, c *call) error {
 		}
 		for _, env := range order {
 			if l := changes[env]; l != "none" {
-				grants = append(grants, grant{env, l})
+				grants = append(grants, envGrant(env, l))
 			}
 		}
 		body["grants"] = grants
@@ -868,11 +859,7 @@ func runAccountUpdate(a *App, c *call) error {
 	if err := cl.JSON(c.ctx, http.MethodPatch, "/accounts/"+url.PathEscape(user), body, &ac); err != nil {
 		return err
 	}
-	access := formatGrants(ac.Grants)
-	if ac.Admin {
-		access = "admin (everything)"
-	}
-	fmt.Fprintf(a.Stdout, "Updated %s: %s; expires %s.\n", user, dash(access), when(ac.Expires))
+	fmt.Fprintf(a.Stdout, "Updated %s: %s; expires %s.\n", user, ac.access(), when(ac.Expires))
 	return nil
 }
 
