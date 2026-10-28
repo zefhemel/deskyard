@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -121,22 +122,49 @@ func parseWhen(c *call, s string) (time.Time, error) {
 	return timeNow().Add(d).UTC().Truncate(time.Second), nil
 }
 
-// levelOf splits NAME[=LEVEL]; a bare NAME is full. allowed are the levels
-// accepted after =.
-func levelOf(c *call, what, s string, allowed ...string) (name, level string, err error) {
-	name, level, ok := strings.Cut(s, "=")
-	if !ok {
-		level = "full"
+// parseGrants reads NAME[=LEVEL] items, a bare NAME being full, into grants
+// made by mk. allowed are the levels accepted after =; a name given twice is
+// refused. what names the items in messages (--grant, USER=LEVEL).
+func parseGrants(c *call, what string, items []string, mk func(name, level string) grant, allowed ...string) ([]grant, error) {
+	var out []grant
+	seen := map[string]bool{}
+	for _, s := range items {
+		name, level, ok := strings.Cut(s, "=")
+		if !ok {
+			level = "full"
+		}
+		if name == "" || !slices.Contains(allowed, level) {
+			return nil, usagef(c.cmd, "%s %q: write NAME or NAME=LEVEL, with LEVEL one of %s", what, s, strings.Join(allowed, ", "))
+		}
+		if seen[name] {
+			return nil, usagef(c.cmd, "%s: %s is listed twice", what, name)
+		}
+		seen[name] = true
+		out = append(out, mk(name, level))
 	}
-	if name == "" {
-		return "", "", usagef(c.cmd, "%s wants NAME or NAME=LEVEL, got %q", what, s)
+	return out, nil
+}
+
+// mergeGrants is cur with changes applied, for an API that replaces the
+// whole list: the grants not named are kept, then the changes are added in
+// the order given, except those to none, which remove one.
+func mergeGrants(cur, changes []grant) []grant {
+	named := map[string]bool{}
+	for _, g := range changes {
+		named[g.name()] = true
 	}
-	for _, l := range allowed {
-		if level == l {
-			return name, level, nil
+	out := []grant{}
+	for _, g := range cur {
+		if !named[g.name()] {
+			out = append(out, g)
 		}
 	}
-	return "", "", usagef(c.cmd, "%s %q: the level is one of %s", what, s, strings.Join(allowed, ", "))
+	for _, g := range changes {
+		if g.Level != "none" {
+			out = append(out, g)
+		}
+	}
+	return out
 }
 
 // ---- environments
@@ -365,13 +393,11 @@ func runEnvCreate(a *App, c *call) error {
 		}
 		body.NanoCPUs = int64(math.Round(f * 1e9))
 	}
-	for _, g := range c.flags["--grant"] {
-		user, level, err := levelOf(c, "--grant", g, "full", "observe")
-		if err != nil {
-			return err
-		}
-		body.Access = append(body.Access, userGrant(user, level))
+	grants, err := parseGrants(c, "--grant", c.flags["--grant"], userGrant, "full", "observe")
+	if err != nil {
+		return err
 	}
+	body.Access = append(body.Access, grants...)
 	for _, v := range c.flags["--volume"] {
 		vol, mode, _ := strings.Cut(v, ":")
 		if vol == "" || (mode != "" && mode != "ro") {
@@ -507,18 +533,9 @@ func runEnvPower(a *App, c *call) error {
 
 func runEnvAccess(a *App, c *call) error {
 	name := c.args[0]
-	changes := map[string]string{}
-	var order []string
-	for _, s := range c.args[1:] {
-		user, level, ok := strings.Cut(s, "=")
-		if !ok || user == "" || (level != "full" && level != "observe" && level != "none") {
-			return usagef(c.cmd, "%q: write USER=full, USER=observe or USER=none", s)
-		}
-		if _, dup := changes[user]; dup {
-			return usagef(c.cmd, "%s is listed twice", user)
-		}
-		changes[user] = level
-		order = append(order, user)
+	changes, err := parseGrants(c, "access", c.args[1:], userGrant, "full", "observe", "none")
+	if err != nil {
+		return err
 	}
 	cl, err := a.apiClient(c, name)
 	if err != nil {
@@ -545,19 +562,8 @@ func runEnvAccess(a *App, c *call) error {
 	if err := cl.JSON(c.ctx, http.MethodGet, path, nil, &e); err != nil {
 		return err
 	}
-	// The PUT replaces every regular account's grant: keep the ones not
-	// named, then apply the changes in the order given.
-	grants := []grant{}
-	for _, g := range e.Access {
-		if _, named := changes[g.Username]; !named {
-			grants = append(grants, g)
-		}
-	}
-	for _, user := range order {
-		if l := changes[user]; l != "none" {
-			grants = append(grants, userGrant(user, l))
-		}
-	}
+	// The PUT replaces every regular account's grant.
+	grants := mergeGrants(e.Access, changes)
 	if err := cl.JSON(c.ctx, http.MethodPut, path+"/access", map[string]any{"grants": grants}, nil); err != nil {
 		return err
 	}
@@ -733,13 +739,11 @@ func runAccountCreate(a *App, c *call) error {
 	if v := c.flags["--description"]; len(v) > 0 {
 		body.Description = &v[len(v)-1]
 	}
-	for _, g := range c.flags["--grant"] {
-		env, level, err := levelOf(c, "--grant", g, "full", "observe")
-		if err != nil {
-			return err
-		}
-		body.Grants = append(body.Grants, envGrant(env, level))
+	grants, err := parseGrants(c, "--grant", c.flags["--grant"], envGrant, "full", "observe")
+	if err != nil {
+		return err
 	}
+	body.Grants = grants
 	if s := c.str("--expires", ""); s != "" {
 		t, err := parseWhen(c, s)
 		if err != nil {
@@ -808,17 +812,9 @@ func runAccountUpdate(a *App, c *call) error {
 		}
 		body["expires"] = t.Format(time.RFC3339)
 	}
-	changes := map[string]string{}
-	var order []string
-	for _, g := range c.flags["--grant"] {
-		env, level, err := levelOf(c, "--grant", g, "full", "observe", "none")
-		if err != nil {
-			return err
-		}
-		if _, dup := changes[env]; !dup {
-			order = append(order, env)
-		}
-		changes[env] = level
+	changes, err := parseGrants(c, "--grant", c.flags["--grant"], envGrant, "full", "observe", "none")
+	if err != nil {
+		return err
 	}
 	if len(body) == 0 && len(changes) == 0 {
 		return usagef(c.cmd, "nothing to change: give --grant, --admin, --no-admin, --description, --expires or --password-stdin")
@@ -842,18 +838,7 @@ func runAccountUpdate(a *App, c *call) error {
 		if cur == nil {
 			return fmt.Errorf("no such account %q: see `deskyard account list`", user)
 		}
-		grants := []grant{}
-		for _, g := range cur.Grants {
-			if _, named := changes[g.Environment]; !named {
-				grants = append(grants, g)
-			}
-		}
-		for _, env := range order {
-			if l := changes[env]; l != "none" {
-				grants = append(grants, envGrant(env, l))
-			}
-		}
-		body["grants"] = grants
+		body["grants"] = mergeGrants(cur.Grants, changes)
 	}
 	var ac account
 	if err := cl.JSON(c.ctx, http.MethodPatch, "/accounts/"+url.PathEscape(user), body, &ac); err != nil {

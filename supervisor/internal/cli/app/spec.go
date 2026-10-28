@@ -340,7 +340,7 @@ func init() {
 			Usage: "env access NAME [USER=LEVEL]...",
 			Desc:  "Without assignments, lists the accounts with access to the environment and their level. With them, changes the named accounts (none removes the access) and keeps the others; a lowered or removed access closes that account's connections at once. Administrators always have full access; shares are managed with `deskyard share`.",
 			Args: []Arg{{Name: "name", Type: "string", Required: true, Desc: "environment name"},
-				{Name: "assignment", Type: "string", Variadic: true, Desc: "USER=LEVEL: USER=full, USER=observe or USER=none"}},
+				{Name: "assignment", Type: "string", Variadic: true, Desc: "USER=LEVEL: USER=full (or just USER), USER=observe or USER=none; each account once"}},
 			Flags:    []Flag{flagJSON, flagServer},
 			Output:   Output{Type: "text", Desc: "without assignments a table USER LEVEL (with --json the API's Environment object, whose access field lists them); with them a confirmation line"},
 			Examples: []string{"deskyard env access alice", "deskyard env access alice anna=full bob=observe carl=none"},

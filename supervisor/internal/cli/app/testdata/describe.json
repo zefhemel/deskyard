@@ -1242,7 +1242,7 @@
           "type": "string",
           "required": false,
           "variadic": true,
-          "description": "USER=LEVEL: USER=full, USER=observe or USER=none"
+          "description": "USER=LEVEL: USER=full (or just USER), USER=observe or USER=none; each account once"
         }
       ],
       "flags": [

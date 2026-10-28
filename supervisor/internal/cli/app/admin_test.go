@@ -177,8 +177,15 @@ func TestAdminEnvironments(t *testing.T) {
 		t.Errorf("env access set: %+v", r)
 	}
 	wantCall(t, f, "PUT", "/api/environments/alice/access", "", `{"grants":[{"username":"bob","level":"full"},{"username":"carl","level":"observe"}]}`)
-	if r = h.run("env", "access", "alice", "bob=admin"); r.code != 2 {
-		t.Errorf("bad level: %+v", r)
+	// A bare USER is full, as with --grant.
+	if r = h.run("env", "access", "alice", "bob"); r.code != 0 {
+		t.Errorf("env access bare user: %+v", r)
+	}
+	wantCall(t, f, "PUT", "/api/environments/alice/access", "", `{"grants":[{"username":"anna","level":"full"},{"username":"bob","level":"full"}]}`)
+	for _, args := range [][]string{{"bob=admin"}, {"=full"}, {"bob=full", "bob=none"}} {
+		if r = h.run(append([]string{"env", "access", "alice"}, args...)...); r.code != 2 {
+			t.Errorf("env access %v: %+v", args, r)
+		}
 	}
 }
 
@@ -285,6 +292,10 @@ func TestAdminAccounts(t *testing.T) {
 	}
 	if r = h.run("account", "update", "anna"); r.code != 2 {
 		t.Errorf("update nothing: %+v", r)
+	}
+	// An environment given twice is refused, as in env access.
+	if r = h.run("account", "update", "anna", "--grant", "bob=full", "--grant", "bob=none"); r.code != 2 || !strings.Contains(r.stderr, "bob is listed twice") {
+		t.Errorf("update twice: %+v", r)
 	}
 
 	f.Answer("DELETE /api/accounts/anna", clitest.Answer{})

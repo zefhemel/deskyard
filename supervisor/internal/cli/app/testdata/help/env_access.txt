@@ -10,7 +10,7 @@ managed with `deskyard share`.
 
 Arguments:
   NAME       string      required  environment name
-  ASSIGNMENT string...   optional  USER=LEVEL: USER=full, USER=observe or USER=none
+  ASSIGNMENT string...   optional  USER=LEVEL: USER=full (or just USER), USER=observe or USER=none; each account once
 
 Options:
   --json               print JSON instead of text
