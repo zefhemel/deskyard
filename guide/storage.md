@@ -126,10 +126,12 @@ listed as a warning. Each snapshot can be:
   and stopping nothing;
 - **restored here**: the home's or volume's files are replaced with the
   snapshot's (newer files go, deleted ones come back). The environment, or every
-  running environment using the volume, is stopped meanwhile and started again.
+  running environment using the volume, is stopped meanwhile and started again;
+  until it finishes they can't be started and the volume can't be granted.
   **Back up the current files first** (on by default) makes it undoable. An
   environment's settings don't change;
-- **restored as new**: a new environment (left stopped, with the saved image and
+- **restored as new**: a new environment (left stopped, getting its container on
+  its first start, with the saved image and
   resources; VPN, Docker access and grants of missing volumes are dropped) or
   volume, leaving the original alone.
 
