@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 )
 
 type cliLoginStart struct {
@@ -176,6 +178,30 @@ func TestCLILoginObserverCannotApprove(t *testing.T) {
 	// An observer may still deny.
 	if code, _ := send(t, login(t, ts, "bob"), "POST", ts.URL+"/api/cli-login/"+start.ID+"/deny", ts.URL, ""); code != http.StatusNoContent {
 		t.Fatalf("observer deny: %d", code)
+	}
+}
+
+// An approver lowered to observe between approving and the poll gets no
+// credential: the poll checks again what approving checked.
+func TestCLILoginPollRechecksTheApprover(t *testing.T) {
+	s, ts := newTestServer(t)
+	fullOnAlice(t, s)
+	start := startCLILogin(t, ts)
+	if code, body := send(t, login(t, ts, "bob"), "POST", ts.URL+"/api/cli-login/"+start.ID+"/approve", ts.URL, ""); code != http.StatusNoContent {
+		t.Fatalf("approve: %d %s", code, body)
+	}
+	if err := s.Accounts.SetAccess("alice", map[string]auth.Level{"bob": auth.LevelObserve}); err != nil {
+		t.Fatal(err)
+	}
+	code, body := pollCLILogin(t, ts, start.ID, start.PollSecret)
+	if code != http.StatusForbidden || !strings.Contains(body, "observe-only access is for the browser") {
+		t.Fatalf("poll after the approver was lowered: %d %s", code, body)
+	}
+	if n := len(s.credentials.list("")); n != 0 {
+		t.Fatalf("%d credentials made for an observer", n)
+	}
+	if code, _ := pollCLILogin(t, ts, start.ID, start.PollSecret); code != http.StatusGone {
+		t.Fatalf("poll after the refusal: %d", code)
 	}
 }
 

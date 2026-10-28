@@ -145,8 +145,8 @@ func (s *Server) handleRedeemLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var a accounts.Account
+	var cli cliSignIn
 	var cred credential
-	var bearer string
 	_, err := s.links.redeem(req.Link, func(l link) error {
 		var ok bool
 		if a, ok = s.linkAccount(l); !ok {
@@ -161,13 +161,10 @@ func (s *Server) handleRedeemLink(w http.ResponseWriter, r *http.Request) {
 		if req.Client != "cli" {
 			return nil
 		}
-		if !s.canUseCLI(a) {
-			return errObserveOnly
-		}
 		// Made before the link is deleted, so a failure keeps the link; it
 		// is handed out only once the deletion is saved.
 		var err error
-		cred, bearer, err = s.credentials.createRedeeming(a, req.Name, l.ID)
+		cli, cred, err = s.issueCLICredential(a, req.Name, l.ID)
 		return err
 	})
 	if err != nil && cred.ID != "" {
@@ -187,12 +184,9 @@ func (s *Server) handleRedeemLink(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "the sign-in couldn't be saved; try the link again")
 		return
 	}
-	if err := s.Accounts.TouchLogin(a.Username); err != nil {
-		s.Log.Warn("recording account login", "account", a.Username, "err", err)
-	}
-	s.Log.Info("signed in with a link", "account", a.Username, "client", req.Client, "ip", clientIP(r))
+	s.signedIn(a, "link, "+req.Client, r)
 	if req.Client == "cli" {
-		writeJSON(w, http.StatusOK, map[string]any{"credential": bearer, "username": a.Username, "environments": s.cliEnvironments(a)})
+		writeJSON(w, http.StatusOK, cli)
 		return
 	}
 	s.replaceSession(w, r, a)
@@ -201,4 +195,35 @@ func (s *Server) handleRedeemLink(w http.ResponseWriter, r *http.Request) {
 		next = "/" + grants[0].Environment + "/"
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"username": a.Username, "next": next})
+}
+
+// cliSignIn is what a CLI receives when it signs in: its credential's
+// bearer, this once, and what it may use.
+type cliSignIn struct {
+	Credential   string             `json:"credential"`
+	Username     string             `json:"username"`
+	Environments []environmentLevel `json:"environments"`
+}
+
+// issueCLICredential makes a CLI credential named client for a as it is
+// now, refusing (errObserveOnly) an account the CLI is of no use to. link is
+// the login link being redeemed, if one is.
+func (s *Server) issueCLICredential(a accounts.Account, client, link string) (cliSignIn, credential, error) {
+	if !s.canUseCLI(a) {
+		return cliSignIn{}, credential{}, errObserveOnly
+	}
+	c, bearer, err := s.credentials.add(credential{AccountID: a.ID, Username: a.Username, Kind: "cli", Name: client, Link: link})
+	if err != nil {
+		return cliSignIn{}, credential{}, err
+	}
+	return cliSignIn{Credential: bearer, Username: a.Username, Environments: s.cliEnvironments(a)}, c, nil
+}
+
+// signedIn records a sign-in to a, made via a password, a link or a CLI
+// login.
+func (s *Server) signedIn(a accounts.Account, via string, r *http.Request) {
+	if err := s.Accounts.TouchLogin(a.Username); err != nil {
+		s.Log.Warn("recording account login", "account", a.Username, "err", err)
+	}
+	s.Log.Info("signed in", "account", a.Username, "via", via, "ip", clientIP(r))
 }
