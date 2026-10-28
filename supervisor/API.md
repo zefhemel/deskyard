@@ -371,7 +371,7 @@ While a backup or restore holds an item, removing the environment, deleting the 
 | `POST /api/images/install` | `{"ref"}` | 202 `{"job"}` (uses a known catalog image locally, pulling only when missing, and checks the contract) |
 | `POST /api/images` | `{"ref"}` | 202 `{"job"}` (uses a local image or pulls a missing reference, then checks the contract) |
 | `DELETE /api/images?ref=…` | | 204; 400 for built-in official refs; 409 while any definition uses it, including stopped environments without a container |
-| `POST /api/images/check` | | 202 `{"job"}` (pull installed non-custom refs, recompute updates, delete unused old desktop images) |
+| `POST /api/images/check` | | 202 `{"job"}` (pull installed non-custom refs, recompute updates, delete unused old desktop images; job messages include image index/reference, Docker status and transferred MB, with current-image progress when totals are known) |
 | `POST /api/images/upgrade` | `{"ref"}` | 202 `{"job"}` (upgrades every environment behind on it, then deletes unused old desktop images) |
 
 `GET /api/images` merges saved entries with the built-in XFCE choice without pulling. `installed` means the reference exists locally; `official` identifies built-in refs; retired KDE and MATE references remain only where saved. Static titles/descriptions are supplied before download. Saved order and the configured default are preserved. Environment creation can pull available images on first use; successful use records the resolved local version. An unavailable registry or failed pull is reported through the job, leaving the choice available for retry.

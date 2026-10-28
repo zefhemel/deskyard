@@ -47,8 +47,16 @@ become available after the image workflow publishes from `main`; local Bake
 builds use `deskyard-debian-xfce:dev`.
 
 CI rebuilds it weekly (Debian security updates) and on every change, tagged `latest` and with the date
-(`2026.10.22`). The supervisor checks downloaded images for newer versions daily (or on "Check
-now"); available images stay undownloaded. The catalog shows **Available**,
+(`2026.10.22`). The supervisor pulls updates for downloaded registry images daily, or when you
+choose **Pull updates**. Images not yet downloaded stay undownloaded, and
+legacy locally built catalog entries are skipped. The Images page shows a
+progress bar with the current image and its position in the pull list, Docker
+status (such as downloading or extracting), transferred MB and a percentage
+when totals are available. The bar animates while totals are unknown and
+shows catalog refresh and cleanup stages too. Percentages describe the current
+image transfer reported by Docker, not the whole batch; they can change as
+Docker discovers layers or switches stages. Pulling updates refreshes the
+local images; use **Upgrade** separately to apply them to environments. The catalog shows **Available**,
 **Installed** or **Update available** when environments are behind.
 After each check and each upgrade, the supervisor deletes old versions of
 desktop images that nothing uses any more: images it saw a newer pull or

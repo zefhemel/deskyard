@@ -31,6 +31,21 @@ command lines are hidden. Live UI updates and these marks use WebSockets, so
 several viewer tabs also work over plain HTTP without occupying the browser's
 limited HTTP connections.
 
+## Paste an image
+
+Paste a screenshot or copied image into the desktop view or a terminal tab
+(**⌘V** on Mac, or the browser’s image-capable Paste action). **Save pasted image** suggests a filename;
+edit it if you like, then choose **Upload image** to save it in `~/Desktop`.
+Clipboard images with generic names get a timestamped `screenshot-….png`
+name (or the image's format). Existing files are kept: the upload adds a
+number if the name is taken. Cancel leaves the image unuploaded; a failed
+upload shows an error and lets you retry. The saved path appears after upload.
+
+This uses the image supplied by the browser's paste event. Ordinary text
+paste continues as before, and the terminal toolbar's Paste button still
+pastes text. Some plain-text paste shortcuts omit clipboard images. As with file drops, uploads require full access to a running
+environment.
+
 ## Mobile controls
 
 The **Display** menu has **Lock size** and **Resolution:** choices that pick
@@ -86,11 +101,13 @@ for the mic and automatic clipboard synchronization; see [On a LAN](running.md#o
 
 The environment's page (`http://host/alice/`) shows its desktop and its shared terminal sessions as tabs: **Desktop** first, then one tab per running session (including ones opened from the desktop's own terminal, the CLI or another browser; a session opened or ended anywhere shows up within about a second), then **+**. A terminal tab's address is `http://host/alice/?terminal=build-2`, and a small count on the tab shows how many others are attached. **+** opens a new session named `terminal-1`, `terminal-2`, and so on. Switching tabs keeps each terminal connected and its scrollback; leaving the Desktop tab stops its stream, and returning reconnects it. Drag a tab, or press Alt+Shift+← or → on it, to reorder; the order is remembered in this browser. A terminal tab's bar has Paste, Keys and Text size.
 
-The small **⌄** button immediately left of **×** opens **Rename session…**. Enter a valid, unused session name; its shell and programs keep running. This browser reconnects using the new name. Other browser tabs discover the renamed session in their session list; old bookmarked terminal URLs no longer join it. Renaming requires an updated desktop image with the rename helper.
+The small **⋯** button immediately left of **×** opens **Rename session…**. Enter a valid, unused session name; its shell and programs keep running. This browser reconnects using the new name. Other browser tabs discover the renamed session in their session list; old bookmarked terminal URLs no longer join it. Renaming requires an updated desktop image with the rename helper.
 
 **×** on a tab ends that session for everyone: its shell, every program in it, and every other client's view. It asks first when a program other than the shell is running in it, or when anyone else is attached; otherwise it ends at once. A link or a reconnect only joins: a session that no longer exists opens the Desktop tab with a "session ended" note and is never recreated. Each running environment's card lists **Desktop** and its sessions (the first three and "+N more" when there are more than four), and **+** opens `main`, creating it if needed, or a new session when `main` already exists.
 
 The create/join walkthrough, screenshots, native keyboard evidence and known limits are in the project space's *Testing/Shared terminal 2026-10-23* page, and the tabs' checks in *Testing/Environment tabs 2026-10-26* (see [Project records](development.md#project-records)). The page reconnects after brief network interruptions without replaying disconnected input. Restarting an environment ends its shells and jobs.
+
+The terminal keyboard bar is hidden by default on devices whose primary pointer supports fine movement and hover (typically a laptop or desktop), and shown on touch-first devices. Browsers do not report physical keyboard attachment reliably. Use **Keys → Show keyboard bar** (or **⋯ → Show keyboard bar** on phones) to override the choice for the current terminal tab. Hiding it gives the terminal the space back and clears any one-shot Ctrl/Alt modifiers.
 
 On phones, tap **Keyboard** to open the software keyboard. The compact, single-row key bar scrolls sideways and provides Ctrl+C/D/L, Esc, Tab, arrows, Home/End, PgUp/PgDn and Delete, plus one-shot Ctrl and Alt. Helper taps keep the keyboard open; paste and composition clear modifiers. On short keyboard viewports the environment toolbar shares the bottom key row as a horizontally scrollable strip. If the browser leaves less than the minimum space for a readable terminal row and 44px controls, the page asks you to rotate to portrait or dismiss the keyboard; the shell stays connected. **History** opens tmux history: use PgUp/PgDn, then Esc to return. Mouse-wheel and
 two-finger trackpad gestures over a terminal tab also scroll its shared tmux

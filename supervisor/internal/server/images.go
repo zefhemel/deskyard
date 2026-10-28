@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"path/filepath"
@@ -256,15 +257,29 @@ func (c *catalog) labelsOf(id string) (map[string]string, bool) {
 func (s *Server) checkImages(ctx context.Context, progress func(string, float64)) error {
 	var errs []error
 	entries := slices.DeleteFunc(s.images.entries(), func(e catalogEntry) bool { return e.Custom })
-	for i, e := range entries {
+	progress("Finding installed images to update", -1)
+	installed := make([]catalogEntry, 0, len(entries))
+	for _, e := range entries {
 		if _, err := s.Eng.ImageInspect(ctx, e.Ref); errors.Is(err, engine.ErrNotFound) {
 			continue
 		} else if err != nil {
 			errs = append(errs, err)
 			continue
 		}
-		progress("Checking "+e.Ref, float64(i)/float64(len(entries)))
-		if err := s.Eng.Pull(ctx, e.Ref, nil); err != nil {
+		installed = append(installed, e)
+	}
+	for i, e := range installed {
+		prefix := fmt.Sprintf("Image %d of %d · %s", i+1, len(installed), e.Ref)
+		progress(prefix+" · Connecting to registry", -1)
+		if err := s.Eng.Pull(ctx, e.Ref, func(p engine.PullProgress) {
+			message := prefix + " · " + p.Status
+			fraction := -1.0
+			if p.Total > 0 {
+				message += fmt.Sprintf(" · %.1f of %.1f MB", float64(p.Current)/(1<<20), float64(p.Total)/(1<<20))
+				fraction = min(1, max(0, float64(p.Current)/float64(p.Total)))
+			}
+			progress(message, fraction)
+		}); err != nil {
 			errs = append(errs, err)
 			if img, ierr := s.Eng.ImageInspect(ctx, e.Ref); ierr == nil {
 				if err := s.images.noteLocal(e.Ref, img.ID); err != nil {
@@ -273,6 +288,7 @@ func (s *Server) checkImages(ctx context.Context, progress func(string, float64)
 			}
 			continue
 		}
+		progress(prefix+" · Recording image version", -1)
 		s.Environments.ForgetImage(e.Ref)
 		img, err := s.Eng.ImageInspect(ctx, e.Ref)
 		if err != nil {
@@ -283,7 +299,9 @@ func (s *Server) checkImages(ctx context.Context, progress func(string, float64)
 			errs = append(errs, err)
 		}
 	}
+	progress("Cleaning up unused old image versions", -1)
 	s.pruneImages(ctx)
+	progress("Refreshing image catalog", -1)
 	s.events.refresh()
 	return errors.Join(errs...)
 }

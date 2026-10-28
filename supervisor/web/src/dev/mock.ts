@@ -664,7 +664,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     if (i >= 0) images.splice(i, 1);
     return json(res, 204);
   }
-  if (path === "/api/images/check") return json(res, 202, job(["Pulling ghcr.io/zefhemel/deskyard-debian-xfce:latest", "Pulling ghcr.io/zefhemel/deskyard-debian-xfce:beta"], () => images.filter((i) => i.installed).forEach((i) => (i.checked = new Date().toISOString()))));
+  if (path === "/api/images/check") return json(res, 202, job(["Image 1 of 1 · ghcr.io/zefhemel/deskyard-debian-xfce:latest · Connecting to registry", "Image 1 of 1 · ghcr.io/zefhemel/deskyard-debian-xfce:latest · Downloading · 32.0 of 128.0 MB", "Image 1 of 1 · ghcr.io/zefhemel/deskyard-debian-xfce:latest · Extracting · 96.0 of 128.0 MB", "Cleaning up unused old image versions"], () => images.filter((i) => i.installed).forEach((i) => (i.checked = new Date().toISOString()))));
   if (path === "/api/images/upgrade") {
     const b = await readBody(req);
     return json(res, 202, job(["Upgrading", "Starting"], () => {

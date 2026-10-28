@@ -16,10 +16,10 @@ button keeps the tab bar and current view together.
 
 - **XFCE desktop in the browser**, streamed with
   [Selkies](https://github.com/selkies-project/selkies): picture, sound, your
-  mic, gamepads, clipboard, file upload, and touch controls on
+  mic, gamepads, clipboard, file upload (including pasted screenshots), and touch controls on
   phones and tablets.
 - **Shared terminals** next to the desktop, with trackpad scrolling through
-  history and a compact single-row key bar on mobile, joinable from the
+  history and touch keyboard helpers that stay hidden by default on desktops, joinable from the
   browser, desktop or your own terminal. Rename a session from its tab’s dropdown.
 - **One shared Chromium** whose tabs and sign-ins stay with the environment.
   It starts when you open it or connect through browser tools.
@@ -154,7 +154,7 @@ Back up the whole data folder (see
 - [Using the desktop](guide/desktop.md): display and touch controls, the iPhone Home Screen, shared terminals.
 - [Environments](guide/environments.md): lifecycle, Docker access, outbound VPN, what persists, reclaiming memory.
 - [Storage](guide/storage.md): volumes, WebDAV drives, backups and the data folder.
-- [Images](guide/images.md): the catalog, upgrades, custom images, Flatpak and AppImages.
+- [Images](guide/images.md): the catalog, pulling updates with progress, upgrades, custom images, Flatpak and AppImages.
 - [Accounts and sharing](guide/sharing.md): accounts, access levels and share links.
 - [The deskyard command](guide/cli.md): signing in, remote control, port mapping and agents.
 - [Development](guide/development.md): building, testing, repository layout and project records.

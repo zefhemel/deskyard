@@ -17,7 +17,7 @@ export function ImagesPage() {
   const reload = () => images.reload();
   const check = useJob(() => {
     images.reload();
-    notify("Checked every image for updates");
+    notify("Image updates pulled");
   });
 
   const checked = (images.data ?? []).map((i) => i.checked).filter((c): c is string => !!c).sort().pop();
@@ -25,13 +25,16 @@ export function ImagesPage() {
     <Page>
       <PageHead
         title="Images"
-        sub={check.running ? (check.job?.message ?? "Checking…") : checked ? `Checked for updates ${ago(checked).toLowerCase()}` : undefined}
+        sub={checked ? `Last refreshed ${ago(checked).toLowerCase()}` : "Pull newer versions of installed images. Upgrade environments separately."}
       >
         <Button disabled={check.running} onClick={() => void check.start(() => api.checkImages())}>
-          {check.running ? "Checking…" : "Check now"}
+          {check.running ? "Pulling updates…" : "Pull updates"}
         </Button>
         <Button onClick={() => setAdding(true)}>Add image</Button>
       </PageHead>
+      <div role="status" aria-live="polite" aria-label="Image update progress">
+        <JobProgress job={check.job} />
+      </div>
       <ErrorText error={images.error ?? check.error} />
       {images.data &&
         (images.data.length ? (
@@ -132,8 +135,8 @@ function ImageCard({
         <dd class="min-w-0">{img.size ? bytes(img.size) : <span class="text-muted">–</span>}</dd>
         <dt class="mt-2 text-muted sm:mt-0">Reference</dt>
         <dd class="mono min-w-0 break-all">{img.ref}</dd>
-        <dt class="mt-2 text-muted sm:mt-0">Checked</dt>
-        <dd class="min-w-0">{img.checked ? `Pulled ${ago(img.checked).toLowerCase()}` : <span class="text-muted">Not yet</span>}</dd>
+        <dt class="mt-2 text-muted sm:mt-0">Last refreshed</dt>
+        <dd class="min-w-0">{img.checked ? ago(img.checked) : <span class="text-muted">Not yet</span>}</dd>
         <dt class="mt-2 text-muted sm:mt-0">Environments</dt>
         <dd class="min-w-0">
           {img.environments.length ? (

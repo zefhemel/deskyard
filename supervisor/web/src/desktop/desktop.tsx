@@ -29,6 +29,7 @@ import { barButton, type BarSlots, ConnDot, EnvironmentTabs, panelId, pressed, t
 import { avSyncWanted, startAvSync } from "./avsync.ts";
 import { ClipboardPopover } from "./clipboard.tsx";
 import { ActivityOverlay } from "./overlay.tsx";
+import { ImagePaste } from "./image-paste.tsx";
 import { DropZone } from "./upload.tsx";
 import {
   type ConnectionState,
@@ -525,6 +526,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
             </Suspense>
           ))}
       </div>
+      {running && !observing && <ImagePaste environment={c.name} />}
       {renaming && <RenameSessionDialog session={renaming} environment={c.name} onStart={() => setRenameInFlight(renaming)} onFailure={() => setRenameInFlight(null)} onClose={() => setRenaming(null)} onRenamed={(next) => {
         const old = renaming;
         if (next === old) { setRenameInFlight(null); setRenaming(null); return; }
@@ -891,6 +893,7 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
         </ZoomViewport>
       )}
       {running && !observing && <DropZone environment={c.name} frame={frame} frameKey={frameKey} />}
+      {running && !observing && <ImagePaste environment={c.name} frame={frame} frameKey={frameKey} />}
       {showing && zoom === 1 && <ActivityOverlay name={c.name} geometry={() => selkiesScreenGeometry(frame.current)} />}
     </>
   );

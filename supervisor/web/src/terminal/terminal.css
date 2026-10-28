@@ -206,3 +206,8 @@
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
 }
+
+/* Without the helper row, keep the terminal clear of the home indicator. */
+.terminal-pane[data-keybar="false"] .terminal-scroll {
+  padding-bottom: max(2px, env(safe-area-inset-bottom));
+}
