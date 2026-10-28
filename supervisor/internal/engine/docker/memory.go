@@ -20,9 +20,14 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	"github.com/zefhemel/deskyard/supervisor/internal/helper"
 )
 
-const reclaimImage = "alpine:3.22"
+// reclaimImage is the memory helper's: the pinned image of every other
+// helper, whose busybox has the shell tools reclaimScript uses. The helper
+// runner can't run it, as it needs the host's cgroup namespace and a
+// hardened, read-only container the engine interface doesn't describe.
+const reclaimImage = helper.Image
 const reclaimBytes = 128 << 20
 
 var _ engine.MemoryReclaimer = (*Docker)(nil)
@@ -94,7 +99,7 @@ func (d *Docker) createMemoryHelper(ctx context.Context, image string, mounts []
 		Name: "deskyard-reclaim-" + strings.ToLower(rand.Text()[:12]),
 		Config: &container.Config{Image: image, User: "0:0", Entrypoint: []string{"/bin/sh"},
 			Cmd: []string{"-ec", script}, Env: []string{"LC_ALL=C"},
-			Labels:      map[string]string{"deskyard.helper": "memory-reclaim"},
+			Labels:      map[string]string{helper.LabelHelper: "memory-reclaim"},
 			Healthcheck: &container.HealthConfig{Test: []string{"NONE"}}},
 		HostConfig: &container.HostConfig{NetworkMode: "none", ReadonlyRootfs: true,
 			CapDrop: []string{"ALL"}, SecurityOpt: []string{"no-new-privileges"},

@@ -117,7 +117,7 @@ func TestReclaimMemorySwapDisabled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	c, err := d.c.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config:     &container.Config{Image: reclaimImage, Cmd: []string{"sleep", "60"}},
+		Config:     &container.Config{Image: reclaimImage, Entrypoint: []string{"sleep"}, Cmd: []string{"60"}},
 		HostConfig: &container.HostConfig{NetworkMode: "none", Resources: container.Resources{Memory: 128 << 20, MemorySwap: 128 << 20}},
 	})
 	if err != nil {
