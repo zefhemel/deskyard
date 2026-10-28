@@ -41,6 +41,17 @@ export interface Media {
 
 export type Capture = "microphone";
 
+/** Presentation statistics from the pinned client (Selkies 2.1.0's stream_stats). */
+export interface StreamSample {
+  /** When it was taken (Date.now()). */
+  t: number;
+  /** Frames shown per second. */
+  fps: number;
+  /** Frames decoded but never shown, counted since the stream started. */
+  frames_not_shown: number;
+  present_ms?: number;
+}
+
 /** What our additions put on the frame's window. */
 export interface DeskyardScreen {
   tab: string;
@@ -48,6 +59,10 @@ export interface DeskyardScreen {
   setTouchMode?(trackpad: boolean): void;
   setViewZoom?(zoom: number): void;
   configureDisplay?(size: Size, dpi: number): void;
+  /** The client's latest presentation statistics; null before any. Not in the legacy additions. */
+  stats?(): StreamSample | null;
+  /** Opens or closes the client's statistics (its statsOpen message), which keep stats() current. */
+  showStats?(open: boolean): void;
   on(type: "deskyard.keyboard", fn: (visible: boolean) => void): () => void;
   on(type: "deskyard.gesture", fn: (gesture: Gesture) => void): () => void;
   /** The frame is an insecure context (plain http). */

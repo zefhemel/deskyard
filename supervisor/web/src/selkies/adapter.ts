@@ -5,6 +5,7 @@ import type {
   DeskyardScreen,
   Display,
   Media,
+  StreamSample,
 } from "./screen.ts";
 import {
   captureGate,
@@ -23,6 +24,8 @@ declare global {
   interface Window {
     __deskyardHooks: ClientHooks;
     deskyardScreen: DeskyardScreen;
+    /** The pinned client's public presentation statistics. */
+    stream_stats?: { latest: StreamSample | null };
   }
 }
 
@@ -433,6 +436,10 @@ window.deskyardScreen = {
   state: () => state,
   display: () => display,
   media: () => media,
+  stats: () => window.stream_stats?.latest ?? null,
+  showStats(open) {
+    post({ type: "statsOpen", open });
+  },
   configureDisplay(size, dpi) {
     if (!display.owner) return;
     requestedDisplay = { ...size, dpi };

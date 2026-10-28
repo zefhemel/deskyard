@@ -1,4 +1,3 @@
-import { startAutoQuality, type StatsWindow } from "./auto-quality.ts";
 // The environment page at /<name>/: a thin bar of ours with tabs for the
 // desktop and the environment's shared terminal sessions. The Desktop tab is
 // Selkies' web client in a frame (how we drive it is described in
@@ -28,6 +27,7 @@ import { ZoomViewport } from "./zoom-viewport.tsx";
 import { tabShortcutListener } from "./tab-shortcuts.ts";
 import { FullscreenButton } from "./fullscreen.tsx";
 import { AudioControl } from "./audio-panel.tsx";
+import { hasStats, startAutoQuality } from "./auto-quality.ts";
 import { ClipboardIcon, DisplayIcon, KeyboardIcon, ShieldIcon } from "./bar-icons.tsx";
 import { barButton, type BarSlots, ConnDot, EnvironmentTabs, panelId, pressed, tabId, useTabHooks } from "./tabs.tsx";
 import { avSyncWanted, startAvSync } from "./avsync.ts";
@@ -778,10 +778,10 @@ function Desktop({ environment: c, slots, selectShortcut, onFrame }: { environme
     store(QUALITY_KEY, id);
     sendQuality(frame.current, id);
   };
+  // Auto adapts while this page owns a connected display (and its client reports statistics).
   useEffect(() => {
-    const target = frame.current?.contentWindow;
-    if (!screen || !target || quality !== "auto" || !owner || observing || conn !== "connected") return;
-    return startAutoQuality(screen, target as unknown as StatsWindow);
+    if (!screen || !hasStats(screen) || quality !== "auto" || !owner || observing || conn !== "connected") return;
+    return startAutoQuality(screen, presetOf(quality));
   }, [screen, quality, owner, observing, conn]);
   const chooseResolution = (size: Size | null) => {
     if (!owner) return; // the display's owner sets its size

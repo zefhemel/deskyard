@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AutoFramerate, startAutoQuality, type StatsWindow } from "./auto-quality.ts";
-import type { DeskyardScreen } from "../selkies/screen.ts";
-import { autoPreset, defaultQuality, isQualityId, qualities, qualityOf, qualitySettings } from "./selkies.ts";
+import { AutoFramerate, hasStats, startAutoQuality, type StatsScreen } from "./auto-quality.ts";
+import type { DeskyardScreen, Display, StreamSample } from "../selkies/screen.ts";
+import { autoPreset, defaultQuality, isQualityId, presetOf, qualities, qualityOf, qualitySettings } from "./selkies.ts";
 
 function feed(policy: AutoFramerate) {
   let t = 1000, lost = 0;
@@ -55,25 +55,77 @@ test("duplicates, counter resets and suspended sampling cannot cause an adjustme
   assert.equal(p.rate, 30);
 });
 
-test("monitor stops adapting while hidden, disconnected or secondary, and disposes stats/timer", (context) => {
+function monitored(context: { mock: { method: typeof import("node:test").mock.method } }) {
   let clock = 1000;
   context.mock.method(Date, "now", () => clock);
-  let tick = () => {}, cancelled = false;
+  const state = { hidden: false, latest: null as StreamSample | null, tick: () => {}, cancelled: false, lost: 0 };
   const messages: object[] = [];
-  let owner = true, state = "connected";
-  const target: StatsWindow = { document: { hidden: false }, stream_stats: { latest: null } };
-  const screen = { display: () => ({ owner, width: 1280, height: 720, settings: { encoder: "jpeg" } }), state: () => state, post: (m: object) => messages.push(m) } as unknown as DeskyardScreen;
-  const stop = startAutoQuality(screen, target, ((fn: () => void) => { tick = fn; return 1; }) as unknown as typeof setInterval, (() => { cancelled = true; }) as typeof clearInterval);
-  let lost = 0;
-  const sample = () => { target.stream_stats!.latest = { t: clock += 1000, fps: 15, frames_not_shown: lost }; lost += 10; tick(); };
-  for (const blocked of ["hidden", "owner", "state"]) {
-    target.document.hidden = blocked === "hidden"; owner = blocked !== "owner"; state = blocked === "state" ? "disconnected" : "connected";
-    for (let i = 0; i < 5; i++) sample();
-  }
-  assert.deepEqual(messages, [{ type: "statsOpen", open: true }]);
-  target.document.hidden = false; owner = true; state = "connected";
-  for (let i = 0; i < 4; i++) sample();
-  assert.deepEqual(messages.at(-1), { type: "settings", settings: { framerate: 14 } });
-  stop(); assert.ok(cancelled);
-  assert.deepEqual(messages.at(-1), { type: "statsOpen", open: false });
+  const displays = new Set<(d: Display) => void>();
+  let display: Display = { owner: true, width: 1280, height: 720, settings: { encoder: "jpeg" } };
+  const screen = {
+    display: () => display,
+    on: (type: string, fn: (d: Display) => void) => {
+      assert.equal(type, "deskyard.display");
+      displays.add(fn);
+      return () => displays.delete(fn);
+    },
+    post: (m: object) => messages.push(m),
+    stats: () => state.latest,
+    showStats: (open: boolean) => messages.push({ stats: open }),
+  } as unknown as StatsScreen;
+  const stop = startAutoQuality(screen, presetOf("auto"), () => state.hidden,
+    ((fn: () => void) => { state.tick = fn; return 1; }) as unknown as typeof setInterval,
+    (() => { state.cancelled = true; }) as typeof clearInterval);
+  return {
+    state, messages, stop, displays,
+    /** A second of 15 fps with 10 frames lost. */
+    overloaded() { state.latest = { t: clock += 1000, fps: 15, frames_not_shown: state.lost }; state.lost += 10; state.tick(); },
+    advance(ms: number) { clock += ms; },
+    setDisplay(next: Partial<Display>) { display = { ...display, ...next }; displays.forEach((fn) => fn(display)); },
+  };
+}
+
+test("the monitor lowers the rate under load, pauses while hidden or stale, and disposes stats, timer and listener", (context) => {
+  const m = monitored(context);
+  assert.deepEqual(m.messages, [{ stats: true }]);
+  m.state.hidden = true;
+  for (let i = 0; i < 5; i++) m.overloaded();
+  m.state.hidden = false;
+  m.state.latest = { t: 0, fps: 15, frames_not_shown: 0 }; // stale
+  m.state.tick();
+  assert.deepEqual(m.messages, [{ stats: true }]);
+  for (let i = 0; i < 4; i++) m.overloaded();
+  // JPEG: Auto's preset tops out at 30 fps; 15 shown makes 14.
+  assert.deepEqual(m.messages.at(-1), { type: "settings", settings: { framerate: 14 } });
+  m.stop();
+  assert.ok(m.state.cancelled);
+  assert.equal(m.displays.size, 0);
+  assert.deepEqual(m.messages.at(-1), { stats: false });
+});
+
+test("the monitor starts over at the display's rate when its encoder or size changes, capped by the preset", (context) => {
+  const m = monitored(context);
+  const healthy = (fps: number, n: number) => {
+    for (let i = 0; i < n; i++) {
+      m.advance(1000);
+      m.state.latest = { t: Date.now(), fps, frames_not_shown: m.state.lost, present_ms: 10 };
+      m.state.tick();
+    }
+  };
+  m.setDisplay({ width: 1920, height: 1080, settings: { encoder: "jpeg", framerate: 28 } });
+  healthy(28, 21);
+  assert.deepEqual(m.messages.at(-1), { type: "settings", settings: { framerate: 30 } });
+  m.messages.length = 0;
+  healthy(30, 21);
+  assert.deepEqual(m.messages, [], "JPEG stays at the preset's 30 fps");
+  m.setDisplay({ settings: { encoder: "x264enc", framerate: 28 } });
+  healthy(28, 21);
+  assert.deepEqual(m.messages, [{ type: "settings", settings: { framerate: 31 } }], "H.264 goes on towards 60");
+  m.stop();
+});
+
+test("only a screen with statistics can adapt", () => {
+  const base = {} as DeskyardScreen;
+  assert.equal(hasStats(base), false);
+  assert.equal(hasStats({ ...base, stats: () => null, showStats: () => {} }), true);
 });
