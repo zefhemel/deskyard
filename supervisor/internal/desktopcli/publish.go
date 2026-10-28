@@ -84,7 +84,15 @@ func publish(dir string, b []byte) error {
 	path := filepath.Join(dir, "deskyard")
 	previous, err := os.ReadFile(path)
 	if err == nil && bytes.Equal(previous, b) {
-		return os.Chmod(path, 0755)
+		st, err := os.Stat(path)
+		if err != nil {
+			return err
+		}
+		if st.Mode().Perm() == 0755 {
+			return nil
+		}
+		// Repair permissions by replacement too: a restored binary can be
+		// root-owned, while its directory still belongs to the supervisor.
 	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err

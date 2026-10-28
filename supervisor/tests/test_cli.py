@@ -56,6 +56,15 @@ def test_runtime_cli_updates_without_desktop_recreation(supervisor, remote):
     finally:
         docker("exec", supervisor.container, "mv", f"{path}.saved", path)
 
+    # The restore above is deliberately root-owned, like an administrator's
+    # restore. An unchanged executable must not require chmod at startup.
+    supervisor.stop()
+    supervisor.start()
+    assert inside("/usr/local/bin/deskyard", "--version") == version
+    restarted = json.loads(docker("inspect", container).stdout)[0]
+    assert restarted["Id"] == before["Id"]
+    assert restarted["State"]["StartedAt"] == before["State"]["StartedAt"]
+
 
 def test_environment_flag_and_saved_server(cli, remote, tmp_path):
     """-e names the environment; the old -d is an unknown option."""

@@ -144,3 +144,28 @@ func TestPublishRefusesInvalidBundleBeforeChangingExistingCLI(t *testing.T) {
 		})
 	}
 }
+
+func TestPublishRepairsModesWithoutChangingExistingExecutable(t *testing.T) {
+	source, state := binaries(t), t.TempDir()
+	if err := Publish(source, state); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(state, "cli/linux-amd64/deskyard")
+	if err := os.Chmod(path, 0644); err != nil {
+		t.Fatal(err)
+	}
+	old, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer old.Close()
+	before, _ := old.Stat()
+	if err := Publish(source, state); err != nil {
+		t.Fatal(err)
+	}
+	current, _ := os.Stat(path)
+	unchangedOld, _ := old.Stat()
+	if os.SameFile(before, current) || current.Mode().Perm() != 0755 || unchangedOld.Mode().Perm() != 0644 {
+		t.Fatalf("mode repair must replace the file without chmod of the existing inode: old=%o current=%o", unchangedOld.Mode().Perm(), current.Mode().Perm())
+	}
+}

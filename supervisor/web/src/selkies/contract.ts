@@ -112,7 +112,7 @@ export function displayMessage<T>(data: T, owner: boolean | null, requested: Dis
   const separator = data.indexOf(",", 2);
   const suffix = separator < 0 ? "" : data.slice(separator);
   if (data.startsWith("r,"))
-    return owner === false ? null : requested ? `r,${requested.width}x${requested.height}${suffix}` : data;
+    return owner && requested ? `r,${requested.width}x${requested.height}${suffix}` : null;
   if (data.startsWith("s,"))
     return owner && requested ? `s,${requested.dpi}${suffix}` : null;
   if (!data.startsWith("SETTINGS,")) return data;
@@ -121,12 +121,15 @@ export function displayMessage<T>(data: T, owner: boolean | null, requested: Dis
   if (owner && requested) {
     Object.assign(settings, { manual_resolution: true, manual_width: requested.width, manual_height: requested.height, scaling_dpi: requested.dpi });
   } else {
+    // The first SETTINGS completes the ownership handshake. Let it through,
+    // but preserve the server's geometry until the parent supplies its policy.
+    // Initial client dimensions otherwise resize a reconnect to CSS pixels.
     delete settings.scaling_dpi;
-    if (owner === false) {
-      delete settings.manual_resolution;
-      delete settings.manual_width;
-      delete settings.manual_height;
-    }
+    delete settings.manual_resolution;
+    delete settings.manual_width;
+    delete settings.manual_height;
   }
+  delete settings.initialClientWidth;
+  delete settings.initialClientHeight;
   return `SETTINGS,${JSON.stringify(settings)}`;
 }

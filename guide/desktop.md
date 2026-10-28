@@ -61,10 +61,14 @@ available viewport. The stream fits proportionally within 3840×2160, so larger
 windows may not achieve a full two physical pixels per logical pixel.
 
 The first viewer controls resolution and scaling for the shared desktop.
+Returning to Desktop from a terminal reconnects the stream while preserving
+the current display size until the viewer's scaling preference is applied.
 Other viewers fit that same picture to their windows. Some applications may
 need reopening to adopt a scale change. Full scaling support requires both an
 updated supervisor and an updated desktop image; upgrade existing environments
 from their image settings after the new image is available.
+After a density change, XFCE can retain a stale work area even though the
+panel scales correctly, allowing maximized windows to overlap the panel.
 
 ## Mobile controls
 
