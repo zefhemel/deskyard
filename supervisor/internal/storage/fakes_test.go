@@ -212,6 +212,13 @@ func (e *fakeEnv) CreateStopped(_ context.Context, name string, set environments
 	if _, err := os.Stat(e.layout.HomeOf(name)); err != nil {
 		return environments.Environment{}, fmt.Errorf("no home: %w", err)
 	}
+	// As the environments service's preflight.
+	e.mu.Lock()
+	replaced := e.replaced[environments.Item{Kind: KindEnvironment, Name: name}]
+	e.mu.Unlock()
+	if replaced {
+		return environments.Environment{}, environments.ErrItemBusy
+	}
 	e.record("create stopped " + name)
 	e.created[name] = set
 	e.defs[name] = environments.Definition{Name: name, Power: environments.PowerStopped}

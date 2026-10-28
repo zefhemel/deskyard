@@ -30,7 +30,10 @@ func (r *storageRunner) Run(_ context.Context, c storage.Call) (storage.Result, 
 		case "backup":
 			out = `{"message_type":"summary","snapshot_id":"snap1"}` + "\n"
 		case "snapshots":
-			out = `[{"time":"2026-10-27T03:00:00Z","hostname":"` + c.Env["HOST"] + `","tags":["deskyard","volume:photos","manual"],"id":"snap1","short_id":"snap1"}]`
+			out = `[{"time":"2026-10-27T03:00:00Z","hostname":"` + c.Env["HOST"] + `","tags":["deskyard","volume:photos","manual"],"id":"snap1","short_id":"snap1"},
+{"time":"2026-10-27T03:00:00Z","hostname":"elsewhere","tags":["deskyard","environment:alice","manual"],"id":"snap2","short_id":"snap2"}]`
+		case "dump":
+			out = `{"name":"alice","image":{"ref":"img"},"limits":{"memoryBytes":1073741824}}`
 		}
 	}
 	if c.Stdout != nil {
@@ -147,6 +150,39 @@ func TestBackupRunIsJob(t *testing.T) {
 	}
 	if code, b := send(admin, "PUT", "/api/backups/home/x", `{}`); code != 400 {
 		t.Fatalf("bad kind: %d %s", code, b)
+	}
+}
+
+// Restoring as new through the environments service: an environment from
+// another machine's snapshot is defined stopped, with no container, and a
+// volume adopts its restored folder.
+func TestRestoreAsNewThroughEnvironments(t *testing.T) {
+	s, send, admin := newStorageServer(t)
+	setUpBackups(t, s, send, admin)
+	code, b := send(admin, "POST", "/api/backups/environment/alice/restore", `{"snapshot":"snap2","repository":"home","mode":"new","newName":"alice-copy"}`)
+	if code != 202 {
+		t.Fatalf("restore: %d %s", code, b)
+	}
+	waitJob(t, s, b)
+	def, ok := s.Environments.Defs.Get("alice-copy")
+	if !ok || def.Power != environments.PowerStopped || def.Image.Ref != "img" || def.Limits.MemoryBytes != 1<<30 {
+		t.Fatalf("restored definition %+v %v", def, ok)
+	}
+	if c, err := s.Environments.Get(context.Background(), "alice-copy"); err != nil || c.Container.ID != "" || c.State != "stopped" {
+		t.Fatalf("restored environment %+v %v", c, err)
+	}
+	code, b = send(admin, "POST", "/api/backups/volume/photos/restore", `{"snapshot":"snap1","mode":"new","newName":"photos-old"}`)
+	if code != 202 {
+		t.Fatalf("restore volume: %d %s", code, b)
+	}
+	waitJob(t, s, b)
+	if _, ok := s.Environments.Vols.Get("photos-old"); !ok {
+		t.Fatal("no restored volume")
+	}
+	for _, it := range []storage.Item{{Kind: storage.KindEnvironment, Name: "alice-copy"}, {Kind: storage.KindVolume, Name: "photos-old"}} {
+		if a := s.storage.Activity(it); a != "" {
+			t.Fatalf("%s still %s", it, a)
+		}
 	}
 }
 

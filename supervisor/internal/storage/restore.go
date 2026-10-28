@@ -198,7 +198,9 @@ func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snaps
 	if _, err := os.Lstat(folder); err == nil {
 		return RestoreResult{}, fmt.Errorf("%w: %s is in the way; remove it or choose another name", ErrExists, folder)
 	}
-	release, err := s.hold(Item{it.Kind, name}, "restoring", true)
+	// Nothing mounts an item that doesn't exist yet, and creating it checks
+	// its files aren't being replaced: the hold only keeps other work off.
+	release, err := s.hold(Item{it.Kind, name}, "restoring", false)
 	if err != nil {
 		return RestoreResult{}, err
 	}
