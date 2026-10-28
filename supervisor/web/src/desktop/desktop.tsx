@@ -28,6 +28,7 @@ import { tabShortcutListener } from "./tab-shortcuts.ts";
 import { FullscreenButton } from "./fullscreen.tsx";
 import { AudioControl } from "./audio-panel.tsx";
 import { hasStats, startAutoQuality } from "./auto-quality.ts";
+import { useDisplay } from "./use-display.ts";
 import { ClipboardIcon, DisplayIcon, KeyboardIcon, ShieldIcon } from "./bar-icons.tsx";
 import { barButton, type BarSlots, ConnDot, EnvironmentTabs, panelId, pressed, tabId, useTabHooks } from "./tabs.tsx";
 import { avSyncWanted, startAvSync } from "./avsync.ts";
@@ -46,6 +47,7 @@ import {
   isQualityId,
   jpegOnly,
   keyCombos,
+  configureDisplay,
   lockSize,
   onClipboard,
   presetOf,
@@ -634,33 +636,60 @@ function Desktop({ environment: c, slots, selectShortcut, onFrame }: { environme
   const [locked, setLocked] = useState(() => initialLock(storedRaw(LOCK_SIZE_KEY), isPhone(window.screen)));
   const [scaling, setScaling] = useState(() => parseScaling(storedRaw(SCALING_KEY)));
   const ratio = useDevicePixelRatio();
-  // Whether this page owns the display (null until known), and the preset the
-  // display streams with (null when unknown or none of ours).
-  const [owner, setOwner] = useState<boolean | null>(null);
-  const [live, setLive] = useState<PresetId | null>(null);
+  // The preset this page last sent, over the display settings it replaces.
+  const [sent, setSent] = useState<{ preset: PresetId; over: Display["settings"] } | null>(null);
   const running = c.state === "running";
 
   // What this browser wants: applied when this page owns the display.
   const prefs = useRef({ quality, locked, scaling, ratio });
   prefs.current = { quality, locked, scaling, ratio };
 
-  const appliedDisplay = useRef("");
+  /** This browser's display, for when this page owns it (configureDisplay applies it then, once). */
   const applyDisplay = useCallback(() => {
     const element = frame.current;
-    if (!element || observingRef.current || !screenOf(element)?.display().owner) return;
+    if (!element || observingRef.current) return;
     const { locked, scaling, ratio } = prefs.current;
     const scale = displayScale(scaling, ratio);
     const size = locked ?? { width: element.clientWidth, height: element.clientHeight };
     if (size.width <= 0 || size.height <= 0) return;
-    const physical = scaledSize(size, scale);
-    const key = `${scale}:${physical.width}x${physical.height}`;
-    if (appliedDisplay.current === key) return;
-    appliedDisplay.current = key;
-    const client = screenOf(element);
-    if (client?.configureDisplay) client.configureDisplay(physical, 96 * scale);
-    else client?.post({ type: "settings", settings: { scaling_dpi: 96 * scale } });
-    lockSize(element, physical);
+    configureDisplay(element, scaledSize(size, scale), scale);
   }, []);
+
+  /** Sends a Quality choice's preset to the display. */
+  const sendChoice = (id: QualityId, over: Display["settings"]) => {
+    sendQuality(frame.current, id);
+    setSent({ preset: presetOf(id).id, over });
+  };
+  // What this page does as the display changes.
+  const onDisplay = (d: Display, was: Display) => {
+    if (observingRef.current) {
+      // Only ever beside the display: the picture at the stream's size,
+      // scaled to fit, and no settings of ours.
+      if (d.width > 0 && (d.width !== was.width || d.height !== was.height || was.owner === null)) lockSize(frame.current, { width: d.width, height: d.height });
+      return;
+    }
+    const { quality } = prefs.current;
+    if (jpegOnly && d.settings && d.settings.encoder !== "jpeg") {
+      // A display streaming a codec this browser can't decode (another
+      // page chose H.264): JPEG, at this browser's quality, so this page
+      // sees it too. Everyone's browser decodes JPEG.
+      sendChoice(quality, d.settings);
+    }
+    // The first page on the display: this browser's choices apply. (A
+    // page handed the display later keeps the quality it streams with.)
+    if (d.owner && was.owner === null) sendChoice(quality, d.settings);
+    applyDisplay();
+    if (d.owner === false && d.width > 0 && (was.owner !== false || d.width !== was.width || d.height !== was.height)) {
+      // Beside the owner: the picture at the stream's size, scaled to fit.
+      lockSize(frame.current, { width: d.width, height: d.height });
+    }
+  };
+  const display = useDisplay(screen, onDisplay);
+  // Whether this page owns the display (null until known), and the preset the
+  // display streams with (null when unknown or none of ours): what this page
+  // sent, until the display reports new settings.
+  const owner = display.owner;
+  const live = sent && sent.over === display.settings ? sent.preset : display.settings && qualityOf(display.settings);
 
   useEffect(() => {
     applyDisplay();
@@ -700,46 +729,9 @@ function Desktop({ environment: c, slots, selectShortcut, onFrame }: { environme
       // this window, which closes it under the user's pointer.
       if (s === "connected" && !observingRef.current && !document.querySelector('[aria-expanded="true"]')) focusFrame(frame.current);
     };
-    // What this page has done for the current connection's display.
-    let was: Display = { owner: null, width: 0, height: 0, settings: null };
-    const onDisplay = (d: Display) => {
-      if (d.owner === null) was = d; // a new connection
-      if (!d.owner || !was.owner) appliedDisplay.current = "";
-      setOwner(d.owner);
-      if (d.settings) setLive(qualityOf(d.settings));
-      if (observingRef.current) {
-        // Only ever beside the display: the picture at the stream's size,
-        // scaled to fit, and no settings of ours.
-        if (d.width > 0 && (d.width !== was.width || d.height !== was.height || was.owner === null)) lockSize(frame.current, { width: d.width, height: d.height });
-        was = d;
-        return;
-      }
-      const { quality } = prefs.current;
-      if (jpegOnly && d.settings && d.settings.encoder !== "jpeg") {
-        // A display streaming a codec this browser can't decode (another
-        // page chose H.264): JPEG, at this browser's quality, so this page
-        // sees it too. Everyone's browser decodes JPEG.
-        sendQuality(frame.current, quality);
-        setLive(presetOf(quality).id);
-      }
-      if (d.owner && !was.owner) {
-        // The first page on the display: this browser's choices apply. (A
-        // page handed the display later keeps the quality it streams with.)
-        if (was.owner === null) {
-          sendQuality(frame.current, quality);
-          setLive(presetOf(quality).id);
-        }
-        applyDisplay();
-      } else if (d.owner === false && d.width > 0 && (was.owner !== false || d.width !== was.width || d.height !== was.height)) {
-        // Beside the owner: the picture at the stream's size, scaled to fit.
-        lockSize(frame.current, { width: d.width, height: d.height });
-      }
-      was = d;
-    };
-    unsubscribe.current.push(screen.on("deskyard.state", onState), screen.on("deskyard.display", onDisplay), onClipboard(screen, setRemoteClip), screen.on("deskyard.keyboard", setKeyboard));
+    unsubscribe.current.push(screen.on("deskyard.state", onState), onClipboard(screen, setRemoteClip), screen.on("deskyard.keyboard", setKeyboard));
     if (avSyncWanted()) unsubscribe.current.push(startAvSync(screen));
     onState(screen.state());
-    onDisplay(screen.display());
   }, []);
   useEffect(
     () => () => {
@@ -774,9 +766,8 @@ function Desktop({ environment: c, slots, selectShortcut, onFrame }: { environme
   };
   const chooseQuality = (id: QualityId) => {
     setQuality(id);
-    setLive(presetOf(id).id);
     store(QUALITY_KEY, id);
-    sendQuality(frame.current, id);
+    sendChoice(id, display.settings);
   };
   // Auto adapts while this page owns a connected display (and its client reports statistics).
   useEffect(() => {

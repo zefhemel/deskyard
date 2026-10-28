@@ -235,6 +235,35 @@ export function remoteSize(frame: HTMLIFrameElement | null): Size | null {
   }
 }
 
+/** The DPI of a display at scale 1. */
+const BASE_DPI = 96;
+
+// What this page applied through legacy additions, per screen, while it owns the display.
+const legacyApplied = new WeakMap<DeskyardScreen, string>();
+
+/**
+ * The display this page wants while it owns it: size in remote pixels, at
+ * scale (1 or 2) times the base DPI, scaled to fit the frame. Idempotent:
+ * call it whenever the wish or the display changes; it applies only what's
+ * new, and again once this page (again) owns the display.
+ */
+export function configureDisplay(frame: HTMLIFrameElement | null, size: Size, scale: number): void {
+  const screen = screenOf(frame);
+  if (!screen) return;
+  const dpi = BASE_DPI * scale;
+  if (screen.configureDisplay) return screen.configureDisplay(size, dpi);
+  // Legacy additions: the page applies it, once per ownership.
+  if (!screen.display().owner) {
+    legacyApplied.delete(screen);
+    return;
+  }
+  const key = `${dpi}:${size.width}x${size.height}`;
+  if (legacyApplied.get(screen) === key) return;
+  legacyApplied.set(screen, key);
+  screen.post({ type: "settings", settings: { scaling_dpi: dpi } });
+  lockSize(frame, size);
+}
+
 /**
  * Lock size: the remote screen stays at size and is scaled to fit the frame.
  * Also how a page beside the owner shows the stream, at the stream's size.

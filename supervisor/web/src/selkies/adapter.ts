@@ -88,7 +88,11 @@ function setState(value: ConnectionState) {
 }
 function setDisplay(value: Partial<Display>) {
   display = { ...display, ...value };
+  // What was applied belongs to this page's ownership; a page owning the
+  // display (again) applies what the page asks for.
+  if (!display.owner) requestedDisplay = null;
   emit("deskyard.display", display);
+  applyDisplay();
 }
 function setMedia(value: Partial<Media>) {
   media = { ...media, ...value };
@@ -98,6 +102,9 @@ const post = (message: object) => window.postMessage(message, location.origin);
 const gate = captureGate();
 let transport: Transport | null = null;
 let input: ClientInput | null = null;
+// The display the page asks for (configureDisplay), kept across connections,
+// and what this connection has applied of it while owning the display.
+let wantedDisplay: DisplayRequest | null = null;
 let requestedDisplay: DisplayRequest | null = null;
 let requestedTouchMode: boolean | null = null;
 let zoom = 1;
@@ -131,6 +138,17 @@ function keyboardVisible() {
     "deskyard.keyboard",
     document.activeElement?.id === "keyboard-input-assist",
   );
+}
+/** Applies the wanted display once per ownership: its size and DPI, the picture scaled to fit. */
+function applyDisplay() {
+  const wanted = wantedDisplay;
+  if (!display.owner || !wanted) return;
+  const applied = requestedDisplay;
+  if (applied && applied.width === wanted.width && applied.height === wanted.height && applied.dpi === wanted.dpi) return;
+  requestedDisplay = wanted;
+  post({ type: "settings", settings: { scaling_dpi: wanted.dpi, manual_resolution: true, manual_width: wanted.width, manual_height: wanted.height } });
+  post({ type: "setScaleLocally", value: true });
+  post({ type: "setManualResolution", width: wanted.width, height: wanted.height });
 }
 function sendOwn(value: string) {
   if (transport?.readyState === WebSocket.OPEN) transport.send(value);
@@ -441,9 +459,8 @@ window.deskyardScreen = {
     post({ type: "statsOpen", open });
   },
   configureDisplay(size, dpi) {
-    if (!display.owner) return;
-    requestedDisplay = { ...size, dpi };
-    post({ type: "settings", settings: { scaling_dpi: dpi, manual_resolution: true, manual_width: size.width, manual_height: size.height } });
+    wantedDisplay = { ...size, dpi };
+    applyDisplay();
   },
   setTouchMode(value) {
     requestedTouchMode = value;

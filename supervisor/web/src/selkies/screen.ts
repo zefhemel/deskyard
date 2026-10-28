@@ -58,6 +58,12 @@ export interface DeskyardScreen {
   keyboard?(show: boolean): void;
   setTouchMode?(trackpad: boolean): void;
   setViewZoom?(zoom: number): void;
+  /**
+   * The display this page wants when it owns it: size in remote pixels and
+   * DPI, the picture scaled to fit. Idempotent; kept across reconnects and
+   * applied whenever this page (again) owns the display. Not in the legacy
+   * additions (desktop/selkies.ts's configureDisplay covers them).
+   */
   configureDisplay?(size: Size, dpi: number): void;
   /** The client's latest presentation statistics; null before any. Not in the legacy additions. */
   stats?(): StreamSample | null;
