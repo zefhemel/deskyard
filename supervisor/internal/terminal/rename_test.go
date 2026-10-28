@@ -45,9 +45,11 @@ func TestRenamePreservesWindowsAndGroups(t *testing.T) {
 	}
 }
 
-// Renaming leaves the old tmux group name reserved. Reusing it used to attach
-// a new browser tab to the renamed shell instead of its own window.
-func TestRenameReservesAttachmentGroupName(t *testing.T) {
+// tmux names a group after its base session and keeps that name after a
+// rename. Reusing the old name used to attach a new browser tab to the
+// renamed shell instead of its own window; attachment groups now have private
+// names, so every public name stays free.
+func TestRenamedSessionNameIsFreeForNewSessions(t *testing.T) {
 	tmux := tmuxRuntime(t)
 	ctx := context.Background()
 	tmux("new-session", "-d", "-s", "terminal-1", "sleep", "300")
@@ -55,41 +57,59 @@ func TestRenameReservesAttachmentGroupName(t *testing.T) {
 	if err := groupWith(ctx, "terminal-1", first); err != nil {
 		t.Fatal(err)
 	}
+	if got := strings.TrimSpace(tmux("display-message", "-p", "-t", "=terminal-1:", "#{session_group}")); !strings.HasPrefix(got, "_deskyard_group_") {
+		t.Fatalf("group named %q", got)
+	}
 	if err := Rename(ctx, "terminal-1", "codex"); err != nil {
 		t.Fatal(err)
 	}
+	window := tmux("list-windows", "-t", "=codex", "-F", "#{window_id}")
 	name, err := createNext(ctx, "/tmp")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if name != "terminal-2" {
-		t.Fatalf("reused reserved group name: %q", name)
+	if name != "terminal-1" {
+		t.Fatalf("new session %q", name)
 	}
 	second := attachmentSession("fedcba9876543210fedcba9876543210")
 	if err := groupWith(ctx, name, second); err != nil {
 		t.Fatal(err)
 	}
-	window := tmux("list-windows", "-t", "=codex", "-F", "#{window_id}")
 	if got := tmux("list-windows", "-t", "="+second, "-F", "#{window_id}"); got == window {
 		t.Fatal("new tab joined renamed session")
-	}
-	if err := Rename(ctx, name, "terminal-1"); err == nil {
-		t.Fatal("allowed rename to reserved group name")
-	}
-	if _, err := ensureSession(ctx, "terminal-1"); err == nil {
-		t.Fatal("allowed explicit creation using reserved group name")
-	}
-	tmux("new-session", "-d", "-s", "terminal-1", "sleep", "300")
-	if err := groupWith(ctx, "terminal-1", attachmentSession("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")); err == nil {
-		t.Fatal("attached colliding legacy session")
-	}
-	if got := tmux("display-message", "-p", "-t", "=terminal-1:", "#{session_group}"); strings.TrimSpace(got) != "" {
-		t.Fatalf("rejected attachment changed base group: %q", got)
 	}
 	if err := Kill(ctx, name); err != nil {
 		t.Fatal(err)
 	}
-	if got := tmux("list-windows", "-t", "=codex", "-F", "#{window_id}"); got != window {
+	if err := Rename(ctx, "codex", "terminal-1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := tmux("list-windows", "-t", "=terminal-1", "-F", "#{window_id}"); got != window {
 		t.Fatal("ending new session affected renamed shell")
+	}
+}
+
+// A group tmux named after a public session, such as one made by plain tmux
+// commands, can't capture a later session of that name.
+func TestAttachIgnoresGroupNamedAfterSession(t *testing.T) {
+	tmux := tmuxRuntime(t)
+	ctx := context.Background()
+	tmux("new-session", "-d", "-s", "work", "sleep", "300")
+	tmux("new-session", "-d", "-s", "side", "-t", "=work")
+	tmux("rename-session", "-t", "=work", "old")
+	window := tmux("list-windows", "-t", "=old", "-F", "#{window_id}")
+	tmux("new-session", "-d", "-s", "work", "sleep", "300")
+	id := attachmentSession("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	if err := groupWith(ctx, "work", id); err != nil {
+		t.Fatal(err)
+	}
+	if got := tmux("list-windows", "-t", "="+id, "-F", "#{window_id}"); got == window {
+		t.Fatal("attachment joined the old group")
+	}
+	if got := tmux("list-windows", "-t", "=old", "-F", "#{window_id}"); got != window {
+		t.Fatal("old group changed")
+	}
+	if got := strings.TrimSpace(tmux("display-message", "-p", "-t", "=work:", "#{session_name}")); got != "work" {
+		t.Fatalf("base renamed to %q", got)
 	}
 }

@@ -1,6 +1,9 @@
 package terminal
 
 import (
+	"net"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -50,23 +53,27 @@ func TestParseSessionDetails(t *testing.T) {
 	}
 }
 
-// A server that is gone, or going, is an empty list; anything else stays an error.
+// A socket nobody listens on, or none, means no server; a live one doesn't.
 func TestNoServer(t *testing.T) {
-	socket := "/run/workspace/deskyard-terminal/tmux.sock"
-	for _, msg := range []string{
-		"no server running on " + socket,
-		"error connecting to " + socket + " (No such file or directory)",
-		"error connecting to " + socket + " (Connection refused)",
-		"server exited unexpectedly",
-		"lost server",
-	} {
-		if !noServer(msg, socket) {
-			t.Errorf("%q should mean no server", msg)
-		}
+	dir, err := os.MkdirTemp("/tmp", "dysock")
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, msg := range []string{"", "error connecting to " + socket + " (Permission denied)", "no server running on /tmp/other.sock", "unknown option -- Z"} {
-		if noServer(msg, socket) {
-			t.Errorf("%q should stay an error", msg)
-		}
+	defer os.RemoveAll(dir)
+	socket := filepath.Join(dir, "tmux.sock")
+	if !noServer(socket) {
+		t.Error("a missing socket should mean no server")
+	}
+	l, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if noServer(socket) {
+		t.Error("a listening socket should be a server")
+	}
+	l.(*net.UnixListener).SetUnlinkOnClose(false)
+	l.Close()
+	if !noServer(socket) {
+		t.Error("a left-behind socket should mean no server")
 	}
 }

@@ -3,14 +3,18 @@ package terminal
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -171,7 +175,7 @@ func queryServer(ctx context.Context, args ...string) ([]byte, error) {
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
 		// An empty list, while unrelated executable/socket failures remain errors.
-		if noServer(strings.TrimSpace(stderr.String()), socket) {
+		if noServer(socket) {
 			return nil, nil
 		}
 		if msg := strings.TrimSpace(stderr.String()); msg != "" {
@@ -182,20 +186,18 @@ func queryServer(ctx context.Context, args ...string) ([]byte, error) {
 	return stdout.Bytes(), nil
 }
 
-// noServer tells whether tmux failed because no server is there to ask. tmux
-// leaves the socket behind when the final shell exits ("no server running",
-// or a refused connection), and a server that is exiting can remove the socket
-// after the check above or drop the query midway.
-func noServer(stderr, socket string) bool {
-	switch stderr {
-	case "no server running on " + socket,
-		"error connecting to " + socket + " (No such file or directory)",
-		"error connecting to " + socket + " (Connection refused)",
-		"server exited unexpectedly",
-		"lost server":
-		return true
+// noServer tells whether tmux failed because no server is there to ask:
+// nothing listens on its socket. tmux leaves the socket behind when its
+// server exits, and a server that is exiting can remove the socket after the
+// check above or drop the query midway. Probing the socket keeps this apart
+// from other failures without reading tmux's messages.
+func noServer(socket string) bool {
+	c, err := net.DialTimeout("unix", socket, time.Second)
+	if err == nil {
+		c.Close()
+		return false
 	}
-	return false
+	return errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, fs.ErrNotExist)
 }
 
 type boundedListBuffer struct{ bytes.Buffer }

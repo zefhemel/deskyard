@@ -2,6 +2,8 @@ package terminal
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -113,8 +115,15 @@ func Lease(ctx context.Context, name, id string, join bool, stdin io.Reader, std
 // against the base's immutable ID, then verify the result: the base still
 // exists under its name and the new session is in its group. Otherwise the
 // group is removed and the base counts as ended.
+//
+// tmux names a new group after the base's current name, keeps that name
+// after a rename, and puts a later base of the same name into the old group.
+// So the base is grouped under a private name instead: renamed to it,
+// grouped and renamed back in one command sequence, which the tmux server
+// runs without interleaving other clients' commands. A base that is already
+// grouped keeps its group. Group names are never public session names.
 func groupWith(ctx context.Context, name, group string) error {
-	base, err := tmuxCommand(ctx, "display-message", "-p", "-t", "="+name+":", "#{session_id}|#{session_group}").Output()
+	base, err := tmuxCommand(ctx, "display-message", "-p", "-t", "="+name+":", "#{session_id}").Output()
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -122,22 +131,19 @@ func groupWith(ctx context.Context, name, group string) error {
 		return ErrNoSession
 	}
 	// display-message succeeds with empty fields when its target is missing.
-	id, baseGroup, _ := strings.Cut(strings.TrimSpace(string(base)), "|")
+	id := strings.TrimSpace(string(base))
 	if !strings.HasPrefix(id, "$") {
 		return ErrNoSession
 	}
-	// tmux names a new group after its base session, even when targeted by
-	// immutable ID. A rename can leave that name owned by another group.
-	if baseGroup == "" {
-		reserved, err := groupNameExists(ctx, name)
-		if err != nil {
-			return err
+	private := groupName()
+	// Single quotes: tmux would expand $ in a parsed command. A base renamed
+	// since the lookup is left alone, and the check below finds no group.
+	seq := fmt.Sprintf("rename-session -t '%[1]s' %[2]s ; new-session -d -s %[3]s -t '%[1]s' ; rename-session -t '%[1]s' %[4]s", id, private, group, name)
+	if err := tmuxCommand(ctx, "if-shell", "-F", "-t", id, "#{==:#{session_name},"+name+"}", seq).Run(); err != nil {
+		// A failed command drops the rest of its sequence: restore the name.
+		if b, qerr := tmuxCommand(ctx, "display-message", "-p", "-t", id+":", "#{session_name}").Output(); qerr == nil && strings.TrimSpace(string(b)) == private {
+			_ = tmuxCommand(ctx, "rename-session", "-t", id, name).Run()
 		}
-		if reserved {
-			return fmt.Errorf("session name %q conflicts with an existing terminal attachment group; rename this session before attaching", name)
-		}
-	}
-	if err := tmuxCommand(ctx, "new-session", "-d", "-s", group, "-t", id).Run(); err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -162,19 +168,12 @@ func groupWith(ctx context.Context, name, group string) error {
 	return nil
 }
 
-// Group names survive renames. Do not reuse them for new public sessions:
-// tmux otherwise joins the old group when preparing their first attachment.
-func groupNameExists(ctx context.Context, name string) (bool, error) {
-	out, err := queryServer(ctx, "list-sessions", "-F", "#{session_group}")
-	if err != nil {
-		return false, err
-	}
-	for _, group := range lines(out) {
-		if group == name {
-			return true, nil
-		}
-	}
-	return false, nil
+// groupName is a new private name for a session group, outside the public
+// session-name grammar and apart from attachment session names.
+func groupName() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return "_deskyard_group_" + hex.EncodeToString(b)
 }
 
 // AttachPrepared never creates a session: a canceled lease cannot be resurrected
