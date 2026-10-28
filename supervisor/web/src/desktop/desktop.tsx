@@ -525,7 +525,10 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
       )}
       <div class="relative flex min-h-0 flex-1 flex-col">
         <div role="tabpanel" id={panelId(null)} aria-labelledby={tabId(null)} hidden={active !== null} class={cx("relative min-h-0 flex-1 flex-col", active === null ? "flex" : "hidden")}>
-          {active === null && <Desktop environment={c} slots={slots} selectShortcut={selectShortcut} onFrame={setDesktopFrame} />}
+          {/* A new level or run is a new Desktop: a loaded frame keeps the
+              permissions it loaded with (an observer's has no microphone or
+              clipboard), and a desktop that comes back needs a fresh frame. */}
+          {active === null && <Desktop key={`${c.level}:${running}`} environment={c} slots={slots} selectShortcut={selectShortcut} onFrame={setDesktopFrame} />}
         </div>
         {opened
           .filter((s) => tabs.includes(s))
@@ -608,9 +611,8 @@ function EndSessionDialog({ session, others: n, command, onEnd, onClose }: { ses
  * controls) and never asks to change the display.
  */
 function Desktop({ environment: c, slots, selectShortcut, onFrame }: { environment: Environment; slots: BarSlots; selectShortcut: (index: number) => boolean; onFrame: (frame: HTMLIFrameElement | null) => void }) {
+  // Fixed for this Desktop: a new level mounts a new one.
   const observing = c.level === "observe";
-  const observingRef = useRef(observing);
-  observingRef.current = observing;
   const frame = useRef<HTMLIFrameElement | null>(null);
   // The same frame, as state: listeners on its window follow it.
   const [frameElement, setFrameElement] = useState<HTMLIFrameElement | null>(null);
@@ -647,7 +649,7 @@ function Desktop({ environment: c, slots, selectShortcut, onFrame }: { environme
   /** This browser's display, for when this page owns it (configureDisplay applies it then, once). */
   const applyDisplay = useCallback(() => {
     const element = frame.current;
-    if (!element || observingRef.current) return;
+    if (!element || observing) return;
     const { locked, scaling, ratio } = prefs.current;
     const scale = displayScale(scaling, ratio);
     const size = locked ?? { width: element.clientWidth, height: element.clientHeight };
@@ -661,13 +663,15 @@ function Desktop({ environment: c, slots, selectShortcut, onFrame }: { environme
     setSent({ preset: presetOf(id).id, over });
   };
   // What this page does as the display changes.
+  const beside = (d: Display) => observing || d.owner === false;
   const onDisplay = (d: Display, was: Display) => {
-    if (observingRef.current) {
-      // Only ever beside the display: the picture at the stream's size,
-      // scaled to fit, and no settings of ours.
-      if (d.width > 0 && (d.width !== was.width || d.height !== was.height || was.owner === null)) lockSize(frame.current, { width: d.width, height: d.height });
-      return;
+    if (beside(d) && d.width > 0 && (!beside(was) || d.width !== was.width || d.height !== was.height)) {
+      // Beside the owner (as an observer always is): the picture at the
+      // stream's size, scaled to fit.
+      lockSize(frame.current, { width: d.width, height: d.height });
     }
+    // An observer has no settings of ours.
+    if (observing) return;
     const { quality } = prefs.current;
     if (jpegOnly && d.settings && d.settings.encoder !== "jpeg") {
       // A display streaming a codec this browser can't decode (another
@@ -679,10 +683,6 @@ function Desktop({ environment: c, slots, selectShortcut, onFrame }: { environme
     // page handed the display later keeps the quality it streams with.)
     if (d.owner && was.owner === null) sendChoice(quality, d.settings);
     applyDisplay();
-    if (d.owner === false && d.width > 0 && (was.owner !== false || d.width !== was.width || d.height !== was.height)) {
-      // Beside the owner: the picture at the stream's size, scaled to fit.
-      lockSize(frame.current, { width: d.width, height: d.height });
-    }
   };
   const display = useDisplay(screen, onDisplay);
   // Whether this page owns the display (null until known), and the preset the
@@ -706,7 +706,7 @@ function Desktop({ environment: c, slots, selectShortcut, onFrame }: { environme
 
   const refocus = useCallback(() => {
     // After the click that closed a menu has landed.
-    if (!observingRef.current) window.setTimeout(() => focusFrame(frame.current), 0);
+    if (!observing) window.setTimeout(() => focusFrame(frame.current), 0);
   }, []);
 
   // Each load of the frame: follow its stream and the desktop's clipboard.
@@ -727,7 +727,7 @@ function Desktop({ environment: c, slots, selectShortcut, onFrame }: { environme
       if (s === "connected") screen.setTouchMode?.(trackpadRef.current);
       // Not while a panel or menu of the bar is open: focusing the frame blurs
       // this window, which closes it under the user's pointer.
-      if (s === "connected" && !observingRef.current && !document.querySelector('[aria-expanded="true"]')) focusFrame(frame.current);
+      if (s === "connected" && !observing && !document.querySelector('[aria-expanded="true"]')) focusFrame(frame.current);
     };
     unsubscribe.current.push(screen.on("deskyard.state", onState), onClipboard(screen, setRemoteClip), screen.on("deskyard.keyboard", setKeyboard));
     if (avSyncWanted()) unsubscribe.current.push(startAvSync(screen));
@@ -739,20 +739,6 @@ function Desktop({ environment: c, slots, selectShortcut, onFrame }: { environme
     },
     [],
   );
-
-  // A fresh frame when the desktop comes back.
-  const wasRunning = useRef(running);
-  useEffect(() => {
-    if (running && !wasRunning.current) reconnect();
-    wasRunning.current = running;
-  }, [running]);
-  // And when the level changes: a loaded frame keeps the permissions it
-  // loaded with (an observer's has no microphone or clipboard).
-  const wasObserving = useRef(observing);
-  useEffect(() => {
-    if (observing !== wasObserving.current && running) reconnect();
-    wasObserving.current = observing;
-  }, [observing]);
 
   function reconnect() {
     setZoom(1);
