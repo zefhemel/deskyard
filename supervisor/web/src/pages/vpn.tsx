@@ -2,7 +2,7 @@ import { useCallback, useState } from "preact/hooks";
 import { api, ApiError, type Job, type SavedVPNConnection, type VPNReference, type VPNInput } from "../api.ts";
 import { JobProgress, useJob } from "../components/job.tsx";
 import { Page, PageHead } from "../components/topbar.tsx";
-import { Button, Check, Dialog, ErrorText, Field, Note, errorMessage } from "../components/ui.tsx";
+import { Button, card, Check, Dialog, errorMessage, ErrorText, Field, Note } from "../components/ui.tsx";
 import { VPNStatus } from "../components/vpn.tsx";
 import { CandidateTestSession, connectionInput, connectionUpdate, type ConnectionForm } from "../lib/vpn-form.ts";
 import { useFetch } from "../lib/use-fetch.ts";
@@ -27,7 +27,7 @@ export function VPNPage() {
       ) : (
         <div class="grid gap-3">
           {list.data.connections.map((c) => (
-            <article key={c.id} class="flex flex-wrap items-center gap-4 rounded-[10px] border border-line bg-surface p-5">
+            <article key={c.id} class={`${card} flex flex-wrap items-center gap-4 p-5`}>
               <div class="mr-auto">
                 <h2 class="text-lg font-semibold">{c.name}</h2>
                 <p class="text-sm text-muted">

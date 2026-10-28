@@ -3,16 +3,13 @@ import { api, type Environment, type Share } from "../../api.ts";
 import { Avatar } from "../../components/avatar.tsx";
 import { RevokeShare } from "../../components/revoke-share.tsx";
 import { useAction } from "../../components/use-action.ts";
-import { Button, Tag } from "../../components/ui.tsx";
+import { Button, Tag, td, th } from "../../components/ui.tsx";
 import { Expiry, LinkDialog, ShareDialog } from "../../dialogs/share.tsx";
 import { useLive } from "../../live.tsx";
 import { can } from "../../lib/permissions.ts";
 import { levelLabel } from "../../lib/grants.ts";
 import { ago } from "../../lib/format.ts";
 import { useFetch } from "../../lib/use-fetch.ts";
-
-const th = "border-b border-line px-4 py-[11px] text-left text-[13px] font-semibold text-muted";
-const td = "border-b border-hairline px-4 py-[13px] align-middle";
 
 export function SharingTab({ environment: c }: { environment: Environment }) {
   const { me } = useLive();
@@ -117,7 +114,7 @@ function ShareRow({ share: s, canManage, onLink, onChanged }: { share: Share; ca
         {canManage && (
           <RevokeShare username={s.username} onRevoked={onChanged}>
             <Button
-              class="h-[30px]! px-[11px]!"
+              size="sm"
               disabled={newLink.busy}
               title={s.linkPending ? "Replaces the unused link" : undefined}
               onClick={() => void newLink.run()}

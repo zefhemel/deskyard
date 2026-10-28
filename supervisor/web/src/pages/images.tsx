@@ -4,7 +4,7 @@ import { JobProgress, useJob } from "../components/job.tsx";
 import { notify, notifyError } from "../components/toast.tsx";
 import { EnvironmentChip } from "../components/environment-chip.tsx";
 import { Page, PageHead } from "../components/topbar.tsx";
-import { Button, Dialog, ErrorText, Field, Tag } from "../components/ui.tsx";
+import { Button, card, Dialog, ErrorText, Field, Tag } from "../components/ui.tsx";
 import { UPGRADE_NOTE, UpgradeDialog } from "../dialogs/upgrade.tsx";
 import { useLive } from "../live.tsx";
 import { ago, bytes, day, plural } from "../lib/format.ts";
@@ -93,9 +93,8 @@ function ImageCard({
     api.removeImage(img.ref).then(onRemoved, notifyError);
   };
   const behind = img.installed && img.behind.length > 0;
-  const small = "h-[30px]! px-[11px]!";
   return (
-    <article class="rounded-[10px] border border-line bg-surface p-5" aria-label={img.title || img.ref}>
+    <article class={`${card} p-5`} aria-label={img.title || img.ref}>
       <div class="flex flex-wrap items-start gap-x-4 gap-y-2">
         <div class="mr-auto min-w-0">
           <h2 class="flex flex-wrap items-center gap-x-2 gap-y-1 text-lg font-semibold">
@@ -107,17 +106,17 @@ function ImageCard({
         </div>
         <div class="flex flex-wrap gap-2">
           {!img.installed && (
-            <Button variant="primary" class={small} disabled={install.running} onClick={() => void install.start(() => api.installImage(img.ref))}>
+            <Button variant="primary" size="sm" disabled={install.running} onClick={() => void install.start(() => api.installImage(img.ref))}>
               {install.running ? "Installing…" : "Install"}
             </Button>
           )}
           {behind && (
-            <Button variant="primary" class={small} onClick={onUpgrade}>
+            <Button variant="primary" size="sm" onClick={onUpgrade}>
               Upgrade {plural(img.behind.length, "environment")}…
             </Button>
           )}
           {img.environments.length === 0 && !img.official && (
-            <Button class={small} onClick={remove}>
+            <Button size="sm" onClick={remove}>
               Remove from catalog
             </Button>
           )}

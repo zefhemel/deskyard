@@ -2,7 +2,7 @@ import { useState } from "preact/hooks";
 import { api, type Remote, type RemoteType } from "../../api.ts";
 import { notify } from "../../components/toast.tsx";
 import { useAction } from "../../components/use-action.ts";
-import { Button, Dialog, ErrorText, Field, Note, Tag, errorMessage } from "../../components/ui.tsx";
+import { Button, Card, Dialog, ErrorText, Field, Note, Tag, errorMessage } from "../../components/ui.tsx";
 import { blankDraft, draftFromRemote, fieldsFor, REMOTE_TYPES, remoteDraftErrors, toRemoteInput, type RemoteChoices, type RemoteDraft } from "../../lib/remote-form.ts";
 import { useFetch } from "../../lib/use-fetch.ts";
 
@@ -41,21 +41,24 @@ export function RemotesTab() {
       ) : (
         <div class="grid gap-3">
           {remotes.map((r) => (
-            <article key={r.name} class="rounded-[10px] border border-line bg-surface p-5">
-              <div class="mb-4 flex flex-wrap items-start gap-x-4 gap-y-2">
-                <h2 class="mr-auto min-w-0 text-lg font-semibold">
+            <Card
+              key={r.name}
+              title={
+                <>
                   {r.name} <Tag>{typeLabel(r.type)}</Tag>
-                </h2>
-                <Button onClick={() => setEditing(r)}>Edit</Button>
-                <Button onClick={() => setRemoving(r)}>Delete</Button>
-              </div>
-              <dl class="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[7.5rem_1fr] sm:gap-y-3">
-                <dt class="text-muted">Location</dt>
-                <dd class="mono min-w-0 break-all">{where(r)}</dd>
-                <dt class="mt-2 text-muted sm:mt-0">Repositories</dt>
-                <dd class="min-w-0">{r.repositories.length ? r.repositories.join(", ") : <span class="text-muted">None</span>}</dd>
-              </dl>
-            </article>
+                </>
+              }
+              actions={
+                <>
+                  <Button onClick={() => setEditing(r)}>Edit</Button>
+                  <Button onClick={() => setRemoving(r)}>Delete</Button>
+                </>
+              }
+              facts={[
+                { label: "Location", value: where(r), mono: true },
+                { label: "Repositories", value: r.repositories.length ? r.repositories.join(", ") : <span class="text-muted">None</span> },
+              ]}
+            />
           ))}
         </div>
       )}

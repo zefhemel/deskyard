@@ -4,16 +4,13 @@ import { Avatar } from "../components/avatar.tsx";
 import { Menu, type MenuItem } from "../components/menu.tsx";
 import { useAction } from "../components/use-action.ts";
 import { Page, PageHead } from "../components/topbar.tsx";
-import { Button, Dialog, ErrorText, IconButton, MORE, Tag } from "../components/ui.tsx";
+import { Button, card, Dialog, ErrorText, IconButton, MORE, Tag, td, th } from "../components/ui.tsx";
 import { AccountDialog } from "../dialogs/account.tsx";
 import { Expiry, LinkDialog } from "../dialogs/share.tsx";
 import { useLive } from "../live.tsx";
 import { ago } from "../lib/format.ts";
 import { useFetch } from "../lib/use-fetch.ts";
 import { DeviceList } from "./devices.tsx";
-
-const th = "border-b border-line px-4 py-[11px] text-left text-[13px] font-semibold text-muted";
-const td = "border-b border-hairline px-4 py-[13px] align-middle";
 
 export function AccountsPage() {
   const { me } = useLive();
@@ -40,7 +37,7 @@ export function AccountsPage() {
       </PageHead>
       <ErrorText error={accounts.error} />
       {accounts.data && (
-        <div class="overflow-x-auto rounded-[10px] border border-line bg-surface">
+        <div class={`overflow-x-auto ${card}`}>
           <table class="w-full border-collapse text-sm">
             <thead>
               <tr>
@@ -95,13 +92,13 @@ export function AccountsPage() {
                     <td class={`${td} whitespace-nowrap`}>{a.username === me.username ? "Now" : ago(a.lastLogin)}</td>
                     <td class={`${td} text-right whitespace-nowrap`}>
                       <span class="inline-flex gap-1.5">
-                        <Button class="h-[30px]! px-[11px]!" onClick={() => setEditing(a)}>
+                        <Button size="sm" onClick={() => setEditing(a)}>
                           Edit
                         </Button>
                         <Menu
                           items={items}
                           trigger={({ toggle, open }) => (
-                            <IconButton class="h-[30px]! w-[30px]!" aria-label={`More actions for ${a.username}`} aria-haspopup="menu" aria-expanded={open} onClick={toggle}>
+                            <IconButton size="sm" aria-label={`More actions for ${a.username}`} aria-haspopup="menu" aria-expanded={open} onClick={toggle}>
                               {MORE}
                             </IconButton>
                           )}

@@ -7,16 +7,13 @@ import { api, type Credential } from "../api.ts";
 import { copySecret, SecretReveal } from "../components/secret-reveal.tsx";
 import { Page, PageHead } from "../components/topbar.tsx";
 import { useAction } from "../components/use-action.ts";
-import { Button, ErrorText, Note, Tag } from "../components/ui.tsx";
+import { Button, card, ErrorText, Note, Tag, td, th } from "../components/ui.tsx";
 import { SignOutEverywhereDialog } from "../dialogs/sign-out-everywhere.tsx";
 import { useLive } from "../live.tsx";
 import { ago, day } from "../lib/format.ts";
 import { useFetch } from "../lib/use-fetch.ts";
 import { accountCan, can } from "../lib/permissions.ts";
 import { davAddress, davInTheClear } from "../lib/webdav.ts";
-
-const th = "border-b border-line px-4 py-[11px] text-left text-[13px] font-semibold text-muted";
-const td = "border-b border-hairline px-4 py-[13px] align-middle";
 
 export function DevicesPage() {
   const { me } = useLive();
@@ -63,7 +60,7 @@ export function DeviceList({
   if (!devices) return <p class="text-sm text-muted">Loading…</p>;
   if (!devices.length) return <p class="text-sm text-muted">No signed-in devices.</p>;
   return (
-    <div class="overflow-x-auto rounded-[10px] border border-line bg-surface">
+    <div class={`overflow-x-auto ${card}`}>
       <table class="w-full border-collapse text-sm">
         <thead>
           <tr>
@@ -93,7 +90,7 @@ function DeviceRow({ device: d, revoke, onChanged }: { device: Credential; revok
       <td class={`${td} whitespace-nowrap`}>{day(d.created)}</td>
       <td class={`${td} whitespace-nowrap`}>{ago(d.lastUsed)}</td>
       <td class={`${td} text-right whitespace-nowrap`}>
-        <Button class="h-[30px]! px-[11px]!" disabled={signOut.busy} onClick={() => void signOut.run()}>
+        <Button size="sm" disabled={signOut.busy} onClick={() => void signOut.run()}>
           Sign out
         </Button>
       </td>
@@ -136,7 +133,7 @@ function WebDAVSection({ devices, onChanged }: { devices: Credential[] | undefin
           {drives.map((name) => (
             <li key={name} class="flex flex-wrap items-center gap-2">
               <span class="mono min-w-0 break-all">{davAddress(name)}</span>
-              <Button class="h-[30px]! px-[11px]!" onClick={() => void copySecret(davAddress(name), "the address")}>
+              <Button size="sm" onClick={() => void copySecret(davAddress(name), "the address")}>
                 Copy
               </Button>
             </li>

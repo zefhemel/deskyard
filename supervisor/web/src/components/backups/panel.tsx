@@ -7,7 +7,7 @@ import { ago, bytes, dateTime } from "../../lib/format.ts";
 import { useBackupItem, useBackups, useFetch } from "../../lib/use-fetch.ts";
 import { JobProgress, useJob } from "../job.tsx";
 import { notify } from "../toast.tsx";
-import { Button, ErrorText } from "../ui.tsx";
+import { Button, card, ErrorText } from "../ui.tsx";
 import { BrowseDialog } from "./browse-dialog.tsx";
 import { PolicyDialog } from "./policy-dialog.tsx";
 import { RestoreHereDialog, RestoreNewDialog } from "./restore-dialogs.tsx";
@@ -48,7 +48,7 @@ export function BackupsPanel({ kind, name, stoppers, hostPath }: { kind: ItemKin
     <section aria-label="Backups">
       <ErrorText error={item.error || overview.error} />
       {b && (
-        <div class="rounded-[10px] border border-line bg-surface p-5">
+        <div class={`${card} p-5`}>
           <div class="flex flex-wrap items-start gap-x-4 gap-y-2">
             <div class="mr-auto min-w-0">
               <h2 class="text-lg font-semibold">
@@ -84,7 +84,7 @@ export function BackupsPanel({ kind, name, stoppers, hostPath }: { kind: ItemKin
       ) : !snaps.data.snapshots.length ? (
         <p class="text-sm text-muted">No snapshots yet.</p>
       ) : (
-        <ul class="m-0 list-none divide-y divide-hairline rounded-[10px] border border-line bg-surface p-0">
+        <ul class={`${card} m-0 list-none divide-y divide-hairline p-0`}>
           {snaps.data.snapshots.map((s) => (
             <li key={s.id} class="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
               <div class="mr-auto min-w-0">
