@@ -18,18 +18,20 @@ import (
 
 // Item kinds: what a backup policy and its snapshots are of.
 const (
-	KindEnvironment = "environment" // the definition and home folder
-	KindVolume      = "volume"
+	KindEnvironment = environments.KindEnvironment // the definition and home folder
+	KindVolume      = environments.KindVolume
 )
 
-// Item is an environment or a volume, by name.
+// Item is an environment or a volume, by name: an environments.Item (which
+// it converts to for reservations) with its restic tag. What differs by kind
+// is in kinds.
 type Item struct {
 	Kind, Name string
 }
 
 // ParseItem checks kind and name.
 func ParseItem(kind, name string) (Item, error) {
-	if kind != KindEnvironment && kind != KindVolume {
+	if _, ok := kinds[kind]; !ok {
 		return Item{}, fmt.Errorf("backups are of an environment or a volume, not %q", kind)
 	}
 	if err := environments.ValidName(name); err != nil {

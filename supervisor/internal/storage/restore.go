@@ -1,9 +1,7 @@
 package storage
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -65,17 +63,7 @@ func (s *Service) repoFor(it Item, name string) (string, error) {
 
 // itemFolder is the folder holding the item's files.
 func (s *Service) itemFolder(it Item) (environments.Folder, error) {
-	if it.Kind == KindEnvironment {
-		if _, ok := s.Env.Definition(it.Name); !ok {
-			return environments.Folder{}, fmt.Errorf("environment %s: %w", it.Name, ErrNotFound)
-		}
-		return environments.Folder{Path: s.Env.Layout().HomeOf(it.Name)}, nil
-	}
-	v, ok := s.Env.Volume(it.Name)
-	if !ok {
-		return environments.Folder{}, fmt.Errorf("volume %s: %w", it.Name, ErrNotFound)
-	}
-	return s.Env.VolumeFolder(v), nil
+	return it.kind().folder(s.Env, it.Name)
 }
 
 // Restore restores a snapshot of it as req says.
@@ -125,14 +113,7 @@ func (s *Service) restoreHere(ctx context.Context, it Item, repo Repo, snap Snap
 	}
 	// The environments that have the files open: stopped, and started again
 	// afterwards when they were running.
-	var envs []string
-	if it.Kind == KindEnvironment {
-		envs = []string{it.Name}
-	} else {
-		for _, u := range s.Env.VolumeUsers(it.Name) {
-			envs = append(envs, u.Environment)
-		}
-	}
+	envs := it.kind().users(s.Env, it.Name)
 	// After any backup that holds the lock, so nothing sits stopped waiting.
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
@@ -173,7 +154,7 @@ func (s *Service) restoreHere(ctx context.Context, it Item, repo Repo, snap Snap
 		}
 	}
 	progress("Restoring", 0)
-	if err := s.Tool.Restore(ctx, repo, snap.ID, itemRoot(it), engine.Mount{Source: folder.Path, MustExist: true}, nil, true, func(frac float64, msg string) {
+	if err := s.Tool.Restore(ctx, repo, snap.ID, it.files(), engine.Mount{Source: folder.Path, MustExist: true}, nil, true, func(frac float64, msg string) {
 		progress("Restoring: "+msg, frac)
 	}); err != nil {
 		if len(restart) > 0 {
@@ -193,56 +174,28 @@ func (s *Service) restoreHere(ctx context.Context, it Item, repo Repo, snap Snap
 
 func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snapshot, req RestoreRequest, progress func(string, float64)) (RestoreResult, error) {
 	name := req.NewName
-	layout := s.Env.Layout()
-	var folder string
-	if it.Kind == KindEnvironment {
-		if err := environments.ValidNewName(name); err != nil {
-			return RestoreResult{}, err
-		}
-		if _, ok := s.Env.Definition(name); ok {
-			return RestoreResult{}, fmt.Errorf("environment %q: %w", name, ErrExists)
-		}
-		folder = layout.HomeOf(name)
-	} else {
-		if err := environments.ValidName(name); err != nil {
-			return RestoreResult{}, err
-		}
-		if _, ok := s.Env.Volume(name); ok {
-			return RestoreResult{}, fmt.Errorf("volume %q: %w", name, ErrExists)
-		}
-		folder = layout.VolumeOf(name)
+	k := it.kind()
+	if err := k.validNew(name); err != nil {
+		return RestoreResult{}, err
 	}
+	if k.exists(s.Env, name) {
+		return RestoreResult{}, fmt.Errorf("%s %q: %w", it.Kind, name, ErrExists)
+	}
+	parent := k.parent(s.Env)
+	folder := filepath.Join(parent.Path, name)
 	if _, err := os.Lstat(folder); err == nil {
 		return RestoreResult{}, fmt.Errorf("%w: %s is in the way; remove it or choose another name", ErrExists, folder)
 	}
-	newItem := Item{it.Kind, name}
-	release, err := s.hold(newItem, "restoring", true)
+	release, err := s.hold(Item{it.Kind, name}, "restoring", true)
 	if err != nil {
 		return RestoreResult{}, err
 	}
 	defer release()
-	if it.Kind == KindEnvironment {
-		// As the create API does, so reconcile and other operations leave the
-		// name alone while its home is restored and it is created, and what
-		// a removal of the name failed to purge doesn't carry over.
-		releaseName, err := s.Env.ClaimName(name)
-		if errors.Is(err, environments.ErrExists) {
-			return RestoreResult{}, fmt.Errorf("environment %q: %w", name, ErrExists)
-		} else if err != nil {
-			return RestoreResult{}, fmt.Errorf("%s is busy: %w", name, err)
-		}
-		defer releaseName()
+	create, releaseNew, err := k.restoreAs(ctx, s, repo, snap, it, name, req)
+	if err != nil {
+		return RestoreResult{}, err
 	}
-	var def environments.Definition
-	if it.Kind == KindEnvironment {
-		var buf bytes.Buffer
-		if err := s.Tool.Dump(ctx, repo, snap.ID, path.Join("/deskyard/environment", it.Name, "definition.json"), false, &buf); err != nil {
-			return RestoreResult{}, err
-		}
-		if err := json.Unmarshal(buf.Bytes(), &def); err != nil {
-			return RestoreResult{}, fmt.Errorf("reading the saved settings: %w", err)
-		}
-	}
+	defer releaseNew()
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
 	done, err := s.useRemote(repo.Remote)
@@ -253,29 +206,16 @@ func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snaps
 	if err := os.Mkdir(folder, 0o755); err != nil {
 		return RestoreResult{}, err
 	}
-	removeFolder := func() {
-		_ = s.Env.RemoveTree(context.WithoutCancel(ctx), environments.Folder{Path: filepath.Dir(folder)}, filepath.Base(folder))
-	}
+	removeFolder := func() { _ = s.Env.RemoveTree(context.WithoutCancel(ctx), parent, name) }
 	progress("Restoring", 0)
-	target := engine.Mount{Source: folder, MustExist: true}
-	if err := s.Tool.Restore(ctx, repo, snap.ID, itemRoot(it), target, nil, false, func(frac float64, msg string) {
+	if err := s.Tool.Restore(ctx, repo, snap.ID, it.files(), engine.Mount{Source: folder, MustExist: true}, nil, false, func(frac float64, msg string) {
 		progress("Restoring: "+msg, frac)
 	}); err != nil {
 		removeFolder()
 		return RestoreResult{}, err
 	}
-	res := RestoreResult{Created: name}
-	if it.Kind == KindVolume {
-		if _, _, err := s.Env.CreateVolume(ctx, name, ""); err != nil {
-			removeFolder()
-			return RestoreResult{}, err
-		}
-		return res, nil
-	}
-	set, dropped := s.settingsFrom(def, req.NewImage)
-	res.Dropped = dropped
-	// Created stopped: the restored desktop never runs before it is asked to.
-	if _, err := s.Env.CreateStopped(ctx, name, set, progress); err != nil {
+	res, err := create(ctx, progress)
+	if err != nil {
 		removeFolder()
 		return RestoreResult{}, err
 	}
@@ -345,7 +285,7 @@ func (s *Service) restoreFolder(ctx context.Context, it Item, repo Repo, snap Sn
 		return RestoreResult{}, err
 	}
 	progress("Restoring", 0)
-	if err := s.Tool.Restore(ctx, repo, snap.ID, itemRoot(it), engine.Mount{Source: filepath.Join(folder.Path, name), MustExist: true}, includes, false, func(frac float64, msg string) {
+	if err := s.Tool.Restore(ctx, repo, snap.ID, it.files(), engine.Mount{Source: filepath.Join(folder.Path, name), MustExist: true}, includes, false, func(frac float64, msg string) {
 		progress("Restoring: "+msg, frac)
 	}); err != nil {
 		return RestoreResult{}, err
@@ -372,7 +312,7 @@ func (s *Service) Browse(ctx context.Context, it Item, repoName, snapshot, dir s
 	if err != nil {
 		return nil, err
 	}
-	root := itemRoot(it)
+	root := it.files()
 	entries, err := s.Tool.Ls(ctx, repo, snap.ID, path.Join(root, clean))
 	if err != nil {
 		return nil, err
@@ -411,7 +351,7 @@ func (s *Service) Download(ctx context.Context, it Item, repoName, snapshot, p s
 	if dir {
 		name += ".zip"
 	}
-	return s.Tool.Dump(ctx, repo, snap.ID, path.Join(itemRoot(it), clean), dir, open(name))
+	return s.Tool.Dump(ctx, repo, snap.ID, path.Join(it.files(), clean), dir, open(name))
 }
 
 // CheckRestorePaths checks the paths of a restore to a folder, as the

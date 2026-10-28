@@ -5,12 +5,10 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
-	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -347,50 +345,16 @@ func (s *Service) ItemGone(it Item) error {
 	return errors.Join(s.Store.DeletePolicy(it), s.State.Forget(it))
 }
 
-func (s *Service) exists(it Item) bool {
-	if it.Kind == KindEnvironment {
-		_, ok := s.Env.Definition(it.Name)
-		return ok
-	}
-	_, ok := s.Env.Volume(it.Name)
-	return ok
-}
+func (s *Service) exists(it Item) bool { return it.kind().exists(s.Env, it.Name) }
 
 // --- backing up ---
 
-// itemPaths are the item's folder in a helper, and the mounts that put its
-// files there.
+// itemSource is where a helper finds the item's files, and the mounts that
+// put them there.
 func (s *Service) itemSource(it Item) (root string, mounts []engine.Mount, cleanup func(), err error) {
-	cleanup = func() {}
-	switch it.Kind {
-	case KindEnvironment:
-		def, ok := s.Env.Definition(it.Name)
-		if !ok {
-			return "", nil, cleanup, fmt.Errorf("environment %s doesn't exist", it.Name)
-		}
-		b, err := json.MarshalIndent(def, "", "  ")
-		if err != nil {
-			return "", nil, cleanup, err
-		}
-		raw := make([]byte, 6)
-		_, _ = rand.Read(raw)
-		file := filepath.Join(s.layout.State, "backups", "definition-"+hex.EncodeToString(raw)+".json")
-		if err := store.WriteFile(file, append(b, '\n')); err != nil {
-			return "", nil, cleanup, err
-		}
-		root = "/deskyard/environment/" + it.Name
-		return root, []engine.Mount{
-			{Source: s.Env.Layout().HomeOf(it.Name), Target: root + "/home", ReadOnly: true, MustExist: true},
-			{Source: file, Target: root + "/definition.json", ReadOnly: true, MustExist: true},
-		}, func() { os.Remove(file) }, nil
-	default:
-		v, ok := s.Env.Volume(it.Name)
-		if !ok {
-			return "", nil, cleanup, fmt.Errorf("volume %s doesn't exist", it.Name)
-		}
-		root = "/deskyard/volume/" + it.Name
-		return root, []engine.Mount{{Source: s.Env.VolumeFolder(v).Path, Target: root, ReadOnly: true, MustExist: true}}, cleanup, nil
-	}
+	root = it.Root()
+	mounts, cleanup, err = it.kind().sources(s, it.Name, root)
+	return root, mounts, cleanup, err
 }
 
 // BackUp backs it up now to its policy's repository, then forgets snapshots
@@ -639,12 +603,4 @@ func (s *Service) snapshotOf(ctx context.Context, repoName string, it Item, id s
 		}
 	}
 	return Snapshot{}, fmt.Errorf("snapshot %s of %s: %w", id, it, ErrNotFound)
-}
-
-// itemRoot is where an item's files are in its snapshots.
-func itemRoot(it Item) string {
-	if it.Kind == KindEnvironment {
-		return path.Join("/deskyard/environment", it.Name, "home")
-	}
-	return path.Join("/deskyard/volume", it.Name)
 }
