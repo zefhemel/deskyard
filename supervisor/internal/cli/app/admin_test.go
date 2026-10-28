@@ -148,9 +148,9 @@ func TestAdminEnvironments(t *testing.T) {
 		}
 	}
 
-	for _, action := range []string{"start", "stop", "restart"} {
+	for action, doing := range map[string]string{"start": "Starting", "stop": "Stopping", "restart": "Restarting"} {
 		f.Answer("POST /api/environments/alice/"+action, clitest.Answer{})
-		if r := h.run("env", action, "alice"); r.code != 0 {
+		if r := h.run("env", action, "alice"); r.code != 0 || r.stdout != doing+" alice.\n" {
 			t.Errorf("env %s: %+v", action, r)
 		}
 		wantCall(t, f, "POST", "/api/environments/alice/"+action, "", "")

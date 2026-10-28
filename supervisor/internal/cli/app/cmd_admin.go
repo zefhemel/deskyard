@@ -515,20 +515,21 @@ func runEnvRemove(a *App, c *call) error {
 	return nil
 }
 
-// runEnvPower is env start, stop and restart.
-func runEnvPower(a *App, c *call) error {
-	name := c.args[0]
-	action := strings.TrimPrefix(c.cmd.Name, "env ")
-	cl, err := a.apiClient(c, name)
-	if err != nil {
-		return err
+// envPower is env start, stop or restart: it posts to the environment's
+// route action and says what is happening (doing: "Starting").
+func envPower(action, doing string) func(a *App, c *call) error {
+	return func(a *App, c *call) error {
+		name := c.args[0]
+		cl, err := a.apiClient(c, name)
+		if err != nil {
+			return err
+		}
+		if err := cl.JSON(c.ctx, http.MethodPost, remote.EnvPath(name, "/"+action), nil, nil); err != nil {
+			return err
+		}
+		fmt.Fprintf(a.Stdout, "%s %s.\n", doing, name)
+		return nil
 	}
-	if err := cl.JSON(c.ctx, http.MethodPost, remote.EnvPath(name, "/"+action), nil, nil); err != nil {
-		return err
-	}
-	done := map[string]string{"start": "Starting", "stop": "Stopping", "restart": "Restarting"}[action]
-	fmt.Fprintf(a.Stdout, "%s %s.\n", done, name)
-	return nil
 }
 
 func runEnvAccess(a *App, c *call) error {
