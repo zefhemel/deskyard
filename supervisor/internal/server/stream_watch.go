@@ -163,7 +163,6 @@ type frameScanner struct {
 
 	hdr       [14]byte
 	hn        int // header bytes so far
-	need      int // the header's length, once its second byte is in
 	inPayload bool
 	left      uint64 // payload bytes still to come
 	first     bool   // the payload's first byte is still to come
@@ -184,22 +183,11 @@ func (s *frameScanner) next(p []byte) int {
 			s.hdr[s.hn] = p[i]
 			s.hn++
 			i++
-			if s.hn == 2 {
-				s.need = 2
-				switch s.hdr[1] & 0x7f {
-				case 126:
-					s.need += 2
-				case 127:
-					s.need += 8
-				}
-				if s.hdr[1]&0x80 != 0 {
-					s.need += 4
-				}
-			}
-			if s.hn < 2 || s.hn < s.need {
+			h, ok := parseWSHeader(s.hdr[:s.hn])
+			if !ok {
 				continue
 			}
-			s.startPayload()
+			s.startPayload(h)
 			if s.left == 0 {
 				s.inPayload = false
 				return i
@@ -230,29 +218,58 @@ func (s *frameScanner) next(p []byte) int {
 	return i
 }
 
-// startPayload reads the complete header.
-func (s *frameScanner) startPayload() {
-	h := s.hdr[:s.need]
-	s.opcode = h[0] & 0x0f
-	s.masked = h[1]&0x80 != 0
-	rest := h[2:]
-	switch n := h[1] & 0x7f; n {
-	case 126:
-		s.left = uint64(binary.BigEndian.Uint16(rest))
-		rest = rest[2:]
-	case 127:
-		s.left = binary.BigEndian.Uint64(rest)
-		rest = rest[8:]
-	default:
-		s.left = uint64(n)
-	}
-	if s.masked {
-		copy(s.mask[:], rest)
-	}
+// startPayload starts the payload of the frame whose header h is in.
+func (s *frameScanner) startPayload(h wsHeader) {
+	s.opcode, s.masked, s.mask, s.left = h.opcode, h.masked, h.mask, h.length
 	s.hn = 0
 	s.inPayload = true
 	s.first = true
 	if s.onHeader != nil {
 		s.onHeader(s.opcode)
 	}
+}
+
+// wsHeader is a WebSocket frame's header (RFC 6455, 5.2).
+type wsHeader struct {
+	fin    bool
+	rsv    byte // the RSV bits, in place
+	opcode byte
+	masked bool
+	mask   [4]byte
+	length uint64 // the payload's
+	size   int    // the header's own
+}
+
+// parseWSHeader reads the frame header b starts with; false while b doesn't
+// hold all of it yet.
+func parseWSHeader(b []byte) (wsHeader, bool) {
+	if len(b) < 2 {
+		return wsHeader{}, false
+	}
+	h := wsHeader{fin: b[0]&0x80 != 0, rsv: b[0] & 0x70, opcode: b[0] & 0x0f, masked: b[1]&0x80 != 0, size: 2}
+	n := b[1] & 0x7f
+	switch n {
+	case 126:
+		h.size += 2
+	case 127:
+		h.size += 8
+	}
+	if h.masked {
+		h.size += 4
+	}
+	if len(b) < h.size {
+		return wsHeader{}, false
+	}
+	switch n {
+	case 126:
+		h.length = uint64(binary.BigEndian.Uint16(b[2:]))
+	case 127:
+		h.length = binary.BigEndian.Uint64(b[2:])
+	default:
+		h.length = uint64(n)
+	}
+	if h.masked {
+		copy(h.mask[:], b[h.size-4:h.size])
+	}
+	return h, true
 }

@@ -29,8 +29,8 @@ type remoteHandler func(w http.ResponseWriter, r *http.Request, c environments.E
 
 // remote authenticates a remote access route (exec, forward, CDP, status):
 // a client credential only, since a browser has no use for them. The
-// connection is registered under the credential before access is checked,
-// so a revocation at any point after the check closes it.
+// connection is registered, and its access checked again, before it is
+// served, so a revocation at any point after the first check closes it.
 func (s *Server) remote(next remoteHandler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		bearer, ok := bearerOf(r)
@@ -42,19 +42,15 @@ func (s *Server) remote(next remoteHandler) http.Handler {
 			}
 			return
 		}
-		id, _, ok := parseBearer(credentialPrefix, bearer)
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "the credential is unknown, revoked or expired")
-			return
-		}
 		ctx, cancel := context.WithCancel(r.Context())
 		defer cancel()
-		defer s.credentials.track(id, r.PathValue("name"), cancel)()
 		rr, c, cred, ok := s.remoteTarget(w, r.WithContext(ctx), bearer)
 		if !ok {
 			return
 		}
-		if ctx.Err() != nil {
+		done, ok := s.open(s.connOf(rr, c.Name, cancel))
+		defer done()
+		if !ok {
 			// Revoked while the environment was looked up: answer as the
 			// request would now.
 			if _, _, _, ok := s.remoteTarget(w, r, bearer); ok {
@@ -82,38 +78,15 @@ func (s *Server) remoteTarget(w http.ResponseWriter, r *http.Request, bearer str
 	return r, c, cred, true
 }
 
-// running writes 409 unless the environment runs.
-func running(w http.ResponseWriter, c environments.Environment) bool {
-	if !c.Running() {
-		writeError(w, http.StatusConflict, c.Name+" is stopped; someone with access can start it")
-		return false
-	}
-	return true
-}
-
-func (s *Server) handleRemoteExec(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
-	if running(w, c) {
-		s.remoteExec(w, r, c, cred)
-	}
-}
-
-func (s *Server) handleRemoteForward(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
-	if running(w, c) {
-		s.remoteForward(w, r, c, cred)
-	}
-}
-
-// handleRemoteCDP serves /cdp/{rest...}, and handleRemoteCDPRoot /cdp
-// (Chromium's /json/version).
-func (s *Server) handleRemoteCDP(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
-	if running(w, c) {
-		s.remoteCDP(w, r, c, cred, "/"+r.PathValue("rest"))
-	}
-}
-
-func (s *Server) handleRemoteCDPRoot(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
-	if running(w, c) {
-		s.remoteCDP(w, r, c, cred, "")
+// whileRunning serves next only while the environment runs, and writes 409
+// otherwise.
+func whileRunning(next remoteHandler) remoteHandler {
+	return func(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
+		if !c.Running() {
+			writeError(w, http.StatusConflict, c.Name+" is stopped; someone with access can start it")
+			return
+		}
+		next(w, r, c, cred)
 	}
 }
 
@@ -226,7 +199,7 @@ func (s *Server) remoteExec(w http.ResponseWriter, r *http.Request, c environmen
 	if act, ok := activity.ParseScreenArgv(start.Argv); ok {
 		s.activity.Screen(ref, agent, act)
 	} else if !isCopy {
-		id := randomID(8)
+		id := auth.RandomID(8)
 		s.activity.CmdStart(ref, agent, id, activity.DisplayCommand(start.Argv))
 		var once sync.Once
 		ended = func(exit *int) { once.Do(func() { s.activity.CmdEnd(ref, agent, id, exit) }) }
@@ -318,15 +291,17 @@ func (s *Server) remoteExec(w http.ResponseWriter, r *http.Request, c environmen
 }
 
 // remoteCDP proxies the shared Chromium's DevTools protocol through the
-// desktop's Caddy (/_cdp/), pointing /json URLs back through this route.
-func (s *Server) remoteCDP(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential, rest string) {
+// desktop's Caddy (/_cdp/), pointing /json URLs back through this route:
+// /cdp/{rest...} to /_cdp/{rest...}, and /cdp to Chromium's /json/version.
+func (s *Server) remoteCDP(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
+	rest := "/json/version"
+	if strings.HasSuffix(r.Pattern, "{rest...}") {
+		rest = "/" + r.PathValue("rest")
+	}
 	addr, tok, err := s.Environments.Target(r.Context(), c.Name)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
-	}
-	if rest == "" {
-		rest = "/json/version"
 	}
 	wsScheme := "ws"
 	if r.TLS != nil {

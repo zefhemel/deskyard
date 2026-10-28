@@ -178,7 +178,7 @@ func TestRevokingCredentialClosesExec(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	ws := startExec(t, ctx, ts, e, anna)
-	if err := s.credentials.remove(func(o credential) bool { return o.ID == c.ID }); err != nil {
+	if err := removeCredential(s, c.ID); err != nil {
 		t.Fatal(err)
 	}
 	closedSoon(t, ctx, ws, "deleting the credential")
@@ -219,7 +219,7 @@ func TestRemoteAccessRechecksAfterRegistering(t *testing.T) {
 	}{
 		{"grant removed", func(s *Server, _ credential) error { return s.Accounts.SetAccess("alice", nil) }, 404},
 		{"credential deleted", func(s *Server, c credential) error {
-			return s.credentials.remove(func(o credential) bool { return o.ID == c.ID })
+			return removeCredential(s, c.ID)
 		}, 401},
 		{"account deleted", func(s *Server, _ credential) error { return s.Accounts.Delete("anna") }, 401},
 	} {

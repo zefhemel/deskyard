@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 )
 
 type cliLoginStart struct {
@@ -74,7 +76,7 @@ func TestCLILoginApprove(t *testing.T) {
 	if code, body := sendBearer(t, "GET", ts.URL+"/api/me", res.Credential, ""); code != 200 || !strings.Contains(body, `"username":"bob"`) {
 		t.Fatalf("me with the credential: %d %s", code, body)
 	}
-	creds := s.credentials.list(accountNamed(t, s, "bob").ID)
+	creds := s.Accounts.Credentials(accountNamed(t, s, "bob").ID)
 	if len(creds) != 1 || creds[0].Name != "deskyard CLI on test" || creds[0].Kind != "cli" {
 		t.Fatalf("credentials: %+v", creds)
 	}
@@ -101,7 +103,7 @@ func TestCLILoginDeny(t *testing.T) {
 	if code, _ := pollCLILogin(t, ts, start.ID, start.PollSecret); code != http.StatusGone {
 		t.Fatalf("poll after the denial was taken: %d", code)
 	}
-	if len(s.credentials.list("")) != 0 {
+	if len(s.Accounts.Credentials("")) != 0 {
 		t.Fatal("a denied login made a credential")
 	}
 }
@@ -179,6 +181,30 @@ func TestCLILoginObserverCannotApprove(t *testing.T) {
 	}
 }
 
+// An approver lowered to observe between approving and the poll gets no
+// credential: the poll checks again what approving checked.
+func TestCLILoginPollRechecksTheApprover(t *testing.T) {
+	s, ts := newTestServer(t)
+	fullOnAlice(t, s)
+	start := startCLILogin(t, ts)
+	if code, body := send(t, login(t, ts, "bob"), "POST", ts.URL+"/api/cli-login/"+start.ID+"/approve", ts.URL, ""); code != http.StatusNoContent {
+		t.Fatalf("approve: %d %s", code, body)
+	}
+	if err := s.Accounts.SetAccess("alice", map[string]auth.Level{"bob": auth.LevelObserve}); err != nil {
+		t.Fatal(err)
+	}
+	code, body := pollCLILogin(t, ts, start.ID, start.PollSecret)
+	if code != http.StatusForbidden || !strings.Contains(body, "observe-only access is for the browser") {
+		t.Fatalf("poll after the approver was lowered: %d %s", code, body)
+	}
+	if n := len(s.Accounts.Credentials("")); n != 0 {
+		t.Fatalf("%d credentials made for an observer", n)
+	}
+	if code, _ := pollCLILogin(t, ts, start.ID, start.PollSecret); code != http.StatusGone {
+		t.Fatalf("poll after the refusal: %d", code)
+	}
+}
+
 func TestCLILoginApproveNeedsSameOrigin(t *testing.T) {
 	s, ts := newTestServer(t)
 	start := startCLILogin(t, ts)
@@ -218,7 +244,7 @@ func TestCLILoginOfDeletedAccountGone(t *testing.T) {
 	if code, _ := pollCLILogin(t, ts, start.ID, start.PollSecret); code != http.StatusGone {
 		t.Fatalf("poll for a recreated account: %d", code)
 	}
-	if len(s.credentials.list("")) != 0 {
+	if len(s.Accounts.Credentials("")) != 0 {
 		t.Fatal("a credential was made for the recreated account")
 	}
 }
@@ -277,16 +303,15 @@ func TestCLILoginKeepsApprovalWhenSavingFails(t *testing.T) {
 	if code, body := send(t, bob, "POST", ts.URL+"/api/cli-login/"+start.ID+"/approve", ts.URL, ""); code != http.StatusNoContent {
 		t.Fatalf("approve: %d %s", code, body)
 	}
-	saved := s.credentials.path
-	s.credentials.path = blockedStatePath(t)
+	blockAccountsFile(t, s)
 	if code, body := pollCLILogin(t, ts, start.ID, start.PollSecret); code != http.StatusInternalServerError {
 		t.Fatalf("poll while saving fails: %d %s", code, body)
 	}
-	s.credentials.path = saved
+	unblockAccountsFile(t, s)
 	if code, body := pollCLILogin(t, ts, start.ID, start.PollSecret); code != 200 || !strings.Contains(body, `"credential":"dyc_`) {
 		t.Fatalf("poll once saving works: %d %s", code, body)
 	}
-	if n := len(s.credentials.list(accountNamed(t, s, "bob").ID)); n != 1 {
+	if n := len(s.Accounts.Credentials(accountNamed(t, s, "bob").ID)); n != 1 {
 		t.Fatalf("%d credentials, want 1", n)
 	}
 }

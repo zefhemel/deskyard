@@ -26,7 +26,7 @@ type shareJSON struct {
 
 func (s *Server) toShareJSON(a accounts.Account) shareJSON {
 	j := shareJSON{Username: a.Username, Expires: a.Expires, Created: a.Created, LastLogin: since(a.LastLogin),
-		LinkPending: s.links.pending(a.ID)}
+		LinkPending: a.Link != nil}
 	if a.SharedBy != nil {
 		j.SharedBy = *a.SharedBy
 	}
@@ -36,15 +36,15 @@ func (s *Server) toShareJSON(a accounts.Account) shareJSON {
 	if seen := s.seen.get(a.ID); seen.After(used) {
 		used = seen
 	}
-	for _, c := range s.credentials.list(a.ID) {
+	for _, c := range a.Credentials {
 		if c.LastUsed != nil && c.LastUsed.After(used) {
 			used = *c.LastUsed
 		}
 	}
 	j.LastUsed = since(used)
-	if len(a.Grants) > 0 {
-		j.Environment, j.Level = a.Grants[0].Environment, a.Grants[0].Level
-		j.Connected = slices.Contains(s.viewers.names(j.Environment), a.Username) || s.credentials.connected(a.ID)
+	if g, ok := a.ShareGrant(); ok {
+		j.Environment, j.Level = g.Environment, g.Level
+		j.Connected = slices.Contains(s.conns.names(j.Environment), a.Username) || s.conns.connected(a.ID)
 	}
 	return j
 }
@@ -53,7 +53,7 @@ func (s *Server) toShareJSON(a accounts.Account) shareJSON {
 func (s *Server) sharesOf(name string) []shareJSON {
 	out := []shareJSON{}
 	for _, a := range s.Accounts.List() {
-		if a.IsShare() && len(a.Grants) > 0 && a.Grants[0].Environment == name {
+		if g, ok := a.ShareGrant(); ok && g.Environment == name {
 			out = append(out, s.toShareJSON(a))
 		}
 	}
@@ -69,16 +69,8 @@ func (s *Server) handleListShares(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
-	c, me, ok := s.environmentFor(w, r, auth.Observe)
+	c, me, ok := s.environmentFor(w, r, auth.Share)
 	if !ok {
-		return
-	}
-	if me.IsShare() {
-		writeError(w, http.StatusForbidden, "shares can't share")
-		return
-	}
-	if !auth.Can(me, auth.Share, c.Name) {
-		writeError(w, http.StatusForbidden, "observe-only access can't do that")
 		return
 	}
 	var req struct {
@@ -97,21 +89,12 @@ func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
 	if !checkExpiry(w, req.Expires) {
 		return
 	}
-	a, err := s.Accounts.Create(accounts.NewAccount{Username: req.Username, Expires: req.Expires,
+	// With its link, in one write: a share nobody can sign in as is no use.
+	a, code, err := s.Accounts.CreateWithLink(accounts.NewAccount{Username: req.Username, Expires: req.Expires,
 		Grants:   []accounts.Grant{{Environment: c.Name, Level: req.Level}},
-		SharedBy: &accounts.Sharer{Username: me.Username, ID: me.ID}})
+		SharedBy: &accounts.Sharer{Username: me.Username, ID: me.ID}}, me.Username)
 	if err != nil {
 		writeError(w, errorStatus(err), err.Error())
-		return
-	}
-	code, err := s.links.issue(a, me.Username)
-	if err != nil {
-		// A share nobody can sign in as is no use: take it back.
-		s.Log.Error("issuing a share's link", "share", a.Username, "err", err)
-		if err := s.Accounts.Delete(a.Username); err != nil {
-			s.Log.Error("deleting a share without a link", "share", a.Username, "err", err)
-		}
-		writeError(w, http.StatusInternalServerError, "the link couldn't be saved")
 		return
 	}
 	s.Log.Info("shared", "environment", c.Name, "share", a.Username, "level", req.Level, "by", me.Username)
@@ -128,7 +111,7 @@ func (s *Server) shareFor(w http.ResponseWriter, r *http.Request) (accounts.Acco
 		writeError(w, http.StatusNotFound, "no such share")
 		return a, me, false
 	}
-	if !me.Admin && a.SharedBy.ID != me.ID {
+	if !auth.Can(me, auth.ManageAccounts, "") && a.SharedBy.ID != me.ID {
 		writeError(w, http.StatusForbidden, "only the person who shared it or an admin can do that")
 		return a, me, false
 	}
@@ -141,8 +124,8 @@ func (s *Server) handleShareLink(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleRevokeShare deletes the share; the sweep its change runs deletes
-// its link and credentials and closes its connections.
+// handleRevokeShare deletes the share with its link and credentials, which
+// closes its connections.
 func (s *Server) handleRevokeShare(w http.ResponseWriter, r *http.Request) {
 	a, me, ok := s.shareFor(w, r)
 	if !ok || !s.deleteAccount(w, a.Username) {

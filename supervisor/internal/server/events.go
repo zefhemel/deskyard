@@ -102,7 +102,7 @@ func eventFor(a accounts.Account, e event) (event, bool) {
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	who, _ := s.principal(r)
 	a := who.account
-	r, untrack := s.trackStream(r)
+	r, untrack := s.track(r)
 	defer untrack()
 	ctx, sse, closeStream := s.startUIEvents(w, r)
 	if sse == nil {
@@ -132,7 +132,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	// session epoch; the page reconnects with its new cookie), and once its
 	// credential is deleted.
 	sendAll := func() bool {
-		acct, ok := s.accountNow(a.Username, a.ID, time.Now())
+		acct, ok := s.Accounts.Usable(a.Username, a.ID, time.Now())
 		if !ok || !who.signedIn(acct) {
 			return false
 		}
@@ -166,7 +166,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case e := <-sub.c:
-			acct, ok := s.accountNow(a.Username, a.ID, time.Now())
+			acct, ok := s.Accounts.Usable(a.Username, a.ID, time.Now())
 			if !ok {
 				return
 			}
@@ -247,7 +247,7 @@ func (s *Server) watchEngine(ctx context.Context) {
 			}
 			switch e.Action {
 			case "die", "stop", "destroy", "restart":
-				s.viewers.closeAll(name)
+				s.conns.closeAll(name)
 			}
 			switch e.Action {
 			case "die", "destroy", "create":

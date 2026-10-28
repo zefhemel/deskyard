@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/terminal"
 )
@@ -30,7 +31,7 @@ func (s *Server) terminalProcess(parent context.Context, containerID, session st
 			cancel()
 		}
 	}()
-	id := randomID(32)
+	id := auth.RandomID(32)
 	env := execEnvFor(map[string]string{"TERM": "xterm-256color"})
 	argv := []string{"deskyard", "terminal-lease", session, id}
 	if join {

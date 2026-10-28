@@ -79,14 +79,15 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.terminals.remove(live)
-	viewer := &conn{username: claims.Username, accountID: claims.AccountID, epoch: claims.Epoch, environment: c.ID, level: auth.LevelFull, cancel: cancel}
-	s.viewers.add(c.Name, viewer)
+	viewer := &conn{username: claims.Username, accountID: claims.AccountID, epoch: claims.Epoch, expires: claims.Expires,
+		environment: c.ID, level: auth.LevelFull, viewer: true, cancel: cancel}
+	s.conns.add(viewer)
 	s.publishViewers(c.Name, c.ID)
-	defer func() { s.viewers.remove(c.Name, viewer); s.publishViewers(c.Name, c.ID) }()
+	defer func() { s.conns.remove(viewer); s.publishViewers(c.Name, c.ID) }()
 	// Recheck after registration: account/lifecycle changes before joining cannot
 	// disappear between the initial permission check and cancellation hooks.
 	current, err := s.Environments.Get(ctx, c.Name)
-	if !s.terminalAllowed(live) || ctx.Err() != nil {
+	if !s.allowed(viewer) || ctx.Err() != nil {
 		writeError(w, 401, "terminal login ended")
 		return
 	}

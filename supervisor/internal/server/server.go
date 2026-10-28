@@ -43,7 +43,7 @@ type Server struct {
 	vpnTests  vpnTester
 	jobs      *jobs
 	events    *hub
-	viewers   *viewers
+	conns     *connections // live connections, with the desktops' viewers
 	terminals *terminalConnections
 	// terminalSessions caches running environments' shared terminal sessions.
 	terminalSessions *terminalSessions
@@ -54,8 +54,6 @@ type Server struct {
 	stats            *statsCollector
 	inside           *insideReader
 	thumbs           *thumbnails
-	credentials      *credentialStore
-	links            *linkStore
 	cliLogins        *cliLogins // pending deskyard logins
 	images           *catalog
 	storage          *storage.Service // storage remotes and backups
@@ -66,16 +64,9 @@ type Server struct {
 	davLocks     davLockSystems    // each environment's WebDAV locks
 	davPasswords *davPasswordCache // account passwords WebDAV clients sent that checked out
 
-	activity       *activity.Tracker
-	activityPub    *throttle
-	screenWatchers *viewers   // screen-events streams, closed on revoke like viewers
-	transfers      *transfers // file uploads, closed on revoke
-	unsaved        *unsavedRevocations
-	// revoking is held by a change that decides an account's access or
-	// sessions, from its save to holding or forgetting what couldn't be
-	// saved, and by the sweep saving those; neither undoes the other.
-	revoking sync.Mutex
-	seen     *lastSeen // browser requests, by account ID
+	activity    *activity.Tracker
+	activityPub *throttle
+	seen        *lastSeen // browser requests, by account ID
 
 	api *http.ServeMux
 }
@@ -116,9 +107,9 @@ func New(o Options) (*Server, error) {
 		Log:      o.Log, Eng: o.Eng, Environments: o.Environments, Accounts: o.Accounts,
 		Sessions: &auth.Sessions{Key: key, Secure: o.Secure}, Throttle: &auth.Throttle{},
 		Layout: o.Layout, UI: o.UI,
-		jobs: newJobs(), events: newHub(), viewers: newViewers(), terminals: newTerminalConnections(), forwards: newForwards(), viewersPub: newThrottle(viewersInterval), streamDials: newDialGates(),
+		jobs: newJobs(), events: newHub(), conns: newConnections(), terminals: newTerminalConnections(), forwards: newForwards(), viewersPub: newThrottle(viewersInterval), streamDials: newDialGates(),
 		clients:     &clientFiles{eng: o.Eng, dir: filepath.Join(o.Layout.Cache, "client")},
-		activityPub: newThrottle(activityInterval), screenWatchers: newViewers(), transfers: newTransfers(), cliLogins: newCLILogins(), unsaved: newUnsavedRevocations(), seen: &lastSeen{at: map[string]time.Time{}},
+		activityPub: newThrottle(activityInterval), cliLogins: newCLILogins(), seen: &lastSeen{at: map[string]time.Time{}},
 		reconcile: make(chan struct{}, 1), davPasswords: newDAVPasswordCache(),
 	}
 	s.activity = s.newActivity(o.ActivityPresence)
@@ -128,25 +119,12 @@ func New(o Options) (*Server, error) {
 	if err := s.removeTokensFile(); err != nil {
 		return nil, err
 	}
-	if s.credentials, err = loadCredentials(o.Layout.Data); err != nil {
-		return nil, err
-	}
-	if s.links, err = loadLinks(o.Layout.Data); err != nil {
-		return nil, err
-	}
-	// A CLI redemption that stopped between saving its credential and
-	// deleting its link left the credential, whose bearer it never handed
-	// out; the link still works.
-	if err := s.credentials.remove(func(c credential) bool { return c.Link != "" && s.links.has(c.Link) }); err != nil {
-		o.Log.Error("deleting credentials of unfinished link redemptions", "err", err)
-	}
 	// Grants of names without a definition are left over from a
 	// removal whose cleanup didn't persist; a later environment of the name
 	// must not inherit them.
 	if err := s.Accounts.Retain(func(name string) bool { _, ok := s.Environments.Defs.Get(name); return ok }); err != nil {
 		return nil, fmt.Errorf("dropping grants of removed environments: %w", err)
 	}
-	s.credentials.onGone = func(c credential) { s.activity.Forget(c.ID) }
 	if s.images, err = loadCatalog(o.Layout.Data, o.DefaultImage); err != nil {
 		return nil, err
 	}
@@ -178,11 +156,13 @@ func New(o Options) (*Server, error) {
 	// An environment whose pinned image was pulled again has a new revision.
 	s.Environments.Repinned = func([]environments.Repin) { s.events.refresh() }
 	o.Accounts.OnChange = s.accountsChanged
-	o.Accounts.HeldSessionEpoch = func(a accounts.Account) int {
-		a, _ = s.unsaved.apply(a)
-		return a.SessionEpoch
+	o.Accounts.OnCredentialsGone = func(ids ...string) {
+		for _, id := range ids {
+			s.conns.closeCredential(id)
+			s.activity.Forget(id)
+		}
 	}
-	s.sweep() // links, credentials and shares left over from changes that didn't persist
+	s.sweep() // shares left over from changes that didn't persist
 	s.detectMemoryReclaim(o.StartupContext)
 	s.routes()
 	return s, nil
@@ -288,29 +268,9 @@ func (l *lastSeen) get(accountID string) time.Time {
 
 // signedIn reports whether the request's sign-in still holds for a, the
 // account as it is now: a browser login ends when a's session epoch moves
-// on. A credential's revocation closes what it opened (trackStream).
+// on. A credential's revocation closes what it opened (track).
 func (p principal) signedIn(a accounts.Account) bool {
 	return p.epoch() == noSession || p.epoch() == a.SessionEpoch
-}
-
-// trackStream registers a long-lived stream opened with a client credential
-// under it, so deleting the credential closes it; the stream checks its
-// account's access itself. The returned request carries the stream's
-// context, and the function unregisters it.
-func (s *Server) trackStream(r *http.Request) (*http.Request, func()) {
-	c, ok := s.credentialOf(r)
-	if !ok {
-		return r, func() {}
-	}
-	ctx, cancel := context.WithCancel(r.Context())
-	untrack := s.credentials.track(c.ID, "", cancel)
-	if !s.credentials.has(c.ID) { // deleted before it was registered
-		cancel()
-	}
-	return r.WithContext(ctx), func() {
-		untrack()
-		cancel()
-	}
 }
 
 // account returns the signed-in account of the request, if any.
@@ -362,13 +322,13 @@ func (s *Server) reissueSession(w http.ResponseWriter, r *http.Request, a accoun
 // withSession resolves the session cookie into the request context; it
 // refreshes cookies that are more than a day old. The cookie must name the
 // account by its ID and current session epoch, and the account must still
-// be usable (accountNow).
+// be usable (accounts.Store.Usable).
 func (s *Server) withSession(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
 	claims, ok := s.Sessions.Claims(r)
 	if !ok {
 		return r, false
 	}
-	a, found := s.accountNow(claims.Username, claims.AccountID, time.Now())
+	a, found := s.Accounts.Usable(claims.Username, claims.AccountID, time.Now())
 	if !found || a.SessionEpoch != claims.Epoch {
 		return r, false
 	}
@@ -391,13 +351,13 @@ func bearerOf(r *http.Request) (string, bool) {
 }
 
 // withCredential resolves a client credential into the request context. Its
-// account must be the one it was issued to, still usable (accountNow).
+// account must be the one it was issued to, still usable (accounts.Store.Usable).
 func (s *Server) withCredential(r *http.Request, bearer string) (*http.Request, bool) {
-	c, ok := s.credentials.check(bearer)
+	c, ok := s.Accounts.CheckCredential(bearer)
 	if !ok || c.Kind == davKind { // a WebDAV password opens only WebDAV
 		return r, false
 	}
-	a, found := s.accountNow(c.Username, c.AccountID, time.Now())
+	a, found := s.Accounts.Usable(c.Username, c.AccountID, time.Now())
 	if !found {
 		return r, false
 	}
@@ -488,22 +448,10 @@ func (s *Server) writeIndex(w http.ResponseWriter) {
 }
 
 // accountsChanged closes the connections of accounts whose access or
-// sessions changed that their level no longer allows, sweeps the shares,
-// links and credentials that depended on them, and refreshes event streams.
+// sessions changed that they no longer allow, sweeps the shares that
+// depended on them, and refreshes event streams.
 func (s *Server) accountsChanged(usernames ...string) {
-	now := time.Now()
-	for _, u := range usernames {
-		a, ok := s.accountState(u)
-		level := levelOf(a, ok, now)
-		s.terminals.revalidate(s, u)
-		s.transfers.revalidate(s, u)
-		s.viewers.revoke(u, level)
-		s.screenWatchers.revoke(u, level)
-		if ok {
-			s.viewers.endSessions(u, a.ID, a.SessionEpoch)
-			s.screenWatchers.endSessions(u, a.ID, a.SessionEpoch)
-		}
-	}
+	s.revalidate(usernames...)
 	s.sweep()
 	s.events.refresh()
 }

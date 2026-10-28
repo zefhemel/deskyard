@@ -29,7 +29,7 @@ var transferRevocations = map[string]func(t *testing.T, s *Server, cred string){
 		}
 	},
 	"credential deleted": func(t *testing.T, s *Server, cred string) {
-		if err := s.credentials.remove(func(c credential) bool { return c.ID == cred }); err != nil {
+		if err := removeCredential(s, cred); err != nil {
 			t.Fatal(err)
 		}
 	},

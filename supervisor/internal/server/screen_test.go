@@ -302,12 +302,12 @@ func TestStreamProxyAndMics(t *testing.T) {
 }
 
 func TestMicsPerStream(t *testing.T) {
-	v := newViewers()
-	a1 := &conn{username: "anna", tab: "a1", cancel: func() {}}
-	a2 := &conn{username: "anna", tab: "a2", cancel: func() {}}
-	z := &conn{username: "zef", tab: "z1", cancel: func() {}}
+	v := newConnections()
+	a1 := &conn{username: "anna", environment: "d", viewer: true, tab: "a1", cancel: func() {}}
+	a2 := &conn{username: "anna", environment: "d", viewer: true, tab: "a2", cancel: func() {}}
+	z := &conn{username: "zef", environment: "d", viewer: true, tab: "z1", cancel: func() {}}
 	for _, c := range []*conn{a1, a2, z} {
-		v.add("d", c)
+		v.add(c)
 	}
 	if got := v.mics("d"); len(got) != 0 {
 		t.Fatalf("mics at start: %v", got)
@@ -322,12 +322,12 @@ func TestMicsPerStream(t *testing.T) {
 	if got := v.mics("d"); !slices.Equal(got, []string{"anna", "zef"}) {
 		t.Errorf("mics: %v", got)
 	}
-	v.remove("d", a1) // anna's other tab still has its mic on
+	v.remove(a1) // anna's other tab still has its mic on
 	if got := v.mics("d"); !slices.Equal(got, []string{"anna", "zef"}) {
 		t.Errorf("after one of anna's tabs closed: %v", got)
 	}
-	v.remove("d", a2)
-	v.remove("d", z)
+	v.remove(a2)
+	v.remove(z)
 	if got := v.mics("d"); len(got) != 0 {
 		t.Errorf("after the streams closed: %v", got)
 	}
@@ -407,8 +407,8 @@ func TestDialGateFreesOnCancel(t *testing.T) {
 }
 
 func TestMicReportsInOrder(t *testing.T) {
-	v := newViewers()
-	v.add("d", &conn{username: "anna", tab: "a1", cancel: func() {}})
+	v := newConnections()
+	v.add(&conn{username: "anna", environment: "d", viewer: true, tab: "a1", cancel: func() {}})
 	// A page turned its mic off (seq 1) then on (seq 2); the off arrives last.
 	v.setMic("d", "anna", "a1", true, 2)
 	if !v.setMic("d", "anna", "a1", false, 1) {

@@ -51,7 +51,7 @@ func (s *Server) reclaimIdle(ctx context.Context, now time.Time, states map[stri
 			return
 		}
 		live[c.ID] = true
-		count, epoch := s.viewers.snapshot(c.Name)
+		count, epoch := s.conns.snapshot(c.Name)
 		// Opting out drops the state, so opting back in starts a new wait.
 		if c.Container.State != "running" || !c.MemoryReclaim || count > 0 {
 			delete(states, c.ID)
@@ -86,7 +86,7 @@ func (s *Server) reclaimIdleEnvironment(ctx context.Context, now time.Time, c en
 	if err != nil || fresh.ID != c.ID || fresh.Container.ID != st.container || fresh.Container.State != "running" || !fresh.StartedAt.Equal(st.started) {
 		return
 	}
-	count, epoch := s.viewers.snapshot(c.Name)
+	count, epoch := s.conns.snapshot(c.Name)
 	if count > 0 || epoch != st.viewerEpoch || !fresh.MemoryReclaim || !s.inside.ready(c.Name, now) {
 		return
 	}

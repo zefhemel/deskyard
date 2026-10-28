@@ -225,7 +225,7 @@ func TestDAVPassword(t *testing.T) {
 		}
 		defer res.Body.Close()
 		var out struct{ Password string }
-		if res.StatusCode != 201 || json.NewDecoder(res.Body).Decode(&out) != nil || !strings.HasPrefix(out.Password, credentialPrefix) {
+		if res.StatusCode != 201 || json.NewDecoder(res.Body).Decode(&out) != nil || !strings.HasPrefix(out.Password, accounts.CredentialPrefix) {
 			t.Fatalf("set: %d %+v", res.StatusCode, out)
 		}
 		return out.Password
@@ -263,7 +263,7 @@ func TestDAVPassword(t *testing.T) {
 
 	// A CLI credential is no WebDAV password.
 	a, _ := s.Accounts.Get("admin")
-	_, cli, err := s.credentials.create(a, "cli", "deskyard CLI")
+	_, cli, err := s.Accounts.AddCredential(a.Username, a.ID, accounts.NewCredential{Kind: "cli", Name: "deskyard CLI"}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -224,19 +224,19 @@ func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, c environme
 	observer := !auth.Can(a, auth.View, c.ID) // allowed to watch, not to use
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	cn := &conn{username: a.Username, accountID: a.ID, epoch: who.epoch(), tab: tab, environment: c.ID, level: a.Level(c.ID), cancel: cancel}
-	s.viewers.add(c.Name, cn)
+	cn := s.connOf(r, c.ID, cancel)
+	cn.level, cn.viewer, cn.tab = a.Level(c.ID), true, tab
 	// Registered, a revoke closes the stream; one while it waited its turn
 	// (a downgrade to observe, or the browser login's end, included)
 	// refuses it.
-	if acct, ok := s.accountNow(a.Username, a.ID, time.Now()); !ok || acct.Level(c.ID) != cn.level || !who.signedIn(acct) {
-		s.viewers.remove(c.Name, cn)
+	done, ok := s.open(cn)
+	if !ok {
 		writeError(w, http.StatusNotFound, "no such environment")
 		return
 	}
 	s.publishViewers(c.Name, c.ID)
 	defer func() {
-		s.viewers.remove(c.Name, cn)
+		done()
 		s.publishViewers(c.Name, c.ID)
 	}()
 	rp := &httputil.ReverseProxy{
@@ -398,7 +398,7 @@ func (s *Server) handleMic(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, `{"on": bool, "tab": id, "seq": number} expected`)
 		return
 	}
-	if !s.viewers.setMic(c.Name, a.Username, req.Tab, req.On, req.Seq) {
+	if !s.conns.setMic(c.Name, a.Username, req.Tab, req.On, req.Seq) {
 		writeError(w, http.StatusConflict, "no stream from that tab")
 		return
 	}

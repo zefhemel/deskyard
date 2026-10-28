@@ -80,8 +80,8 @@ func (s *Server) environmentJSON(ctx context.Context, c environments.Environment
 		VPN:      c.VPN,
 		Settings: settingsJSON{MemoryBytes: c.Settings.MemoryBytes, NanoCPUs: c.Settings.NanoCPUs, LANExceptions: c.Settings.LANExceptions, DockerAccess: c.Settings.DockerAccess, Volumes: c.Settings.Volumes},
 		Level:    a.Level(c.Name),
-		Access:   []accessGrant{}, Viewers: s.viewers.names(c.Name), Observers: s.viewers.observers(c.Name),
-		Mics: s.viewers.mics(c.Name), Forwards: s.forwards.list(c.Name), Agents: s.activity.Present(c.Name),
+		Access:   []accessGrant{}, Viewers: s.conns.names(c.Name), Observers: s.conns.observers(c.Name),
+		Mics: s.conns.mics(c.Name), Forwards: s.forwards.list(c.Name), Agents: s.activity.Present(c.Name),
 	}
 	if c.Settings.VPNConnectionID != "" {
 		id := c.Settings.VPNConnectionID
@@ -106,7 +106,7 @@ func (s *Server) environmentJSON(ctx context.Context, c environments.Environment
 		}
 	}
 	if a.Admin && c.Revision != 0 { // defined, not still being created
-		levels := s.accessOf(c.Name)
+		levels := s.Accounts.WithAccess(c.Name)
 		for _, u := range slices.Sorted(maps.Keys(levels)) {
 			j.Access = append(j.Access, accessGrant{Username: u, Level: levels[u]})
 		}
@@ -214,10 +214,6 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleValidateName(w http.ResponseWriter, r *http.Request) {
-	a, _ := s.account(r)
-	if !requireAdmin(w, a) {
-		return
-	}
 	name := r.URL.Query().Get("name")
 	res := map[string]any{"ok": true, "folderExists": false}
 	if err := environments.ValidNewName(name); err != nil {
@@ -233,9 +229,6 @@ func (s *Server) handleValidateName(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(r)
-	if !requireAdmin(w, a) {
-		return
-	}
 	var req struct {
 		VPNConnectionID optionalVPN                `json:"vpnConnectionId"`
 		LANExceptions   []vpn.Exception            `json:"lanExceptions"`
@@ -394,7 +387,7 @@ func (s *Server) startRecreate(w http.ResponseWriter, a accounts.Account, name s
 			release()
 			s.publishEnvironment(ctx, name)
 		}()
-		s.viewers.closeAll(name)
+		s.conns.closeAll(name)
 		_, err := s.Environments.Recreate(ctx, name, set, progress)
 		if err == nil {
 			s.Log.Info("recreated", "environment", name, "image", set.Image, "by", a.Username)
@@ -439,7 +432,7 @@ func (s *Server) handleRemoveEnvironment(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	defer release()
-	s.viewers.closeAll(c.Name)
+	s.conns.closeAll(c.Name)
 	ctx, cancel := removalContext(r)
 	defer cancel()
 	if err := s.Environments.Remove(ctx, c.Name, r.URL.Query().Get("files") == "1"); err != nil {
@@ -486,10 +479,10 @@ func (s *Server) handlePower(w http.ResponseWriter, r *http.Request) {
 	case "start":
 		err = s.Environments.Start(ctx, c.Name)
 	case "stop":
-		s.viewers.closeAll(c.Name)
+		s.conns.closeAll(c.Name)
 		err = s.Environments.Stop(ctx, c.Name)
 	case "restart":
-		s.viewers.closeAll(c.Name)
+		s.conns.closeAll(c.Name)
 		err = s.Environments.Restart(ctx, c.Name)
 	}
 	if err != nil {
@@ -548,44 +541,14 @@ func (s *Server) handleSetAccess(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.revoking.Lock()
-	defer s.revoking.Unlock()
-	before := map[string]accounts.Account{}
-	for _, a := range s.Accounts.List() {
-		before[a.Username] = a
-	}
+	// Unsaved, what it revokes holds all the same (accounts.Store).
 	if err := s.Accounts.SetAccess(c.Name, access); err != nil {
-		// What it revokes ends although it isn't saved.
-		for u, a := range before {
-			if want := access[u]; !a.Admin && !a.IsShare() && len(accounts.Lowered(a.Grants, accounts.Capped(a.Grants, map[string]auth.Level{c.Name: want}))) > 0 {
-				s.revokeUnsaved(unsavedRevocation{username: u, id: a.ID, caps: map[string]auth.Level{c.Name: want}})
-			}
-		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
-	}
-	// Saved, these levels decide the environment's grants anew: what an
-	// earlier change that couldn't be saved revoked of them no longer
-	// applies.
-	for u := range before {
-		s.unsaved.forget(u, func(u *unsavedRevocation) { delete(u.caps, c.Name) })
 	}
 	s.events.refresh()
 	s.publishEnvironment(r.Context(), c.Name)
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// accessOf maps the regular accounts (not admins, not shares) with access to
-// the named environment to their level, as their access stands: with what
-// couldn't be saved applied, so what the Access tab saves back keeps it.
-func (s *Server) accessOf(name string) map[string]auth.Level {
-	out := map[string]auth.Level{}
-	for _, a := range s.accountStates() {
-		if l := a.Level(name); !a.Admin && !a.IsShare() && l != auth.LevelNone {
-			out[a.Username] = l
-		}
-	}
-	return out
 }
 
 // execOutput runs a command as the environment's user and returns its stdout.

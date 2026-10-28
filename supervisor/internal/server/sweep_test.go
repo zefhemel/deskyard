@@ -31,7 +31,7 @@ func createShare(t *testing.T, s *Server, sharer accounts.Account, username stri
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.links.issue(a, sharer.Username); err != nil {
+	if _, err := s.Accounts.IssueLink(a.Username, a.ID, sharer.Username); err != nil {
 		t.Fatal(err)
 	}
 	c, _ := issueCredential(t, s, a)
@@ -45,10 +45,10 @@ func shareGone(t *testing.T, s *Server, share accounts.Account) {
 	if _, ok := s.Accounts.Get(share.Username); ok {
 		t.Fatalf("share %s still exists", share.Username)
 	}
-	if s.links.pending(share.ID) {
+	if linkPending(t, s, share.ID) {
 		t.Fatalf("share %s kept its link", share.Username)
 	}
-	if n := len(s.credentials.list(share.ID)); n != 0 {
+	if n := len(s.Accounts.Credentials(share.ID)); n != 0 {
 		t.Fatalf("share %s kept %d credentials", share.Username, n)
 	}
 }
@@ -63,7 +63,7 @@ func TestShareEndsWhenSharerLosesAccess(t *testing.T) {
 	}
 	share, c := createShare(t, s, bob, "sanne", auth.LevelObserve)
 	ctx, cancel := context.WithCancel(context.Background())
-	defer s.credentials.track(c.ID, "alice", cancel)()
+	defer trackConn(s, c, "alice", cancel)()
 	admin, _ := s.Accounts.Get("admin")
 	byAdmin, _ := createShare(t, s, admin, "carla", auth.LevelFull)
 
@@ -127,7 +127,7 @@ func TestShareEndsWhenEnvironmentRemoved(t *testing.T) {
 func TestSweepDropsLinksAndCredentialsOfRecreatedAccounts(t *testing.T) {
 	s, _ := newTestServer(t)
 	old := createBob(t, s)
-	if _, err := s.links.issue(old, "admin"); err != nil {
+	if _, err := s.Accounts.IssueLink(old.Username, old.ID, "admin"); err != nil {
 		t.Fatal(err)
 	}
 	c, _ := issueCredential(t, s, old)
@@ -140,10 +140,10 @@ func TestSweepDropsLinksAndCredentialsOfRecreatedAccounts(t *testing.T) {
 	createBob(t, s)
 	s.Accounts.OnChange = s.accountsChanged
 	s.sweep()
-	if s.links.pending(old.ID) {
+	if linkPending(t, s, old.ID) {
 		t.Fatal("kept the link of a recreated account")
 	}
-	if len(s.credentials.list(c.AccountID)) != 0 {
+	if len(s.Accounts.Credentials(c.AccountID)) != 0 {
 		t.Fatal("kept the credential of a recreated account")
 	}
 }
@@ -156,14 +156,14 @@ func TestSweepClosesCredentialConnectionsTheLevelNoLongerAllows(t *testing.T) {
 	}
 	c, _ := issueCredential(t, s, bob)
 	ctx, cancel := context.WithCancel(context.Background())
-	defer s.credentials.track(c.ID, "alice", cancel)()
+	defer trackConn(s, c, "alice", cancel)()
 	if err := s.Accounts.SetAccess("alice", map[string]auth.Level{"bob": auth.LevelObserve}); err != nil {
 		t.Fatal(err)
 	}
 	if ctx.Err() == nil {
 		t.Fatal("an exec connection stayed open after a downgrade to observe")
 	}
-	if len(s.credentials.list(bob.ID)) != 1 {
+	if len(s.Accounts.Credentials(bob.ID)) != 1 {
 		t.Fatal("a downgrade deleted the account's credential")
 	}
 }
@@ -173,12 +173,12 @@ func TestExpiredShareDeletedAndConnectionsClosed(t *testing.T) {
 	admin, _ := s.Accounts.Get("admin")
 	share, c := createShare(t, s, admin, "sanne", auth.LevelFull)
 	ctx, cancel := context.WithCancel(context.Background())
-	defer s.credentials.track(c.ID, "alice", cancel)()
+	defer trackConn(s, c, "alice", cancel)()
 	stream, cancelStream := context.WithCancel(context.Background())
 	defer cancelStream()
-	cn := &conn{username: "sanne", environment: "alice", level: auth.LevelFull, cancel: cancelStream}
-	s.viewers.add("alice", cn)
-	defer s.viewers.remove("alice", cn)
+	cn := &conn{username: "sanne", environment: "alice", viewer: true, level: auth.LevelFull, cancel: cancelStream}
+	s.conns.add(cn)
+	defer s.conns.remove(cn)
 	expire(t, s, "sanne")
 	if ctx.Err() != nil || stream.Err() != nil {
 		t.Fatal("the connections closed before the expiry tick")
@@ -195,21 +195,19 @@ func TestExpiryClosesConnectionsWhenTheDeletionFails(t *testing.T) {
 	admin, _ := s.Accounts.Get("admin")
 	_, c := createShare(t, s, admin, "sanne", auth.LevelFull)
 	ctx, cancel := context.WithCancel(context.Background())
-	defer s.credentials.track(c.ID, "alice", cancel)()
+	defer trackConn(s, c, "alice", cancel)()
 	stream, cancelStream := context.WithCancel(context.Background())
 	defer cancelStream()
-	cn := &conn{username: "sanne", environment: "alice", level: auth.LevelFull, cancel: cancelStream}
-	s.viewers.add("alice", cn)
-	defer s.viewers.remove("alice", cn)
+	cn := &conn{username: "sanne", environment: "alice", viewer: true, level: auth.LevelFull, cancel: cancelStream}
+	s.conns.add(cn)
+	defer s.conns.remove(cn)
 	expire(t, s, "sanne")
 	blockAccountsFile(t, s)
 	if ctx.Err() != nil || stream.Err() != nil {
 		t.Fatal("the connections closed before the expiry tick")
 	}
 	s.expireAccounts(time.Now())
-	if _, ok := s.Accounts.Get("sanne"); !ok {
-		t.Fatal("deleted the expired account although writing accounts.json fails")
-	}
+	requireUnsaved(t, s)
 	if ctx.Err() == nil || stream.Err() == nil {
 		t.Fatalf("an expired account's connections stayed open when its deletion failed: exec %v, stream %v", ctx.Err(), stream.Err())
 	}
@@ -279,9 +277,7 @@ func TestOrphanedShareRefusedWhenTheDeletionFails(t *testing.T) {
 	s.Accounts.OnChange = s.accountsChanged
 	blockAccountsFile(t, s)
 	s.sweep()
-	if _, ok := s.Accounts.Get("sanne"); !ok {
-		t.Fatal("deleted the share although writing accounts.json fails")
-	}
+	requireUnsaved(t, s)
 	for _, path := range []string{"/api/me", "/api/environments/alice"} {
 		if code, _, _ := bearerRequest(t, "GET", ts.URL+path, bearer); code != http.StatusUnauthorized {
 			t.Errorf("the orphaned share's GET %s: %d", path, code)
@@ -319,6 +315,11 @@ func TestDowngradeClosesViewerStream(t *testing.T) {
 		t.Fatal("the terminal wasn't registered")
 	}
 	defer s.terminals.remove(tc)
+	// As handleTerminal does: the terminal is a viewer of its desktop.
+	viewer := &conn{username: "bob", accountID: bob.ID, epoch: bob.SessionEpoch, expires: tc.claims.Expires, environment: "alice",
+		level: auth.LevelFull, viewer: true, cancel: cancelTerm}
+	s.conns.add(viewer)
+	defer s.conns.remove(viewer)
 	if _, err := s.Accounts.Update("bob", func(a *accounts.Account) { a.Description = "colleague" }); err != nil {
 		t.Fatal(err)
 	}
@@ -327,14 +328,14 @@ func TestDowngradeClosesViewerStream(t *testing.T) {
 	}
 	full, cancelFull := context.WithCancel(context.Background())
 	defer cancelFull()
-	stream := &conn{username: "bob", environment: "alice", level: auth.LevelFull, cancel: cancelFull}
-	s.viewers.add("alice", stream)
-	defer s.viewers.remove("alice", stream)
+	stream := &conn{username: "bob", environment: "alice", viewer: true, level: auth.LevelFull, cancel: cancelFull}
+	s.conns.add(stream)
+	defer s.conns.remove(stream)
 	watch, cancelWatch := context.WithCancel(context.Background())
 	defer cancelWatch()
 	watcher := &conn{username: "bob", environment: "alice", level: auth.LevelFull, cancel: cancelWatch}
-	s.screenWatchers.add("alice", watcher)
-	defer s.screenWatchers.remove("alice", watcher)
+	s.conns.add(watcher)
+	defer s.conns.remove(watcher)
 	if err := s.Accounts.SetAccess("alice", map[string]auth.Level{"bob": auth.LevelObserve}); err != nil {
 		t.Fatal(err)
 	}
@@ -346,16 +347,16 @@ func TestDowngradeClosesViewerStream(t *testing.T) {
 	observing, cancelObserving := context.WithCancel(context.Background())
 	defer cancelObserving()
 	bob, _ = s.Accounts.Get("bob")
-	obs := &conn{username: "bob", accountID: bob.ID, epoch: bob.SessionEpoch, environment: "alice", level: auth.LevelObserve, cancel: cancelObserving}
-	s.viewers.add("alice", obs)
-	defer s.viewers.remove("alice", obs)
+	obs := &conn{username: "bob", accountID: bob.ID, epoch: bob.SessionEpoch, environment: "alice", viewer: true, level: auth.LevelObserve, cancel: cancelObserving}
+	s.conns.add(obs)
+	defer s.conns.remove(obs)
 	if _, err := s.Accounts.Update("bob", func(a *accounts.Account) { a.Description = "a colleague" }); err != nil {
 		t.Fatal(err)
 	}
 	if observing.Err() != nil {
 		t.Fatal("an unrelated change closed an observer's stream")
 	}
-	if got := s.viewers.observers("alice"); len(got) != 1 || got[0] != "bob" {
+	if got := s.conns.observers("alice"); len(got) != 1 || got[0] != "bob" {
 		t.Fatalf("observers %v", got)
 	}
 }
@@ -396,7 +397,7 @@ func TestStartupDropsGrantsOfUndefinedEnvironments(t *testing.T) {
 	}
 	restarted := restart(t, s)
 	a, _ := restarted.Accounts.Get("anna")
-	if a.HasAccess("carol") || !a.HasAccess("alice") {
+	if a.Level("carol") == auth.LevelFull || a.Level("alice") != auth.LevelFull {
 		t.Fatalf("grants after startup: %v", a.Grants)
 	}
 }
@@ -438,7 +439,7 @@ func TestCreateDropsLeftoverGrantsOfTheName(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("create job timed out")
 	}
-	if a, _ := s.Accounts.Get("anna"); a.HasAccess("carol") {
+	if a, _ := s.Accounts.Get("anna"); a.Level("carol") == auth.LevelFull {
 		t.Fatal("new environment inherited the removed one's grant")
 	}
 }
@@ -464,7 +465,7 @@ func TestRemovalWhoseFolderDeletionFailsStillPurgesAccess(t *testing.T) {
 	}
 	c, _ := issueCredential(t, s, accountNamed(t, s, "anna"))
 	conn, cancel := context.WithCancel(context.Background())
-	defer s.credentials.track(c.ID, "alice", cancel)()
+	defer trackConn(s, c, "alice", cancel)()
 	s.activity.Inside(activity.Ref{Name: "alice", ID: "alice"}, activity.Event{Agent: "terminal", Kind: "cmd-start", ID: "cmd", Cmd: "sleep", T: time.Now()})
 	if len(s.activity.Present("alice")) == 0 {
 		t.Fatal("test did not record activity")
@@ -489,7 +490,7 @@ func TestRemovalWhoseFolderDeletionFailsStillPurgesAccess(t *testing.T) {
 	if _, ok := s.Environments.Defs.Get("alice"); ok {
 		t.Fatal("test did not delete the definition")
 	}
-	if a, _ := s.Accounts.Get("anna"); a.HasAccess("alice") {
+	if a, _ := s.Accounts.Get("anna"); a.Level("alice") == auth.LevelFull {
 		t.Error("removal kept the grant")
 	}
 	if conn.Err() == nil {
@@ -546,7 +547,7 @@ func TestCreateFailureKeepingTheEnvironmentAppliesAccess(t *testing.T) {
 	if _, ok := s.Environments.Defs.Get("carol"); !ok {
 		t.Fatal("test's failed creation did not keep the definition")
 	}
-	if a, _ := s.Accounts.Get("anna"); !a.HasAccess("carol") {
+	if a, _ := s.Accounts.Get("anna"); a.Level("carol") != auth.LevelFull {
 		t.Error("environment kept for recovery lost its requested access")
 	}
 }
@@ -558,7 +559,7 @@ func trackCredential(t *testing.T, s *Server, a accounts.Account, environment st
 	c, _ := issueCredential(t, s, a)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	t.Cleanup(s.credentials.track(c.ID, environment, cancel))
+	t.Cleanup(trackConn(s, c, environment, cancel))
 	return ctx
 }
 

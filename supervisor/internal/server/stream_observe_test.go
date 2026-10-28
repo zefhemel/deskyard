@@ -241,7 +241,7 @@ func TestStreamRechecksLevelOnceRegistered(t *testing.T) {
 	if resp == nil || resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("dial: %v %v", resp, err)
 	}
-	if got := s.viewers.observers("bob"); len(got) != 0 {
+	if got := s.conns.observers("bob"); len(got) != 0 {
 		t.Fatalf("the refused stream stayed registered: %v", got)
 	}
 }

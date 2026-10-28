@@ -54,14 +54,14 @@ func TestPasswordChangeBumpsEpochAndAccess(t *testing.T) {
 		t.Fatal("epoch not bumped")
 	}
 	_ = s.SetAccess("c1", map[string]auth.Level{"anna": auth.LevelFull})
-	if a, _ := s.Get("anna"); !a.HasAccess("c1") || a.HasAccess("c2") {
+	if a, _ := s.Get("anna"); a.Level("c1") != auth.LevelFull || a.Level("c2") == auth.LevelFull {
 		t.Fatal("access")
 	}
 	if got := s.WithAccess("c1"); len(got) != 1 || got["anna"] != auth.LevelFull {
 		t.Fatal(got)
 	}
 	_ = s.Forget("c1")
-	if a, _ := s.Get("anna"); a.HasAccess("c1") {
+	if a, _ := s.Get("anna"); a.Level("c1") == auth.LevelFull {
 		t.Fatal("forget")
 	}
 	if len(notified) < 2 {
@@ -81,7 +81,7 @@ func TestRetainDropsGrantsOfUndefinedEnvironments(t *testing.T) {
 	}
 	reloaded, _ := Load(dir)
 	a, _ := reloaded.Get("anna")
-	if !a.HasAccess("alice") || a.HasAccess("gone") {
+	if a.Level("alice") != auth.LevelFull || a.Level("gone") == auth.LevelFull {
 		t.Fatalf("grants after retain: %v", a.Grants)
 	}
 	if !strings.Contains(readFile(t, dir), `"grants"`) {
@@ -128,7 +128,7 @@ func TestTokenAccountHasNoPassword(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.HasPassword() || a.PasswordHash != "" || a.ID == "" || a.Level("alice") != auth.LevelObserve || a.HasAccess("alice") {
+	if a.HasPassword() || a.PasswordHash != "" || a.ID == "" || a.Level("alice") != auth.LevelObserve {
 		t.Fatalf("token account: %+v", a)
 	}
 	if _, err := s.Create(NewAccount{Username: "piet", Grants: []Grant{{Environment: "alice", Level: "admin"}}}); err == nil {
@@ -192,7 +192,7 @@ func TestSetAccessLevels(t *testing.T) {
 	if err := s.SetAccess("alice", map[string]auth.Level{"bob": auth.LevelObserve}); err != nil {
 		t.Fatal(err)
 	}
-	if a, _ := s.Get("bob"); a.Level("alice") != auth.LevelObserve || a.HasAccess("alice") {
+	if a, _ := s.Get("bob"); a.Level("alice") != auth.LevelObserve {
 		t.Fatalf("observe: %+v", a)
 	}
 	if got := s.WithAccess("alice"); len(got) != 1 || got["bob"] != auth.LevelObserve {
@@ -201,7 +201,7 @@ func TestSetAccessLevels(t *testing.T) {
 	if err := s.SetAccess("alice", map[string]auth.Level{"bob": auth.LevelFull}); err != nil {
 		t.Fatal(err)
 	}
-	if a, _ := s.Get("bob"); !a.HasAccess("alice") || len(a.Grants) != 1 {
+	if a, _ := s.Get("bob"); a.Level("alice") != auth.LevelFull || len(a.Grants) != 1 {
 		t.Fatalf("full: %+v", a)
 	}
 	if err := s.SetAccess("alice", map[string]auth.Level{}); err != nil {
@@ -242,9 +242,17 @@ func TestLoweredGrantKeepsSessionEpoch(t *testing.T) {
 
 // A bump starts from the session epoch held unsaved, when it is ahead.
 func TestBumpStartsFromHeldSessionEpoch(t *testing.T) {
-	s, _ := Load(t.TempDir())
+	dir := t.TempDir()
+	s, _ := Load(dir)
 	_, _ = s.Create(NewAccount{Username: "bob", Password: "pw"})
-	s.HeldSessionEpoch = func(a Account) int { return 3 }
+	path := s.path
+	s.path = blocked(t, dir)
+	for range 3 {
+		if _, err := s.BumpSessionEpoch("bob"); err == nil {
+			t.Fatal("saved")
+		}
+	}
+	s.path = path
 	if a, _ := s.BumpSessionEpoch("bob"); a.SessionEpoch != 4 {
 		t.Errorf("sign out everywhere: epoch %d, want 4", a.SessionEpoch)
 	}
@@ -256,16 +264,21 @@ func TestBumpStartsFromHeldSessionEpoch(t *testing.T) {
 	}
 }
 
-func TestLoweredLevels(t *testing.T) {
-	before := []Grant{{Environment: "alice", Level: auth.LevelFull}, {Environment: "beta", Level: auth.LevelFull}, {Environment: "carol", Level: auth.LevelObserve}}
-	after := []Grant{{Environment: "alice", Level: auth.LevelObserve}, {Environment: "beta", Level: auth.LevelFull}, {Environment: "dora", Level: auth.LevelFull}}
-	got := Lowered(before, after)
-	if len(got) != 2 || got["alice"] != auth.LevelObserve || got["carol"] != auth.LevelNone {
-		t.Fatalf("lowered %v", got)
+func TestRevoked(t *testing.T) {
+	before := Account{ID: "a", Admin: true, SessionEpoch: 2, Description: "before",
+		Grants: []Grant{{Environment: "alice", Level: auth.LevelFull}, {Environment: "beta", Level: auth.LevelFull}, {Environment: "carol", Level: auth.LevelObserve}}}
+	after := Account{ID: "a", SessionEpoch: 3, Description: "after",
+		Grants: []Grant{{Environment: "alice", Level: auth.LevelObserve}, {Environment: "beta", Level: auth.LevelFull}, {Environment: "dora", Level: auth.LevelFull}}}
+	got := revoked(before, after)
+	if got.Admin || got.SessionEpoch != 2 || got.Description != "before" || len(got.Grants) != 2 ||
+		got.Level("alice") != auth.LevelObserve || got.Level("beta") != auth.LevelFull || got.Level("carol") != auth.LevelNone || got.Level("dora") != auth.LevelNone {
+		t.Fatalf("revoked %+v", got)
 	}
-	capped := Capped(after, map[string]auth.Level{"beta": auth.LevelObserve, "dora": auth.LevelNone})
-	if grantLevel(capped, "alice") != auth.LevelObserve || grantLevel(capped, "beta") != auth.LevelObserve || grantLevel(capped, "dora") != auth.LevelNone || len(after) != 3 {
-		t.Fatalf("capped %v (from %v)", capped, after)
+	if got := signedOut(before, after); got.SessionEpoch != 3 {
+		t.Fatalf("signed out: epoch %d", got.SessionEpoch)
+	}
+	if len(before.Grants) != 3 || before.Grants[0].Level != auth.LevelFull {
+		t.Fatalf("revoked changed before: %+v", before.Grants)
 	}
 }
 
@@ -299,7 +312,7 @@ func TestShareAndExpiry(t *testing.T) {
 	if !a.IsShare() || !a.Expired(time.Now()) || a.Expired(past.Add(-time.Second)) {
 		t.Fatalf("share: %+v", a)
 	}
-	if names := a.GrantNames(); len(names) != 1 || names[0] != "alice" {
+	if names := a.Environments(); len(names) != 1 || names[0] != "alice" {
 		t.Fatal(names)
 	}
 }

@@ -391,14 +391,14 @@ func TestSignOutEverywhereClosesDesktopStreams(t *testing.T) {
 	admin, _ := s.Accounts.Get("admin")
 	stream, closeStream := context.WithCancel(context.Background())
 	defer closeStream()
-	cn := &conn{username: "admin", accountID: admin.ID, epoch: admin.SessionEpoch, environment: "alice", level: auth.LevelFull, cancel: closeStream}
-	s.viewers.add("alice", cn)
-	defer s.viewers.remove("alice", cn)
+	cn := &conn{username: "admin", accountID: admin.ID, epoch: admin.SessionEpoch, environment: "alice", viewer: true, level: auth.LevelFull, cancel: closeStream}
+	s.conns.add(cn)
+	defer s.conns.remove(cn)
 	watch, closeWatch := context.WithCancel(context.Background())
 	defer closeWatch()
 	cli := &conn{username: "admin", accountID: admin.ID, epoch: noSession, environment: "alice", level: auth.LevelFull, cancel: closeWatch}
-	s.screenWatchers.add("alice", cli)
-	defer s.screenWatchers.remove("alice", cli)
+	s.conns.add(cli)
+	defer s.conns.remove(cli)
 	if got := status(t, here, "POST", ts.URL+"/api/me/sign-out-everywhere", ts.URL); got != 204 {
 		t.Fatalf("sign out everywhere: %d", got)
 	}
