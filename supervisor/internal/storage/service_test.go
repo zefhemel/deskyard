@@ -41,7 +41,7 @@ func TestCreateRepositoryInitShowsKey(t *testing.T) {
 	if st, err := os.Stat(filepath.Join(s.keyDir("offsite"), "restic-password")); err != nil || st.Mode().Perm() != 0o600 {
 		t.Fatalf("key file %v %v", st, err)
 	}
-	if _, ok := s.Store.Repository("offsite"); !ok {
+	if _, ok := s.store.Repository("offsite"); !ok {
 		t.Fatal("not saved")
 	}
 }
@@ -58,7 +58,7 @@ func TestCreateRepositoryExistingNeedsKey(t *testing.T) {
 	if _, err := s.CreateRepository(context.Background(), "offsite", "nas", "old", ""); !errors.Is(err, ErrNeedsKey) {
 		t.Fatalf("got %v", err)
 	}
-	if _, ok := s.Store.Repository("offsite"); ok {
+	if _, ok := s.store.Repository("offsite"); ok {
 		t.Fatal("saved without a key")
 	}
 	key, err := s.CreateRepository(context.Background(), "offsite", "nas", "old", "the-key")
@@ -102,7 +102,7 @@ func TestBackUpEnvironmentMountsHomeAndDefinition(t *testing.T) {
 	s, env := testService(t, f)
 	env.addEnvironment(t, "alice", true, environments.Settings{Image: "img"})
 	it := Item{KindEnvironment, "alice"}
-	if err := s.Store.PutPolicy(policyOf(it)); err != nil {
+	if err := s.store.PutPolicy(policyOf(it)); err != nil {
 		t.Fatal(err)
 	}
 	var defSeen environments.Definition
@@ -144,7 +144,7 @@ func TestBackUpEnvironmentMountsHomeAndDefinition(t *testing.T) {
 	} else if _, err := os.Stat(m.Source); !os.IsNotExist(err) {
 		t.Error("definition copy left behind")
 	}
-	st := s.State.Get(it)
+	st := s.state.Get(it)
 	if st.LastSuccess.IsZero() || st.Error != "" || st.Snapshot != "snap1" {
 		t.Fatalf("state %+v", st)
 	}
@@ -163,12 +163,12 @@ func TestBackUpFailureRecorded(t *testing.T) {
 	s, env := testService(t, f)
 	env.addVolume(t, "photos")
 	it := Item{KindVolume, "photos"}
-	_ = s.Store.PutPolicy(policyOf(it))
+	_ = s.store.PutPolicy(policyOf(it))
 	err := s.BackUp(context.Background(), it, "scheduled", nil)
 	if err == nil || !strings.Contains(err.Error(), "connection refused") {
 		t.Fatalf("got %v", err)
 	}
-	st := s.State.Get(it)
+	st := s.state.Get(it)
 	if st.LastAttempt.IsZero() || !st.LastSuccess.IsZero() || !strings.Contains(st.Error, "connection refused") {
 		t.Fatalf("state %+v", st)
 	}
@@ -184,7 +184,7 @@ func TestBackUpForgetsAndPrunesWeekly(t *testing.T) {
 	s, env := testService(t, f)
 	env.addVolume(t, "photos")
 	it := Item{KindVolume, "photos"}
-	_ = s.Store.PutPolicy(policyOf(it))
+	_ = s.store.PutPolicy(policyOf(it))
 	now := time.Date(2026, 10, 27, 3, 0, 0, 0, time.UTC)
 	s.Now = func() time.Time { return now }
 	for i := range 3 {
@@ -247,7 +247,7 @@ func TestRemoteChangeHoldsOffBackups(t *testing.T) {
 	s, env := testService(t, f)
 	env.addVolume(t, "photos")
 	it := Item{KindVolume, "photos"}
-	_ = s.Store.PutPolicy(policyOf(it))
+	_ = s.store.PutPolicy(policyOf(it))
 	v := validRemotes()[SFTP]
 	updated := make(chan error, 1)
 	go func() { updated <- s.UpdateRemote(context.Background(), "nas", v.r, Secrets{}) }()
@@ -282,8 +282,8 @@ func TestSchedulerRunsDueOnce(t *testing.T) {
 	env.addVolume(t, "photos")
 	it := Item{KindVolume, "photos"}
 	p := policyOf(it)
-	_ = s.Store.PutPolicy(p)
-	p, _ = s.Store.Policy(it)
+	_ = s.store.PutPolicy(p)
+	p, _ = s.store.Policy(it)
 	now := p.Updated.Add(48 * time.Hour)
 	s.Now = func() time.Time { return now }
 	s.RunDue(context.Background())
@@ -298,10 +298,10 @@ func TestSchedulerRunsDueOnce(t *testing.T) {
 		t.Fatalf("%d backups", backups)
 	}
 	// A policy of an item that no longer exists is skipped, not failed in a loop.
-	_ = s.Store.PutPolicy(policyOf(Item{KindVolume, "gone"}))
+	_ = s.store.PutPolicy(policyOf(Item{KindVolume, "gone"}))
 	now = now.Add(72 * time.Hour)
 	s.RunDue(context.Background())
-	if st := s.State.Get(Item{KindVolume, "gone"}); st.Error == "" {
+	if st := s.state.Get(Item{KindVolume, "gone"}); st.Error == "" {
 		t.Fatalf("missing item not reported: %+v", st)
 	}
 }
@@ -346,7 +346,7 @@ func TestUnsavedRemoteTestCleansUp(t *testing.T) {
 	if err := s.CreateRemote(context.Background(), v.r, v.sec); err == nil || !strings.Contains(err.Error(), "401") {
 		t.Fatalf("got %v", err)
 	}
-	if _, ok := s.Remotes.Get("cloud"); ok {
+	if _, ok := s.remotes.Get("cloud"); ok {
 		t.Fatal("saved a remote whose test failed")
 	}
 }
@@ -395,11 +395,11 @@ func TestBackUpRecordsWarnings(t *testing.T) {
 	s, env := testService(t, f)
 	env.addVolume(t, "photos")
 	it := Item{KindVolume, "photos"}
-	_ = s.Store.PutPolicy(policyOf(it))
+	_ = s.store.PutPolicy(policyOf(it))
 	if err := s.BackUp(context.Background(), it, ReasonManual, nil); err != nil {
 		t.Fatal(err)
 	}
-	st := s.State.Get(it)
+	st := s.state.Get(it)
 	if st.Snapshot != "snap1" || st.Error != "" || len(st.Warnings) != 1 || !strings.Contains(st.Warnings[0], "permission denied") {
 		t.Fatalf("state %+v", st)
 	}

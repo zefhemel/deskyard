@@ -14,17 +14,29 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
-// RestoreRequest is a restore of a snapshot: here (replace the item's
-// files), new (a new environment or volume named NewName) or folder (Paths,
-// relative to the item, into a new "Restored …" folder inside the item).
+// RestoreMode is how a snapshot is restored.
+type RestoreMode string
+
+const (
+	RestoreHere   RestoreMode = "here"   // replace the item's files
+	RestoreNew    RestoreMode = "new"    // into a new environment or volume, NewName
+	RestoreFolder RestoreMode = "folder" // Paths, relative to the item, into a new "Restored …" folder inside it
+)
+
+// Valid reports whether m is one of the modes.
+func (m RestoreMode) Valid() bool {
+	return m == RestoreHere || m == RestoreNew || m == RestoreFolder
+}
+
+// RestoreRequest is a restore of a snapshot, as its Mode says.
 type RestoreRequest struct {
-	Repository  string   `json:"repository"` // default: the item's policy's
-	Snapshot    string   `json:"snapshot"`
-	Mode        string   `json:"mode"`
-	NewName     string   `json:"newName,omitempty"`
-	NewImage    string   `json:"newImage,omitempty"`
-	BackupFirst bool     `json:"backupFirst,omitempty"`
-	Paths       []string `json:"paths,omitempty"`
+	Repository  string      `json:"repository"` // default: the item's policy's
+	Snapshot    string      `json:"snapshot"`
+	Mode        RestoreMode `json:"mode"`
+	NewName     string      `json:"newName,omitempty"`
+	NewImage    string      `json:"newImage,omitempty"`
+	BackupFirst bool        `json:"backupFirst,omitempty"`
+	Paths       []string    `json:"paths,omitempty"`
 }
 
 // RestoreResult says what a restore made: a new item's name and the
@@ -55,7 +67,7 @@ func (s *Service) repoFor(it Item, name string) (string, error) {
 	if name != "" {
 		return name, nil
 	}
-	if p, ok := s.Store.Policy(it); ok {
+	if p, ok := s.store.Policy(it); ok {
 		return p.Repository, nil
 	}
 	return "", fmt.Errorf("say which repository %s's snapshot is in", it)
@@ -84,11 +96,11 @@ func (s *Service) Restore(ctx context.Context, it Item, req RestoreRequest, prog
 		return RestoreResult{}, err
 	}
 	switch req.Mode {
-	case "here":
+	case RestoreHere:
 		return RestoreResult{}, s.restoreHere(ctx, it, repo, snap, req.BackupFirst, progress)
-	case "new":
+	case RestoreNew:
 		return s.restoreNew(ctx, it, repo, snap, req, progress)
-	case "folder":
+	case RestoreFolder:
 		return s.restoreFolder(ctx, it, repo, snap, req.Paths, progress)
 	}
 	return RestoreResult{}, fmt.Errorf("unknown restore mode %q", req.Mode)

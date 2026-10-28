@@ -7,7 +7,6 @@ import (
 	"io"
 	"mime"
 	"net/http"
-	"slices"
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/storage"
@@ -52,7 +51,7 @@ type remoteJSON struct {
 }
 
 func (s *Server) remoteJSON(r storage.Remote) remoteJSON {
-	j := remoteJSON{Remote: r, SecretsSet: s.storage.Remotes.SecretsSet(r.Name), Repositories: s.storage.Store.RepositoriesOnRemote(r.Name)}
+	j := remoteJSON{Remote: r, SecretsSet: s.storage.RemoteSecretsSet(r.Name), Repositories: s.storage.RepositoriesOnRemote(r.Name)}
 	if j.SecretsSet == nil {
 		j.SecretsSet = []string{}
 	}
@@ -78,7 +77,7 @@ func (s *Server) handleListRemotes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := []remoteJSON{}
-	for _, rem := range s.storage.Remotes.List() {
+	for _, rem := range s.storage.Remotes() {
 		out = append(out, s.remoteJSON(rem))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"remotes": out, "s3Providers": storage.S3Providers, "webdavVendors": storage.WebDAVVendors})
@@ -88,7 +87,7 @@ func (s *Server) handleGetRemote(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.admin(w, r); !ok {
 		return
 	}
-	rem, ok := s.storage.Remotes.Get(r.PathValue("name"))
+	rem, ok := s.storage.Remote(r.PathValue("name"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "no such remote")
 		return
@@ -112,7 +111,7 @@ func (s *Server) handleCreateRemote(w http.ResponseWriter, r *http.Request) {
 		storageError(w, err)
 		return
 	}
-	rem, _ := s.storage.Remotes.Get(req.Remote.Name)
+	rem, _ := s.storage.Remote(req.Remote.Name)
 	s.Log.Info("created storage remote", "remote", rem.Name, "type", rem.Type, "by", user)
 	writeJSON(w, http.StatusCreated, s.remoteJSON(rem))
 }
@@ -128,7 +127,7 @@ func (s *Server) handleUpdateRemote(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
-	if _, ok := s.storage.Remotes.Get(name); !ok {
+	if _, ok := s.storage.Remote(name); !ok {
 		writeError(w, http.StatusNotFound, "no such remote")
 		return
 	}
@@ -138,7 +137,7 @@ func (s *Server) handleUpdateRemote(w http.ResponseWriter, r *http.Request) {
 		storageError(w, err)
 		return
 	}
-	rem, _ := s.storage.Remotes.Get(name)
+	rem, _ := s.storage.Remote(name)
 	s.Log.Info("changed storage remote", "remote", name, "by", user)
 	writeJSON(w, http.StatusOK, s.remoteJSON(rem))
 }
@@ -172,7 +171,7 @@ func (s *Server) handleTestRemote(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	var err error
 	if name := r.PathValue("name"); name != "" {
-		if _, ok := s.storage.Remotes.Get(name); !ok {
+		if _, ok := s.storage.Remote(name); !ok {
 			writeError(w, http.StatusNotFound, "no such remote")
 			return
 		}
@@ -211,7 +210,7 @@ func (s *Server) handleCreateRepository(w http.ResponseWriter, r *http.Request) 
 		storageError(w, err)
 		return
 	}
-	repo, _ := s.storage.Store.Repository(req.Name)
+	repo, _ := s.storage.Repository(req.Name)
 	s.Log.Info("added backup repository", "repository", repo.Name, "remote", repo.Remote, "new", key != "", "by", user)
 	out := map[string]any{"repository": repo}
 	if key != "" {
@@ -263,8 +262,8 @@ type itemJSON struct {
 }
 
 func (s *Server) itemJSON(it storage.Item) itemJSON {
-	j := itemJSON{Item: it, State: s.storage.State.Get(it), Activity: s.storage.Activity(it)}
-	if p, ok := s.storage.Store.Policy(it); ok {
+	j := itemJSON{Item: it, State: s.storage.RunState(it), Activity: s.storage.Activity(it)}
+	if p, ok := s.storage.Policy(it); ok {
 		j.Policy = &p
 		if p.Enabled {
 			next := storage.NextRun(p, j.State, s.storage.Loc)
@@ -279,10 +278,10 @@ func (s *Server) handleBackups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items := []itemJSON{}
-	for _, p := range s.storage.Store.Policies() {
+	for _, p := range s.storage.Policies() {
 		items = append(items, s.itemJSON(p.Item))
 	}
-	out := map[string]any{"repositories": s.storage.Store.Repositories(), "items": items, "host": s.storage.Tool.Host}
+	out := map[string]any{"repositories": s.storage.Repositories(), "items": items, "host": s.storage.Host()}
 	if r.URL.Query().Get("catalog") == "1" {
 		ctx, cancel := timeout(r, 2*time.Minute)
 		defer cancel()
@@ -346,7 +345,7 @@ func (s *Server) handleDeleteBackup(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.storage.Store.DeletePolicy(it); err != nil {
+	if err := s.storage.DeletePolicy(it); err != nil {
 		storageError(w, err)
 		return
 	}
@@ -363,7 +362,7 @@ func (s *Server) handleRunBackup(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, ok := s.storage.Store.Policy(it); !ok {
+	if _, ok := s.storage.Policy(it); !ok {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("%s has no backup policy", it))
 		return
 	}
@@ -465,7 +464,7 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
-	if !slices.Contains([]string{"here", "new", "folder"}, req.Mode) {
+	if !req.Mode.Valid() {
 		writeError(w, http.StatusBadRequest, "mode is here, new or folder")
 		return
 	}
@@ -478,7 +477,7 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	env := it.Environment()
-	if req.Mode == "new" {
+	if req.Mode == storage.RestoreNew {
 		env = ""
 	}
 	id := s.jobs.runResult(user, env, false, func(ctx context.Context, progress func(string, float64)) (any, error) {

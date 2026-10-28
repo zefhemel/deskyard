@@ -172,17 +172,17 @@ func TestRestorePathRejected(t *testing.T) {
 func TestEnvironmentRemoveDeletesPolicy(t *testing.T) {
 	s, send, admin := newStorageServer(t)
 	setUpBackups(t, s, send, admin)
-	if err := s.storage.Store.PutPolicy(storage.Policy{Item: storage.Item{Kind: "environment", Name: "alice"}, Repository: "home", Enabled: true, Schedule: storage.DefaultSchedule, Retention: storage.DefaultRetention}); err != nil {
+	if err := s.storage.PutPolicy(storage.Policy{Item: storage.Item{Kind: "environment", Name: "alice"}, Repository: "home", Enabled: true, Schedule: storage.DefaultSchedule, Retention: storage.DefaultRetention}); err != nil {
 		t.Fatal(err)
 	}
 	_ = s.environmentRemoved("alice")
-	if _, ok := s.storage.Store.Policy(storage.Item{Kind: "environment", Name: "alice"}); ok {
+	if _, ok := s.storage.Policy(storage.Item{Kind: "environment", Name: "alice"}); ok {
 		t.Fatal("policy of a removed environment kept")
 	}
 	if code, b := send(admin, "DELETE", "/api/volumes/photos", ""); code != 204 {
 		t.Fatalf("delete volume: %d %s", code, b)
 	}
-	if _, ok := s.storage.Store.Policy(storage.Item{Kind: "volume", Name: "photos"}); ok {
+	if _, ok := s.storage.Policy(storage.Item{Kind: "volume", Name: "photos"}); ok {
 		t.Fatal("policy of a deleted volume kept")
 	}
 }

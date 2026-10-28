@@ -135,3 +135,107 @@ func (s *Service) MakeFreeFolder(ctx context.Context, parent Folder, base string
 		name = fmt.Sprintf("%s (%d)", base, n)
 	}
 }
+
+// FolderExists reports whether a workspace folder of that name is already there.
+func (s *Service) FolderExists(name string) bool {
+	st, err := os.Stat(s.Layout.HomeOf(name))
+	return err == nil && st.IsDir()
+}
+
+// missingHome is the error of a defined environment without its home folder.
+func (s *Service) missingHome(name string) error {
+	return fmt.Errorf("%s's home folder %s is missing", name, s.Layout.ToHost(s.Layout.HomeOf(name)))
+}
+
+// missingVolume is the error of the first of grants, name's, whose volume
+// isn't in volumes.json or whose local folder is missing; nil when there is
+// none. A host volume's folder is on the engine host, which the supervisor
+// may not see: checkHostSources and the strict mount check that.
+func (s *Service) missingVolume(name string, grants []VolumeGrant) error {
+	for _, g := range grants {
+		v, ok := s.Vols.Get(g.Name)
+		if !ok {
+			return fmt.Errorf("%s uses volume %s, which doesn't exist", name, g.Name)
+		}
+		if v.Kind == VolumeHost {
+			continue
+		}
+		folder := s.Layout.VolumeOf(g.Name)
+		if st, err := os.Stat(folder); err != nil || !st.IsDir() {
+			return fmt.Errorf("%s uses volume %s, whose folder %s is missing", name, g.Name, s.Layout.ToHost(folder))
+		}
+	}
+	return nil
+}
+
+// missingFolder is name's missing home folder, or else the first volume
+// of grants missing as missingVolume has it; nil when there is none.
+func (s *Service) missingFolder(name string, grants []VolumeGrant) error {
+	if !s.FolderExists(name) {
+		return s.missingHome(name)
+	}
+	return s.missingVolume(name, grants)
+}
+
+// checkFolders records a missing home or granted volume folder as name's
+// error, and clears that error once the folder is back. It is kept apart from
+// the error of a failed change, which shows again once the folder is back.
+// Only creation makes a home, and only CreateVolume a volume folder.
+func (s *Service) checkFolders(name string) error {
+	def, defined := s.Defs.Get(name)
+	err := s.missingFolder(name, def.Volumes)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err == nil || !defined {
+		delete(s.folderErrs, name)
+	} else {
+		s.folderErrs[name] = err.Error()
+	}
+	return err
+}
+
+// FolderSize adds up the sizes of the files in an environment's folder. complete
+// is false when some directories couldn't be read (the supervisor is UID 1000,
+// so only root-owned files, as an environment with Docker access can leave,
+// are out of reach).
+func (s *Service) FolderSize(name string) (bytes int64, complete bool) {
+	return treeSize(s.Layout.HomeOf(name))
+}
+
+// VolumeSize is FolderSize for the folder of the volume name. A host
+// volume's folder is on the engine host, which the supervisor can't see:
+// its size is 0 and incomplete.
+func (s *Service) VolumeSize(name string) (bytes int64, complete bool) {
+	v, ok := s.Vols.Get(name)
+	if !ok {
+		return 0, false
+	}
+	folder := s.VolumeFolder(v)
+	if folder.OnEngineHost {
+		return 0, false
+	}
+	return treeSize(folder.Path)
+}
+
+func treeSize(dir string) (bytes int64, complete bool) {
+	complete = true
+	// Through an os.Root: an environment's links never lead the walk outside.
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return 0, !errors.Is(err, fs.ErrPermission)
+	}
+	defer root.Close()
+	_ = fs.WalkDir(root.FS(), ".", func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			complete = false
+			return nil
+		}
+		if d.Type().IsRegular() {
+			if info, err := d.Info(); err == nil {
+				bytes += info.Size()
+			}
+		}
+		return nil
+	})
+	return bytes, complete
+}

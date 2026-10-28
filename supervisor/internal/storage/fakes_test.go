@@ -235,10 +235,10 @@ func testService(t *testing.T, f *fakeRunner) (*Service, *fakeEnv) {
 	}
 	s.Loc = time.UTC
 	v := validRemotes()[SFTP]
-	if err := s.Remotes.Add(v.r, v.sec); err != nil {
+	if err := s.remotes.Add(v.r, v.sec); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Store.AddRepository(Repository{Name: "home", Remote: "nas", Folder: DefaultFolder, Created: time.Now()}); err != nil {
+	if err := s.store.AddRepository(Repository{Name: "home", Remote: "nas", Folder: DefaultFolder, Created: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(s.keyDir("home"), 0o700); err != nil {

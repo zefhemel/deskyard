@@ -6,7 +6,6 @@
 package environments
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -14,8 +13,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -27,7 +24,6 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/helper"
-	"github.com/zefhemel/deskyard/supervisor/internal/store"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 )
 
@@ -258,30 +254,6 @@ func (s *Service) errorOf(name string) string {
 	return s.errs[name]
 }
 
-func (s *Service) image(ctx context.Context, ref string) engine.Image {
-	s.mu.Lock()
-	img, ok := s.imgInfo[ref]
-	s.mu.Unlock()
-	if ok {
-		return img
-	}
-	img, err := s.Eng.ImageInspect(ctx, ref)
-	if err != nil {
-		return engine.Image{}
-	}
-	s.mu.Lock()
-	s.imgInfo[ref] = img
-	s.mu.Unlock()
-	return img
-}
-
-// ForgetImage drops cached image information (after a pull).
-func (s *Service) ForgetImage(ref string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.imgInfo, ref)
-}
-
 // fromDefinition joins def with its container c (zero when it has none).
 func (s *Service) fromDefinition(ctx context.Context, def Definition, c engine.Container) Environment {
 	env := Environment{
@@ -314,27 +286,6 @@ func (s *Service) fromDefinition(ctx context.Context, def Definition, c engine.C
 // creating is the placeholder of an environment whose definition isn't saved yet.
 func (s *Service) creating(name string) Environment {
 	return Environment{ID: name, Name: name, State: "creating", Folder: s.Layout.HomeOf(name)}
-}
-
-// ImagesInUse returns the IDs of the images that environment definitions pin
-// (stopped environments without a container included) and that containers
-// on the engine run from, of any supervisor and in any state, parked
-// replacements included.
-func (s *Service) ImagesInUse(ctx context.Context) (map[string]bool, error) {
-	inUse := map[string]bool{}
-	for _, def := range s.Defs.List() {
-		if def.Image.ID != "" {
-			inUse[def.Image.ID] = true
-		}
-	}
-	all, err := s.Eng.List(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	for _, c := range all {
-		inUse[c.ImageID] = true
-	}
-	return inUse, nil
 }
 
 // List returns every defined environment, with or without a container, and
@@ -425,89 +376,10 @@ func (s *Service) container(ctx context.Context, name string) (c engine.Containe
 	return c, "", nil
 }
 
-// FolderExists reports whether a workspace folder of that name is already there.
-func (s *Service) FolderExists(name string) bool {
-	st, err := os.Stat(s.Layout.HomeOf(name))
-	return err == nil && st.IsDir()
-}
-
-// missingHome is the error of a defined environment without its home folder.
-func (s *Service) missingHome(name string) error {
-	return fmt.Errorf("%s's home folder %s is missing", name, s.Layout.ToHost(s.Layout.HomeOf(name)))
-}
-
-// missingVolume is the error of the first of grants, name's, whose volume
-// isn't in volumes.json or whose local folder is missing; nil when there is
-// none. A host volume's folder is on the engine host, which the supervisor
-// may not see: checkHostSources and the strict mount check that.
-func (s *Service) missingVolume(name string, grants []VolumeGrant) error {
-	for _, g := range grants {
-		v, ok := s.Vols.Get(g.Name)
-		if !ok {
-			return fmt.Errorf("%s uses volume %s, which doesn't exist", name, g.Name)
-		}
-		if v.Kind == VolumeHost {
-			continue
-		}
-		folder := s.Layout.VolumeOf(g.Name)
-		if st, err := os.Stat(folder); err != nil || !st.IsDir() {
-			return fmt.Errorf("%s uses volume %s, whose folder %s is missing", name, g.Name, s.Layout.ToHost(folder))
-		}
-	}
-	return nil
-}
-
-// missingFolder is name's missing home folder, or else the first volume
-// of grants missing as missingVolume has it; nil when there is none.
-func (s *Service) missingFolder(name string, grants []VolumeGrant) error {
-	if !s.FolderExists(name) {
-		return s.missingHome(name)
-	}
-	return s.missingVolume(name, grants)
-}
-
-// checkFolders records a missing home or granted volume folder as name's
-// error, and clears that error once the folder is back. It is kept apart from
-// the error of a failed change, which shows again once the folder is back.
-// Only creation makes a home, and only CreateVolume a volume folder.
-func (s *Service) checkFolders(name string) error {
-	def, defined := s.Defs.Get(name)
-	err := s.missingFolder(name, def.Volumes)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err == nil || !defined {
-		delete(s.folderErrs, name)
-	} else {
-		s.folderErrs[name] = err.Error()
-	}
-	return err
-}
-
 func randomHex(n int) string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
-}
-
-func (s *Service) tokenPath(name string) string {
-	return filepath.Join(s.Layout.Secret, "proxy", name)
-}
-
-// proxyToken is the token the proxy sends to name's Caddy, kept in
-// secret/proxy/<name> and made on first use.
-func (s *Service) proxyToken(name string) (string, error) {
-	b, err := os.ReadFile(s.tokenPath(name))
-	if err == nil && len(bytes.TrimSpace(b)) > 0 {
-		return string(bytes.TrimSpace(b)), nil
-	}
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return "", err
-	}
-	token := randomHex(32)
-	if err := store.WriteFile(s.tokenPath(name), []byte(token+"\n")); err != nil {
-		return "", err
-	}
-	return token, nil
 }
 
 // forget deletes name's definition and proxy token.
@@ -523,34 +395,6 @@ func (s *Service) forget(name string) error {
 		return err
 	}
 	return nil
-}
-
-// EnsureImage pulls ref when it isn't present and checks the image contract.
-func (s *Service) EnsureImage(ctx context.Context, ref string, progress func(string, float64)) (engine.Image, error) {
-	img, err := s.Eng.ImageInspect(ctx, ref)
-	if errors.Is(err, engine.ErrNotFound) {
-		progress("Pulling "+ref, 0)
-		err = s.Eng.Pull(ctx, ref, func(p engine.PullProgress) {
-			if p.Total > 0 {
-				progress(fmt.Sprintf("Pulling image, %d of %d MB", p.Current>>20, p.Total>>20), float64(p.Current)/float64(p.Total))
-			}
-		})
-		if err != nil {
-			return engine.Image{}, fmt.Errorf("pulling %s: %w", ref, err)
-		}
-		s.ForgetImage(ref)
-		img, err = s.Eng.ImageInspect(ctx, ref)
-	}
-	if err != nil {
-		return engine.Image{}, err
-	}
-	if img.Labels[LabelContract] != Contract {
-		return engine.Image{}, fmt.Errorf("%s isn't a Deskyard desktop image (label %s=%s missing)", ref, LabelContract, Contract)
-	}
-	if s.ImageUsed != nil {
-		s.ImageUsed(ref, img.ID)
-	}
-	return img, nil
 }
 
 // withSettings is def changed to set, with image the ID set.Image resolved to.
@@ -570,14 +414,6 @@ func withSettings(def Definition, set Settings, image string) Definition {
 		next.Revision++
 	}
 	return next
-}
-
-// pinned is the image a definition's container is built from.
-func pinned(def Definition) string {
-	if def.Image.ID != "" {
-		return def.Image.ID
-	}
-	return def.Image.Ref
 }
 
 // Create defines a new environment and starts it. progress reports steps
@@ -723,96 +559,6 @@ func (s *Service) create(ctx context.Context, name string, set Settings, power P
 		return Environment{}, err
 	}
 	return s.Get(ctx, name)
-}
-
-// WaitReady waits until the environment's desktop answers through its Caddy.
-func (s *Service) WaitReady(ctx context.Context, name string, limit time.Duration) error {
-	deadline := time.Now().Add(limit)
-	client := &http.Client{Timeout: 3 * time.Second}
-	for {
-		addr, token, err := s.Target(ctx, name)
-		if err == nil {
-			req, _ := http.NewRequestWithContext(ctx, "GET", "http://"+addr+"/", nil)
-			req.Header.Set("X-Deskyard-Token", token)
-			if resp, err := client.Do(req); err == nil {
-				resp.Body.Close()
-				if resp.StatusCode == http.StatusOK {
-					return nil
-				}
-			}
-		} else if errors.Is(err, ErrStopped) {
-			if c, _ := s.Get(ctx, name); c.Container.State == "exited" {
-				return fmt.Errorf("%s stopped while starting (see its logs: docker logs %s)", name, containerName(name))
-			}
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("%s didn't come up within %s", name, limit)
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(500 * time.Millisecond):
-		}
-	}
-}
-
-// createNetwork gives name's network the first free subnet of the pool.
-// Choosing and creating are one step for this supervisor (subnetMu), so
-// environments created at once don't choose the same subnet; one that another
-// supervisor on the engine takes meanwhile is chosen again.
-func (s *Service) createNetwork(ctx context.Context, name string) error {
-	pool, err := netipParse(s.Cfg.Subnet)
-	if err != nil {
-		return err
-	}
-	s.subnetMu.Lock()
-	defer s.subnetMu.Unlock()
-	for attempt := 0; ; attempt++ {
-		nets, err := s.Eng.Networks(ctx, nil)
-		if err != nil {
-			return err
-		}
-		var used []string
-		for _, n := range nets {
-			if n.Subnet != "" {
-				used = append(used, n.Subnet)
-			}
-		}
-		subnet, err := freeSubnet(pool, used)
-		if err != nil {
-			return err
-		}
-		err = s.Eng.CreateNetwork(ctx, containerName(name), subnet.String(), s.ownLabels(name))
-		if !errors.Is(err, engine.ErrSubnetTaken) || attempt == 4 {
-			return err
-		}
-	}
-}
-
-// network checks name's network: engine.ErrNotFound when there is none,
-// ErrConflict when one of its name isn't this supervisor's.
-func (s *Service) network(ctx context.Context, name string) error {
-	nets, err := s.Eng.Networks(ctx, nil)
-	if err != nil {
-		return err
-	}
-	for _, n := range nets {
-		if n.Name == containerName(name) {
-			if !s.owns(n.Labels, name) {
-				return fmt.Errorf("network %s: %w", n.Name, ErrConflict)
-			}
-			return nil
-		}
-	}
-	return engine.ErrNotFound
-}
-
-// ensureNetwork creates name's network unless it is there.
-func (s *Service) ensureNetwork(ctx context.Context, name string) error {
-	if err := s.network(ctx, name); !errors.Is(err, engine.ErrNotFound) {
-		return err
-	}
-	return s.createNetwork(ctx, name)
 }
 
 // realise creates the container of def, not started.
@@ -1125,96 +871,6 @@ func (s *Service) removed(name string) error {
 		return nil
 	}
 	return s.Removed(name)
-}
-
-// removeNetwork removes an environment's network. The supervisor joined it to
-// reach the environment, and has to leave it first. A network of its name that
-// isn't this supervisor's is left alone (ErrConflict).
-func (s *Service) removeNetwork(ctx context.Context, name string) error {
-	if err := s.network(ctx, name); err != nil {
-		return err
-	}
-	if s.Cfg.SelfID != "" {
-		_ = s.Eng.DisconnectNetwork(ctx, containerName(name), s.Cfg.SelfID)
-	}
-	return s.Eng.RemoveNetwork(ctx, containerName(name))
-}
-
-// FolderSize adds up the sizes of the files in an environment's folder. complete
-// is false when some directories couldn't be read (the supervisor is UID 1000,
-// so only root-owned files, as an environment with Docker access can leave,
-// are out of reach).
-func (s *Service) FolderSize(name string) (bytes int64, complete bool) {
-	return treeSize(s.Layout.HomeOf(name))
-}
-
-// VolumeSize is FolderSize for the folder of the volume name. A host
-// volume's folder is on the engine host, which the supervisor can't see:
-// its size is 0 and incomplete.
-func (s *Service) VolumeSize(name string) (bytes int64, complete bool) {
-	v, ok := s.Vols.Get(name)
-	if !ok {
-		return 0, false
-	}
-	folder := s.VolumeFolder(v)
-	if folder.OnEngineHost {
-		return 0, false
-	}
-	return treeSize(folder.Path)
-}
-
-func treeSize(dir string) (bytes int64, complete bool) {
-	complete = true
-	// Through an os.Root: an environment's links never lead the walk outside.
-	root, err := os.OpenRoot(dir)
-	if err != nil {
-		return 0, !errors.Is(err, fs.ErrPermission)
-	}
-	defer root.Close()
-	_ = fs.WalkDir(root.FS(), ".", func(_ string, d fs.DirEntry, err error) error {
-		if err != nil {
-			complete = false
-			return nil
-		}
-		if d.Type().IsRegular() {
-			if info, err := d.Info(); err == nil {
-				bytes += info.Size()
-			}
-		}
-		return nil
-	})
-	return bytes, complete
-}
-
-// Target is where the proxy reaches a running environment's port 8080, and the
-// token it must send.
-func (s *Service) Target(ctx context.Context, name string) (addr, token string, err error) {
-	c, err := s.Get(ctx, name)
-	if err != nil {
-		return "", "", err
-	}
-	if !c.Container.Running() {
-		return "", "", ErrStopped
-	}
-	token = c.Container.Env[TokenEnv]
-	if c.Settings.VPNConnectionID != "" {
-		if s.Networking == nil {
-			return "", "", errVPNUnavailable
-		}
-		g, ok := s.Networking.target(name)
-		if !ok {
-			return "", "", errors.New("VPN gateway unavailable")
-		}
-		c.Container = g
-	}
-	port := "8080"
-	if s.Cfg.DesktopPort != 0 {
-		port = strconv.Itoa(s.Cfg.DesktopPort)
-	}
-	if ip := c.Container.IP[containerName(name)]; ip != "" {
-		return net.JoinHostPort(ip, port), token, nil
-	}
-	return net.JoinHostPort(containerName(name), port), token, nil
 }
 
 func isAlreadyConnected(err error) bool {

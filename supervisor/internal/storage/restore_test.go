@@ -56,7 +56,7 @@ func TestRestoreHereEnvironmentStopsAndStarts(t *testing.T) {
 	f.reply = restoreReply(environments.Definition{}, nil)
 	env.addEnvironment(t, "alice", true, environments.Settings{Image: "img"})
 	it := Item{KindEnvironment, "alice"}
-	_ = s.Store.PutPolicy(policyOf(it))
+	_ = s.store.PutPolicy(policyOf(it))
 	if _, err := s.Restore(context.Background(), it, RestoreRequest{Snapshot: "e1", Mode: "here"}, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestRestoreHereFailureLeavesStopped(t *testing.T) {
 	f.reply = restoreReply(environments.Definition{}, &fail)
 	env.addEnvironment(t, "alice", true, environments.Settings{Image: "img"})
 	it := Item{KindEnvironment, "alice"}
-	_ = s.Store.PutPolicy(policyOf(it))
+	_ = s.store.PutPolicy(policyOf(it))
 	_, err := s.Restore(context.Background(), it, RestoreRequest{Snapshot: "e1", Mode: "here"}, nil)
 	if err == nil || !strings.Contains(err.Error(), "connection lost") || !strings.Contains(err.Error(), "stopped") {
 		t.Fatalf("got %v", err)
@@ -117,7 +117,7 @@ func TestRestoreHereBackupFirst(t *testing.T) {
 	f.reply = restoreReply(environments.Definition{}, nil)
 	env.addEnvironment(t, "alice", false, environments.Settings{Image: "img"})
 	it := Item{KindEnvironment, "alice"}
-	_ = s.Store.PutPolicy(policyOf(it))
+	_ = s.store.PutPolicy(policyOf(it))
 	if _, err := s.Restore(context.Background(), it, RestoreRequest{Snapshot: "e1", Mode: "here", BackupFirst: true}, nil); err != nil {
 		t.Fatal(err)
 	}

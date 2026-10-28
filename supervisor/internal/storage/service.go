@@ -41,19 +41,21 @@ const (
 	listingFresh = 30 * time.Second
 )
 
-// Service runs storage remotes and backups.
+// Service runs storage remotes and backups. It is the storage API: its
+// remotes, repositories, policies and run state are reached only through
+// its methods.
 type Service struct {
-	Remotes *Remotes
-	Store   *Store
-	State   *State
-	Tool    Tool
-	Env     Environments
-	Loc     *time.Location
-	Now     func() time.Time
-	Log     *slog.Logger
+	Tool Tool
+	Env  Environments
+	Loc  *time.Location
+	Now  func() time.Time
+	Log  *slog.Logger
 
-	layout config.Layout
-	opMu   sync.Mutex // one backup or restore at a time
+	remotes *Remotes
+	store   *Store
+	state   *State
+	layout  config.Layout
+	opMu    sync.Mutex // one backup or restore at a time
 
 	mu       sync.Mutex
 	remoteOp map[string]int // remote → operations using it; -1 while it is changed
@@ -85,7 +87,7 @@ func Open(layout config.Layout, instance string, run Runner, env Environments, l
 		host = host[:12]
 	}
 	return &Service{
-		Remotes: remotes, Store: st, State: state, Env: env, Loc: time.Local, Now: time.Now, Log: log,
+		remotes: remotes, store: st, state: state, Env: env, Loc: time.Local, Now: time.Now, Log: log,
 		Tool:   Tool{Run: run, Host: "deskyard-" + host, CacheDir: filepath.Join(layout.Cache, "restic")},
 		layout: layout, remoteOp: map[string]int{}, listings: map[string]listing{},
 	}, nil
@@ -97,15 +99,15 @@ func (s *Service) keyDir(repo string) string {
 
 // repo is where restic finds the repository name.
 func (s *Service) repo(name string) (Repo, Repository, error) {
-	r, ok := s.Store.Repository(name)
+	r, ok := s.store.Repository(name)
 	if !ok {
 		return Repo{}, Repository{}, fmt.Errorf("repository %q: %w", name, ErrNotFound)
 	}
-	remote, ok := s.Remotes.Get(r.Remote)
+	remote, ok := s.remotes.Get(r.Remote)
 	if !ok {
 		return Repo{}, Repository{}, fmt.Errorf("repository %s's remote %q: %w", name, r.Remote, ErrNotFound)
 	}
-	return Repo{Remote: remote.Name, Path: joinPath(remote.Root, r.Folder), ConfigDir: s.Remotes.ConfigDir(remote.Name), KeyDir: s.keyDir(name)}, r, nil
+	return Repo{Remote: remote.Name, Path: joinPath(remote.Root, r.Folder), ConfigDir: s.remotes.ConfigDir(remote.Name), KeyDir: s.keyDir(name)}, r, nil
 }
 
 // hold holds it's files for what, through the environments service, which
@@ -160,6 +162,23 @@ func (s *Service) forgetListings(repo string) {
 
 // --- remotes ---
 
+// Remotes are every remote.
+func (s *Service) Remotes() []Remote { return s.remotes.List() }
+
+// Remote is the remote name.
+func (s *Service) Remote(name string) (Remote, bool) { return s.remotes.Get(name) }
+
+// RemoteSecretsSet names the secrets the remote name has.
+func (s *Service) RemoteSecretsSet(name string) []string { return s.remotes.SecretsSet(name) }
+
+// RepositoriesOnRemote are the repositories on the remote name.
+func (s *Service) RepositoriesOnRemote(name string) []string {
+	return s.store.RepositoriesOnRemote(name)
+}
+
+// Host is the restic host of this Deskyard's snapshots.
+func (s *Service) Host() string { return s.Tool.Host }
+
 // TestRemote connects to an unsaved remote with its secrets.
 func (s *Service) TestRemote(ctx context.Context, r Remote, sec Secrets) error {
 	if err := r.Validate(sec, true); err != nil {
@@ -181,7 +200,7 @@ func (s *Service) testWith(ctx context.Context, r Remote, sec StoredSecrets) err
 
 // TestSavedRemote tests name as changed to r, with sec over its stored secrets.
 func (s *Service) TestSavedRemote(ctx context.Context, name string, r Remote, sec Secrets) error {
-	stored, err := s.Remotes.StoredSecrets(name)
+	stored, err := s.remotes.StoredSecrets(name)
 	if err != nil {
 		return err
 	}
@@ -194,14 +213,14 @@ func (s *Service) TestSavedRemote(ctx context.Context, name string, r Remote, se
 
 // CreateRemote saves a new remote after a successful connection test.
 func (s *Service) CreateRemote(ctx context.Context, r Remote, sec Secrets) error {
-	if _, ok := s.Remotes.Get(r.Name); ok {
+	if _, ok := s.remotes.Get(r.Name); ok {
 		return fmt.Errorf("remote %q: %w", r.Name, ErrExists)
 	}
 	if err := s.TestRemote(ctx, r, sec); err != nil {
 		return err
 	}
 	r.Created = s.Now().UTC()
-	return s.Remotes.Add(r, sec)
+	return s.remotes.Add(r, sec)
 }
 
 // UpdateRemote saves changes to name after a successful connection test,
@@ -217,7 +236,7 @@ func (s *Service) UpdateRemote(ctx context.Context, name string, r Remote, sec S
 		return err
 	}
 	r.Name = name
-	return s.Remotes.Update(name, r, sec)
+	return s.remotes.Update(name, r, sec)
 }
 
 // DeleteRemote forgets name, refusing while a repository is on it, or a
@@ -228,10 +247,10 @@ func (s *Service) DeleteRemote(name string) error {
 		return err
 	}
 	defer done()
-	if repos := s.Store.RepositoriesOnRemote(name); len(repos) > 0 {
+	if repos := s.store.RepositoriesOnRemote(name); len(repos) > 0 {
 		return fmt.Errorf("%w: backup repositories %s are on remote %s", ErrInUse, strings.Join(repos, ", "), name)
 	}
-	return s.Remotes.Delete(name)
+	return s.remotes.Delete(name)
 }
 
 // --- repositories ---
@@ -248,10 +267,10 @@ func (s *Service) CreateRepository(ctx context.Context, name, remote, folder, ke
 	if err := repo.validate(); err != nil {
 		return "", err
 	}
-	if _, ok := s.Store.Repository(name); ok {
+	if _, ok := s.store.Repository(name); ok {
 		return "", fmt.Errorf("repository %q: %w", name, ErrExists)
 	}
-	rem, ok := s.Remotes.Get(remote)
+	rem, ok := s.remotes.Get(remote)
 	if !ok {
 		return "", fmt.Errorf("remote %q: %w", remote, ErrNotFound)
 	}
@@ -280,7 +299,7 @@ func (s *Service) CreateRepository(ctx context.Context, name, remote, folder, ke
 		return "", err
 	}
 	defer done()
-	r := Repo{Remote: rem.Name, Path: joinPath(rem.Root, repo.Folder), ConfigDir: s.Remotes.ConfigDir(rem.Name), KeyDir: tmp}
+	r := Repo{Remote: rem.Name, Path: joinPath(rem.Root, repo.Folder), ConfigDir: s.remotes.ConfigDir(rem.Name), KeyDir: tmp}
 	switch err := s.Tool.CheckRepo(ctx, r); {
 	case err == nil && generated:
 		return "", ErrNeedsKey
@@ -301,7 +320,7 @@ func (s *Service) CreateRepository(ctx context.Context, name, remote, folder, ke
 	if err := os.Rename(tmp, dir); err != nil {
 		return "", err
 	}
-	if err := s.Store.AddRepository(repo); err != nil {
+	if err := s.store.AddRepository(repo); err != nil {
 		_ = os.RemoveAll(dir)
 		return "", err
 	}
@@ -312,17 +331,23 @@ func (s *Service) CreateRepository(ctx context.Context, name, remote, folder, ke
 }
 
 func (s *Service) RecoveryKey(repo string) (string, error) {
-	if _, ok := s.Store.Repository(repo); !ok {
+	if _, ok := s.store.Repository(repo); !ok {
 		return "", fmt.Errorf("repository %q: %w", repo, ErrNotFound)
 	}
 	b, err := os.ReadFile(filepath.Join(s.keyDir(repo), "restic-password"))
 	return string(b), err
 }
 
+// Repository is the repository name.
+func (s *Service) Repository(name string) (Repository, bool) { return s.store.Repository(name) }
+
+// Repositories are every repository.
+func (s *Service) Repositories() []Repository { return s.store.Repositories() }
+
 // RemoveRepository forgets a repository and its local key; its snapshots stay
 // on the remote.
 func (s *Service) RemoveRepository(name string) error {
-	if err := s.Store.RemoveRepository(name); err != nil {
+	if err := s.store.RemoveRepository(name); err != nil {
 		return err
 	}
 	s.forgetListings(name)
@@ -336,13 +361,25 @@ func (s *Service) PutPolicy(p Policy) error {
 	if !s.exists(p.Item) {
 		return fmt.Errorf("%s: %w", p.Item, ErrNotFound)
 	}
-	return s.Store.PutPolicy(p)
+	return s.store.PutPolicy(p)
 }
+
+// DeletePolicy drops it's policy, keeping its run state and snapshots.
+func (s *Service) DeletePolicy(it Item) error { return s.store.DeletePolicy(it) }
+
+// Policy is it's backup policy, if it has one.
+func (s *Service) Policy(it Item) (Policy, bool) { return s.store.Policy(it) }
+
+// Policies are every item's backup policy.
+func (s *Service) Policies() []Policy { return s.store.Policies() }
+
+// RunState is what the latest backups of it did.
+func (s *Service) RunState(it Item) RunState { return s.state.Get(it) }
 
 // ItemGone drops the policy and run state of a removed environment or a
 // deleted volume. Their snapshots stay.
 func (s *Service) ItemGone(it Item) error {
-	return errors.Join(s.Store.DeletePolicy(it), s.State.Forget(it))
+	return errors.Join(s.store.DeletePolicy(it), s.state.Forget(it))
 }
 
 func (s *Service) exists(it Item) bool { return it.kind().exists(s.Env, it.Name) }
@@ -372,7 +409,7 @@ func (s *Service) BackUp(ctx context.Context, it Item, reason string, progress f
 // backUp is BackUp with it held.
 func (s *Service) backUp(ctx context.Context, it Item, reason string, progress func(string, float64)) (err error) {
 	start := s.Now().UTC()
-	st := s.State.Get(it)
+	st := s.state.Get(it)
 	defer func() {
 		st.LastAttempt = start
 		st.Error = ""
@@ -382,11 +419,11 @@ func (s *Service) backUp(ctx context.Context, it Item, reason string, progress f
 		if err != nil {
 			st.Error = err.Error()
 		}
-		if rerr := s.State.Record(it, st); rerr != nil && s.Log != nil {
+		if rerr := s.state.Record(it, st); rerr != nil && s.Log != nil {
 			s.Log.Error("recording backup state", "item", it, "err", rerr)
 		}
 	}()
-	p, ok := s.Store.Policy(it)
+	p, ok := s.store.Policy(it)
 	if !ok {
 		return fmt.Errorf("%s has no backup policy", it)
 	}
@@ -422,12 +459,12 @@ func (s *Service) backUp(ctx context.Context, it Item, reason string, progress f
 	if err := s.Tool.Forget(ctx, repo, it.Tag(), p.Retention); err != nil {
 		return err
 	}
-	if now := s.Now(); now.Sub(s.State.LastPrune(p.Repository)) >= pruneEvery {
+	if now := s.Now(); now.Sub(s.state.LastPrune(p.Repository)) >= pruneEvery {
 		progress("Pruning the repository", -1)
 		if err := s.Tool.Prune(ctx, repo); err != nil {
 			return err
 		}
-		if err := s.State.RecordPrune(p.Repository, now.UTC()); err != nil {
+		if err := s.state.RecordPrune(p.Repository, now.UTC()); err != nil {
 			return err
 		}
 	}
@@ -437,17 +474,17 @@ func (s *Service) backUp(ctx context.Context, it Item, reason string, progress f
 // RunDue backs up every item whose policy is due, one after another.
 func (s *Service) RunDue(ctx context.Context) {
 	now := s.Now()
-	for _, p := range s.Store.Policies() {
+	for _, p := range s.store.Policies() {
 		if ctx.Err() != nil {
 			return
 		}
-		if !Due(p, s.State.Get(p.Item), now, s.Loc) {
+		if !Due(p, s.state.Get(p.Item), now, s.Loc) {
 			continue
 		}
 		if !s.exists(p.Item) {
-			st := s.State.Get(p.Item)
+			st := s.state.Get(p.Item)
 			st.LastAttempt, st.Error = now.UTC(), fmt.Sprintf("%s doesn't exist", p.Item)
-			_ = s.State.Record(p.Item, st)
+			_ = s.state.Record(p.Item, st)
 			continue
 		}
 		if err := s.BackUp(ctx, p.Item, ReasonScheduled, nil); err != nil && s.Log != nil {
@@ -527,7 +564,7 @@ func itemOf(tags []string) (Item, bool) {
 // newest first.
 func (s *Service) Snapshots(ctx context.Context, it Item) ([]ItemSnapshot, error) {
 	var out []ItemSnapshot
-	for _, r := range s.Store.Repositories() {
+	for _, r := range s.store.Repositories() {
 		snaps, err := s.repoSnapshots(ctx, r.Name)
 		if err != nil {
 			return nil, fmt.Errorf("repository %s: %w", r.Name, err)
@@ -558,7 +595,7 @@ type CatalogItem struct {
 // can't be read is reported in errs, not failing the others.
 func (s *Service) Catalog(ctx context.Context) (items []CatalogItem, errs map[string]string) {
 	errs = map[string]string{}
-	for _, r := range s.Store.Repositories() {
+	for _, r := range s.store.Repositories() {
 		snaps, err := s.repoSnapshots(ctx, r.Name)
 		if err != nil {
 			errs[r.Name] = err.Error()
