@@ -9,14 +9,11 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path"
 	"runtime"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/cli/remote"
-	"github.com/zefhemel/deskyard/supervisor/internal/envname"
 )
 
 // loginInterval is how long deskyard login waits between polls, given the
@@ -113,16 +110,6 @@ func runLogin(a *App, c *call) error {
 	t, err := remote.ParseURL(c.args[0])
 	if err != nil {
 		return usagef(c.cmd, "%v", err)
-	}
-	if envname.IsReserved(t.Environment) {
-		return usagef(c.cmd, "%s/%s is a page of Deskyard, it isn't an environment: run `deskyard login %s`, or add an environment's name to it", t.Base, t.Environment, t.Base)
-	}
-	// Below a page, such as a volume's (…/volumes/photos).
-	if u, err := url.Parse(t.Base); err == nil {
-		if dir, page := path.Split(u.Path); page != "" && envname.IsReserved(page) {
-			u.Path = strings.TrimSuffix(dir, "/")
-			return usagef(c.cmd, "%s is a page of Deskyard, it isn't an environment: run `deskyard login %s`, or add an environment's name to it", t.URL(), u)
-		}
 	}
 	name, err := serverName(a, c, t.Base)
 	if err != nil {
@@ -300,12 +287,12 @@ func runLogout(a *App, c *call) error {
 	if len(c.args) > 0 {
 		name = c.args[0]
 	}
-	srv := cfg.Servers[name]
-	if srv == nil {
-		if name == "" {
-			return errors.New("no server chosen: run `deskyard server list`, then `deskyard logout NAME`")
-		}
-		return fmt.Errorf("no server named %q: run `deskyard server list`", name)
+	if name == "" {
+		return errors.New("no server chosen: run `deskyard server list`, then `deskyard logout NAME`")
+	}
+	srv, err := savedServer(cfg, name)
+	if err != nil {
+		return err
 	}
 	note := "its credential is revoked"
 	err = a.revoke(c.ctx, srv.URL, srv.Credential)
@@ -350,20 +337,15 @@ func runServerList(a *App, c *call) error {
 		fmt.Fprintln(a.Stdout, "Not signed in to any server: "+loginHint+".")
 		return nil
 	}
-	tw := tabwriter.NewWriter(a.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "  NAME\tURL\tUSER\tENVIRONMENT\tCREDENTIAL")
+	var rows [][]string
 	for _, s := range cfg.Sorted() {
 		mark := " "
 		if s.Name == cfg.Default {
 			mark = "*"
 		}
-		env := s.Environment
-		if env == "" {
-			env = "-"
-		}
-		fmt.Fprintf(tw, "%s %s\t%s\t%s\t%s\t%s\n", mark, s.Name, s.URL, s.Username, env, remote.MaskCredential(s.Credential))
+		rows = append(rows, []string{mark + " " + s.Name, s.URL, s.Username, dash(s.Environment), remote.MaskCredential(s.Credential)})
 	}
-	return tw.Flush()
+	return table(a.Stdout, []string{"  NAME", "URL", "USER", "ENVIRONMENT", "CREDENTIAL"}, rows)
 }
 
 func runServerDefault(a *App, c *call) error {
@@ -378,8 +360,8 @@ func runServerDefault(a *App, c *call) error {
 		return nil
 	}
 	name := c.args[0]
-	if cfg.Servers[name] == nil {
-		return fmt.Errorf("no server named %q: run `deskyard server list`", name)
+	if _, err := savedServer(cfg, name); err != nil {
+		return err
 	}
 	cfg.Default = name
 	return cfg.Save(path)
@@ -389,6 +371,9 @@ func runServerDefault(a *App, c *call) error {
 
 func runEnvUse(a *App, c *call) error {
 	name, env, err := splitSelector(c.args[0])
+	if err == nil && env == "" {
+		err = fmt.Errorf("%q names no environment: write ENV, or SERVER/ENV", c.args[0])
+	}
 	if err != nil {
 		return usagef(c.cmd, "%v", err)
 	}
@@ -399,19 +384,18 @@ func runEnvUse(a *App, c *call) error {
 	if name == "" {
 		name = cfg.Default
 	}
-	srv := cfg.Servers[name]
-	if srv == nil {
-		if name == "" {
-			return a.noServer()
-		}
-		return fmt.Errorf("no server named %q: run `deskyard server list`", name)
+	if name == "" {
+		return a.noServer()
 	}
-	cl := remote.FromServer(srv, env)
-	cl.HTTP = a.HTTP
+	srv, err := savedServer(cfg, name)
+	if err != nil {
+		return err
+	}
+	cl := a.client(srv, env)
 	var got struct {
 		Level string `json:"level"`
 	}
-	if err := cl.JSON(c.ctx, http.MethodGet, "/environments/"+url.PathEscape(env), nil, &got); err != nil {
+	if err := cl.JSON(c.ctx, http.MethodGet, remote.EnvPath(env, ""), nil, &got); err != nil {
 		return err
 	}
 	if got.Level != "full" {

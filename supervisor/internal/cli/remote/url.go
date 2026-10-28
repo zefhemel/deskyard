@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"github.com/zefhemel/deskyard/supervisor/internal/envname"
 )
 
 // Target is a parsed environment URL: the supervisor's base URL and the
@@ -20,7 +22,8 @@ type Target struct {
 // environment name (the last path segment). A URL without a path names only
 // the supervisor. A pasted API URL (…/api/environments/alice/exec) names the
 // supervisor before /api and the environment after environments/, and so
-// does the web UI's page of an environment (…/environments/alice).
+// does the web UI's page of an environment (…/environments/alice). Any other
+// page of the web UI (…/accounts, …/volumes/photos) is an error.
 func ParseURL(raw string) (Target, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
@@ -52,6 +55,19 @@ func ParseURL(raw string) (Target, error) {
 	name, base := segs[len(segs)-1], segs[:len(segs)-1]
 	if len(base) > 0 && base[len(base)-1] == "environments" {
 		base = base[:len(base)-1]
+	}
+	// Another page of the web UI (…/accounts), or one below it
+	// (…/volumes/photos), names no environment.
+	page := -1 // the index of the page's segment
+	switch {
+	case envname.IsReserved(name):
+		page = len(base)
+	case len(base) > 0 && envname.IsReserved(base[len(base)-1]):
+		page = len(base) - 1
+	}
+	if page >= 0 {
+		server := u.Scheme + "://" + u.Host + prefix(strings.Join(base[:page], "/"))
+		return Target{}, fmt.Errorf("%s is a page of Deskyard, it isn't an environment: use the server's address %s, or add an environment's name to it", strings.TrimSpace(raw), server)
 	}
 	return Target{
 		Base:        u.Scheme + "://" + u.Host + prefix(strings.Join(base, "/")),

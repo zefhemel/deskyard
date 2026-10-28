@@ -23,6 +23,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/cli/remote"
 	"github.com/zefhemel/deskyard/supervisor/internal/forward"
 )
 
@@ -192,16 +193,6 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
-// credentialID is the id part of dyc_<id>_<secret>.
-func credentialID(cred string) string {
-	rest, ok := strings.CutPrefix(cred, "dyc_")
-	if !ok {
-		return ""
-	}
-	id, _, _ := strings.Cut(rest, "_")
-	return id
-}
-
 func (f *Fake) auth(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cred, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -311,7 +302,7 @@ func (f *Fake) info(w http.ResponseWriter, r *http.Request) {
 func (f *Fake) deleteCredential(w http.ResponseWriter, r *http.Request) {
 	cred := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	id := r.PathValue("id")
-	if id != credentialID(cred) {
+	if id != remote.CredentialID(cred) {
 		writeErr(w, http.StatusNotFound, "no such credential")
 		return
 	}

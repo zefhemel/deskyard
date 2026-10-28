@@ -49,7 +49,8 @@ With `browser connect` running, Playwright's
 `browser.contexts[0]`, the shared profile), Puppeteer or chrome-devtools
 tools work as if the browser were local. `-e ENV` (or `--environment ENV`)
 goes before the command and picks one of the default server's environments;
-`-e SERVER/ENV` picks one on another signed-in server. `deskyard env use alice`
+`-e SERVER/ENV` picks one on another signed-in server, and `-e SERVER/` that
+server's default environment. `deskyard env use alice`
 saves typing `-e`, `deskyard server list` and `server default NAME` manage the
 servers, and `DESKYARD_ENVIRONMENT` (`ENV` or `SERVER/ENV`) or
 `DESKYARD_URL` with `DESKYARD_CREDENTIAL` work without a config file. Inside an
@@ -72,6 +73,14 @@ deskyard share create bob guest --observe --expires 1d                          
 deskyard share revoke guest
 deskyard device list --account sanne
 ```
+
+These manage the server `-e SERVER/` (or `-e SERVER/ENV`) names, else the
+default server. Commands about one environment (`env show`, `create`,
+`remove`, `start`, `stop`, `restart` and `access`, `share list` and `create`)
+take its name as `NAME` or `SERVER/NAME`: `deskyard env stop work/bob` and
+`deskyard -e work/bob env stop` are the same; where the name is optional, the
+chosen environment is used. `env access` and `--grant` take `NAME` (full) or
+`NAME=LEVEL`, each name once.
 
 Removing an account, revoking a share or its device, its expiry, or losing the
 grant closes the CLI's open connections at once. An environment's access also

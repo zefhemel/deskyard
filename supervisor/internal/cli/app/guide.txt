@@ -110,7 +110,7 @@ MANAGING THE SERVER
     deskyard share create alice sanne --observe --expires 1d   prints a link
     deskyard account create anna --grant alice   token account: prints a link
     deskyard volume list | device list | device revoke ID
-  --server NAME picks another signed-in server.
+  -e SERVER/ manages another server; env commands also take SERVER/NAME.
 
 MORE
   deskyard --help                 all commands

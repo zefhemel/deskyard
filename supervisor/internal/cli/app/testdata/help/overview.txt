@@ -42,12 +42,12 @@ Servers and sign-in:
 
 Environments (on the server):
   env list [--json]                    list the environments you can see
-  env show NAME [--json]               show an environment's state and settings
+  env show [NAME] [--json]             show an environment's state and settings
   env create NAME --image REF [OPTIONS] create an environment (admin)
   env remove NAME [--delete-files]     remove an environment (admin)
-  env start NAME                       start an environment
-  env stop NAME                        stop an environment
-  env restart NAME                     restart an environment
+  env start [NAME]                     start an environment
+  env stop [NAME]                      stop an environment
+  env restart [NAME]                   restart an environment
   env access NAME [USER=LEVEL]...      show or change who may use an environment (admin)
 
 Volumes (admin):
@@ -63,7 +63,7 @@ Accounts (admin):
   account link USER                    make a new login link for a token account
 
 Sharing:
-  share list ENV [--json]              list an environment's shares
+  share list [ENV] [--json]            list an environment's shares
   share create ENV NAME [OPTIONS]      share an environment by link
   share link NAME                      make a new link for a share
   share revoke NAME                    end a share
@@ -84,10 +84,12 @@ Choosing an environment:
   use an environment on a server: -e ENV on the default server, or
   -e SERVER/ENV (also --environment, before the command), else
   $DESKYARD_ENVIRONMENT, else the default server's environment
-  (`deskyard env use ENV`). $DESKYARD_URL + $DESKYARD_CREDENTIAL replace the
-  default server. Inside an environment with none chosen, commands act on it
-  directly. After the command, -e is that command's own flag (exec -e K=V
-  sets an environment variable).
+  (`deskyard env use ENV`). -e SERVER/ is that server's default environment.
+  Administrator commands manage the server -e names; those about an
+  environment also take SERVER/NAME. $DESKYARD_URL + $DESKYARD_CREDENTIAL
+  replace the default server. Inside an environment with none chosen,
+  commands act on it directly. After the command, -e is that command's own
+  flag (exec -e K=V sets an environment variable).
 
 Environment variables:
   DESKYARD_ENVIRONMENT environment to use when -e isn't given (ENV or SERVER/ENV)

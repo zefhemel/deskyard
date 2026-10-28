@@ -94,6 +94,14 @@ type call struct {
 
 func (c *call) bool(name string) bool { return len(c.flags[name]) > 0 }
 
+// arg is the i-th argument, or "" when it wasn't given.
+func (c *call) arg(i int) string {
+	if i < len(c.args) {
+		return c.args[i]
+	}
+	return ""
+}
+
 func (c *call) str(name, def string) string {
 	if v := c.flags[name]; len(v) > 0 {
 		return v[len(v)-1]
@@ -338,7 +346,8 @@ func (a *App) loadConfig() (*remote.Config, string, error) {
 
 const loginHint = "run `deskyard login https://host/ENV` (or `deskyard auth LINK` with a login link)"
 
-// splitSelector splits -e's ENV or SERVER/ENV.
+// splitSelector splits -e's ENV, SERVER/ENV or SERVER/ (that server's
+// default environment).
 func splitSelector(sel string) (server, env string, err error) {
 	if sel == "" {
 		return "", "", nil
@@ -347,8 +356,8 @@ func splitSelector(sel string) (server, env string, err error) {
 	if !ok {
 		return "", sel, nil
 	}
-	if server == "" || env == "" || strings.Contains(env, "/") {
-		return "", "", fmt.Errorf("%q isn't an environment: write ENV, or SERVER/ENV for another server", sel)
+	if server == "" || strings.Contains(env, "/") {
+		return "", "", fmt.Errorf("%q isn't an environment: write ENV, or SERVER/ENV for another server (SERVER/ for its default environment)", sel)
 	}
 	return server, env, nil
 }
@@ -400,9 +409,15 @@ func (a *App) resolve(sel string) (*remote.Client, error) {
 	if env == "" {
 		return nil, fmt.Errorf("no environment chosen on %s: use -e ENV, or choose a default with `deskyard env use ENV`", srv.Name)
 	}
+	return a.client(srv, env), nil
+}
+
+// client is the API client for srv and one of its environments (env may be
+// empty), using a.HTTP.
+func (a *App) client(srv *remote.Server, env string) *remote.Client {
 	c := remote.FromServer(srv, env)
 	c.HTTP = a.HTTP
-	return c, nil
+	return c
 }
 
 // server returns the named server, or for "" the default one: the server
@@ -420,6 +435,12 @@ func (a *App) server(name string) (*remote.Server, error) {
 	if name == "" {
 		return cfg.Servers[cfg.Default], nil
 	}
+	return savedServer(cfg, name)
+}
+
+// savedServer is the server saved as name in cfg, or an error saying which
+// servers there are.
+func savedServer(cfg *remote.Config, name string) (*remote.Server, error) {
 	if srv := cfg.Servers[name]; srv != nil {
 		return srv, nil
 	}
