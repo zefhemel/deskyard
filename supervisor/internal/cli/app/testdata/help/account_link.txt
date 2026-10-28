@@ -8,16 +8,11 @@ one. The link works once.
 Arguments:
   USER       string      required  username
 
-Options:
-  --server NAME        the server to manage (see `deskyard server list`);
-                       default: the server -e SERVER/ENV names, else the
-                       default server
-
 Prints: the login link (https://host/link#dyl_…) alone on stdout; what it
   gives on stderr
 
 Examples:
   deskyard account link anna
 
-Where: on this machine, talking to the server
+Where: on this machine, talking to the chosen server: the one -e SERVER/ (or -e SERVER/ENV) names, else the default server
 Exit codes: 0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error

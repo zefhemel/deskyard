@@ -1,22 +1,17 @@
 deskyard env restart: restart an environment
 
-Usage: deskyard [-e ENV] env restart NAME
+Usage: deskyard [-e ENV] env restart [NAME]
 
 Saves that the environment should be running and restarts it, closing
 everyone's connections; the server answers at once. Needs full access to it.
 
 Arguments:
-  NAME       string      required  environment name
-
-Options:
-  --server NAME        the server to manage (see `deskyard server list`);
-                       default: the server -e SERVER/ENV names, else the
-                       default server
+  NAME       string      optional  environment name, or SERVER/NAME on another server; default: the chosen environment (-e, else the server's default)
 
 Prints: a confirmation line
 
 Examples:
   deskyard env restart alice
 
-Where: on this machine, talking to the server
+Where: on this machine, talking to the environment's server: SERVER in SERVER/NAME, else the one -e SERVER/ names, else the default server
 Exit codes: 0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error

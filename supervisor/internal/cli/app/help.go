@@ -32,10 +32,12 @@ Choosing an environment:
   use an environment on a server: -e ENV on the default server, or
   -e SERVER/ENV (also --environment, before the command), else
   $DESKYARD_ENVIRONMENT, else the default server's environment
-  (`+"`deskyard env use ENV`"+`). $DESKYARD_URL + $DESKYARD_CREDENTIAL replace the
-  default server. Inside an environment with none chosen, commands act on it
-  directly. After the command, -e is that command's own flag (exec -e K=V
-  sets an environment variable).
+  (`+"`deskyard env use ENV`"+`). -e SERVER/ is that server's default environment.
+  Administrator commands manage the server -e names; those about an
+  environment also take SERVER/NAME. $DESKYARD_URL + $DESKYARD_CREDENTIAL
+  replace the default server. Inside an environment with none chosen,
+  commands act on it directly. After the command, -e is that command's own
+  flag (exec -e K=V sets an environment variable).
 
 Environment variables:
 `)

@@ -30,17 +30,44 @@ import (
 // timeNow is the clock --expires durations count from (tests fix it).
 var timeNow = time.Now
 
-// apiClient is the client for the server the command talks to: --server,
-// else the server -e SERVER/ENV or DESKYARD_ENVIRONMENT names, else the
-// default one. env names the environment the command is about, for messages.
-func (a *App) apiClient(c *call, env string) (*remote.Client, error) {
-	name := c.str("--server", "")
-	if name == "" {
-		sel, err := a.selector()
-		if err != nil {
-			return nil, err
+// apiClient is the client for the server a command manages: the server
+// -e SERVER/… or DESKYARD_ENVIRONMENT names, else the default one.
+func (a *App) apiClient(c *call) (*remote.Client, error) {
+	sel, err := a.selector()
+	if err != nil {
+		return nil, err
+	}
+	name, _, _ := splitSelector(sel)
+	srv, err := a.server(name)
+	if err != nil {
+		return nil, err
+	}
+	if srv == nil {
+		return nil, a.noServer()
+	}
+	return a.client(srv, ""), nil
+}
+
+// envClient is the client for the environment a command is about, its
+// Environment the name: arg is [SERVER/]NAME, NAME on the server -e names
+// (else the default server). Without arg (when the command's NAME is
+// optional) it is the environment -e or DESKYARD_ENVIRONMENT chooses, else
+// the server's default environment, like the commands that act on one.
+func (a *App) envClient(c *call, arg string) (*remote.Client, error) {
+	sel, err := a.selector()
+	if err != nil {
+		return nil, err
+	}
+	name, env, _ := splitSelector(sel)
+	if arg != "" {
+		server, e, err := splitSelector(arg)
+		if err != nil || e == "" {
+			return nil, usagef(c.cmd, "%q isn't an environment: write NAME, or SERVER/NAME for another server", arg)
 		}
-		name, _, _ = splitSelector(sel)
+		if server != "" {
+			name = server
+		}
+		env = e
 	}
 	srv, err := a.server(name)
 	if err != nil {
@@ -48,6 +75,12 @@ func (a *App) apiClient(c *call, env string) (*remote.Client, error) {
 	}
 	if srv == nil {
 		return nil, a.noServer()
+	}
+	if env == "" {
+		env = srv.Environment
+	}
+	if env == "" {
+		return nil, usagef(c.cmd, "no environment chosen on %s: give its NAME, use -e ENV, or choose a default with `deskyard env use ENV`", srv.Name)
 	}
 	return a.client(srv, env), nil
 }
@@ -238,7 +271,7 @@ func formatMounts(ms []mount) string {
 }
 
 func runEnvList(a *App, c *call) error {
-	cl, err := a.apiClient(c, "")
+	cl, err := a.apiClient(c)
 	if err != nil {
 		return err
 	}
@@ -282,11 +315,11 @@ func imageName(e envDetail) string {
 }
 
 func runEnvShow(a *App, c *call) error {
-	name := c.args[0]
-	cl, err := a.apiClient(c, name)
+	cl, err := a.envClient(c, c.arg(0))
 	if err != nil {
 		return err
 	}
+	name := cl.Environment
 	var e envDetail
 	if done, err := getJSON(a, c, cl, remote.EnvPath(name, ""), &e); done || err != nil {
 		return err
@@ -366,7 +399,11 @@ func formatBytes(n int64) string {
 }
 
 func runEnvCreate(a *App, c *call) error {
-	name := c.args[0]
+	cl, err := a.envClient(c, c.arg(0))
+	if err != nil {
+		return err
+	}
+	name := cl.Environment
 	image := c.str("--image", "")
 	if image == "" {
 		return usagef(c.cmd, "--image is required: the image reference, e.g. ghcr.io/zefhemel/deskyard-debian-xfce:latest (see the Images page)")
@@ -404,10 +441,6 @@ func runEnvCreate(a *App, c *call) error {
 			return usagef(c.cmd, "--volume wants NAME or NAME:ro, got %q", v)
 		}
 		body.Volumes = append(body.Volumes, mount{vol, mode == "ro"})
-	}
-	cl, err := a.apiClient(c, name)
-	if err != nil {
-		return err
 	}
 	var job struct {
 		Job string `json:"job"`
@@ -495,11 +528,11 @@ func (a *App) followJob(ctx context.Context, cl *remote.Client, id string) error
 const removalTimeout = 6 * time.Minute
 
 func runEnvRemove(a *App, c *call) error {
-	name := c.args[0]
-	cl, err := a.apiClient(c, name)
+	cl, err := a.envClient(c, c.arg(0))
 	if err != nil {
 		return err
 	}
+	name := cl.Environment
 	path := remote.EnvPath(name, "")
 	if c.bool("--delete-files") {
 		path += "?files=1"
@@ -519,11 +552,11 @@ func runEnvRemove(a *App, c *call) error {
 // route action and says what is happening (doing: "Starting").
 func envPower(action, doing string) func(a *App, c *call) error {
 	return func(a *App, c *call) error {
-		name := c.args[0]
-		cl, err := a.apiClient(c, name)
+		cl, err := a.envClient(c, c.arg(0))
 		if err != nil {
 			return err
 		}
+		name := cl.Environment
 		if err := cl.JSON(c.ctx, http.MethodPost, remote.EnvPath(name, "/"+action), nil, nil); err != nil {
 			return err
 		}
@@ -533,15 +566,15 @@ func envPower(action, doing string) func(a *App, c *call) error {
 }
 
 func runEnvAccess(a *App, c *call) error {
-	name := c.args[0]
 	changes, err := parseGrants(c, "access", c.args[1:], userGrant, "full", "observe", "none")
 	if err != nil {
 		return err
 	}
-	cl, err := a.apiClient(c, name)
+	cl, err := a.envClient(c, c.arg(0))
 	if err != nil {
 		return err
 	}
+	name := cl.Environment
 	path := remote.EnvPath(name, "")
 	if len(changes) == 0 {
 		var e envDetail
@@ -579,7 +612,7 @@ func runEnvAccess(a *App, c *call) error {
 // ---- volumes
 
 func runVolumeList(a *App, c *call) error {
-	cl, err := a.apiClient(c, "")
+	cl, err := a.apiClient(c)
 	if err != nil {
 		return err
 	}
@@ -607,7 +640,7 @@ func runVolumeList(a *App, c *call) error {
 }
 
 func runVolumeCreate(a *App, c *call) error {
-	cl, err := a.apiClient(c, "")
+	cl, err := a.apiClient(c)
 	if err != nil {
 		return err
 	}
@@ -630,7 +663,7 @@ func runVolumeCreate(a *App, c *call) error {
 }
 
 func runVolumeRemove(a *App, c *call) error {
-	cl, err := a.apiClient(c, "")
+	cl, err := a.apiClient(c)
 	if err != nil {
 		return err
 	}
@@ -671,7 +704,7 @@ func (ac account) access() string {
 }
 
 func runAccountList(a *App, c *call) error {
-	cl, err := a.apiClient(c, "")
+	cl, err := a.apiClient(c)
 	if err != nil {
 		return err
 	}
@@ -752,7 +785,7 @@ func runAccountCreate(a *App, c *call) error {
 		}
 		body.Expires = t.Format(time.RFC3339)
 	}
-	cl, err := a.apiClient(c, "")
+	cl, err := a.apiClient(c)
 	if err != nil {
 		return err
 	}
@@ -820,7 +853,7 @@ func runAccountUpdate(a *App, c *call) error {
 	if len(body) == 0 && len(changes) == 0 {
 		return usagef(c.cmd, "nothing to change: give --grant, --admin, --no-admin, --description, --expires or --password-stdin")
 	}
-	cl, err := a.apiClient(c, "")
+	cl, err := a.apiClient(c)
 	if err != nil {
 		return err
 	}
@@ -850,7 +883,7 @@ func runAccountUpdate(a *App, c *call) error {
 }
 
 func runAccountRemove(a *App, c *call) error {
-	cl, err := a.apiClient(c, "")
+	cl, err := a.apiClient(c)
 	if err != nil {
 		return err
 	}
@@ -862,7 +895,7 @@ func runAccountRemove(a *App, c *call) error {
 }
 
 func runAccountLink(a *App, c *call) error {
-	cl, err := a.apiClient(c, "")
+	cl, err := a.apiClient(c)
 	if err != nil {
 		return err
 	}
@@ -873,11 +906,11 @@ func runAccountLink(a *App, c *call) error {
 // ---- sharing
 
 func runShareList(a *App, c *call) error {
-	env := c.args[0]
-	cl, err := a.apiClient(c, env)
+	cl, err := a.envClient(c, c.arg(0))
 	if err != nil {
 		return err
 	}
+	env := cl.Environment
 	var list []struct {
 		Username string `json:"username"`
 		Level    string `json:"level"`
@@ -912,7 +945,7 @@ func runShareList(a *App, c *call) error {
 }
 
 func runShareCreate(a *App, c *call) error {
-	env, user := c.args[0], c.args[1]
+	user := c.args[1]
 	body := struct {
 		Username string `json:"username"`
 		Level    string `json:"level"`
@@ -928,10 +961,11 @@ func runShareCreate(a *App, c *call) error {
 		}
 		body.Expires = t.Format(time.RFC3339)
 	}
-	cl, err := a.apiClient(c, env)
+	cl, err := a.envClient(c, c.args[0])
 	if err != nil {
 		return err
 	}
+	env := cl.Environment
 	var ans struct {
 		Link string `json:"link"`
 	}
@@ -948,7 +982,7 @@ func runShareCreate(a *App, c *call) error {
 }
 
 func runShareLink(a *App, c *call) error {
-	cl, err := a.apiClient(c, "")
+	cl, err := a.apiClient(c)
 	if err != nil {
 		return err
 	}
@@ -957,7 +991,7 @@ func runShareLink(a *App, c *call) error {
 }
 
 func runShareRevoke(a *App, c *call) error {
-	cl, err := a.apiClient(c, "")
+	cl, err := a.apiClient(c)
 	if err != nil {
 		return err
 	}
@@ -980,7 +1014,7 @@ func devicePath(c *call) string {
 }
 
 func runDeviceList(a *App, c *call) error {
-	cl, err := a.apiClient(c, "")
+	cl, err := a.apiClient(c)
 	if err != nil {
 		return err
 	}
@@ -1011,7 +1045,7 @@ func runDeviceList(a *App, c *call) error {
 }
 
 func runDeviceRevoke(a *App, c *call) error {
-	cl, err := a.apiClient(c, "")
+	cl, err := a.apiClient(c)
 	if err != nil {
 		return err
 	}

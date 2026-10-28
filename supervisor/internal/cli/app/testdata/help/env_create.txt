@@ -10,7 +10,7 @@ Administrators have access to every environment; --grant gives it to other
 accounts.
 
 Arguments:
-  NAME       string      required  environment name (2–32 lowercase letters, digits and -)
+  NAME       string      required  environment name (2–32 lowercase letters, digits and -), or SERVER/NAME on another server
 
 Options:
   --image REF          image reference (required), e.g.
@@ -22,9 +22,6 @@ Options:
                        =observe (repeatable)
   --volume NAME[:ro]   mount a volume at /share/NAME, read-only with :ro
                        (repeatable)
-  --server NAME        the server to manage (see `deskyard server list`);
-                       default: the server -e SERVER/ENV names, else the
-                       default server
 
 Prints: the new environment's URL once it is ready; progress on stderr
 
@@ -32,5 +29,5 @@ Examples:
   deskyard env create bob --image ghcr.io/zefhemel/deskyard-debian-xfce:latest --memory 4G --cpus 2 --grant bob
   deskyard env create lab --image ghcr.io/zefhemel/deskyard-debian-xfce:latest --volume photos:ro
 
-Where: on this machine, talking to the server
+Where: on this machine, talking to the environment's server: SERVER in SERVER/NAME, else the one -e SERVER/ names, else the default server
 Exit codes: 0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error

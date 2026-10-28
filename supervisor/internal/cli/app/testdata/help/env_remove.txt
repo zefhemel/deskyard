@@ -7,13 +7,10 @@ Removes an environment: its container, its grants to accounts and its shares
 --delete-files; volumes are never touched.
 
 Arguments:
-  NAME       string      required  environment name
+  NAME       string      required  environment name, or SERVER/NAME on another server
 
 Options:
   --delete-files       also delete the environment's files (home/NAME/)
-  --server NAME        the server to manage (see `deskyard server list`);
-                       default: the server -e SERVER/ENV names, else the
-                       default server
 
 Prints: a confirmation line
 
@@ -21,5 +18,5 @@ Examples:
   deskyard env remove bob
   deskyard env remove bob --delete-files
 
-Where: on this machine, talking to the server
+Where: on this machine, talking to the environment's server: SERVER in SERVER/NAME, else the one -e SERVER/ names, else the default server
 Exit codes: 0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error

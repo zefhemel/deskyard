@@ -9,7 +9,7 @@
       "short": "-e",
       "type": "string",
       "value": "ENV",
-      "description": "the environment to use: ENV on the default server, or SERVER/ENV (see `deskyard server list`); only before the command name: after it, as in `exec -e K=V`, -e is a command's own flag"
+      "description": "the environment to use: ENV on the default server, or SERVER/ENV (see `deskyard server list`), SERVER/ for that server's default environment; it also picks the server administrator commands manage. Only before the command name: after it, as in `exec -e K=V`, -e is a command's own flag"
     },
     {
       "name": "--help",
@@ -967,12 +967,6 @@
           "name": "--json",
           "type": "boolean",
           "description": "print JSON instead of text"
-        },
-        {
-          "name": "--server",
-          "type": "string",
-          "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
         }
       ],
       "output": {
@@ -987,21 +981,21 @@
         "deskyard env list",
         "deskyard env list --json"
       ],
-      "where": "on this machine, talking to the server",
+      "where": "on this machine, talking to the chosen server: the one -e SERVER/ (or -e SERVER/ENV) names, else the default server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
       "name": "env show",
       "group": "environments",
       "summary": "show an environment's state and settings",
-      "usage": "env show NAME [--json]",
+      "usage": "env show [NAME] [--json]",
       "description": "Shows an environment's state, image, limits, volumes, access and viewers. Observers see its state only.",
       "arguments": [
         {
           "name": "name",
           "type": "string",
-          "required": true,
-          "description": "environment name"
+          "required": false,
+          "description": "environment name, or SERVER/NAME on another server; default: the chosen environment (-e, else the server's default)"
         }
       ],
       "flags": [
@@ -1009,12 +1003,6 @@
           "name": "--json",
           "type": "boolean",
           "description": "print JSON instead of text"
-        },
-        {
-          "name": "--server",
-          "type": "string",
-          "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
         }
       ],
       "output": {
@@ -1024,7 +1012,7 @@
       "examples": [
         "deskyard env show alice"
       ],
-      "where": "on this machine, talking to the server",
+      "where": "on this machine, talking to the environment's server: SERVER in SERVER/NAME, else the one -e SERVER/ names, else the default server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
@@ -1038,7 +1026,7 @@
           "name": "name",
           "type": "string",
           "required": true,
-          "description": "environment name (2–32 lowercase letters, digits and -)"
+          "description": "environment name (2–32 lowercase letters, digits and -), or SERVER/NAME on another server"
         }
       ],
       "flags": [
@@ -1071,12 +1059,6 @@
           "type": "string[]",
           "value": "NAME[:ro]",
           "description": "mount a volume at /share/NAME, read-only with :ro (repeatable)"
-        },
-        {
-          "name": "--server",
-          "type": "string",
-          "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
         }
       ],
       "output": {
@@ -1087,7 +1069,7 @@
         "deskyard env create bob --image ghcr.io/zefhemel/deskyard-debian-xfce:latest --memory 4G --cpus 2 --grant bob",
         "deskyard env create lab --image ghcr.io/zefhemel/deskyard-debian-xfce:latest --volume photos:ro"
       ],
-      "where": "on this machine, talking to the server",
+      "where": "on this machine, talking to the environment's server: SERVER in SERVER/NAME, else the one -e SERVER/ names, else the default server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
@@ -1101,7 +1083,7 @@
           "name": "name",
           "type": "string",
           "required": true,
-          "description": "environment name"
+          "description": "environment name, or SERVER/NAME on another server"
         }
       ],
       "flags": [
@@ -1109,12 +1091,6 @@
           "name": "--delete-files",
           "type": "boolean",
           "description": "also delete the environment's files (home/NAME/)"
-        },
-        {
-          "name": "--server",
-          "type": "string",
-          "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
         }
       ],
       "output": {
@@ -1125,31 +1101,24 @@
         "deskyard env remove bob",
         "deskyard env remove bob --delete-files"
       ],
-      "where": "on this machine, talking to the server",
+      "where": "on this machine, talking to the environment's server: SERVER in SERVER/NAME, else the one -e SERVER/ names, else the default server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
       "name": "env start",
       "group": "environments",
       "summary": "start an environment",
-      "usage": "env start NAME",
+      "usage": "env start [NAME]",
       "description": "Saves that the environment should be running and starts it, making its container when it has none or its settings changed; the server answers at once. Needs full access to it.",
       "arguments": [
         {
           "name": "name",
           "type": "string",
-          "required": true,
-          "description": "environment name"
+          "required": false,
+          "description": "environment name, or SERVER/NAME on another server; default: the chosen environment (-e, else the server's default)"
         }
       ],
-      "flags": [
-        {
-          "name": "--server",
-          "type": "string",
-          "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
-        }
-      ],
+      "flags": [],
       "output": {
         "type": "text",
         "description": "a confirmation line"
@@ -1157,63 +1126,51 @@
       "examples": [
         "deskyard env start alice"
       ],
-      "where": "on this machine, talking to the server",
+      "where": "on this machine, talking to the environment's server: SERVER in SERVER/NAME, else the one -e SERVER/ names, else the default server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
       "name": "env stop",
       "group": "environments",
       "summary": "stop an environment",
-      "usage": "env stop NAME",
+      "usage": "env stop [NAME]",
       "description": "Saves that the environment should be stopped and stops it, keeping its container and files; the server answers at once. Needs full access to it.",
       "arguments": [
         {
           "name": "name",
           "type": "string",
-          "required": true,
-          "description": "environment name"
+          "required": false,
+          "description": "environment name, or SERVER/NAME on another server; default: the chosen environment (-e, else the server's default)"
         }
       ],
-      "flags": [
-        {
-          "name": "--server",
-          "type": "string",
-          "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
-        }
-      ],
+      "flags": [],
       "output": {
         "type": "text",
         "description": "a confirmation line"
       },
       "examples": [
-        "deskyard env stop alice"
+        "deskyard env stop alice",
+        "deskyard env stop work/bob",
+        "deskyard -e work/bob env stop"
       ],
-      "where": "on this machine, talking to the server",
+      "where": "on this machine, talking to the environment's server: SERVER in SERVER/NAME, else the one -e SERVER/ names, else the default server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
       "name": "env restart",
       "group": "environments",
       "summary": "restart an environment",
-      "usage": "env restart NAME",
+      "usage": "env restart [NAME]",
       "description": "Saves that the environment should be running and restarts it, closing everyone's connections; the server answers at once. Needs full access to it.",
       "arguments": [
         {
           "name": "name",
           "type": "string",
-          "required": true,
-          "description": "environment name"
+          "required": false,
+          "description": "environment name, or SERVER/NAME on another server; default: the chosen environment (-e, else the server's default)"
         }
       ],
-      "flags": [
-        {
-          "name": "--server",
-          "type": "string",
-          "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
-        }
-      ],
+      "flags": [],
       "output": {
         "type": "text",
         "description": "a confirmation line"
@@ -1221,7 +1178,7 @@
       "examples": [
         "deskyard env restart alice"
       ],
-      "where": "on this machine, talking to the server",
+      "where": "on this machine, talking to the environment's server: SERVER in SERVER/NAME, else the one -e SERVER/ names, else the default server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
@@ -1235,7 +1192,7 @@
           "name": "name",
           "type": "string",
           "required": true,
-          "description": "environment name"
+          "description": "environment name, or SERVER/NAME on another server"
         },
         {
           "name": "assignment",
@@ -1250,12 +1207,6 @@
           "name": "--json",
           "type": "boolean",
           "description": "print JSON instead of text"
-        },
-        {
-          "name": "--server",
-          "type": "string",
-          "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
         }
       ],
       "output": {
@@ -1266,7 +1217,7 @@
         "deskyard env access alice",
         "deskyard env access alice anna=full bob=observe carl=none"
       ],
-      "where": "on this machine, talking to the server",
+      "where": "on this machine, talking to the environment's server: SERVER in SERVER/NAME, else the one -e SERVER/ names, else the default server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
@@ -1281,12 +1232,6 @@
           "name": "--json",
           "type": "boolean",
           "description": "print JSON instead of text"
-        },
-        {
-          "name": "--server",
-          "type": "string",
-          "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
         }
       ],
       "output": {
@@ -1296,7 +1241,7 @@
       "examples": [
         "deskyard volume list"
       ],
-      "where": "on this machine, talking to the server",
+      "where": "on this machine, talking to the chosen server: the one -e SERVER/ (or -e SERVER/ENV) names, else the default server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
@@ -1313,14 +1258,7 @@
           "description": "volume name (2–32 lowercase letters, digits and -)"
         }
       ],
-      "flags": [
-        {
-          "name": "--server",
-          "type": "string",
-          "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
-        }
-      ],
+      "flags": [],
       "output": {
         "type": "text",
         "description": "a confirmation line"
@@ -1328,7 +1266,7 @@
       "examples": [
         "deskyard volume create photos"
       ],
-      "where": "on this machine, talking to the server",
+      "where": "on this machine, talking to the chosen server: the one -e SERVER/ (or -e SERVER/ENV) names, else the default server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
@@ -1350,12 +1288,6 @@
           "name": "--delete-files",
           "type": "boolean",
           "description": "also delete the volume's files"
-        },
-        {
-          "name": "--server",
-          "type": "string",
-          "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
         }
       ],
       "output": {
@@ -1365,7 +1297,7 @@
       "examples": [
         "deskyard volume remove photos"
       ],
-      "where": "on this machine, talking to the server",
+      "where": "on this machine, talking to the chosen server: the one -e SERVER/ (or -e SERVER/ENV) names, else the default server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
@@ -1380,12 +1312,6 @@
           "name": "--json",
           "type": "boolean",
           "description": "print JSON instead of text"
-        },
-        {
-          "name": "--server",
-          "type": "string",
-          "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
         }
       ],
       "output": {
@@ -1395,7 +1321,7 @@
       "examples": [
         "deskyard account list"
       ],
-      "where": "on this machine, talking to the server",
+      "where": "on this machine, talking to the chosen server: the one -e SERVER/ (or -e SERVER/ENV) names, else the default server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
@@ -1440,12 +1366,6 @@
           "type": "string",
           "value": "WHEN",
           "description": "when the account ends: a time from now (90m, 2h, 7d, 2w) or an RFC 3339 time (2026-12-01T18:00:00Z)"
-        },
-        {
-          "name": "--server",
-          "type": "string",
-          "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
         }
       ],
       "output": {
@@ -1457,7 +1377,7 @@
         "printf '%s' \"$PW\" | deskyard account create carl --password-stdin --admin",
         "deskyard account create guest --grant demo=observe --expires 7d"
       ],
-      "where": "on this machine, talking to the server",
+      "where": "on this machine, talking to the chosen server: the one -e SERVER/ (or -e SERVER/ENV) names, else the default server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
@@ -1507,12 +1427,6 @@
           "type": "string",
           "value": "WHEN",
           "description": "when the account ends: a time from now (2h, 7d), an RFC 3339 time, or never"
-        },
-        {
-          "name": "--server",
-          "type": "string",
-          "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
         }
       ],
       "output": {
@@ -1523,7 +1437,7 @@
         "deskyard account update anna --grant bob=observe --grant alice=none",
         "deskyard account update guest --expires never"
       ],
-      "where": "on this machine, talking to the server",
+      "where": "on this machine, talking to the chosen server: the one -e SERVER/ (or -e SERVER/ENV) names, else the default server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
@@ -1540,14 +1454,7 @@
           "description": "username"
         }
       ],
-      "flags": [
-        {
-          "name": "--server",
-          "type": "string",
-          "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
-        }
-      ],
+      "flags": [],
       "output": {
         "type": "text",
         "description": "a confirmation line"
@@ -1555,7 +1462,7 @@
       "examples": [
         "deskyard account remove anna"
       ],
-      "where": "on this machine, talking to the server",
+      "where": "on this machine, talking to the chosen server: the one -e SERVER/ (or -e SERVER/ENV) names, else the default server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
@@ -1572,14 +1479,7 @@
           "description": "username"
         }
       ],
-      "flags": [
-        {
-          "name": "--server",
-          "type": "string",
-          "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
-        }
-      ],
+      "flags": [],
       "output": {
         "type": "text",
         "description": "the login link (https://host/link#dyl_…) alone on stdout; what it gives on stderr"
@@ -1587,21 +1487,21 @@
       "examples": [
         "deskyard account link anna"
       ],
-      "where": "on this machine, talking to the server",
+      "where": "on this machine, talking to the chosen server: the one -e SERVER/ (or -e SERVER/ENV) names, else the default server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
       "name": "share list",
       "group": "sharing",
       "summary": "list an environment's shares",
-      "usage": "share list ENV [--json]",
+      "usage": "share list [ENV] [--json]",
       "description": "Lists the shares of an environment: who it was shared with and by, at which level, until when, and whether they are connected now. Needs full access to it.",
       "arguments": [
         {
           "name": "env",
           "type": "string",
-          "required": true,
-          "description": "environment name"
+          "required": false,
+          "description": "environment name, or SERVER/NAME on another server; default: the chosen environment (-e, else the server's default)"
         }
       ],
       "flags": [
@@ -1609,12 +1509,6 @@
           "name": "--json",
           "type": "boolean",
           "description": "print JSON instead of text"
-        },
-        {
-          "name": "--server",
-          "type": "string",
-          "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
         }
       ],
       "output": {
@@ -1624,7 +1518,7 @@
       "examples": [
         "deskyard share list alice"
       ],
-      "where": "on this machine, talking to the server",
+      "where": "on this machine, talking to the environment's server: SERVER in SERVER/NAME, else the one -e SERVER/ names, else the default server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
@@ -1638,7 +1532,7 @@
           "name": "env",
           "type": "string",
           "required": true,
-          "description": "environment name"
+          "description": "environment name, or SERVER/NAME on another server"
         },
         {
           "name": "name",
@@ -1658,12 +1552,6 @@
           "type": "string",
           "value": "WHEN",
           "description": "when the share ends: a time from now (90m, 2h, 7d, 2w) or an RFC 3339 time"
-        },
-        {
-          "name": "--server",
-          "type": "string",
-          "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
         }
       ],
       "output": {
@@ -1674,7 +1562,7 @@
         "deskyard share create alice sanne --observe --expires 1d",
         "link=$(deskyard share create alice pair)"
       ],
-      "where": "on this machine, talking to the server",
+      "where": "on this machine, talking to the environment's server: SERVER in SERVER/NAME, else the one -e SERVER/ names, else the default server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
@@ -1691,14 +1579,7 @@
           "description": "the share's username"
         }
       ],
-      "flags": [
-        {
-          "name": "--server",
-          "type": "string",
-          "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
-        }
-      ],
+      "flags": [],
       "output": {
         "type": "text",
         "description": "the login link (https://host/link#dyl_…) alone on stdout; what it gives on stderr"
@@ -1706,7 +1587,7 @@
       "examples": [
         "deskyard share link sanne"
       ],
-      "where": "on this machine, talking to the server",
+      "where": "on this machine, talking to the chosen server: the one -e SERVER/ (or -e SERVER/ENV) names, else the default server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
@@ -1723,14 +1604,7 @@
           "description": "the share's username"
         }
       ],
-      "flags": [
-        {
-          "name": "--server",
-          "type": "string",
-          "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
-        }
-      ],
+      "flags": [],
       "output": {
         "type": "text",
         "description": "a confirmation line"
@@ -1738,7 +1612,7 @@
       "examples": [
         "deskyard share revoke sanne"
       ],
-      "where": "on this machine, talking to the server",
+      "where": "on this machine, talking to the chosen server: the one -e SERVER/ (or -e SERVER/ENV) names, else the default server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
@@ -1759,12 +1633,6 @@
           "name": "--json",
           "type": "boolean",
           "description": "print JSON instead of text"
-        },
-        {
-          "name": "--server",
-          "type": "string",
-          "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
         }
       ],
       "output": {
@@ -1780,7 +1648,7 @@
         "deskyard device list",
         "deskyard device list --account anna"
       ],
-      "where": "on this machine, talking to the server",
+      "where": "on this machine, talking to the chosen server: the one -e SERVER/ (or -e SERVER/ENV) names, else the default server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
@@ -1803,12 +1671,6 @@
           "type": "string",
           "value": "USER",
           "description": "another account's device (admin)"
-        },
-        {
-          "name": "--server",
-          "type": "string",
-          "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
         }
       ],
       "output": {
@@ -1819,7 +1681,7 @@
         "deskyard device revoke 3f9c0a12",
         "deskyard device revoke 3f9c0a12 --account anna"
       ],
-      "where": "on this machine, talking to the server",
+      "where": "on this machine, talking to the chosen server: the one -e SERVER/ (or -e SERVER/ENV) names, else the default server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {

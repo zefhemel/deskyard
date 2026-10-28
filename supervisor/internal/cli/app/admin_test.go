@@ -402,14 +402,41 @@ func TestAdminServerChoice(t *testing.T) {
 	g := clitest.New(t, "bob")
 	h.save("two", g, "bob")
 	g.Answer("GET /api/volumes", clitest.Answer{JSON: map[string]any{"volumes": []any{}}})
-	if r := h.run("volume", "list", "--server", "two"); r.code != 0 || len(f.Calls()) != 0 || len(g.Calls()) != 1 {
-		t.Errorf("--server: %+v", r)
+	// The server comes from -e SERVER/ or -e SERVER/ENV.
+	if r := h.run("-e", "two/", "volume", "list"); r.code != 0 || len(f.Calls()) != 0 || len(g.Calls()) != 1 {
+		t.Errorf("-e SERVER/: %+v", r)
 	}
 	if r := h.run("-e", "two/bob", "volume", "list"); r.code != 0 || len(f.Calls()) != 0 || len(g.Calls()) != 2 {
 		t.Errorf("-e SERVER/ENV: %+v", r)
 	}
-	if r := h.run("volume", "list", "--server", "nope"); r.code != 1 || !strings.Contains(r.stderr, `no server named "nope"`) {
-		t.Errorf("--server nope: %+v", r)
+	if r := h.run("-e", "nope/", "volume", "list"); r.code != 1 || !strings.Contains(r.stderr, `no server named "nope"`) {
+		t.Errorf("-e nope/: %+v", r)
+	}
+	if r := h.run("volume", "list", "--server", "two"); r.code != 2 || len(g.Calls()) != 2 {
+		t.Errorf("--server is gone: %+v", r)
+	}
+
+	// Commands about an environment take [SERVER/]NAME, or default to the
+	// chosen environment.
+	for _, srv := range []*clitest.Fake{f, g} {
+		srv.Answer("POST /api/environments/bob/stop", clitest.Answer{})
+		srv.Answer("POST /api/environments/alice/stop", clitest.Answer{})
+	}
+	for _, args := range [][]string{{"env", "stop", "two/bob"}, {"-e", "two/bob", "env", "stop"}, {"-e", "two/", "env", "stop"}, {"-e", "two/alice", "env", "stop", "bob"}} {
+		n := len(g.Calls())
+		if r := h.run(args...); r.code != 0 || r.stdout != "Stopping bob.\n" || len(f.Calls()) != 0 || len(g.Calls()) != n+1 {
+			t.Errorf("%v: %+v", args, r)
+		}
+		wantCall(t, g, "POST", "/api/environments/bob/stop", "", "")
+	}
+	if r := h.run("env", "stop"); r.code != 0 || r.stdout != "Stopping alice.\n" {
+		t.Errorf("env stop (default environment): %+v", r)
+	}
+	wantCall(t, f, "POST", "/api/environments/alice/stop", "", "")
+	for _, args := range [][]string{{"env", "remove", "two/"}, {"env", "stop", "/bob"}, {"env", "stop", "a/b/c"}} {
+		if r := h.run(args...); r.code != 2 {
+			t.Errorf("%v: exit %d, want 2 (%s)", args, r.code, r.stderr)
+		}
 	}
 	if r := h.run("volume"); r.code != 2 || !strings.Contains(r.stderr, "list") {
 		t.Errorf("volume: %+v", r)

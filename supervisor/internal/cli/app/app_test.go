@@ -213,7 +213,7 @@ func TestUsageErrors(t *testing.T) {
 	h := newHarness(t)
 	h.inside = true
 	for _, args := range [][]string{{}, {"bogus"}, {"click", "1"}, {"zoom", "50", "50", "10", "10"}, {"server"}, {"server", "bogus"},
-		{"exec"}, {"cp", "a"}, {"login"}, {"auth"}, {"auth", "https://h/notalink"}, {"login", "ftp://h"}, {"env", "use"}, {"-e", "a/"}, {"-e", "/x"}, {"--nope"}, {"-e"}, {"status", "--bogus"}, {"exec", "--cwd"}} {
+		{"exec"}, {"cp", "a"}, {"login"}, {"auth"}, {"auth", "https://h/notalink"}, {"login", "ftp://h"}, {"env", "use"}, {"-e", "a/b/c", "size"}, {"-e", "/x"}, {"env", "use", "a/"}, {"--nope"}, {"-e"}, {"status", "--bogus"}, {"exec", "--cwd"}} {
 		r := h.run(args...)
 		if r.code != 2 {
 			t.Errorf("%v: exit %d, want 2 (stderr %q)", args, r.code, r.stderr)
@@ -961,6 +961,10 @@ func TestEnvironmentFlagServerSlashEnv(t *testing.T) {
 	if r := h.run("-e", "work", "screenshot"); r.code != 0 || last(alice) != "work" {
 		t.Errorf("-e work: %+v", r)
 	}
+	// -e SERVER/ is that server's default environment.
+	if r := h.run("-e", "b/", "screenshot"); r.code != 0 || last(bob) != "bob" {
+		t.Errorf("-e b/: %+v", r)
+	}
 	// Without -e the default server's environment is used.
 	if r := h.run("screenshot"); r.code != 0 || last(alice) != "alice" {
 		t.Errorf("default: %+v", r)
@@ -976,7 +980,7 @@ func TestEnvironmentFlagServerSlashEnv(t *testing.T) {
 	if r := h.run("-e", "a/alice", "status", "--json"); !strings.Contains(r.stdout, `"name": "alice"`) {
 		t.Errorf("-e over DESKYARD_ENVIRONMENT: %+v", r)
 	}
-	h.env["DESKYARD_ENVIRONMENT"] = "b/"
+	h.env["DESKYARD_ENVIRONMENT"] = "b/x/y"
 	if r := h.run("status"); r.code != 1 || !strings.Contains(r.stderr, "DESKYARD_ENVIRONMENT") {
 		t.Errorf("bad DESKYARD_ENVIRONMENT: %+v", r)
 	}

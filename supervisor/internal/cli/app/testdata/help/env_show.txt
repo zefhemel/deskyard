@@ -1,23 +1,20 @@
 deskyard env show: show an environment's state and settings
 
-Usage: deskyard [-e ENV] env show NAME [--json]
+Usage: deskyard [-e ENV] env show [NAME] [--json]
 
 Shows an environment's state, image, limits, volumes, access and viewers.
 Observers see its state only.
 
 Arguments:
-  NAME       string      required  environment name
+  NAME       string      optional  environment name, or SERVER/NAME on another server; default: the chosen environment (-e, else the server's default)
 
 Options:
   --json               print JSON instead of text
-  --server NAME        the server to manage (see `deskyard server list`);
-                       default: the server -e SERVER/ENV names, else the
-                       default server
 
 Prints: "key: value" lines; with --json the API's Environment object
 
 Examples:
   deskyard env show alice
 
-Where: on this machine, talking to the server
+Where: on this machine, talking to the environment's server: SERVER in SERVER/NAME, else the one -e SERVER/ names, else the default server
 Exit codes: 0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error

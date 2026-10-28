@@ -377,6 +377,9 @@ func runServerDefault(a *App, c *call) error {
 
 func runEnvUse(a *App, c *call) error {
 	name, env, err := splitSelector(c.args[0])
+	if err == nil && env == "" {
+		err = fmt.Errorf("%q names no environment: write ENV, or SERVER/ENV", c.args[0])
+	}
 	if err != nil {
 		return usagef(c.cmd, "%v", err)
 	}

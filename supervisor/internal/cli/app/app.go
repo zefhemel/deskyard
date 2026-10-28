@@ -94,6 +94,14 @@ type call struct {
 
 func (c *call) bool(name string) bool { return len(c.flags[name]) > 0 }
 
+// arg is the i-th argument, or "" when it wasn't given.
+func (c *call) arg(i int) string {
+	if i < len(c.args) {
+		return c.args[i]
+	}
+	return ""
+}
+
 func (c *call) str(name, def string) string {
 	if v := c.flags[name]; len(v) > 0 {
 		return v[len(v)-1]
@@ -338,7 +346,8 @@ func (a *App) loadConfig() (*remote.Config, string, error) {
 
 const loginHint = "run `deskyard login https://host/ENV` (or `deskyard auth LINK` with a login link)"
 
-// splitSelector splits -e's ENV or SERVER/ENV.
+// splitSelector splits -e's ENV, SERVER/ENV or SERVER/ (that server's
+// default environment).
 func splitSelector(sel string) (server, env string, err error) {
 	if sel == "" {
 		return "", "", nil
@@ -347,8 +356,8 @@ func splitSelector(sel string) (server, env string, err error) {
 	if !ok {
 		return "", sel, nil
 	}
-	if server == "" || env == "" || strings.Contains(env, "/") {
-		return "", "", fmt.Errorf("%q isn't an environment: write ENV, or SERVER/ENV for another server", sel)
+	if server == "" || strings.Contains(env, "/") {
+		return "", "", fmt.Errorf("%q isn't an environment: write ENV, or SERVER/ENV for another server (SERVER/ for its default environment)", sel)
 	}
 	return server, env, nil
 }

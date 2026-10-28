@@ -1,19 +1,16 @@
 deskyard share list: list an environment's shares
 
-Usage: deskyard [-e ENV] share list ENV [--json]
+Usage: deskyard [-e ENV] share list [ENV] [--json]
 
 Lists the shares of an environment: who it was shared with and by, at which
 level, until when, and whether they are connected now. Needs full access to
 it.
 
 Arguments:
-  ENV        string      required  environment name
+  ENV        string      optional  environment name, or SERVER/NAME on another server; default: the chosen environment (-e, else the server's default)
 
 Options:
   --json               print JSON instead of text
-  --server NAME        the server to manage (see `deskyard server list`);
-                       default: the server -e SERVER/ENV names, else the
-                       default server
 
 Prints: a table NAME LEVEL SHARED-BY EXPIRES LAST-USED NOTE; with --json the
   API's [Share]
@@ -21,5 +18,5 @@ Prints: a table NAME LEVEL SHARED-BY EXPIRES LAST-USED NOTE; with --json the
 Examples:
   deskyard share list alice
 
-Where: on this machine, talking to the server
+Where: on this machine, talking to the environment's server: SERVER in SERVER/NAME, else the one -e SERVER/ names, else the default server
 Exit codes: 0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error
