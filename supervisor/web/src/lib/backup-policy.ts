@@ -119,13 +119,18 @@ export function isTime(iso: string | null | undefined): iso is string {
 
 export type BackupStatus = { label: string; kind: "ok" | "plain" | "update" | "danger" };
 
+/** Whether a scheduled backup is overdue: due over an hour ago and not run (nor running). */
+export function isOverdue(b: BackupItem, now = Date.now()): boolean {
+  return !!b.policy?.enabled && !b.activity && isTime(b.nextRun) && Date.parse(b.nextRun) < now - 3600_000;
+}
+
 /** An item's backup status as a tag: failed, overdue (due over an hour ago, not run), left files out, or fine; null without a policy. */
 export function backupStatus(b: BackupItem | undefined, now = Date.now()): BackupStatus | null {
   if (!b?.policy) return null;
   const st = b.state;
   if (b.activity) return { label: b.activity[0]!.toUpperCase() + b.activity.slice(1), kind: "update" };
   if (st.error) return { label: "Backup failed", kind: "danger" };
-  if (b.policy.enabled && isTime(b.nextRun) && Date.parse(b.nextRun) < now - 3600_000) return { label: "Backup overdue", kind: "danger" };
+  if (isOverdue(b, now)) return { label: "Backup overdue", kind: "danger" };
   if (st.warnings?.length) return { label: `Backed up, ${st.warnings.length} file${st.warnings.length === 1 ? "" : "s"} left out`, kind: "update" };
   return isTime(st.lastSuccess) ? { label: "Backed up", kind: "ok" } : { label: "Backup pending", kind: "plain" };
 }

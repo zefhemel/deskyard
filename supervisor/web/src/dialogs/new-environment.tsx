@@ -9,8 +9,7 @@ import { VolumeGrantFields } from "../components/volume-grants.tsx";
 import { Button, Dialog, ErrorText, Field, Seg } from "../components/ui.tsx";
 import { useLive } from "../live.tsx";
 import { useFetch } from "../lib/use-fetch.ts";
-
-const NAME = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
+import { RESOURCE_NAME, resourceNameHint } from "../lib/names.ts";
 
 /** Where the environment's files will be: from the server when it says, else next to the other environments' folders. */
 function folderFor(name: string, check: NameCheck | null, folders: string[]): string | null {
@@ -49,7 +48,7 @@ export function NewEnvironmentDialog({ onClose }: { onClose: () => void }) {
   // Live name validation, a moment after typing stops.
   useEffect(() => {
     setCheck(null);
-    if (!NAME.test(name)) return;
+    if (!RESOURCE_NAME.test(name)) return;
     let current = true;
     const t = window.setTimeout(() => {
       api.validateName(name).then(
@@ -65,8 +64,8 @@ export function NewEnvironmentDialog({ onClose }: { onClose: () => void }) {
 
   let hint: ComponentChildren = "Lowercase letters, digits and dashes; it can't be changed later.";
   let hintOk = false;
-  if (name && !NAME.test(name)) {
-    hint = <span class="text-danger">Use 2–32 lowercase letters, digits and dashes, starting with a letter and not ending with a dash.</span>;
+  if (name && !RESOURCE_NAME.test(name)) {
+    hint = <span class="text-danger">{resourceNameHint}</span>;
   } else if (check && !check.ok) {
     hint = <span class="text-danger">{check.error ?? "This name can't be used."}</span>;
   } else if (check?.ok) {

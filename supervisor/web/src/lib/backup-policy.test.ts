@@ -83,3 +83,15 @@ test("an item's copy names its parts and places", async () => {
   assert.equal(vol.jobEnvironment, undefined);
   assert.deepEqual(splitItem("volume:a:b"), ["volume", "a:b"]);
 });
+
+test("a backup is overdue an hour after it was due, unless it is running or paused", async () => {
+  const { isOverdue } = await import("./backup-policy.ts");
+  const now = Date.parse("2026-10-27T12:00:00Z");
+  const policy = { item: "volume:v", repository: "r", enabled: true, schedule: { every: "daily" as const, at: "03:00", weekday: 0 }, retention: { last: 1, hourly: 0, daily: 0, weekly: 0, monthly: 0, yearly: 0 }, updated: "" };
+  const b = { item: "volume:v", policy, state: { lastAttempt: "", lastSuccess: "" }, activity: "", nextRun: "2026-10-27T10:30:00Z" };
+  assert.equal(isOverdue(b, now), true);
+  assert.equal(isOverdue({ ...b, nextRun: "2026-10-27T11:30:00Z" }, now), false);
+  assert.equal(isOverdue({ ...b, activity: "backing up" }, now), false);
+  assert.equal(isOverdue({ ...b, policy: { ...policy, enabled: false } }, now), false);
+  assert.equal(isOverdue({ ...b, policy: null }, now), false);
+});

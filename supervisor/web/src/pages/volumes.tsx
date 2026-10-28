@@ -6,6 +6,7 @@ import { notify } from "../components/toast.tsx";
 import { EnvironmentChip } from "../components/environment-chip.tsx";
 import { Button, Check, Dialog, ErrorText, Field, Meter, Note, Seg, Tag, errorMessage } from "../components/ui.tsx";
 import { bytes } from "../lib/format.ts";
+import { RESOURCE_NAME, resourceNameHint } from "../lib/names.ts";
 import { useBackups, useFetch } from "../lib/use-fetch.ts";
 import { cx } from "../components/ui.tsx";
 import { backupStatus } from "../lib/backup-policy.ts";
@@ -50,8 +51,6 @@ export function StoragePage() {
     </Page>
   );
 }
-
-const NAME = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
 
 function VolumesTab() {
   const list = useFetch(() => api.volumes(), "volumes");
@@ -172,7 +171,7 @@ function CreateVolume({ onClose, onCreated }: { onClose: () => void; onCreated: 
   const [busy, setBusy] = useState(false);
   const [adopted, setAdopted] = useState<Volume | null>(null);
   const hostPathValid = !onHost || (hostPath.startsWith("/") && !hostPath.endsWith("/") && !hostPath.split("/").some((p) => p === "." || p === ".."));
-  const valid = NAME.test(name) && hostPathValid;
+  const valid = RESOURCE_NAME.test(name) && hostPathValid;
   const submit = async () => {
     if (!valid || busy) return;
     setBusy(true);
@@ -232,7 +231,7 @@ function CreateVolume({ onClose, onCreated }: { onClose: () => void; onCreated: 
         htmlFor="volume-name"
         hint={
           name && !valid ? (
-            <span class="text-danger">Use 2–32 lowercase letters, digits and dashes, starting with a letter.</span>
+            <span class="text-danger">{resourceNameHint}</span>
           ) : (
             "Can't be changed later."
           )

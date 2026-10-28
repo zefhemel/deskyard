@@ -1,4 +1,5 @@
 import type { Remote, RemoteInput, RemoteSecrets, RemoteType } from "../api.ts";
+import { RESOURCE_NAME, resourceNameHint } from "./names.ts";
 
 /** The remote form's state: every field as typed, secrets blank unless typed. */
 export interface RemoteDraft {
@@ -26,13 +27,20 @@ type SecretKey = keyof RemoteSecrets;
 const SECRETS: SecretKey[] = ["secretAccessKey", "applicationKey", "password", "privateKey"];
 const isSecret = (k: Key): k is SecretKey => SECRETS.some((s) => s === k);
 
+/** The choices the server offers for a remote's settings (GET /api/remotes). */
+export interface RemoteChoices {
+  s3Providers: string[];
+  webdavVendors: string[];
+}
+
 export interface FieldSpec {
   key: Key;
   label: string;
   secret?: boolean;
   required?: boolean;
   multiline?: boolean;
-  options?: string[];
+  /** A pick from the server's list of these. */
+  choices?: keyof RemoteChoices;
   placeholder?: string;
   hint?: string;
 }
@@ -44,12 +52,9 @@ export const REMOTE_TYPES: { type: RemoteType; label: string; hint: string }[] =
   { type: "webdav", label: "WebDAV", hint: "Nextcloud, ownCloud or another WebDAV server" },
 ];
 
-export const S3_PROVIDERS = ["AWS", "Cloudflare", "Minio", "Wasabi", "Other"];
-export const WEBDAV_VENDORS = ["nextcloud", "owncloud", "other"];
-
 const FIELDS: Record<RemoteType, FieldSpec[]> = {
   s3: [
-    { key: "provider", label: "Provider", required: true, options: S3_PROVIDERS },
+    { key: "provider", label: "Provider", required: true, choices: "s3Providers" },
     { key: "endpoint", label: "Endpoint", placeholder: "https://…", hint: "Empty for AWS." },
     { key: "region", label: "Region", placeholder: "us-east-1" },
     { key: "accessKeyId", label: "Access key ID", required: true },
@@ -72,7 +77,7 @@ const FIELDS: Record<RemoteType, FieldSpec[]> = {
   ],
   webdav: [
     { key: "url", label: "URL", required: true, placeholder: "https://cloud.example.com/remote.php/dav/files/me" },
-    { key: "vendor", label: "Server", options: WEBDAV_VENDORS },
+    { key: "vendor", label: "Server", choices: "webdavVendors" },
     { key: "user", label: "User" },
     { key: "password", label: "Password", secret: true },
     { key: "root", label: "Folder", placeholder: "Backups" },
@@ -106,14 +111,13 @@ export function draftFromRemote(r: Remote): RemoteDraft {
   }
 }
 
-const NAME = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
 const isURL = (s: string) => /^https?:\/\/[^/\s]+/.test(s);
 
 /** Why the draft can't be saved, by field; empty when it can. `secretsSet` names the stored secrets an edit keeps. */
 export function remoteDraftErrors(d: RemoteDraft, creating: boolean, secretsSet: string[] = []): Record<string, string> {
   const errs: Record<string, string> = {};
   const has = (k: SecretKey) => d[k] !== "" || (!creating && secretsSet.includes(k));
-  if (!NAME.test(d.name)) errs.name = "Use 2–32 lowercase letters, digits and dashes, starting with a letter.";
+  if (!RESOURCE_NAME.test(d.name)) errs.name = resourceNameHint;
   for (const f of fieldsFor(d.type)) {
     const missing = isSecret(f.key) ? !has(f.key) : !d[f.key].trim();
     if (f.required && missing) errs[f.key] = `${f.label} is needed.`;

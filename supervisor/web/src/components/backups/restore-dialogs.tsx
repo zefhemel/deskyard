@@ -3,12 +3,11 @@ import { useState } from "preact/hooks";
 import { api, type ItemKind, type RestoreResult, type Snapshot } from "../../api.ts";
 import { itemCopy } from "../../lib/backup-policy.ts";
 import { dateTime, day } from "../../lib/format.ts";
+import { RESOURCE_NAME, resourceNameHint } from "../../lib/names.ts";
 import { useFetch } from "../../lib/use-fetch.ts";
 import { JobProgress, useJob } from "../job.tsx";
 import { notify } from "../toast.tsx";
 import { Button, Check, Dialog, ErrorText, Field, Note } from "../ui.tsx";
-
-const NAME = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
 
 export function RestoreHereDialog({
   kind,
@@ -75,7 +74,7 @@ export function RestoreNewDialog({ kind, name, snapshot: s, onClose }: { kind: I
   const images = useFetch(() => (kind === "environment" ? api.images() : Promise.resolve([])), "images");
   const [result, setResult] = useState<RestoreResult | null>(null);
   const run = useJob<RestoreResult>((j) => setResult(j.result ?? {}));
-  const valid = NAME.test(newName);
+  const valid = RESOURCE_NAME.test(newName);
   if (result) {
     const created = result.created ?? "";
     const href = copy.pageOf(created);
@@ -109,7 +108,7 @@ export function RestoreNewDialog({ kind, name, snapshot: s, onClose }: { kind: I
         </>
       }
     >
-      <Field label={copy.newNameLabel} htmlFor="restore-name" hint={newName && !valid ? <span class="text-danger">Use 2–32 lowercase letters, digits and dashes, starting with a letter.</span> : undefined}>
+      <Field label={copy.newNameLabel} htmlFor="restore-name" hint={newName && !valid ? <span class="text-danger">{resourceNameHint}</span> : undefined}>
         <input type="text" id="restore-name" value={newName} autocomplete="off" spellcheck={false} onInput={(e) => setNewName(e.currentTarget.value.toLowerCase())} />
       </Field>
       {kind === "environment" && (

@@ -4,6 +4,7 @@
 // see another account's devices on the Accounts page through DeviceList.
 import { useState } from "preact/hooks";
 import { api, type Credential } from "../api.ts";
+import { copySecret, SecretReveal } from "../components/secret-reveal.tsx";
 import { Page, PageHead } from "../components/topbar.tsx";
 import { notify, notifyError } from "../components/toast.tsx";
 import { Button, ErrorText, Note, Tag } from "../components/ui.tsx";
@@ -11,7 +12,6 @@ import { SignOutEverywhereDialog } from "../dialogs/sign-out-everywhere.tsx";
 import { useLive } from "../live.tsx";
 import { ago, day } from "../lib/format.ts";
 import { useFetch } from "../lib/use-fetch.ts";
-import { copyText } from "../lib/clipboard.ts";
 import { davAddress, davInTheClear } from "../lib/webdav.ts";
 
 const th = "border-b border-line px-4 py-[11px] text-left text-[13px] font-semibold text-muted";
@@ -135,8 +135,6 @@ function WebDAVSection({ devices, onChanged }: { devices: Credential[] | undefin
       setBusy(false);
     }
   };
-  const copy = async (text: string, what: string) =>
-    (await copyText(text)) ? notify(`Copied the ${what}`) : notify("Couldn't copy; select it and copy it instead", { error: true });
   return (
     <section class="mb-8">
       <h2 class="mb-1 text-lg font-semibold">WebDAV</h2>
@@ -150,7 +148,7 @@ function WebDAVSection({ devices, onChanged }: { devices: Credential[] | undefin
           {drives.map((name) => (
             <li key={name} class="flex flex-wrap items-center gap-2">
               <span class="mono min-w-0 break-all">{davAddress(name)}</span>
-              <Button class="h-[30px]! px-[11px]!" onClick={() => void copy(davAddress(name), "address")}>
+              <Button class="h-[30px]! px-[11px]!" onClick={() => void copySecret(davAddress(name), "the address")}>
                 Copy
               </Button>
             </li>
@@ -161,15 +159,13 @@ function WebDAVSection({ devices, onChanged }: { devices: Credential[] | undefin
       )}
       {davInTheClear() && <Note danger>This page is on plain HTTP, so a password given to a WebDAV client crosses the network readable. Windows refuses to connect this way.</Note>}
       {password && (
-        <div class="mb-3.5 rounded-lg border border-line bg-surface p-3.5">
-          <div class="flex flex-wrap items-center gap-2">
-            <code class="mono min-w-0 flex-1 break-all text-sm" aria-label="WebDAV password">
-              {password}
-            </code>
-            <Button onClick={() => void copy(password, "WebDAV password")}>Copy</Button>
-          </div>
-          <p class="mt-2 text-[13px] text-muted">Shown only now. Keep it in your WebDAV client or a password manager.</p>
-        </div>
+        <SecretReveal
+          class="mb-3.5 bg-surface"
+          secret={password}
+          label="WebDAV password"
+          what="the WebDAV password"
+          note="Shown only now. Keep it in your WebDAV client or a password manager."
+        />
       )}
       <div class="flex flex-wrap gap-2">
         <Button disabled={busy} onClick={() => void change(true)}>

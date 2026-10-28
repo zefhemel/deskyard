@@ -2,7 +2,7 @@ import { useState } from "preact/hooks";
 import { api, type Remote, type RemoteType } from "../../api.ts";
 import { notify } from "../../components/toast.tsx";
 import { Button, Dialog, ErrorText, Field, Note, Tag, errorMessage } from "../../components/ui.tsx";
-import { blankDraft, draftFromRemote, fieldsFor, REMOTE_TYPES, remoteDraftErrors, toRemoteInput, type RemoteDraft } from "../../lib/remote-form.ts";
+import { blankDraft, draftFromRemote, fieldsFor, REMOTE_TYPES, remoteDraftErrors, toRemoteInput, type RemoteChoices, type RemoteDraft } from "../../lib/remote-form.ts";
 import { useFetch } from "../../lib/use-fetch.ts";
 
 const typeLabel = (t: RemoteType) => REMOTE_TYPES.find((x) => x.type === t)?.label ?? t;
@@ -28,7 +28,7 @@ export function RemotesTab() {
   return (
     <>
       <div class="mb-4 flex justify-end">
-        <Button variant="primary" onClick={() => setEditing("new")}>
+        <Button variant="primary" disabled={!list.data} onClick={() => setEditing("new")}>
           Add remote
         </Button>
       </div>
@@ -58,13 +58,13 @@ export function RemotesTab() {
           ))}
         </div>
       )}
-      {editing && <RemoteDialog remote={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={list.reload} />}
+      {editing && list.data && <RemoteDialog remote={editing === "new" ? null : editing} choices={list.data} onClose={() => setEditing(null)} onSaved={list.reload} />}
       {removing && <DeleteRemote remote={removing} onClose={() => setRemoving(null)} onDeleted={list.reload} />}
     </>
   );
 }
 
-function RemoteDialog({ remote, onClose, onSaved }: { remote: Remote | null; onClose: () => void; onSaved: () => void }) {
+function RemoteDialog({ remote, choices, onClose, onSaved }: { remote: Remote | null; choices: RemoteChoices; onClose: () => void; onSaved: () => void }) {
   const creating = remote === null;
   const [d, setD] = useState<RemoteDraft>(remote ? draftFromRemote(remote) : blankDraft("s3"));
   const [busy, setBusy] = useState<"" | "test" | "save">("");
@@ -165,9 +165,9 @@ function RemoteDialog({ remote, onClose, onSaved }: { remote: Remote | null; onC
         const hint = err ? <span class="text-danger">{err}</span> : keep ? "Leave empty to keep the saved one." : f.hint;
         return (
           <Field key={f.key} label={f.label} htmlFor={id} hint={hint}>
-            {f.options ? (
+            {f.choices ? (
               <select id={id} value={value} onChange={(e) => set({ [f.key]: e.currentTarget.value })}>
-                {f.options.map((o) => (
+                {choices[f.choices].map((o) => (
                   <option key={o} value={o}>
                     {o}
                   </option>

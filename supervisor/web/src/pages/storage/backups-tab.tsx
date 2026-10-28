@@ -1,14 +1,13 @@
 import { useState } from "preact/hooks";
 import { api, ApiError, type BackupsOverview, type CatalogItem, type Repository } from "../../api.ts";
 import { RestoreNewDialog } from "../../components/backups/restore-dialogs.tsx";
+import { SecretReveal } from "../../components/secret-reveal.tsx";
 import { notify } from "../../components/toast.tsx";
 import { Button, Dialog, ErrorText, Field, Note, Tag, errorMessage } from "../../components/ui.tsx";
 import { backupStatus, describeSchedule, isTime, itemCopy, splitItem } from "../../lib/backup-policy.ts";
-import { copyText } from "../../lib/clipboard.ts";
 import { ago, day } from "../../lib/format.ts";
+import { RESOURCE_NAME, resourceNameHint } from "../../lib/names.ts";
 import { useBackups, useFetch } from "../../lib/use-fetch.ts";
-
-const NAME = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
 
 function itemHref(item: string): string {
   return itemCopy(...splitItem(item)).page;
@@ -179,23 +178,13 @@ function RepositoryCard({ repository: r, used, onRemoved }: { repository: Reposi
 
 function KeyPanel({ recoveryKey }: { recoveryKey: string }) {
   return (
-    <div class="mt-3 rounded-lg border border-line bg-white p-3.5">
-      <div class="flex flex-wrap items-center gap-2">
-        <code class="mono min-w-0 flex-1 break-all text-sm" aria-label="Recovery key">
-          {recoveryKey}
-        </code>
-        <Button
-          onClick={() =>
-            void copyText(recoveryKey).then((ok) =>
-              ok ? notify("Copied the recovery key") : notify("Couldn't copy; select the key and copy it instead", { error: true }),
-            )
-          }
-        >
-          Copy
-        </Button>
-      </div>
-      <p class="mt-2 text-[13px] text-muted">Without this key the backups can't be read. Keep it in a password manager.</p>
-    </div>
+    <SecretReveal
+      class="mt-3 bg-white"
+      secret={recoveryKey}
+      label="Recovery key"
+      what="the recovery key"
+      note="Without this key the backups can't be read. Keep it in a password manager."
+    />
   );
 }
 
@@ -208,7 +197,7 @@ function CreateRepository({ remotes, onClose, onCreated }: { remotes: string[]; 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ repository: Repository; recoveryKey?: string } | null>(null);
-  const valid = NAME.test(name) && !!remote && !!folder.trim() && (!needsKey || !!key.trim());
+  const valid = RESOURCE_NAME.test(name) && !!remote && !!folder.trim() && (!needsKey || !!key.trim());
   const submit = async () => {
     setBusy(true);
     setError(null);
@@ -253,7 +242,7 @@ function CreateRepository({ remotes, onClose, onCreated }: { remotes: string[]; 
         </>
       }
     >
-      <Field label="Name" htmlFor="repo-name" hint={name && !NAME.test(name) ? <span class="text-danger">Use 2–32 lowercase letters, digits and dashes.</span> : undefined}>
+      <Field label="Name" htmlFor="repo-name" hint={name && !RESOURCE_NAME.test(name) ? <span class="text-danger">{resourceNameHint}</span> : undefined}>
         <input type="text" id="repo-name" value={name} autocomplete="off" spellcheck={false} onInput={(e) => setName(e.currentTarget.value.toLowerCase())} />
       </Field>
       <Field label="Remote" htmlFor="repo-remote">

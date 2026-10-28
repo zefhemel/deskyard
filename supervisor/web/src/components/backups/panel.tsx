@@ -2,7 +2,7 @@
 // and the ways back (browse and download, restore to a folder, here, or as new).
 import { useEffect, useState } from "preact/hooks";
 import { api, type BackupItem, type ItemKind, type Snapshot } from "../../api.ts";
-import { describeReason, describeRetention, describeSchedule, isTime, itemCopy } from "../../lib/backup-policy.ts";
+import { describeReason, describeRetention, describeSchedule, isOverdue, isTime, itemCopy } from "../../lib/backup-policy.ts";
 import { ago, bytes, dateTime } from "../../lib/format.ts";
 import { useBackupItem, useBackups, useFetch } from "../../lib/use-fetch.ts";
 import { JobProgress, useJob } from "../job.tsx";
@@ -147,7 +147,7 @@ function Status({ item: b }: { item: BackupItem }) {
           </dd>
         </>
       )}
-      {b.policy?.enabled && isTime(b.nextRun) && Date.parse(b.nextRun) < Date.now() - 3600_000 && !b.activity && (
+      {isOverdue(b) && b.nextRun && (
         <>
           <dt class="text-danger">Overdue</dt>
           <dd class="text-danger">The backup due {ago(b.nextRun).toLowerCase()} hasn't run.</dd>
