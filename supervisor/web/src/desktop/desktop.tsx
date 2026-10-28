@@ -57,7 +57,8 @@ import {
   sendClipboard,
   sendQuality,
 } from "./selkies.ts";
-import { AUTO_FIT, initialLock, initialTrackpad, isPhone, parseScaling, displayScale, scaledSize, type Scaling } from "./display-prefs.ts";
+import { isPhone, useTouchCapable } from "./device.ts";
+import { AUTO_FIT, initialLock, initialTrackpad, parseScaling, displayScale, scaledSize, type Scaling } from "./display-prefs.ts";
 
 // Remembered per browser.
 const QUALITY_KEY = "deskyard.quality";
@@ -620,8 +621,7 @@ function Desktop({ environment: c, slots, selectShortcut, onFrame }: { environme
   trackpadRef.current = trackpad;
   const [keyboard, setKeyboard] = useState(false);
   const [zoom, setZoom] = useState(1);
-  const [touchControls, setTouchControls] = useState(() => navigator.maxTouchPoints > 0 || matchMedia("(pointer: coarse)").matches);
-  useEventListener(window, "touchstart", () => setTouchControls(true), { passive: true });
+  const touchControls = useTouchCapable();
   const [conn, setConn] = useState<ConnectionState>("connecting");
   // The frame's client, for the Audio panel; null until it loads.
   const [screen, setScreen] = useState<DeskyardScreen | null>(null);

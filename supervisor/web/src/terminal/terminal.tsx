@@ -19,6 +19,7 @@ import {
 } from "./keys.ts";
 import { KeyBar, terminalKeys } from "./key-bar.tsx";
 import { terminalLayout } from "./viewport.ts";
+import { coarsePointer, DESKTOP_INPUT, useMediaQuery } from "../desktop/device.ts";
 
 // Text size, remembered per browser and shared by every open terminal tab.
 const FONT_KEY = "deskyard.terminal.fontSize";
@@ -41,7 +42,6 @@ function chooseFontSize(size: number) {
   window.dispatchEvent(new CustomEvent(FONT_EVENT, { detail: size }));
 }
 
-const finePointer = () => !matchMedia("(pointer: coarse)").matches;
 
 const connOf = (state: string): Conn => (state === "connected" ? "connected" : state === "connecting" || state === "retrying" ? "connecting" : "disconnected");
 
@@ -76,19 +76,13 @@ export function TerminalPane({ name, session, active, create, slots, alive, onSt
   const [state, setState] = useState("connecting");
   const [message, setMessage] = useState("");
   const [warning, setWarning] = useState("");
-  const [desktopInput, setDesktopInput] = useState(() => matchMedia("(hover: hover) and (pointer: fine)").matches);
+  // Pointer/hover capability is a desktop-input heuristic, not a keyboard API.
+  const desktopInput = useMediaQuery(DESKTOP_INPUT);
   const [keyBarOverride, setKeyBarOverride] = useState<boolean | null>(null);
   const showKeyBar = keyBarOverride ?? !desktopInput;
   const [fontSize, setFontSize] = useState(loadFontSize);
   const measureRef = useRef<() => void>(() => {});
 
-  // Pointer/hover capability is a desktop-input heuristic, not a keyboard API.
-  useEffect(() => {
-    const media = matchMedia("(hover: hover) and (pointer: fine)");
-    const change = () => setDesktopInput(media.matches);
-    media.addEventListener("change", change);
-    return () => media.removeEventListener("change", change);
-  }, []);
   useEffect(() => {
     if (!showKeyBar) {
       modifiers.current.reset();
@@ -133,7 +127,7 @@ export function TerminalPane({ name, session, active, create, slots, alive, onSt
   }, [fontSize]);
 
   useEffect(() => {
-    if (active && finePointer()) requestAnimationFrame(() => terminal.current?.focus());
+    if (active && !coarsePointer()) requestAnimationFrame(() => terminal.current?.focus());
   }, [active]);
 
   useEffect(() => {
@@ -307,7 +301,7 @@ export function TerminalPane({ name, session, active, create, slots, alive, onSt
     connection.current?.input(new TextEncoder().encode(text));
   };
   const refocus = () => {
-    if (finePointer()) window.setTimeout(() => terminal.current?.focus(), 0);
+    if (!coarsePointer()) window.setTimeout(() => terminal.current?.focus(), 0);
   };
   const paste = async () => {
     try {

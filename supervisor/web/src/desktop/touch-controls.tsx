@@ -1,5 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { cx } from "../components/ui.tsx";
+import { hasTouchPoints } from "./device.ts";
 import { visibleViewport } from "./viewport.ts";
 
 /** Follow the unobscured viewport when a phone's software keyboard opens. */
@@ -7,7 +8,7 @@ export function useVisibleViewport() {
   const [viewport, setViewport] = useState<{ height: number; top: number; keyboard: boolean } | null>(null);
   useEffect(() => {
     const visual = window.visualViewport;
-    if (!visual || navigator.maxTouchPoints === 0) return;
+    if (!visual || !hasTouchPoints()) return;
     const standalone = matchMedia("(display-mode: standalone)").matches && CSS.supports("-webkit-touch-callout", "none");
     const probe = document.createElement("div");
     probe.style.cssText = "position:fixed;visibility:hidden;pointer-events:none;width:0;height:100lvh";

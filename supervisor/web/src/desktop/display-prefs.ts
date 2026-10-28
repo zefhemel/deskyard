@@ -1,15 +1,11 @@
 import type { Size } from "../selkies/screen.ts";
 
 /**
- * A phone: a screen whose short side is below the 640px at which the bar
- * turns compact. At its own size a desktop doesn't fit there, in either
- * orientation, so a phone starts with the screen locked at phoneSize and the
- * pointer as a trackpad until its viewer chooses otherwise. Tablets and
- * computers start with Auto fit and Tap.
- */
-export const isPhone = (screen: { width: number; height: number }) => Math.min(screen.width, screen.height) < 640;
-
-/** The smallest 16:9 preset: a phone's landscape shape, and a usable desktop. */
+ * A phone (device.ts's isPhone) starts with the screen locked at phoneSize
+ * and the pointer as a trackpad until its viewer chooses otherwise. Tablets
+ * and computers start with Auto fit and Tap.
+ *
+ * The smallest 16:9 preset: a phone's landscape shape, and a usable desktop. */
 export const phoneSize: Size = { width: 1280, height: 720 };
 
 /** Stored for a chosen Auto fit, so that a phone's default doesn't replace it. */

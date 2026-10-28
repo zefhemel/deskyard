@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { displayScale, scaledSize, parseScaling, AUTO_FIT, initialLock, initialTrackpad, isPhone, phoneSize } from "./display-prefs.ts";
+import { displayScale, scaledSize, parseScaling, AUTO_FIT, initialLock, initialTrackpad, phoneSize } from "./display-prefs.ts";
+import { isPhone } from "./device.ts";
 
 test("a screen with a short side below 640 is a phone, in either orientation", () => {
   assert.equal(isPhone({ width: 390, height: 844 }), true);
