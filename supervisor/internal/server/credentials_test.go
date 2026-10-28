@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -39,11 +40,29 @@ func createBob(t *testing.T, s *Server) accounts.Account {
 
 func issueCredential(t *testing.T, s *Server, a accounts.Account) (credential, string) {
 	t.Helper()
-	c, bearer, err := s.credentials.create(a, "cli", "deskyard CLI on test")
+	c, bearer, err := s.Accounts.AddCredential(a.Username, a.ID, accounts.NewCredential{Kind: "cli", Name: "deskyard CLI on test"}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return c, bearer
+}
+
+// removeCredential deletes the credential with this ID.
+func removeCredential(s *Server, id string) error {
+	_, err := s.Accounts.RemoveCredentials(func(c credential) bool { return c.ID == id })
+	return err
+}
+
+// linkPending reports whether the account with this ID has an unused
+// login link.
+func linkPending(t *testing.T, s *Server, accountID string) bool {
+	t.Helper()
+	for _, a := range s.Accounts.List() {
+		if a.ID == accountID {
+			return a.Link != nil
+		}
+	}
+	return false
 }
 
 func TestBearerCredentialReachesAPI(t *testing.T) {
@@ -70,7 +89,7 @@ func TestBearerCredentialReachesAPI(t *testing.T) {
 	if code, _, _ := bearerRequest(t, "GET", ts.URL+"/api/me", bearer); code != 200 {
 		t.Fatalf("sign out everywhere ended the credential: %d", code)
 	}
-	got, ok := s.credentials.check(bearer)
+	got, ok := s.Accounts.CheckCredential(bearer)
 	if !ok || got.LastUsed == nil {
 		t.Fatalf("last use not recorded: %+v", got)
 	}
@@ -102,7 +121,7 @@ func TestBadBearerRejected(t *testing.T) {
 func TestRevokedCredentialRejected(t *testing.T) {
 	s, ts := newTestServer(t)
 	c, bearer := issueCredential(t, s, createBob(t, s))
-	if err := s.credentials.remove(func(o credential) bool { return o.ID == c.ID }); err != nil {
+	if err := removeCredential(s, c.ID); err != nil {
 		t.Fatal(err)
 	}
 	if code, body, _ := bearerRequest(t, "GET", ts.URL+"/api/me", bearer); code != 401 {
@@ -140,12 +159,13 @@ func TestCredentialOfExpiredAccountRejected(t *testing.T) {
 func TestCredentialsPersistAcrossRestart(t *testing.T) {
 	s, _ := newTestServer(t)
 	c, bearer := issueCredential(t, s, createBob(t, s))
-	st, err := os.Stat(s.credentials.path)
+	p := filepath.Join(s.Layout.Data, "accounts.json")
+	st, err := os.Stat(p)
 	if err != nil || st.Mode().Perm() != 0o600 {
-		t.Fatalf("credentials.json: %v %v", st, err)
+		t.Fatalf("accounts.json: %v %v", st, err)
 	}
-	if b, _ := os.ReadFile(s.credentials.path); strings.Contains(string(b), strings.TrimPrefix(bearer, "dyc_"+c.ID+"_")) {
-		t.Fatal("credentials.json holds the secret")
+	if b, _ := os.ReadFile(p); strings.Contains(string(b), strings.TrimPrefix(bearer, "dyc_"+c.ID+"_")) {
+		t.Fatal("accounts.json holds the secret")
 	}
 	restarted := httptest.NewServer(restart(t, s))
 	t.Cleanup(restarted.Close)
@@ -153,7 +173,7 @@ func TestCredentialsPersistAcrossRestart(t *testing.T) {
 	if code != 200 || !strings.Contains(body, `"bob"`) {
 		t.Fatalf("credential after restart: %d %s", code, body)
 	}
-	list := restart(t, s).credentials.list("")
+	list := restart(t, s).Accounts.Credentials("")
 	if len(list) != 1 || list[0].ID != c.ID || list[0].Name != "deskyard CLI on test" || list[0].Kind != "cli" || list[0].Username != "bob" {
 		t.Fatalf("persisted credentials: %+v", list)
 	}
@@ -166,11 +186,11 @@ func TestCredentialListByAccount(t *testing.T) {
 	first, _ := issueCredential(t, s, bob)
 	issueCredential(t, s, anna)
 	second, _ := issueCredential(t, s, bob)
-	got := s.credentials.list(bob.ID)
+	got := s.Accounts.Credentials(bob.ID)
 	if len(got) != 2 || got[0].ID != second.ID || got[1].ID != first.ID {
 		t.Fatalf("bob's credentials, newest first: %+v", got)
 	}
-	if all := s.credentials.list(""); len(all) != 3 {
+	if all := s.Accounts.Credentials(""); len(all) != 3 {
 		t.Fatalf("all credentials: %d", len(all))
 	}
 }
@@ -184,7 +204,7 @@ func TestCredentialRemoveClosesTrackedConnections(t *testing.T) {
 	defer otherCancel()
 	d, _ := issueCredential(t, s, createAccount(t, s, "carol"))
 	defer trackConn(s, d, "alice", otherCancel)()
-	if err := s.credentials.remove(func(o credential) bool { return o.ID == c.ID }); err != nil {
+	if err := removeCredential(s, c.ID); err != nil {
 		t.Fatal(err)
 	}
 	if ctx.Err() == nil {
@@ -194,15 +214,19 @@ func TestCredentialRemoveClosesTrackedConnections(t *testing.T) {
 		t.Fatal("removing one credential closed another's connection")
 	}
 
-	// A failed write still closes live access, and reports the error.
+	// A failed write still closes live access, refuses the credential
+	// until it is saved, and reports the error.
 	ctx, cancel = context.WithCancel(context.Background())
 	defer trackConn(s, d, "alice", cancel)()
-	s.credentials.path = blockedStatePath(t)
-	if err := s.credentials.remove(func(o credential) bool { return o.ID == d.ID }); err == nil {
+	blockAccountsFile(t, s)
+	if err := removeCredential(s, d.ID); err == nil {
 		t.Fatal("remove reported success without persisting")
 	}
 	if ctx.Err() == nil {
 		t.Fatal("a failed write left the connection open")
+	}
+	if s.Accounts.HasCredential(d.ID) {
+		t.Fatal("a failed write kept the credential")
 	}
 }
 
@@ -246,21 +270,24 @@ func TestRevalidateClosesWhatIsNoLongerAllowed(t *testing.T) {
 	}
 }
 
-func TestCredentialRetain(t *testing.T) {
+// Deleting an account deletes its credentials, and closes their
+// connections.
+func TestCredentialsGoWithTheirAccount(t *testing.T) {
 	s, _ := newTestServer(t)
 	bob := createBob(t, s)
 	keep, _ := issueCredential(t, s, bob)
-	drop, _ := issueCredential(t, s, createAccount(t, s, "carol"))
+	carol := createAccount(t, s, "carol")
+	drop, _ := issueCredential(t, s, carol)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer trackConn(s, drop, "alice", cancel)()
-	if err := s.credentials.retain(func(c credential) bool { return c.AccountID == bob.ID }); err != nil {
+	if err := s.Accounts.Delete(carol.Username); err != nil {
 		t.Fatal(err)
 	}
-	if got := restart(t, s).credentials.list(""); len(got) != 1 || got[0].ID != keep.ID {
-		t.Fatalf("retained: %+v", got)
+	if got := restart(t, s).Accounts.Credentials(""); len(got) != 1 || got[0].ID != keep.ID {
+		t.Fatalf("credentials left: %+v", got)
 	}
 	if ctx.Err() == nil {
-		t.Fatal("retain left a dropped credential's connection open")
+		t.Fatal("deleting the account left its credential's connection open")
 	}
 }
 
@@ -297,7 +324,7 @@ func TestCredentialRemoveClosesItsStreams(t *testing.T) {
 			}
 			// Sweeps (every account change) leave it open.
 			s.sweep()
-			if err := s.credentials.remove(func(o credential) bool { return o.ID == c.ID }); err != nil {
+			if err := removeCredential(s, c.ID); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := io.Copy(io.Discard, resp.Body); ctx.Err() != nil {

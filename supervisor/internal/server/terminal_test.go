@@ -596,7 +596,7 @@ func TestLinkRedemptionEndsAnotherAccountsBrowserLogin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, err := s.links.issue(sanne, "admin")
+	code, err := s.Accounts.IssueLink(sanne.Username, sanne.ID, "admin")
 	if err != nil {
 		t.Fatal(err)
 	}

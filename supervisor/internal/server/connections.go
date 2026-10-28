@@ -66,7 +66,7 @@ func (s *Server) allowed(c *conn) bool {
 	a, ok := s.Accounts.Usable(c.username, c.accountID, now)
 	switch {
 	case !ok, c.epoch != noSession && c.epoch != a.SessionEpoch, !c.expires.IsZero() && !now.Before(c.expires),
-		c.credential != "" && !s.credentials.has(c.credential):
+		c.credential != "" && !s.Accounts.HasCredential(c.credential):
 		return false
 	case c.environment == "":
 		return true

@@ -293,14 +293,14 @@ func TestCredentialGoneForgetsAgent(t *testing.T) {
 		return c
 	}
 	var gone []string
-	orig := s.credentials.onGone
-	s.credentials.onGone = func(c credential) { gone = append(gone, c.ID); orig(c) }
+	orig := s.Accounts.OnCredentialsGone
+	s.Accounts.OnCredentialsGone = func(ids ...string) { gone = append(gone, ids...); orig(ids...) }
 
 	// A live forward link of the credential: Forget publishes viewers, which
 	// reads the forwards; it must run with no lock held.
 	del := mk(accountNamed(t, s, "admin"))
 	s.forwards.tryAdd("alice", newForwardLink(del.Name, del.ID, []int{5173}))
-	within(t, "remove", func() { s.credentials.remove(func(x credential) bool { return x.ID == del.ID }) })
+	within(t, "remove", func() { removeCredential(s, del.ID) })
 	if len(gone) != 1 || gone[0] != del.ID {
 		t.Fatalf("onGone after delete: %v", gone)
 	}

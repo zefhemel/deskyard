@@ -36,7 +36,7 @@ func accountKind(a accounts.Account) string {
 // toAccountJSON shows a with its grants of defined environments.
 func (s *Server) toAccountJSON(a accounts.Account) accountJSON {
 	return accountJSON{Username: a.Username, Kind: accountKind(a), Admin: a.Admin, Description: a.Description,
-		Grants: s.definedGrants(a), SharedBy: a.SharedBy, Expires: a.Expires, LinkPending: s.links.pending(a.ID),
+		Grants: s.definedGrants(a), SharedBy: a.SharedBy, Expires: a.Expires, LinkPending: a.Link != nil,
 		Created: a.Created, LastLogin: since(a.LastLogin)}
 }
 
@@ -213,8 +213,8 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.toAccountJSON(a))
 }
 
-// handleDeleteAccount deletes the account; the sweep its change runs deletes
-// its link, its credentials and the shares it made, and closes their
+// handleDeleteAccount deletes the account with its link and credentials;
+// the sweep its change runs deletes the shares it made, and closes their
 // connections.
 func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 	me, _ := s.account(r)
@@ -259,7 +259,7 @@ func (s *Server) handleAccountLink(w http.ResponseWriter, r *http.Request) {
 
 // writeNewLink issues a new login link for a by me and answers with it.
 func (s *Server) writeNewLink(w http.ResponseWriter, r *http.Request, a, me accounts.Account) {
-	code, err := s.links.issue(a, me.Username)
+	code, err := s.Accounts.IssueLink(a.Username, a.ID, me.Username)
 	if err != nil {
 		s.Log.Error("issuing a login link", "account", a.Username, "err", err)
 		writeError(w, http.StatusInternalServerError, "the link couldn't be saved")
@@ -285,25 +285,25 @@ type credentialJSON struct {
 func (s *Server) writeCredentials(w http.ResponseWriter, r *http.Request, accountID string) {
 	mine, _ := s.credentialOf(r)
 	out := []credentialJSON{}
-	for _, c := range s.credentials.list(accountID) {
+	for _, c := range s.Accounts.Credentials(accountID) {
 		out = append(out, credentialJSON{ID: c.ID, Kind: c.Kind, Name: c.Name, Created: c.Created, LastUsed: c.LastUsed, Current: c.ID == mine.ID})
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
-// deleteCredential deletes credential id of the account with this ID and
-// closes its connections.
+// deleteCredential deletes credential id of the account with this ID, which
+// closes its connections (also when that can't be saved).
 func (s *Server) deleteCredential(w http.ResponseWriter, accountID, id string) {
-	if !slices.ContainsFunc(s.credentials.list(accountID), func(c credential) bool { return c.ID == id }) {
-		writeError(w, http.StatusNotFound, "no such credential")
-		return
-	}
-	if err := s.credentials.remove(func(c credential) bool { return c.ID == id && c.AccountID == accountID }); err != nil {
+	gone, err := s.Accounts.RemoveCredentials(func(c credential) bool { return c.ID == id && c.AccountID == accountID })
+	switch {
+	case err != nil:
 		s.Log.Error("deleting a client credential", "credential", id, "err", err)
 		writeError(w, http.StatusInternalServerError, "the credential couldn't be deleted")
-		return
+	case len(gone) == 0:
+		writeError(w, http.StatusNotFound, "no such credential")
+	default:
+		w.WriteHeader(http.StatusNoContent)
 	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleOwnCredentials(w http.ResponseWriter, r *http.Request) {

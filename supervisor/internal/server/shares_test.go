@@ -210,10 +210,10 @@ func TestObserveShareRefusedForCLIKeepsLink(t *testing.T) {
 	if code != 403 || !strings.Contains(body, "observe-only access is for the browser") {
 		t.Fatalf("observe share CLI redemption: %d %s", code, body)
 	}
-	if !s.links.pending(accountNamed(t, s, "sanne").ID) {
+	if !linkPending(t, s, accountNamed(t, s, "sanne").ID) {
 		t.Fatal("the refused redemption used the link")
 	}
-	if len(s.credentials.list(accountNamed(t, s, "sanne").ID)) != 0 {
+	if len(s.Accounts.Credentials(accountNamed(t, s, "sanne").ID)) != 0 {
 		t.Fatal("the refused redemption left a credential")
 	}
 	if code, _ := send(t, browser(), "POST", ts.URL+"/api/links/redeem", ts.URL, `{"link":"`+linkCode+`","client":"browser"}`); code != 200 {
@@ -270,7 +270,7 @@ func TestRevokeShareClosesStream(t *testing.T) {
 		t.Fatalf("redeem: %d %s", code, body)
 	}
 	share := accountNamed(t, s, "sanne")
-	creds := s.credentials.list(share.ID)
+	creds := s.Accounts.Credentials(share.ID)
 	if len(creds) != 1 {
 		t.Fatalf("credentials %+v", creds)
 	}
@@ -333,14 +333,12 @@ func TestShareLastUsed(t *testing.T) {
 	}
 	redeemed := accountNamed(t, s, "sanne").LastLogin
 	later := redeemed.Add(time.Hour)
-	s.credentials.mu.Lock()
-	for i := range s.credentials.all {
-		if s.credentials.all[i].ID == c.ID {
-			s.credentials.all[i].LastUsed = &later
-		}
+	used := accountNamed(t, s, "sanne")
+	if len(used.Credentials) != 1 || used.Credentials[0].ID != c.ID {
+		t.Fatalf("credentials %+v", used.Credentials)
 	}
-	s.credentials.mu.Unlock()
-	if j := s.toShareJSON(accountNamed(t, s, "sanne")); j.LastUsed == nil || !j.LastUsed.Equal(later) {
+	used.Credentials[0].LastUsed = &later
+	if j := s.toShareJSON(used); j.LastUsed == nil || !j.LastUsed.Equal(later) {
 		t.Fatalf("last used %v, want the credential's %v", j.LastUsed, later)
 	}
 	// So does a browser request.

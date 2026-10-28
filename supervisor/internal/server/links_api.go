@@ -77,13 +77,7 @@ func (s *Server) linkThrottled(w http.ResponseWriter, r *http.Request) bool {
 // linkGone answers a used, replaced or unknown code and counts the failure.
 func (s *Server) linkGone(w http.ResponseWriter, r *http.Request) {
 	s.Throttle.Fail("link:" + clientIP(r))
-	writeError(w, http.StatusGone, errLinkUsed.Error())
-}
-
-// linkAccount is the account a link signs in as, while it is the account
-// the link was issued to and may use anything.
-func (s *Server) linkAccount(l link) (accounts.Account, bool) {
-	return s.Accounts.Usable(l.Username, l.AccountID, time.Now())
+	writeError(w, http.StatusGone, accounts.ErrLinkUsed.Error())
 }
 
 // handleInspectLink shows what a link signs in as, without using it.
@@ -96,12 +90,7 @@ func (s *Server) handleInspectLink(w http.ResponseWriter, r *http.Request) {
 	if s.linkThrottled(w, r) {
 		return
 	}
-	l, ok := s.links.peek(req.Link)
-	if !ok {
-		s.linkGone(w, r)
-		return
-	}
-	a, ok := s.linkAccount(l)
+	a, ok := s.Accounts.PeekLink(req.Link, time.Now())
 	if !ok {
 		s.linkGone(w, r)
 		return
@@ -140,36 +129,19 @@ func (s *Server) handleRedeemLink(w http.ResponseWriter, r *http.Request) {
 	if s.linkThrottled(w, r) {
 		return
 	}
-	var a accounts.Account
-	var cli cliSignIn
-	var cred credential
-	_, err := s.links.redeem(req.Link, func(l link) error {
-		var ok bool
-		if a, ok = s.linkAccount(l); !ok {
-			return errLinkUsed
-		}
-		// An earlier redemption of the link that failed, and couldn't
-		// delete its credential either, left one whose bearer it never
-		// handed out.
-		if err := s.credentials.remove(func(c credential) bool { return c.Link == l.ID }); err != nil {
-			return err
-		}
-		if req.Client != "cli" {
-			return nil
-		}
-		// Made before the link is deleted, so a failure keeps the link; it
-		// is handed out only once the deletion is saved.
-		var err error
-		cli, cred, err = s.issueCLICredential(a, req.Name, l.ID)
-		return err
-	})
-	if err != nil && cred.ID != "" {
-		if err := s.credentials.remove(func(c credential) bool { return c.ID == cred.ID }); err != nil {
-			s.Log.Error("deleting the credential of a failed redemption", "credential", cred.ID, "err", err)
-		}
+	// The link is deleted and, for a CLI, the credential made in one write.
+	var cred *accounts.NewCredential
+	if req.Client == "cli" {
+		cred = &accounts.NewCredential{Kind: cliKind, Name: req.Name}
 	}
+	a, _, bearer, err := s.Accounts.RedeemLink(req.Link, time.Now(), cred, func(a accounts.Account) error {
+		if cred != nil {
+			return s.checkCLI(a)
+		}
+		return nil
+	})
 	switch {
-	case errors.Is(err, errLinkUsed):
+	case errors.Is(err, accounts.ErrLinkUsed):
 		s.linkGone(w, r)
 		return
 	case errors.Is(err, auth.ErrBrowserOnly):
@@ -182,7 +154,7 @@ func (s *Server) handleRedeemLink(w http.ResponseWriter, r *http.Request) {
 	}
 	s.signedIn(a, "link, "+req.Client, r)
 	if req.Client == "cli" {
-		writeJSON(w, http.StatusOK, cli)
+		writeJSON(w, http.StatusOK, s.cliAnswer(a, bearer))
 		return
 	}
 	s.replaceSession(w, r, a)
@@ -201,18 +173,26 @@ type cliSignIn struct {
 	Environments []environmentLevel `json:"environments"`
 }
 
+// cliKind is the kind of a CLI's client credential.
+const cliKind = "cli"
+
+// cliAnswer is the CLI's answer when it signs in to a with bearer.
+func (s *Server) cliAnswer(a accounts.Account, bearer string) cliSignIn {
+	return cliSignIn{Credential: bearer, Username: a.Username, Environments: s.cliEnvironments(a)}
+}
+
 // issueCLICredential makes a CLI credential named client for a as it is
-// now, refusing (auth.ErrBrowserOnly) an account the CLI is of no use to. link is
-// the login link being redeemed, if one is.
-func (s *Server) issueCLICredential(a accounts.Account, client, link string) (cliSignIn, credential, error) {
+// now, refusing (auth.ErrBrowserOnly) an account the CLI is of no use to,
+// and returns the CLI's answer.
+func (s *Server) issueCLICredential(a accounts.Account, client string) (cliSignIn, error) {
 	if err := s.checkCLI(a); err != nil {
-		return cliSignIn{}, credential{}, err
+		return cliSignIn{}, err
 	}
-	c, bearer, err := s.credentials.add(credential{AccountID: a.ID, Username: a.Username, Kind: "cli", Name: client, Link: link})
+	_, bearer, err := s.Accounts.AddCredential(a.Username, a.ID, accounts.NewCredential{Kind: cliKind, Name: client}, false)
 	if err != nil {
-		return cliSignIn{}, credential{}, err
+		return cliSignIn{}, err
 	}
-	return cliSignIn{Credential: bearer, Username: a.Username, Environments: s.cliEnvironments(a)}, c, nil
+	return s.cliAnswer(a, bearer), nil
 }
 
 // signedIn records a sign-in to a, made via a password, a link or a CLI

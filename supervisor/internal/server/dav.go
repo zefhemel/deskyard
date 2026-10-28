@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -218,8 +219,8 @@ func (s *Server) davCheck(username, password string) (accounts.Account, *credent
 	if found {
 		a, found = s.Accounts.Usable(a.Username, a.ID, time.Now())
 	}
-	if strings.HasPrefix(password, credentialPrefix) {
-		if c, ok := s.credentials.check(password); ok && found && c.Kind == davKind && c.AccountID == a.ID {
+	if strings.HasPrefix(password, accounts.CredentialPrefix) {
+		if c, ok := s.Accounts.CheckCredential(password); ok && found && c.Kind == davKind && c.AccountID == a.ID {
 			return a, &c, true
 		}
 	}
@@ -227,20 +228,11 @@ func (s *Server) davCheck(username, password string) (accounts.Account, *credent
 		auth.CheckPassword(dummyHash, password) // same time either way
 		return accounts.Account{}, nil, false
 	}
-	if s.hasDAVPassword(a.ID) {
+	if slices.ContainsFunc(a.Credentials, func(c credential) bool { return c.Kind == davKind }) {
 		auth.CheckPassword(dummyHash, password) // same time as checking it
 		return accounts.Account{}, nil, false   // the WebDAV password replaces the account's
 	}
 	return a, nil, s.davPasswords.check(a, password)
-}
-
-func (s *Server) hasDAVPassword(accountID string) bool {
-	for _, c := range s.credentials.list(accountID) {
-		if c.Kind == davKind {
-			return true
-		}
-	}
-	return false
 }
 
 // davPasswordCache remembers account passwords that checked out, by a keyed
@@ -350,15 +342,10 @@ func (s *Server) handleCreateWebDAVPassword(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
-	c, password, err := s.credentials.create(me, davKind, "WebDAV password")
+	_, password, err := s.Accounts.AddCredential(me.Username, me.ID, accounts.NewCredential{Kind: davKind, Name: "WebDAV password"}, true)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
-	}
-	if err := s.credentials.remove(func(o credential) bool {
-		return o.AccountID == me.ID && o.Kind == davKind && o.ID != c.ID
-	}); err != nil {
-		s.Log.Warn("removing the old WebDAV password", "account", me.Username, "err", err)
 	}
 	s.Log.Info("WebDAV password set", "account", me.Username, "ip", clientIP(r))
 	writeJSON(w, http.StatusCreated, map[string]string{"password": password})
@@ -376,5 +363,6 @@ func (s *Server) handleDeleteWebDAVPassword(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) removeDAVPasswords(accountID string) error {
-	return s.credentials.remove(func(c credential) bool { return c.AccountID == accountID && c.Kind == davKind })
+	_, err := s.Accounts.RemoveCredentials(func(c credential) bool { return c.AccountID == accountID && c.Kind == davKind })
+	return err
 }

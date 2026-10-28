@@ -153,9 +153,8 @@ plain view; there is no hidden folder:
 ```
 <data>/
   environments.json   environment definitions (no secrets)
-  accounts.json       accounts, password hashes and environment grants (full or observe)
-  links.json          unused login links (hashed)
-  credentials.json    signed-in CLIs' client credentials (hashed)
+  accounts.json       accounts, password hashes, environment grants (full or observe),
+                      unused login links and client credentials (hashed)
   networks.json       saved VPN connections (no credentials)
   images.json         the image catalog
   volumes.json        named volumes (grants live in environments.json)
@@ -173,8 +172,10 @@ plain view; there is no hidden folder:
   volume/<name>/      each local volume's files
 ```
 
-JSON files are written atomically with mode 0600, and existing `accounts.json`,
-`links.json` and `credentials.json` files are tightened to 0600 at startup. A
+JSON files are written atomically with mode 0600, and an existing
+`accounts.json` is tightened to 0600 at startup. The `links.json` and
+`credentials.json` of earlier versions are moved into `accounts.json` at
+startup and deleted once it is saved. A
 `tokens.json` left from a version with per-environment access tokens is deleted
 at startup with a log line: those tokens are replaced by accounts, and an
 `environments` list in `accounts.json` is read as full grants; `secret/` and `state/` are

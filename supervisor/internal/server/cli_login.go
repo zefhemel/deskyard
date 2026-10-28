@@ -272,7 +272,7 @@ func (s *Server) handleCLILoginToken(w http.ResponseWriter, r *http.Request) {
 		}
 		// The approver may have lost since what the CLI needs.
 		var err error
-		cli, _, err = s.issueCLICredential(a, client, "")
+		cli, err = s.issueCLICredential(a, client)
 		return err
 	})
 	switch {

@@ -264,21 +264,21 @@ func TestBumpStartsFromHeldSessionEpoch(t *testing.T) {
 	}
 }
 
-func TestNarrowed(t *testing.T) {
+func TestRevoked(t *testing.T) {
 	before := Account{ID: "a", Admin: true, SessionEpoch: 2, Description: "before",
 		Grants: []Grant{{Environment: "alice", Level: auth.LevelFull}, {Environment: "beta", Level: auth.LevelFull}, {Environment: "carol", Level: auth.LevelObserve}}}
 	after := Account{ID: "a", SessionEpoch: 3, Description: "after",
 		Grants: []Grant{{Environment: "alice", Level: auth.LevelObserve}, {Environment: "beta", Level: auth.LevelFull}, {Environment: "dora", Level: auth.LevelFull}}}
-	got := narrowed(before, after, false)
+	got := revoked(before, after)
 	if got.Admin || got.SessionEpoch != 2 || got.Description != "before" || len(got.Grants) != 2 ||
 		got.Level("alice") != auth.LevelObserve || got.Level("beta") != auth.LevelFull || got.Level("carol") != auth.LevelNone || got.Level("dora") != auth.LevelNone {
-		t.Fatalf("narrowed %+v", got)
+		t.Fatalf("revoked %+v", got)
 	}
-	if got := narrowed(before, after, true); got.SessionEpoch != 3 {
-		t.Fatalf("narrowed with the epoch: %d", got.SessionEpoch)
+	if got := signedOut(before, after); got.SessionEpoch != 3 {
+		t.Fatalf("signed out: epoch %d", got.SessionEpoch)
 	}
 	if len(before.Grants) != 3 || before.Grants[0].Level != auth.LevelFull {
-		t.Fatalf("narrowed changed before: %+v", before.Grants)
+		t.Fatalf("revoked changed before: %+v", before.Grants)
 	}
 }
 

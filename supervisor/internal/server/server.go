@@ -54,8 +54,6 @@ type Server struct {
 	stats            *statsCollector
 	inside           *insideReader
 	thumbs           *thumbnails
-	credentials      *credentialStore
-	links            *linkStore
 	cliLogins        *cliLogins // pending deskyard logins
 	images           *catalog
 	storage          *storage.Service // storage remotes and backups
@@ -121,26 +119,12 @@ func New(o Options) (*Server, error) {
 	if err := s.removeTokensFile(); err != nil {
 		return nil, err
 	}
-	if s.credentials, err = loadCredentials(o.Layout.Data); err != nil {
-		return nil, err
-	}
-	if s.links, err = loadLinks(o.Layout.Data); err != nil {
-		return nil, err
-	}
-	// A CLI redemption that stopped between saving its credential and
-	// deleting its link left the credential, whose bearer it never handed
-	// out; the link still works.
-	if err := s.credentials.remove(func(c credential) bool { return c.Link != "" && s.links.has(c.Link) }); err != nil {
-		o.Log.Error("deleting credentials of unfinished link redemptions", "err", err)
-	}
 	// Grants of names without a definition are left over from a
 	// removal whose cleanup didn't persist; a later environment of the name
 	// must not inherit them.
 	if err := s.Accounts.Retain(func(name string) bool { _, ok := s.Environments.Defs.Get(name); return ok }); err != nil {
 		return nil, fmt.Errorf("dropping grants of removed environments: %w", err)
 	}
-	s.credentials.onGone = func(c credential) { s.activity.Forget(c.ID) }
-	s.credentials.closed = s.conns.closeCredential
 	if s.images, err = loadCatalog(o.Layout.Data, o.DefaultImage); err != nil {
 		return nil, err
 	}
@@ -172,7 +156,13 @@ func New(o Options) (*Server, error) {
 	// An environment whose pinned image was pulled again has a new revision.
 	s.Environments.Repinned = func([]environments.Repin) { s.events.refresh() }
 	o.Accounts.OnChange = s.accountsChanged
-	s.sweep() // links, credentials and shares left over from changes that didn't persist
+	o.Accounts.OnCredentialsGone = func(ids ...string) {
+		for _, id := range ids {
+			s.conns.closeCredential(id)
+			s.activity.Forget(id)
+		}
+	}
+	s.sweep() // shares left over from changes that didn't persist
 	s.detectMemoryReclaim(o.StartupContext)
 	s.routes()
 	return s, nil
@@ -363,7 +353,7 @@ func bearerOf(r *http.Request) (string, bool) {
 // withCredential resolves a client credential into the request context. Its
 // account must be the one it was issued to, still usable (accounts.Store.Usable).
 func (s *Server) withCredential(r *http.Request, bearer string) (*http.Request, bool) {
-	c, ok := s.credentials.check(bearer)
+	c, ok := s.Accounts.CheckCredential(bearer)
 	if !ok || c.Kind == davKind { // a WebDAV password opens only WebDAV
 		return r, false
 	}
@@ -458,8 +448,8 @@ func (s *Server) writeIndex(w http.ResponseWriter) {
 }
 
 // accountsChanged closes the connections of accounts whose access or
-// sessions changed that they no longer allow, sweeps the shares, links and
-// credentials that depended on them, and refreshes event streams.
+// sessions changed that they no longer allow, sweeps the shares that
+// depended on them, and refreshes event streams.
 func (s *Server) accountsChanged(usernames ...string) {
 	s.revalidate(usernames...)
 	s.sweep()

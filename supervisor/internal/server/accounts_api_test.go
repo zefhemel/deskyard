@@ -206,7 +206,7 @@ func TestOwnCredentialsListAndRevoke(t *testing.T) {
 	if code, _ := sendBearer(t, "DELETE", ts.URL+"/api/me/credentials/"+annaCred.ID, firstBearer, ""); code != 404 {
 		t.Fatalf("deleting another account's credential: %d", code)
 	}
-	if len(s.credentials.list(annaCred.AccountID)) != 1 {
+	if len(s.Accounts.Credentials(annaCred.AccountID)) != 1 {
 		t.Fatal("bob deleted anna's credential")
 	}
 	if code, _ := sendBearer(t, "DELETE", ts.URL+"/api/me/credentials/"+second.ID, firstBearer, ""); code != 204 {
@@ -242,7 +242,7 @@ func TestOwnCredentialsListAndRevoke(t *testing.T) {
 	if code, _ := send(t, admin, "DELETE", ts.URL+"/api/accounts/bob/credentials/"+third.ID, ts.URL, ""); code != 204 {
 		t.Fatalf("admin deleting bob's credential: %d", code)
 	}
-	if len(s.credentials.list(bob.ID)) != 0 {
+	if len(s.Accounts.Credentials(bob.ID)) != 0 {
 		t.Fatal("bob kept a deleted credential")
 	}
 }

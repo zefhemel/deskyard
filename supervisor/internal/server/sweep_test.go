@@ -31,7 +31,7 @@ func createShare(t *testing.T, s *Server, sharer accounts.Account, username stri
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.links.issue(a, sharer.Username); err != nil {
+	if _, err := s.Accounts.IssueLink(a.Username, a.ID, sharer.Username); err != nil {
 		t.Fatal(err)
 	}
 	c, _ := issueCredential(t, s, a)
@@ -45,10 +45,10 @@ func shareGone(t *testing.T, s *Server, share accounts.Account) {
 	if _, ok := s.Accounts.Get(share.Username); ok {
 		t.Fatalf("share %s still exists", share.Username)
 	}
-	if s.links.pending(share.ID) {
+	if linkPending(t, s, share.ID) {
 		t.Fatalf("share %s kept its link", share.Username)
 	}
-	if n := len(s.credentials.list(share.ID)); n != 0 {
+	if n := len(s.Accounts.Credentials(share.ID)); n != 0 {
 		t.Fatalf("share %s kept %d credentials", share.Username, n)
 	}
 }
@@ -127,7 +127,7 @@ func TestShareEndsWhenEnvironmentRemoved(t *testing.T) {
 func TestSweepDropsLinksAndCredentialsOfRecreatedAccounts(t *testing.T) {
 	s, _ := newTestServer(t)
 	old := createBob(t, s)
-	if _, err := s.links.issue(old, "admin"); err != nil {
+	if _, err := s.Accounts.IssueLink(old.Username, old.ID, "admin"); err != nil {
 		t.Fatal(err)
 	}
 	c, _ := issueCredential(t, s, old)
@@ -140,10 +140,10 @@ func TestSweepDropsLinksAndCredentialsOfRecreatedAccounts(t *testing.T) {
 	createBob(t, s)
 	s.Accounts.OnChange = s.accountsChanged
 	s.sweep()
-	if s.links.pending(old.ID) {
+	if linkPending(t, s, old.ID) {
 		t.Fatal("kept the link of a recreated account")
 	}
-	if len(s.credentials.list(c.AccountID)) != 0 {
+	if len(s.Accounts.Credentials(c.AccountID)) != 0 {
 		t.Fatal("kept the credential of a recreated account")
 	}
 }
@@ -163,7 +163,7 @@ func TestSweepClosesCredentialConnectionsTheLevelNoLongerAllows(t *testing.T) {
 	if ctx.Err() == nil {
 		t.Fatal("an exec connection stayed open after a downgrade to observe")
 	}
-	if len(s.credentials.list(bob.ID)) != 1 {
+	if len(s.Accounts.Credentials(bob.ID)) != 1 {
 		t.Fatal("a downgrade deleted the account's credential")
 	}
 }

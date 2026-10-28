@@ -11,10 +11,9 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 )
 
-// sweep makes links, credentials and shares follow the accounts: it deletes
-// the shares whose sharer lost them and the links and credentials whose
-// account is gone (also when one of the same name replaced it), and closes
-// the live connections their accounts no longer allow. It runs on every account change and once at startup, and first
+// sweep makes shares and live connections follow the accounts: it deletes
+// the shares whose sharer lost them, and closes the live connections their
+// accounts no longer allow. (Links and credentials go with their account.) It runs on every account change and once at startup, and first
 // retries saving the revocations the accounts hold unsaved. Failed writes
 // are logged; an orphaned share is refused (and held deleted) all the same.
 func (s *Server) sweep() {
@@ -23,19 +22,9 @@ func (s *Server) sweep() {
 	}
 	now := time.Now()
 	// The deletion notifies accountsChanged, which closes the shares'
-	// browser connections and sweeps again for their links and credentials.
+	// connections.
 	if _, err := s.Accounts.DeleteOrphans(now); err != nil {
 		s.Log.Error("deleting shares whose sharer lost access", "err", err)
-	}
-	current := func(username, id string) bool {
-		a, ok := s.Accounts.Get(username)
-		return ok && a.ID == id
-	}
-	if err := s.links.retain(func(l link) bool { return current(l.Username, l.AccountID) }); err != nil {
-		s.Log.Error("deleting login links of deleted accounts", "err", err)
-	}
-	if err := s.credentials.retain(func(c credential) bool { return current(c.Username, c.AccountID) }); err != nil {
-		s.Log.Error("deleting client credentials of deleted accounts", "err", err)
 	}
 	// Shares orphaned or expired by others' changes, and accounts expired
 	// by time, may have connections of their own.
