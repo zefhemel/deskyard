@@ -122,6 +122,11 @@ uv run pytest -m "not slow"
 uv run pytest                        # also: memory budget, Flatpak app, CLIs
 ```
 
+Desktop image tests for `deskyard.fuse="userns-v1"` need `/dev/fuse` on the Docker
+host. Their user exec helper joins the shared desktop namespace, as the supervisor
+does. `test_flatpak.py` checks document export/read/write, namespace sharing and
+read-only mount protection with and without `no-new-privileges`.
+
 Screenshots and stats land in `images/tests/artifacts/`. `AC_IMAGE=<tag>`
 skips the build and tests that image instead, for example:
 

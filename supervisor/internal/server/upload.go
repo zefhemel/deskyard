@@ -136,7 +136,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 func (s *Server) streamIn(ctx context.Context, c environments.Environment, part string, body io.Reader) (int64, error) {
 	p, err := s.Eng.Exec(ctx, c.Container.ID, engine.ExecSpec{
 		Cmd:  []string{"sh", "-c", `mkdir -p "$1" && cat > "$2"`, "sh", uploadDir, part},
-		User: "user", WorkDir: filesRoot, Env: append([]string{"LC_ALL=C"}, execEnv...), Stdin: true,
+		User: "user", DesktopSession: true, WorkDir: filesRoot, Env: append([]string{"LC_ALL=C"}, execEnv...), Stdin: true,
 	})
 	if err != nil {
 		return 0, err
@@ -210,7 +210,7 @@ func (s *Server) dropPart(c environments.Environment, part string) {
 // execStream runs cmd as the desktop's user and hands its stdout to fn. An exit
 // code above okUpTo is an error, as is fn's.
 func (s *Server) execStream(ctx context.Context, c environments.Environment, okUpTo int, cmd []string, fn func(stdout io.Reader) error) error {
-	result, err := engine.Run(ctx, s.Eng, c.Container.ID, engine.ExecSpec{Cmd: cmd, User: "user", WorkDir: filesRoot, Env: append([]string{"LC_ALL=C"}, execEnv...)}, engine.RunOptions{Consume: fn, StderrLimit: 4096})
+	result, err := engine.Run(ctx, s.Eng, c.Container.ID, engine.ExecSpec{Cmd: cmd, User: "user", DesktopSession: true, WorkDir: filesRoot, Env: append([]string{"LC_ALL=C"}, execEnv...)}, engine.RunOptions{Consume: fn, StderrLimit: 4096})
 	if err != nil {
 		return err
 	}

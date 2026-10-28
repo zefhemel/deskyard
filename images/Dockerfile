@@ -209,6 +209,7 @@ EXPOSE 8080
 ARG VERSION=dev
 LABEL deskyard.contract="3" \
       deskyard.terminal="tmux-v1" \
+      deskyard.fuse="userns-v1" \
       deskyard.kind="desktop" \
       org.opencontainers.image.version="${VERSION}"
 

@@ -633,3 +633,23 @@ def test_native_picker(desktop, name):
         process.terminate()
         process.wait(10)
         os.close(master)
+
+
+def test_trackpad_wheel_scrolls_terminal_tab_history(supervisor, desktop, name):
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base)
+        open_terminal(page, supervisor.base, name)
+        command(page, "printf 'trackpad-row-%03d\\n' {1..300}")
+        eventually(lambda: int(pane(name, 'history_size')) > 200, True)
+        screen = page.locator(f'{ACTIVE} .xterm-screen')
+        bounds = screen.bounding_box()
+        page.mouse.move(bounds['x'] + bounds['width'] / 2, bounds['y'] + bounds['height'] / 2)
+        page.mouse.wheel(0, -320)
+        eventually(lambda: pane(name, 'pane_in_mode'), '1')
+        eventually(lambda: int(pane(name, 'scroll_position') or '0') > 0, True)
+        page.keyboard.press('Escape')
+        eventually(lambda: pane(name, 'pane_in_mode'), '0')
+        # Scrolling history must not recall/execute shell command history.
+        command(page, 'printf scroll-finished > /workspace/trackpad-scroll-proof')
+        eventually(lambda: shell(name, 'cat /workspace/trackpad-scroll-proof 2>/dev/null || true'), 'scroll-finished')
+        browser.close()

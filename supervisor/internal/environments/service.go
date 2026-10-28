@@ -858,6 +858,13 @@ func (s *Service) createContainer(ctx context.Context, name string, revision uin
 		MemoryBytes: set.MemoryBytes, NanoCPUs: set.NanoCPUs, ShmBytes: shmBytes,
 		Flatpak: true, Restart: "unless-stopped", NoNewPrivileges: len(set.Volumes) > 0,
 	}
+	img, err := s.Eng.ImageInspect(ctx, imageID)
+	if err != nil {
+		return fmt.Errorf("inspect desktop FUSE support: %w", err)
+	}
+	if img.Labels["deskyard.fuse"] == "userns-v1" {
+		spec.Devices = append(spec.Devices, "/dev/fuse")
+	}
 	if set.DockerAccess {
 		spec.Mounts = append(spec.Mounts, engine.Mount{Source: dockerSocket, Target: dockerSocket, MustExist: true})
 		spec.Env["DESKYARD_DOCKER_ACCESS"] = "1"

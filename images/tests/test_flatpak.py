@@ -80,3 +80,32 @@ def test_plain_flatpak_commands_default_to_user(sandbox):
     assert "is not in the search path" not in res.stderr + res.stdout
     # Explicit --system is left alone (and fails without root, as expected).
     assert sandbox.exec("flatpak remote-add --system probe2 /etc/workspace/flathub.flatpakrepo", check=False).returncode != 0
+
+
+@pytest.mark.parametrize("no_new_privileges", [False, True])
+def test_document_portal_shared_namespace(make_sandbox, volumes, no_new_privileges):
+    args = ["-v", f"{volumes.home}:/mnt/readonly:ro"]
+    if no_new_privileges:
+        args += ["--security-opt", "no-new-privileges"]
+    sb = make_sandbox(docker_args=args)
+    result = sb.exec("dbus-send --session --print-reply --dest=org.freedesktop.portal.Documents "
+                     "/org/freedesktop/portal/documents org.freedesktop.portal.Documents.GetMountPoint")
+    assert "/run/workspace/doc" in result.stdout
+    sb.exec("mountpoint -q /run/workspace/doc && test -d /run/workspace/doc/by-app")
+    # Remote execs and graphical desktop services must see the very same mount.
+    panel = sb.exec("pgrep -o -x xfce4-panel").stdout.strip()
+    sb.exec(f"test /proc/self/ns/mnt -ef /proc/{panel}/ns/mnt")
+    sb.exec(BWRAP_PROBE)
+    assert "CapEff:\t0000000000000000" in sb.exec("cat /proc/self/status").stdout
+    sb.exec("printf before > /workspace/portal-probe.txt")
+    exported = sb.exec("flatpak document-export --app=org.deskyard.Probe --allow-read --allow-write /workspace/portal-probe.txt").stdout.strip()
+    assert exported.startswith("/run/workspace/doc/")
+    assert sb.exec(f"cat {exported}").stdout == "before"
+    sb.exec(f"printf after > {exported}")
+    assert sb.exec("cat /workspace/portal-probe.txt").stdout == "after"
+    assert sb.exec("touch /mnt/readonly/must-not-exist", check=False).returncode != 0
+    assert sb.exec("unshare --user --map-current-user --mount --keep-caps mount -o remount,rw /mnt/readonly", check=False).returncode != 0
+    # Namespace capabilities must not confer authority over the container's parent.
+    assert sb.exec("nsenter -t 1 -U true", check=False).returncode != 0
+    if no_new_privileges:
+        assert "NoNewPrivs:\t1" in sb.exec("cat /proc/self/status").stdout

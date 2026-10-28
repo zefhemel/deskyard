@@ -55,6 +55,8 @@ export interface Transport {
   addEventListener(type: string, listener: (event: MessageEvent) => void): void;
 }
 export interface ClientInput {
+  /** The input surface, supplied by the pinned v1 client. */
+  element?: HTMLElement;
   setTrackpadMode(trackpad: boolean): void;
 }
 export type Gesture =

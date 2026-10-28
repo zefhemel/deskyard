@@ -37,3 +37,12 @@ def test_root_owned_home_is_fixed(make_sandbox, volumes):
     docker("run", "--rm", "-v", f"{volumes.home}:/w", "alpine", "sh", "-c", "chown 0:0 /w")
     sb = make_sandbox()
     sb.exec("touch /workspace/mine")
+
+
+def test_user_services_stop_session_before_display(sandbox):
+    sandbox.stop()
+    logs = sandbox.logs()
+    session = logs.rfind("stopped: session")
+    display = logs.rfind("stopped: xvfb")
+    services = logs.rfind("stopped: desktop-services")
+    assert 0 <= session < display < services, logs[-6000:]

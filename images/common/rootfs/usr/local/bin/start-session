@@ -7,6 +7,12 @@ for _ in $(seq 100); do
 done
 [ -e "$XDG_RUNTIME_DIR/xvfb-ready" ] || exit 1
 
+for _ in $(seq 100); do
+    /usr/bin/mountpoint -q "$XDG_RUNTIME_DIR/doc" && break
+    sleep 0.1
+done
+/usr/bin/mountpoint -q "$XDG_RUNTIME_DIR/doc" || exit 1
+
 rm -f "$XDG_RUNTIME_DIR/stopping"
 /usr/local/bin/deskyard-terminal-configure
 session_configure

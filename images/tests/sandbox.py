@@ -4,6 +4,7 @@ supervisor runs them: Flatpak security options, a proxy token, only 8080."""
 from __future__ import annotations
 
 import shlex
+import json
 import os
 import subprocess
 import time
@@ -29,10 +30,13 @@ def docker(*args: str, check: bool = True, input: str | None = None) -> subproce
 class Sandbox:
     def __init__(self, name: str):
         self.name = name
+        self.userns = json.loads(docker("inspect", name).stdout)[0]["Config"]["Labels"].get("deskyard.fuse") == "userns-v1"
 
     def exec(self, cmd: str, user: str = "user", login: bool = True, check: bool = True,
-             timeout: float = 300) -> subprocess.CompletedProcess:
+             timeout: float = 300, join_session: bool = True) -> subprocess.CompletedProcess:
         argv = ["docker", "exec", "-u", user, self.name]
+        if self.userns and user == "user" and join_session:
+            argv += ["/usr/local/bin/workspace-exec"]
         argv += ["bash", "-lc", cmd] if login else shlex.split(cmd)
         res = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
         if check and res.returncode != 0:
@@ -40,7 +44,8 @@ class Sandbox:
         return res
 
     def exec_bytes(self, cmd: str, user: str = "user") -> bytes:
-        res = subprocess.run(["docker", "exec", "-u", user, self.name, "bash", "-lc", cmd],
+        prefix = ["/usr/local/bin/workspace-exec"] if self.userns and user == "user" else []
+        res = subprocess.run(["docker", "exec", "-u", user, self.name, *prefix, "bash", "-lc", cmd],
                              capture_output=True, check=True)
         return res.stdout
 
@@ -115,6 +120,8 @@ def run_args(image: str, *, home: str, env: dict[str, str] | None = None,
             "-v", f"{home}:/workspace", "-p", "127.0.0.1::8080",
             "--security-opt", f"seccomp={SECCOMP}", "--security-opt", "apparmor=unconfined",
             "--security-opt", "systempaths=unconfined"]
+    if json.loads(docker("image", "inspect", image).stdout)[0]["Config"]["Labels"].get("deskyard.fuse") == "userns-v1":
+        argv += ["--device", "/dev/fuse"]
     for k, v in (DEFAULT_ENV if env is None else env).items():
         argv += ["-e", f"{k}={v}"]
     return name, argv + [image]

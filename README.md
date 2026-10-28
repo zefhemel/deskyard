@@ -17,8 +17,8 @@ it opens the same desktop, at the same time if they like.
   [Selkies](https://github.com/selkies-project/selkies): picture, sound, your
   mic, gamepads, clipboard, file upload, and touch controls on
   phones and tablets.
-- **Shared terminals** next to the desktop, joinable from the browser, the
-  desktop itself or your own terminal.
+- **Shared terminals** next to the desktop, with trackpad scrolling through
+  history, joinable from the browser, desktop or your own terminal.
 - **One shared Chromium** whose tabs and sign-ins stay with the environment.
   It starts when you open it or connect through browser tools.
 - **Sharing by link**: full access or observe-only, optionally for a limited
@@ -42,8 +42,9 @@ machine.
 
 ## Run it
 
-You need Docker (or OrbStack, or Docker Desktop) on Linux or macOS. The
-supervisor runs only in a container (`ghcr.io/zefhemel/deskyard`, amd64 and
+You need Docker (or OrbStack, or Docker Desktop) on Linux or macOS. The Docker
+host needs `/dev/fuse` for desktop Flatpak file dialogs; see
+[Images](guide/images.md#flatpak). The supervisor runs only in a container (`ghcr.io/zefhemel/deskyard`, amd64 and
 arm64) and needs two things mounted: the Docker socket, and a folder of your
 choice **at `/data`**, where it keeps everything. It finds that folder's path
 on the host itself. Nothing else is needed: no `user:` or `group_add`, and no

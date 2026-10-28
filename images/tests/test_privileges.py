@@ -16,7 +16,8 @@ def test_caddy_not_root(sandbox):
 
 def test_desktop_does_not_start_extra_root_services(sandbox):
     time.sleep(3)
-    commands = set(sandbox.exec("ps -u root -o comm=").stdout.split())
+    # Inspect from the outer namespace, where container root is mapped.
+    commands = set(sandbox.exec("ps -u root -o comm=", join_session=False).stdout.split())
     assert commands <= {"supervisord", "dbus-daemon"}, commands
 
 

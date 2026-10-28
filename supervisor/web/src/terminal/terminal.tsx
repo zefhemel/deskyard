@@ -125,6 +125,7 @@ export function TerminalPane({ name, session, active, create, slots, alive, onSt
       fontFamily: '"IBM Plex Mono", monospace',
       fontSize: loadFontSize(),
       cursorBlink: true,
+      macOptionClickForcesSelection: true,
       theme: {
         background: "#101822",
         foreground: "#e6ebf1",

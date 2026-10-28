@@ -14,6 +14,7 @@ import {
   type Gesture,
   type Transport,
 } from "./contract.ts";
+import { installWheelScrolling } from "./wheel.ts";
 import { playbackWorklets } from "./worklet.ts";
 
 declare global {
@@ -41,6 +42,8 @@ try {
 } catch {
   /* Private browsing can disable storage. */
 }
+
+let removeWheelScrolling: (() => void) | undefined;
 
 const listeners = new Map<string, Set<(data: unknown) => void>>();
 function emit(type: string, data: unknown) {
@@ -273,6 +276,8 @@ window.__deskyardHooks = {
     return stream;
   },
   input(value) {
+    removeWheelScrolling?.();
+    removeWheelScrolling = value?.element ? installWheelScrolling(value.element) : undefined;
     input = value;
     if (value && requestedTouchMode !== null)
       value.setTrackpadMode(requestedTouchMode);

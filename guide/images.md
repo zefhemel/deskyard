@@ -34,9 +34,11 @@ LibreOffice is optional and is not bundled in the base images. Admins can
 also preinstall apps in a separately built Dockerfile image.
 
 LibreOffice installation, launch and saving into the workspace have been
-verified. Apps requiring document-portal file grants have a current limitation:
-the container configuration does not expose the FUSE device needed by the
-document portal.
+verified. Updated desktop images also support Flatpak document-portal file
+and folder selection, including VS Code's native **Open Folder** dialog.
+This requires both an updated supervisor and desktop image; recreate existing
+environments through an image upgrade. An older deployment can use VS Code's
+**Files: Simple Dialog** setting (`files.simpleDialog.enable`) as a workaround.
 
 In local ARM64 samples, idle memory without a viewer was about 213 MiB for
 XFCE. The project space's *Testing/Desktop variants 2026-10-23* page has the
@@ -111,6 +113,22 @@ failures while retaining Debian's security patches. Existing environments receiv
 it through an image upgrade. The rebuilt packages' corresponding source is
 included at `/usr/share/doc/flatpak/deskyard-source/`.
 
+Images advertising `deskyard.fuse="userns-v1"` receive the Docker host's
+`/dev/fuse` device. On a Linux host it must exist before starting the desktop
+(load the host's `fuse` module if necessary). A missing device fails container
+creation explicitly. For Docker Desktop or OrbStack, this means the Linux VM's
+device; support depends on that VM providing FUSE and user namespaces. Runtime
+verification of this implementation currently covers a Linux amd64 engine.
+
+Desktop-user services share a user and mount namespace. Their user supervisor
+passes its namespace-scoped mount capability only to the document portal;
+ordinary apps and commands have
+no effective capabilities. No Docker `SYS_ADMIN` grant or privileged container is
+needed. Read-only shared volumes remain read-only, including with
+`no-new-privileges`. Remote commands and shared terminals join the same namespace.
+For manual `docker exec` commands that need portal mounts, run as `user` through
+`/usr/local/bin/workspace-exec COMMAND ...`.
+
 Flatpak apps run inside bubblewrap, which needs namespaces that Docker's
 defaults block. Every environment therefore runs with Docker's default seccomp
 profile plus the namespace and mount syscalls, `apparmor=unconfined` and
@@ -130,8 +148,8 @@ tested yet. If bubblewrap fails there, try
 
 ## AppImages
 
-AppImages normally mount themselves with FUSE, which an unprivileged desktop
-does not have. Desktop images set `APPIMAGE_EXTRACT_AND_RUN=1`, so an AppImage
+AppImages normally mount themselves with FUSE. Desktop images continue to set
+`APPIMAGE_EXTRACT_AND_RUN=1`, so an AppImage
 unpacks itself to `/tmp` and runs from there instead. Each launch unpacks it
 again, so large AppImages start more slowly; Flatpak is the better choice when
 the app is available there.

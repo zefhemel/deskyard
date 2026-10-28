@@ -36,7 +36,7 @@ func (s *Server) terminalProcess(parent context.Context, containerID, session st
 	if join {
 		argv = append(argv, "join")
 	}
-	lease, err := s.Eng.Exec(ctx, containerID, engine.ExecSpec{Cmd: argv, User: "user", WorkDir: "/workspace", Env: env, Stdin: true})
+	lease, err := s.Eng.Exec(ctx, containerID, engine.ExecSpec{Cmd: argv, User: "user", DesktopSession: true, WorkDir: "/workspace", Env: env, Stdin: true})
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +59,7 @@ func (s *Server) terminalProcess(parent context.Context, containerID, session st
 	if err != nil || line != "prepared\n" {
 		return nil, fmt.Errorf("shared terminal lease did not prepare")
 	}
-	attach, err := s.Eng.Exec(ctx, containerID, engine.ExecSpec{Cmd: []string{"deskyard", "terminal-attach", id}, User: "user", WorkDir: "/workspace", Env: env, Tty: true, Stdin: true, Cols: cols, Rows: rows})
+	attach, err := s.Eng.Exec(ctx, containerID, engine.ExecSpec{Cmd: []string{"deskyard", "terminal-attach", id}, User: "user", DesktopSession: true, WorkDir: "/workspace", Env: env, Tty: true, Stdin: true, Cols: cols, Rows: rows})
 	if err != nil {
 		return nil, err
 	}
