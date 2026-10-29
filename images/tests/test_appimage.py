@@ -43,8 +43,8 @@ def wait_for(sandbox, cmd, timeout=30):
 
 # The fixture AppImage is built with Debian packages and the upstream runtime.
 @pytest.mark.network
-def test_appimage_runs_without_fuse(sandbox, probe_appimage):
-    assert sandbox.exec("test -e /dev/fuse", check=False).returncode != 0
+def test_appimage_extract_and_run(sandbox, probe_appimage):
+    assert sandbox.exec("printf %s \"$APPIMAGE_EXTRACT_AND_RUN\"").stdout == "1"
     put(sandbox, probe_appimage, "/tmp/probe.AppImage")
     sandbox.exec("/tmp/probe.AppImage hello")
     assert sandbox.exec("cat ~/appimage-probe.out").stdout.strip() == "hello"

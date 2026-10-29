@@ -196,11 +196,15 @@ def test_plain_http_sound_and_quality(supervisor, desktop, name):
 
         # Quality: the presets are a JPEG quality and frame rate here.
         open_display_menu(page).get_by_role("menuitemcheckbox", name=re.compile("^Quality: Low")).click()
+        expect(open_display_menu(page).get_by_role("menuitemcheckbox", name=re.compile("^Quality: Low"))).to_have_attribute("aria-checked", "true")
+        page.keyboard.press("Escape")
         beside = sign_in(browser, base)
         open_desktop(beside, base, name)
         beside.wait_for_function(f"{SCREEN}.display().settings?.framerate === 15", timeout=15000)
         s = beside.evaluate(f"{SCREEN}.display().settings")
         assert (s["encoder"], s["jpeg_quality"], s["framerate"]) == ("jpeg", 30, 15), s
-        expect(open_display_menu(beside).get_by_role("menuitemcheckbox", name=re.compile("^Quality: Low"))).to_have_attribute("aria-checked", "true")
+        # Auto is this new browser context's preference, not a server preset.
+        # It follows the owner's shared Low stream without driving adaptation.
+        expect(open_display_menu(beside).get_by_role("menuitemcheckbox", name=re.compile("^Quality: Auto"))).to_have_attribute("aria-checked", "true")
         browser.close()
     in_desktop(name, "pkill", "paplay", check=False)

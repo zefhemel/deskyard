@@ -1,16 +1,5 @@
 # syntax=docker/dockerfile:1
 
-# The `deskyard` command (supervisor/cmd/deskyard), built for the target
-# platform on the build machine's.
-FROM --platform=$BUILDPLATFORM golang:1.27-trixie AS desktop
-WORKDIR /src
-COPY supervisor/go.mod supervisor/go.sum ./
-RUN go mod download
-COPY supervisor/ ./
-ARG TARGETOS TARGETARCH VERSION=dev
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /desktop ./cmd/deskyard
-
 # Gamepads for apps: Selkies' Input Interposer (an LD_PRELOAD library that
 # serves /dev/input/js0-3 and event1000-1003 from Selkies' sockets) and
 # fake-udev (lists those pads to libudev users such as SDL). Neither is in the
@@ -197,7 +186,10 @@ ENV HOME=/workspace \
     XDG_DATA_DIRS=/workspace/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/usr/local/share:/usr/share \
     PATH=/workspace/.local/bin:/workspace/.npm-global/bin:/workspace/.local/share/mise/shims:/opt/deskyard/bin:/opt/runtimes/node/bin:/opt/runtimes/python/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-COPY --from=desktop /desktop /usr/local/bin/deskyard
+# The supervisor supplies the platform-correct CLI through a read-only
+# directory mount. The symlink observes atomic updates without recreation.
+RUN mkdir -p /opt/deskyard/cli \
+    && ln -s /opt/deskyard/cli/deskyard /usr/local/bin/deskyard
 COPY --from=gamepads /out/ /
 
 VOLUME ["/workspace"]
@@ -208,7 +200,9 @@ EXPOSE 8080
 # The image contract the supervisor checks before using an image.
 ARG VERSION=dev
 LABEL deskyard.contract="3" \
+      deskyard.cli="runtime-v1" \
       deskyard.terminal="tmux-v1" \
+      deskyard.fuse="userns-v1" \
       deskyard.kind="desktop" \
       org.opencontainers.image.version="${VERSION}"
 

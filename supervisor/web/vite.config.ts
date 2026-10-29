@@ -10,6 +10,7 @@ import { mockApi } from "./src/dev/mock.ts";
 const target = process.env.DESKYARD_API;
 const proxied: ProxyOptions = {
   target,
+  changeOrigin: true,
   ws: true,
   configure: (proxy) => {
     proxy.on("proxyReq", (req) => {

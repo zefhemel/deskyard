@@ -307,7 +307,7 @@ func (s *Server) remoteForward(w http.ResponseWriter, r *http.Request, c compute
 		s.publishViewers(c.Name, c.ID)
 	}()
 	p, err := s.Eng.Exec(ctx, c.Container.ID, engine.ExecSpec{
-		Cmd: []string{"deskyard", "forward-helper"}, User: "user", WorkDir: "/workspace",
+		Cmd: []string{"deskyard", "forward-helper"}, User: "user", DesktopSession: true, WorkDir: "/workspace",
 		Env: execEnvFor(nil), Stdin: true,
 	})
 	if err != nil {

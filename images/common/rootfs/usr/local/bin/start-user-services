@@ -1,0 +1,8 @@
+#!/bin/bash
+set -euo pipefail
+# Give the user supervisor a user-owned logging pipe: reopening the root
+# supervisor's pipe through /dev/stdout is otherwise denied.
+exec > >(/usr/bin/setpriv --inh-caps=-all --ambient-caps=-all /bin/cat) 2>&1
+# PID stays stable through exec; remote commands join these same namespaces.
+printf '%s\n' "$$" > "$XDG_RUNTIME_DIR/session-namespace.pid"
+exec /usr/bin/setpriv --inh-caps=-all,+sys_admin --ambient-caps=-all,+sys_admin /usr/bin/supervisord -n -c /etc/workspace/user-services.conf

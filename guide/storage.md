@@ -169,7 +169,7 @@ plain view; there is no hidden folder:
                       backup recovery keys (backups/<repository>/)
   state/              this supervisor's instance ID, the ownership marker (owner), replacement records (recovery/<name>.json),
                       VPN network transitions (network/transitions.json), VPN runtime scratch (vpn/),
-                      backup run state (backups.json)
+                      backup run state (backups.json), runtime CLI builds (cli/linux-<arch>/deskyard)
   cache/              Selkies web clients extracted from images, restic's cache and binary; safe to delete
   home/<name>/        each computer's /workspace, owned by UID 1000
   volume/<name>/      each local volume's files
@@ -185,8 +185,15 @@ whole data folder; `cache/` can be left out. Deskyard's own backups cover
 computers and volumes, not this folder's settings and secrets: keep the
 recovery keys somewhere else.
 
+`state/cli/` holds the supervisor's platform-specific CLI builds. Desktop
+containers mount only their architecture's subdirectory read-only. Keep those
+directories in place while desktops run; normal updates replace the executable
+atomically. Deleting a mounted directory requires restarting the supervisor to
+republish it and recreating affected desktops to acquire the new directory.
+Deleting `cache/` does not affect the CLI.
+
 `computers.json` is the only place a computer's settings live (an older
-`computers.json` is renamed to it at start). The
+`environments.json` is renamed to it at start). The
 supervisor reads it strictly: an unknown field, a duplicate name or an invalid
 entry stops it from starting rather than being ignored. Containers and networks
 carry only matching labels: `deskyard.managed`, `deskyard.name`,

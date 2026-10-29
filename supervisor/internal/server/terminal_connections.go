@@ -194,3 +194,14 @@ func (s *Server) terminalAllowed(c *terminalConnection) bool {
 	return ok && a.SessionEpoch == c.claims.Epoch &&
 		auth.Can(a, auth.View, c.computer) && time.Now().Before(c.claims.Expires)
 }
+
+// rename keeps end-session bookkeeping tied to the renamed public session.
+func (t *terminalConnections) rename(computer, old, next string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for c := range t.active {
+		if c.computer == computer && c.session == old {
+			c.session = next
+		}
+	}
+}

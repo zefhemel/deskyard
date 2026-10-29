@@ -617,6 +617,8 @@ export const api = {
   /** Starts the next free terminal-N, detached; the tab then opens it. */
   createTerminal: (name: string) => request<{ name: string }>("POST", `${c(name)}/terminal/sessions`),
   /** Ends a session for everyone attached to it. */
+  renameTerminal: (name: string, session: string, next: string) => request<{ name: string }>("PATCH", `${c(name)}/terminal/sessions/${enc(session)}`, { name: next }),
+
   endTerminal: (name: string, session: string) => request<void>("DELETE", `${c(name)}/terminal/sessions/${enc(session)}`),
   createComputer: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: AccessGrant[]; dockerAccess: boolean; volumes?: VolumeGrant[] } & ComputerVPNSettings) =>
     request<JobRef>("POST", "/api/computers", body),
@@ -719,11 +721,11 @@ export const api = {
   cancelJob: (id: string) => request<void>("POST", `/api/jobs/${enc(id)}/cancel`),
 };
 
-/** Uploads one file into the computer's ~/Desktop, reporting progress as 0..1. */
-export function uploadFile(computer: string, file: File, onProgress: (fraction: number) => void): Promise<Uploaded> {
+/** Uploads one file to the destination (default ~/Desktop), reporting progress as 0..1. */
+export function uploadFile(computer: string, file: File, onProgress: (fraction: number) => void, destination?: string): Promise<Uploaded> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${c(computer)}/upload?name=${enc(file.name)}`);
+    xhr.open("POST", `${c(computer)}/upload?name=${enc(file.name)}${destination ? `&path=${enc(destination)}` : ""}`);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total);
     };

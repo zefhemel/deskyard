@@ -34,9 +34,11 @@ LibreOffice is optional and is not bundled in the base images. Admins can
 also preinstall apps in a separately built Dockerfile image.
 
 LibreOffice installation, launch and saving into the workspace have been
-verified. Apps requiring document-portal file grants have a current limitation:
-the container configuration does not expose the FUSE device needed by the
-document portal.
+verified. Updated desktop images also support Flatpak document-portal file
+and folder selection, including VS Code's native **Open Folder** dialog.
+This requires both an updated supervisor and desktop image; recreate existing
+computers through an image upgrade. An older deployment can use VS Code's
+**Files: Simple Dialog** setting (`files.simpleDialog.enable`) as a workaround.
 
 In local ARM64 samples, idle memory without a viewer was about 213 MiB for
 XFCE. The project space's *Testing/Desktop variants 2026-10-23* page has the
@@ -44,9 +46,17 @@ conditions, viewer/browser measurements and screenshots. New registry tags
 become available after the image workflow publishes from `main`; local Bake
 builds use `deskyard-debian-xfce:dev`.
 
-CI rebuilds it weekly (Debian security updates) and on every change, tagged `latest` and with the date
-(`2026.10.22`). The supervisor checks downloaded images for newer versions daily (or on "Check
-now"); available images stay undownloaded. The catalog shows **Available**,
+CI rebuilds it weekly (Debian security updates) and when desktop image inputs change, tagged `latest` and with the date
+(`2026.10.22`). The supervisor pulls updates for downloaded registry images daily, or when you
+choose **Pull updates**. Images not yet downloaded stay undownloaded, and
+legacy locally built catalog entries are skipped. The Images page shows a
+progress bar with the current image and its position in the pull list, Docker
+status (such as downloading or extracting), transferred MB and a percentage
+when totals are available. The bar animates while totals are unknown and
+shows catalog refresh and cleanup stages too. Percentages describe the current
+image transfer reported by Docker, not the whole batch; they can change as
+Docker discovers layers or switches stages. Pulling updates refreshes the
+local images; use **Upgrade** separately to apply them to computers. The catalog shows **Available**,
 **Installed** or **Update available** when computers are behind.
 After each check and each upgrade, the supervisor deletes old versions of
 desktop images that nothing uses any more: images it saw a newer pull or
@@ -76,6 +86,14 @@ keep working across Debian versions; if one breaks, reinstall it.
 Any image can be added to the catalog if it follows the image contract
 (label `deskyard.contract=3`, user `user` with home `/workspace`,
 Selkies behind Caddy on 8080); see [Custom images](#custom-images).
+
+Current desktop images receive `deskyard` from the supervisor through a read-only
+runtime mount (`deskyard.cli=runtime-v1`), selected by the image's architecture.
+CLI changes therefore require updating or restarting the supervisor, without a
+desktop image rebuild. Older images keep their baked-in CLI until a one-time
+image **Upgrade** recreates their container with the runtime mount. Runtime-capable
+images require an updated supervisor. When running one directly with Docker,
+supply the CLI directory yourself; see [Development](development.md).
 
 Images this project builds carry the label `deskyard.kind`: `desktop` for
 the desktop image and `supervisor` for the supervisor. List them with
@@ -111,6 +129,22 @@ failures while retaining Debian's security patches. Existing computers receive
 it through an image upgrade. The rebuilt packages' corresponding source is
 included at `/usr/share/doc/flatpak/deskyard-source/`.
 
+Images advertising `deskyard.fuse="userns-v1"` receive the Docker host's
+`/dev/fuse` device. On a Linux host it must exist before starting the desktop
+(load the host's `fuse` module if necessary). A missing device fails container
+creation explicitly. For Docker Desktop or OrbStack, this means the Linux VM's
+device; support depends on that VM providing FUSE and user namespaces. Runtime
+verification of this implementation currently covers a Linux amd64 engine.
+
+Desktop-user services share a user and mount namespace. Their user supervisor
+passes its namespace-scoped mount capability only to the document portal;
+ordinary apps and commands have
+no effective capabilities. No Docker `SYS_ADMIN` grant or privileged container is
+needed. Read-only shared volumes remain read-only, including with
+`no-new-privileges`. Remote commands and shared terminals join the same namespace.
+For manual `docker exec` commands that need portal mounts, run as `user` through
+`/usr/local/bin/workspace-exec COMMAND ...`.
+
 Flatpak apps run inside bubblewrap, which needs namespaces that Docker's
 defaults block. Every computer therefore runs with Docker's default seccomp
 profile plus the namespace and mount syscalls, `apparmor=unconfined` and
@@ -130,8 +164,8 @@ tested yet. If bubblewrap fails there, try
 
 ## AppImages
 
-AppImages normally mount themselves with FUSE, which an unprivileged desktop
-does not have. Desktop images set `APPIMAGE_EXTRACT_AND_RUN=1`, so an AppImage
+AppImages normally mount themselves with FUSE. Desktop images continue to set
+`APPIMAGE_EXTRACT_AND_RUN=1`, so an AppImage
 unpacks itself to `/tmp` and runs from there instead. Each launch unpacks it
 again, so large AppImages start more slowly; Flatpak is the better choice when
 the app is available there.

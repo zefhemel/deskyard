@@ -8,12 +8,15 @@ import type {
 } from "../desktop/selkies.ts";
 import {
   captureGate,
+  displayMessage,
+  type DisplayRequest,
   shouldSend,
   type ClientHooks,
   type ClientInput,
   type Gesture,
   type Transport,
 } from "./contract.ts";
+import { installWheelScrolling } from "./wheel.ts";
 import { playbackWorklets } from "./worklet.ts";
 
 declare global {
@@ -31,7 +34,7 @@ const tab = Array.from(crypto.getRandomValues(new Uint8Array(12)), (byte) =>
 try {
   sessionStorage.removeItem("selkies_tab_id");
   const saved =
-    /_(encoder|framerate|video_crf|video_fullcolor|video_10bit|video_streaming_mode|jpeg_quality|paint_over_jpeg_quality|use_paint_over_quality|video_paintover_crf|video_paintover_burst_frames|video_bitrate|rate_control_mode|use_cpu|cpu_encode_threading|manual_resolution|manual_width|manual_height|scaleLocallyManual)(_pick)?$/;
+    /_(encoder|framerate|video_crf|video_fullcolor|video_10bit|video_streaming_mode|jpeg_quality|paint_over_jpeg_quality|use_paint_over_quality|video_paintover_crf|video_paintover_burst_frames|video_bitrate|rate_control_mode|use_cpu|cpu_encode_threading|scaling_dpi|manual_resolution|manual_width|manual_height|scaleLocallyManual)(_pick)?$/;
   for (const key of Object.keys(localStorage))
     if (/^https?___.*_screen__/.test(key) && saved.test(key))
       localStorage.removeItem(key);
@@ -41,6 +44,8 @@ try {
 } catch {
   /* Private browsing can disable storage. */
 }
+
+let removeWheelScrolling: (() => void) | undefined;
 
 const listeners = new Map<string, Set<(data: unknown) => void>>();
 function emit(type: string, data: unknown) {
@@ -90,6 +95,7 @@ const post = (message: object) => window.postMessage(message, location.origin);
 const gate = captureGate();
 let transport: Transport | null = null;
 let input: ClientInput | null = null;
+let requestedDisplay: DisplayRequest | null = null;
 let requestedTouchMode: boolean | null = null;
 let zoom = 1;
 let playback: AudioContext | null = null;
@@ -222,11 +228,14 @@ window.__deskyardHooks = {
     return url.href;
   },
   send(socket, data) {
-    if (shouldSend(data)) socket.send(data);
+    if (!shouldSend(data)) return;
+    const next = displayMessage(data, display.owner, requestedDisplay);
+    if (next !== null) socket.send(next);
   },
   transport(value) {
     clearTimeout(recovery);
     transport = value;
+    requestedDisplay = null;
     gate.reset();
     if (!value) {
       setState("disconnected");
@@ -273,6 +282,8 @@ window.__deskyardHooks = {
     return stream;
   },
   input(value) {
+    removeWheelScrolling?.();
+    removeWheelScrolling = value?.element ? installWheelScrolling(value.element) : undefined;
     input = value;
     if (value && requestedTouchMode !== null)
       value.setTrackpadMode(requestedTouchMode);
@@ -422,6 +433,11 @@ window.deskyardScreen = {
   state: () => state,
   display: () => display,
   media: () => media,
+  configureDisplay(size, dpi) {
+    if (!display.owner) return;
+    requestedDisplay = { ...size, dpi };
+    post({ type: "settings", settings: { scaling_dpi: dpi, manual_resolution: true, manual_width: size.width, manual_height: size.height } });
+  },
   setTouchMode(value) {
     requestedTouchMode = value;
     input?.setTrackpadMode(value);

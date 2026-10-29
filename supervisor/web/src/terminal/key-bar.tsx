@@ -63,7 +63,6 @@ export function KeyBar({
         >
           Keyboard
         </button>
-        <span class="terminal-keyhint">History: PgUp/PgDn · Esc to return</span>
       </div>
       <div class="terminal-shortcuts">
         {terminalKeys.map(([key, text, label]) => (

@@ -19,6 +19,7 @@ import {
 } from "./keys.ts";
 import { KeyBar, terminalKeys } from "./key-bar.tsx";
 import { terminalLayout } from "./viewport.ts";
+import { installTouchScroll } from "./touch-scroll.ts";
 
 // Text size, remembered per browser and shared by every open terminal tab.
 const FONT_KEY = "deskyard.terminal.fontSize";
@@ -76,8 +77,25 @@ export function TerminalPane({ name, session, active, create, slots, alive, onSt
   const [state, setState] = useState("connecting");
   const [message, setMessage] = useState("");
   const [warning, setWarning] = useState("");
+  const [desktopInput, setDesktopInput] = useState(() => matchMedia("(hover: hover) and (pointer: fine)").matches);
+  const [keyBarOverride, setKeyBarOverride] = useState<boolean | null>(null);
+  const showKeyBar = keyBarOverride ?? !desktopInput;
   const [fontSize, setFontSize] = useState(loadFontSize);
   const measureRef = useRef<() => void>(() => {});
+
+  // Pointer/hover capability is a desktop-input heuristic, not a keyboard API.
+  useEffect(() => {
+    const media = matchMedia("(hover: hover) and (pointer: fine)");
+    const change = () => setDesktopInput(media.matches);
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, []);
+  useEffect(() => {
+    if (!showKeyBar) {
+      modifiers.current.reset();
+      setPressed(modifiers.current.value);
+    }
+  }, [showKeyBar]);
 
   // The layout tier follows the visible page's height, bar included: below the
   // compact budget ("ultra") the bar moves beside the key row and below the
@@ -90,9 +108,9 @@ export function TerminalPane({ name, session, active, create, slots, alive, onSt
     const size = () => {
       if (element.hidden) return;
       const safeArea = insets.current && getComputedStyle(insets.current);
-      const layout = terminalLayout(page?.clientHeight ?? element.clientHeight + 46,
+      const layout = showKeyBar ? terminalLayout(page?.clientHeight ?? element.clientHeight + 46,
         parseFloat(safeArea?.paddingTop ?? "0"),
-        parseFloat(safeArea?.paddingBottom ?? "0"));
+        parseFloat(safeArea?.paddingBottom ?? "0")) : "full";
       element.dataset.compact = String(layout !== "full");
       element.dataset.layout = layout;
     };
@@ -101,7 +119,7 @@ export function TerminalPane({ name, session, active, create, slots, alive, onSt
     observer.observe(element);
     if (page) observer.observe(page);
     return () => observer.disconnect();
-  }, []);
+  }, [showKeyBar]);
 
   useEffect(() => {
     const change = (e: Event) => setFontSize((e as CustomEvent<number>).detail);
@@ -125,6 +143,7 @@ export function TerminalPane({ name, session, active, create, slots, alive, onSt
       fontFamily: '"IBM Plex Mono", monospace',
       fontSize: loadFontSize(),
       cursorBlink: true,
+      macOptionClickForcesSelection: true,
       theme: {
         background: "#101822",
         foreground: "#e6ebf1",
@@ -138,6 +157,7 @@ export function TerminalPane({ name, session, active, create, slots, alive, onSt
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host.current);
+    const disposeTouchScroll = installTouchScroll(term.element!);
     terminal.current = term;
     term.textarea?.setAttribute("aria-label", "Terminal input");
     // Consume OSC 52 before any clipboard integration. No link addon or title handler.
@@ -266,6 +286,7 @@ export function TerminalPane({ name, session, active, create, slots, alive, onSt
       data.dispose();
       binary.dispose();
       clipboard.dispose();
+      disposeTouchScroll();
       term.dispose();
       terminal.current = null;
       connection.current = null;
@@ -300,11 +321,17 @@ export function TerminalPane({ name, session, active, create, slots, alive, onSt
     }
     refocus();
   };
-  const keyItems: MenuItem[] = terminalKeys.map(([key, , label]) => ({
+  const keyBarItem: MenuItem = {
+    label: "Show keyboard bar",
+    checked: showKeyBar,
+    onSelect: () => setKeyBarOverride(!showKeyBar),
+  };
+  const keyItems: MenuItem[] = [keyBarItem, ...terminalKeys.map(([key, , label]) => ({
     label,
     disabled: state !== "connected",
     onSelect: () => sendKey(key, label.startsWith("Ctrl+")),
-  }));
+    separated: key === "c",
+  }))];
   const sizeItems: MenuItem[] = fontSizes.map((size) => ({
     label: `Text size: ${size}px`,
     checked: size === fontSize,
@@ -312,12 +339,12 @@ export function TerminalPane({ name, session, active, create, slots, alive, onSt
   }));
   // On phones Text size is in ⋯; the on-screen key bar has the keys.
   useTabHooks(slots, active, {
-    menu: () => sizeItems.map((k, i) => ({ ...k, separated: i === 0, class: "sm:hidden" })),
+    menu: () => [{ ...keyBarItem, separated: true, class: "sm:hidden" }, ...sizeItems.map((k, i) => ({ ...k, separated: i === 0, class: "sm:hidden" }))],
     refocus,
   });
 
   return (
-    <div ref={pane} role="tabpanel" id={panelId(session)} aria-labelledby={tabId(session)} data-terminal-pane={session} class="terminal-pane" hidden={!active}>
+    <div ref={pane} role="tabpanel" id={panelId(session)} aria-labelledby={tabId(session)} data-terminal-pane={session} data-keybar={String(showKeyBar)} class="terminal-pane" hidden={!active}>
       {active && slots.dot && createPortal(<ConnDot state={connOf(state)} />, slots.dot)}
       {active && slots.controls && createPortal(
         <>
@@ -379,7 +406,7 @@ export function TerminalPane({ name, session, active, create, slots, alive, onSt
       <div class="terminal-scroll">
         <div ref={host} class="terminal-host" />
       </div>
-      <KeyBar
+      {showKeyBar && <KeyBar
         modifiers={pressed}
         disabled={state !== "connected"}
         onModifier={(key) => {
@@ -388,7 +415,7 @@ export function TerminalPane({ name, session, active, create, slots, alive, onSt
         }}
         onFocus={() => terminal.current?.focus()}
         onKey={sendKey}
-      />
+      />}
     </div>
   );
 }

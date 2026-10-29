@@ -49,6 +49,7 @@ func (s *Server) routes() {
 	h("GET /api/computers/{name}/terminal", s.handleTerminal)
 	h("GET /api/computers/{name}/terminal/sessions", s.handleTerminalSessions)
 	h("POST /api/computers/{name}/terminal/sessions", s.handleCreateTerminalSession)
+	h("PATCH /api/computers/{name}/terminal/sessions/{session}", s.handleRenameTerminalSession)
 	h("DELETE /api/computers/{name}/terminal/sessions/{session}", s.handleEndTerminalSession)
 	h("GET /api/computers/{name}", s.handleGetComputer)
 	h("PATCH /api/computers/{name}", s.handleUpdateComputer)

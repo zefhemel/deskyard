@@ -12,7 +12,8 @@ make test-engine    # the tests that drive a real Docker engine (builds the
 make typecheck      # the UI's TypeScript and tests
 make vet            # Go static checks
 make build          # the UI, then bin/deskyard-supervisor and bin/deskyard
-make linux          # the supervisor for the engine's Linux, bin/deskyard-supervisor-linux
+make linux          # the engine-platform supervisor and both Linux desktop CLIs
+make cli-linux      # just the amd64 and arm64 desktop CLIs, bin/desktop-cli/
 make release VERSION=v1.2.3   # cross-compiled deskyard binaries in dist/
 make image          # the supervisor's container image
 ```
@@ -20,14 +21,39 @@ make image          # the supervisor's container image
 `make dev` builds the supervisor's base image (Alpine, without the binary)
 when its Dockerfile changes, and starts `deskyard-dev` from it with the Docker
 socket, `DEV_DATA` (default `test-instance/` in the top folder) at `/data`, and
-`bin/deskyard-supervisor-linux` bind-mounted over the image's binary, on
+`bin/deskyard-supervisor-linux` bind-mounted over the image's binary and
+`bin/desktop-cli/` mounted read-only at `/opt/deskyard/cli`, on
 `127.0.0.1:DEV_PORT` (default 7343). The same command after every edit rebuilds
 the UI only when its sources changed. Run a second instance beside it with
 `make dev DEV_DATA=/tmp/scratch DEV_PORT=7344 DEV_NAME=deskyard-dev2`. With
-Compose, run `make linux` and `docker compose up -d` using
+Compose, run `make linux` and `docker compose up -d --force-recreate` using
 `supervisor/compose.yaml`. The supervisor refuses to run outside a container;
 the `deskyard` command released from `make release` is the only binary
 distributed.
+
+The supervisor publishes the shipped Linux amd64 and arm64 CLIs into
+`/data/state/cli/linux-<arch>/deskyard` on startup. Runtime-capable images
+(`deskyard.cli=runtime-v1`) receive the matching directory as a strict read-only
+mount at `/opt/deskyard/cli`; `/usr/local/bin/deskyard` links to it. Updating the
+supervisor updates new CLI invocations in running desktops; existing processes
+keep their original executable. The mounted directories stay in place while
+individual binaries are replaced atomically.
+
+For CLI-only edits, run `make cli-linux` then `docker restart deskyard-dev`
+(or `docker compose restart supervisor`). For supervisor changes, use `make dev`
+or the Compose force-recreate command above to refresh its binary mount too.
+Neither path rebuilds desktop images. Existing images with a baked-in CLI need
+a one-time image rebuild and computer **Upgrade** to acquire the symlink
+and mount. Until upgraded, they retain their original CLI.
+
+For a standalone desktop started with `docker run`, first run `make cli-linux`
+in `supervisor/`, then mount `bin/desktop-cli/linux-<arch>/` read-only at
+`/opt/deskyard/cli`. Use the desktop image's architecture, reported by
+`docker image inspect --format '{{.Architecture}}' IMAGE`, rather than the
+architecture of your workstation. For example, add
+`--mount type=bind,src="$PWD/bin/desktop-cli/linux-amd64",dst=/opt/deskyard/cli,readonly`
+when starting an amd64 desktop from that folder. The image and engine test
+fixtures supply the matching mount automatically.
 
 ## Repository layout
 
@@ -53,8 +79,8 @@ docs/               local copy of the SilverBullet project space (ignored by git
 ```
 
 CI: `.github/workflows/images.yml` builds all `docker-bake.hcl` targets together for
-amd64 and arm64 on native runners, weekly and on change (of `supervisor/`, only
-changes to the `deskyard` command's packages count);
+amd64 and arm64 on native runners, weekly and when desktop image inputs change.
+CLI-only changes no longer trigger desktop publication;
 `.github/workflows/supervisor.yml` tests the supervisor, publishes its image,
 builds the `deskyard` command binaries (the supervisor is released only as
 the image) and puts them in the `edge` pre-release (main) or the GitHub
@@ -64,9 +90,9 @@ release (tags `v*`);
 
 ## Project records
 
-Project documentation lives in the SilverBullet space "Container Computer", which is synced and versioned outside this repository. A local copy sits in `docs/`, which git ignores; edit pages there or in SilverBullet and let sync carry them, rather than committing them. Links from the README and these guides name pages in that space instead of linking files.
+Project documentation lives in the SilverBullet space "docs", which is synced and versioned outside this repository. A local copy sits in `docs/`, which git ignores; edit pages there or in SilverBullet and let sync carry them, rather than committing them. Links from the README and these guides name pages in that space instead of linking files.
 
-The space's *Operations manual* describes how the owner and agents plan, work, review feedback, verify outcomes and maintain the records. Its *index* page is the owner dashboard: requests, current capabilities and unscheduled loose ends through live SilverBullet views. No baked sections are used. The space tracks features, outcome-based milestones, design specs, implementation plans, components, spikes and verification evidence. Its *AGENTS* page (the documentation manual) defines their fields and lifecycle; its *CONFIG* page registers native SilverBullet schemas. Use SilverBullet comments addressed to `@agent` for contextual feedback; the *Agent inbox* page collects open requests for agents to check during work. Invoke `$sb-inbox` to process that queue explicitly; its repository skill lives in `.agents/skills/sb-inbox/`. Milestones have no target dates. Completed implementation plans are purged after durable decisions and evidence are retained; design specs stay while they describe the current system or agreed future work. The space's remote versioning preserves the history. From the repository root, with SilverBullet Desktop available, check metadata and relationships using `sb --space "Container Computer" script --file scripts/check-docs.lua --json`; run `sb` outside an agent sandbox so it can reach Desktop.
+The space's *Operations manual* describes how the owner and agents plan, work, review feedback, verify outcomes and maintain the records. Its *index* page is the owner dashboard: requests, current capabilities and unscheduled loose ends through live SilverBullet views. No baked sections are used. The space tracks features, outcome-based milestones, design specs, implementation plans, components, spikes and verification evidence. Its *AGENTS* page (the documentation manual) defines their fields and lifecycle; its *CONFIG* page registers native SilverBullet schemas. Use SilverBullet comments addressed to `@agent` for contextual feedback; the *Agent inbox* page collects open requests for agents to check during work. Invoke `$sb-inbox` to process that queue explicitly; its repository skill lives in `.agents/skills/sb-inbox/`. Milestones have no target dates. Completed implementation plans are purged after durable decisions and evidence are retained; design specs stay while they describe the current system or agreed future work. The space's remote versioning preserves the history. From the repository root, with SilverBullet Desktop available, check metadata and relationships using `sb --space "docs" script --file scripts/check-docs.lua --json`; run `sb` outside an agent sandbox so it can reach Desktop.
 
 ## Tests
 
@@ -122,6 +148,11 @@ uv run pytest -m "not slow"
 uv run pytest                        # also: memory budget, Flatpak app, CLIs
 ```
 
+Desktop image tests for `deskyard.fuse="userns-v1"` need `/dev/fuse` on the Docker
+host. Their user exec helper joins the shared desktop namespace, as the supervisor
+does. `test_flatpak.py` checks document export/read/write, namespace sharing and
+read-only mount protection with and without `no-new-privileges`.
+
 Screenshots and stats land in `images/tests/artifacts/`. `AC_IMAGE=<tag>`
 skips the build and tests that image instead, for example:
 
@@ -130,3 +161,7 @@ AC_IMAGE=deskyard-debian-xfce:dev uv run pytest -m "not slow and not network"
 ```
 
 For shared-engine VPN verification, use the [scoped VPN test guide](../supervisor/tests/VPN.md). Its `vpnintegration` test binary protects existing resources with a unique ownership label. Do not start an ordinary production supervisor or the full-main Python fixture against a Docker engine holding unrelated computers.
+
+For UI development against an existing test supervisor, run `DESKYARD_API=http://<supervisor>:7343 npm run dev` in `supervisor/web`. The Vite proxy rewrites both Host and Origin to the supervisor for API and desktop stream requests, so login and other same-origin checks work through the development URL. Without `DESKYARD_API`, Vite uses mock data.
+
+In current desktop images, control a user service as the desktop user with `/usr/local/bin/workspace-exec supervisorctl -c /etc/workspace/user-services.conf stop selkies` (or `start selkies`). The root supervisor controls system services; the user control socket is private. Allow at least 45 seconds when stopping disposable desktop containers to observe the complete ordered shutdown.

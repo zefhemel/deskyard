@@ -17,7 +17,7 @@ RUN npm ci
 COPY web/ ./
 RUN npm run build
 
-# 2. The supervisor binary (static, cross-compiled for the target platform).
+# 2. Static desktop CLIs for both Linux architectures, plus the target supervisor.
 FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -26,11 +26,16 @@ COPY . .
 COPY --from=web /src/internal/web/dist ./internal/web/dist
 ARG TARGETOS TARGETARCH
 ARG VERSION=dev
+RUN set -e; for arch in amd64 arm64; do \
+    CGO_ENABLED=0 GOOS=linux GOARCH=$arch \
+    go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
+        -o /out/cli/linux-$arch/deskyard ./cmd/deskyard; \
+    done
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
         -o /out/deskyard-supervisor ./cmd/deskyard-supervisor
 
-# 3. The base: everything but the binary, so development can mount its own.
+# 3. The base: everything but the binaries, so development can mount its own.
 # CA certificates serve registry pulls and ACME; tzdata, local times.
 FROM alpine:3.22 AS base
 RUN apk add --no-cache ca-certificates tzdata
@@ -46,6 +51,7 @@ ENV DESKYARD_IN_CONTAINER=1 \
 EXPOSE 7343
 ENTRYPOINT ["/usr/local/bin/deskyard-supervisor"]
 
-# 4. The image: the base plus the binary.
+# 4. The image: the base plus supervisor and desktop CLI binaries.
 FROM base
 COPY --from=build /out/deskyard-supervisor /usr/local/bin/deskyard-supervisor
+COPY --from=build /out/cli/ /opt/deskyard/cli/

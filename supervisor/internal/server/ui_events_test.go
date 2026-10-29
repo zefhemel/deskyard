@@ -245,6 +245,15 @@ func TestUIEventsRemovedOnlyForVisibleComputers(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ws.CloseNow()
+	// The WebSocket handshake can finish before the server registers its
+	// subscriber. Publish only once the event feed is ready to receive it.
+	for s.events.count() == 0 {
+		select {
+		case <-ctx.Done():
+			t.Fatal("event subscriber was not registered", ctx.Err())
+		case <-time.After(time.Millisecond):
+		}
+	}
 	s.publishComputer(ctx, "bobs-secret")
 	s.events.publish(event{kind: "marker", data: map[string]string{}})
 	for {

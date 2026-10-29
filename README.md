@@ -11,14 +11,16 @@ The supervisor is one Go binary with its web UI built in. You sign in with
 your own account and create, open, start, stop, upgrade and remove
 **computers**. A computer is one persistent Linux desktop with its own
 home folder, in the browser at `http://host/<name>/`; everyone with access to
-it opens the same desktop, at the same time if they like.
+it opens the same desktop, at the same time if they like. The fullscreen
+button keeps the tab bar and current view together.
 
 - **XFCE desktop in the browser**, streamed with
   [Selkies](https://github.com/selkies-project/selkies): picture, sound, your
-  mic, gamepads, clipboard, file upload, and touch controls on
-  phones and tablets.
-- **Shared terminals** next to the desktop, joinable from the browser, the
-  desktop itself or your own terminal.
+  mic, gamepads, clipboard, file upload (including pasted screenshots), and touch controls on
+  phones and tablets, with automatic stream quality, Retina scaling and a 1×/2× override.
+- **Shared terminals** next to the desktop, with trackpad scrolling through
+  history, finger swiping on phones, and touch keyboard helpers that stay hidden by default on desktops, joinable from the
+  browser, desktop or your own terminal. Switch views with Ctrl+Shift+1–9; rename a session or detach without ending it from its tab’s dropdown.
 - **One shared Chromium** whose tabs and sign-ins stay with the computer.
   It starts when you open it or connect through browser tools.
 - **Sharing by link**: full access or observe-only, optionally for a limited
@@ -42,8 +44,9 @@ machine.
 
 ## Run it
 
-You need Docker (or OrbStack, or Docker Desktop) on Linux or macOS. The
-supervisor runs only in a container (`ghcr.io/zefhemel/deskyard`, amd64 and
+You need Docker (or OrbStack, or Docker Desktop) on Linux or macOS. The Docker
+host needs `/dev/fuse` for desktop Flatpak file dialogs; see
+[Images](guide/images.md#flatpak). The supervisor runs only in a container (`ghcr.io/zefhemel/deskyard`, amd64 and
 arm64) and needs two things mounted: the Docker socket, and a folder of your
 choice **at `/data`**, where it keeps everything. It finds that folder's path
 on the host itself. Nothing else is needed: no `user:` or `group_add`, and no
@@ -108,7 +111,7 @@ on <http://localhost:7343>, with the data folder `test-instance/` next to
 `supervisor/`. Run it again after every edit: it takes a few seconds and needs
 no image build. `DEV_DATA`, `DEV_PORT` and `DEV_NAME` choose another data
 folder, port and container name, for a second instance. Compose users run
-`make linux` and then `docker compose up -d` with
+`make linux` and then `docker compose up -d --force-recreate` with
 [`supervisor/compose.yaml`](supervisor/compose.yaml).
 
 To build a desktop image from the checkout, run `docker buildx bake --load` in
@@ -118,7 +121,8 @@ the **Images** page. Tests and the rest of the workflow:
 
 ## The `deskyard` command
 
-Inside a computer it's already there. On your own Linux or macOS machine:
+Inside a computer it's already there, supplied by the supervisor at runtime
+so CLI updates need no desktop image rebuild. On your own Linux or macOS machine:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/zefhemel/deskyard/main/install.sh | sh
@@ -151,7 +155,7 @@ Back up the whole data folder (see
 - [Using the desktop](guide/desktop.md): display and touch controls, the iPhone Home Screen, shared terminals.
 - [Computers](guide/computers.md): lifecycle, Docker access, outbound VPN, what persists, reclaiming memory.
 - [Storage](guide/storage.md): volumes, WebDAV drives, backups and the data folder.
-- [Images](guide/images.md): the catalog, upgrades, custom images, Flatpak and AppImages.
+- [Images](guide/images.md): the catalog, pulling updates with progress, upgrades, custom images, Flatpak and AppImages.
 - [Accounts and sharing](guide/sharing.md): accounts, access levels and share links.
 - [The deskyard command](guide/cli.md): signing in, remote control, port mapping and agents.
 - [Development](guide/development.md): building, testing, repository layout and project records.

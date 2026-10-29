@@ -206,7 +206,7 @@ func (s *Server) remoteExec(w http.ResponseWriter, r *http.Request, c computers.
 		p, err = s.terminalProcess(ctx, c.Container.ID, session, false, start.Cols, start.Rows)
 	} else {
 		p, err = s.Eng.Exec(ctx, c.Container.ID, engine.ExecSpec{
-			Cmd: start.Argv, User: "user", WorkDir: start.Cwd, Env: execEnvFor(start.Env),
+			Cmd: start.Argv, User: "user", DesktopSession: true, WorkDir: start.Cwd, Env: execEnvFor(start.Env),
 			Tty: start.Tty, Stdin: true, Cols: start.Cols, Rows: start.Rows,
 		})
 	}

@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/config"
+	"github.com/zefhemel/deskyard/supervisor/internal/desktopcli"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
@@ -857,6 +858,31 @@ func (s *Service) createContainer(ctx context.Context, name string, revision uin
 		Network: containerName(name), Aliases: []string{containerName(name)},
 		MemoryBytes: set.MemoryBytes, NanoCPUs: set.NanoCPUs, ShmBytes: shmBytes,
 		Flatpak: true, Restart: "unless-stopped", NoNewPrivileges: len(set.Volumes) > 0,
+	}
+	img, err := s.Eng.ImageInspect(ctx, imageID)
+	if err != nil {
+		return fmt.Errorf("inspect desktop capabilities: %w", err)
+	}
+	if capability := img.Labels[desktopcli.Label]; capability != "" {
+		if capability != desktopcli.Capability {
+			return fmt.Errorf("unsupported desktop CLI capability %q", capability)
+		}
+		dir, err := desktopcli.Directory(s.Layout.State, img.Arch)
+		if err != nil {
+			return err
+		}
+		binary := filepath.Join(dir, "deskyard")
+		st, err := os.Stat(binary)
+		if err != nil {
+			return fmt.Errorf("desktop CLI unavailable (restart the supervisor to republish it): %w", err)
+		}
+		if !st.Mode().IsRegular() || st.Mode().Perm()&0111 == 0 {
+			return fmt.Errorf("desktop CLI %s is not an executable file", binary)
+		}
+		spec.Mounts = append(spec.Mounts, engine.Mount{Source: dir, Target: desktopcli.Target, ReadOnly: true, MustExist: true})
+	}
+	if img.Labels["deskyard.fuse"] == "userns-v1" {
+		spec.Devices = append(spec.Devices, "/dev/fuse")
 	}
 	if set.DockerAccess {
 		spec.Mounts = append(spec.Mounts, engine.Mount{Source: dockerSocket, Target: dockerSocket, MustExist: true})

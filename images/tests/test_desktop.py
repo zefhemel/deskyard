@@ -81,6 +81,9 @@ def test_existing_home_dock_terminal_becomes_deskyard_terminal(make_sandbox):
 
 def test_exec_starts_in_home(sandbox):
     assert sandbox.exec("pwd", login=False).stdout.strip() == "/workspace"
+    # Shell pwd can use PWD and hide a cwd outside the destination mount tree.
+    # Native getcwd (used by uv and other tools) must resolve it too.
+    assert sandbox.exec("python3 -c 'import os; print(os.getcwd())'", login=False).stdout.strip() == "/workspace"
 
 
 def test_nothing_opens_at_start(sandbox):

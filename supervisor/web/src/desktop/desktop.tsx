@@ -1,3 +1,4 @@
+import { startAutoQuality, type StatsWindow } from "./auto-quality.ts";
 // The computer page at /<name>/: a thin bar of ours with tabs for the
 // desktop and the computer's shared terminal sessions. The Desktop tab is
 // Selkies' web client in a frame (how we drive it is described in
@@ -12,7 +13,7 @@ import { power } from "../components/computer-menu.tsx";
 import { Menu, type MenuItem } from "../components/menu.tsx";
 import { ViewersPopover } from "../components/viewers-popover.tsx";
 import { notify, notifyError } from "../components/toast.tsx";
-import { Button, cx, Dialog, MORE } from "../components/ui.tsx";
+import { Button, cx, Dialog, ErrorText, Field, MORE } from "../components/ui.tsx";
 import { LinkDialog, ShareDialog } from "../dialogs/share.tsx";
 import { useComputer, useLive } from "../live.tsx";
 import { agentTitle } from "../lib/activity-format.ts";
@@ -22,12 +23,15 @@ import { names, notice } from "../lib/format.ts";
 import { isShell, needsConfirm, others } from "../terminal/sessions.ts";
 import { TouchControls, useVisibleViewport } from "./touch-controls.tsx";
 import { ZoomViewport } from "./zoom-viewport.tsx";
+import { installTabShortcuts } from "./tab-shortcuts.ts";
+import { FullscreenButton } from "./fullscreen.tsx";
 import { AudioControl } from "./audio-panel.tsx";
 import { ClipboardIcon, DisplayIcon, KeyboardIcon, ShieldIcon } from "./bar-icons.tsx";
 import { barButton, type BarSlots, ConnDot, ComputerTabs, panelId, pressed, tabId, useTabHooks } from "./tabs.tsx";
 import { avSyncWanted, startAvSync } from "./avsync.ts";
 import { ClipboardPopover } from "./clipboard.tsx";
 import { ActivityOverlay } from "./overlay.tsx";
+import { ImagePaste } from "./image-paste.tsx";
 import { DropZone } from "./upload.tsx";
 import {
   type ConnectionState,
@@ -53,13 +57,13 @@ import {
   sendClipboard,
   sendQuality,
   type Size,
-  unlockSize,
 } from "./selkies.ts";
-import { AUTO_FIT, initialLock, initialTrackpad, isPhone } from "./display-prefs.ts";
+import { AUTO_FIT, initialLock, initialTrackpad, isPhone, parseScaling, displayScale, scaledSize, type Scaling } from "./display-prefs.ts";
 
 // Remembered per browser.
 const QUALITY_KEY = "deskyard.quality";
 const LOCK_SIZE_KEY = "deskyard.lockSize";
+const SCALING_KEY = "deskyard.scaling";
 const TRACKPAD_KEY = "deskyard.trackpad";
 const resolutions: Size[] = [
   { width: 800, height: 600 },
@@ -151,6 +155,8 @@ function ComputerView({ computer: c }: { computer: Computer }) {
   const [opened, setOpened] = useState<string[]>([]);
   const [order, setOrder] = useState(() => loadOrder(c.name));
   const [states, setStates] = useState<Record<string, string>>({});
+  const [renameInFlight, setRenameInFlight] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ session: string; others: number; command: string } | null>(null);
   const [viewersOpen, setViewersOpen] = useState(false);
   // Share, as under Shares on the computer's Access tab: full access, but not a share itself.
@@ -166,7 +172,7 @@ function ComputerView({ computer: c }: { computer: Computer }) {
   const deleting = useRef(new Set<string>());
   const adding = useRef(false);
 
-  const shown = [...listed, ...Object.keys(pending).filter((s) => !listed.includes(s))].filter((s) => !gone.includes(s));
+  const shown = [...listed, ...(renameInFlight && !listed.includes(renameInFlight) ? [renameInFlight] : []), ...Object.keys(pending).filter((s) => !listed.includes(s))].filter((s) => !gone.includes(s));
   const tabs = orderTabs(shown, order);
   const tabsKey = tabs.join("\n");
   const active = query.terminal && tabs.includes(query.terminal) ? query.terminal : null;
@@ -187,6 +193,14 @@ function ComputerView({ computer: c }: { computer: Computer }) {
 
   const tabUrl = (s: string | null) => (s ? `/${c.name}/?terminal=${encodeURIComponent(s)}` : `/${c.name}/`);
   const show = (s: string | null) => latest.current.route(tabUrl(s), true);
+
+  const selectShortcut = useCallback((index: number) => {
+    const session = index === 0 ? null : latest.current.tabs[index - 1];
+    if (session === undefined || document.querySelector('[role="dialog"]')) return false;
+    show(session);
+    return true;
+  }, []);
+  useEffect(() => installTabShortcuts(window, selectShortcut), [selectShortcut]);
 
   /** Closes a session's tab; when it was the active one, moves left (or to Desktop) and maybe says so. */
   const closeTab = (s: string, say: boolean, toDesktop = false) => {
@@ -246,7 +260,7 @@ function ComputerView({ computer: c }: { computer: Computer }) {
       seen.current.add(s);
       linked.current.delete(s);
     }
-    for (const s of vanished(seen.current, listed, Object.keys(pending))) {
+    for (const s of vanished(seen.current, listed, [...Object.keys(pending), ...(renameInFlight ? [renameInFlight] : [])])) {
       seen.current.delete(s);
       closeTab(s, running && !ending.current.has(s));
     }
@@ -432,6 +446,9 @@ function ComputerView({ computer: c }: { computer: Computer }) {
           active={active}
           canAdd={running && c.terminal && !observing}
           onSelect={show}
+          tabUrl={tabUrl}
+          onRename={setRenaming}
+          onDetach={(s) => closeTab(s, false)}
           onClose={(s) => void requestEnd(s)}
           onAdd={() => void add()}
           onReorder={(next) => {
@@ -441,6 +458,7 @@ function ComputerView({ computer: c }: { computer: Computer }) {
         />
         <div class="ml-auto flex h-[46px] shrink-0 items-center gap-0.5">
           <span ref={setControls} class="contents" />
+          <FullscreenButton />
           {canShare && (
             <button type="button" class={cx(barButton, sharing && pressed)} title={`Share ${c.name} through a link`} onClick={() => setSharing(true)}>
               Share
@@ -501,7 +519,7 @@ function ComputerView({ computer: c }: { computer: Computer }) {
       )}
       <div class="relative flex min-h-0 flex-1 flex-col">
         <div role="tabpanel" id={panelId(null)} aria-labelledby={tabId(null)} hidden={active !== null} class={cx("relative min-h-0 flex-1 flex-col", active === null ? "flex" : "hidden")}>
-          {active === null && <Desktop computer={c} slots={slots} />}
+          {active === null && <Desktop computer={c} slots={slots} selectShortcut={selectShortcut} />}
         </div>
         {opened
           .filter((s) => tabs.includes(s))
@@ -520,6 +538,18 @@ function ComputerView({ computer: c }: { computer: Computer }) {
             </Suspense>
           ))}
       </div>
+      {running && !observing && <ImagePaste computer={c.name} />}
+      {renaming && <RenameSessionDialog session={renaming} computer={c.name} onStart={() => setRenameInFlight(renaming)} onFailure={() => setRenameInFlight(null)} onClose={() => setRenaming(null)} onRenamed={(next) => {
+        const old = renaming;
+        if (next === old) { setRenameInFlight(null); setRenaming(null); return; }
+        seen.current.delete(old);
+        setOpened((o) => o.filter((s) => s !== old));
+        setGone((g) => [...g, old]);
+        setOrder((order) => order.map((s) => s === old ? next : s));
+        openCreated(next);
+        setRenameInFlight(null);
+        setRenaming(null);
+      }} />}
       {confirm && (
         <EndSessionDialog
           {...confirm}
@@ -571,7 +601,7 @@ function EndSessionDialog({ session, others: n, command, onEnd, onClose }: { ses
  * frame takes the pointer, the frame never takes focus, the bar has no input
  * controls) and never asks to change the display.
  */
-function Desktop({ computer: c, slots }: { computer: Computer; slots: BarSlots }) {
+function Desktop({ computer: c, slots, selectShortcut }: { computer: Computer; slots: BarSlots; selectShortcut: (index: number) => boolean }) {
   const observing = c.level === "observe";
   const observingRef = useRef(observing);
   observingRef.current = observing;
@@ -595,6 +625,8 @@ function Desktop({ computer: c, slots }: { computer: Computer; slots: BarSlots }
   const [clipOpen, setClipOpen] = useState(false);
   const [quality, setQuality] = useState(() => stored(QUALITY_KEY, parseQuality, defaultQuality));
   const [locked, setLocked] = useState(() => initialLock(storedRaw(LOCK_SIZE_KEY), isPhone(window.screen)));
+  const [scaling, setScaling] = useState(() => parseScaling(storedRaw(SCALING_KEY)));
+  const [ratio, setRatio] = useState(() => window.devicePixelRatio || 1);
   // Whether this page owns the display (null until known), and the preset the
   // display streams with (null when unknown or none of ours).
   const [owner, setOwner] = useState<boolean | null>(null);
@@ -602,8 +634,55 @@ function Desktop({ computer: c, slots }: { computer: Computer; slots: BarSlots }
   const running = c.state === "running";
 
   // What this browser wants: applied when this page owns the display.
-  const prefs = useRef({ quality, locked });
-  prefs.current = { quality, locked };
+  const prefs = useRef({ quality, locked, scaling, ratio });
+  prefs.current = { quality, locked, scaling, ratio };
+
+  const appliedDisplay = useRef("");
+  const applyDisplay = useCallback(() => {
+    const element = frame.current;
+    if (!element || observingRef.current || !screenOf(element)?.display().owner) return;
+    const { locked, scaling, ratio } = prefs.current;
+    const scale = displayScale(scaling, ratio);
+    const size = locked ?? { width: element.clientWidth, height: element.clientHeight };
+    if (size.width <= 0 || size.height <= 0) return;
+    const physical = scaledSize(size, scale);
+    const key = `${scale}:${physical.width}x${physical.height}`;
+    if (appliedDisplay.current === key) return;
+    appliedDisplay.current = key;
+    const client = screenOf(element);
+    if (client?.configureDisplay) client.configureDisplay(physical, 96 * scale);
+    else client?.post({ type: "settings", settings: { scaling_dpi: 96 * scale } });
+    lockSize(element, physical);
+  }, []);
+
+  useEffect(() => {
+    let query: MediaQueryList;
+    const changed = () => {
+      query?.removeEventListener("change", changed);
+      setRatio(window.devicePixelRatio || 1);
+      query = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+      query.addEventListener("change", changed);
+    };
+    changed();
+    window.addEventListener("resize", changed);
+    return () => {
+      query.removeEventListener("change", changed);
+      window.removeEventListener("resize", changed);
+    };
+  }, []);
+
+  useEffect(() => {
+    applyDisplay();
+    const element = frame.current;
+    if (!element || !owner || observing) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const observer = new ResizeObserver(() => {
+      clearTimeout(timer);
+      timer = setTimeout(applyDisplay, 150);
+    });
+    observer.observe(element);
+    return () => { clearTimeout(timer); observer.disconnect(); };
+  }, [owner, observing, locked, scaling, ratio, screen, applyDisplay]);
 
   const refocus = useCallback(() => {
     // After the click that closed a menu has landed.
@@ -615,6 +694,8 @@ function Desktop({ computer: c, slots }: { computer: Computer; slots: BarSlots }
   const onFrameLoad = useCallback(() => {
     for (const f of unsubscribe.current) f();
     unsubscribe.current = [];
+    const frameWindow = frame.current?.contentWindow;
+    if (frameWindow) unsubscribe.current.push(installTabShortcuts(frameWindow, selectShortcut));
     const screen = screenOf(frame.current);
     setScreen(screen);
     setKeyboard(false);
@@ -634,6 +715,7 @@ function Desktop({ computer: c, slots }: { computer: Computer; slots: BarSlots }
     let was: Display = { owner: null, width: 0, height: 0, settings: null };
     const onDisplay = (d: Display) => {
       if (d.owner === null) was = d; // a new connection
+      if (!d.owner || !was.owner) appliedDisplay.current = "";
       setOwner(d.owner);
       if (d.settings) setLive(qualityOf(d.settings));
       if (observingRef.current) {
@@ -643,7 +725,7 @@ function Desktop({ computer: c, slots }: { computer: Computer; slots: BarSlots }
         was = d;
         return;
       }
-      const { quality, locked } = prefs.current;
+      const { quality } = prefs.current;
       if (jpegOnly && d.settings && d.settings.encoder !== "jpeg") {
         // A display streaming a codec this browser can't decode (another
         // page chose H.264): JPEG, at this browser's quality, so this page
@@ -658,15 +740,14 @@ function Desktop({ computer: c, slots }: { computer: Computer; slots: BarSlots }
           sendQuality(frame.current, quality);
           setLive(quality);
         }
-        if (locked) lockSize(frame.current, locked);
-        else unlockSize(frame.current);
+        applyDisplay();
       } else if (d.owner === false && d.width > 0 && (was.owner !== false || d.width !== was.width || d.height !== was.height)) {
         // Beside the owner: the picture at the stream's size, scaled to fit.
         lockSize(frame.current, { width: d.width, height: d.height });
       }
       was = d;
     };
-    unsubscribe.current = [screen.on("deskyard.state", onState), screen.on("deskyard.display", onDisplay), onClipboard(screen, setRemoteClip), screen.on("deskyard.keyboard", setKeyboard)];
+    unsubscribe.current.push(screen.on("deskyard.state", onState), screen.on("deskyard.display", onDisplay), onClipboard(screen, setRemoteClip), screen.on("deskyard.keyboard", setKeyboard));
     if (avSyncWanted()) unsubscribe.current.push(startAvSync(screen));
     onState(screen.state());
     onDisplay(screen.display());
@@ -708,20 +789,27 @@ function Desktop({ computer: c, slots }: { computer: Computer; slots: BarSlots }
     store(QUALITY_KEY, id);
     sendQuality(frame.current, id);
   };
+  useEffect(() => {
+    const target = frame.current?.contentWindow;
+    if (!screen || !target || quality !== "auto" || !owner || observing || conn !== "connected") return;
+    return startAutoQuality(screen, target as unknown as StatsWindow);
+  }, [screen, quality, owner, observing, conn]);
   const chooseResolution = (size: Size | null) => {
     if (!owner) return; // the display's owner sets its size
     setLocked(size);
     store(LOCK_SIZE_KEY, size ? JSON.stringify(size) : AUTO_FIT);
     setZoom(1);
-    if (size) lockSize(frame.current, size);
-    else unlockSize(frame.current);
+    // The display effect applies the committed preferences.
     refocus();
   };
   const toggleLock = () => {
     if (locked) chooseResolution(null);
     else {
       const size = remoteSize(frame.current);
-      if (size) chooseResolution(size);
+      if (size) {
+        const scale = displayScale(scaling, ratio);
+        chooseResolution({ width: size.width / scale, height: size.height / scale });
+      }
     }
   };
   const closeClip = useCallback(() => {
@@ -745,9 +833,20 @@ function Desktop({ computer: c, slots }: { computer: Computer; slots: BarSlots }
       onSelect: () => chooseResolution(size),
     })),
   ];
+  const scalingItems: MenuItem[] = (["auto", "1", "2"] as Scaling[]).map((value) => ({
+    label: `Scaling: ${value === "auto" ? `Auto (${displayScale(value, ratio)}×)` : `${value}×`}`,
+    checked: scaling === value,
+    onSelect: () => {
+      if (!owner) return;
+      setScaling(value);
+      store(SCALING_KEY, value);
+      setZoom(1);
+      refocus();
+    },
+  }));
   const displayItems: MenuItem[] = [
     ...(owner
-      ? [{ label: "Lock size", checked: locked !== null, onSelect: toggleLock }, ...resolutionItems]
+      ? [{ label: "Lock size", checked: locked !== null, onSelect: toggleLock }, ...resolutionItems, ...scalingItems]
       : [{ label: owner === false ? "Screen size: set by the first viewer" : "Screen size: connecting…", disabled: true, onSelect: () => {} }]),
     ...qualities.map((q, i) => ({
       label: (
@@ -756,7 +855,7 @@ function Desktop({ computer: c, slots }: { computer: Computer; slots: BarSlots }
           {q.hint && <span class="text-muted">, {q.hint}</span>}
         </>
       ),
-      checked: q.id === live,
+      checked: quality === "auto" ? q.id === "auto" : q.id === live,
       onSelect: () => chooseQuality(q.id),
       separated: i === 0,
     })),
@@ -771,7 +870,7 @@ function Desktop({ computer: c, slots }: { computer: Computer; slots: BarSlots }
       ? [
           ...(owner ? [
             { label: "Lock size", checked: locked !== null, onSelect: toggleLock, separated: true, class: compactOnly },
-            ...resolutionItems.map((item) => ({ ...item, class: compactOnly })),
+            ...[...resolutionItems, ...scalingItems].map((item) => ({ ...item, class: compactOnly })),
           ] : [{
             label: owner === false ? "Resolution: controlled by another viewer" : "Resolution: connecting…",
             disabled: true, onSelect: () => {}, separated: true, class: compactOnly,
@@ -779,7 +878,7 @@ function Desktop({ computer: c, slots }: { computer: Computer; slots: BarSlots }
           ...keyItems.map((k, i) => ({ ...k, label: <>Send {k.label}</>, separated: i === 0 && !owner, class: compactOnly })),
           ...qualities.map((q, i) => ({
             label: `Quality: ${q.label}`,
-            checked: q.id === live,
+            checked: quality === "auto" ? q.id === "auto" : q.id === live,
             onSelect: () => chooseQuality(q.id),
             separated: i === 0,
             class: compactOnly,
@@ -809,7 +908,7 @@ function Desktop({ computer: c, slots }: { computer: Computer; slots: BarSlots }
                 items={displayItems}
                 onClose={refocus}
                 trigger={({ toggle, open }) => (
-                  <button type="button" aria-label="Display" aria-haspopup="menu" aria-expanded={open} title="Display: screen size and quality" class={cx(barButton, "px-2", open && pressed)} onClick={toggle}>
+                  <button type="button" aria-label="Display" aria-haspopup="menu" aria-expanded={open} title="Display: screen size, scaling and quality" class={cx(barButton, "px-2", open && pressed)} onClick={toggle}>
                     <DisplayIcon />
                     <span aria-hidden="true" class="text-[10px]">▾</span>
                   </button>
@@ -875,6 +974,7 @@ function Desktop({ computer: c, slots }: { computer: Computer; slots: BarSlots }
         </ZoomViewport>
       )}
       {running && !observing && <DropZone computer={c.name} frame={frame} frameKey={frameKey} />}
+      {running && !observing && <ImagePaste computer={c.name} frame={frame} frameKey={frameKey} />}
       {showing && zoom === 1 && <ActivityOverlay name={c.name} geometry={() => selkiesScreenGeometry(frame.current)} />}
     </>
   );
@@ -949,4 +1049,25 @@ function useJoinToasts(viewers: string[], me: string) {
       }
     }
   }, [viewers.join(","), me]);
+}
+
+function RenameSessionDialog({ session, computer, onClose, onRenamed, onStart, onFailure }: { session: string; computer: string; onClose: () => void; onRenamed: (next: string) => void; onStart: () => void; onFailure: () => void }) {
+  const [name, setName] = useState(session);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const valid = validSession(name);
+  return <Dialog title={`Rename ${session}`} onClose={() => { if (!busy) onClose(); }} onSubmit={() => {
+    if (busy || !valid) return;
+    setBusy(true);
+    setError(null);
+    onStart();
+    api.renameTerminal(computer, session, name).then(({ name }) => onRenamed(name), (e: unknown) => {
+      onFailure();
+      setError(e instanceof Error ? e.message : String(e)); setBusy(false);
+    });
+  }} footer={<><Button onClick={onClose} disabled={busy}>Cancel</Button><Button type="submit" disabled={busy || !valid}>{busy ? "Renaming…" : "Rename"}</Button></>}>
+    <Field label="Session name" htmlFor="terminal-session-name"><input id="terminal-session-name" autoFocus value={name} maxLength={64} disabled={busy} onInput={(e) => setName(e.currentTarget.value)} /></Field>
+    <p class="text-sm text-muted">Use 1–64 letters, digits, underscores or dashes, starting with a letter or digit. The shell and its programs keep running.</p>
+    <ErrorText error={error} />
+  </Dialog>;
 }

@@ -1,5 +1,6 @@
 // A button that opens a small menu (the ⋯ menus, the account menu, the
 // desktop bar's Keys and Quality).
+import { createPortal } from "preact/compat";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { cx } from "./ui.tsx";
@@ -22,15 +23,18 @@ interface MenuProps {
   /** Renders the trigger; `open` tells whether the menu is showing. */
   trigger: (props: { open: boolean; toggle: () => void }) => ComponentChildren;
   align?: "left" | "right";
+  /** Escape a scrolling tab strip. */
+  portal?: boolean;
   class?: string;
   /** Called after the menu closes (the desktop page refocuses its frame). */
   onClose?: () => void;
 }
 
-export function Menu({ items: given, trigger, align = "right", class: extra, onClose }: MenuProps) {
+export function Menu({ items: given, trigger, align = "right", class: extra, onClose, portal = false }: MenuProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const menu = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
   const [maxHeight, setMaxHeight] = useState<number>();
   const items = open ? (typeof given === "function" ? given() : given) : [];
 
@@ -39,15 +43,23 @@ export function Menu({ items: given, trigger, align = "right", class: extra, onC
     const viewport = window.visualViewport;
     const resize = () => {
       if (!menu.current) return;
+      let top = menu.current.getBoundingClientRect().top;
+      if (portal && ref.current) {
+        const rect = ref.current.getBoundingClientRect();
+        top = rect.bottom + 4;
+        setPosition({ top, left: Math.max(8, Math.min(rect.left, window.innerWidth - (menu.current.offsetWidth || 180) - 8)) });
+      }
       const bottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
-      setMaxHeight(Math.max(0, bottom - menu.current.getBoundingClientRect().top - 8));
+      setMaxHeight(Math.max(0, bottom - top - 8));
     };
     resize();
     window.addEventListener("resize", resize);
+    if (portal) window.addEventListener("scroll", resize, true);
     viewport?.addEventListener("resize", resize);
     viewport?.addEventListener("scroll", resize);
     return () => {
       window.removeEventListener("resize", resize);
+      if (portal) window.removeEventListener("scroll", resize, true);
       viewport?.removeEventListener("resize", resize);
       viewport?.removeEventListener("scroll", resize);
     };
@@ -61,7 +73,7 @@ export function Menu({ items: given, trigger, align = "right", class: extra, onC
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) close();
+      if (ref.current && !ref.current.contains(e.target as Node) && !menu.current?.contains(e.target as Node)) close();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") close();
@@ -78,14 +90,15 @@ export function Menu({ items: given, trigger, align = "right", class: extra, onC
     };
   });
 
+  const renderMenu = (content: ComponentChildren) => portal ? createPortal(content, document.body) : content;
   return (
     <div ref={ref} class={cx("relative", extra)}>
       {trigger({ open, toggle: () => (open ? close() : setOpen(true)) })}
-      {open && (
+      {open && renderMenu(
         <div
           ref={menu}
           role="menu"
-          style={{ maxHeight: maxHeight === undefined ? undefined : `${maxHeight}px` }}
+          style={{ ...(portal ? { position: "fixed", top: position.top, left: position.left, right: "auto", width: "max-content" } : {}), maxHeight: maxHeight === undefined ? undefined : `${maxHeight}px` }}
           class={cx(
             "absolute top-[calc(100%+4px)] z-40 min-w-[180px] overflow-y-auto overscroll-contain rounded-[9px] border border-line bg-surface p-[5px] text-ink shadow-[0_14px_30px_-12px_rgba(23,34,49,.35)]",
             align === "right" ? "right-0" : "left-0",

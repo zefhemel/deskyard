@@ -1,0 +1,13 @@
+#!/bin/bash
+set -euo pipefail
+# No privilege elevation: the caller and namespace owner are the desktop user.
+# Joining an unrelated user's namespace is rejected by the kernel.
+namespace_pid=$(cat "$XDG_RUNTIME_DIR/session-namespace.pid")
+[[ "$namespace_pid" =~ ^[1-9][0-9]*$ ]] || exit 1
+if [ /proc/self/ns/user -ef "/proc/$namespace_pid/ns/user" ] &&
+   [ /proc/self/ns/mnt -ef "/proc/$namespace_pid/ns/mnt" ]; then
+    exec /usr/bin/setpriv --inh-caps=-all --ambient-caps=-all -- "$@"
+fi
+exec /usr/bin/nsenter --target "$namespace_pid" --user --mount \
+    --wdns="$(pwd -P)" --preserve-credentials --keep-caps -- \
+    /usr/bin/setpriv --inh-caps=-all --ambient-caps=-all -- "$@"

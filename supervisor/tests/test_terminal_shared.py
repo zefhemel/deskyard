@@ -56,7 +56,7 @@ def test_browser_cli_and_native_launcher_share_shell(supervisor, name, desktop, 
                 command(page, f'export SHARED_PROOF={nonce}; printf "%s" "$$" > /workspace/shared-browser-pid')
                 eventually(lambda: shell(name, 'cat /workspace/shared-browser-pid 2>/dev/null || true').isdigit(), True)
                 pid = shell(name, 'cat /workspace/shared-browser-pid')
-                process = subprocess.Popen([cli, '-e', name, 'terminal', session], env=remote.env,
+                process = subprocess.Popen([cli, '-c', name, 'terminal', session], env=remote.env,
                                            stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
                 os.close(slave)
                 slave = None

@@ -664,7 +664,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     if (i >= 0) images.splice(i, 1);
     return json(res, 204);
   }
-  if (path === "/api/images/check") return json(res, 202, job(["Pulling ghcr.io/zefhemel/deskyard-debian-xfce:latest", "Pulling ghcr.io/zefhemel/deskyard-debian-xfce:beta"], () => images.filter((i) => i.installed).forEach((i) => (i.checked = new Date().toISOString()))));
+  if (path === "/api/images/check") return json(res, 202, job(["Image 1 of 1 · ghcr.io/zefhemel/deskyard-debian-xfce:latest · Connecting to registry", "Image 1 of 1 · ghcr.io/zefhemel/deskyard-debian-xfce:latest · Downloading · 32.0 of 128.0 MB", "Image 1 of 1 · ghcr.io/zefhemel/deskyard-debian-xfce:latest · Extracting · 96.0 of 128.0 MB", "Cleaning up unused old image versions"], () => images.filter((i) => i.installed).forEach((i) => (i.checked = new Date().toISOString()))));
   if (path === "/api/images/upgrade") {
     const b = await readBody(req);
     return json(res, 202, job(["Upgrading", "Starting"], () => {
@@ -719,6 +719,19 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     return json(res, 201, { name });
   }
   const ts = /^terminal\/sessions\/(.+)$/.exec(sub);
+  if (ts && method === "PATCH") {
+    const old = decodeURIComponent(ts[1]!);
+    const body = await readBody(req);
+    const name = String(body.name ?? "");
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(name)) return json(res, 400, { error: "invalid session name" });
+    if (c.state !== "running" || !c.terminal) return json(res, 409, { error: "Computer terminal unavailable" });
+    const session = c.terminals.find((t) => t.name === old);
+    if (!session) return json(res, 404, { error: "no such session" });
+    if (old !== name && c.terminals.some((t) => t.name === name)) return json(res, 409, { error: "name already in use" });
+    session.name = name;
+    changed(c);
+    return json(res, 200, { name });
+  }
   if (ts && method === "DELETE") {
     const name = decodeURIComponent(ts[1]!);
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(name)) return json(res, 400, { error: "invalid session name" });

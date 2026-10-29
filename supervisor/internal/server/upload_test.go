@@ -225,3 +225,37 @@ func TestFinishScriptStopsOnARealLnFailure(t *testing.T) {
 		t.Fatal("kept retrying after a failure that isn't a taken name")
 	}
 }
+
+func TestUploadEditablePath(t *testing.T) {
+	_, ts, root := newFilesServer(t)
+	admin := login(t, ts, "admin")
+	for _, destination := range []string{"~/Pictures/pasted.png", "/workspace/Pictures/pasted.png"} {
+		req, _ := http.NewRequest("POST", ts.URL+"/api/computers/alice/upload?path="+url.QueryEscape(destination), strings.NewReader("image bytes"))
+		req.Header.Set("Origin", ts.URL)
+		resp, err := admin.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("%s: %d %s", destination, resp.StatusCode, body)
+		}
+	}
+	for _, name := range []string{"pasted.png", "pasted (2).png"} {
+		data, err := os.ReadFile(filepath.Join(root, "Pictures", name))
+		if err != nil || string(data) != "image bytes" {
+			t.Fatalf("%s: %q %v", name, data, err)
+		}
+	}
+	req, _ := http.NewRequest("POST", ts.URL+"/api/computers/alice/upload?path=relative.png", strings.NewReader("x"))
+	req.Header.Set("Origin", ts.URL)
+	resp, err := admin.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 400 {
+		t.Fatalf("relative path: %d", resp.StatusCode)
+	}
+}

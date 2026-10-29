@@ -81,6 +81,8 @@
 }
 .terminal-host .xterm {
   height: 100%;
+  /* Vertical swipes use xterm wheel reports; preserve sideways/pinch gestures. */
+  touch-action: pan-x pinch-zoom;
 }
 .terminal-host .xterm-helper-textarea {
   font-size: 16px !important;
@@ -89,53 +91,32 @@
   flex: none;
   min-width: 0;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  touch-action: pan-x;
   background: #1a2739;
   padding: 4px 6px max(4px, env(safe-area-inset-bottom));
   font-size: 13px;
 }
 .terminal-shortcuts,
 .terminal-modifiers {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scrollbar-width: thin;
-  touch-action: pan-x;
+  display: contents;
 }
-.terminal-shortcuts {
-  order: 0;
-}
-.terminal-modifiers {
-  order: 1;
-  margin-top: 4px;
+.terminal-keybar::-webkit-scrollbar {
+  display: none;
 }
 .terminal-keybar button {
   padding: 0 9px;
+  white-space: nowrap;
 }
 .terminal-keybar button[aria-pressed="true"] {
   background: #3a5d8d;
   border-color: #9ec0ff;
-}
-.terminal-keyhint {
-  color: #aab9ce;
-  white-space: nowrap;
-  font-size: 12px;
-  padding-left: 6px;
-}
-.terminal-pane[data-compact="true"] .terminal-keybar {
-  flex-direction: row;
-  overflow-x: auto;
-  gap: 4px;
-  touch-action: pan-x;
-}
-.terminal-pane[data-compact="true"] .terminal-modifiers,
-.terminal-pane[data-compact="true"] .terminal-shortcuts {
-  display: contents;
-}
-.terminal-pane[data-compact="true"] .terminal-keyhint {
-  display: none;
 }
 .terminal-pane[data-compact="true"] .terminal-warning {
   position: absolute;
@@ -226,4 +207,9 @@
   pointer-events: none;
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Without the helper row, keep the terminal clear of the home indicator. */
+.terminal-pane[data-keybar="false"] .terminal-scroll {
+  padding-bottom: max(2px, env(safe-area-inset-bottom));
 }

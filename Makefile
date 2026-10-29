@@ -59,6 +59,7 @@ test-image-build:
 	[ "$(BUILD_IMAGE)" = 0 ] || docker build -q -t $(TEST_IMAGE) --target debian-xfce -f images/Dockerfile .
 
 test-engine: test-image-build
+	$(MAKE) -C supervisor cli-linux
 	cd supervisor && go test -tags engine ./internal/computers/ ./internal/engine/...
 
 test-image: test-image-build

@@ -4,11 +4,8 @@
 #   debian-xfce   -> ghcr.io/<owner>/deskyard-debian-xfce
 #   <other name>  -> ghcr.io/<owner>/deskyard-<name>
 # Tags (main only): latest, the build date (2026.10.22) and sha-<commit>.
-# The images also build the deskyard command from supervisor/: a push or
-# pull request touching supervisor/ builds them only when it changes that
-# command's Go packages (go list -deps ./cmd/deskyard, test files aside) or
-# go.mod/go.sum; other supervisor changes skip the build. A weekly run picks
-# up Debian security updates. Pull requests build without pushing.
+# CLI builds ship with the supervisor, so CLI-only changes do not rebuild
+# desktop images. A weekly run picks up Debian security updates.
 name: Desktop images
 
 on:
@@ -16,13 +13,11 @@ on:
     branches: [main]
     paths:
       - images/**
-      - supervisor/**
       - .github/workflows/images.yml
       - docker-bake.hcl
   pull_request:
     paths:
       - images/**
-      - supervisor/**
       - .github/workflows/images.yml
       - docker-bake.hcl
   schedule:
@@ -54,15 +49,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: supervisor/go.mod
-          cache-dependency-path: supervisor/go.sum
-
-      # The images take only the deskyard command from supervisor/, so a
-      # change elsewhere there (the supervisor, its UI, tests, docs) needs no
-      # build. Scheduled and manual runs always build, and so does a push
-      # whose previous commit is unknown (a new or force-pushed branch).
+      # Scheduled/manual runs always build. Pushes and PRs build only when
+      # desktop inputs changed; no supervisor Go package is an image input.
       - id: changes
         name: Whether the images' inputs changed
         run: |
@@ -76,19 +64,15 @@ jobs:
             echo "Building: no earlier commit to compare with"
             exit 0
           fi
-          root=$PWD
-          pkgs=$(cd supervisor && go list -deps -f '{{.Dir}}' ./cmd/deskyard | sed -n "s|^$root/||p")
           build=false
           while read -r f; do
             case "$f" in
               "") ;;
-              images/*|docker-bake.hcl|.github/workflows/images.yml|supervisor/go.mod|supervisor/go.sum) build=true ;;
-              *_test.go) ;;
-              *) if grep -qxF "$(dirname "$f")" <<< "$pkgs"; then build=true; fi ;;
+              images/*|docker-bake.hcl|.github/workflows/images.yml) build=true ;;
             esac
             if [ "$build" = true ]; then echo "Building: $f changed"; break; fi
           done < <(git diff --name-only "$base" HEAD)
-          [ "$build" = true ] || echo "Skipping the build: no change to the images or the deskyard command since $base"
+          [ "$build" = true ] || echo "Skipping the build: no change to desktop image inputs since $base"
           echo "build=$build" >> "$GITHUB_OUTPUT"
         env:
           EVENT: ${{ github.event_name }}

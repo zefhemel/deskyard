@@ -85,6 +85,10 @@ func (e *rolloutEngine) Create(_ context.Context, s engine.ContainerSpec) (strin
 	return "replacement", nil
 }
 
+func (*rolloutEngine) ImageInspect(_ context.Context, ref string) (engine.Image, error) {
+	return engine.Image{ID: ref}, nil
+}
+
 type rolloutRuntime struct {
 	entered, release chan struct{}
 	fail             bool

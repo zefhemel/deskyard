@@ -122,9 +122,20 @@ func groupWith(ctx context.Context, name, group string) error {
 		return ErrNoSession
 	}
 	// display-message succeeds with empty fields when its target is missing.
-	id, _, _ := strings.Cut(strings.TrimSpace(string(base)), "|")
+	id, baseGroup, _ := strings.Cut(strings.TrimSpace(string(base)), "|")
 	if !strings.HasPrefix(id, "$") {
 		return ErrNoSession
+	}
+	// tmux names a new group after its base session, even when targeted by
+	// immutable ID. A rename can leave that name owned by another group.
+	if baseGroup == "" {
+		reserved, err := groupNameExists(ctx, name)
+		if err != nil {
+			return err
+		}
+		if reserved {
+			return fmt.Errorf("session name %q conflicts with an existing terminal attachment group; rename this session before attaching", name)
+		}
 	}
 	if err := tmuxCommand(ctx, "new-session", "-d", "-s", group, "-t", id).Run(); err != nil {
 		if ctx.Err() != nil {
@@ -149,6 +160,21 @@ func groupWith(ctx context.Context, name, group string) error {
 		return ErrNoSession
 	}
 	return nil
+}
+
+// Group names survive renames. Do not reuse them for new public sessions:
+// tmux otherwise joins the old group when preparing their first attachment.
+func groupNameExists(ctx context.Context, name string) (bool, error) {
+	out, err := queryServer(ctx, "list-sessions", "-F", "#{session_group}")
+	if err != nil {
+		return false, err
+	}
+	for _, group := range lines(out) {
+		if group == name {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // AttachPrepared never creates a session: a canceled lease cannot be resurrected

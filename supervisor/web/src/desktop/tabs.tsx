@@ -2,7 +2,7 @@
 // shared terminal session in this viewer's order, then +. Also the pieces of
 // the bar that the active tab fills in (its dot, controls and ⋯ items).
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { MenuItem } from "../components/menu.tsx";
+import { Menu, type MenuItem } from "../components/menu.tsx";
 import { cx } from "../components/ui.tsx";
 import { moveTab, moveTabTo } from "../lib/tab-order.ts";
 import { DisplayIcon, TerminalIcon } from "./bar-icons.tsx";
@@ -76,7 +76,10 @@ export function ComputerTabs({
   active,
   canAdd,
   onSelect,
+  tabUrl,
   onClose,
+  onRename,
+  onDetach,
   onAdd,
   onReorder,
 }: {
@@ -85,7 +88,10 @@ export function ComputerTabs({
   active: string | null;
   canAdd: boolean;
   onSelect: (session: string | null) => void;
+  tabUrl: (session: string | null) => string;
   onClose: (session: string) => void;
+  onRename: (session: string) => void;
+  onDetach: (session: string) => void;
   onAdd: () => void;
   onReorder: (order: string[]) => void;
 }) {
@@ -109,6 +115,11 @@ export function ComputerTabs({
 
   const focusTab = (session: string | null) => strip.current?.querySelector<HTMLElement>(`[data-tab="${CSS.escape(session ?? "")}"]`)?.focus();
   const onKeyDown = (e: KeyboardEvent, session: string | null) => {
+    if (e.key === " " && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      onSelect(session);
+      return;
+    }
     if (e.key === "Delete" && session !== null) {
       e.preventDefault();
       onClose(session);
@@ -162,7 +173,8 @@ export function ComputerTabs({
 
   const tab = "group relative flex h-8 flex-none items-center rounded-[7px] text-[13.5px] font-semibold";
   const tabButton = (session: string | null) => ({
-    type: "button" as const,
+    href: tabUrl(session),
+    draggable: false,
     role: "tab" as const,
     id: tabId(session),
     "data-tab": session ?? "",
@@ -170,7 +182,11 @@ export function ComputerTabs({
     "aria-controls": panelId(session),
     // Roving focus: only the selected tab is in the Tab order; arrows move between tabs.
     tabIndex: active === session ? 0 : -1,
-    onClick: () => onSelect(session),
+    onClick: (e: MouseEvent) => {
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      onSelect(session);
+    },
     onKeyDown: (e: KeyboardEvent) => onKeyDown(e, session),
   });
   return (
@@ -183,12 +199,12 @@ export function ComputerTabs({
     >
       <div role="tablist" aria-label="Desktop and terminals" class="flex flex-none items-center gap-0.5">
         <div role="presentation" class={cx(tab, active === null ? "bg-bar-hover text-white" : "text-bar-muted hover:bg-bar-hover hover:text-white")} {...dragProps(null)}>
-          <button {...tabButton(null)} title="Desktop" class="inline-flex h-full cursor-pointer items-center gap-1.5 rounded-[7px] border-0 bg-transparent px-2.5 text-inherit">
+          <a {...tabButton(null)} title="Desktop (Ctrl+Shift+1)" aria-keyshortcuts="Control+Shift+1" class="inline-flex h-full cursor-pointer items-center gap-1.5 rounded-[7px] border-0 bg-transparent px-2.5 text-inherit no-underline">
             <DisplayIcon />
             Desktop
-          </button>
+          </a>
         </div>
-        {tabs.map((t) => (
+        {tabs.map((t, index) => (
           <div
             key={t.name}
             role="presentation"
@@ -210,11 +226,11 @@ export function ComputerTabs({
             }}
             {...dragProps(t.name)}
           >
-            <button
+            <a
               {...tabButton(t.name)}
-              aria-keyshortcuts="Delete Alt+Shift+ArrowLeft Alt+Shift+ArrowRight"
-              title={`${t.name}${t.others ? ` · ${t.others} other${t.others === 1 ? "" : "s"} attached` : ""} (Alt+Shift+← → to move, Delete to end)`}
-              class="inline-flex h-full max-w-[200px] cursor-pointer items-center gap-1.5 rounded-[7px] border-0 bg-transparent pr-1 pl-2.5 text-inherit"
+              aria-keyshortcuts={`Delete Alt+Shift+ArrowLeft Alt+Shift+ArrowRight${index < 8 ? ` Control+Shift+${index + 2}` : ""}`}
+              title={`${t.name}${t.others ? ` · ${t.others} other${t.others === 1 ? "" : "s"} attached` : ""} (${index < 8 ? `Ctrl+Shift+${index + 2} to switch, ` : ""}Alt+Shift+← → to move, Delete to end)`}
+              class="inline-flex h-full max-w-[200px] cursor-pointer items-center gap-1.5 rounded-[7px] border-0 bg-transparent pr-1 pl-2.5 text-inherit no-underline"
             >
               <TerminalIcon />
               <span class="truncate">{t.name}</span>
@@ -226,7 +242,21 @@ export function ComputerTabs({
                   <span class="sr-only">({t.others === 1 ? "1 other" : `${t.others} others`} attached)</span>
                 </>
               )}
-            </button>
+            </a>
+            <Menu
+              class="inline-flex h-6 items-center"
+              portal
+              items={[
+                { label: "Rename session…", onSelect: () => onRename(t.name) },
+                { label: "Detach", onSelect: () => onDetach(t.name) },
+              ]}
+              trigger={({ open, toggle }) => (
+                <button type="button" aria-label={`Session menu for ${t.name}`} aria-haspopup="menu" aria-expanded={open}
+                  title={`Session menu for ${t.name}`}
+                  class="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-[5px] border-0 bg-transparent text-[15px] leading-none text-inherit opacity-70 hover:bg-[#3a4b63] hover:opacity-100"
+                  onClick={toggle}>⋯</button>
+              )}
+            />
             {/* Out of the Tab order: Delete on the focused tab does the same. */}
             <button
               type="button"

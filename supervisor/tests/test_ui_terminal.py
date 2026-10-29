@@ -63,6 +63,14 @@ def connected(page):
     expect(page.locator(f'{ACTIVE} [data-terminal-state=connected]')).to_be_attached(timeout=15000)
 
 
+def show_keyboard_bar(page):
+    """Desktop clients hide helpers by default; opt in through the real menu."""
+    expect(page.locator(ACTIVE)).to_have_attribute('data-keybar', 'false')
+    page.get_by_role('button', name='Keys', exact=True).click()
+    page.get_by_role('menuitemcheckbox', name='Show keyboard bar', exact=True).click()
+    expect(page.locator(f'{ACTIVE} .terminal-keybar')).to_be_visible()
+
+
 def open_terminal(page, base, name, session='main', create=True):
     """Opens a terminal tab: create as an explicit open (the card's +), else a join."""
     page.goto(f'{base}/{name}/?terminal={session}' + ('&create=1' if create else ''))
@@ -71,7 +79,7 @@ def open_terminal(page, base, name, session='main', create=True):
 
 def cli_session(cli, remote, name, session):
     """`deskyard terminal SESSION` from elsewhere, kept attached: its process."""
-    process = subprocess.Popen([cli, '-e', name, 'terminal', session], env=remote.env,
+    process = subprocess.Popen([cli, '-c', name, 'terminal', session], env=remote.env,
                                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     eventually(lambda: session in sessions(name), True, seconds=20)
     return process
@@ -124,6 +132,7 @@ def test_owned_terminal_shared_shell_keys_history_and_reconnect(supervisor, desk
 
         # Tapping a helper keeps native xterm focus, sends actual control input,
         # and interrupts a foreground process independently of rendered echo.
+        show_keyboard_bar(first)
         command(first, 'sleep 60; printf interrupted > /workspace/ui-interrupt')
         first.get_by_role('button', name='Ctrl+C', exact=True).click()
         expect(first.get_by_role('textbox', name='Terminal input')).to_be_focused()
@@ -277,6 +286,7 @@ def test_terminal_insufficient_viewport_preserves_native_input_and_connection(su
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base, viewport={'width': 750, 'height': 404})
         open_terminal(page, supervisor.base, name)
+        show_keyboard_bar(page)
         command(page, 'printf "%s" "$$" > /workspace/fallback-pid')
         eventually(lambda: shell(name, 'cat /workspace/fallback-pid 2>/dev/null || true').isdigit(), True)
         pid = pane(name, 'pane_pid')
@@ -297,6 +307,7 @@ def test_terminal_compact_budget_with_reopen_and_safe_bottom(supervisor, desktop
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base, viewport={'width': 750, 'height': 404})
         open_terminal(page, supervisor.base, name)
+        show_keyboard_bar(page)
         # Substitute only the CSS environment value: retain selectors and the
         # actual cascade, since this Chromium has no safe-area CDP emulation.
         page.evaluate("""() => {
@@ -633,3 +644,56 @@ def test_native_picker(desktop, name):
         process.terminate()
         process.wait(10)
         os.close(master)
+
+
+def test_trackpad_wheel_scrolls_terminal_tab_history(supervisor, desktop, name):
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base)
+        open_terminal(page, supervisor.base, name)
+        command(page, "printf 'trackpad-row-%03d\\n' {1..300}")
+        eventually(lambda: int(pane(name, 'history_size')) > 200, True)
+        screen = page.locator(f'{ACTIVE} .xterm-screen')
+        bounds = screen.bounding_box()
+        page.mouse.move(bounds['x'] + bounds['width'] / 2, bounds['y'] + bounds['height'] / 2)
+        page.mouse.wheel(0, -320)
+        eventually(lambda: pane(name, 'pane_in_mode'), '1')
+        eventually(lambda: int(pane(name, 'scroll_position') or '0') > 0, True)
+        page.keyboard.press('Escape')
+        eventually(lambda: pane(name, 'pane_in_mode'), '0')
+        # Scrolling history must not recall/execute shell command history.
+        command(page, 'printf scroll-finished > /workspace/trackpad-scroll-proof')
+        eventually(lambda: shell(name, 'cat /workspace/trackpad-scroll-proof 2>/dev/null || true'), 'scroll-finished')
+        browser.close()
+
+
+def test_finger_swipes_scroll_terminal_tab_history(supervisor, desktop, name):
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base, viewport={"width": 390, "height": 844},
+                                  has_touch=True, is_mobile=True)
+        open_terminal(page, supervisor.base, name)
+        command(page, "printf 'touch-row-%03d\\n' {1..300}")
+        eventually(lambda: int(pane(name, 'history_size')) > 200, True)
+        bounds = page.locator(f'{ACTIVE} .xterm-screen').bounding_box()
+        x = bounds['x'] + bounds['width'] / 2
+        top = bounds['y'] + bounds['height'] * .25
+        bottom = bounds['y'] + bounds['height'] * .75
+        cdp = page.context.new_cdp_session(page)
+
+        def swipe(start, end):
+            cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': x, 'y': start}]})
+            for step in range(1, 13):
+                cdp.send('Input.dispatchTouchEvent', {'type': 'touchMove', 'touchPoints':
+                         [{'x': x, 'y': start + (end - start) * step / 12}]})
+                page.wait_for_timeout(20)
+            cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
+
+        # Drag content down to reveal older tmux output, then back toward live.
+        swipe(top, bottom)
+        eventually(lambda: pane(name, 'pane_in_mode'), '1')
+        eventually(lambda: int(pane(name, 'scroll_position') or '0') > 0, True)
+        position = int(pane(name, 'scroll_position'))
+        swipe(bottom, top)
+        eventually(lambda: int(pane(name, 'scroll_position') or '0') < position, True)
+        page.keyboard.press('Escape')
+        eventually(lambda: pane(name, 'pane_in_mode'), '0')
+        browser.close()

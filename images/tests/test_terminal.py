@@ -42,6 +42,14 @@ try:
     assert tmux('show-options','-g','-v','status') == 'off'
     assert open(user_config).read() == 'set -g status on\n'
     assert tmux('show-window-options','-g','-v','window-size') == 'latest'
+    # A browser xterm sends SGR mouse-wheel reports, not arrow/history keys.
+    tmux('send-keys','-t','=main:', "printf 'trackpad-row-%03d\\n' {1..300}", 'Enter')
+    wait(lambda: int(tmux('display-message','-p','-t','=main:','#{history_size}')) > 200)
+    os.write(clients[0][1], b'\x1b[<64;10;10M')
+    wait(lambda: tmux('display-message','-p','-t','=main:','#{pane_in_mode}') == '1')
+    assert int(tmux('display-message','-p','-t','=main:','#{scroll_position}')) > 0
+    tmux('send-keys','-t','=main:','-X','cancel')
+    wait(lambda: tmux('display-message','-p','-t','=main:','#{pane_in_mode}') == '0')
     assert oct(os.stat(os.path.dirname(socket)).st_mode & 0o777) == '0o700'
     assert os.stat(socket).st_mode & 0o077 == 0
     tmux('send-keys','-t','=main:','pwd > /workspace/terminal-cwd-proof','Enter')

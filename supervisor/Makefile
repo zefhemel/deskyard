@@ -6,7 +6,8 @@
 #                      (builds the desktop image unless CC_TEST_IMAGE names one)
 # (All of Deskyard's tests: the Makefile one folder up.)
 #   make linux         the supervisor for the engine's Linux architecture,
-#                      into bin/deskyard-supervisor-linux
+#                      into bin/deskyard-supervisor-linux, plus both desktop CLIs
+#   make cli-linux     just the desktop CLIs in bin/desktop-cli/linux-{amd64,arm64}/
 #   make dev           make linux, then (re)start a container from the base
 #                      image with that binary mounted over the image's:
 #                      /data is DEV_DATA, on 127.0.0.1:DEV_PORT. The same
@@ -34,7 +35,7 @@ DEV_DATA ?= $(abspath ../test-instance)
 DEV_PORT ?= 7343
 DEV_NAME ?= deskyard-dev
 
-.PHONY: all web build linux dev test test-engine typecheck vet release image clean
+.PHONY: all web build linux cli-linux dev test test-engine typecheck vet release image clean
 
 all: build
 
@@ -42,7 +43,7 @@ all: build
 web:
 	cd web && npm ci && npm run build
 
-build: web
+build: web cli-linux
 	$(GO) build -ldflags "-X main.version=$(VERSION)" -o bin/deskyard-supervisor ./cmd/deskyard-supervisor
 	$(GO) build -ldflags "-X main.version=$(VERSION)" -o bin/deskyard ./cmd/deskyard
 
@@ -52,8 +53,18 @@ WEB_SOURCES := $(shell find web/src web/index.html web/package.json web/package-
 internal/web/dist/index.html: $(WEB_SOURCES)
 	$(MAKE) web
 
+# Both desktop architectures ship with the supervisor. Write to a temporary
+# file and rename so mounted build directories never expose a partial build.
+cli-linux:
+	@set -e; for arch in amd64 arm64; do \
+		dir=bin/desktop-cli/linux-$$arch; mkdir -p $$dir; \
+		CGO_ENABLED=0 GOOS=linux GOARCH=$$arch $(GO) build $(GOFLAGS_RELEASE) \
+			-o $$dir/deskyard.next ./cmd/deskyard; \
+		mv $$dir/deskyard.next $$dir/deskyard; \
+	done
+
 # The binary's architecture is the Docker engine's, asked only here.
-linux: internal/web/dist/index.html
+linux: internal/web/dist/index.html cli-linux
 	@arch=$$(docker info -f '{{.Architecture}}' 2>/dev/null) && test -n "$$arch" || \
 		{ echo "cannot read the engine's architecture: is Docker running?"; exit 1; }; \
 	case $$arch in \
@@ -72,6 +83,7 @@ dev: linux
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-v $(DEV_DATA):/data \
 		-v $(CURDIR)/bin/deskyard-supervisor-linux:/usr/local/bin/deskyard-supervisor:ro \
+		-v $(CURDIR)/bin/desktop-cli:/opt/deskyard/cli:ro \
 		-p 127.0.0.1:$(DEV_PORT):7343 deskyard:base
 
 test:
@@ -82,7 +94,7 @@ test:
 # contract this supervisor checks.
 TEST_IMAGE ?= deskyard-debian-xfce:test
 ENGINE_PACKAGES := ./internal/computers/ ./internal/engine/... ./internal/storage/
-test-engine:
+test-engine: cli-linux
 ifdef CC_TEST_IMAGE
 	$(GO) test -tags engine $(ENGINE_PACKAGES)
 else

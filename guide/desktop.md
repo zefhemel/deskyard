@@ -13,8 +13,16 @@ resolution and quality), the clipboard, keys the browser would otherwise take
 didn't get in through a share. Drop files on the screen to copy them into the
 computer. Badges show who has their mic on.
 The bar's tabs show the desktop next to the computer's shared terminal
-sessions. On phones, Display and Keys are in the scrollable More
+sessions. Cmd-click (Mac), Ctrl-click (Linux/Windows), or middle-click a Desktop or terminal tab to open that view in another browser tab; Shift-click uses the browser’s new-window behavior. Terminal links join the existing session. On phones, Display and Keys are in the scrollable More
 menu, and the tabs get a row of their own.
+
+**Enter fullscreen** (the expand icon in the top bar) fills the browser screen with the Deskyard tab bar and current desktop or terminal view. The same button becomes **Exit fullscreen**; the browser’s Escape action also exits. Switching tabs keeps fullscreen active, and menus and dialogs remain usable. Leaving the computer page exits fullscreen started with this button. The button appears only when the browser supports fullscreen; it needs no desktop image update.
+
+Mouse-wheel and two-finger trackpad gestures scroll the application under the
+pointer in the desktop. Small trackpad movements accumulate rather than being
+discarded; horizontal gestures scroll horizontally where the application supports
+it. The desktop fix is served by the updated supervisor for images with the v1
+client contract; older images need an image upgrade.
 
 The bar also shows terminal clients and programs working in the computer
 alongside browser viewers, with what they are running, recent actions, and
@@ -22,6 +30,45 @@ marks on the screen where they click and type. Typed text and secrets on
 command lines are hidden. Live UI updates and these marks use WebSockets, so
 several viewer tabs also work over plain HTTP without occupying the browser's
 limited HTTP connections.
+
+## Paste an image
+
+Paste a screenshot or copied image into the desktop view or a terminal tab
+(**⌘V** on Mac, or the browser’s image-capable Paste action). **Save pasted image** suggests an editable full path under `~/Desktop/`;
+edit it if you like, then choose **Upload image** to save it at that path.
+Clipboard images with generic names get a timestamped `screenshot-….png`
+name (or the image's format). Existing files are kept: the upload adds a
+number if the name is taken. Cancel leaves the image unuploaded; a failed
+upload shows an error and lets you retry. Use `~/` or an absolute path to choose another location writable by the desktop user. Missing parent folders are created. The final absolute path appears after upload and is copied to your clipboard; a copy failure is reported so you can copy it manually.
+
+This uses the image supplied by the browser's paste event. Ordinary text
+paste continues as before, and the terminal toolbar's Paste button still
+pastes text. Some plain-text paste shortcuts omit clipboard images. As with file drops, uploads require full access to a running
+computer.
+
+## Retina and display scaling
+
+The **Display** menu offers **Scaling: Auto**, **1×** and **2×**. Auto chooses
+2× when your browser reports a pixel density of at least 1.5, including Retina
+Macs, and follows changes as you move between displays. Browser zoom also
+influences this detection. Choose 1× or 2× to override it; the choice is saved
+in your browser. On narrow screens these choices are in **⋯ More**.
+
+At 2× the desktop renders twice as many pixels in each direction and XFCE
+scales its fonts, GTK controls, panel and cursor. Resolution presets describe
+logical dimensions: 1280×800 at 2× streams 2560×1600. Auto fit follows the
+available viewport. The stream fits proportionally within 3840×2160, so larger
+windows may not achieve a full two physical pixels per logical pixel.
+
+The first viewer controls resolution and scaling for the shared desktop.
+Returning to Desktop from a terminal reconnects the stream while preserving
+the current display size until the viewer's scaling preference is applied.
+Other viewers fit that same picture to their windows. Some applications may
+need reopening to adopt a scale change. Full scaling support requires both an
+updated supervisor and an updated desktop image; upgrade existing computers
+from their image settings after the new image is available.
+After a density change, XFCE can retain a stale work area even though the
+panel scales correctly, allowing maximized windows to overlap the panel.
 
 ## Mobile controls
 
@@ -76,12 +123,34 @@ for the mic and automatic clipboard synchronization; see [On a LAN](running.md#o
 
 ## Shared terminal
 
-The computer's page (`http://host/alice/`) shows its desktop and its shared terminal sessions as tabs: **Desktop** first, then one tab per running session (including ones opened from the desktop's own terminal, the CLI or another browser; a session opened or ended anywhere shows up within about a second), then **+**. A terminal tab's address is `http://host/alice/?terminal=build-2`, and a small count on the tab shows how many others are attached. **+** opens a new session named `terminal-1`, `terminal-2`, and so on. Switching tabs keeps each terminal connected and its scrollback; leaving the Desktop tab stops its stream, and returning reconnects it. Drag a tab, or press Alt+Shift+← or → on it, to reorder; the order is remembered in this browser. A terminal tab's bar has Paste, Keys and Text size.
+The computer's page (`http://host/alice/`) shows its desktop and its shared terminal sessions as tabs: **Desktop** first, then one tab per running session (including ones opened from the desktop's own terminal, the CLI or another browser; a session opened or ended anywhere shows up within about a second), then **+**. A terminal tab's address is `http://host/alice/?terminal=build-2`, and a small count on the tab shows how many others are attached. **+** opens a new session named `terminal-1`, `terminal-2`, and so on, skipping names retained by attachment groups after a rename. Switching tabs keeps each terminal connected and its scrollback; leaving the Desktop tab stops its stream, and returning reconnects it. Drag a tab, or press Alt+Shift+← or → on it, to reorder; the order is remembered in this browser. A terminal tab's bar has Paste, Keys and Text size.
+
+The small **⋯** button immediately left of **×** offers **Detach** and **Rename session…**. **Detach** closes only this page’s tab and connection; the shell, its jobs and other clients keep running. It stays hidden through session-list updates on this page. Reload the page or open the session’s URL to show it again. **Rename session…** changes its name. Enter a valid, unused session name (names retained by tmux attachment groups are reserved); its shell and programs keep running. This browser reconnects using the new name. Other browser tabs discover the renamed session in their session list; old bookmarked terminal URLs no longer join it. Renaming requires an updated desktop image with the rename helper.
 
 **×** on a tab ends that session for everyone: its shell, every program in it, and every other client's view. It asks first when a program other than the shell is running in it, or when anyone else is attached; otherwise it ends at once. A link or a reconnect only joins: a session that no longer exists opens the Desktop tab with a "session ended" note and is never recreated. Each running computer's card lists **Desktop** and its sessions (the first three and "+N more" when there are more than four), and **+** opens `main`, creating it if needed, or a new session when `main` already exists.
 
 The create/join walkthrough, screenshots, native keyboard evidence and known limits are in the project space's *Testing/Shared terminal 2026-10-23* page, and the tabs' checks in *Testing/Environment tabs 2026-10-26* (see [Project records](development.md#project-records)). The page reconnects after brief network interruptions without replaying disconnected input. Restarting a computer ends its shells and jobs.
 
-On phones, tap **Keyboard** to open the software keyboard. The scrollable key bar provides Ctrl+C/D/L, Esc, Tab, arrows, Home/End, PgUp/PgDn and Delete, plus one-shot Ctrl and Alt. Helper taps keep the keyboard open; paste and composition clear modifiers. On short keyboard viewports the bar moves into the key row as a horizontally scrollable strip. If the browser leaves less than the minimum space for a readable terminal row and 44px controls, the page asks you to rotate to portrait or dismiss the keyboard; the shell stays connected. **History** opens tmux history: use PgUp/PgDn, then Esc to return. The font stays readable when clients have different sizes; a passive smaller client may show a cropped tmux view until it interacts.
+The terminal keyboard bar is hidden by default on devices whose primary pointer supports fine movement and hover (typically a laptop or desktop), and shown on touch-first devices. Browsers do not report physical keyboard attachment reliably. Use **Keys → Show keyboard bar** (or **⋯ → Show keyboard bar** on phones) to override the choice for the current terminal tab. Hiding it gives the terminal the space back and clears any one-shot Ctrl/Alt modifiers.
+
+On phones, tap **Keyboard** to open the software keyboard. The compact, single-row key bar scrolls sideways and provides Ctrl+C/D/L, Esc, Tab, arrows, Home/End, PgUp/PgDn and Delete, plus one-shot Ctrl and Alt. Helper taps keep the keyboard open; paste and composition clear modifiers. On short keyboard viewports the computer toolbar shares the bottom key row as a horizontally scrollable strip. If the browser leaves less than the minimum space for a readable terminal row and 44px controls, the page asks you to rotate to portrait or dismiss the keyboard; the shell stays connected. **History** opens tmux history: use PgUp/PgDn, then Esc to return. Drag the terminal output down with one finger to reveal older history, or up
+to move toward live output. Taps still focus the terminal; horizontal and
+multi-finger gestures do not send terminal input. Mouse-wheel and
+two-finger trackpad gestures over a terminal tab also scroll its shared tmux
+history; the first upward movement scrolls immediately. Mouse-aware applications
+(such as `less --mouse` or Vim with mouse support enabled) receive the wheel
+events themselves. For local text selection in a browser terminal, hold Shift
+while dragging on Linux/Windows, or Option on Mac. Finger scrolling is supplied by the updated supervisor UI. The tmux mouse
+scrolling defaults need an updated desktop image; Mac Option selection also needs the updated supervisor. The font stays readable when clients have different sizes; a passive smaller client may show a cropped tmux view until it interacts.
 
 `deskyard -c alice terminal` joins the computer's shared Bash login shell in `/workspace`; `deskyard terminal build-2` selects another named shell. Inside the computer, ordinary terminal windows and tabs (including **Deskyard Terminal**, the default terminal shortcut and file-manager terminal actions) each open a new shared shell named `terminal-1`, `terminal-2`, and so on, preserving their starting directory. The window/tab title shows the session name, and the browser shows it as a tab. When sessions are already running, the desktop's **Deskyard Terminal** launcher first lists them with their attached clients and running program: type a number to join one, or press Enter for a new session. Within a native shared terminal, press **Ctrl-B then s** and choose its name; outside tmux, `deskyard terminal NAME` joins it. Browser clients switch tabs; remote CLI clients detach and reconnect with the chosen name. Saved emulator defaults migrate at desktop startup; explicit emulator command launches such as `xfce4-terminal -x PROGRAM` still run the requested program directly. Run `deskyard terminal` locally to join `main`. Session names contain 1–64 letters, digits, underscores or dashes and start with a letter or digit. Detach with Ctrl-B then D; reconnecting joins the same shell and running jobs. Sessions end when the computer stops or restarts. Existing computers need an updated image with tmux and the shared terminal helper.
+
+### Switch tabs with the keyboard
+
+Ctrl+Shift+1 selects Desktop; Ctrl+Shift+2–9 selects the first eight terminal tabs in the viewer’s current order. Use Control on Mac too. Shortcuts work with focus inside the desktop iframe or browser terminal, ignore composition and extra Alt/Meta modifiers, leave missing positions untouched, and pause while a dialog is open. Physical number-row keys are used so Shift-produced punctuation does not change the mapping. Tab tooltips and `aria-keyshortcuts` expose the bindings.
+
+## Automatic stream quality
+
+Display → **Quality: Auto** is the default when this browser has no saved quality choice. Existing manual choices are kept. Auto starts at Medium (H.264 up to 8 Mbit/s and 60 fps, or JPEG quality 50 and 30 fps where WebCodecs is unavailable). Selkies checks codec support and handles decoder backlog and network congestion; Auto also measures frames reaching the screen and lowers the frame rate after sustained presentation loss. It gradually raises it again under sustained healthy motion. Still screens do not count as slow playback or evidence of spare capacity.
+
+Only the first viewer, which owns the display, automatically adjusts its shared frame rate. Other viewers follow it. Auto preserves resolution, scaling and text paint-over quality. Manual Low through Lossless remain available, and choosing one stops Auto’s presentation adjustments; Selkies’ protective decoder and network adaptation still apply. Automatic measurements pause in background tabs and stop on disconnect or when leaving Desktop. No desktop image update is needed for the pinned Selkies 2.1.0 client.
