@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Whether the desktop images need building for HEAD (or HEAD_REF): prints
+# build=true or build=false, for $GITHUB_OUTPUT, and why on stderr.
+#
+#   images/ci/build-needed BASE [HEAD_REF]
+#
+# They do when BASE is empty or not a commit here (nothing to compare with),
+# or when a desktop image input changed between BASE and HEAD_REF: images/,
+# docker-bake.hcl or the images workflow. No supervisor Go package is an
+# image input: the desktop CLIs ship with the supervisor. Run it locally,
+# e.g. images/ci/build-needed HEAD~1.
+set -euo pipefail
+
+base=${1-}
+head=${2:-HEAD}
+if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+	echo "Building: no earlier commit to compare with" >&2
+	echo "build=true"
+	exit 0
+fi
+changed=$(git diff --name-only "$base" "$head")
+while read -r f; do
+	case "$f" in
+	images/* | docker-bake.hcl | .github/workflows/images.yml)
+		echo "Building: $f changed" >&2
+		echo "build=true"
+		exit 0
+		;;
+	esac
+done <<<"$changed"
+echo "Skipping the build: no change to desktop image inputs since $base" >&2
+echo "build=false"

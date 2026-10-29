@@ -50,7 +50,7 @@ jobs:
           fetch-depth: 0
 
       # Scheduled/manual runs always build. Pushes and PRs build only when
-      # desktop inputs changed; no supervisor Go package is an image input.
+      # desktop inputs changed (images/ci/build-needed, which runs locally too).
       - id: changes
         name: Whether the images' inputs changed
         run: |
@@ -59,21 +59,7 @@ jobs:
             pull_request) base=$(git merge-base "$BASE_SHA" HEAD) ;;
             *) base=$BEFORE ;;
           esac
-          if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
-            echo "build=true" >> "$GITHUB_OUTPUT"
-            echo "Building: no earlier commit to compare with"
-            exit 0
-          fi
-          build=false
-          while read -r f; do
-            case "$f" in
-              "") ;;
-              images/*|docker-bake.hcl|.github/workflows/images.yml) build=true ;;
-            esac
-            if [ "$build" = true ]; then echo "Building: $f changed"; break; fi
-          done < <(git diff --name-only "$base" HEAD)
-          [ "$build" = true ] || echo "Skipping the build: no change to desktop image inputs since $base"
-          echo "build=$build" >> "$GITHUB_OUTPUT"
+          images/ci/build-needed "$base" >> "$GITHUB_OUTPUT"
         env:
           EVENT: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}

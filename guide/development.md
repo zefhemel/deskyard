@@ -85,11 +85,14 @@ images/
   common/          shared rootfs and streaming patches
   debian-xfce/     XFCE rootfs overlay
   tests/           shared desktop image tests
+  ci/              CI helpers (build-needed: whether images need building)
 docs/               local copy of the SilverBullet project space (ignored by git)
 ```
 
 CI: `.github/workflows/images.yml` builds all `docker-bake.hcl` targets together for
-amd64 and arm64 on native runners, weekly and when desktop image inputs change.
+amd64 and arm64 on native runners, weekly and when desktop image inputs change
+(`images/`, `docker-bake.hcl` or the workflow; `images/ci/build-needed BASE`
+decides, and runs locally too, e.g. `images/ci/build-needed HEAD~1`).
 CLI-only changes no longer trigger desktop publication;
 `.github/workflows/supervisor.yml` tests the supervisor, publishes its image,
 builds the `deskyard` command binaries (the supervisor is released only as
