@@ -424,7 +424,7 @@ def remote(cli, admin, desktop, name, tmp_path):
     r = admin.post("/api/accounts", json={"username": user, "grants": [{"computer": name, "level": "full"}]})
     assert r.status_code == 201, r.text
     env = {**os.environ, "XDG_CONFIG_HOME": str(tmp_path / "config"), "HOME": str(tmp_path)}
-    for k in ("DESKYARD_URL", "DESKYARD_CREDENTIAL", "DESKYARD_ENVIRONMENT"):
+    for k in ("DESKYARD_URL", "DESKYARD_CREDENTIAL", "DESKYARD_COMPUTER"):
         env.pop(k, None)
 
     def run(*args, input=None, check=True):

@@ -165,11 +165,11 @@ def test_browser_presence(admin, desktop, name):
 def test_cp_recorded(cli, remote, admin, name, tmp_path):
     f = tmp_path / "f.bin"
     f.write_bytes(b"x" * 1000)
-    remote("-e", name, "cp", str(f), f"{name}:/workspace/f.bin")
+    remote("-c", name, "cp", str(f), f"{name}:/workspace/f.bin")
     s = summary(admin, name)
     assert has_recent(s, kind="copy", direction="in", path="/workspace/f.bin", size=1000), s
     back = tmp_path / "back.bin"
-    remote("-e", name, "cp", f"{name}:/workspace/f.bin", str(back))
+    remote("-c", name, "cp", f"{name}:/workspace/f.bin", str(back))
     assert back.stat().st_size == 1000
     s = summary(admin, name)
     assert has_recent(s, kind="copy", direction="out", path="/workspace/f.bin", size=1000), s

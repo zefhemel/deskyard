@@ -1,6 +1,6 @@
 deskyard size: print the screen size
 
-Usage: deskyard [-e ENV] size
+Usage: deskyard [-c COMPUTER] size
 
 Prints the screen size in pixels.
 
@@ -9,5 +9,5 @@ Prints: one line "W H", e.g. "1280 800"
 Examples:
   deskyard size
 
-Where: inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)
+Where: inside a computer it acts locally; elsewhere on the chosen computer (-c COMPUTER)
 Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop

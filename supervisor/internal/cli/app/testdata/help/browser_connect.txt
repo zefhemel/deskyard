@@ -1,12 +1,12 @@
-deskyard browser connect: forward the environment's browser to a local CDP port
+deskyard browser connect: forward the computer's browser to a local CDP port
 
-Usage: deskyard [-e ENV] browser connect [--port N]
+Usage: deskyard [-c COMPUTER] browser connect [--port N]
 
 Listens on 127.0.0.1:PORT and forwards the Chrome DevTools Protocol to the
-environment's shared Chromium (the one on its desktop, with your signed-in
+computer's shared Chromium (the one on its desktop, with your signed-in
 sessions), so Playwright, Puppeteer or DevTools tools connect as if the
 browser were local. Prints the URL, then keeps running until Ctrl-C. Run it in
-the background. Inside an environment it isn't needed: CDP is at
+the background. Inside a computer it isn't needed: CDP is at
 http://127.0.0.1:9221.
 
 Options:
@@ -16,8 +16,8 @@ Prints: first line: the local CDP URL (http://127.0.0.1:9222); connection log
   on stderr
 
 Examples:
-  deskyard -e alice browser connect &
+  deskyard -c alice browser connect &
   # then in Python: p.chromium.connect_over_cdp("http://127.0.0.1:9222")
 
-Where: on the chosen environment (-e ENV); inside an environment without one chosen it acts locally
+Where: on the chosen computer (-c COMPUTER); inside a computer without one chosen it acts locally
 Exit codes: 0 ok, 1 error, 2 usage error

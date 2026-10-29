@@ -1,7 +1,7 @@
-deskyard guide: how to work in a Deskyard environment
+deskyard guide: how to work in a Deskyard computer
 
-WHAT AN ENVIRONMENT IS
-An environment is a persistent Debian Linux desktop in a container, with a
+WHAT A COMPUTER IS
+A computer is a persistent Debian Linux desktop in a container, with a
 shared Chromium browser. Open it in your web browser or use this CLI from
 your terminal. Everyone with access shares the same screen and browser profile.
 
@@ -14,23 +14,23 @@ your terminal. Everyone with access shares the same screen and browser profile.
     uv tool install PKG            Python CLIs; uv run / uv venv for projects
     flatpak install --user -y --noninteractive flathub APP_ID   desktop apps
   Node and Python come preinstalled.
-- Leave the environment's services alone (Caddy, Selkies, Chromium, D-Bus,
+- Leave the computer's services alone (Caddy, Selkies, Chromium, D-Bus,
   supervisord): killing them disconnects viewers.
 
 WHERE YOU ARE
-- Inside an environment: every command acts on it directly. No setup.
+- Inside a computer: every command acts on it directly. No setup.
 - Anywhere else: sign in to the server once, then talk to it:
     deskyard login https://host/alice    approve in your browser
     deskyard auth 'https://host/link#dyl_...'   or use a login link, no browser
     deskyard status
-  The URL's environment (alice) becomes the default. -e ENV (before the
-  command) picks another on the same server, -e SERVER/ENV one on another
-  server; DESKYARD_ENVIRONMENT does the same. `deskyard env use ENV` changes
+  The URL's computer (alice) becomes the default. -c COMPUTER (before the
+  command) picks another on the same server, -c SERVER/COMPUTER one on another
+  server; DESKYARD_COMPUTER does the same. `deskyard computer use COMPUTER` changes
   the default, `deskyard server list` shows where you are signed in, and
   `deskyard logout` revokes this machine's credential. DESKYARD_URL +
   DESKYARD_CREDENTIAL work without saving anything. The CLI can do what your
-  account can, in environments you have full access to. A stopped
-  environment answers "alice is stopped"; start it in the web UI first.
+  account can, in computers you have full access to. A stopped
+  computer answers "alice is stopped"; start it in the web UI first.
 
 THREE WAYS TO WORK
 
@@ -39,7 +39,7 @@ THREE WAYS TO WORK
     deskyard exec -- ls -la                    run a command, exit code passes through
     deskyard exec -- bash -lc 'cd app && npm test'   pipes, &&, globs need bash -lc
     deskyard exec --json -- cat notes.txt      {"stdout","stderr","exit"} in one object
-    deskyard exec --cwd /workspace/app -e CI=1 -- make   -e after exec: a variable
+    deskyard exec --cwd /workspace/app -e CI=1 -- make   -e: a variable
     echo data | deskyard exec -- tee /workspace/in.txt   stdin is streamed
     deskyard cp ./src alice:/workspace/src     upload (file or directory)
     deskyard cp alice:/workspace/out.csv .     download
@@ -47,16 +47,16 @@ THREE WAYS TO WORK
     deskyard shell                             interactive shell
 
 2. Browser: connect browser tools to your existing Chromium session.
-   The environment's Chromium shares the same profile and signed-in sessions
+   The computer's Chromium shares the same profile and signed-in sessions
    whether you open it on screen or connect through CDP.
-   Inside the environment CDP is at http://127.0.0.1:9221. From elsewhere:
-    deskyard -e alice browser connect &        forwards http://127.0.0.1:9222
+   Inside the computer CDP is at http://127.0.0.1:9221. From elsewhere:
+    deskyard -c alice browser connect &        forwards http://127.0.0.1:9222
    then attach to the shared browser:
     browser = p.chromium.connect_over_cdp("http://127.0.0.1:9222")
     page = browser.contexts[0].new_page()      your own tab, in the shared profile
    Open a separate tab when other people are using the browser.
    browser.close() only disconnects. For a login, 2FA or CAPTCHA, open
-   the environment in your web browser and complete it there.
+   the computer in your web browser and complete it there.
 
 3. Desktop: for anything without an API: desktop apps, browser UI outside
    the page (permission prompts, file pickers), or checking what is on
@@ -82,22 +82,22 @@ WHICH ONE
   a screenshot to check the result.
 
 PORTS
-  Map TCP ports between your machine and an environment (from outside it):
-    deskyard -e alice forward 3000 &       your 127.0.0.1:3000 is localhost:3000 in alice
-    deskyard -e alice forward -R 5173 &    alice's localhost:5173 is your 127.0.0.1:5173
+  Map TCP ports between your machine and a computer (from outside it):
+    deskyard -c alice forward 3000 &       your 127.0.0.1:3000 is localhost:3000 in alice
+    deskyard -c alice forward -R 5173 &    alice's localhost:5173 is your 127.0.0.1:5173
   Mix several in one command (-R goes before each reverse one). Port
-  order: plain LOCAL:ENV (forward 8080:3000: your 8080 is the environment's
-  3000); after -R it is ENV:LOCAL (-R 80:8080: the environment's 80 is your
-  8080). Loopback only; the environment won't listen below 1024, so plain
+  order: plain LOCAL:COMPUTER (forward 8080:3000: your 8080 is the computer's
+  3000); after -R it is COMPUTER:LOCAL (-R 80:8080: the computer's 80 is your
+  8080). Loopback only; the computer won't listen below 1024, so plain
   "forward 80" fails but "-R 80:8080" works (it only dials). On a lost link
   it reconnects by itself: -R local ports stay bound meanwhile, plain
-  mappings come back in the environment once the link is back. It prints
-  "in LOCAL ENV" / "out ENV 127.0.0.1:LOCAL" and "Linked to ..." when the
-  link is accepted, a moment before the environment side is known to run.
+  mappings come back in the computer once the link is back. It prints
+  "in LOCAL COMPUTER" / "out COMPUTER 127.0.0.1:LOCAL" and "Linked to ..." when the
+  link is accepted, a moment before the computer side is known to run.
   Limits: 4 links per credential, 64 plain and 256 mappings per command.
   The viewers see which ports you map.
 
-SHARING AN ENVIRONMENT
+SHARING A COMPUTER
 - Other viewers see every window you open. Coordinate mouse and keyboard use.
 - CLI activity and screen actions are visible alongside browser viewers.
 - Keep long-running programs in the background (setsid -f CMD) so they
@@ -105,8 +105,8 @@ SHARING AN ENVIRONMENT
 
 MANAGING THE SERVER
   With an administrator account (some need only full access):
-    deskyard env list | env create NAME --image REF | env start NAME
-    deskyard env access alice anna=full bob=observe   who may use it
+    deskyard computer list | computer create NAME --image REF | computer start NAME
+    deskyard computer access alice anna=full bob=observe   who may use it
     deskyard share create alice sanne --observe --expires 1d   prints a link
     deskyard account create anna --grant alice   token account: prints a link
     deskyard volume list | device list | device revoke ID

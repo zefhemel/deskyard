@@ -1,15 +1,15 @@
 deskyard server list: list the servers you are signed in to
 
-Usage: deskyard [-e ENV] server list [--json]
+Usage: deskyard [-c COMPUTER] server list [--json]
 
-Lists the saved servers with your username and default environment on each; *
+Lists the saved servers with your username and default computer on each; *
 marks the default server.
 
 Options:
   --json               print JSON instead of text
 
-Prints: a table NAME URL USER ENVIRONMENT CREDENTIAL (credential ID only);
-  with --json an array of {name,url,username,environment,default}
+Prints: a table NAME URL USER COMPUTER CREDENTIAL (credential ID only); with
+  --json an array of {name,url,username,computer,default}
 
 Examples:
   deskyard server list

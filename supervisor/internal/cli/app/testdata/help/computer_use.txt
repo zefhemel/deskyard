@@ -1,0 +1,18 @@
+deskyard computer use: set a server's default computer
+
+Usage: deskyard [-c COMPUTER] computer use COMPUTER|SERVER/COMPUTER
+
+Checks that you can see COMPUTER on the default server (or SERVER), then makes
+it that server's default computer, used when -c isn't given.
+
+Arguments:
+  COMPUTER   string      required  computer name, or SERVER/COMPUTER
+
+Prints: a confirmation line
+
+Examples:
+  deskyard computer use alice
+  deskyard computer use work/bob
+
+Where: on this machine, talking to the server
+Exit codes: 0 ok, 1 error, 2 usage error

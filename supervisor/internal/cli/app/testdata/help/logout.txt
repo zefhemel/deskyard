@@ -1,6 +1,6 @@
 deskyard logout: revoke this CLI's credential and forget the server
 
-Usage: deskyard [-e ENV] logout [SERVER]
+Usage: deskyard [-c COMPUTER] logout [SERVER]
 
 Revokes this CLI's credential on the server (default: the default server),
 then forgets the server. A credential the server already refuses is forgotten

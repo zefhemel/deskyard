@@ -1,15 +1,15 @@
 {
   "name": "deskyard",
   "version": "test",
-  "description": "Use a Deskyard environment (a Linux desktop with a shared Chromium) from inside it or remotely through its server's API, after `deskyard login`. Run commands as `deskyard [-e ENV] <name> <arguments...>`: the global -e ENV or -e SERVER/ENV (--environment) chooses the environment and goes before the command name; arguments are positional in the listed order, and a command's flags go after its name (so exec -e K=V sets an environment variable).",
-  "usage": "deskyard [-e ENV] COMMAND [ARGS...]",
+  "description": "Use a Deskyard computer (a Linux desktop with a shared Chromium) from inside it or remotely through its server's API, after `deskyard login`. Run commands as `deskyard [-c COMPUTER] <name> <arguments...>`: the global -c COMPUTER or -c SERVER/COMPUTER (--computer) chooses the computer and goes before the command name; arguments are positional in the listed order, and a command's flags go after its name.",
+  "usage": "deskyard [-c COMPUTER] COMMAND [ARGS...]",
   "globalFlags": [
     {
-      "name": "--environment",
-      "short": "-e",
+      "name": "--computer",
+      "short": "-c",
       "type": "string",
-      "value": "ENV",
-      "description": "the environment to use: ENV on the default server, or SERVER/ENV (see `deskyard server list`); only before the command name: after it, as in `exec -e K=V`, -e is a command's own flag"
+      "value": "COMPUTER",
+      "description": "the computer to use: COMPUTER on the default server, or SERVER/COMPUTER (see `deskyard server list`); only before the command name"
     },
     {
       "name": "--help",
@@ -20,12 +20,12 @@
   ],
   "environment": [
     {
-      "name": "DESKYARD_ENVIRONMENT",
-      "description": "environment to use when -e isn't given (ENV or SERVER/ENV)"
+      "name": "DESKYARD_COMPUTER",
+      "description": "computer to use when -c isn't given (COMPUTER or SERVER/COMPUTER)"
     },
     {
       "name": "DESKYARD_URL",
-      "description": "server URL, optionally with an environment (https://host/alice), to use instead of the default server; needs DESKYARD_CREDENTIAL"
+      "description": "server URL, optionally with a computer (https://host/alice), to use instead of the default server; needs DESKYARD_CREDENTIAL"
     },
     {
       "name": "DESKYARD_CREDENTIAL",
@@ -55,7 +55,7 @@
     },
     {
       "code": "other",
-      "meaning": "exec, shell and screen actions pass through the exit code of the command in the environment"
+      "meaning": "exec, shell and screen actions pass through the exit code of the command in the computer"
     }
   ],
   "commands": [
@@ -82,7 +82,7 @@
         "deskyard screenshot shot.png",
         "deskyard screenshot > shot.png"
       ],
-      "where": "inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)",
+      "where": "inside a computer it acts locally; elsewhere on the chosen computer (-c COMPUTER)",
       "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
@@ -131,7 +131,7 @@
       "examples": [
         "deskyard zoom 100 50 420 290 detail.png"
       ],
-      "where": "inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)",
+      "where": "inside a computer it acts locally; elsewhere on the chosen computer (-c COMPUTER)",
       "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
@@ -149,7 +149,7 @@
       "examples": [
         "deskyard size"
       ],
-      "where": "inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)",
+      "where": "inside a computer it acts locally; elsewhere on the chosen computer (-c COMPUTER)",
       "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
@@ -167,7 +167,7 @@
       "examples": [
         "deskyard cursor"
       ],
-      "where": "inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)",
+      "where": "inside a computer it acts locally; elsewhere on the chosen computer (-c COMPUTER)",
       "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
@@ -198,7 +198,7 @@
       "examples": [
         "deskyard move 640 400"
       ],
-      "where": "inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)",
+      "where": "inside a computer it acts locally; elsewhere on the chosen computer (-c COMPUTER)",
       "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
@@ -242,7 +242,7 @@
         "deskyard click 640 400",
         "deskyard click 640 400 right"
       ],
-      "where": "inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)",
+      "where": "inside a computer it acts locally; elsewhere on the chosen computer (-c COMPUTER)",
       "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
@@ -273,7 +273,7 @@
       "examples": [
         "deskyard double-click 200 300"
       ],
-      "where": "inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)",
+      "where": "inside a computer it acts locally; elsewhere on the chosen computer (-c COMPUTER)",
       "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
@@ -304,7 +304,7 @@
       "examples": [
         "deskyard triple-click 200 300"
       ],
-      "where": "inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)",
+      "where": "inside a computer it acts locally; elsewhere on the chosen computer (-c COMPUTER)",
       "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
@@ -335,7 +335,7 @@
       "examples": [
         "deskyard move 100 100 && deskyard mouse-down && deskyard move 300 300 && deskyard mouse-up"
       ],
-      "where": "inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)",
+      "where": "inside a computer it acts locally; elsewhere on the chosen computer (-c COMPUTER)",
       "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
@@ -366,7 +366,7 @@
       "examples": [
         "deskyard mouse-up"
       ],
-      "where": "inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)",
+      "where": "inside a computer it acts locally; elsewhere on the chosen computer (-c COMPUTER)",
       "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
@@ -409,7 +409,7 @@
       "examples": [
         "deskyard drag 100 100 400 300"
       ],
-      "where": "inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)",
+      "where": "inside a computer it acts locally; elsewhere on the chosen computer (-c COMPUTER)",
       "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
@@ -435,7 +435,7 @@
       "examples": [
         "deskyard type 'hello world'"
       ],
-      "where": "inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)",
+      "where": "inside a computer it acts locally; elsewhere on the chosen computer (-c COMPUTER)",
       "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
@@ -462,7 +462,7 @@
         "deskyard key ctrl+l",
         "deskyard key ctrl+a BackSpace"
       ],
-      "where": "inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)",
+      "where": "inside a computer it acts locally; elsewhere on the chosen computer (-c COMPUTER)",
       "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
@@ -493,7 +493,7 @@
       "examples": [
         "deskyard hold-key shift 0.5"
       ],
-      "where": "inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)",
+      "where": "inside a computer it acts locally; elsewhere on the chosen computer (-c COMPUTER)",
       "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
@@ -543,7 +543,7 @@
       "examples": [
         "deskyard scroll 640 400 down 5"
       ],
-      "where": "inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)",
+      "where": "inside a computer it acts locally; elsewhere on the chosen computer (-c COMPUTER)",
       "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
@@ -568,13 +568,13 @@
       "examples": [
         "deskyard wait 2"
       ],
-      "where": "inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)",
+      "where": "inside a computer it acts locally; elsewhere on the chosen computer (-c COMPUTER)",
       "exitCodes": "0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop"
     },
     {
       "name": "exec",
       "group": "shell",
-      "summary": "run a command in the environment",
+      "summary": "run a command in the computer",
       "usage": "exec [OPTIONS] -- CMD [ARG...]",
       "description": "Runs one command as user (in /workspace unless --cwd) and streams its stdin, stdout and stderr; exits with the command's exit code. The command is run as given, not through a shell: for pipes, globs or && use `-- bash -lc '...'`.",
       "arguments": [
@@ -603,14 +603,14 @@
           "type": "string",
           "value": "DIR",
           "default": "/workspace",
-          "description": "working directory in the environment"
+          "description": "working directory in the computer"
         },
         {
           "name": "--env",
           "short": "-e",
           "type": "string[]",
           "value": "K=V",
-          "description": "after exec: set an environment variable for the command (repeatable); not the global -e ENV before exec, which chooses the environment"
+          "description": "set an environment variable for the command (repeatable)"
         }
       ],
       "output": {
@@ -625,20 +625,20 @@
         }
       },
       "examples": [
-        "deskyard -e alice exec -- ls -la",
-        "deskyard -e alice exec -e CI=1 -- make test",
+        "deskyard -c alice exec -- ls -la",
+        "deskyard -c alice exec -e CI=1 -- make test",
         "deskyard exec --json -- bash -lc 'cd app && npm test'",
         "echo hi | deskyard exec -- tee /workspace/hi.txt"
       ],
-      "where": "on the chosen environment (-e ENV); inside an environment without one chosen it acts locally",
-      "exitCodes": "the command's own exit code; 1 when it couldn't run (connection, credential, stopped environment), 2 usage error"
+      "where": "on the chosen computer (-c COMPUTER); inside a computer without one chosen it acts locally",
+      "exitCodes": "the command's own exit code; 1 when it couldn't run (connection, credential, stopped computer), 2 usage error"
     },
     {
       "name": "terminal",
       "group": "shell",
       "summary": "join a shared terminal session",
       "usage": "terminal [SESSION]",
-      "description": "Joins a shared Bash login shell in /workspace, default main. Browser, CLI and desktop clients share the same session. Inside an existing native shared terminal, press Ctrl-B then s and choose the session instead of nesting this command. Detach with Ctrl-B then D; jobs survive disconnect but end when the environment restarts. Session names use 1–64 letters, digits, underscores or dashes and start with a letter or digit.",
+      "description": "Joins a shared Bash login shell in /workspace, default main. Browser, CLI and desktop clients share the same session. Inside an existing native shared terminal, press Ctrl-B then s and choose the session instead of nesting this command. Detach with Ctrl-B then D; jobs survive disconnect but end when the computer restarts. Session names use 1–64 letters, digits, underscores or dashes and start with a letter or digit.",
       "arguments": [
         {
           "name": "session",
@@ -654,18 +654,18 @@
         "description": "shared terminal input and output"
       },
       "examples": [
-        "deskyard -e alice terminal",
+        "deskyard -c alice terminal",
         "deskyard terminal build-2"
       ],
-      "where": "on the chosen environment (-e ENV); inside an environment without one chosen it acts locally",
-      "exitCodes": "the command's own exit code; 1 when it couldn't run (connection, credential, stopped environment), 2 usage error"
+      "where": "on the chosen computer (-c COMPUTER); inside a computer without one chosen it acts locally",
+      "exitCodes": "the command's own exit code; 1 when it couldn't run (connection, credential, stopped computer), 2 usage error"
     },
     {
       "name": "shell",
       "group": "shell",
       "summary": "interactive login shell",
       "usage": "shell",
-      "description": "Opens an interactive bash login shell in the environment in your terminal (raw mode, resizes follow your window). Exit with `exit` or Ctrl-D. For scripted use, prefer exec.",
+      "description": "Opens an interactive bash login shell in the computer in your terminal (raw mode, resizes follow your window). Exit with `exit` or Ctrl-D. For scripted use, prefer exec.",
       "arguments": [],
       "flags": [],
       "output": {
@@ -673,29 +673,29 @@
         "description": "the terminal session"
       },
       "examples": [
-        "deskyard -e alice shell"
+        "deskyard -c alice shell"
       ],
-      "where": "on the chosen environment (-e ENV); inside an environment without one chosen it acts locally",
+      "where": "on the chosen computer (-c COMPUTER); inside a computer without one chosen it acts locally",
       "exitCodes": "the shell's exit code; 1 when it couldn't start"
     },
     {
       "name": "cp",
       "group": "shell",
-      "summary": "copy files to or from an environment",
+      "summary": "copy files to or from a computer",
       "usage": "cp SRC DST",
-      "description": "Copies a file or directory between this machine and an environment; write the environment side as ENV:/path (ENV is an environment on the chosen server, -e SERVER/… or the default one; an empty ENV, as in :/path, means the chosen environment). A file lands at DST, or inside DST when it is an existing directory. A directory's contents land in DST, which is created (like `cp -r SRC/. DST`). SRC - reads stdin; DST - writes to stdout (a tar stream for a directory). Files land as user; inside an environment, two local paths are copied locally.",
+      "description": "Copies a file or directory between this machine and a computer; write the computer side as COMPUTER:/path (COMPUTER is a computer on the chosen server, -c SERVER/… or the default one; an empty COMPUTER, as in :/path, means the chosen computer). A file lands at DST, or inside DST when it is an existing directory. A directory's contents land in DST, which is created (like `cp -r SRC/. DST`). SRC - reads stdin; DST - writes to stdout (a tar stream for a directory). Files land as user; inside a computer, two local paths are copied locally.",
       "arguments": [
         {
           "name": "src",
           "type": "path",
           "required": true,
-          "description": "local path, -, or ENV:/path"
+          "description": "local path, -, or COMPUTER:/path"
         },
         {
           "name": "dst",
           "type": "path",
           "required": true,
-          "description": "local path, -, or ENV:/path"
+          "description": "local path, -, or COMPUTER:/path"
         }
       ],
       "flags": [],
@@ -708,22 +708,22 @@
         "deskyard cp ./site alice:/workspace/site",
         "deskyard cp alice:/workspace/out.csv ."
       ],
-      "where": "on the chosen environment (-e ENV); inside an environment without one chosen it acts locally",
+      "where": "on the chosen computer (-c COMPUTER); inside a computer without one chosen it acts locally",
       "exitCodes": "0 ok, 1 error, 2 usage error"
     },
     {
       "name": "forward",
       "group": "shell",
-      "summary": "map TCP ports between this machine and the environment",
+      "summary": "map TCP ports between this machine and the computer",
       "usage": "forward [-R] PORT[:PORT]...",
-      "description": "Maps TCP ports both ways until Ctrl-C, over the remote access API (no port is opened anywhere else). Each argument is one mapping. PORT or LOCAL:ENV: this machine's 127.0.0.1:LOCAL becomes localhost:ENV in the environment (a dev server here, reachable by the environment's browser). -R PORT or -R ENV:LOCAL (reverse; one -R before each such mapping): the environment's localhost:ENV becomes 127.0.0.1:LOCAL here. Both ends listen on loopback only; the environment won't listen below 1024 (plain forward only; -R just dials, so -R 80:8080 works). A port in use on either side fails that mapping, which is retried, and the others carry on. When the connection drops (the environment stops or restarts, the network blips) it keeps its local listeners, closes open connections and reconnects with backoff (1 s up to 30 s). It exits only on Ctrl-C, or when the credential is refused. Run it in the background. Inside an environment it needs -e too.",
+      "description": "Maps TCP ports both ways until Ctrl-C, over the remote access API (no port is opened anywhere else). Each argument is one mapping. PORT or LOCAL:COMPUTER: this machine's 127.0.0.1:LOCAL becomes localhost:COMPUTER in the computer (a dev server here, reachable by the computer's browser). -R PORT or -R COMPUTER:LOCAL (reverse; one -R before each such mapping): the computer's localhost:COMPUTER becomes 127.0.0.1:LOCAL here. Both ends listen on loopback only; the computer won't listen below 1024 (plain forward only; -R just dials, so -R 80:8080 works). A port in use on either side fails that mapping, which is retried, and the others carry on. When the connection drops (the computer stops or restarts, the network blips) it keeps its local listeners, closes open connections and reconnects with backoff (1 s up to 30 s). It exits only on Ctrl-C, or when the credential is refused. Run it in the background. Inside a computer it needs -c too.",
       "arguments": [
         {
           "name": "port",
           "type": "string",
           "required": true,
           "variadic": true,
-          "description": "a mapping: PORT or LOCAL:ENV; after -R, PORT or ENV:LOCAL"
+          "description": "a mapping: PORT or LOCAL:COMPUTER; after -R, PORT or COMPUTER:LOCAL"
         }
       ],
       "flags": [
@@ -731,31 +731,31 @@
           "name": "--reverse",
           "short": "-R",
           "type": "boolean",
-          "description": "the next mapping is reverse: a port in the environment becomes a port here"
+          "description": "the next mapping is reverse: a port in the computer becomes a port here"
         }
       ],
       "output": {
         "type": "text",
-        "description": "one line per mapping each time it goes live: \"in LOCAL ENV\" or \"out ENV 127.0.0.1:LOCAL\"; on stderr one line per state change (linked, lost and retrying, port in use)",
+        "description": "one line per mapping each time it goes live: \"in LOCAL COMPUTER\" or \"out COMPUTER 127.0.0.1:LOCAL\"; on stderr one line per state change (linked, lost and retrying, port in use)",
         "fields": {
-          "in": "LOCAL ENV: this machine's port, reachable in the environment at localhost:ENV",
-          "out": "ENV ADDR: the environment's port, reachable here at ADDR"
+          "in": "LOCAL COMPUTER: this machine's port, reachable in the computer at localhost:COMPUTER",
+          "out": "COMPUTER ADDR: the computer's port, reachable here at ADDR"
         }
       },
       "examples": [
-        "deskyard -e alice forward 3000 -R 5173",
-        "deskyard -e alice forward 8080:3000 &",
-        "deskyard -e alice forward -R 9229:19229"
+        "deskyard -c alice forward 3000 -R 5173",
+        "deskyard -c alice forward 8080:3000 &",
+        "deskyard -c alice forward -R 9229:19229"
       ],
-      "where": "on the chosen environment (-e ENV); inside an environment too, since it maps ports between two machines. Ports are LOCAL:ENV, or ENV:LOCAL after -R. The environment won't listen below 1024. \"Linked to ...\" and the out lines appear when the link is accepted, before the environment side is known to run",
-      "exitCodes": "0 after Ctrl-C, 1 when the credential is refused (401) or no environment is chosen, 2 usage error"
+      "where": "on the chosen computer (-c COMPUTER); inside a computer too, since it maps ports between two machines. Ports are LOCAL:COMPUTER, or COMPUTER:LOCAL after -R. The computer won't listen below 1024. \"Linked to ...\" and the out lines appear when the link is accepted, before the computer side is known to run",
+      "exitCodes": "0 after Ctrl-C, 1 when the credential is refused (401) or no computer is chosen, 2 usage error"
     },
     {
       "name": "browser connect",
       "group": "browser",
-      "summary": "forward the environment's browser to a local CDP port",
+      "summary": "forward the computer's browser to a local CDP port",
       "usage": "browser connect [--port N]",
-      "description": "Listens on 127.0.0.1:PORT and forwards the Chrome DevTools Protocol to the environment's shared Chromium (the one on its desktop, with your signed-in sessions), so Playwright, Puppeteer or DevTools tools connect as if the browser were local. Prints the URL, then keeps running until Ctrl-C. Run it in the background. Inside an environment it isn't needed: CDP is at http://127.0.0.1:9221.",
+      "description": "Listens on 127.0.0.1:PORT and forwards the Chrome DevTools Protocol to the computer's shared Chromium (the one on its desktop, with your signed-in sessions), so Playwright, Puppeteer or DevTools tools connect as if the browser were local. Prints the URL, then keeps running until Ctrl-C. Run it in the background. Inside a computer it isn't needed: CDP is at http://127.0.0.1:9221.",
       "arguments": [],
       "flags": [
         {
@@ -771,10 +771,10 @@
         "description": "first line: the local CDP URL (http://127.0.0.1:9222); connection log on stderr"
       },
       "examples": [
-        "deskyard -e alice browser connect &",
+        "deskyard -c alice browser connect &",
         "# then in Python: p.chromium.connect_over_cdp(\"http://127.0.0.1:9222\")"
       ],
-      "where": "on the chosen environment (-e ENV); inside an environment without one chosen it acts locally",
+      "where": "on the chosen computer (-c COMPUTER); inside a computer without one chosen it acts locally",
       "exitCodes": "0 ok, 1 error, 2 usage error"
     },
     {
@@ -782,13 +782,13 @@
       "group": "servers",
       "summary": "sign in to a server, approving in the browser",
       "usage": "login URL [OPTIONS]",
-      "description": "Signs this CLI in to a Deskyard server: prints a code and an approval URL (on stderr) and opens it in your browser, where you check the code and approve while signed in to Deskyard. Then saves the server, your username and a client credential for this machine in servers.json ($XDG_CONFIG_HOME/deskyard, default ~/.config/deskyard; mode 0600). With an environment in the URL (https://host/alice) it becomes the server's default environment, once checked that you have full access to it; without one, your only environment does. The first server becomes the default. The request expires after 10 minutes.",
+      "description": "Signs this CLI in to a Deskyard server: prints a code and an approval URL (on stderr) and opens it in your browser, where you check the code and approve while signed in to Deskyard. Then saves the server, your username and a client credential for this machine in servers.json ($XDG_CONFIG_HOME/deskyard, default ~/.config/deskyard; mode 0600). With a computer in the URL (https://host/alice) it becomes the server's default computer, once checked that you have full access to it; without one, your only computer does. The first server becomes the default. The request expires after 10 minutes.",
       "arguments": [
         {
           "name": "url",
           "type": "string",
           "required": true,
-          "description": "the server's address, optionally with an environment: https://host or https://host/alice"
+          "description": "the server's address, optionally with a computer: https://host or https://host/alice"
         }
       ],
       "flags": [
@@ -796,7 +796,7 @@
           "name": "--name",
           "type": "string",
           "value": "NAME",
-          "description": "local name for the server, used with -e NAME/ENV (default: its host name, unless another server already has it)"
+          "description": "local name for the server, used with -c NAME/COMPUTER (default: its host name, unless another server already has it)"
         },
         {
           "name": "--no-browser",
@@ -806,7 +806,7 @@
       ],
       "output": {
         "type": "text",
-        "description": "a confirmation with the account and environment; the code and approval URL on stderr"
+        "description": "a confirmation with the account and computer; the code and approval URL on stderr"
       },
       "examples": [
         "deskyard login https://deskyard.example.com/alice",
@@ -820,7 +820,7 @@
       "group": "servers",
       "summary": "sign in to a server with a login link",
       "usage": "auth LINK [--name NAME]",
-      "description": "Signs this CLI in with a login link (https://host/link#dyl_…), without a browser: the link is used up, and the server, your username and a client credential are saved in servers.json as for login. When the account has exactly one environment it becomes the default. Observe-only links work in a browser only.",
+      "description": "Signs this CLI in with a login link (https://host/link#dyl_…), without a browser: the link is used up, and the server, your username and a client credential are saved in servers.json as for login. When the account has exactly one computer it becomes the default. Observe-only links work in a browser only.",
       "arguments": [
         {
           "name": "link",
@@ -834,12 +834,12 @@
           "name": "--name",
           "type": "string",
           "value": "NAME",
-          "description": "local name for the server, used with -e NAME/ENV (default: its host name, unless another server already has it)"
+          "description": "local name for the server, used with -c NAME/COMPUTER (default: its host name, unless another server already has it)"
         }
       ],
       "output": {
         "type": "text",
-        "description": "a confirmation with the account and environment"
+        "description": "a confirmation with the account and computer"
       },
       "examples": [
         "deskyard auth 'https://deskyard.example.com/link#dyl_…'"
@@ -878,7 +878,7 @@
       "group": "servers",
       "summary": "list the servers you are signed in to",
       "usage": "server list [--json]",
-      "description": "Lists the saved servers with your username and default environment on each; * marks the default server.",
+      "description": "Lists the saved servers with your username and default computer on each; * marks the default server.",
       "arguments": [],
       "flags": [
         {
@@ -889,10 +889,10 @@
       ],
       "output": {
         "type": "text",
-        "description": "a table NAME URL USER ENVIRONMENT CREDENTIAL (credential ID only); with --json an array of {name,url,username,environment,default}",
+        "description": "a table NAME URL USER COMPUTER CREDENTIAL (credential ID only); with --json an array of {name,url,username,computer,default}",
         "fields": {
+          "computer": "default computer, or empty",
           "default": "whether it is the default server",
-          "environment": "default environment, or empty",
           "name": "server name",
           "url": "server URL",
           "username": "account signed in"
@@ -909,7 +909,7 @@
       "group": "servers",
       "summary": "set or show the default server",
       "usage": "server default [NAME]",
-      "description": "Makes NAME the server used when -e names no server; without NAME prints the current default.",
+      "description": "Makes NAME the server used when -c names no server; without NAME prints the current default.",
       "arguments": [
         {
           "name": "name",
@@ -930,17 +930,17 @@
       "exitCodes": "0 ok, 1 error, 2 usage error"
     },
     {
-      "name": "env use",
+      "name": "computer use",
       "group": "servers",
-      "summary": "set a server's default environment",
-      "usage": "env use ENV|SERVER/ENV",
-      "description": "Checks that you can see the environment ENV on the default server (or SERVER), then makes it that server's default environment, used when -e isn't given.",
+      "summary": "set a server's default computer",
+      "usage": "computer use COMPUTER|SERVER/COMPUTER",
+      "description": "Checks that you can see COMPUTER on the default server (or SERVER), then makes it that server's default computer, used when -c isn't given.",
       "arguments": [
         {
-          "name": "env",
+          "name": "computer",
           "type": "string",
           "required": true,
-          "description": "environment name, or SERVER/ENV"
+          "description": "computer name, or SERVER/COMPUTER"
         }
       ],
       "flags": [],
@@ -949,18 +949,18 @@
         "description": "a confirmation line"
       },
       "examples": [
-        "deskyard env use alice",
-        "deskyard env use work/bob"
+        "deskyard computer use alice",
+        "deskyard computer use work/bob"
       ],
       "where": "on this machine, talking to the server",
       "exitCodes": "0 ok, 1 error, 2 usage error"
     },
     {
-      "name": "env list",
-      "group": "environments",
-      "summary": "list the environments you can see",
-      "usage": "env list [--json]",
-      "description": "Lists the environments your account can see on the server, with their state, your access level, image and who is viewing. Administrators see every environment, and the containers the server can't match (conflicts) on stderr.",
+      "name": "computer list",
+      "group": "computers",
+      "summary": "list the computers you can see",
+      "usage": "computer list [--json]",
+      "description": "Lists the computers your account can see on the server, with their state, your access level, image and who is viewing. Administrators see every computer, and the containers the server can't match (conflicts) on stderr.",
       "arguments": [],
       "flags": [
         {
@@ -972,36 +972,36 @@
           "name": "--server",
           "type": "string",
           "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+          "description": "the server to manage (see `deskyard server list`); default: the server -c SERVER/COMPUTER names, else the default server"
         }
       ],
       "output": {
         "type": "text",
-        "description": "a table NAME STATE ACCESS IMAGE VIEWERS; with --json the API's answer {environments:[Environment],conflicts:[Conflict]} (see the server's API reference)",
+        "description": "a table NAME STATE ACCESS IMAGE VIEWERS; with --json the API's answer {computers:[Computer],conflicts:[Conflict]} (see the server's API reference)",
         "fields": {
-          "conflicts": "containers the server can't match to an environment (administrators only)",
-          "environments": "the environments, sorted by name"
+          "computers": "the computers, sorted by name",
+          "conflicts": "containers the server can't match to a computer (administrators only)"
         }
       },
       "examples": [
-        "deskyard env list",
-        "deskyard env list --json"
+        "deskyard computer list",
+        "deskyard computer list --json"
       ],
       "where": "on this machine, talking to the server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
-      "name": "env show",
-      "group": "environments",
-      "summary": "show an environment's state and settings",
-      "usage": "env show NAME [--json]",
-      "description": "Shows an environment's state, image, limits, volumes, access and viewers. Observers see its state only.",
+      "name": "computer show",
+      "group": "computers",
+      "summary": "show a computer's state and settings",
+      "usage": "computer show NAME [--json]",
+      "description": "Shows a computer's state, image, limits, volumes, access and viewers. Observers see its state only.",
       "arguments": [
         {
           "name": "name",
           "type": "string",
           "required": true,
-          "description": "environment name"
+          "description": "computer name"
         }
       ],
       "flags": [
@@ -1014,31 +1014,31 @@
           "name": "--server",
           "type": "string",
           "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+          "description": "the server to manage (see `deskyard server list`); default: the server -c SERVER/COMPUTER names, else the default server"
         }
       ],
       "output": {
         "type": "text",
-        "description": "\"key: value\" lines; with --json the API's Environment object"
+        "description": "\"key: value\" lines; with --json the API's Computer object"
       },
       "examples": [
-        "deskyard env show alice"
+        "deskyard computer show alice"
       ],
       "where": "on this machine, talking to the server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
-      "name": "env create",
-      "group": "environments",
-      "summary": "create an environment (admin)",
-      "usage": "env create NAME --image REF [OPTIONS]",
-      "description": "Creates an environment from an image and starts it, printing the progress (pulling the image, starting the desktop) on stderr until it is ready; Ctrl-C stops following, not the creation. Its files are in home/NAME/ in the server's data folder; a folder left by an earlier environment of that name is reused. Administrators have access to every environment; --grant gives it to other accounts.",
+      "name": "computer create",
+      "group": "computers",
+      "summary": "create a computer (admin)",
+      "usage": "computer create NAME --image REF [OPTIONS]",
+      "description": "Creates a computer from an image and starts it, printing the progress (pulling the image, starting the desktop) on stderr until it is ready; Ctrl-C stops following, not the creation. Its files are in home/NAME/ in the server's data folder; a folder left by an earlier computer of that name is reused. Administrators have access to every computer; --grant gives it to other accounts.",
       "arguments": [
         {
           "name": "name",
           "type": "string",
           "required": true,
-          "description": "environment name (2–32 lowercase letters, digits and -)"
+          "description": "computer name (2–32 lowercase letters, digits and -)"
         }
       ],
       "flags": [
@@ -1076,45 +1076,45 @@
           "name": "--server",
           "type": "string",
           "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+          "description": "the server to manage (see `deskyard server list`); default: the server -c SERVER/COMPUTER names, else the default server"
         }
       ],
       "output": {
         "type": "text",
-        "description": "the new environment's URL once it is ready; progress on stderr"
+        "description": "the new computer's URL once it is ready; progress on stderr"
       },
       "examples": [
-        "deskyard env create bob --image ghcr.io/zefhemel/deskyard-debian-xfce:latest --memory 4G --cpus 2 --grant bob",
-        "deskyard env create lab --image ghcr.io/zefhemel/deskyard-debian-xfce:latest --volume photos:ro"
+        "deskyard computer create bob --image ghcr.io/zefhemel/deskyard-debian-xfce:latest --memory 4G --cpus 2 --grant bob",
+        "deskyard computer create lab --image ghcr.io/zefhemel/deskyard-debian-xfce:latest --volume photos:ro"
       ],
       "where": "on this machine, talking to the server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
-      "name": "env remove",
-      "group": "environments",
-      "summary": "remove an environment (admin)",
-      "usage": "env remove NAME [--delete-files]",
-      "description": "Removes an environment: its container, its grants to accounts and its shares (closing their connections). Its files in home/NAME/ are kept unless --delete-files; volumes are never touched.",
+      "name": "computer remove",
+      "group": "computers",
+      "summary": "remove a computer (admin)",
+      "usage": "computer remove NAME [--delete-files]",
+      "description": "Removes a computer: its container, its grants to accounts and its shares (closing their connections). Its files in home/NAME/ are kept unless --delete-files; volumes are never touched.",
       "arguments": [
         {
           "name": "name",
           "type": "string",
           "required": true,
-          "description": "environment name"
+          "description": "computer name"
         }
       ],
       "flags": [
         {
           "name": "--delete-files",
           "type": "boolean",
-          "description": "also delete the environment's files (home/NAME/)"
+          "description": "also delete the computer's files (home/NAME/)"
         },
         {
           "name": "--server",
           "type": "string",
           "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+          "description": "the server to manage (see `deskyard server list`); default: the server -c SERVER/COMPUTER names, else the default server"
         }
       ],
       "output": {
@@ -1122,24 +1122,24 @@
         "description": "a confirmation line"
       },
       "examples": [
-        "deskyard env remove bob",
-        "deskyard env remove bob --delete-files"
+        "deskyard computer remove bob",
+        "deskyard computer remove bob --delete-files"
       ],
       "where": "on this machine, talking to the server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
-      "name": "env start",
-      "group": "environments",
-      "summary": "start an environment",
-      "usage": "env start NAME",
-      "description": "Saves that the environment should be running and starts it, making its container when it has none or its settings changed; the server answers at once. Needs full access to it.",
+      "name": "computer start",
+      "group": "computers",
+      "summary": "start a computer",
+      "usage": "computer start NAME",
+      "description": "Saves that the computer should be running and starts it, making its container when it has none or its settings changed; the server answers at once. Needs full access to it.",
       "arguments": [
         {
           "name": "name",
           "type": "string",
           "required": true,
-          "description": "environment name"
+          "description": "computer name"
         }
       ],
       "flags": [
@@ -1147,7 +1147,7 @@
           "name": "--server",
           "type": "string",
           "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+          "description": "the server to manage (see `deskyard server list`); default: the server -c SERVER/COMPUTER names, else the default server"
         }
       ],
       "output": {
@@ -1155,23 +1155,23 @@
         "description": "a confirmation line"
       },
       "examples": [
-        "deskyard env start alice"
+        "deskyard computer start alice"
       ],
       "where": "on this machine, talking to the server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
-      "name": "env stop",
-      "group": "environments",
-      "summary": "stop an environment",
-      "usage": "env stop NAME",
-      "description": "Saves that the environment should be stopped and stops it, keeping its container and files; the server answers at once. Needs full access to it.",
+      "name": "computer stop",
+      "group": "computers",
+      "summary": "stop a computer",
+      "usage": "computer stop NAME",
+      "description": "Saves that the computer should be stopped and stops it, keeping its container and files; the server answers at once. Needs full access to it.",
       "arguments": [
         {
           "name": "name",
           "type": "string",
           "required": true,
-          "description": "environment name"
+          "description": "computer name"
         }
       ],
       "flags": [
@@ -1179,7 +1179,7 @@
           "name": "--server",
           "type": "string",
           "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+          "description": "the server to manage (see `deskyard server list`); default: the server -c SERVER/COMPUTER names, else the default server"
         }
       ],
       "output": {
@@ -1187,23 +1187,23 @@
         "description": "a confirmation line"
       },
       "examples": [
-        "deskyard env stop alice"
+        "deskyard computer stop alice"
       ],
       "where": "on this machine, talking to the server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
-      "name": "env restart",
-      "group": "environments",
-      "summary": "restart an environment",
-      "usage": "env restart NAME",
-      "description": "Saves that the environment should be running and restarts it, closing everyone's connections; the server answers at once. Needs full access to it.",
+      "name": "computer restart",
+      "group": "computers",
+      "summary": "restart a computer",
+      "usage": "computer restart NAME",
+      "description": "Saves that the computer should be running and restarts it, closing everyone's connections; the server answers at once. Needs full access to it.",
       "arguments": [
         {
           "name": "name",
           "type": "string",
           "required": true,
-          "description": "environment name"
+          "description": "computer name"
         }
       ],
       "flags": [
@@ -1211,7 +1211,7 @@
           "name": "--server",
           "type": "string",
           "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+          "description": "the server to manage (see `deskyard server list`); default: the server -c SERVER/COMPUTER names, else the default server"
         }
       ],
       "output": {
@@ -1219,23 +1219,23 @@
         "description": "a confirmation line"
       },
       "examples": [
-        "deskyard env restart alice"
+        "deskyard computer restart alice"
       ],
       "where": "on this machine, talking to the server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
     },
     {
-      "name": "env access",
-      "group": "environments",
-      "summary": "show or change who may use an environment (admin)",
-      "usage": "env access NAME [USER=LEVEL]...",
-      "description": "Without assignments, lists the accounts with access to the environment and their level. With them, changes the named accounts (none removes the access) and keeps the others; a lowered or removed access closes that account's connections at once. Administrators always have full access; shares are managed with `deskyard share`.",
+      "name": "computer access",
+      "group": "computers",
+      "summary": "show or change who may use a computer (admin)",
+      "usage": "computer access NAME [USER=LEVEL]...",
+      "description": "Without assignments, lists the accounts with access to the computer and their level. With them, changes the named accounts (none removes the access) and keeps the others; a lowered or removed access closes that account's connections at once. Administrators always have full access; shares are managed with `deskyard share`.",
       "arguments": [
         {
           "name": "name",
           "type": "string",
           "required": true,
-          "description": "environment name"
+          "description": "computer name"
         },
         {
           "name": "assignment",
@@ -1255,16 +1255,16 @@
           "name": "--server",
           "type": "string",
           "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+          "description": "the server to manage (see `deskyard server list`); default: the server -c SERVER/COMPUTER names, else the default server"
         }
       ],
       "output": {
         "type": "text",
-        "description": "without assignments a table USER LEVEL (with --json the API's Environment object, whose access field lists them); with them a confirmation line"
+        "description": "without assignments a table USER LEVEL (with --json the API's Computer object, whose access field lists them); with them a confirmation line"
       },
       "examples": [
-        "deskyard env access alice",
-        "deskyard env access alice anna=full bob=observe carl=none"
+        "deskyard computer access alice",
+        "deskyard computer access alice anna=full bob=observe carl=none"
       ],
       "where": "on this machine, talking to the server",
       "exitCodes": "0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error"
@@ -1274,7 +1274,7 @@
       "group": "volumes",
       "summary": "list the volumes",
       "usage": "volume list [--json]",
-      "description": "Lists the volumes (shared folders in the server's data folder, mounted at /share/NAME) and the environments they are granted to.",
+      "description": "Lists the volumes (shared folders in the server's data folder, mounted at /share/NAME) and the computers they are granted to.",
       "arguments": [],
       "flags": [
         {
@@ -1286,12 +1286,12 @@
           "name": "--server",
           "type": "string",
           "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+          "description": "the server to manage (see `deskyard server list`); default: the server -c SERVER/COMPUTER names, else the default server"
         }
       ],
       "output": {
         "type": "text",
-        "description": "a table NAME ENVIRONMENTS FOLDER CREATED; with --json the API's answer {volumes:[Volume]}"
+        "description": "a table NAME COMPUTERS FOLDER CREATED; with --json the API's answer {volumes:[Volume]}"
       },
       "examples": [
         "deskyard volume list"
@@ -1304,7 +1304,7 @@
       "group": "volumes",
       "summary": "create a volume",
       "usage": "volume create NAME",
-      "description": "Creates a volume, volume/NAME/ in the server's data folder; an existing folder of that name is kept as it is. Grant it to environments with `deskyard env create … --volume NAME`.",
+      "description": "Creates a volume, volume/NAME/ in the server's data folder; an existing folder of that name is kept as it is. Grant it to computers with `deskyard computer create … --volume NAME`.",
       "arguments": [
         {
           "name": "name",
@@ -1318,7 +1318,7 @@
           "name": "--server",
           "type": "string",
           "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+          "description": "the server to manage (see `deskyard server list`); default: the server -c SERVER/COMPUTER names, else the default server"
         }
       ],
       "output": {
@@ -1336,7 +1336,7 @@
       "group": "volumes",
       "summary": "remove a volume",
       "usage": "volume remove NAME [--delete-files]",
-      "description": "Removes a volume no environment grants any more; its folder is kept unless --delete-files.",
+      "description": "Removes a volume no computer grants any more; its folder is kept unless --delete-files.",
       "arguments": [
         {
           "name": "name",
@@ -1355,7 +1355,7 @@
           "name": "--server",
           "type": "string",
           "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+          "description": "the server to manage (see `deskyard server list`); default: the server -c SERVER/COMPUTER names, else the default server"
         }
       ],
       "output": {
@@ -1385,7 +1385,7 @@
           "name": "--server",
           "type": "string",
           "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+          "description": "the server to manage (see `deskyard server list`); default: the server -c SERVER/COMPUTER names, else the default server"
         }
       ],
       "output": {
@@ -1432,8 +1432,8 @@
         {
           "name": "--grant",
           "type": "string[]",
-          "value": "ENV[=observe]",
-          "description": "give full access to an environment, or observe-only with =observe (repeatable)"
+          "value": "COMPUTER[=observe]",
+          "description": "give full access to a computer, or observe-only with =observe (repeatable)"
         },
         {
           "name": "--expires",
@@ -1445,7 +1445,7 @@
           "name": "--server",
           "type": "string",
           "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+          "description": "the server to manage (see `deskyard server list`); default: the server -c SERVER/COMPUTER names, else the default server"
         }
       ],
       "output": {
@@ -1465,7 +1465,7 @@
       "group": "accounts",
       "summary": "change an account",
       "usage": "account update USER [OPTIONS]",
-      "description": "Changes what the options give and keeps the rest; --grant changes the named environments (=none removes one) and keeps the others. Lowering access, a new password or --no-admin signs the account out of its browsers and closes the connections it may no longer have.",
+      "description": "Changes what the options give and keeps the rest; --grant changes the named computers (=none removes one) and keeps the others. Lowering access, a new password or --no-admin signs the account out of its browsers and closes the connections it may no longer have.",
       "arguments": [
         {
           "name": "user",
@@ -1499,8 +1499,8 @@
         {
           "name": "--grant",
           "type": "string[]",
-          "value": "ENV[=LEVEL]",
-          "description": "set its access to an environment: ENV or ENV=full, ENV=observe, ENV=none (repeatable)"
+          "value": "COMPUTER[=LEVEL]",
+          "description": "set its access to a computer: COMPUTER or COMPUTER=full, COMPUTER=observe, COMPUTER=none (repeatable)"
         },
         {
           "name": "--expires",
@@ -1512,7 +1512,7 @@
           "name": "--server",
           "type": "string",
           "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+          "description": "the server to manage (see `deskyard server list`); default: the server -c SERVER/COMPUTER names, else the default server"
         }
       ],
       "output": {
@@ -1545,7 +1545,7 @@
           "name": "--server",
           "type": "string",
           "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+          "description": "the server to manage (see `deskyard server list`); default: the server -c SERVER/COMPUTER names, else the default server"
         }
       ],
       "output": {
@@ -1577,7 +1577,7 @@
           "name": "--server",
           "type": "string",
           "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+          "description": "the server to manage (see `deskyard server list`); default: the server -c SERVER/COMPUTER names, else the default server"
         }
       ],
       "output": {
@@ -1593,15 +1593,15 @@
     {
       "name": "share list",
       "group": "sharing",
-      "summary": "list an environment's shares",
-      "usage": "share list ENV [--json]",
-      "description": "Lists the shares of an environment: who it was shared with and by, at which level, until when, and whether they are connected now. Needs full access to it.",
+      "summary": "list a computer's shares",
+      "usage": "share list COMPUTER [--json]",
+      "description": "Lists the shares of a computer: who it was shared with and by, at which level, until when, and whether they are connected now. Needs full access to it.",
       "arguments": [
         {
-          "name": "env",
+          "name": "computer",
           "type": "string",
           "required": true,
-          "description": "environment name"
+          "description": "computer name"
         }
       ],
       "flags": [
@@ -1614,7 +1614,7 @@
           "name": "--server",
           "type": "string",
           "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+          "description": "the server to manage (see `deskyard server list`); default: the server -c SERVER/COMPUTER names, else the default server"
         }
       ],
       "output": {
@@ -1630,15 +1630,15 @@
     {
       "name": "share create",
       "group": "sharing",
-      "summary": "share an environment by link",
-      "usage": "share create ENV NAME [OPTIONS]",
-      "description": "Shares an environment you have full access to: makes the account NAME with access to it only, and prints its login link, which works once. Observe-only shares watch in a browser and can't use the CLI. The share ends when it is revoked or expires, or when you lose full access.",
+      "summary": "share a computer by link",
+      "usage": "share create COMPUTER NAME [OPTIONS]",
+      "description": "Shares a computer you have full access to: makes the account NAME with access to it only, and prints its login link, which works once. Observe-only shares watch in a browser and can't use the CLI. The share ends when it is revoked or expires, or when you lose full access.",
       "arguments": [
         {
-          "name": "env",
+          "name": "computer",
           "type": "string",
           "required": true,
-          "description": "environment name"
+          "description": "computer name"
         },
         {
           "name": "name",
@@ -1663,7 +1663,7 @@
           "name": "--server",
           "type": "string",
           "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+          "description": "the server to manage (see `deskyard server list`); default: the server -c SERVER/COMPUTER names, else the default server"
         }
       ],
       "output": {
@@ -1696,7 +1696,7 @@
           "name": "--server",
           "type": "string",
           "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+          "description": "the server to manage (see `deskyard server list`); default: the server -c SERVER/COMPUTER names, else the default server"
         }
       ],
       "output": {
@@ -1728,7 +1728,7 @@
           "name": "--server",
           "type": "string",
           "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+          "description": "the server to manage (see `deskyard server list`); default: the server -c SERVER/COMPUTER names, else the default server"
         }
       ],
       "output": {
@@ -1764,7 +1764,7 @@
           "name": "--server",
           "type": "string",
           "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+          "description": "the server to manage (see `deskyard server list`); default: the server -c SERVER/COMPUTER names, else the default server"
         }
       ],
       "output": {
@@ -1808,7 +1808,7 @@
           "name": "--server",
           "type": "string",
           "value": "NAME",
-          "description": "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"
+          "description": "the server to manage (see `deskyard server list`); default: the server -c SERVER/COMPUTER names, else the default server"
         }
       ],
       "output": {
@@ -1825,9 +1825,9 @@
     {
       "name": "status",
       "group": "info",
-      "summary": "show the environment's name, state, image and screen",
+      "summary": "show the computer's name, state, image and screen",
       "usage": "status [--json]",
-      "description": "Shows which environment the command talks to and its state, image and screen size.",
+      "description": "Shows which computer the command talks to and its state, image and screen size.",
       "arguments": [],
       "flags": [
         {
@@ -1844,25 +1844,25 @@
           "imageTitle": "image title",
           "imageVersion": "image version",
           "local": "true when acting locally",
-          "name": "environment name",
+          "name": "computer name",
           "remote": "remote used (absent locally)",
           "screen": "{width,height}",
           "state": "running, stopped, …",
-          "url": "environment URL (absent locally)"
+          "url": "computer URL (absent locally)"
         }
       },
       "examples": [
-        "deskyard -e alice status"
+        "deskyard -c alice status"
       ],
-      "where": "inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)",
+      "where": "inside a computer it acts locally; elsewhere on the chosen computer (-c COMPUTER)",
       "exitCodes": "0 ok, 1 error, 2 usage error"
     },
     {
       "name": "guide",
       "group": "info",
-      "summary": "short manual for environment access and control",
+      "summary": "short manual for computer access and control",
       "usage": "guide",
-      "description": "Prints a short manual: how an environment is laid out, the three ways to work (shell, browser, desktop) and when to use which.",
+      "description": "Prints a short manual: how a computer is laid out, the three ways to work (shell, browser, desktop) and when to use which.",
       "arguments": [],
       "flags": [],
       "output": {

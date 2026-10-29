@@ -1,6 +1,6 @@
 deskyard account list: list the accounts
 
-Usage: deskyard [-e ENV] account list [--json]
+Usage: deskyard [-c COMPUTER] account list [--json]
 
 Lists the accounts, shares included, with their kind (password or token),
 access, expiry and last sign-in.
@@ -8,7 +8,7 @@ access, expiry and last sign-in.
 Options:
   --json               print JSON instead of text
   --server NAME        the server to manage (see `deskyard server list`);
-                       default: the server -e SERVER/ENV names, else the
+                       default: the server -c SERVER/COMPUTER names, else the
                        default server
 
 Prints: a table USER KIND ACCESS EXPIRES LAST-SIGN-IN NOTE; with --json the

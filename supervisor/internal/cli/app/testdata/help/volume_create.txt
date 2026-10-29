@@ -1,9 +1,9 @@
 deskyard volume create: create a volume
 
-Usage: deskyard [-e ENV] volume create NAME
+Usage: deskyard [-c COMPUTER] volume create NAME
 
 Creates a volume, volume/NAME/ in the server's data folder; an existing folder
-of that name is kept as it is. Grant it to environments with `deskyard env
+of that name is kept as it is. Grant it to computers with `deskyard computer
 create … --volume NAME`.
 
 Arguments:
@@ -11,7 +11,7 @@ Arguments:
 
 Options:
   --server NAME        the server to manage (see `deskyard server list`);
-                       default: the server -e SERVER/ENV names, else the
+                       default: the server -c SERVER/COMPUTER names, else the
                        default server
 
 Prints: a confirmation line

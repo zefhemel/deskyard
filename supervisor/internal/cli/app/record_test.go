@@ -101,7 +101,7 @@ func TestNothingRecordedWhenOff(t *testing.T) {
 
 func TestNothingRecordedRemotely(t *testing.T) {
 	h, _ := remoteHarness(t)
-	h.run("-e", "al", "click", "1", "2")
+	h.run("-c", "al", "click", "1", "2")
 	h.run("exec", "--", "true")
 	if len(h.events) != 0 {
 		t.Errorf("recorded remotely: %+v", h.events)

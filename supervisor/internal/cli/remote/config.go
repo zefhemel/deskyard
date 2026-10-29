@@ -18,8 +18,8 @@ type Server struct {
 	Name       string `json:"-"`
 	URL        string `json:"url"` // supervisor base URL, no trailing slash
 	Username   string `json:"username"`
-	Credential string `json:"credential"`            // dyc_…
-	Computer   string `json:"environment,omitempty"` // default computer; may be empty
+	Credential string `json:"credential"`         // dyc_…
+	Computer   string `json:"computer,omitempty"` // default computer; may be empty
 }
 
 // Config is the content of servers.json.
@@ -168,4 +168,23 @@ func DefaultName(base string) string {
 		return ""
 	}
 	return u.Hostname()
+}
+
+// UnmarshalJSON reads a server entry, taking the default computer from the
+// legacy "environment" key of older servers.json files when "computer" is
+// absent. Saving writes only "computer".
+func (s *Server) UnmarshalJSON(data []byte) error {
+	type plain Server
+	var aux struct {
+		plain
+		LegacyEnvironment string `json:"environment"`
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	*s = Server(aux.plain)
+	if s.Computer == "" {
+		s.Computer = aux.LegacyEnvironment
+	}
+	return nil
 }

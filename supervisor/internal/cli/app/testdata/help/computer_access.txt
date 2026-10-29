@@ -1,0 +1,29 @@
+deskyard computer access: show or change who may use a computer (admin)
+
+Usage: deskyard [-c COMPUTER] computer access NAME [USER=LEVEL]...
+
+Without assignments, lists the accounts with access to the computer and their
+level. With them, changes the named accounts (none removes the access) and
+keeps the others; a lowered or removed access closes that account's
+connections at once. Administrators always have full access; shares are
+managed with `deskyard share`.
+
+Arguments:
+  NAME       string      required  computer name
+  ASSIGNMENT string...   optional  USER=LEVEL: USER=full, USER=observe or USER=none
+
+Options:
+  --json               print JSON instead of text
+  --server NAME        the server to manage (see `deskyard server list`);
+                       default: the server -c SERVER/COMPUTER names, else the
+                       default server
+
+Prints: without assignments a table USER LEVEL (with --json the API's Computer
+  object, whose access field lists them); with them a confirmation line
+
+Examples:
+  deskyard computer access alice
+  deskyard computer access alice anna=full bob=observe carl=none
+
+Where: on this machine, talking to the server
+Exit codes: 0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error

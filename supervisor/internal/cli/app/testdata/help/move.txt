@@ -1,6 +1,6 @@
 deskyard move: move the mouse
 
-Usage: deskyard [-e ENV] move X Y
+Usage: deskyard [-c COMPUTER] move X Y
 
 Moves the mouse pointer to X Y without clicking (to hover, e.g. for tooltips
 or menus).
@@ -14,5 +14,5 @@ Prints: nothing
 Examples:
   deskyard move 640 400
 
-Where: inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)
+Where: inside a computer it acts locally; elsewhere on the chosen computer (-c COMPUTER)
 Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop

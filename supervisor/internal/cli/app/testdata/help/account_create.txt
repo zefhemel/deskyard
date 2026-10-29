@@ -1,6 +1,6 @@
 deskyard account create: create an account
 
-Usage: deskyard [-e ENV] account create USER [OPTIONS]
+Usage: deskyard [-c COMPUTER] account create USER [OPTIONS]
 
 Creates an account. With --password-stdin it signs in with that password;
 without one it is a token account, which signs in with a login link: the link
@@ -15,12 +15,12 @@ Options:
   --admin              make it an administrator (full access to everything, and
                        these commands)
   --description TEXT   who it is for (at most 200 characters)
-  --grant ENV[=observe] give full access to an environment, or observe-only with
+  --grant COMPUTER[=observe] give full access to a computer, or observe-only with
                        =observe (repeatable)
   --expires WHEN       when the account ends: a time from now (90m, 2h, 7d, 2w)
                        or an RFC 3339 time (2026-12-01T18:00:00Z)
   --server NAME        the server to manage (see `deskyard server list`);
-                       default: the server -e SERVER/ENV names, else the
+                       default: the server -c SERVER/COMPUTER names, else the
                        default server
 
 Prints: for a token account its login link alone on stdout (what it gives on

@@ -1,0 +1,36 @@
+deskyard computer create: create a computer (admin)
+
+Usage: deskyard [-c COMPUTER] computer create NAME --image REF [OPTIONS]
+
+Creates a computer from an image and starts it, printing the progress (pulling
+the image, starting the desktop) on stderr until it is ready; Ctrl-C stops
+following, not the creation. Its files are in home/NAME/ in the server's data
+folder; a folder left by an earlier computer of that name is reused.
+Administrators have access to every computer; --grant gives it to other
+accounts.
+
+Arguments:
+  NAME       string      required  computer name (2–32 lowercase letters, digits and -)
+
+Options:
+  --image REF          image reference (required), e.g.
+                       ghcr.io/zefhemel/deskyard-debian-xfce:latest
+  --memory BYTES       memory limit in bytes, or with K, M, G or T (4G);
+                       default no limit
+  --cpus N             CPU limit, e.g. 2 or 1.5; default no limit
+  --grant USER[=observe] give an account full access, or observe-only with
+                       =observe (repeatable)
+  --volume NAME[:ro]   mount a volume at /share/NAME, read-only with :ro
+                       (repeatable)
+  --server NAME        the server to manage (see `deskyard server list`);
+                       default: the server -c SERVER/COMPUTER names, else the
+                       default server
+
+Prints: the new computer's URL once it is ready; progress on stderr
+
+Examples:
+  deskyard computer create bob --image ghcr.io/zefhemel/deskyard-debian-xfce:latest --memory 4G --cpus 2 --grant bob
+  deskyard computer create lab --image ghcr.io/zefhemel/deskyard-debian-xfce:latest --volume photos:ro
+
+Where: on this machine, talking to the server
+Exit codes: 0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error

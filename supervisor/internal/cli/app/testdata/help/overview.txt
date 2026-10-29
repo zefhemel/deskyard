@@ -1,6 +1,6 @@
-deskyard: use a Deskyard environment (a Linux desktop with a shared browser) from inside it or from anywhere else.
+deskyard: use a Deskyard computer (a Linux desktop with a shared browser) from inside it or from anywhere else.
 
-Usage: deskyard [-e ENV] COMMAND [ARGS...]
+Usage: deskyard [-c COMPUTER] COMMAND [ARGS...]
 
 New here? Run `deskyard guide` and `deskyard COMMAND --help`.
 
@@ -23,14 +23,14 @@ Desktop (screen, mouse, keyboard):
   wait SECONDS                         pause for a while
 
 Shell and files:
-  exec [OPTIONS] -- CMD [ARG...]       run a command in the environment
+  exec [OPTIONS] -- CMD [ARG...]       run a command in the computer
   terminal [SESSION]                   join a shared terminal session
   shell                                interactive login shell
-  cp SRC DST                           copy files to or from an environment
-  forward [-R] PORT[:PORT]...          map TCP ports between this machine and the environment
+  cp SRC DST                           copy files to or from a computer
+  forward [-R] PORT[:PORT]...          map TCP ports between this machine and the computer
 
 Browser:
-  browser connect [--port N]           forward the environment's browser to a local CDP port
+  browser connect [--port N]           forward the computer's browser to a local CDP port
 
 Servers and sign-in:
   login URL [OPTIONS]                  sign in to a server, approving in the browser
@@ -38,17 +38,17 @@ Servers and sign-in:
   logout [SERVER]                      revoke this CLI's credential and forget the server
   server list [--json]                 list the servers you are signed in to
   server default [NAME]                set or show the default server
-  env use ENV|SERVER/ENV               set a server's default environment
+  computer use COMPUTER|SERVER/COMPUTER set a server's default computer
 
-Environments (on the server):
-  env list [--json]                    list the environments you can see
-  env show NAME [--json]               show an environment's state and settings
-  env create NAME --image REF [OPTIONS] create an environment (admin)
-  env remove NAME [--delete-files]     remove an environment (admin)
-  env start NAME                       start an environment
-  env stop NAME                        stop an environment
-  env restart NAME                     restart an environment
-  env access NAME [USER=LEVEL]...      show or change who may use an environment (admin)
+Computers (on the server):
+  computer list [--json]               list the computers you can see
+  computer show NAME [--json]          show a computer's state and settings
+  computer create NAME --image REF [OPTIONS] create a computer (admin)
+  computer remove NAME [--delete-files] remove a computer (admin)
+  computer start NAME                  start a computer
+  computer stop NAME                   stop a computer
+  computer restart NAME                restart a computer
+  computer access NAME [USER=LEVEL]... show or change who may use a computer (admin)
 
 Volumes (admin):
   volume list [--json]                 list the volumes
@@ -63,8 +63,8 @@ Accounts (admin):
   account link USER                    make a new login link for a token account
 
 Sharing:
-  share list ENV [--json]              list an environment's shares
-  share create ENV NAME [OPTIONS]      share an environment by link
+  share list COMPUTER [--json]         list a computer's shares
+  share create COMPUTER NAME [OPTIONS] share a computer by link
   share link NAME                      make a new link for a share
   share revoke NAME                    end a share
 
@@ -73,25 +73,24 @@ Signed-in devices:
   device revoke ID [--account USER]    sign out a device
 
 Information:
-  status [--json]                      show the environment's name, state, image and screen
-  guide                                short manual for environment access and control
+  status [--json]                      show the computer's name, state, image and screen
+  guide                                short manual for computer access and control
   describe --json                      machine-readable description of every command
   help [COMMAND...]                    help for a command
   version                              print the version
 
-Choosing an environment:
-  Sign in to a server first: `deskyard login https://host/ENV`. Commands then
-  use an environment on a server: -e ENV on the default server, or
-  -e SERVER/ENV (also --environment, before the command), else
-  $DESKYARD_ENVIRONMENT, else the default server's environment
-  (`deskyard env use ENV`). $DESKYARD_URL + $DESKYARD_CREDENTIAL replace the
-  default server. Inside an environment with none chosen, commands act on it
-  directly. After the command, -e is that command's own flag (exec -e K=V
-  sets an environment variable).
+Choosing a computer:
+  Sign in to a server first: `deskyard login https://host/COMPUTER`. Commands then
+  use a computer on a server: -c COMPUTER on the default server, or
+  -c SERVER/COMPUTER (also --computer, before the command), else
+  $DESKYARD_COMPUTER, else the default server's computer
+  (`deskyard computer use COMPUTER`). $DESKYARD_URL + $DESKYARD_CREDENTIAL replace the
+  default server. Inside a computer with none chosen, commands act on it
+  directly.
 
 Environment variables:
-  DESKYARD_ENVIRONMENT environment to use when -e isn't given (ENV or SERVER/ENV)
-  DESKYARD_URL         server URL, optionally with an environment (https://host/alice), to use instead of the default server; needs DESKYARD_CREDENTIAL
+  DESKYARD_COMPUTER    computer to use when -c isn't given (COMPUTER or SERVER/COMPUTER)
+  DESKYARD_URL         server URL, optionally with a computer (https://host/alice), to use instead of the default server; needs DESKYARD_CREDENTIAL
   DESKYARD_CREDENTIAL  client credential (dyc_…) for DESKYARD_URL
   DESKYARD_SETTLE      seconds screenshot and zoom wait before capturing (default 0.3)
   XDG_CONFIG_HOME      where servers.json lives (default ~/.config)
@@ -100,6 +99,6 @@ Exit codes:
   0      ok
   1      error (the message on stderr says what to do next)
   2      usage error (bad command, flag or argument)
-  other  exec, shell and screen actions pass through the exit code of the command in the environment
+  other  exec, shell and screen actions pass through the exit code of the command in the computer
 
 Machine-readable: deskyard describe --json

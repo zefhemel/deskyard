@@ -1,6 +1,6 @@
 deskyard device list: list the signed-in CLIs
 
-Usage: deskyard [-e ENV] device list [OPTIONS]
+Usage: deskyard [-c COMPUTER] device list [OPTIONS]
 
 Lists the CLI credentials (signed-in devices) of your account, or of another
 one (admin); * marks this CLI's own.
@@ -9,7 +9,7 @@ Options:
   --account USER       another account's devices (admin)
   --json               print JSON instead of text
   --server NAME        the server to manage (see `deskyard server list`);
-                       default: the server -e SERVER/ENV names, else the
+                       default: the server -c SERVER/COMPUTER names, else the
                        default server
 
 Prints: a table ID NAME SIGNED-IN LAST-USED; with --json the API's

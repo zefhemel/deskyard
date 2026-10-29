@@ -93,26 +93,26 @@ func TestAdminComputers(t *testing.T) {
 	f.Answer("GET /api/computers", clitest.Answer{JSON: map[string]any{"computers": []any{alice}, "conflicts": []any{}}})
 	f.Answer("GET /api/computers/alice", clitest.Answer{JSON: alice})
 
-	r := h.run("env", "list")
+	r := h.run("computer", "list")
 	if r.code != 0 || !strings.Contains(r.stdout, "alice") || !strings.Contains(r.stdout, "running") {
-		t.Errorf("env list: %+v", r)
+		t.Errorf("computer list: %+v", r)
 	}
 	wantCall(t, f, "GET", "/api/computers", "", "")
-	r = h.run("env", "list", "--json")
+	r = h.run("computer", "list", "--json")
 	var list struct {
 		Computers []map[string]any `json:"computers"`
 	}
 	if json.Unmarshal([]byte(r.stdout), &list); len(list.Computers) != 1 || list.Computers[0]["name"] != "alice" {
-		t.Errorf("env list --json: %+v", r)
+		t.Errorf("computer list --json: %+v", r)
 	}
 
-	r = h.run("env", "show", "alice")
+	r = h.run("computer", "show", "alice")
 	if r.code != 0 || !strings.Contains(r.stdout, "Debian XFCE") || !strings.Contains(r.stdout, "bob (observe)") || !strings.Contains(r.stdout, "photos (read-only)") {
-		t.Errorf("env show: %+v", r)
+		t.Errorf("computer show: %+v", r)
 	}
 	wantCall(t, f, "GET", "/api/computers/alice", "", "")
-	if r = h.run("env", "show", "alice", "--json"); !strings.Contains(r.stdout, `"imageTitle": "Debian XFCE"`) {
-		t.Errorf("env show --json: %+v", r)
+	if r = h.run("computer", "show", "alice", "--json"); !strings.Contains(r.stdout, `"imageTitle": "Debian XFCE"`) {
+		t.Errorf("computer show --json: %+v", r)
 	}
 
 	// create waits for the job, printing its progress.
@@ -120,10 +120,10 @@ func TestAdminComputers(t *testing.T) {
 	f.Answer("GET /api/jobs/j1", clitest.Answer{Events: []any{
 		map[string]any{"status": "running", "message": "Pulling image", "progress": 0.5},
 		map[string]any{"status": "done", "message": "Ready", "computer": "bob"}}})
-	r = h.run("env", "create", "bob", "--image", "ghcr.io/x/cc:latest", "--memory", "2G", "--cpus", "1.5",
+	r = h.run("computer", "create", "bob", "--image", "ghcr.io/x/cc:latest", "--memory", "2G", "--cpus", "1.5",
 		"--grant", "anna", "--grant", "carl=observe", "--volume", "photos:ro", "--volume", "music")
 	if r.code != 0 || !strings.Contains(r.stderr, "Pulling image (50%)") || !strings.Contains(r.stdout, "Created bob") {
-		t.Errorf("env create: %+v", r)
+		t.Errorf("computer create: %+v", r)
 	}
 	calls := f.Calls()
 	if len(calls) < 2 || calls[len(calls)-2].Path != "/api/computers" {
@@ -140,11 +140,11 @@ func TestAdminComputers(t *testing.T) {
 
 	f.Answer("GET /api/jobs/j2", clitest.Answer{Events: []any{map[string]any{"status": "failed", "message": "Pulling image", "error": "no such image"}}})
 	f.Answer("POST /api/computers", clitest.Answer{Status: 202, JSON: map[string]string{"job": "j2"}})
-	if r = h.run("env", "create", "bob", "--image", "nope"); r.code != 1 || !strings.Contains(r.stderr, "no such image") {
+	if r = h.run("computer", "create", "bob", "--image", "nope"); r.code != 1 || !strings.Contains(r.stderr, "no such image") {
 		t.Errorf("failed create: %+v", r)
 	}
-	for _, args := range [][]string{{"env", "create", "bob"}, {"env", "create", "bob", "--image", "x", "--grant", "anna=admin"},
-		{"env", "create", "bob", "--image", "x", "--memory", "lots"}, {"env", "create", "bob", "--image", "x", "--volume", "photos:rw"}} {
+	for _, args := range [][]string{{"computer", "create", "bob"}, {"computer", "create", "bob", "--image", "x", "--grant", "anna=admin"},
+		{"computer", "create", "bob", "--image", "x", "--memory", "lots"}, {"computer", "create", "bob", "--image", "x", "--volume", "photos:rw"}} {
 		if r := h.run(args...); r.code != 2 {
 			t.Errorf("%v: exit %d, want 2 (%s)", args, r.code, r.stderr)
 		}
@@ -152,34 +152,34 @@ func TestAdminComputers(t *testing.T) {
 
 	for _, action := range []string{"start", "stop", "restart"} {
 		f.Answer("POST /api/computers/alice/"+action, clitest.Answer{})
-		if r := h.run("env", action, "alice"); r.code != 0 {
-			t.Errorf("env %s: %+v", action, r)
+		if r := h.run("computer", action, "alice"); r.code != 0 {
+			t.Errorf("computer %s: %+v", action, r)
 		}
 		wantCall(t, f, "POST", "/api/computers/alice/"+action, "", "")
 	}
 
 	f.Answer("DELETE /api/computers/alice", clitest.Answer{})
-	if r = h.run("env", "remove", "alice"); r.code != 0 {
-		t.Errorf("env remove: %+v", r)
+	if r = h.run("computer", "remove", "alice"); r.code != 0 {
+		t.Errorf("computer remove: %+v", r)
 	}
 	wantCall(t, f, "DELETE", "/api/computers/alice", "", "")
-	if r = h.run("env", "remove", "alice", "--delete-files"); r.code != 0 {
-		t.Errorf("env remove --delete-files: %+v", r)
+	if r = h.run("computer", "remove", "alice", "--delete-files"); r.code != 0 {
+		t.Errorf("computer remove --delete-files: %+v", r)
 	}
 	wantCall(t, f, "DELETE", "/api/computers/alice", "files=1", "")
 
 	// access without assignments shows; with them it changes the listed
 	// accounts and keeps the others.
-	r = h.run("env", "access", "alice")
+	r = h.run("computer", "access", "alice")
 	if r.code != 0 || !strings.Contains(r.stdout, "anna") || !strings.Contains(r.stdout, "observe") {
-		t.Errorf("env access: %+v", r)
+		t.Errorf("computer access: %+v", r)
 	}
 	f.Answer("PUT /api/computers/alice/access", clitest.Answer{})
-	if r = h.run("env", "access", "alice", "bob=full", "anna=none", "carl=observe"); r.code != 0 {
-		t.Errorf("env access set: %+v", r)
+	if r = h.run("computer", "access", "alice", "bob=full", "anna=none", "carl=observe"); r.code != 0 {
+		t.Errorf("computer access set: %+v", r)
 	}
 	wantCall(t, f, "PUT", "/api/computers/alice/access", "", `{"grants":[{"username":"bob","level":"full"},{"username":"carl","level":"observe"}]}`)
-	if r = h.run("env", "access", "alice", "bob=admin"); r.code != 2 {
+	if r = h.run("computer", "access", "alice", "bob=admin"); r.code != 2 {
 		t.Errorf("bad level: %+v", r)
 	}
 }
@@ -396,8 +396,8 @@ func TestAdminServerChoice(t *testing.T) {
 	if r := h.run("volume", "list", "--server", "two"); r.code != 0 || len(f.Calls()) != 0 || len(g.Calls()) != 1 {
 		t.Errorf("--server: %+v", r)
 	}
-	if r := h.run("-e", "two/bob", "volume", "list"); r.code != 0 || len(f.Calls()) != 0 || len(g.Calls()) != 2 {
-		t.Errorf("-e SERVER/ENV: %+v", r)
+	if r := h.run("-c", "two/bob", "volume", "list"); r.code != 0 || len(f.Calls()) != 0 || len(g.Calls()) != 2 {
+		t.Errorf("-c SERVER/ENV: %+v", r)
 	}
 	if r := h.run("volume", "list", "--server", "nope"); r.code != 1 || !strings.Contains(r.stderr, `no server named "nope"`) {
 		t.Errorf("--server nope: %+v", r)
@@ -415,8 +415,8 @@ func TestRemovalsDeletingFilesWaitForTheServer(t *testing.T) {
 	defer func(d time.Duration) { remote.Timeout = d }(remote.Timeout)
 	remote.Timeout = 50 * time.Millisecond
 	f.Answer("DELETE /api/computers/alice", clitest.Answer{Delay: 300 * time.Millisecond})
-	if r := h.run("env", "remove", "alice", "--delete-files"); r.code != 0 {
-		t.Errorf("env remove --delete-files: %+v", r)
+	if r := h.run("computer", "remove", "alice", "--delete-files"); r.code != 0 {
+		t.Errorf("computer remove --delete-files: %+v", r)
 	}
 	f.Answer("DELETE /api/volumes/music", clitest.Answer{Delay: 300 * time.Millisecond})
 	if r := h.run("volume", "remove", "music", "--delete-files"); r.code != 0 {

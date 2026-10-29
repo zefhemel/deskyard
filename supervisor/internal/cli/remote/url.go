@@ -20,7 +20,7 @@ type Target struct {
 // computer name (the last path segment). A URL without a path names only
 // the supervisor. A pasted API URL (…/api/computers/alice/exec) names the
 // supervisor before /api and the computer after computers/, and so
-// does the web UI's page of a computer (…/environments/alice).
+// does the web UI's page of a computer (…/computers/alice).
 func ParseURL(raw string) (Target, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
@@ -50,7 +50,7 @@ func ParseURL(raw string) (Target, error) {
 	}
 	segs := strings.Split(path, "/")
 	name, base := segs[len(segs)-1], segs[:len(segs)-1]
-	if len(base) > 0 && base[len(base)-1] == "environments" {
+	if len(base) > 0 && base[len(base)-1] == "computers" {
 		base = base[:len(base)-1]
 	}
 	return Target{

@@ -1,6 +1,6 @@
 deskyard share link: make a new link for a share
 
-Usage: deskyard [-e ENV] share link NAME
+Usage: deskyard [-c COMPUTER] share link NAME
 
 Makes a new login link for a share you made (administrators: any share),
 replacing its unused one.
@@ -10,7 +10,7 @@ Arguments:
 
 Options:
   --server NAME        the server to manage (see `deskyard server list`);
-                       default: the server -e SERVER/ENV names, else the
+                       default: the server -c SERVER/COMPUTER names, else the
                        default server
 
 Prints: the login link (https://host/link#dyl_…) alone on stdout; what it

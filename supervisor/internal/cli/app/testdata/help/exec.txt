@@ -1,6 +1,6 @@
-deskyard exec: run a command in the environment
+deskyard exec: run a command in the computer
 
-Usage: deskyard [-e ENV] exec [OPTIONS] -- CMD [ARG...]
+Usage: deskyard [-c COMPUTER] exec [OPTIONS] -- CMD [ARG...]
 
 Runs one command as user (in /workspace unless --cwd) and streams its stdin,
 stdout and stderr; exits with the command's exit code. The command is run as
@@ -15,11 +15,8 @@ Options:
                        when the JSON was printed
   -t, --tty            run in a terminal (for programs that need one); stdout
                        and stderr are merged
-  --cwd DIR            working directory in the environment (default
-                       /workspace)
-  -e, --env K=V        after exec: set an environment variable for the command
-                       (repeatable); not the global -e ENV before exec, which
-                       chooses the environment
+  --cwd DIR            working directory in the computer (default /workspace)
+  -e, --env K=V        set an environment variable for the command (repeatable)
 
 Prints: the command's stdout and stderr as they arrive; with --json one object
   {"stdout":string,"stderr":string,"exit":int}, using
@@ -27,10 +24,10 @@ Prints: the command's stdout and stderr as they arrive; with --json one object
   UTF-8
 
 Examples:
-  deskyard -e alice exec -- ls -la
-  deskyard -e alice exec -e CI=1 -- make test
+  deskyard -c alice exec -- ls -la
+  deskyard -c alice exec -e CI=1 -- make test
   deskyard exec --json -- bash -lc 'cd app && npm test'
   echo hi | deskyard exec -- tee /workspace/hi.txt
 
-Where: on the chosen environment (-e ENV); inside an environment without one chosen it acts locally
-Exit codes: the command's own exit code; 1 when it couldn't run (connection, credential, stopped environment), 2 usage error
+Where: on the chosen computer (-c COMPUTER); inside a computer without one chosen it acts locally
+Exit codes: the command's own exit code; 1 when it couldn't run (connection, credential, stopped computer), 2 usage error

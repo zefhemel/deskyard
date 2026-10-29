@@ -14,10 +14,10 @@ from helpers import make_credential, wait_until
 
 
 def test_status_and_exec(remote):
-    assert remote.name in remote("-e", remote.name, "status").stdout.decode()
-    r = remote("-e", remote.name, "exec", "--", "id", "-u")
+    assert remote.name in remote("-c", remote.name, "status").stdout.decode()
+    r = remote("-c", remote.name, "exec", "--", "id", "-u")
     assert r.stdout.strip() == b"1000"
-    r = remote("-e", remote.name, "exec", "--", "sh", "-c", "exit 5", check=False)
+    r = remote("-c", remote.name, "exec", "--", "sh", "-c", "exit 5", check=False)
     assert r.returncode == 5
 
 
@@ -37,7 +37,7 @@ def test_cp_round_trip(remote, tmp_path):
     src = tmp_path / "hello.txt"
     src.write_bytes(b"hello from the host\n")
     remote("cp", str(src), f"{remote.name}:/workspace/hello.txt")
-    assert remote("-e", remote.name, "exec", "--", "stat", "-c", "%u", "/workspace/hello.txt").stdout.strip() == b"1000"
+    assert remote("-c", remote.name, "exec", "--", "stat", "-c", "%u", "/workspace/hello.txt").stdout.strip() == b"1000"
     back = tmp_path / "back.txt"
     remote("cp", f"{remote.name}:/workspace/hello.txt", str(back))
     assert back.read_bytes() == src.read_bytes()
@@ -45,16 +45,16 @@ def test_cp_round_trip(remote, tmp_path):
 
 def test_screenshot(remote, tmp_path):
     out = tmp_path / "s.png"
-    remote("-e", remote.name, "screenshot", str(out))
+    remote("-c", remote.name, "screenshot", str(out))
     assert out.read_bytes()[:4] == b"\x89PNG"
-    assert remote("-e", remote.name, "size").stdout.split() == [b"1280", b"800"]
+    assert remote("-c", remote.name, "size").stdout.split() == [b"1280", b"800"]
 
 
 def test_browser_connect(cli, remote):
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
-    p = subprocess.Popen([cli, "-e", remote.name, "browser", "connect", "--port", str(port)], env=remote.env,
+    p = subprocess.Popen([cli, "-c", remote.name, "browser", "connect", "--port", str(port)], env=remote.env,
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     def listening():
@@ -84,14 +84,14 @@ def test_self_description(cli):
 
 
 def desktop_curl(remote, port, name=None):
-    return remote("-e", name or remote.name, "exec", "--", "curl", "-s", "-m", "10", f"http://127.0.0.1:{port}/", check=False)
+    return remote("-c", name or remote.name, "exec", "--", "curl", "-s", "-m", "10", f"http://127.0.0.1:{port}/", check=False)
 
 
 def desktop_http_server(run, port, name):
     """Starts python3 -m http.server PORT in a desktop, in the background."""
-    run("-e", name, "exec", "--", "bash", "-lc", f"setsid -f python3 -m http.server {port} --bind 127.0.0.1 >/dev/null 2>&1")
+    run("-c", name, "exec", "--", "bash", "-lc", f"setsid -f python3 -m http.server {port} --bind 127.0.0.1 >/dev/null 2>&1")
     for _ in range(50):
-        if run("-e", name, "exec", "--", "curl", "-sf", f"http://127.0.0.1:{port}/", check=False).returncode == 0:
+        if run("-c", name, "exec", "--", "curl", "-sf", f"http://127.0.0.1:{port}/", check=False).returncode == 0:
             return
         time.sleep(0.2)
     raise AssertionError(f"http.server {port} didn't start in {name}")

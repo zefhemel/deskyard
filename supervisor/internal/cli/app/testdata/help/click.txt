@@ -1,6 +1,6 @@
 deskyard click: click at X Y
 
-Usage: deskyard [-e ENV] click X Y [left|right|middle]
+Usage: deskyard [-c COMPUTER] click X Y [left|right|middle]
 
 Moves the mouse to X Y and clicks a button (default left).
 
@@ -15,5 +15,5 @@ Examples:
   deskyard click 640 400
   deskyard click 640 400 right
 
-Where: inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)
+Where: inside a computer it acts locally; elsewhere on the chosen computer (-c COMPUTER)
 Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop

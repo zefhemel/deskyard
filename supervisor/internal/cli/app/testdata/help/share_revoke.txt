@@ -1,6 +1,6 @@
 deskyard share revoke: end a share
 
-Usage: deskyard [-e ENV] share revoke NAME
+Usage: deskyard [-c COMPUTER] share revoke NAME
 
 Ends a share you made (administrators: any share): deletes its account and
 link and closes its connections.
@@ -10,7 +10,7 @@ Arguments:
 
 Options:
   --server NAME        the server to manage (see `deskyard server list`);
-                       default: the server -e SERVER/ENV names, else the
+                       default: the server -c SERVER/COMPUTER names, else the
                        default server
 
 Prints: a confirmation line

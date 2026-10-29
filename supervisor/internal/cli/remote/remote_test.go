@@ -29,8 +29,8 @@ func TestParseURL(t *testing.T) {
 		{"https://host/cc/api/me", "https://host/cc", ""},
 		{" https://host/alice ", "https://host", "alice"},
 		// The web UI's page of a computer.
-		{"https://host/environments/alice", "https://host", "alice"},
-		{"https://host/cc/environments/alice/", "https://host/cc", "alice"},
+		{"https://host/computers/alice", "https://host", "alice"},
+		{"https://host/cc/computers/alice/", "https://host/cc", "alice"},
 	}
 	for _, c := range cases {
 		got, err := ParseURL(c.in)
@@ -88,7 +88,7 @@ func TestConfigRoundTrip(t *testing.T) {
 		Servers map[string]map[string]any `json:"servers"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil || raw.Default != "h" || raw.Servers["h"]["credential"] != "dyc_0000000a_s" ||
-		raw.Servers["h"]["url"] != "https://h" || raw.Servers["h"]["username"] != "zef" || raw.Servers["h"]["environment"] != "alice" {
+		raw.Servers["h"]["url"] != "https://h" || raw.Servers["h"]["username"] != "zef" || raw.Servers["h"]["computer"] != "alice" {
 		t.Errorf("servers.json: %s %v", data, err)
 	}
 	c2, err := Load(path)
@@ -289,5 +289,28 @@ func TestRedirectErrorNamesTheTarget(t *testing.T) {
 	err := c.JSON(context.Background(), http.MethodGet, "/me", nil, nil)
 	if !IsStatus(err, http.StatusPermanentRedirect) || !strings.Contains(err.Error(), "deskyard login https://deskyard.example.com") || strings.Contains(err.Error(), "<a") {
 		t.Fatalf("%v", err)
+	}
+}
+
+func TestConfigReadsLegacyEnvironment(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	old := `{"default":"h","servers":{"h":{"url":"https://h","username":"zef","credential":"dyc_0000000a_s","environment":"alice"},` +
+		`"k":{"url":"https://k","username":"zef","credential":"dyc_0000000b_s","environment":"old","computer":"new"}}}`
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Servers["h"].Computer != "alice" || c.Servers["k"].Computer != "new" {
+		t.Fatalf("computers: %q, %q", c.Servers["h"].Computer, c.Servers["k"].Computer)
+	}
+	if err := c.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	if strings.Contains(string(data), `"environment"`) || !strings.Contains(string(data), `"computer": "alice"`) {
+		t.Errorf("saved: %s", data)
 	}
 }

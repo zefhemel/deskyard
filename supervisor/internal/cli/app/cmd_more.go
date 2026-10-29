@@ -37,7 +37,7 @@ func runCp(a *App, c *call) error {
 			end(0, err)
 			return err
 		}
-		return usagef(c.cmd, "neither side is in a computer: write the computer side as ENV:/path, e.g. deskyard cp ./file alice:/workspace/ (an empty ENV, :/path, means the chosen computer)")
+		return usagef(c.cmd, "neither side is in a computer: write the computer side as COMPUTER:/path, e.g. deskyard cp ./file alice:/workspace/ (an empty COMPUTER, :/path, means the chosen computer)")
 	}
 	rp := src
 	if dst.IsRemote {
@@ -60,8 +60,8 @@ func runCp(a *App, c *call) error {
 	return transfer.Download(c.ctx, run, src.Path, dst.Path, a.Stdout)
 }
 
-// cpTarget is the client for cp's ENV:/path side: ENV on the chosen server
-// (-e SERVER/…, else the default one), or for :/path the chosen computer.
+// cpTarget is the client for cp's COMPUTER:/path side: COMPUTER on the chosen server
+// (-c SERVER/…, else the default one), or for :/path the chosen computer.
 func (a *App) cpTarget(env string) (*remote.Client, error) {
 	if env == "" {
 		return a.target()

@@ -1,6 +1,6 @@
 deskyard cursor: print the mouse position
 
-Usage: deskyard [-e ENV] cursor
+Usage: deskyard [-c COMPUTER] cursor
 
 Prints where the mouse pointer is.
 
@@ -9,5 +9,5 @@ Prints: one line "X Y", e.g. "640 400"
 Examples:
   deskyard cursor
 
-Where: inside an environment it acts locally; elsewhere on the chosen environment (-e ENV)
+Where: inside a computer it acts locally; elsewhere on the chosen computer (-c COMPUTER)
 Exit codes: 0 ok, 1 error, 2 usage error; otherwise the exit code of the action on the desktop

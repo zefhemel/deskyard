@@ -134,7 +134,7 @@ def test_plain_http_screen(supervisor, desktop, name, remote):
         page.keyboard.press("Escape")
 
         # The agent overlay marks an agent's click where it lands.
-        remote("-e", name, "click", "200", "150")
+        remote("-c", name, "click", "200", "150")
         mark = page.locator('[data-mark="click"]')
         expect(mark).to_be_visible(timeout=5000)
         box = mark.bounding_box()

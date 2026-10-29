@@ -96,7 +96,7 @@ def test_browser_terminal_lease_lifetime(admin, desktop, name):
 
 def test_remote_terminal_disconnect_and_eof(cli, remote, name):
     for mode in ("disconnect", "eof"):
-        process = subprocess.Popen([cli, "-e", name, "terminal"], env=remote.env,
+        process = subprocess.Popen([cli, "-c", name, "terminal"], env=remote.env,
                                    stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         try:
             process.stdin.write(f'printf {mode} > /workspace/lease-cli\r'.encode())

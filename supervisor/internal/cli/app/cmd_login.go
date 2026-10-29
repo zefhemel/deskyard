@@ -266,7 +266,7 @@ func (a *App) saveLogin(c *call, cl *remote.Client, ans loginAnswer, want string
 	case env != "":
 		fmt.Fprintf(a.Stdout, "Commands use the computer %s; try `deskyard status`.\n", env)
 	case len(full) > 0:
-		fmt.Fprintf(a.Stdout, "Your computers: %s. Choose one with `deskyard env use ENV`, or -e ENV per command.\n", strings.Join(full, ", "))
+		fmt.Fprintf(a.Stdout, "Your computers: %s. Choose one with `deskyard computer use COMPUTER`, or -c COMPUTER per command.\n", strings.Join(full, ", "))
 	default:
 		fmt.Fprintln(a.Stdout, "This account has no computer it can use from the CLI yet.")
 	}
@@ -274,7 +274,7 @@ func (a *App) saveLogin(c *call, cl *remote.Client, ans loginAnswer, want string
 		fmt.Fprintf(a.Stdout, "Observe only, in the browser: %s.\n", strings.Join(observed, ", "))
 	}
 	if cfg.Default != cl.Alias {
-		fmt.Fprintf(a.Stdout, "Use it with -e %s/ENV, or make it the default server with `deskyard server default %s`.\n", cl.Alias, cl.Alias)
+		fmt.Fprintf(a.Stdout, "Use it with -c %s/COMPUTER, or make it the default server with `deskyard server default %s`.\n", cl.Alias, cl.Alias)
 	}
 	return nil
 }
@@ -335,7 +335,7 @@ func runServerList(a *App, c *call) error {
 			Name     string `json:"name"`
 			URL      string `json:"url"`
 			Username string `json:"username"`
-			Computer string `json:"environment"`
+			Computer string `json:"computer"`
 			Default  bool   `json:"default"`
 		}
 		rows := []row{}
@@ -385,7 +385,7 @@ func runServerDefault(a *App, c *call) error {
 	return cfg.Save(path)
 }
 
-// ---- env use
+// ---- computer use
 
 func runEnvUse(a *App, c *call) error {
 	name, env, err := splitSelector(c.args[0])

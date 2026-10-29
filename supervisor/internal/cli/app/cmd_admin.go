@@ -30,7 +30,7 @@ import (
 var timeNow = time.Now
 
 // apiClient is the client for the server the command talks to: --server,
-// else the server -e SERVER/ENV or DESKYARD_ENVIRONMENT names, else the
+// else the server -c SERVER/COMPUTER or DESKYARD_COMPUTER names, else the
 // default one. env names the computer the command is about, for messages.
 func (a *App) apiClient(c *call, env string) (*remote.Client, error) {
 	name := c.str("--server", "")
@@ -195,7 +195,7 @@ func runEnvList(a *App, c *call) error {
 		for _, e := range list.Computers {
 			state := e.State
 			if e.Error != "" || e.Conflict != "" {
-				state += " (problem: see env show)"
+				state += " (problem: see computer show)"
 			}
 			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", e.Name, state, dash(e.Level), dash(imageName(e)), dash(strings.Join(e.Viewers, ", ")))
 		}
@@ -380,7 +380,7 @@ func runEnvCreate(a *App, c *call) error {
 	defer stop()
 	if err := a.followJob(ctx, cl, job.Job); err != nil {
 		if errors.Is(err, context.Canceled) {
-			fmt.Fprintf(a.Stderr, "Stopped following; %s is still being created on the server: see `deskyard env show %s`.\n", name, name)
+			fmt.Fprintf(a.Stderr, "Stopped following; %s is still being created on the server: see `deskyard computer show %s`.\n", name, name)
 		}
 		return err
 	}
@@ -447,7 +447,7 @@ func (a *App) followJob(ctx context.Context, cl *remote.Client, id string) error
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return fmt.Errorf("lost the progress of %s before it finished: check with `deskyard env show %s`", cl.Label(), cl.Label())
+	return fmt.Errorf("lost the progress of %s before it finished: check with `deskyard computer show %s`", cl.Label(), cl.Label())
 }
 
 // removalTimeout is how long a removal waits for the server, which allows
@@ -476,10 +476,10 @@ func runEnvRemove(a *App, c *call) error {
 	return nil
 }
 
-// runEnvPower is env start, stop and restart.
+// runEnvPower is computer start, stop and restart.
 func runEnvPower(a *App, c *call) error {
 	name := c.args[0]
-	action := strings.TrimPrefix(c.cmd.Name, "env ")
+	action := strings.TrimPrefix(c.cmd.Name, "computer ")
 	cl, err := a.apiClient(c, name)
 	if err != nil {
 		return err
@@ -615,7 +615,7 @@ func runVolumeCreate(a *App, c *call) error {
 	if ans.Adopted {
 		fmt.Fprintf(a.Stdout, "Created the volume %s, keeping the existing folder %s in the data folder.\n", ans.Volume.Name, ans.Volume.Folder)
 	} else {
-		fmt.Fprintf(a.Stdout, "Created the volume %s (%s in the data folder). Grant it with `deskyard env create … --volume %s`.\n", ans.Volume.Name, ans.Volume.Folder, ans.Volume.Name)
+		fmt.Fprintf(a.Stdout, "Created the volume %s (%s in the data folder). Grant it with `deskyard computer create … --volume %s`.\n", ans.Volume.Name, ans.Volume.Folder, ans.Volume.Name)
 	}
 	return nil
 }

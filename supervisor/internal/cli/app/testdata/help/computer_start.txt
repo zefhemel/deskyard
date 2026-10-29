@@ -1,0 +1,23 @@
+deskyard computer start: start a computer
+
+Usage: deskyard [-c COMPUTER] computer start NAME
+
+Saves that the computer should be running and starts it, making its container
+when it has none or its settings changed; the server answers at once. Needs
+full access to it.
+
+Arguments:
+  NAME       string      required  computer name
+
+Options:
+  --server NAME        the server to manage (see `deskyard server list`);
+                       default: the server -c SERVER/COMPUTER names, else the
+                       default server
+
+Prints: a confirmation line
+
+Examples:
+  deskyard computer start alice
+
+Where: on this machine, talking to the server
+Exit codes: 0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error

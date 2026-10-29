@@ -1,0 +1,25 @@
+deskyard computer remove: remove a computer (admin)
+
+Usage: deskyard [-c COMPUTER] computer remove NAME [--delete-files]
+
+Removes a computer: its container, its grants to accounts and its shares
+(closing their connections). Its files in home/NAME/ are kept unless
+--delete-files; volumes are never touched.
+
+Arguments:
+  NAME       string      required  computer name
+
+Options:
+  --delete-files       also delete the computer's files (home/NAME/)
+  --server NAME        the server to manage (see `deskyard server list`);
+                       default: the server -c SERVER/COMPUTER names, else the
+                       default server
+
+Prints: a confirmation line
+
+Examples:
+  deskyard computer remove bob
+  deskyard computer remove bob --delete-files
+
+Where: on this machine, talking to the server
+Exit codes: 0 ok, 1 error, 2 usage error; the server's refusal (403 for what your account may not do) is an error

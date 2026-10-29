@@ -1,6 +1,6 @@
 deskyard device revoke: sign out a device
 
-Usage: deskyard [-e ENV] device revoke ID [--account USER]
+Usage: deskyard [-c COMPUTER] device revoke ID [--account USER]
 
 Revokes a CLI credential by its ID (from device list), closing its connections
 at once. To sign out this CLI, use `deskyard logout` instead.
@@ -11,7 +11,7 @@ Arguments:
 Options:
   --account USER       another account's device (admin)
   --server NAME        the server to manage (see `deskyard server list`);
-                       default: the server -e SERVER/ENV names, else the
+                       default: the server -c SERVER/COMPUTER names, else the
                        default server
 
 Prints: a confirmation line

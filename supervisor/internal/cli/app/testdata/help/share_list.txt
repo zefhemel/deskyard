@@ -1,18 +1,17 @@
-deskyard share list: list an environment's shares
+deskyard share list: list a computer's shares
 
-Usage: deskyard [-e ENV] share list ENV [--json]
+Usage: deskyard [-c COMPUTER] share list COMPUTER [--json]
 
-Lists the shares of an environment: who it was shared with and by, at which
-level, until when, and whether they are connected now. Needs full access to
-it.
+Lists the shares of a computer: who it was shared with and by, at which level,
+until when, and whether they are connected now. Needs full access to it.
 
 Arguments:
-  ENV        string      required  environment name
+  COMPUTER   string      required  computer name
 
 Options:
   --json               print JSON instead of text
   --server NAME        the server to manage (see `deskyard server list`);
-                       default: the server -e SERVER/ENV names, else the
+                       default: the server -c SERVER/COMPUTER names, else the
                        default server
 
 Prints: a table NAME LEVEL SHARED-BY EXPIRES LAST-USED NOTE; with --json the

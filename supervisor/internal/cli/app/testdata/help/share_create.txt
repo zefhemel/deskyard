@@ -1,14 +1,14 @@
-deskyard share create: share an environment by link
+deskyard share create: share a computer by link
 
-Usage: deskyard [-e ENV] share create ENV NAME [OPTIONS]
+Usage: deskyard [-c COMPUTER] share create COMPUTER NAME [OPTIONS]
 
-Shares an environment you have full access to: makes the account NAME with
-access to it only, and prints its login link, which works once. Observe-only
-shares watch in a browser and can't use the CLI. The share ends when it is
-revoked or expires, or when you lose full access.
+Shares a computer you have full access to: makes the account NAME with access
+to it only, and prints its login link, which works once. Observe-only shares
+watch in a browser and can't use the CLI. The share ends when it is revoked or
+expires, or when you lose full access.
 
 Arguments:
-  ENV        string      required  environment name
+  COMPUTER   string      required  computer name
   NAME       string      required  the share's username, e.g. who it is for
 
 Options:
@@ -16,7 +16,7 @@ Options:
   --expires WHEN       when the share ends: a time from now (90m, 2h, 7d, 2w)
                        or an RFC 3339 time
   --server NAME        the server to manage (see `deskyard server list`);
-                       default: the server -e SERVER/ENV names, else the
+                       default: the server -c SERVER/COMPUTER names, else the
                        default server
 
 Prints: the login link (https://host/link#dyl_…) alone on stdout; what it

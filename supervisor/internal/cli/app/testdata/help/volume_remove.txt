@@ -1,8 +1,8 @@
 deskyard volume remove: remove a volume
 
-Usage: deskyard [-e ENV] volume remove NAME [--delete-files]
+Usage: deskyard [-c COMPUTER] volume remove NAME [--delete-files]
 
-Removes a volume no environment grants any more; its folder is kept unless
+Removes a volume no computer grants any more; its folder is kept unless
 --delete-files.
 
 Arguments:
@@ -11,7 +11,7 @@ Arguments:
 Options:
   --delete-files       also delete the volume's files
   --server NAME        the server to manage (see `deskyard server list`);
-                       default: the server -e SERVER/ENV names, else the
+                       default: the server -c SERVER/COMPUTER names, else the
                        default server
 
 Prints: a confirmation line

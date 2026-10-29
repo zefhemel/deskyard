@@ -1,8 +1,8 @@
 deskyard server default: set or show the default server
 
-Usage: deskyard [-e ENV] server default [NAME]
+Usage: deskyard [-c COMPUTER] server default [NAME]
 
-Makes NAME the server used when -e names no server; without NAME prints the
+Makes NAME the server used when -c names no server; without NAME prints the
 current default.
 
 Arguments:

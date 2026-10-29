@@ -180,7 +180,7 @@ class Forward:
     """A running `deskyard forward`, with its output collected as it comes."""
 
     def __init__(self, cli, remote, *specs, name=None):
-        self.p = subprocess.Popen([cli, "-e", name or remote.name, "forward", *specs], env=remote.env,
+        self.p = subprocess.Popen([cli, "-c", name or remote.name, "forward", *specs], env=remote.env,
                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         self.out, self.err = [], []
         self.lines = queue.Queue()

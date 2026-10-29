@@ -40,7 +40,7 @@ type App struct {
 	callerName string
 	callerSet  bool
 
-	envFlag string // -e/--environment: ENV or SERVER/ENV
+	envFlag string // -c/--computer: COMPUTER or SERVER/COMPUTER
 }
 
 // New returns an App wired to the process.
@@ -130,23 +130,23 @@ func (a *App) Run(ctx context.Context, argv []string) int {
 }
 
 func (a *App) run(ctx context.Context, argv []string) error {
-	// Global flags, only before the command name: -e is exec's --env after it.
+	// Global flags, only before the command name: -c is global; commands have their own flags after the name.
 	for len(argv) > 0 {
 		arg := argv[0]
 		switch {
-		case arg == "-e" || arg == "--environment":
+		case arg == "-c" || arg == "--computer":
 			if len(argv) < 2 || argv[1] == "" {
-				return usagef(nil, "%s needs a computer: deskyard -e ENV COMMAND, or -e SERVER/ENV (see `deskyard server list`)", arg)
+				return usagef(nil, "%s needs a computer: deskyard -c COMPUTER COMMAND, or -c SERVER/COMPUTER (see `deskyard server list`)", arg)
 			}
 			if _, _, err := splitSelector(argv[1]); err != nil {
 				return usagef(nil, "%s: %v", arg, err)
 			}
 			a.envFlag, argv = argv[1], argv[2:]
 			continue
-		case strings.HasPrefix(arg, "-e="), strings.HasPrefix(arg, "--environment="):
+		case strings.HasPrefix(arg, "-c="), strings.HasPrefix(arg, "--computer="):
 			flag, v, _ := strings.Cut(arg, "=")
 			if v == "" {
-				return usagef(nil, "%s needs a computer: deskyard -e ENV COMMAND, or -e SERVER/ENV (see `deskyard server list`)", flag)
+				return usagef(nil, "%s needs a computer: deskyard -c COMPUTER COMMAND, or -c SERVER/COMPUTER (see `deskyard server list`)", flag)
 			}
 			if _, _, err := splitSelector(v); err != nil {
 				return usagef(nil, "%s: %v", flag, err)
@@ -159,7 +159,7 @@ func (a *App) run(ctx context.Context, argv []string) error {
 			return runVersion(a, nil)
 		case arg == "-d" || arg == "--desktop" || strings.HasPrefix(arg, "--desktop="):
 			name, _, _ := strings.Cut(arg, "=")
-			return usagef(nil, "unknown option %q (choose a computer with -e ENV before the command)", name)
+			return usagef(nil, "unknown option %q (choose a computer with -c COMPUTER before the command)", name)
 		case strings.HasPrefix(arg, "-") && arg != "-":
 			return usagef(nil, "unknown option %q (options for a command go after it, e.g. deskyard exec --json -- ls)", arg)
 		}
@@ -173,7 +173,7 @@ func (a *App) run(ctx context.Context, argv []string) error {
 	cmd, rest := lookup(argv)
 	if cmd == nil {
 		if argv[0] == "remote" {
-			return usagef(nil, "unknown command \"remote\": remotes were replaced by servers you sign in to; run `deskyard login https://host/ENV` (or `deskyard auth LINK`), then `deskyard server list`")
+			return usagef(nil, "unknown command \"remote\": remotes were replaced by servers you sign in to; run `deskyard login https://host/COMPUTER` (or `deskyard auth LINK`), then `deskyard server list`")
 		}
 		if len(subcommands(argv[0])) > 0 {
 			if len(argv) == 1 {
@@ -336,9 +336,9 @@ func (a *App) loadConfig() (*remote.Config, string, error) {
 	return cfg, p, err
 }
 
-const loginHint = "run `deskyard login https://host/ENV` (or `deskyard auth LINK` with a login link)"
+const loginHint = "run `deskyard login https://host/COMPUTER` (or `deskyard auth LINK` with a login link)"
 
-// splitSelector splits -e's ENV or SERVER/ENV.
+// splitSelector splits -c's COMPUTER or SERVER/COMPUTER.
 func splitSelector(sel string) (server, env string, err error) {
 	if sel == "" {
 		return "", "", nil
@@ -348,25 +348,25 @@ func splitSelector(sel string) (server, env string, err error) {
 		return "", sel, nil
 	}
 	if server == "" || env == "" || strings.Contains(env, "/") {
-		return "", "", fmt.Errorf("%q isn't a computer: write ENV, or SERVER/ENV for another server", sel)
+		return "", "", fmt.Errorf("%q isn't a computer: write COMPUTER, or SERVER/COMPUTER for another server", sel)
 	}
 	return server, env, nil
 }
 
-// selector is the computer chosen with -e, else DESKYARD_ENVIRONMENT.
+// selector is the computer chosen with -c, else DESKYARD_COMPUTER.
 func (a *App) selector() (string, error) {
 	if a.envFlag != "" {
 		return a.envFlag, nil
 	}
-	sel := a.Getenv("DESKYARD_ENVIRONMENT")
+	sel := a.Getenv("DESKYARD_COMPUTER")
 	if _, _, err := splitSelector(sel); err != nil {
-		return "", fmt.Errorf("DESKYARD_ENVIRONMENT: %v", err)
+		return "", fmt.Errorf("DESKYARD_COMPUTER: %v", err)
 	}
 	return sel, nil
 }
 
-// target picks the server and computer to talk to: -e, else
-// DESKYARD_ENVIRONMENT, else the default server's computer. It returns
+// target picks the server and computer to talk to: -c, else
+// DESKYARD_COMPUTER, else the default server's computer. It returns
 // nil, nil when the command should act locally (inside a computer with
 // no computer chosen).
 func (a *App) target() (*remote.Client, error) {
@@ -377,7 +377,7 @@ func (a *App) target() (*remote.Client, error) {
 	return a.resolve(sel)
 }
 
-// resolve finds the client for ENV or SERVER/ENV ("" = the default
+// resolve finds the client for COMPUTER or SERVER/COMPUTER ("" = the default
 // server's computer).
 func (a *App) resolve(sel string) (*remote.Client, error) {
 	name, env, err := splitSelector(sel)
@@ -398,7 +398,7 @@ func (a *App) resolve(sel string) (*remote.Client, error) {
 		return nil, a.noServer()
 	}
 	if env == "" {
-		return nil, fmt.Errorf("no computer chosen on %s: use -e ENV, or choose a default with `deskyard env use ENV`", srv.Name)
+		return nil, fmt.Errorf("no computer chosen on %s: use -c COMPUTER, or choose a default with `deskyard computer use COMPUTER`", srv.Name)
 	}
 	c := remote.FromServer(srv, env)
 	c.HTTP = a.HTTP
@@ -430,7 +430,7 @@ func (a *App) server(name string) (*remote.Server, error) {
 	for _, s := range cfg.Sorted() {
 		names = append(names, s.Name)
 	}
-	return nil, fmt.Errorf("no server named %q (there are: %s): run `deskyard server list`, or sign in with `deskyard login https://host/ENV --name %s`", name, strings.Join(names, ", "), name)
+	return nil, fmt.Errorf("no server named %q (there are: %s): run `deskyard server list`, or sign in with `deskyard login https://host/COMPUTER --name %s`", name, strings.Join(names, ", "), name)
 }
 
 // noServer explains why there is no default server.
@@ -440,7 +440,7 @@ func (a *App) noServer() error {
 		return err
 	}
 	if len(cfg.Servers) > 0 {
-		return errors.New("no server chosen: run `deskyard server list`, then `deskyard server default NAME`, or use -e SERVER/ENV")
+		return errors.New("no server chosen: run `deskyard server list`, then `deskyard server default NAME`, or use -c SERVER/COMPUTER")
 	}
 	return errors.New("not signed in to any server: " + loginHint)
 }
