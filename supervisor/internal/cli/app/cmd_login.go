@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/cli/remote"
-	"github.com/zefhemel/deskyard/supervisor/internal/envname"
+	"github.com/zefhemel/deskyard/supervisor/internal/computername"
 )
 
 // loginInterval is how long deskyard login waits between polls, given the
@@ -114,12 +114,12 @@ func runLogin(a *App, c *call) error {
 	if err != nil {
 		return usagef(c.cmd, "%v", err)
 	}
-	if envname.IsReserved(t.Computer) {
+	if computername.IsReserved(t.Computer) {
 		return usagef(c.cmd, "%s/%s is a page of Deskyard, it isn't a computer: run `deskyard login %s`, or add a computer's name to it", t.Base, t.Computer, t.Base)
 	}
 	// Below a page, such as a volume's (…/volumes/photos).
 	if u, err := url.Parse(t.Base); err == nil {
-		if dir, page := path.Split(u.Path); page != "" && envname.IsReserved(page) {
+		if dir, page := path.Split(u.Path); page != "" && computername.IsReserved(page) {
 			u.Path = strings.TrimSuffix(dir, "/")
 			return usagef(c.cmd, "%s is a page of Deskyard, it isn't a computer: run `deskyard login %s`, or add a computer's name to it", t.URL(), u)
 		}

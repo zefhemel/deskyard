@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/zefhemel/deskyard/supervisor/internal/envname"
+	"github.com/zefhemel/deskyard/supervisor/internal/computername"
 )
 
 var nameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}[a-z0-9]$`)
@@ -13,7 +13,7 @@ var nameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}[a-z0-9]$`)
 // ValidName checks a computer name: DNS label rules (so it also works as a
 // container, network and folder name), not one of the supervisor's routes.
 func ValidName(name string) error {
-	if envname.IsReserved(name) {
+	if computername.IsReserved(name) {
 		return fmt.Errorf("%q is reserved by the supervisor", name)
 	}
 	if !nameRE.MatchString(name) {
@@ -35,4 +35,4 @@ func ValidNewName(name string) error {
 }
 
 // IsReserved reports whether a top-level path segment belongs to the supervisor.
-func IsReserved(segment string) bool { return envname.IsReserved(segment) }
+func IsReserved(segment string) bool { return computername.IsReserved(segment) }
