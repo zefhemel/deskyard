@@ -102,9 +102,8 @@ func TestVPNEndToEnd(t *testing.T) {
 	if dataHost == "" {
 		t.Fatal("no bind mount at " + config.DataDir)
 	}
-	layout := config.NewLayout(config.DataDir)
-	hostLayout := layout.WithHost(dataHost)
-	eng := engine.WithHostPaths(e, hostLayout.ToHost, hostLayout.FromHost)
+	layout := config.NewLayout(config.DataDir).WithHost(dataHost)
+	eng := engine.WithDataFolder(e, layout.Data, layout.Host())
 	state := layout.State
 	if err = layout.Prepare(); err != nil {
 		t.Fatal(err)
@@ -157,7 +156,7 @@ func TestVPNEndToEnd(t *testing.T) {
 	}
 	makeService := func() *environments.Service {
 		// Open reads the saved definitions, so a fresh service recovers from them.
-		ds, err := environments.Open(eng, environments.Config{DataDir: layout.Data, DataHost: dataHost, Subnet: "10.219.0.0/16", SelfID: cfg.SelfID}, instance, log)
+		ds, err := environments.Open(eng, environments.Config{Layout: layout, Subnet: "10.219.0.0/16", SelfID: cfg.SelfID}, instance, log)
 		if err != nil {
 			t.Fatal(err)
 		}

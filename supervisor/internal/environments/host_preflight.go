@@ -92,13 +92,13 @@ func (s *Service) checkHostSources(ctx context.Context, mounts []hostSource, doc
 	spec := helper.Spec{Purpose: helper.MountCheck, Network: "none", MemoryBytes: 32 << 20, NanoCPUs: 1e9}
 	var checks []string
 	for i, m := range mounts {
-		spec.Mounts = append(spec.Mounts, engine.Mount{Source: m.path, Target: fmt.Sprintf("/check/%d", i), ReadOnly: true, MustExist: true})
+		spec.Mounts = append(spec.Mounts, engine.Mount{Source: m.path, OnEngineHost: true, Target: fmt.Sprintf("/check/%d", i), ReadOnly: true, MustExist: true})
 	}
 	if len(mounts) > 0 {
 		checks = append(checks, `for folder in /check/*; do [ -d "$folder" ] || exit 1; done`)
 	}
 	if dockerAccess {
-		spec.Mounts = append(spec.Mounts, engine.Mount{Source: dockerSocket, Target: "/docker.sock", ReadOnly: true, MustExist: true})
+		spec.Mounts = append(spec.Mounts, engine.Mount{Source: dockerSocket, OnEngineHost: true, Target: "/docker.sock", ReadOnly: true, MustExist: true})
 		checks = append(checks, `test -S /docker.sock || exit 2`)
 	}
 	spec.Cmd = []string{"sh", "-c", strings.Join(checks, "\n")}

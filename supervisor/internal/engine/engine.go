@@ -17,8 +17,15 @@ var ErrNotFound = errors.New("not found")
 // uses part of the subnet, possibly one created since it was chosen.
 var ErrSubnetTaken = errors.New("subnet in use")
 
+// Mount is a bind mount (or, inspected, a named volume). Its Source is one
+// of two kinds of path, and OnEngineHost says which.
 type Mount struct {
-	Source, Target string // Source is a host path
+	// Source is, by default, a path in the supervisor's data folder as the
+	// supervisor sees it (config.DataDir): WithDataFolder maps it to the
+	// folder the engine host mounts there. With OnEngineHost it is a path on
+	// the engine host (the Docker socket, a host volume), passed on as is.
+	Source, Target string
+	OnEngineHost   bool
 	// Volume is the Docker volume's name when an inspected mount is a named
 	// volume, empty for a bind mount. Create ignores it.
 	Volume   string
@@ -74,7 +81,9 @@ type Container struct {
 	IP                    map[string]string // network name → address
 	MemoryBytes, NanoCPUs int64
 	Devices               []string // host devices passed in (their paths on the host)
-	Mounts                []Mount  // its mounts, Source on the host
+	// Mounts are its mounts: OnEngineHost from an engine, and through
+	// WithDataFolder those of the data folder as data folder paths.
+	Mounts []Mount
 }
 
 func (c Container) Running() bool { return c.State == "running" || c.State == "restarting" }
@@ -175,6 +184,9 @@ type Engine interface {
 
 	Events(ctx context.Context) (<-chan Event, error)
 	Info(ctx context.Context) (HostInfo, error)
+
+	MemoryReclaimer
+	ImagePruner
 }
 
 // Output runs cmd with bounded capture and returns its stdout, stderr and exit code.

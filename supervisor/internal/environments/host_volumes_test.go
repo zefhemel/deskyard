@@ -209,7 +209,7 @@ func TestCreateContainerMountsGrantPaths(t *testing.T) {
 	want := []engine.Mount{
 		{Source: s.Layout.HomeOf("alice"), Target: "/workspace", MustExist: true},
 		{Source: s.Layout.VolumeOf("local"), Target: "/share/local", MustExist: true},
-		{Source: source, Target: "/mnt/p", ReadOnly: true, MustExist: true},
+		{Source: source, OnEngineHost: true, Target: "/mnt/p", ReadOnly: true, MustExist: true},
 	}
 	if !reflect.DeepEqual(spec.Mounts, want) || !spec.NoNewPrivileges {
 		t.Fatalf("mounts %+v nnp=%v", spec.Mounts, spec.NoNewPrivileges)

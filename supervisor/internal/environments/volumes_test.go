@@ -126,38 +126,37 @@ func TestVolumesAddDuplicate(t *testing.T) {
 	}
 }
 
-func TestValidHostPathRefusesDataEntries(t *testing.T) {
-	if err := ValidHostPath(dataLayout, "/data/home/x"); err == nil {
-		t.Error("/data/home/x must be refused")
-	}
-	for _, p := range []string{"/data/photos", "/srv/photos"} {
-		if err := ValidHostPath(dataLayout, p); err != nil {
-			t.Errorf("%s: %v", p, err)
-		}
-	}
-}
-
-// dataLayout is the supervisor's layout at /data, without a host folder.
+// dataLayout is the supervisor's layout at /data, which the engine host has
+// at /data too.
 var dataLayout = config.NewLayout(config.DataDir)
 
-// A host path inside the host data folder's own entries reads back as a
-// /data path through the engine, so it is refused too; other folders under
-// the host data folder are not the layout's and stay allowed.
-func TestValidHostPathRefusesHostDataEntries(t *testing.T) {
-	l := dataLayout.WithHost("/srv/deskyard")
-	for _, p := range []string{"/srv/deskyard", "/srv/deskyard/home/bob", "/srv/deskyard/volume/v", "/srv/deskyard/state", "/srv/deskyard/accounts.json"} {
-		if err := ValidHostPath(l, p); err == nil {
-			t.Errorf("%s must be refused", p)
+// A host volume can't be anywhere in the data folder on the engine host:
+// the supervisor alone manages it, and the engine reads its mounts back as
+// data folder paths.
+func TestValidHostPathRefusesHostDataFolder(t *testing.T) {
+	for _, tc := range []struct {
+		layout          config.Layout
+		refused, usable []string
+	}{
+		{dataLayout, []string{"/data", "/data/home/x", "/data/photos"}, []string{"/srv/photos", "/database"}},
+		{dataLayout.WithHost("/srv/deskyard"),
+			[]string{"/srv/deskyard", "/srv/deskyard/home/bob", "/srv/deskyard/volume/v", "/srv/deskyard/accounts.json", "/srv/deskyard/photos"},
+			[]string{"/srv/photos", "/srv/deskyard-other/home", "/data/home/x"}},
+	} {
+		for _, p := range tc.refused {
+			if err := ValidHostPath(tc.layout, p); err == nil {
+				t.Errorf("%s with the data folder at %s must be refused", p, tc.layout.Host())
+			}
 		}
-	}
-	for _, p := range []string{"/srv/deskyard/photos", "/srv/photos", "/srv/deskyard-other/home"} {
-		if err := ValidHostPath(l, p); err != nil {
-			t.Errorf("%s: %v", p, err)
+		for _, p := range tc.usable {
+			if err := ValidHostPath(tc.layout, p); err != nil {
+				t.Errorf("%s: %v", p, err)
+			}
 		}
 	}
 }
 
-// A stored host volume inside the host data folder's entries fails the load
+// A stored host volume inside the host data folder fails the load
 // rather than being read back as another environment's folder.
 func TestLoadVolumesRefusesHostDataEntries(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "volumes.json")

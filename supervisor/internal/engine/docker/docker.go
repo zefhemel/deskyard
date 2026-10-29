@@ -231,7 +231,7 @@ func (d *Docker) Inspect(ctx context.Context, id string) (engine.Container, erro
 		}
 	}
 	for _, m := range r.Mounts {
-		em := engine.Mount{Source: m.Source, Target: m.Destination, ReadOnly: !m.RW}
+		em := engine.Mount{Source: m.Source, OnEngineHost: true, Target: m.Destination, ReadOnly: !m.RW}
 		if m.Type == mount.TypeVolume {
 			em.Volume = m.Name
 		}

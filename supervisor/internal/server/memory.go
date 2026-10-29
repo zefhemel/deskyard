@@ -19,13 +19,7 @@ func (s *Server) detectMemoryReclaim(ctx context.Context) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	var err error
-	if reclaimer, ok := s.Eng.(engine.MemoryReclaimer); ok {
-		err = reclaimer.ProbeMemoryReclaim(ctx)
-	} else {
-		err = engine.ErrReclaimUnsupported
-	}
-	if err != nil {
+	if err := s.Eng.ProbeMemoryReclaim(ctx); err != nil {
 		s.memoryReclaim = engine.MemoryReclaimSupport{Reason: err.Error()}
 		s.Log.Warn("memory reclamation disabled", "enabled", false, "reason", err.Error())
 		return
@@ -50,11 +44,6 @@ func (s *Server) handleReclaimMemory(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotImplemented, s.memoryReclaim.Reason)
 		return
 	}
-	reclaimer, ok := s.Eng.(engine.MemoryReclaimer)
-	if !ok {
-		writeError(w, http.StatusNotImplemented, engine.ErrReclaimUnsupported.Error())
-		return
-	}
 	// Keep the desktop running, while excluding concurrent lifecycle/reclaim requests.
 	release, err := s.Environments.Reserve(c.Name, "")
 	if err != nil {
@@ -64,7 +53,7 @@ func (s *Server) handleReclaimMemory(w http.ResponseWriter, r *http.Request) {
 	defer release()
 	ctx, cancel := timeout(r, 45*time.Second)
 	defer cancel()
-	result, err := reclaimer.ReclaimMemory(ctx, c.Container.ID)
+	result, err := s.Eng.ReclaimMemory(ctx, c.Container.ID)
 	if err != nil {
 		code := http.StatusBadGateway
 		if errors.Is(err, engine.ErrReclaimUnsupported) {

@@ -30,7 +30,7 @@ type volumeJSON struct {
 }
 
 func (s *Server) volumeJSON(v environments.Volume) volumeJSON {
-	j := volumeJSON{Name: v.Name, Created: v.Created, Kind: v.Kind, HostPath: v.HostPath, Folder: s.Environments.Layout.ToHost(s.Environments.VolumeFolder(v).Path), Environments: []volumeUserJSON{}}
+	j := volumeJSON{Name: v.Name, Created: v.Created, Kind: v.Kind, HostPath: v.HostPath, Folder: s.Environments.HostPath(s.Environments.VolumeFolder(v)), Environments: []volumeUserJSON{}}
 	for _, u := range s.Environments.VolumeUsers(v.Name) {
 		j.Environments = append(j.Environments, volumeUserJSON{Name: u.Environment, ReadOnly: u.ReadOnly})
 	}

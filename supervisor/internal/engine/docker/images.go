@@ -8,8 +8,6 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 )
 
-var _ engine.ImagePruner = (*Docker)(nil)
-
 func (d *Docker) DanglingImages(ctx context.Context, labels map[string]string) ([]engine.Image, error) {
 	f := labelFilters(labels)
 	f.Add("dangling", "true")

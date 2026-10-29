@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/helper"
@@ -425,7 +426,7 @@ func TestFoldersShownAsHostPaths(t *testing.T) {
 	e.current.Labels = maps.Clone(alice.Labels)
 	e.current.Image = "img"
 	e.current.Env = map[string]string{environments.TokenEnv: "token"}
-	s, ts := newTestServerCfg(t, e, environments.Config{Subnet: "10.0.0.0/16", DataHost: "/srv/deskyard"})
+	s, ts := newTestServerCfg(t, e, environments.Config{Subnet: "10.0.0.0/16", Layout: config.Layout{}.WithHost("/srv/deskyard")})
 	admin := login(t, ts, "admin")
 	get := func(path string, v any) {
 		t.Helper()

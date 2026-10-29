@@ -122,11 +122,12 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	// Only the engine translates; everything else keeps the /data layout.
-	hostLayout := cfg.Layout.WithHost(host)
-	eng = engine.WithHostPaths(eng, hostLayout.ToHost, hostLayout.FromHost)
+	// Only the engine translates mounts; everything else keeps the /data
+	// layout.
+	layout := cfg.Layout.WithHost(host)
+	eng = engine.WithDataFolder(eng, layout.Data, layout.Host())
 	// Nor are an older supervisor's containers that use this data folder.
-	if err := environments.New(eng, environments.Config{DataDir: cfg.DataDir, DataHost: host}, log).CheckLegacyContainers(ctx); err != nil {
+	if err := environments.New(eng, environments.Config{Layout: layout}, log).CheckLegacyContainers(ctx); err != nil {
 		return err
 	}
 	if err := cfg.Layout.Prepare(); err != nil {
@@ -153,7 +154,7 @@ func run(log *slog.Logger) error {
 	}
 
 	comps, err := environments.Open(eng, environments.Config{
-		DataDir: cfg.DataDir, DataHost: host, Subnet: cfg.Subnet.String(), SelfID: selfID,
+		Layout: layout, Subnet: cfg.Subnet.String(), SelfID: selfID,
 	}, instance, log)
 	if err != nil {
 		return err
@@ -176,7 +177,7 @@ func run(log *slog.Logger) error {
 	}
 	srv, err := server.New(server.Options{
 		StartupContext: ctx,
-		Log:            log, Eng: eng, Environments: comps, Accounts: accts, Layout: cfg.Layout,
+		Log:            log, Eng: eng, Environments: comps, Accounts: accts, Layout: layout,
 		UI: ui, Secure: cfg.Domain != "", DefaultImage: cfg.DefaultImage,
 		ActivityPresence: cfg.ActivityPresence,
 	})

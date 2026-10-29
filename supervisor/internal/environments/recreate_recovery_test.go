@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 )
@@ -515,7 +516,7 @@ func TestStartupReconnectsNetworksBeforeReplacementRecovery(t *testing.T) {
 // A request can pause between the journal check and operation reservation while
 // the preceding request finishes with a retained journal.
 func TestReservationChecksRecoveryAfterAcquiringSlot(t *testing.T) {
-	s := New(nil, Config{DataDir: t.TempDir()}, nil)
+	s := New(nil, Config{Layout: config.NewLayout(t.TempDir())}, nil)
 	s.mu.Lock()
 	unlock := sync.OnceFunc(s.mu.Unlock)
 	t.Cleanup(unlock)
@@ -564,7 +565,7 @@ func TestReservationChecksRecoveryAfterAcquiringSlot(t *testing.T) {
 }
 
 func TestReservationStatErrorReleasesSlot(t *testing.T) {
-	s := New(nil, Config{DataDir: t.TempDir()}, nil)
+	s := New(nil, Config{Layout: config.NewLayout(t.TempDir())}, nil)
 	blocked := s.Layout.State
 	if err := os.WriteFile(blocked, []byte("not a directory"), 0600); err != nil {
 		t.Fatal(err)

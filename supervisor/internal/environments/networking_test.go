@@ -3,6 +3,7 @@ package environments
 import (
 	"context"
 	"errors"
+	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 	"io"
@@ -123,7 +124,7 @@ func pairSetup(t *testing.T) (*Service, *pairEngine, *pairRuntime, vpn.Connectio
 	t.Helper()
 	e := &pairEngine{fakeEngine: newFakeEngine()}
 	dir := t.TempDir()
-	s := New(e, Config{DataDir: dir, Subnet: "10.213.0.0/16"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s := New(e, Config{Layout: config.NewLayout(dir), Subnet: "10.213.0.0/16"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	st, err := vpn.NewStore(filepath.Join(dir, "networks.json"), s.Layout.Secret)
 	if err != nil {
 		t.Fatal(err)

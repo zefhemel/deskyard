@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
@@ -95,14 +94,10 @@ func (s *Server) reclaimIdleEnvironment(ctx context.Context, now time.Time, c en
 			return
 		}
 	}
-	reclaimer, ok := s.Eng.(engine.MemoryReclaimer)
-	if !ok {
-		return
-	}
 	st.attempted = true
 	request, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	result, err := reclaimer.ReclaimMemory(request, c.Container.ID)
+	result, err := s.Eng.ReclaimMemory(request, c.Container.ID)
 	if err != nil {
 		s.Log.Warn("automatic memory reclamation failed", "environment", c.Name, "err", err)
 		return

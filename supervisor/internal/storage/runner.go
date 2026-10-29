@@ -46,7 +46,7 @@ type Runner interface {
 
 // EngineRunner runs each Call in a new storage helper of RcloneImage
 // (helper.Runner), removed when the call returns. restic comes from
-// ResticImage: extracted once into BinDir (a host folder) and mounted
+// ResticImage: extracted once into BinDir (in the data folder) and mounted
 // read-only, or, without a BinDir, copied into each helper.
 type EngineRunner struct {
 	Helpers *helper.Runner

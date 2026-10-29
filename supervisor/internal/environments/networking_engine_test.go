@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine/docker"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
@@ -292,7 +293,7 @@ func TestVPNPairedEngineLifecycle(t *testing.T) {
 		}
 	})
 	dir, _ := filepath.EvalSymlinks(t.TempDir())
-	cfg := Config{DataDir: dir, Subnet: "10.217.0.0/16"}
+	cfg := Config{Layout: config.NewLayout(dir), Subnet: "10.217.0.0/16"}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	s := New(e, cfg, log)
 	publishTestCLI(t, s)

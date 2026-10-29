@@ -177,7 +177,7 @@ func TestPresenceKnob(t *testing.T) {
 		accts, _ := accounts.Load(dir)
 		e := fakeEngine{}
 		s, err := New(Options{Log: log, Eng: e, Accounts: accts, Layout: config.NewLayout(dir), DefaultImage: "img",
-			Environments:     environments.New(e, environments.Config{DataDir: dir, Subnet: "10.0.0.0/16"}, log),
+			Environments:     environments.New(e, environments.Config{Layout: config.NewLayout(dir), Subnet: "10.0.0.0/16"}, log),
 			ActivityPresence: c.presence})
 		if err != nil {
 			t.Fatal(err)

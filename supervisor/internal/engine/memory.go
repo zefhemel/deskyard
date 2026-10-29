@@ -7,7 +7,8 @@ import (
 
 var ErrReclaimUnsupported = errors.New("memory reclamation requires a rootful Linux engine with cgroup v2 and available swap")
 
-// MemoryReclaimer is optional: engines without host cgroup access need not implement it.
+// MemoryReclaimer is the part of Engine that reclaims a desktop's memory. An
+// engine without host cgroup access returns ErrReclaimUnsupported.
 type MemoryReclaimer interface {
 	// ProbeMemoryReclaim verifies the complete helper path on a disposable
 	// container. It must not reclaim memory from existing desktops.

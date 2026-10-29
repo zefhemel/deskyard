@@ -35,7 +35,7 @@ func Run(t *testing.T, e engine.Engine) {
 		Name: name, Image: image, Labels: labels, Env: map[string]string{"HELLO": "world"},
 		Network: name, Aliases: []string{"probe"},
 		Cmd: []string{"sleep", "600"}, Devices: []string{"/dev/zero"},
-		Mounts: []engine.Mount{{Source: dir, Target: "/mnt/probe", ReadOnly: true}},
+		Mounts: []engine.Mount{{Source: dir, OnEngineHost: true, Target: "/mnt/probe", ReadOnly: true}},
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -49,7 +49,7 @@ func Run(t *testing.T, e engine.Engine) {
 		}
 		if c.Labels["deskyard.enginetest"] != name || c.Env["HELLO"] != "world" || c.Name != name ||
 			len(c.Devices) != 1 || c.Devices[0] != "/dev/zero" ||
-			len(c.Mounts) != 1 || c.Mounts[0].Source != dir || c.Mounts[0].Target != "/mnt/probe" || !c.Mounts[0].ReadOnly {
+			len(c.Mounts) != 1 || c.Mounts[0].Source != dir || !c.Mounts[0].OnEngineHost || c.Mounts[0].Target != "/mnt/probe" || !c.Mounts[0].ReadOnly {
 			t.Fatalf("got %+v", c)
 		}
 		list, err := e.List(ctx, labels)

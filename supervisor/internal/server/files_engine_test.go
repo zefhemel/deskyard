@@ -154,7 +154,7 @@ func newFilesServer(t *testing.T) (*Server, *httptest.Server, string) {
 	_, _ = accts.Create(accounts.NewAccount{Username: "ben", Password: "pw"})
 	e := &filesEngine{root: root}
 	s, err := New(Options{Log: log, Eng: e, Accounts: accts, Layout: config.NewLayout(dir), DefaultImage: "img",
-		Environments: environments.New(e, environments.Config{DataDir: dir, Subnet: "10.0.0.0/16"}, log),
+		Environments: environments.New(e, environments.Config{Layout: config.NewLayout(dir), Subnet: "10.0.0.0/16"}, log),
 		UI:           fstest.MapFS{"index.html": {Data: []byte("ui")}}})
 	if err != nil {
 		t.Fatal(err)

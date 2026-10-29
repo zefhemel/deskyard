@@ -398,9 +398,9 @@ func (s *Service) repin(ctx context.Context, name string) (Definition, error) {
 // from before environment definitions, those without an instance label, that
 // mount this data folder. They are neither adopted nor removed. Helpers and
 // VPN candidate tests are ignored. Only Deskyard-labelled containers are
-// listed, not every container on the engine. Through the engine's host path
-// translation, sources outside the layout's entries keep their host paths,
-// so the host data folder is searched as well as Data.
+// listed, not every container on the engine. The engine reports a mount of
+// the data folder's host folder as one in Data (engine.WithDataFolder),
+// whatever the layout it had.
 func (s *Service) CheckLegacyContainers(ctx context.Context) error {
 	var cs []engine.Container
 	seen := map[string]bool{}
@@ -416,13 +416,7 @@ func (s *Service) CheckLegacyContainers(ctx context.Context) error {
 			}
 		}
 	}
-	dirs := []string{filepath.Clean(s.Layout.Data)}
-	if real, err := filepath.EvalSymlinks(s.Layout.Data); err == nil && real != dirs[0] {
-		dirs = append(dirs, real)
-	}
-	if host := s.Layout.Host(); host != "" {
-		dirs = append(dirs, host)
-	}
+	data := Folder{Path: s.Layout.Data}
 	var old []string
 	for _, c := range cs {
 		l := c.Labels
@@ -430,9 +424,7 @@ func (s *Service) CheckLegacyContainers(ctx context.Context) error {
 		if !deskyard || l[LabelInstance] != "" || l[vpn.LabelRole] == "test" || l["deskyard.helper"] != "" {
 			continue
 		}
-		if slices.ContainsFunc(c.Mounts, func(m engine.Mount) bool {
-			return slices.ContainsFunc(dirs, func(dir string) bool { return within(m.Source, dir) })
-		}) {
+		if slices.ContainsFunc(c.Mounts, data.holds) {
 			old = append(old, c.Name)
 		}
 	}

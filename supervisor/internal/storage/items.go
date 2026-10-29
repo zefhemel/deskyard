@@ -166,7 +166,7 @@ func (volumeKind) sources(s *Service, name, root string) ([]engine.Mount, func()
 	if !ok {
 		return nil, func() {}, fmt.Errorf("volume %s doesn't exist", name)
 	}
-	return []engine.Mount{{Source: s.Env.VolumeFolder(v).Path, Target: root, ReadOnly: true, MustExist: true}}, func() {}, nil
+	return []engine.Mount{s.Env.VolumeFolder(v).Mount(root, true)}, func() {}, nil
 }
 
 func (volumeKind) users(env Environments, name string) []string {

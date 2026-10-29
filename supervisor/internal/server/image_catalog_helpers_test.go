@@ -28,6 +28,13 @@ type catalogEngine struct {
 	pullErr    error
 }
 
+// The catalog engine reclaims no memory and has no old images
+// (pruneEngine adds them).
+func (*catalogEngine) ProbeMemoryReclaim(context.Context) error { return engine.ErrReclaimUnsupported }
+func (*catalogEngine) DanglingImages(context.Context, map[string]string) ([]engine.Image, error) {
+	return nil, nil
+}
+
 func newCatalogEngine() *catalogEngine {
 	e := &catalogEngine{images: map[string]engine.Image{}, tags: map[string]string{}}
 	e.addImage("img", "sha256:base1", "user")

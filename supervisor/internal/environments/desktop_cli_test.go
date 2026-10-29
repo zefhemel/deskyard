@@ -30,8 +30,7 @@ func TestDesktopCLIArchitectureAndHostMount(t *testing.T) {
 		t.Run(arch, func(t *testing.T) {
 			s, base := newFakeService(t)
 			e := &cliEngine{fakeEngine: base, arch: arch, capability: "runtime-v1"}
-			layout := s.Layout.WithHost("/srv/deskyard")
-			s.Eng = engine.WithHostPaths(e, layout.ToHost, layout.FromHost)
+			s.Eng = engine.WithDataFolder(e, s.Layout.Data, "/srv/deskyard")
 			dir := filepath.Join(s.Layout.State, "cli", "linux-"+arch)
 			if err := os.MkdirAll(dir, 0755); err != nil {
 				t.Fatal(err)

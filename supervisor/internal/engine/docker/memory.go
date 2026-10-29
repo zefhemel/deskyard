@@ -30,8 +30,6 @@ import (
 const reclaimImage = helper.Image
 const reclaimBytes = 128 << 20
 
-var _ engine.MemoryReclaimer = (*Docker)(nil)
-
 func (d *Docker) ReclaimMemory(ctx context.Context, id string) (engine.MemoryReclaim, error) {
 	ctx, cancel := context.WithTimeout(ctx, 35*time.Second)
 	defer cancel()

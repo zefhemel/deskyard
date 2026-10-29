@@ -58,26 +58,17 @@ func (v Volume) validate(l config.Layout) error {
 	return nil
 }
 
-// ValidHostPath checks a host volume's folder against l, the supervisor's
-// layout: a clean absolute path outside the layout's entries, both in the
-// data mount and in the host folder behind it (which the engine would read
-// back as the data mount's).
+// ValidHostPath checks a host volume's folder, a path on the engine host: a
+// clean absolute path outside the supervisor's data folder there (l.Host),
+// which only the supervisor may manage.
 func ValidHostPath(l config.Layout, p string) error {
 	if len(p) > 4096 || !filepath.IsAbs(p) || strings.ContainsRune(p, 0) || filepath.Clean(p) != p {
 		return fmt.Errorf("a host volume needs a clean absolute path on the engine host, not %q", p)
 	}
-	if l.Owns(p) {
-		return fmt.Errorf("%s is inside the supervisor's data folder mount; choose a folder outside %s", p, entriesOf(l.Data))
-	}
-	if l.FromHost(p) != p {
-		return fmt.Errorf("%s is inside the supervisor's data folder on the host; choose a folder outside %s", p, entriesOf(l.Host()))
+	if within(p, l.Host()) {
+		return fmt.Errorf("%s is inside the supervisor's data folder (%s on the engine host); choose a folder outside it", p, l.Host())
 	}
 	return nil
-}
-
-// entriesOf names the layout's folders in data for an error message.
-func entriesOf(data string) string {
-	return fmt.Sprintf("%[1]s/home, %[1]s/volume, %[1]s/secret, %[1]s/state and %[1]s/cache", strings.TrimSuffix(data, "/"))
 }
 
 type volumesFile struct {

@@ -87,6 +87,16 @@ func (fakeEngine) Info(context.Context) (engine.HostInfo, error) {
 	return engine.HostInfo{CPUs: 4}, nil
 }
 
+// The fake engine reclaims no memory and has no old images.
+func (fakeEngine) ProbeMemoryReclaim(context.Context) error { return engine.ErrReclaimUnsupported }
+func (fakeEngine) ReclaimMemory(context.Context, string) (engine.MemoryReclaim, error) {
+	return engine.MemoryReclaim{}, engine.ErrReclaimUnsupported
+}
+func (fakeEngine) DanglingImages(context.Context, map[string]string) ([]engine.Image, error) {
+	return nil, nil
+}
+func (fakeEngine) RemoveImage(context.Context, string) error { return engine.ErrNotFound }
+
 func newTestServer(t *testing.T) (*Server, *httptest.Server) {
 	return newTestServerWith(t, fakeEngine{})
 }
@@ -95,15 +105,21 @@ func newTestServerWith(t *testing.T, e engine.Engine) (*Server, *httptest.Server
 	return newTestServerCfg(t, e, environments.Config{Subnet: "10.0.0.0/16"})
 }
 
-// newTestServerCfg is newTestServerWith with the desktops' config (DataDir is set here).
+// newTestServerCfg is newTestServerWith with the desktops' config. Its
+// layout is made here, in a new folder; only a host folder set with
+// config.Layout.WithHost is kept.
 func newTestServerCfg(t *testing.T, e engine.Engine, cfg environments.Config) (*Server, *httptest.Server) {
 	dir := t.TempDir()
-	cfg.DataDir = dir
+	host := cfg.Layout.Host()
+	cfg.Layout = config.NewLayout(dir)
+	if host != "" {
+		cfg.Layout = cfg.Layout.WithHost(host)
+	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	accts, _ := accounts.Load(dir)
 	_, _ = accts.EnsureAdmin("admin", "pw")
 	_, _ = accts.Create(accounts.NewAccount{Username: "anna", Password: "pw"})
-	s, err := New(Options{Log: log, Eng: e, Accounts: accts, Layout: config.NewLayout(dir), DefaultImage: "img",
+	s, err := New(Options{Log: log, Eng: e, Accounts: accts, Layout: cfg.Layout, DefaultImage: "img",
 		Environments: environments.New(e, cfg, log),
 		UI:           fstest.MapFS{"index.html": {Data: []byte("<!doctype html>ui")}, "assets/a.js": {Data: []byte("js")}}})
 	if err != nil {

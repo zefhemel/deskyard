@@ -166,7 +166,7 @@ func (s *Service) restoreHere(ctx context.Context, it Item, repo Repo, snap Snap
 		}
 	}
 	progress("Restoring", 0)
-	if err := s.Tool.Restore(ctx, repo, snap.ID, it.files(), engine.Mount{Source: folder.Path, MustExist: true}, nil, true, func(frac float64, msg string) {
+	if err := s.Tool.Restore(ctx, repo, snap.ID, it.files(), engine.Mount{Source: folder.Path, OnEngineHost: folder.OnEngineHost, MustExist: true}, nil, true, func(frac float64, msg string) {
 		progress("Restoring: "+msg, frac)
 	}); err != nil {
 		if len(restart) > 0 {
@@ -299,7 +299,7 @@ func (s *Service) restoreFolder(ctx context.Context, it Item, repo Repo, snap Sn
 		return RestoreResult{}, err
 	}
 	progress("Restoring", 0)
-	if err := s.Tool.Restore(ctx, repo, snap.ID, it.files(), engine.Mount{Source: filepath.Join(folder.Path, name), MustExist: true}, includes, false, func(frac float64, msg string) {
+	if err := s.Tool.Restore(ctx, repo, snap.ID, it.files(), engine.Mount{Source: filepath.Join(folder.Path, name), OnEngineHost: folder.OnEngineHost, MustExist: true}, includes, false, func(frac float64, msg string) {
 		progress("Restoring: "+msg, frac)
 	}); err != nil {
 		return RestoreResult{}, err

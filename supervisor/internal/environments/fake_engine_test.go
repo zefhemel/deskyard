@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 )
 
@@ -145,5 +146,5 @@ func newFakeService(t *testing.T) (*Service, *fakeEngine) {
 	t.Cleanup(health.Close)
 	_, port, _ := net.SplitHostPort(health.Listener.Addr().String())
 	eng.port, _ = strconv.Atoi(port)
-	return New(eng, Config{DataDir: t.TempDir(), DesktopPort: eng.port}, slog.New(slog.DiscardHandler)), eng
+	return New(eng, Config{Layout: config.NewLayout(t.TempDir()), DesktopPort: eng.port}, slog.New(slog.DiscardHandler)), eng
 }

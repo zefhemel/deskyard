@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/helper"
 )
@@ -73,7 +74,7 @@ func (e *helperEngine) ran() []engine.ContainerSpec {
 func volumeService(t *testing.T) (*Service, *helperEngine) {
 	t.Helper()
 	eng := &helperEngine{fakeEngine: newFakeEngine()}
-	s, err := Open(eng, Config{DataDir: t.TempDir()}, "test", slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
+	s, err := Open(eng, Config{Layout: config.NewLayout(t.TempDir())}, "test", slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +125,7 @@ func TestCreateVolumeMakesFolder(t *testing.T) {
 // is created, and the folder has mode 0755.
 func TestMakeVolumeFolderWithoutHelper(t *testing.T) {
 	eng := &noCreateEngine{fakeEngine: newFakeEngine()}
-	s, err := Open(eng, Config{DataDir: t.TempDir()}, "test", slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
+	s, err := Open(eng, Config{Layout: config.NewLayout(t.TempDir())}, "test", slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -616,8 +617,8 @@ func TestReplacedVolumeIsNeitherGrantedNorMounted(t *testing.T) {
 	}
 }
 
-// CreateVolume refuses a host path inside the host data folder's entries.
-func TestCreateHostVolumeRefusesHostDataEntries(t *testing.T) {
+// CreateVolume refuses a host path inside the host data folder.
+func TestCreateHostVolumeRefusesHostDataFolder(t *testing.T) {
 	s, _ := mountService(t)
 	if err := s.Layout.Prepare(); err != nil {
 		t.Fatal(err)
@@ -632,6 +633,9 @@ func TestCreateHostVolumeRefusesHostDataEntries(t *testing.T) {
 	}
 	if _, _, err := s.CreateVolume(context.Background(), "top", filepath.Join(host, "home")); err == nil {
 		t.Fatal("created a host volume of the data folder's homes")
+	}
+	if _, _, err := s.CreateVolume(context.Background(), "other", host); err == nil {
+		t.Fatal("created a host volume of the data folder")
 	}
 }
 

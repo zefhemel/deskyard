@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/activity"
+	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
@@ -52,7 +53,7 @@ func (b *delayedActivityEOF) Close() error { return nil }
 func TestActivityWorkerHandsOffCursorBeforeReattach(t *testing.T) {
 	eng := activityEngine{}
 	s := &Server{Eng: eng, events: newHub(), activity: activity.NewTracker()}
-	s.Environments = environments.New(eng, environments.Config{DataDir: t.TempDir(), DesktopPort: 1}, nil)
+	s.Environments = environments.New(eng, environments.Config{Layout: config.NewLayout(t.TempDir()), DesktopPort: 1}, nil)
 	defineEnvironments(t, s)
 	ir := newInsideReader(s)
 	s.inside = ir

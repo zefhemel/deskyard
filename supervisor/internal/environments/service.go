@@ -95,12 +95,11 @@ type Environment struct {
 func (c Environment) Running() bool { return c.State == "running" }
 
 type Config struct {
-	DataDir string // the supervisor's data folder (see config.Layout)
-	Subnet  string // DESKYARD_SUBNET
-	SelfID  string // the supervisor's own container; empty in Go tests, which have none
-	// DataHost is where the data folder lives on the engine host (see
-	// config.Layout.WithHost); empty in Go tests, which have no host folder.
-	DataHost string
+	// Layout is the supervisor's data folder, with where the engine host
+	// has it (config.Layout.WithHost).
+	Layout config.Layout
+	Subnet string // DESKYARD_SUBNET
+	SelfID string // the supervisor's own container; empty in Go tests, which have none
 	// DesktopPort is the port the proxy dials on a desktop. Zero means 8080;
 	// only tests set it, to reach a fake desktop served on a local port.
 	DesktopPort int
@@ -110,7 +109,7 @@ type Service struct {
 	Networking *Networking
 	Eng        engine.Engine
 	Cfg        Config
-	Layout     config.Layout // from Cfg.DataDir
+	Layout     config.Layout // Cfg.Layout
 	Defs       *Definitions  // environments.json
 	Vols       *Volumes      // volumes.json
 	// Instance is this supervisor's ID (config.InstanceID). Only containers
@@ -157,7 +156,7 @@ type Service struct {
 // environments.json and volumes.json in the data folder once there are) and
 // no instance ID. Open loads them.
 func New(e engine.Engine, cfg Config, log *slog.Logger) *Service {
-	layout := config.NewLayout(cfg.DataDir).WithHost(cfg.DataHost)
+	layout := cfg.Layout
 	s := &Service{Eng: e, Cfg: cfg, Layout: layout, Log: log,
 		Defs:     &Definitions{path: definitionsPath(layout), defs: map[string]Definition{}},
 		Vols:     &Volumes{path: volumesPath(layout), layout: layout, vols: map[string]Volume{}},
@@ -620,7 +619,7 @@ func (s *Service) createContainer(ctx context.Context, name string, revision uin
 		spec.Devices = append(spec.Devices, "/dev/fuse")
 	}
 	if set.DockerAccess {
-		spec.Mounts = append(spec.Mounts, engine.Mount{Source: dockerSocket, Target: dockerSocket, MustExist: true})
+		spec.Mounts = append(spec.Mounts, engine.Mount{Source: dockerSocket, OnEngineHost: true, Target: dockerSocket, MustExist: true})
 		spec.Env["DESKYARD_DOCKER_ACCESS"] = "1"
 	}
 	if runtimeID != "" {

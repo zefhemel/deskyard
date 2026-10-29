@@ -316,15 +316,11 @@ func (s *Server) checkImages(ctx context.Context, progress func(string, float64)
 // any image a container still uses. A version removed or gone is
 // forgotten. Failures are logged; the next check tries again.
 func (s *Server) pruneImages(ctx context.Context) {
-	pruner, ok := s.Eng.(engine.ImagePruner)
-	if !ok {
-		return
-	}
 	replaced := s.images.previous()
 	if len(replaced) == 0 {
 		return
 	}
-	old, err := pruner.DanglingImages(ctx, map[string]string{"deskyard.kind": "desktop"})
+	old, err := s.Eng.DanglingImages(ctx, map[string]string{"deskyard.kind": "desktop"})
 	if err != nil {
 		s.Log.Warn("listing old desktop images", "err", err)
 		return
@@ -344,7 +340,7 @@ func (s *Server) pruneImages(ctx context.Context) {
 		if !replaced[img.ID] || keep[img.ID] {
 			continue
 		}
-		if err := pruner.RemoveImage(ctx, img.ID); err != nil {
+		if err := s.Eng.RemoveImage(ctx, img.ID); err != nil {
 			if errors.Is(err, engine.ErrNotFound) {
 				gone[img.ID] = true
 			} else {

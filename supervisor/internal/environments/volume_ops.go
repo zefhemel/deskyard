@@ -6,13 +6,10 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 )
 
 // VolumeUser is an environment whose definition grants a volume.
@@ -165,19 +162,9 @@ func (s *Service) volumeMounters(ctx context.Context, v Volume) ([]string, error
 		return nil, err
 	}
 	folder := s.VolumeFolder(v)
-	folders := []string{filepath.Clean(folder.Path)}
-	// Links resolve only in the supervisor's own folders: a host volume's
-	// path is on the engine host, where the engine already resolved it.
-	if !folder.OnEngineHost {
-		if real, err := filepath.EvalSymlinks(folders[0]); err == nil && real != folders[0] {
-			folders = append(folders, real)
-		}
-	}
 	var out []string
 	for _, c := range cs {
-		if slices.ContainsFunc(c.Mounts, func(m engine.Mount) bool {
-			return slices.ContainsFunc(folders, func(f string) bool { return within(m.Source, f) })
-		}) && !slices.Contains(out, c.Labels[LabelName]) {
+		if slices.ContainsFunc(c.Mounts, folder.holds) && !slices.Contains(out, c.Labels[LabelName]) {
 			out = append(out, c.Labels[LabelName])
 		}
 	}

@@ -24,12 +24,14 @@ type Layout struct {
 	Home   string // home/<name>: each environment's /workspace
 	Volume string // volume/<name>: each named volume's data
 
-	host string // where Data lives on the engine host; "" when unknown
+	host string // where Data is on the engine host
 }
 
 // DataDir is where the supervisor's container mounts the data folder.
 const DataDir = "/data"
 
+// NewLayout is the layout of the data folder data, which the engine host
+// has at the same path until WithHost says otherwise.
 func NewLayout(data string) Layout {
 	return Layout{
 		Data:   data,
@@ -38,81 +40,29 @@ func NewLayout(data string) Layout {
 		Cache:  filepath.Join(data, "cache"),
 		Home:   filepath.Join(data, "home"),
 		Volume: filepath.Join(data, "volume"),
+		host:   filepath.Clean(data),
 	}
 }
 
-// WithHost returns a copy that knows the host folder mounted at Data, so
-// ToHost and FromHost can translate between the two.
+// WithHost returns a copy whose data folder is host on the engine host.
 func (l Layout) WithHost(host string) Layout {
-	l.host = ""
-	if host != "" {
-		l.host = filepath.Clean(host)
-	}
+	l.host = filepath.Clean(host)
 	return l
 }
 
-// Host is the host folder WithHost set: where Data lives on the engine host,
-// or "" when unknown.
+// Host is where Data is on the engine host.
 func (l Layout) Host() string { return l.host }
 
-// entry is the first path element of p below Data, and whether p is Data
-// itself or below it at all.
-func (l Layout) entry(p string) (first string, in bool) {
-	p = filepath.Clean(p)
-	if p == l.Data {
-		return "", true
-	}
-	rest, ok := strings.CutPrefix(p, l.Data+"/")
-	if !ok {
-		return "", false
-	}
-	first, _, _ = strings.Cut(rest, "/")
-	return first, true
-}
-
-// Owns reports whether p is Data itself or one of the layout's own entries
-// (home, volume, secret, state, cache or a top-level JSON store) and so
-// lives in the data folder's mount. Any other path under Data is not the
-// layout's, and is not translated.
-func (l Layout) Owns(p string) bool {
-	first, in := l.entry(p)
-	if !in {
-		return false
-	}
-	switch first {
-	case "", "home", "volume", "secret", "state", "cache":
-		return true
-	}
-	// A top-level *.json store, not a deeper file.
-	return strings.HasSuffix(first, ".json") && filepath.Clean(p) == filepath.Join(l.Data, first)
-}
-
-// ToHost maps a path inside the supervisor's container to the engine host's
-// path, for bind mounts the engine resolves on the host. Paths the layout
-// does not own, and every path when the host folder is unknown, are
-// returned unchanged.
+// ToHost is where a path in the data folder is on the engine host, to show
+// it to people, who know the host's folder. The engine's own mounts are
+// translated by engine.WithDataFolder. A path outside Data is returned as
+// it is.
 func (l Layout) ToHost(p string) string {
-	if l.host == "" || !l.Owns(p) {
+	rel, err := filepath.Rel(l.Data, filepath.Clean(p))
+	if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
 		return p
 	}
-	return filepath.Join(l.host, strings.TrimPrefix(filepath.Clean(p), l.Data))
-}
-
-// FromHost is the inverse of ToHost, for paths under the host folder. Only a
-// path that maps to one of the layout's entries is translated: a host
-// volume elsewhere under the host folder keeps its host path.
-func (l Layout) FromHost(p string) string {
-	if l.host == "" {
-		return p
-	}
-	c := filepath.Clean(p)
-	if c != l.host && !strings.HasPrefix(c, l.host+"/") {
-		return p
-	}
-	if in := filepath.Join(l.Data, strings.TrimPrefix(c, l.host)); l.Owns(in) {
-		return in
-	}
-	return p
+	return filepath.Join(l.host, rel)
 }
 
 // HomeOf is the environment's workspace folder.

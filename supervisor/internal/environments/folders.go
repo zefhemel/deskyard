@@ -24,6 +24,25 @@ type Folder struct {
 	OnEngineHost bool
 }
 
+// Mount is the strict engine mount of f at target: the engine never makes
+// a missing folder.
+func (f Folder) Mount(target string, readOnly bool) engine.Mount {
+	return engine.Mount{Source: f.Path, OnEngineHost: f.OnEngineHost, Target: target, ReadOnly: readOnly, MustExist: true}
+}
+
+// holds reports whether m, an inspected mount, is of f or a folder in it.
+func (f Folder) holds(m engine.Mount) bool {
+	return m.OnEngineHost == f.OnEngineHost && within(m.Source, f.Path)
+}
+
+// HostPath is where f is on the engine host, to show it to people.
+func (s *Service) HostPath(f Folder) string {
+	if f.OnEngineHost {
+		return f.Path
+	}
+	return s.Layout.ToHost(f.Path)
+}
+
 // HomeFolder is the home folder of the environment name.
 func (s *Service) HomeFolder(name string) Folder { return Folder{Path: s.Layout.HomeOf(name)} }
 
@@ -70,7 +89,7 @@ func (s *Service) Mounts(name string, grants []VolumeGrant) (mounts []FolderMoun
 func engineMounts(mounts []FolderMount) []engine.Mount {
 	out := make([]engine.Mount, len(mounts))
 	for i, m := range mounts {
-		out[i] = engine.Mount{Source: m.Folder.Path, Target: m.Target, ReadOnly: m.ReadOnly, MustExist: true}
+		out[i] = m.Folder.Mount(m.Target, m.ReadOnly)
 	}
 	return out
 }
@@ -101,7 +120,7 @@ func (s *Service) RemoveTree(ctx context.Context, parent Folder, child string) e
 	}
 	res, err := s.Helpers().Run(ctx, helper.Spec{
 		Purpose: helper.Folders, Network: "none",
-		Mounts: []engine.Mount{{Source: parent.Path, Target: "/parent", MustExist: true}},
+		Mounts: []engine.Mount{parent.Mount("/parent", false)},
 		Cmd:    []string{"rm", "-rf", "--", "/parent/" + child},
 	})
 	if err != nil {
@@ -152,7 +171,7 @@ func (s *Service) MakeFreeFolder(ctx context.Context, parent Folder, base string
 		var out bytes.Buffer
 		res, err := s.Helpers().Run(ctx, helper.Spec{
 			Purpose: helper.Folders, Network: "none",
-			Mounts: []engine.Mount{{Source: parent.Path, Target: "/parent", MustExist: true}},
+			Mounts: []engine.Mount{parent.Mount("/parent", false)},
 			Cmd:    []string{"sh", "-c", "cd /parent || exit 1\n" + freeFolderScript, "sh", base, fmt.Sprint(maxFreeNames)},
 			Stdout: &out,
 		})

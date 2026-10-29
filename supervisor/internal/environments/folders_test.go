@@ -170,7 +170,7 @@ func TestEngineHostFoldersStayOutOfReach(t *testing.T) {
 	hostVolume(t, s, "linked", link, "/mnt/linked", false)
 	v, _ := s.Vols.Get("linked")
 	for name, source := range map[string]string{"bob": other, "carol": link} {
-		if _, err := s.Eng.Create(context.Background(), engine.ContainerSpec{Name: containerName(name), Labels: s.ownLabels(name), Mounts: []engine.Mount{{Source: source, Target: "/mnt"}}}); err != nil {
+		if _, err := s.Eng.Create(context.Background(), engine.ContainerSpec{Name: containerName(name), Labels: s.ownLabels(name), Mounts: []engine.Mount{{Source: source, OnEngineHost: true, Target: "/mnt"}}}); err != nil {
 			t.Fatal(err)
 		}
 	}
