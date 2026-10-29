@@ -34,7 +34,7 @@ on the server and forgets the server. A credential acts with its account's
 access at the time of each request. Then:
 
 ```bash
-deskyard computer list                         # the computers you can use
+deskyard computer list                    # the computers you can use
 deskyard -c alice exec -- ls ~            # one command; exit code passed through
 deskyard -c alice shell                   # interactive shell
 deskyard -c alice terminal                # shared terminal; rejoin later

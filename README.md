@@ -147,7 +147,7 @@ Back up the whole data folder (see
 
 ## Guides
 
-- [Running Deskyard](guide/running.md): domains, LANs and plain HTTP, Tailscale, security, upgrading from "environments".
+- [Running Deskyard](guide/running.md): domains, LANs and plain HTTP, Tailscale, security and upgrading.
 - [Using the desktop](guide/desktop.md): display and touch controls, the iPhone Home Screen, shared terminals.
 - [Computers](guide/computers.md): lifecycle, Docker access, outbound VPN, what persists, reclaiming memory.
 - [Storage](guide/storage.md): volumes, WebDAV drives, backups and the data folder.
