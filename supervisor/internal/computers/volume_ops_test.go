@@ -477,7 +477,7 @@ func TestRemoveRefusedWhileItemBusy(t *testing.T) {
 	}
 	busy := errors.New("a backup of alice is running")
 	s.ItemBusy = func(kind, name string) error {
-		if kind == "environment" && name == "alice" {
+		if kind == "computer" && name == "alice" {
 			return busy
 		}
 		return nil

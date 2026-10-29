@@ -640,7 +640,7 @@ func runVolumeRemove(a *App, c *call) error {
 // ---- accounts
 
 type grant struct {
-	Computer string `json:"environment"`
+	Computer string `json:"computer"`
 	Level    string `json:"level"`
 }
 

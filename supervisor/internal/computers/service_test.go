@@ -297,7 +297,7 @@ func TestInterruptedRemoveDoesNotRecreate(t *testing.T) {
 		t.Fatal(err)
 	}
 	good := s.Defs.path
-	s.Eng.(*definitionEngine).onRemove = func(string) { s.Defs.path = filepath.Join(blocker, "environments.json") }
+	s.Eng.(*definitionEngine).onRemove = func(string) { s.Defs.path = filepath.Join(blocker, "computers.json") }
 	if err := s.Remove(ctx, "alice", false); err == nil {
 		t.Fatal("remove succeeded without deleting the definition")
 	}

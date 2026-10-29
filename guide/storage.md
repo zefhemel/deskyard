@@ -52,7 +52,7 @@ never written by file uploads, which go into `/workspace/Desktop`. There is no C
 or through `/api/volumes`.
 
 Per-environment host folders were replaced by host volumes. A data folder whose
-`environments.json` still has host folders (`mounts`) isn't migrated: the
+`computers.json` still has host folders (`mounts`) isn't migrated: the
 supervisor refuses to start and names the environment; remove its folders with
 the previous version, or delete the `mounts` entries, then create host volumes.
 
@@ -140,8 +140,10 @@ machines'), to restore as new. rclone and restic run in short-lived helper conta
 read-only files. To read a repository without Deskyard:
 `restic -r rclone:<remote>:<root>/<folder> snapshots`, with the remote's
 `secret/remotes/<name>/rclone.conf` as `RCLONE_CONFIG` and the recovery key as
-the password. Snapshots are tagged `environment:<name>` or `volume:<name>`; an
-environment's are under `/deskyard/environment/<name>/` (`home/` and
+the password. Snapshots are tagged `computer:<name>` or `volume:<name>`
+(an environment's snapshots taken before it was called a computer keep the tag
+`environment:<name>`, and are listed, restored and pruned with the newer ones);
+an environment's are under `/deskyard/environment/<name>/` (`home/` and
 `definition.json`), a volume's under `/deskyard/volume/<name>/`.
 
 ## The data folder
@@ -152,13 +154,13 @@ plain view; there is no hidden folder:
 
 ```
 <data>/
-  environments.json   environment definitions (no secrets)
+  computers.json      environment definitions (no secrets)
   accounts.json       accounts, password hashes and environment grants (full or observe)
   links.json          unused login links (hashed)
   credentials.json    signed-in CLIs' client credentials (hashed)
   networks.json       saved VPN connections (no credentials)
   images.json         the image catalog
-  volumes.json        named volumes (grants live in environments.json)
+  volumes.json        named volumes (grants live in computers.json)
   storage-remotes.json  storage remotes (no credentials)
   backups.json        backup repositories and policies
   secret/             session key, per-environment proxy tokens (proxy/<name>),
@@ -183,7 +185,8 @@ whole data folder; `cache/` can be left out. Deskyard's own backups cover
 environments and volumes, not this folder's settings and secrets: keep the
 recovery keys somewhere else.
 
-`environments.json` is the only place an environment's settings live. The
+`computers.json` is the only place an environment's settings live (an older
+`environments.json` is renamed to it at start). The
 supervisor reads it strictly: an unknown field, a duplicate name or an invalid
 entry stops it from starting rather than being ignored. Containers and networks
 carry only matching labels: `deskyard.managed`, `deskyard.name`,

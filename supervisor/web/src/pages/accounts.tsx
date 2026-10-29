@@ -79,8 +79,8 @@ export function AccountsPage() {
                       ) : a.grants.length ? (
                         <div class="flex flex-wrap gap-[5px]">
                           {a.grants.map((g) => (
-                            <Tag key={g.environment}>
-                              {g.environment}
+                            <Tag key={g.computer}>
+                              {g.computer}
                               {g.level === "observe" && <span class="font-medium text-muted"> · observe</span>}
                             </Tag>
                           ))}

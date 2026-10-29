@@ -18,9 +18,14 @@ import (
 
 // Item kinds: what a backup policy and its snapshots are of.
 const (
-	KindComputer = "environment" // the definition and home folder
+	KindComputer = "computer" // the definition and home folder
 	KindVolume   = "volume"
 )
+
+// legacyKindComputer is KindComputer before computers were called computers:
+// their older snapshots are tagged environment:NAME, and older backups.json
+// files key them so. It is read, never written.
+const legacyKindComputer = "environment"
 
 // Item is a computer or a volume, by name.
 type Item struct {
@@ -38,17 +43,36 @@ func ParseItem(kind, name string) (Item, error) {
 	return Item{kind, name}, nil
 }
 
-// ParseTag reads an item's restic tag, kind:name.
+// ParseTag reads an item's restic tag, kind:name. The tag environment:NAME,
+// from before computers were called computers, is the computer NAME.
 func ParseTag(tag string) (Item, error) {
 	kind, name, ok := strings.Cut(tag, ":")
 	if !ok {
 		return Item{}, fmt.Errorf("%q isn't an item tag", tag)
 	}
+	if kind == legacyKindComputer {
+		kind = KindComputer
+	}
 	return ParseItem(kind, name)
 }
 
-// Tag is the item's restic tag and its key in backups.json.
+// Tag is the item's restic tag for new snapshots and its key in backups.json.
 func (i Item) Tag() string { return i.Kind + ":" + i.Name }
+
+// Tags are every tag the item's snapshots may carry: Tag, and for a computer
+// also the tag of its snapshots from before the rename. Tags in repositories
+// are never rewritten, so those stay as they are.
+func (i Item) Tags() []string {
+	if i.Kind == KindComputer {
+		return []string{i.Tag(), legacyKindComputer + ":" + i.Name}
+	}
+	return []string{i.Tag()}
+}
+
+// taggedIn reports whether a snapshot with tags is of the item.
+func (i Item) taggedIn(tags []string) bool {
+	return slices.ContainsFunc(i.Tags(), func(t string) bool { return slices.Contains(tags, t) })
+}
 
 func (i Item) String() string { return i.Tag() }
 
@@ -330,10 +354,28 @@ func LoadState(path string) (*State, error) {
 	if st.f.Items == nil {
 		st.f.Items = map[string]RunState{}
 	}
+	st.f.Items = rekeyItems(st.f.Items)
 	if st.f.Prunes == nil {
 		st.f.Prunes = map[string]time.Time{}
 	}
 	return st, nil
+}
+
+// rekeyItems keys run states saved under a computer's old tag
+// (environment:NAME) by its tag; a state already under the new tag wins. Keys
+// that aren't item tags are kept as they are.
+func rekeyItems(items map[string]RunState) map[string]RunState {
+	out := make(map[string]RunState, len(items))
+	for key, rs := range items {
+		if it, err := ParseTag(key); err == nil && it.Tag() != key {
+			if _, ok := items[it.Tag()]; !ok {
+				out[it.Tag()] = rs
+			}
+			continue
+		}
+		out[key] = rs
+	}
+	return out
 }
 
 func (st *State) Get(it Item) RunState {

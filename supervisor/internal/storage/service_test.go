@@ -127,7 +127,7 @@ func TestBackUpComputerMountsHomeAndDefinition(t *testing.T) {
 		}
 	}
 	args := strings.Join(backup.Args, " ")
-	for _, want := range []string{"--tag deskyard", "--tag environment:alice", "--tag manual", "--host deskyard-0123456789ab", " /deskyard/environment/alice"} {
+	for _, want := range []string{"--tag deskyard", "--tag computer:alice", "--tag manual", "--host deskyard-0123456789ab", " /deskyard/environment/alice"} {
 		if !strings.Contains(args, want) {
 			t.Errorf("missing %q in %s", want, args)
 		}

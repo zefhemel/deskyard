@@ -80,7 +80,7 @@ def test_upload_limits(supervisor, admin, desktop, name):
 def test_access_and_credentials(admin, desktop, name, supervisor):
     user = "u" + uuid.uuid4().hex[:6]
     for who, ds in [(user, []), (user + "v", [name])]:
-        grants = [{"environment": e, "level": "full"} for e in ds]
+        grants = [{"computer": e, "level": "full"} for e in ds]
         assert admin.post("/api/accounts", json={"username": who, "password": "pw-" + who, "admin": False, "grants": grants}).status_code == 201
     # A client credential whose account has no grant of the desktop.
     t = make_credential(admin, name)

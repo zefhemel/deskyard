@@ -220,7 +220,7 @@ func TestAdminAccounts(t *testing.T) {
 	h, f := adminHarness(t)
 	fixedNow(t, time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC))
 	anna := map[string]any{"username": "anna", "kind": "token", "admin": false, "description": "", "grants": []any{
-		map[string]any{"environment": "alice", "level": "full"}, map[string]any{"environment": "bob", "level": "observe"}},
+		map[string]any{"computer": "alice", "level": "full"}, map[string]any{"computer": "bob", "level": "observe"}},
 		"sharedBy": nil, "expires": nil, "linkPending": true, "created": "2026-10-01T10:00:00Z", "lastLogin": nil}
 	f.Answer("GET /api/accounts", clitest.Answer{JSON: []any{anna, map[string]any{"username": "zef", "kind": "password", "admin": true, "grants": []any{}}}})
 	r := h.run("account", "list")
@@ -240,7 +240,7 @@ func TestAdminAccounts(t *testing.T) {
 	if r.code != 0 || strings.Contains(r.stdout, "s3cret") {
 		t.Errorf("account create: %+v", r)
 	}
-	wantCall(t, f, "POST", "/api/accounts", "", `{"username":"carl","password":"s3cret pass","admin":true,"description":"Carl","grants":[{"environment":"alice","level":"full"},{"environment":"bob","level":"observe"}]}`)
+	wantCall(t, f, "POST", "/api/accounts", "", `{"username":"carl","password":"s3cret pass","admin":true,"description":"Carl","grants":[{"computer":"alice","level":"full"},{"computer":"bob","level":"observe"}]}`)
 	h.stdin = ""
 
 	// Without one it is a token account, and the link is printed.
@@ -277,7 +277,7 @@ func TestAdminAccounts(t *testing.T) {
 	if r = h.run("account", "update", "anna", "--grant", "bob=full", "--grant", "alice=none", "--grant", "carl=observe", "--expires", "never", "--no-admin"); r.code != 0 {
 		t.Errorf("account update: %+v", r)
 	}
-	wantCall(t, f, "PATCH", "/api/accounts/anna", "", `{"admin":false,"grants":[{"environment":"bob","level":"full"},{"environment":"carl","level":"observe"}],"expires":null}`)
+	wantCall(t, f, "PATCH", "/api/accounts/anna", "", `{"admin":false,"grants":[{"computer":"bob","level":"full"},{"computer":"carl","level":"observe"}],"expires":null}`)
 	if r = h.run("account", "update", "anna", "--description", ""); r.code != 0 {
 		t.Errorf("account update description: %+v", r)
 	}

@@ -318,7 +318,7 @@ def test_two_mics(supervisor, admin, desktop, name, tmp_path):
     # Two viewers' mics are mixed into the desktop's one. One turning theirs
     # off, or leaving, never takes the other's away.
     user = "u" + uuid.uuid4().hex[:5]
-    r = admin.post("/api/accounts", json={"username": user, "password": "pw-" + user, "admin": False, "grants": [{"environment": name, "level": "full"}]})
+    r = admin.post("/api/accounts", json={"username": user, "password": "pw-" + user, "admin": False, "grants": [{"computer": name, "level": "full"}]})
     assert r.status_code == 201, r.text
     try:
         with sync_playwright() as p:

@@ -202,9 +202,10 @@ def test_visible_data_layout_and_labels(admin, desktop, name, supervisor):
     for d in ("secret", "state"):
         assert (data / d).stat().st_mode & 0o777 == 0o700, d
     assert (data / "home" / name).is_dir()
-    defs = json.loads(supervisor.read(data / "environments.json"))
+    assert not (data / "environments.json").exists()
+    defs = json.loads(supervisor.read(data / "computers.json"))
     assert defs["version"] == 1
-    mine = [e for e in defs["environments"] if e["name"] == name]
+    mine = [e for e in defs["computers"] if e["name"] == name]
     assert len(mine) == 1 and mine[0]["power"] == "running" and mine[0]["revision"] == desktop["revision"]
     labels = json.loads(docker("inspect", f"deskyard-{name}").stdout)[0]["Config"]["Labels"]
     assert labels["deskyard.name"] == name and labels["deskyard.instance"] == supervisor.instance() != ""

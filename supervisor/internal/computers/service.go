@@ -1,5 +1,5 @@
 // Package computers creates and runs computers. Each is defined in
-// environments.json (Definitions), the only authority for its configuration,
+// computers.json (Definitions), the only authority for its configuration,
 // and realised as a disposable container labelled as this supervisor's, with
 // its own network and home folder. Private recovery intent protects container
 // replacements.
@@ -114,7 +114,7 @@ type Service struct {
 	Eng        engine.Engine
 	Cfg        Config
 	Layout     config.Layout // from Cfg.DataDir
-	Defs       *Definitions  // environments.json
+	Defs       *Definitions  // computers.json
 	Vols       *Volumes      // volumes.json
 	// Instance is this supervisor's ID (config.InstanceID). Only containers
 	// and networks labelled with it are considered.
@@ -154,7 +154,7 @@ type Service struct {
 }
 
 // New makes a service with no definitions or volumes yet (saved to
-// environments.json and volumes.json in the data folder once there are) and
+// computers.json and volumes.json in the data folder once there are) and
 // no instance ID. Open loads them.
 func New(e engine.Engine, cfg Config, log *slog.Logger) *Service {
 	layout := config.NewLayout(cfg.DataDir).WithHost(cfg.DataHost)
@@ -184,7 +184,7 @@ func Open(e engine.Engine, cfg Config, instance string, log *slog.Logger) (*Serv
 	return s, nil
 }
 
-func definitionsPath(l config.Layout) string { return filepath.Join(l.Data, "environments.json") }
+func definitionsPath(l config.Layout) string { return filepath.Join(l.Data, "computers.json") }
 
 func containerName(name string) string { return "deskyard-" + name }
 
@@ -1102,7 +1102,7 @@ func (s *Service) Remove(ctx context.Context, name string, deleteFiles bool) err
 		return err
 	}
 	if s.ItemBusy != nil {
-		if err := s.ItemBusy("environment", name); err != nil {
+		if err := s.ItemBusy("computer", name); err != nil {
 			return err
 		}
 	}

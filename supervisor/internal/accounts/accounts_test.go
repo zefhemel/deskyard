@@ -334,3 +334,43 @@ func TestSetAccessLeavesAdminsAndSharesAlone(t *testing.T) {
 		t.Fatalf("bob kept %+v", a.Grants)
 	}
 }
+
+// Grants saved before computers were called computers name them under
+// "environment": they load, the file is rewritten under "computer", and a
+// grant of a computer that no longer exists is kept, as before.
+func TestGrantReadsLegacyEnvironmentField(t *testing.T) {
+	dir := t.TempDir()
+	legacy := `{"accounts":[{"id":"a1","username":"bob","passwordHash":"x","admin":false,"sessionEpoch":0,"created":"2026-10-01T00:00:00Z",` +
+		`"grants":[{"environment":"alice","level":"full"},{"environment":"gone","level":"observe"},{"computer":"carl","environment":"ignored","level":"full"}]}]}`
+	if err := os.WriteFile(filepath.Join(dir, "accounts.json"), []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := s.Get("bob")
+	want := []Grant{{Computer: "alice", Level: auth.LevelFull}, {Computer: "gone", Level: auth.LevelObserve}, {Computer: "carl", Level: auth.LevelFull}}
+	if len(a.Grants) != len(want) {
+		t.Fatalf("grants %+v", a.Grants)
+	}
+	for i := range want {
+		if a.Grants[i] != want[i] {
+			t.Fatalf("grants %+v, want %+v", a.Grants, want)
+		}
+	}
+	disk := readFile(t, dir)
+	if strings.Contains(disk, `"environment"`) || !strings.Contains(disk, `"computer": "alice"`) || !strings.Contains(disk, `"computer": "gone"`) {
+		t.Fatalf("not rewritten under computer: %s", disk)
+	}
+	if _, err := s.Update("bob", func(a *Account) { a.Description = "x" }); err != nil {
+		t.Fatal(err)
+	}
+	if disk := readFile(t, dir); strings.Contains(disk, `"environment"`) || !strings.Contains(disk, `"computer": "carl"`) {
+		t.Fatalf("save wrote %s", disk)
+	}
+	reloaded, _ := Load(dir)
+	if b, _ := reloaded.Get("bob"); len(b.Grants) != 3 || b.Level("gone") != auth.LevelObserve {
+		t.Fatalf("reload: %+v", b)
+	}
+}

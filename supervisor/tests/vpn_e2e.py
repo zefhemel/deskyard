@@ -297,7 +297,7 @@ def check(d):
     for name in ready["names"]:
         # A token account with full access, signed in as `deskyard auth` does.
         user = "e2e" + secrets.token_hex(4)
-        req("/api/accounts", {"username": user, "grants": [{"environment": name, "level": "full"}]})
+        req("/api/accounts", {"username": user, "grants": [{"computer": name, "level": "full"}]})
         link = json.loads(req("/api/accounts/" + user + "/link", {}))["link"]
         credential = json.loads(
             req(

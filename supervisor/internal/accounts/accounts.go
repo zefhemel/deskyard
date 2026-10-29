@@ -23,7 +23,7 @@ import (
 
 // Grant lets an account use a computer at a level.
 type Grant struct {
-	Computer string     `json:"environment"`
+	Computer string     `json:"computer"`
 	Level    auth.Level `json:"level"`
 }
 
@@ -183,10 +183,29 @@ type file struct {
 }
 
 // loaded is an account as stored, including the computers list grants
-// replaced.
+// replaced, kept under its old key "environments".
 type loaded struct {
 	Account
-	Computers []string `json:"environments"`
+	Grants    []loadedGrant `json:"grants"`
+	Computers []string      `json:"environments"`
+}
+
+// loadedGrant is a grant as stored. Grants saved before computers were called
+// computers name theirs under "environment", read only when "computer" is
+// absent.
+type loadedGrant struct {
+	Grant
+	Environment *string `json:"environment"`
+}
+
+// legacy reports whether the grant was stored under "environment".
+func (g loadedGrant) legacy() bool { return g.Environment != nil }
+
+func (g loadedGrant) grant() Grant {
+	if g.Computer == "" && g.Environment != nil {
+		g.Computer = *g.Environment
+	}
+	return g.Grant
 }
 
 // Store is safe for concurrent use; every change is written to disk at once.
@@ -216,11 +235,19 @@ func Load(dataDir string) (*Store, error) {
 	if err := store.ReadJSON(s.path, &f); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
-	// Accounts without an ID get one, and a computers list becomes full
-	// grants; the file is rewritten so they keep them.
+	// Accounts without an ID get one, a computers list becomes full grants,
+	// and grants stored under "environment" move to "computer"; the file is
+	// rewritten so they keep them.
 	changed := false
 	for _, l := range f.Accounts {
 		a := l.Account
+		if l.Grants != nil {
+			a.Grants = make([]Grant, 0, len(l.Grants))
+			for _, g := range l.Grants {
+				a.Grants = append(a.Grants, g.grant())
+				changed = changed || g.legacy()
+			}
+		}
 		if a.ID == "" {
 			a.ID = randomID()
 			changed = true

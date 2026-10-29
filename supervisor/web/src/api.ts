@@ -13,7 +13,7 @@ export interface Me {
 export type Level = "full" | "observe";
 /** An account's grant of a computer. */
 export interface Grant {
-  environment: string;
+  computer: string;
   level: Level;
 }
 /** A computer's grant to an account. */
@@ -529,7 +529,7 @@ export interface RunState {
   /** Files the last snapshot left out because they couldn't be read. */
   warnings?: string[];
 }
-export type ItemKind = "environment" | "volume";
+export type ItemKind = "computer" | "volume";
 /** A computer's or volume's backups: its policy (null without one), last run and what it's doing. */
 export interface BackupItem {
   item: string;

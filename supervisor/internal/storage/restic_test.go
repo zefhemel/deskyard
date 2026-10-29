@@ -226,15 +226,25 @@ func TestLsParsesOneLevel(t *testing.T) {
 
 func TestForgetArgs(t *testing.T) {
 	f := &fakeRunner{}
-	if err := testTool(f).Forget(context.Background(), testRepo, "volume:photos", DefaultRetention); err != nil {
+	if err := testTool(f).Forget(context.Background(), testRepo, []string{"volume:photos"}, DefaultRetention); err != nil {
 		t.Fatal(err)
 	}
 	want := "restic forget --retry-lock 10m --host deskyard-0123456789ab --tag volume:photos --keep-daily 7 --keep-weekly 4 --keep-monthly 12"
 	if got := strings.Join(f.last().Args, " "); got != want {
 		t.Fatalf("args\n got %s\nwant %s", got, want)
 	}
-	if err := testTool(f).Forget(context.Background(), testRepo, "volume:photos", Retention{}); err == nil {
+	if err := testTool(f).Forget(context.Background(), testRepo, []string{"computer:alice", "environment:alice"}, DefaultRetention); err != nil {
+		t.Fatal(err)
+	}
+	want = "restic forget --retry-lock 10m --host deskyard-0123456789ab --tag computer:alice --tag environment:alice --keep-daily 7 --keep-weekly 4 --keep-monthly 12"
+	if got := strings.Join(f.last().Args, " "); got != want {
+		t.Fatalf("args\n got %s\nwant %s", got, want)
+	}
+	if err := testTool(f).Forget(context.Background(), testRepo, []string{"volume:photos"}, Retention{}); err == nil {
 		t.Fatal("forgot everything")
+	}
+	if err := testTool(f).Forget(context.Background(), testRepo, nil, DefaultRetention); err == nil {
+		t.Fatal("forgot every item's snapshots")
 	}
 }
 

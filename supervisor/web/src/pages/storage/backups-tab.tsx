@@ -11,7 +11,7 @@ const NAME = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
 
 function itemHref(item: string): string {
   const [kind, name] = splitItem(item);
-  return kind === "environment" ? `/environments/${name}?tab=backups` : `/volumes/${name}`;
+  return kind === "computer" ? `/environments/${name}?tab=backups` : `/volumes/${name}`;
 }
 
 export function BackupsTab() {
@@ -67,7 +67,7 @@ export function BackupsTab() {
                   <a href={itemHref(i.item)} class="font-semibold">
                     {splitItem(i.item)[1]}
                   </a>{" "}
-                  <span class="text-sm text-muted">{splitItem(i.item)[0] === "environment" ? "environment" : "volume"}</span>
+                  <span class="text-sm text-muted">{splitItem(i.item)[0] === "computer" ? "environment" : "volume"}</span>
                 </span>
                 {i.policy && <span class="text-sm text-muted">{i.policy.enabled ? describeSchedule(i.policy.schedule) : "Paused"} · {i.policy.repository}</span>}
                 <span class="text-sm">{isTime(i.state.lastSuccess) ? ago(i.state.lastSuccess) : "Never"}</span>
@@ -120,7 +120,7 @@ function Catalog({ overview: o }: { overview: BackupsOverview }) {
             <li key={`${c.repository} ${c.host} ${c.item}`} class="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
               <div class="mr-auto min-w-0">
                 <div>
-                  <span class="font-semibold">{splitItem(c.item)[1]}</span> <span class="text-sm text-muted">{splitItem(c.item)[0]}</span>
+                  <span class="font-semibold">{splitItem(c.item)[1]}</span> <span class="text-sm text-muted">{splitItem(c.item)[0] === "computer" ? "environment" : "volume"}</span>
                 </div>
                 <div class="text-sm text-muted">
                   {c.snapshots} snapshot{c.snapshots === 1 ? "" : "s"}, latest {day(c.latest)} · {c.repository}

@@ -128,6 +128,12 @@ func run(log *slog.Logger) error {
 	if err := computers.New(eng, computers.Config{DataDir: cfg.DataDir, DataHost: host}, log).CheckLegacyContainers(ctx); err != nil {
 		return err
 	}
+	// Data files from before computers were called computers move to their
+	// current names before any store reads them; until then the data folder
+	// is unchanged, so a refused start above leaves it to the old version.
+	if err := computers.MigrateDataFiles(cfg.Layout); err != nil {
+		return fmt.Errorf("migrating the data folder: %w", err)
+	}
 	if err := cfg.Layout.Prepare(); err != nil {
 		return err
 	}

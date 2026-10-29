@@ -27,11 +27,11 @@ test("levels have labels", () => {
 
 test("grants read as a line", () => {
   assert.equal(grantsLine([]), "");
-  assert.equal(grantsLine([{ environment: "alice", level: "observe" }]), "observe alice");
+  assert.equal(grantsLine([{ computer: "alice", level: "observe" }]), "observe alice");
   assert.equal(
     grantsLine([
-      { environment: "alice", level: "full" },
-      { environment: "notes", level: "observe" },
+      { computer: "alice", level: "full" },
+      { computer: "notes", level: "observe" },
     ]),
     "use alice and observe notes",
   );

@@ -14,7 +14,7 @@ import (
 )
 
 // Layout is where the supervisor keeps things in its data folder. The JSON
-// stores (environments.json, volumes.json, accounts.json, links.json,
+// stores (computers.json, volumes.json, accounts.json, links.json,
 // credentials.json, networks.json, images.json) sit at the top of Data; the
 // folders below hold the rest.
 type Layout struct {

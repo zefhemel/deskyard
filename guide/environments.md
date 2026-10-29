@@ -9,7 +9,7 @@ environment runs as a container `deskyard-<name>` on its own network
 
 The supervisor keeps each environment's definition (image, limits, network,
 volume grants, Docker access, memory preference and whether it should
-run) in `environments.json`, not on its container. The container is
+run) in `computers.json`, not on its container. The container is
 disposable: if it is lost, the supervisor recreates it from the definition
 with the same name, home folder, access grants, shares and settings. A stopped
 environment may have no container; it gets one when started. Stopping keeps the

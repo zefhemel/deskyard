@@ -30,7 +30,7 @@ export function BackupsPanel({ kind, name, stoppers, hostPath }: { kind: ItemKin
   const run = useJob(() => {
     notify(`Backed up ${name}`);
     refresh();
-  }, kind === "environment" ? name : undefined);
+  }, kind === "computer" ? name : undefined);
   // A scheduled backup or a restore elsewhere changes what's shown.
   useEffect(() => {
     if (!item.data?.activity) return;
@@ -54,7 +54,7 @@ export function BackupsPanel({ kind, name, stoppers, hostPath }: { kind: ItemKin
               <p class="text-sm text-muted">
                 {b.policy
                   ? `Keeps ${describeRetention(b.policy.retention)}`
-                  : kind === "environment"
+                  : kind === "computer"
                     ? "Its settings and home folder, to a backup repository."
                     : "Its files, to a backup repository."}
               </p>
@@ -326,7 +326,7 @@ function BrowseDialog({ kind, name, snapshot: s, onClose }: { kind: ItemKind; na
     return (
       <Dialog title="Files restored" onClose={onClose} onSubmit={onClose} footer={<Button type="submit" variant="primary">Done</Button>}>
         <p class="text-sm" role="status">
-          In <span class="mono break-all">{done.folder}</span> {kind === "environment" ? "in the home folder" : "in the volume"}.
+          In <span class="mono break-all">{done.folder}</span> {kind === "computer" ? "in the home folder" : "in the volume"}.
         </p>
       </Dialog>
     );
@@ -353,7 +353,7 @@ function BrowseDialog({ kind, name, snapshot: s, onClose }: { kind: ItemKind; na
     >
       <nav aria-label="Folder" class="mb-3 flex flex-wrap items-center gap-1 text-sm">
         <button type="button" class="cursor-pointer border-0 bg-transparent p-0 font-semibold text-accent" onClick={() => setDir("")}>
-          {kind === "environment" ? "Home" : name}
+          {kind === "computer" ? "Home" : name}
         </button>
         {parts.map((p, i) => (
           <span key={i}>
@@ -420,7 +420,7 @@ function RestoreHereDialog({
     notify(`Restored ${name} from ${day(s.time)}`);
     onDone();
     onClose();
-  }, kind === "environment" ? name : undefined);
+  }, kind === "computer" ? name : undefined);
   return (
     <Dialog
       title={`Restore ${name} from ${when(s.time)}?`}
@@ -438,7 +438,7 @@ function RestoreHereDialog({
       }
     >
       <Note danger>
-        {kind === "environment" ? `${name}'s home folder` : hostPath ? `The host folder ${hostPath}` : `The volume ${name}`}
+        {kind === "computer" ? `${name}'s home folder` : hostPath ? `The host folder ${hostPath}` : `The volume ${name}`}
         {" "}goes back to this snapshot. Files added or changed since are lost.
         {stoppers.length > 0 && ` ${stoppers.join(", ")} ${stoppers.length === 1 ? "is" : "are"} stopped meanwhile.`}
       </Note>
@@ -458,16 +458,16 @@ const NAME = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
 export function RestoreNewDialog({ kind, name, snapshot: s, onClose }: { kind: ItemKind; name: string; snapshot: { id: string; time: string; repository: string }; onClose: () => void }) {
   const [newName, setNewName] = useState(`${name}-restored`.slice(0, 32).replace(/-+$/, ""));
   const [image, setImage] = useState("");
-  const images = useFetch(() => (kind === "environment" ? api.images() : Promise.resolve([])), "images");
+  const images = useFetch(() => (kind === "computer" ? api.images() : Promise.resolve([])), "images");
   const [result, setResult] = useState<RestoreResult | null>(null);
   const run = useJob((j) => setResult((j.result as RestoreResult) ?? {}));
   const valid = NAME.test(newName);
   if (result) {
-    const href = kind === "environment" ? `/environments/${result.created}` : `/volumes/${result.created}`;
+    const href = kind === "computer" ? `/environments/${result.created}` : `/volumes/${result.created}`;
     return (
       <Dialog title={`Restored as ${result.created}`} onClose={onClose} onSubmit={() => (location.href = href)} footer={<><Button variant="quiet" onClick={onClose}>Close</Button><Button type="submit" variant="primary">Open {result.created}</Button></>}>
         <p class="text-sm" role="status">
-          {kind === "environment" ? `${result.created} is ready, and stopped.` : `${result.created} is ready.`}
+          {kind === "computer" ? `${result.created} is ready, and stopped.` : `${result.created} is ready.`}
         </p>
         {!!result.dropped?.length && (
           <Note>
@@ -494,10 +494,10 @@ export function RestoreNewDialog({ kind, name, snapshot: s, onClose }: { kind: I
         </>
       }
     >
-      <Field label={kind === "environment" ? "New environment's name" : "New volume's name"} htmlFor="restore-name" hint={newName && !valid ? <span class="text-danger">Use 2–32 lowercase letters, digits and dashes, starting with a letter.</span> : undefined}>
+      <Field label={kind === "computer" ? "New environment's name" : "New volume's name"} htmlFor="restore-name" hint={newName && !valid ? <span class="text-danger">Use 2–32 lowercase letters, digits and dashes, starting with a letter.</span> : undefined}>
         <input type="text" id="restore-name" value={newName} autocomplete="off" spellcheck={false} onInput={(e) => setNewName(e.currentTarget.value.toLowerCase())} />
       </Field>
-      {kind === "environment" && (
+      {kind === "computer" && (
         <Field label="Image" htmlFor="restore-image" hint="VPN, Docker access and missing volumes aren't copied.">
           <select id="restore-image" value={image} onChange={(e) => setImage(e.currentTarget.value)}>
             <option value="">The saved image</option>

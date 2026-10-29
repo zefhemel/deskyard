@@ -68,20 +68,20 @@ function meJSON(a: MockAccount) {
 
 function accountJSON(a: MockAccount): Account {
   const { password, id: _, ...rest } = a;
-  return { ...rest, kind: password === null ? "token" : "password", linkPending: [...links.values()].includes(a.username), grants: [...a.grants].sort((x, y) => x.environment.localeCompare(y.environment)) };
+  return { ...rest, kind: password === null ? "token" : "password", linkPending: [...links.values()].includes(a.username), grants: [...a.grants].sort((x, y) => x.computer.localeCompare(y.computer)) };
 }
 
 /** An account's level on a computer, or null without access. */
 function levelOf(a: MockAccount, env: string): Level | null {
   if (a.admin) return "full";
-  return a.grants.find((g) => g.environment === env)?.level ?? null;
+  return a.grants.find((g) => g.computer === env)?.level ?? null;
 }
 
 /** The regular accounts granted a computer, as admins see it. */
 function accessOf(env: string): AccessGrant[] {
   return accounts
     .filter((a) => !a.admin && !a.sharedBy)
-    .flatMap((a) => a.grants.filter((g) => g.environment === env).map((g) => ({ username: a.username, level: g.level })))
+    .flatMap((a) => a.grants.filter((g) => g.computer === env).map((g) => ({ username: a.username, level: g.level })))
     .sort((x, y) => x.username.localeCompare(y.username));
 }
 
@@ -132,9 +132,9 @@ function computersOf(a: MockAccount) {
 
 function shareJSON(a: MockAccount): Share {
   const g = a.grants[0]!;
-  const env = computers.find((c) => c.name === g.environment);
+  const env = computers.find((c) => c.name === g.computer);
   return {
-    username: a.username, environment: g.environment, level: g.level, sharedBy: a.sharedBy!, expires: a.expires, created: a.created,
+    username: a.username, environment: g.computer, level: g.level, sharedBy: a.sharedBy!, expires: a.expires, created: a.created,
     lastLogin: a.lastLogin, lastUsed: a.lastLogin, linkPending: [...links.values()].includes(a.username), connected: env?.viewers.includes(a.username) ?? false,
   };
 }
@@ -158,7 +158,7 @@ function removeAccount(a: MockAccount): void {
 function endOrphanShares(): void {
   for (const share of accounts.filter((x) => x.sharedBy)) {
     const sharer = accounts.find((x) => x.id === share.sharedBy!.id);
-    if (!sharer || levelOf(sharer, share.grants[0]!.environment) !== "full") removeAccount(share);
+    if (!sharer || levelOf(sharer, share.grants[0]!.computer) !== "full") removeAccount(share);
   }
 }
 
@@ -166,10 +166,10 @@ function checkGrants(grants: unknown): string | null {
   if (!Array.isArray(grants)) return null;
   const seen = new Set<string>();
   for (const g of grants as Grant[]) {
-    if (!computers.some((c) => c.name === g.environment)) return `no environment ${g.environment}`;
+    if (!computers.some((c) => c.name === g.computer)) return `no environment ${g.computer}`;
     if (g.level !== "full" && g.level !== "observe") return `the level must be full or observe`;
-    if (seen.has(g.environment)) return `${g.environment} is listed twice`;
-    seen.add(g.environment);
+    if (seen.has(g.computer)) return `${g.computer} is listed twice`;
+    seen.add(g.computer);
   }
   return null;
 }
@@ -206,7 +206,7 @@ async function signedOut(req: IncomingMessage, res: ServerResponse, path: string
       return true;
     }
     session = a.username;
-    const only = !a.admin && a.grants.length === 1 ? a.grants[0]!.environment : null;
+    const only = !a.admin && a.grants.length === 1 ? a.grants[0]!.computer : null;
     json(res, 200, { username: a.username, next: only ? `/${only}/` : "/" });
     return true;
   }
@@ -523,7 +523,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
       memoryReclaim: true, webdav: false, imageVersion: img.version, updateAvailable: null, settings: { dockerAccess: b.dockerAccess === true, memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), vpnConnectionId: null, lanExceptions: [], volumes: (b.volumes as Computer["settings"]["volumes"]) ?? [] },
       vpn: blankVPN, level: "full", access: [], viewers: [], observers: [], mics: [], terminal: true, terminals: [], forwards: [], agents: [], stats: null,
     };
-    for (const g of (b.access as AccessGrant[]) ?? []) accounts.find((a) => a.username === g.username)?.grants.push({ environment: name, level: g.level });
+    for (const g of (b.access as AccessGrant[]) ?? []) accounts.find((a) => a.username === g.username)?.grants.push({ computer: name, level: g.level });
     computers.push(c);
     changed(c);
     return json(res, 202, job(["Pulling image, 120 of 820 MB", "Pulling image, 540 of 820 MB", "Creating the container", "Starting"], () => setState(c, "running"), name));
@@ -686,7 +686,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   }
 
   if (sub === "shares" && method === "GET") {
-    return json(res, 200, accounts.filter((a) => a.sharedBy && a.grants[0]?.environment === c.name).map(shareJSON).sort((x, y) => x.username.localeCompare(y.username)));
+    return json(res, 200, accounts.filter((a) => a.sharedBy && a.grants[0]?.computer === c.name).map(shareJSON).sort((x, y) => x.username.localeCompare(y.username)));
   }
   if (sub === "shares" && method === "POST") {
     if (m.sharedBy) return json(res, 403, { error: "shares can't share" });
@@ -697,7 +697,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     if (b.expires && Date.parse(String(b.expires)) <= Date.now()) return json(res, 400, { error: "the expiry must be in the future" });
     if (accounts.some((x) => x.username === username)) return json(res, 409, { error: "an account with that name already exists" });
     const a: MockAccount = {
-      id: hex(8), username, password: null, admin: false, description: "", grants: [{ environment: c.name, level: b.level }],
+      id: hex(8), username, password: null, admin: false, description: "", grants: [{ computer: c.name, level: b.level }],
       sharedBy: { username: m.username, id: m.id }, expires: (b.expires as string | null) ?? null, created: new Date().toISOString(), lastLogin: null,
     };
     accounts.push(a);
@@ -733,8 +733,8 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   if (sub === "" && method === "DELETE") {
     computers.splice(computers.indexOf(c), 1);
     for (const a of [...accounts]) {
-      if (a.sharedBy && a.grants[0]?.environment === c.name) removeAccount(a);
-      else a.grants = a.grants.filter((g) => g.environment !== c.name);
+      if (a.sharedBy && a.grants[0]?.computer === c.name) removeAccount(a);
+      else a.grants = a.grants.filter((g) => g.computer !== c.name);
     }
     broadcast("removed", { name: c.name });
     return json(res, 204);
@@ -787,7 +787,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     for (const a of accounts) {
       if (a.admin || a.sharedBy) continue;
       const g = grants.find((x) => x.username === a.username);
-      a.grants = [...a.grants.filter((x) => x.environment !== c.name), ...(g ? [{ environment: c.name, level: g.level }] : [])];
+      a.grants = [...a.grants.filter((x) => x.computer !== c.name), ...(g ? [{ computer: c.name, level: g.level }] : [])];
     }
     endOrphanShares();
     changed(c);

@@ -84,7 +84,7 @@ def video_settings_lines(name) -> list[str]:
 def make_account(admin, environments, password="pw") -> str:
     """A password account with full access to the environments."""
     user = "u" + uuid.uuid4().hex[:5]
-    grants = [{"environment": e, "level": "full"} for e in environments]
+    grants = [{"computer": e, "level": "full"} for e in environments]
     r = admin.post("/api/accounts", json={"username": user, "password": password, "admin": False, "grants": grants})
     assert r.status_code == 201, r.text
     return user
@@ -102,7 +102,7 @@ def make_credential(admin, name, client="test", expires=None) -> dict:
     with full access to the environment: {"credential", "id", "username"}. The
     credential is named client; activity lists it as an agent with that name."""
     user = "c" + uuid.uuid4().hex[:5]
-    r = admin.post("/api/accounts", json={"username": user, "grants": [{"environment": name, "level": "full"}], "expires": expires})
+    r = admin.post("/api/accounts", json={"username": user, "grants": [{"computer": name, "level": "full"}], "expires": expires})
     assert r.status_code == 201, r.text
     code = login_link(admin, user).split("#", 1)[1]
     r = requests.post(admin.base + "/api/links/redeem", json={"link": code, "client": "cli", "name": client}, timeout=10)

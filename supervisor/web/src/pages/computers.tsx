@@ -33,7 +33,7 @@ export function ComputersPage() {
       ) : (
         <div class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-x-6 gap-y-7 max-sm:grid-cols-1">
           {computers.map((c) => (
-            <Tile key={c.name} computer={c} job={jobs[c.name]} now={now} admin={me.admin} backupFailed={failing.has(`environment:${c.name}`)} />
+            <Tile key={c.name} computer={c} job={jobs[c.name]} now={now} admin={me.admin} backupFailed={failing.has(`computer:${c.name}`)} />
           ))}
         </div>
       )}

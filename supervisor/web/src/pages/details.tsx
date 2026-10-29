@@ -158,7 +158,7 @@ function ComputerDetail({ computer: c }: { computer: Computer }) {
           </div>
         </div>
       ) : tab === "backups" ? (
-        <BackupsPanel kind="environment" name={c.name} stoppers={c.state === "running" ? [c.name] : []} />
+        <BackupsPanel kind="computer" name={c.name} stoppers={c.state === "running" ? [c.name] : []} />
       ) : (
         <div class="overflow-hidden rounded-[10px] border border-line bg-surface">
           {tab === "processes" && <ProcessesTab computer={c} />}

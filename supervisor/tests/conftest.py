@@ -421,7 +421,7 @@ def remote(cli, admin, desktop, name, tmp_path):
     from helpers import login_link
 
     user = "c" + uuid.uuid4().hex[:5]
-    r = admin.post("/api/accounts", json={"username": user, "grants": [{"environment": name, "level": "full"}]})
+    r = admin.post("/api/accounts", json={"username": user, "grants": [{"computer": name, "level": "full"}]})
     assert r.status_code == 201, r.text
     env = {**os.environ, "XDG_CONFIG_HOME": str(tmp_path / "config"), "HOME": str(tmp_path)}
     for k in ("DESKYARD_URL", "DESKYARD_CREDENTIAL", "DESKYARD_ENVIRONMENT"):

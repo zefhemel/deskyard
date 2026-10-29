@@ -17,7 +17,7 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 )
 
-// definitionsVersion is the format version of environments.json.
+// definitionsVersion is the format version of computers.json.
 const definitionsVersion = 1
 
 // Network kinds a computer's definition selects.
@@ -63,7 +63,7 @@ type Network struct {
 }
 
 // Definition is a computer's desired configuration, kept in
-// environments.json. It is the only authority: containers are built from it
+// computers.json. It is the only authority: containers are built from it
 // and their labels are never read back as configuration.
 type Definition struct {
 	Name     string        `json:"name"`
@@ -163,10 +163,10 @@ func (d Definition) validate() error {
 
 type definitionsFile struct {
 	Version   int          `json:"version"`
-	Computers []Definition `json:"environments"`
+	Computers []Definition `json:"computers"`
 }
 
-// loadedDefinition is a Definition as read from environments.json. Files
+// loadedDefinition is a Definition as read from computers.json. Files
 // written before camera support was removed carry a "camera" field, which is
 // accepted and dropped: the next save leaves it out. Files from before host
 // volumes carry "mounts", host folders, which load only when empty: they are
@@ -189,7 +189,7 @@ func (l loadedDefinition) hasHostFolders() bool {
 	return len(mounts) > 0
 }
 
-// Definitions is the environments.json store. Every change is written
+// Definitions is the computers.json store. Every change is written
 // atomically before it replaces the in-memory copy, so a failed write leaves
 // both as they were.
 type Definitions struct {
@@ -218,7 +218,7 @@ func LoadDefinitions(path string) (*Definitions, error) {
 	}
 	var f struct {
 		Version   int                `json:"version"`
-		Computers []loadedDefinition `json:"environments"`
+		Computers []loadedDefinition `json:"computers"`
 	}
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
@@ -362,7 +362,7 @@ func (d *Definitions) Delete(name string) error {
 	return d.save(next)
 }
 
-// syncDefinitionsDir syncs the directory of environments.json; a variable so
+// syncDefinitionsDir syncs the directory of computers.json; a variable so
 // tests can observe it.
 var syncDefinitionsDir = syncDirectory
 

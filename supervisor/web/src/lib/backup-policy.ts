@@ -1,4 +1,4 @@
-import type { BackupItem, PolicyInput, Retention, Schedule } from "../api.ts";
+import type { BackupItem, ItemKind, PolicyInput, Retention, Schedule } from "../api.ts";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -48,9 +48,9 @@ export function describeReason(reason: string): string {
 }
 
 /** "computer:alice" → ["computer", "alice"]. */
-export function splitItem(item: string): ["environment" | "volume", string] {
+export function splitItem(item: string): [ItemKind, string] {
   const i = item.indexOf(":");
-  return [item.slice(0, i) as "environment" | "volume", item.slice(i + 1)];
+  return [item.slice(0, i) as ItemKind, item.slice(i + 1)];
 }
 
 /** Whether a time from the API is set: Go sends its zero time for never. */

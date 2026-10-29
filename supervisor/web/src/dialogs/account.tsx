@@ -75,7 +75,7 @@ export function AccountDialog({ account, onClose, onSaved }: { account: Account 
 
   const names = (computers ?? []).map((c) => c.name);
   // Keep names the account has even if this list hasn't loaded them.
-  for (const g of picked) if (!names.includes(g.environment)) names.push(g.environment);
+  for (const g of picked) if (!names.includes(g.computer)) names.push(g.computer);
   names.sort();
 
   return (
@@ -140,7 +140,7 @@ export function AccountDialog({ account, onClose, onSaved }: { account: Account 
       </Field>
       {share ? (
         <p class="mb-[18px] text-sm text-muted">
-          A share: {levelLabel(account?.grants[0]?.level ?? "full").toLowerCase()} of {account?.grants[0]?.environment ?? "its environment"}, by{" "}
+          A share: {levelLabel(account?.grants[0]?.level ?? "full").toLowerCase()} of {account?.grants[0]?.computer ?? "its environment"}, by{" "}
           {share.username}. Its access is set when it is shared.
         </p>
       ) : (
@@ -155,8 +155,8 @@ export function AccountDialog({ account, onClose, onSaved }: { account: Account 
             >
               <LevelPicks
                 names={names}
-                value={picked.map((g) => ({ name: g.environment, level: g.level }))}
-                onChange={(picks) => setPicked(picks.map((p) => ({ environment: p.name, level: p.level })))}
+                value={picked.map((g) => ({ name: g.computer, level: g.level }))}
+                onChange={(picks) => setPicked(picks.map((p) => ({ computer: p.name, level: p.level })))}
                 empty="There are no environments yet."
               />
             </Field>

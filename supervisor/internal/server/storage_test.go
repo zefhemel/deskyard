@@ -172,11 +172,11 @@ func TestRestorePathRejected(t *testing.T) {
 func TestComputerRemoveDeletesPolicy(t *testing.T) {
 	s, send, admin := newStorageServer(t)
 	setUpBackups(t, s, send, admin)
-	if err := s.storage.Store.PutPolicy(storage.Policy{Item: storage.Item{Kind: "environment", Name: "alice"}, Repository: "home", Enabled: true, Schedule: storage.DefaultSchedule, Retention: storage.DefaultRetention}); err != nil {
+	if err := s.storage.Store.PutPolicy(storage.Policy{Item: storage.Item{Kind: storage.KindComputer, Name: "alice"}, Repository: "home", Enabled: true, Schedule: storage.DefaultSchedule, Retention: storage.DefaultRetention}); err != nil {
 		t.Fatal(err)
 	}
 	_ = s.computerRemoved("alice")
-	if _, ok := s.storage.Store.Policy(storage.Item{Kind: "environment", Name: "alice"}); ok {
+	if _, ok := s.storage.Store.Policy(storage.Item{Kind: storage.KindComputer, Name: "alice"}); ok {
 		t.Fatal("policy of a removed computer kept")
 	}
 	if code, b := send(admin, "DELETE", "/api/volumes/photos", ""); code != 204 {
@@ -189,7 +189,7 @@ func TestComputerRemoveDeletesPolicy(t *testing.T) {
 
 func TestRemoveRefusedDuringBackup(t *testing.T) {
 	s, send, admin := newStorageServer(t)
-	release, err := s.storage.Hold(storage.Item{Kind: "environment", Name: "alice"}, "backing up")
+	release, err := s.storage.Hold(storage.Item{Kind: storage.KindComputer, Name: "alice"}, "backing up")
 	if err != nil {
 		t.Fatal(err)
 	}

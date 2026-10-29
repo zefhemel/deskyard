@@ -63,7 +63,7 @@ func TestUnsavedDeleteKeepsTheAccountOut(t *testing.T) {
 func TestUnsavedGrantChangesHold(t *testing.T) {
 	for _, tc := range []struct{ name, method, path, body string }{
 		{"access tab", "PUT", "/api/environments/alice/access", `{"grants":[{"username":"anna","level":"observe"}]}`},
-		{"account dialog", "PATCH", "/api/accounts/anna", `{"grants":[{"environment":"alice","level":"observe"}]}`},
+		{"account dialog", "PATCH", "/api/accounts/anna", `{"grants":[{"computer":"alice","level":"observe"}]}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, ts := newTestServer(t)
@@ -120,7 +120,7 @@ func TestRefusedChangeKeepsUnsavedRevocation(t *testing.T) {
 	}
 	unblockAccountsFile(t, s)
 	if code, body := send(t, admin, "PATCH", ts.URL+"/api/accounts/anna", ts.URL,
-		`{"grants":[{"environment":"alice","level":"full"},{"environment":"alice","level":"full"}]}`); code != http.StatusBadRequest {
+		`{"grants":[{"computer":"alice","level":"full"},{"computer":"alice","level":"full"}]}`); code != http.StatusBadRequest {
 		t.Fatalf("refused change: %d %s", code, body)
 	}
 	if a, _ := s.accountNow("anna", accountNamed(t, s, "anna").ID, time.Now()); a.Level("alice") != auth.LevelNone {
@@ -156,7 +156,7 @@ func TestEditorsShowUnsavedRevocations(t *testing.T) {
 	}
 	admin := login(t, ts, "admin")
 	blockAccountsFile(t, s)
-	if code, body := send(t, admin, "PATCH", ts.URL+"/api/accounts/anna", ts.URL, `{"grants":[{"environment":"alice","level":"observe"}]}`); code != http.StatusInternalServerError {
+	if code, body := send(t, admin, "PATCH", ts.URL+"/api/accounts/anna", ts.URL, `{"grants":[{"computer":"alice","level":"observe"}]}`); code != http.StatusInternalServerError {
 		t.Fatalf("downgrade: %d %s", code, body)
 	}
 	unblockAccountsFile(t, s)

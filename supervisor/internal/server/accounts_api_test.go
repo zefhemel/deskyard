@@ -14,7 +14,7 @@ func TestAccountLinkForTokenAccount(t *testing.T) {
 	_, ts := newTestServer(t)
 	admin := login(t, ts, "admin")
 	code, body := send(t, admin, "POST", ts.URL+"/api/accounts", ts.URL,
-		`{"username":"tess","description":"Build agent","grants":[{"environment":"alice","level":"full"}]}`)
+		`{"username":"tess","description":"Build agent","grants":[{"computer":"alice","level":"full"}]}`)
 	var a accountJSON
 	_ = json.Unmarshal([]byte(body), &a)
 	if code != 201 || a.Kind != "token" || a.Description != "Build agent" || a.LinkPending || a.SharedBy != nil ||
@@ -71,9 +71,9 @@ func TestAccountsAPIValidation(t *testing.T) {
 	admin := login(t, ts, "admin")
 	future := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
 	for _, req := range []string{
-		`{"username":"x1","grants":[{"environment":"ghost","level":"full"}]}`,
-		`{"username":"x1","grants":[{"environment":"alice","level":"write"}]}`,
-		`{"username":"x1","grants":[{"environment":"alice","level":"full"},{"environment":"alice","level":"observe"}]}`,
+		`{"username":"x1","grants":[{"computer":"ghost","level":"full"}]}`,
+		`{"username":"x1","grants":[{"computer":"alice","level":"write"}]}`,
+		`{"username":"x1","grants":[{"computer":"alice","level":"full"},{"computer":"alice","level":"observe"}]}`,
 		`{"username":"x1","expires":"2001-01-01T00:00:00Z"}`,
 		`{"username":"x1","password":"pw","admin":true,"expires":"` + future + `"}`,
 		`{"username":"x1","description":"` + strings.Repeat("d", 201) + `"}`,
@@ -90,7 +90,7 @@ func TestAccountsAPIValidation(t *testing.T) {
 	}
 	// PATCH: description, grants with levels, expiry and its removal.
 	code, body := send(t, admin, "PATCH", ts.URL+"/api/accounts/x3", ts.URL,
-		`{"description":"Temp","grants":[{"environment":"alice","level":"observe"}],"expires":null}`)
+		`{"description":"Temp","grants":[{"computer":"alice","level":"observe"}],"expires":null}`)
 	if a, _ := s.Accounts.Get("x3"); code != 200 || a.Description != "Temp" || a.Expires != nil || a.Level("alice") != auth.LevelObserve {
 		t.Fatalf("patch: %d %s %+v", code, body, a)
 	}

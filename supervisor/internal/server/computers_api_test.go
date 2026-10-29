@@ -133,7 +133,7 @@ func TestJobAndAccountJSONUseComputerNames(t *testing.T) {
 	getJSON(t, admin, ts.URL+"/api/accounts", &accts)
 	for _, a := range accts {
 		if a["username"] == "anna" {
-			if grants, _ := a["grants"].([]any); len(grants) != 1 || grants[0].(map[string]any)["environment"] != "alice" {
+			if grants, _ := a["grants"].([]any); len(grants) != 1 || grants[0].(map[string]any)["computer"] != "alice" {
 				t.Fatalf("%+v", a)
 			}
 			if _, ok := a["desktops"]; ok {

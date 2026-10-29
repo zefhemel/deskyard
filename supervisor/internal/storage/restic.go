@@ -332,12 +332,23 @@ func (t Tool) Backup(ctx context.Context, repo Repo, src []engine.Mount, paths, 
 	return pw.snapshot, nil, nil
 }
 
-// Forget forgets this host's snapshots tagged tag beyond keep.
-func (t Tool) Forget(ctx context.Context, repo Repo, tag string, keep Retention) error {
+// Forget forgets this host's snapshots tagged any of tags beyond keep:
+// restic selects snapshots matching any one of repeated --tag flags (a
+// comma-separated list would need all of them). Snapshots are grouped by host
+// and paths, as restic does by default, so an item's snapshots under each of
+// its tags share one retention.
+func (t Tool) Forget(ctx context.Context, repo Repo, tags []string, keep Retention) error {
 	if err := keep.Validate(); err != nil {
 		return err
 	}
-	args := append([]string{"forget", "--retry-lock", "10m", "--host", t.Host, "--tag", tag}, keep.args()...)
+	if len(tags) == 0 {
+		return errors.New("forgetting old snapshots: no tag")
+	}
+	args := []string{"forget", "--retry-lock", "10m", "--host", t.Host}
+	for _, tag := range tags {
+		args = append(args, "--tag", tag)
+	}
+	args = append(args, keep.args()...)
 	return t.run(ctx, "forgetting old snapshots", t.call(repo, nil, args...))
 }
 

@@ -28,7 +28,7 @@ func testDefinition(name string) Definition {
 }
 
 func TestDefinitionsRoundTripSpecKeys(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "environments.json")
+	path := filepath.Join(t.TempDir(), "computers.json")
 	defs, err := LoadDefinitions(path)
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +59,7 @@ func TestDefinitionsRoundTripSpecKeys(t *testing.T) {
 	if raw["version"] != float64(1) {
 		t.Fatalf("version = %v", raw["version"])
 	}
-	envs := raw["environments"].([]any)
+	envs := raw["computers"].([]any)
 	if len(envs) != 2 {
 		t.Fatalf("computers = %v", envs)
 	}
@@ -111,10 +111,10 @@ func TestDefinitionsRoundTripSpecKeys(t *testing.T) {
 }
 
 func TestDefinitionsSpecExampleLoads(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "environments.json")
+	path := filepath.Join(t.TempDir(), "computers.json")
 	example := `{
   "version": 1,
-  "environments": [
+  "computers": [
     {
       "name": "alice",
       "created": "2026-10-26T10:00:00Z",
@@ -145,8 +145,8 @@ func TestDefinitionsSpecExampleLoads(t *testing.T) {
 // Files written before camera support was removed carry a "camera" field:
 // it loads, and the next save leaves it out. Other unknown fields still fail.
 func TestDefinitionsLoadDropsLegacyCamera(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "environments.json")
-	legacy := `{"version": 1, "environments": [
+	path := filepath.Join(t.TempDir(), "computers.json")
+	legacy := `{"version": 1, "computers": [
     {"name": "alice", "created": "2026-10-26T10:00:00Z", "revision": 4,
      "image": {"ref": "ghcr.io/x/deskyard-xfce:latest", "id": "sha256:1"},
      "limits": {"memoryBytes": 0, "nanoCPUs": 0}, "network": {"kind": "isolated"},
@@ -189,8 +189,8 @@ func TestDefinitionsLoadDropsLegacyCamera(t *testing.T) {
 // Host folders were replaced by host volumes without a migration: a
 // definition that still has them stops loading, naming the computer.
 func TestLoadDefinitionsRejectsHostFolders(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "environments.json")
-	def := `{"version": 1, "environments": [
+	path := filepath.Join(t.TempDir(), "computers.json")
+	def := `{"version": 1, "computers": [
     {"name": "alice", "created": "2026-10-26T10:00:00Z", "revision": 1,
      "image": {"ref": "img", "id": "sha256:1"},
      "limits": {"memoryBytes": 0, "nanoCPUs": 0}, "network": {"kind": "isolated"},
@@ -216,8 +216,8 @@ func TestLoadDefinitionsRejectsHostFolders(t *testing.T) {
 // A grant saved without a path is mounted at /share/<volume>, and gets that
 // path when loaded.
 func TestLoadDefinitionsDefaultsGrantPath(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "environments.json")
-	body := `{"version": 1, "environments": [
+	path := filepath.Join(t.TempDir(), "computers.json")
+	body := `{"version": 1, "computers": [
     {"name": "alice", "created": "2026-10-26T10:00:00Z", "revision": 1,
      "image": {"ref": "img", "id": "sha256:1"},
      "limits": {"memoryBytes": 0, "nanoCPUs": 0}, "network": {"kind": "isolated"},
@@ -236,8 +236,8 @@ func TestLoadDefinitionsDefaultsGrantPath(t *testing.T) {
 }
 
 func TestDefinitionsLoadRejectsUnknownVersion(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "environments.json")
-	for _, body := range []string{`{"version": 2, "environments": []}`, `{"environments": []}`} {
+	path := filepath.Join(t.TempDir(), "computers.json")
+	for _, body := range []string{`{"version": 2, "computers": []}`, `{"computers": []}`} {
 		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -248,7 +248,7 @@ func TestDefinitionsLoadRejectsUnknownVersion(t *testing.T) {
 }
 
 func TestDefinitionsLoadExplainsNewlyReservedName(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "environments.json")
+	path := filepath.Join(t.TempDir(), "computers.json")
 	b, _ := json.Marshal(definitionsFile{Version: 1, Computers: []Definition{testDefinition("alice"), testDefinition("volumes")}})
 	if err := os.WriteFile(path, b, 0o600); err != nil {
 		t.Fatal(err)
@@ -283,7 +283,7 @@ func TestDefinitionsLoadRejectsMalformedEntries(t *testing.T) {
 			d := valid
 			d.Volumes = append([]VolumeGrant(nil), valid.Volumes...)
 			mutate(&d)
-			path := filepath.Join(t.TempDir(), "environments.json")
+			path := filepath.Join(t.TempDir(), "computers.json")
 			b, _ := json.Marshal(definitionsFile{Version: 1, Computers: []Definition{d}})
 			if err := os.WriteFile(path, b, 0o600); err != nil {
 				t.Fatal(err)
@@ -291,7 +291,7 @@ func TestDefinitionsLoadRejectsMalformedEntries(t *testing.T) {
 			if _, err := LoadDefinitions(path); err == nil {
 				t.Fatal("malformed entry loaded")
 			}
-			defs, err := LoadDefinitions(filepath.Join(t.TempDir(), "environments.json"))
+			defs, err := LoadDefinitions(filepath.Join(t.TempDir(), "computers.json"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -301,10 +301,10 @@ func TestDefinitionsLoadRejectsMalformedEntries(t *testing.T) {
 		})
 	}
 
-	path := filepath.Join(t.TempDir(), "environments.json")
+	path := filepath.Join(t.TempDir(), "computers.json")
 	for _, body := range []string{
 		`not json`,
-		`{"version": 1, "environments": [{"name": "alice", "unknown": 1}]}`,
+		`{"version": 1, "computers": [{"name": "alice", "unknown": 1}]}`,
 	} {
 		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 			t.Fatal(err)
@@ -328,12 +328,12 @@ func TestDefinitionsPutFailureKeepsMemory(t *testing.T) {
 	if err := os.WriteFile(parent, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	defs, err := LoadDefinitions(filepath.Join(dir, "environments.json"))
+	defs, err := LoadDefinitions(filepath.Join(dir, "computers.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	good := defs.path
-	defs.path = filepath.Join(parent, "environments.json")
+	defs.path = filepath.Join(parent, "computers.json")
 	if err := defs.Put(testDefinition("alice")); err == nil {
 		t.Fatal("Put succeeded under a file")
 	}
@@ -346,7 +346,7 @@ func TestDefinitionsPutFailureKeepsMemory(t *testing.T) {
 	if err := defs.Put(alice); err != nil {
 		t.Fatal(err)
 	}
-	defs.path = filepath.Join(parent, "environments.json")
+	defs.path = filepath.Join(parent, "computers.json")
 	changed := alice
 	changed.Revision++
 	if err := defs.Put(changed); err == nil {
@@ -362,7 +362,7 @@ func TestDefinitionsPutFailureKeepsMemory(t *testing.T) {
 
 // Every save syncs the directory, so the rename outlives a power loss.
 func TestDefinitionsSaveSyncsDirectory(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "environments.json")
+	path := filepath.Join(t.TempDir(), "computers.json")
 	defs, err := LoadDefinitions(path)
 	if err != nil {
 		t.Fatal(err)
@@ -386,7 +386,7 @@ func TestDefinitionsSaveSyncsDirectory(t *testing.T) {
 }
 
 func TestDefinitionsCopiesAreIndependent(t *testing.T) {
-	defs, err := LoadDefinitions(filepath.Join(t.TempDir(), "environments.json"))
+	defs, err := LoadDefinitions(filepath.Join(t.TempDir(), "computers.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,7 +403,7 @@ func TestDefinitionsCopiesAreIndependent(t *testing.T) {
 }
 
 func TestDefinitionsDelete(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "environments.json")
+	path := filepath.Join(t.TempDir(), "computers.json")
 	defs, err := LoadDefinitions(path)
 	if err != nil {
 		t.Fatal(err)

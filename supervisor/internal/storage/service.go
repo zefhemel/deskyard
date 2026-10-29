@@ -453,7 +453,7 @@ func (s *Service) backUp(ctx context.Context, it Item, reason string, progress f
 	}
 	st.LastSuccess, st.Snapshot, st.Warnings = start, id, warnings
 	progress("Forgetting old snapshots", -1)
-	if err := s.Tool.Forget(ctx, repo, it.Tag(), p.Retention); err != nil {
+	if err := s.Tool.Forget(ctx, repo, it.Tags(), p.Retention); err != nil {
 		return err
 	}
 	if now := s.Now(); now.Sub(s.State.LastPrune(p.Repository)) >= pruneEvery {
@@ -567,7 +567,7 @@ func (s *Service) Snapshots(ctx context.Context, it Item) ([]ItemSnapshot, error
 			return nil, fmt.Errorf("repository %s: %w", r.Name, err)
 		}
 		for _, sn := range snaps {
-			if sn.Host == s.Tool.Host && slices.Contains(sn.Tags, it.Tag()) {
+			if sn.Host == s.Tool.Host && it.taggedIn(sn.Tags) {
 				out = append(out, ItemSnapshot{Snapshot: sn, Repository: r.Name, Reason: reasonOf(sn.Tags)})
 			}
 		}
@@ -632,7 +632,7 @@ func (s *Service) snapshotOf(ctx context.Context, repoName string, it Item, id s
 		return Snapshot{}, err
 	}
 	for _, sn := range snaps {
-		if (sn.ID == id || sn.ShortID == id) && slices.Contains(sn.Tags, it.Tag()) {
+		if (sn.ID == id || sn.ShortID == id) && it.taggedIn(sn.Tags) {
 			return sn, nil
 		}
 	}

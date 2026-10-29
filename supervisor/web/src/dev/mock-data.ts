@@ -139,17 +139,17 @@ export const accounts: MockAccount[] = [
   { id: "a0000001", username: "zef", admin: true, description: "", grants: [], sharedBy: null, expires: null, created: iso(30 * DAY), lastLogin: iso(0), password: "zef" },
   {
     id: "a0000002", username: "anna", admin: false, description: "", sharedBy: null, expires: null, created: iso(20 * DAY), lastLogin: iso(60 * 1000), password: "anna",
-    grants: [{ environment: "alice", level: "full" }, { environment: "notes", level: "observe" }, { environment: "research", level: "full" }],
+    grants: [{ computer: "alice", level: "full" }, { computer: "notes", level: "observe" }, { computer: "research", level: "full" }],
   },
-  { id: "a0000003", username: "sam", admin: false, description: "", grants: [{ environment: "research", level: "full" }], sharedBy: null, expires: null, created: iso(10 * DAY), lastLogin: iso(3 * DAY), password: "sam" },
-  { id: "a0000004", username: "ci", admin: false, description: "The build runner", grants: [{ environment: "build-bot", level: "full" }], sharedBy: null, expires: null, created: iso(2 * DAY), lastLogin: iso(HOUR), password: null },
+  { id: "a0000003", username: "sam", admin: false, description: "", grants: [{ computer: "research", level: "full" }], sharedBy: null, expires: null, created: iso(10 * DAY), lastLogin: iso(3 * DAY), password: "sam" },
+  { id: "a0000004", username: "ci", admin: false, description: "The build runner", grants: [{ computer: "build-bot", level: "full" }], sharedBy: null, expires: null, created: iso(2 * DAY), lastLogin: iso(HOUR), password: null },
   // Shares: token accounts with one grant, made by Share.
   {
-    id: "a0000005", username: "sanne", admin: false, description: "", grants: [{ environment: "alice", level: "observe" }], sharedBy: { username: "zef", id: "a0000001" },
+    id: "a0000005", username: "sanne", admin: false, description: "", grants: [{ computer: "alice", level: "observe" }], sharedBy: { username: "zef", id: "a0000001" },
     expires: new Date(now + DAY).toISOString(), created: iso(2 * HOUR), lastLogin: iso(HOUR), password: null,
   },
   {
-    id: "a0000006", username: "bob", admin: false, description: "", grants: [{ environment: "research", level: "full" }], sharedBy: { username: "anna", id: "a0000002" },
+    id: "a0000006", username: "bob", admin: false, description: "", grants: [{ computer: "research", level: "full" }], sharedBy: { username: "anna", id: "a0000002" },
     expires: null, created: iso(3 * DAY), lastLogin: null, password: null,
   },
 ];
