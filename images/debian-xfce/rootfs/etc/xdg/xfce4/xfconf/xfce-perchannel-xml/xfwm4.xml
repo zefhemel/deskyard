@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Window borders matching the Arc Dark look (xsettings.xml). xfwm4 takes
-     everything else from its own defaults. -->
+     other settings from its own defaults. Super-drag moves windows so
+     Alt-click remains available to applications. -->
 
 <channel name="xfwm4" version="1.0">
   <property name="general" type="empty">
+    <property name="easy_click" type="string" value="Super"/>
     <property name="theme" type="string" value="Arc-Dark"/>
   </property>
 </channel>

@@ -1,0 +1,13 @@
+#!/bin/bash
+# Once per home: leave Alt-click to applications. Preserve other modifiers and
+# later user changes, as with the panel/appearance migrations.
+set -e
+marker="$HOME/.config/workspace/window-modifiers-v1"
+[ -e "$marker" ] && exit 0
+
+current=$(xfconf-query -c xfwm4 -p /general/easy_click)
+if [ "$current" = Alt ]; then
+    xfconf-query -c xfwm4 -p /general/easy_click -s Super
+fi
+mkdir -p "${marker%/*}"
+touch "$marker"

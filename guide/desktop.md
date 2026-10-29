@@ -40,6 +40,12 @@ alternate-character modifier. Ctrl and Shift retain their normal behavior.
 Focus the desktop before pressing a modifier; a key held before the desktop
 gains focus may not reach it.
 
+XFCE uses **Super-drag** (the Windows/Super key) to move windows, leaving
+Alt-click and Alt-drag available to applications. An updated image migrates
+older homes still using Alt for window movement once; other modifier choices
+and later changes are kept. To apply this setting immediately in an existing
+desktop, run `xfconf-query -c xfwm4 -p /general/easy_click -s Super` in its terminal.
+
 ## Paste an image
 
 Paste a screenshot or copied image into the desktop view or a terminal tab
