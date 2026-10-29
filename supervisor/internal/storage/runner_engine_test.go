@@ -168,7 +168,7 @@ func TestResticRoundTrip(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "folder/a.txt")); !os.IsNotExist(err) {
 		t.Fatalf("include restored more: %v", err)
 	}
-	if err := tool.Forget(ctx, repo, "volume:v", Retention{Last: 1}); err != nil {
+	if err := tool.Forget(ctx, repo, []string{"volume:v"}, Retention{Last: 1}); err != nil {
 		t.Fatal(err)
 	}
 	if err := tool.Prune(ctx, repo); err != nil {
