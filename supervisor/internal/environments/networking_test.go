@@ -700,15 +700,15 @@ func TestVPNNeverDirectOnFailure(t *testing.T) {
 	}
 }
 
-// Without the test seam the proxy dials the desktop's address on its own port:
-// the container's IP, or its name when the engine reported none.
+// The proxy dials the desktop's address on the desktop port: the
+// container's IP, or its name when the engine reported none.
 func TestTargetUsesContainerAddressAndDefaultPort(t *testing.T) {
 	s, e, _, _ := pairSetup(t)
 	ctx := context.Background()
 	if _, err := s.Create(ctx, "alice", Settings{Image: "img"}, noProgress); err != nil {
 		t.Fatal(err)
 	}
-	s.Cfg.DesktopPort = 0
+	s.Cfg.DesktopPort = DesktopPort
 	if addr, _, err := s.Target(ctx, "alice"); err != nil || addr != "127.0.0.1:8080" {
 		t.Fatalf("with an address: %s %v", addr, err)
 	}

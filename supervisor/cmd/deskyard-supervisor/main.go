@@ -76,24 +76,12 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	if !cfg.InContainer {
-		return errors.New("the supervisor runs only in a container: see the README for the docker run command")
-	}
-	// Before anything is written, the root phase's re-own included: an older
-	// layout is refused, not adopted.
-	if err := config.CheckLegacy(cfg.DataDir); err != nil {
+	// Before anything is written: /data must be a mounted folder, and an
+	// older layout is refused, not adopted.
+	if err := checkDataDir(config.DataDir); err != nil {
 		return err
 	}
-	// The root phase comes before the engine, the stores and the listener.
-	if os.Getuid() == 0 {
-		if err := rootPhase(cfg); err != nil {
-			return err
-		}
-	}
-	if os.Getuid() != config.UID || os.Getgid() != config.GID {
-		return fmt.Errorf("the supervisor must run as UID:GID %d:%d (or start as root to drop to it), not %d:%d", config.UID, config.GID, os.Getuid(), os.Getgid())
-	}
-	if err := checkSocketAccess(cfg.EngineHost); err != nil {
+	if err := config.CheckLegacy(config.DataDir); err != nil {
 		return err
 	}
 	dockerEng, err := docker.New(cfg.EngineHost)
@@ -104,23 +92,33 @@ func run(log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if _, err := eng.Info(ctx); err != nil {
-		return fmt.Errorf("can't reach the container engine (is Docker running, and may this user use its socket?): %w", err)
+		return engineError(cfg.EngineHost, err)
 	}
 	// The engine resolves mounts on the host, so find where /data lives there.
 	// The container ID is the hostname, which a user's --hostname or host
 	// networking would change: then the supervisor can't find itself and says
-	// so.
+	// so. Outside a container it never finds itself, and stops here, before
+	// the root phase changes anything.
 	selfID, err := os.Hostname()
 	if err != nil {
 		return err
 	}
 	self, err := eng.Inspect(ctx, selfID)
 	if err != nil {
-		return fmt.Errorf("can't find the supervisor's own container %q (its hostname must be the container ID, so don't set --hostname or use --network host): %w", selfID, err)
+		return fmt.Errorf("can't find the supervisor's own container %q: it runs only in a container (see the README for the docker run command), whose hostname is the container ID (so don't set --hostname or use --network host): %w", selfID, err)
 	}
 	host, err := dataHostPath(self)
 	if err != nil {
 		return err
+	}
+	// The root phase comes before the stores and the listener.
+	if os.Getuid() == 0 {
+		if err := rootPhase(cfg); err != nil {
+			return err
+		}
+	}
+	if os.Getuid() != config.UID || os.Getgid() != config.GID {
+		return fmt.Errorf("the supervisor must run as UID:GID %d:%d (or start as root to drop to it), not %d:%d", config.UID, config.GID, os.Getuid(), os.Getgid())
 	}
 	// Only the engine translates mounts; everything else keeps the /data
 	// layout.
@@ -130,18 +128,18 @@ func run(log *slog.Logger) error {
 	if err := environments.New(eng, environments.Config{Layout: layout}, log).CheckLegacyContainers(ctx); err != nil {
 		return err
 	}
-	if err := cfg.Layout.Prepare(); err != nil {
+	if err := layout.Prepare(); err != nil {
 		return err
 	}
-	if err := desktopcli.Publish(desktopcli.Source, cfg.Layout.State); err != nil {
+	if err := desktopcli.Publish(desktopcli.Source, layout.State); err != nil {
 		return err
 	}
-	instance, err := config.InstanceID(cfg.Layout)
+	instance, err := config.InstanceID(layout)
 	if err != nil {
 		return err
 	}
 
-	accts, err := accounts.Load(cfg.DataDir)
+	accts, err := accounts.Load(layout.Data)
 	if err != nil {
 		return err
 	}
@@ -154,17 +152,17 @@ func run(log *slog.Logger) error {
 	}
 
 	comps, err := environments.Open(eng, environments.Config{
-		Layout: layout, Subnet: cfg.Subnet.String(), SelfID: selfID,
+		Layout: layout, Subnet: cfg.Subnet.String(), SelfID: selfID, DesktopPort: environments.DesktopPort,
 	}, instance, log)
 	if err != nil {
 		return err
 	}
-	vpnStore, err := vpn.NewStore(filepath.Join(cfg.DataDir, "networks.json"), cfg.Layout.Secret)
+	vpnStore, err := vpn.NewStore(filepath.Join(layout.Data, "networks.json"), layout.Secret)
 	if err != nil {
 		return err
 	}
-	vpnRuntime := vpn.NewManager(eng, vpnStore, cfg.Layout.State).ForInstance(instance)
-	if err := comps.ConfigureNetworking(vpnStore, vpnRuntime, cfg.Layout.State); err != nil {
+	vpnRuntime := vpn.NewManager(eng, vpnStore, layout.State).ForInstance(instance)
+	if err := comps.ConfigureNetworking(vpnStore, vpnRuntime, layout.State); err != nil {
 		return err
 	}
 	if err := comps.Reconcile(ctx); err != nil {
@@ -187,8 +185,8 @@ func run(log *slog.Logger) error {
 	srv.Run(ctx)
 
 	if cfg.Domain != "" {
-		log.Info("serving HTTPS", "domain", cfg.Domain, "data", cfg.DataDir, "instance", instance, "version", version)
-		return tlsserve.Serve(ctx, srv, cfg.Domain, filepath.Join(cfg.Layout.Secret, "certmagic"), log)
+		log.Info("serving HTTPS", "domain", cfg.Domain, "data", layout.Data, "instance", instance, "version", version)
+		return tlsserve.Serve(ctx, srv, cfg.Domain, filepath.Join(layout.Secret, "certmagic"), log)
 	}
 	hs := &http.Server{Addr: cfg.Listen, Handler: srv, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
@@ -197,7 +195,7 @@ func run(log *slog.Logger) error {
 		defer cancel()
 		_ = hs.Shutdown(sctx)
 	}()
-	log.Info("listening", "url", "http://"+cfg.Listen, "data", cfg.DataDir, "instance", instance, "version", version)
+	log.Info("listening", "url", "http://"+cfg.Listen, "data", layout.Data, "instance", instance, "version", version)
 	if err := hs.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -214,37 +212,30 @@ func checkDataDir(dir string) error {
 	return nil
 }
 
-// checkSocketAccess explains a refused connection to the engine's unix
-// socket: a process started without root (--user) must have the socket's
-// group itself. A TCP engine host has no such check.
-func checkSocketAccess(engineHost string) error {
-	path, ok := config.SocketPath(engineHost)
-	if !ok {
-		return nil
+// engineError is err, from the engine's first call, explained. A process
+// started without root (--user) must have the unix socket's group itself:
+// when the socket refuses it, say so.
+func engineError(engineHost string, err error) error {
+	if path, ok := config.SocketPath(engineHost); ok {
+		if c, dialErr := net.DialTimeout("unix", path, 5*time.Second); dialErr == nil {
+			_ = c.Close()
+		} else if errors.Is(dialErr, fs.ErrPermission) {
+			group := ""
+			if gid, ok, gerr := config.SocketGroup(engineHost); gerr == nil && ok {
+				group = fmt.Sprintf(" (group %d)", gid)
+			}
+			return fmt.Errorf("this user may not use the container engine socket %s%s: add its group to the container (--group-add), or start as root, which adds it automatically", path, group)
+		}
 	}
-	c, err := net.DialTimeout("unix", path, 5*time.Second)
-	if err == nil {
-		return c.Close()
-	}
-	if !errors.Is(err, fs.ErrPermission) {
-		return nil // missing or down: the engine check reports it
-	}
-	group := ""
-	if gid, ok, gerr := config.SocketGroup(engineHost); gerr == nil && ok {
-		group = fmt.Sprintf(" (group %d)", gid)
-	}
-	return fmt.Errorf("this user may not use the container engine socket %s%s: add its group to the container (--group-add), or start as root, which adds it automatically", path, group)
+	return fmt.Errorf("can't reach the container engine (is Docker running?): %w", err)
 }
 
 // rootPhase runs while the supervisor is still root: it fixes the ownership
 // of a data folder an older, root supervisor made, finds the engine socket's
 // group, and drops to UID 1000 with that group.
 func rootPhase(cfg config.Config) error {
-	if err := checkDataDir(cfg.DataDir); err != nil {
-		return err
-	}
 	if err := config.ReownOnce(cfg.Layout); err != nil {
-		return fmt.Errorf("giving %s to UID %d: %w", cfg.DataDir, config.UID, err)
+		return fmt.Errorf("giving %s to UID %d: %w", cfg.Layout.Data, config.UID, err)
 	}
 	gid, hasSocket, err := config.SocketGroup(cfg.EngineHost)
 	if err != nil {

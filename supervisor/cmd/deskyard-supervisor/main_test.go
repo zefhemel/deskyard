@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -24,9 +25,10 @@ func TestCheckDataDir(t *testing.T) {
 	}
 }
 
-func TestCheckSocketAccess(t *testing.T) {
-	if err := checkSocketAccess("tcp://h:2375"); err != nil {
-		t.Fatal(err)
+func TestEngineError(t *testing.T) {
+	cause := errors.New("engine down")
+	if err := engineError("tcp://h:2375", cause); !errors.Is(err, cause) || strings.Contains(err.Error(), "group") {
+		t.Fatalf("tcp: %v", err)
 	}
 	dir, err := os.MkdirTemp("", "sa")
 	if err != nil {
@@ -34,13 +36,16 @@ func TestCheckSocketAccess(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 	path := filepath.Join(dir, "d.sock")
+	if err := engineError("unix://"+path, cause); !errors.Is(err, cause) {
+		t.Fatalf("missing socket: %v", err)
+	}
 	ln, err := net.Listen("unix", path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ln.Close()
-	if err := checkSocketAccess("unix://" + path); err != nil {
-		t.Fatal(err)
+	if err := engineError("unix://"+path, cause); !errors.Is(err, cause) {
+		t.Fatalf("usable socket: %v", err)
 	}
 	if os.Getuid() == 0 {
 		t.Skip("root ignores socket permissions")
@@ -48,7 +53,7 @@ func TestCheckSocketAccess(t *testing.T) {
 	if err := os.Chmod(path, 0); err != nil {
 		t.Fatal(err)
 	}
-	err = checkSocketAccess("unix://" + path)
+	err = engineError("unix://"+path, cause)
 	if err == nil || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), "group") {
 		t.Fatalf("got %v", err)
 	}

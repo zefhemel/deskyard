@@ -99,11 +99,18 @@ type Config struct {
 	// has it (config.Layout.WithHost).
 	Layout config.Layout
 	Subnet string // DESKYARD_SUBNET
-	SelfID string // the supervisor's own container; empty in Go tests, which have none
-	// DesktopPort is the port the proxy dials on a desktop. Zero means 8080;
-	// only tests set it, to reach a fake desktop served on a local port.
+	// SelfID is the supervisor's own container, which joins each desktop's
+	// network to reach it. Empty when the caller isn't in a container on
+	// the engine, as for Go tests on the engine's host, which reach
+	// desktops by address.
+	SelfID string
+	// DesktopPort is the port the proxy dials on a desktop: DesktopPort, or
+	// a test's fake desktop.
 	DesktopPort int
 }
+
+// DesktopPort is the port desktops serve on.
+const DesktopPort = 8080
 
 type Service struct {
 	Networking *Networking

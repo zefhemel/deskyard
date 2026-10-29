@@ -102,7 +102,7 @@ func newService(t *testing.T) *Service {
 	dir := t.TempDir()
 	// Docker Desktop/OrbStack share /Users and /private; t.TempDir lives there on macOS.
 	dir, _ = filepath.EvalSymlinks(dir)
-	s := New(d, Config{Layout: config.NewLayout(dir), Subnet: testSubnet()}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s := New(d, Config{Layout: config.NewLayout(dir), Subnet: testSubnet(), DesktopPort: DesktopPort}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	publishTestCLI(t, s)
 	s.Instance = "test-" + randomHex(8) // never another supervisor's containers
 	return s

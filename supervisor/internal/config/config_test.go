@@ -17,8 +17,8 @@ func TestLoadRefusesOtherDataDir(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if c.DataDir != "/data" || c.Layout.Data != "/data" {
-			t.Errorf("DataDir = %q, Layout.Data = %q", c.DataDir, c.Layout.Data)
+		if c.Layout.Data != "/data" {
+			t.Errorf("Layout.Data = %q", c.Layout.Data)
 		}
 	}
 }

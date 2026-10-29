@@ -46,8 +46,7 @@ LABEL deskyard.kind="supervisor" \
       org.opencontainers.image.version="${VERSION}"
 # The data folder is always /data: mount any host folder there. The
 # supervisor reads the host path from its own container.
-ENV DESKYARD_IN_CONTAINER=1 \
-    DESKYARD_LISTEN=0.0.0.0:7343
+ENV DESKYARD_LISTEN=0.0.0.0:7343
 EXPOSE 7343
 ENTRYPOINT ["/usr/local/bin/deskyard-supervisor"]
 

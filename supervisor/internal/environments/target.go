@@ -89,10 +89,7 @@ func (s *Service) Target(ctx context.Context, name string) (addr, token string, 
 		}
 		c.Container = g
 	}
-	port := "8080"
-	if s.Cfg.DesktopPort != 0 {
-		port = strconv.Itoa(s.Cfg.DesktopPort)
-	}
+	port := strconv.Itoa(s.Cfg.DesktopPort)
 	if ip := c.Container.IP[containerName(name)]; ip != "" {
 		return net.JoinHostPort(ip, port), token, nil
 	}

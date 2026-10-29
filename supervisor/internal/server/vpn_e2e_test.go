@@ -156,7 +156,7 @@ func TestVPNEndToEnd(t *testing.T) {
 	}
 	makeService := func() *environments.Service {
 		// Open reads the saved definitions, so a fresh service recovers from them.
-		ds, err := environments.Open(eng, environments.Config{Layout: layout, Subnet: "10.219.0.0/16", SelfID: cfg.SelfID}, instance, log)
+		ds, err := environments.Open(eng, environments.Config{Layout: layout, Subnet: "10.219.0.0/16", SelfID: cfg.SelfID, DesktopPort: environments.DesktopPort}, instance, log)
 		if err != nil {
 			t.Fatal(err)
 		}
