@@ -203,7 +203,7 @@ All five routes require an administrator session; mutations also require the usu
 | --- | --- | --- |
 | `GET /api/vpn/connections` | | 200 `{connections:[VPNConnection & {computers:[Reference]}],countries:[string]}` |
 | `POST /api/vpn/connections` | `VPNInput` | 201 `VPNConnection`; 400 invalid input; 409 duplicate name |
-| `PUT /api/vpn/connections/{id}` | `VPNInput` plus `expectedRevision`, `affectedEnvironments:[name]`, `confirmRestart:true` when referenced | 202 `{job,computers:[Reference]}`; 409 `{error,computers:[Reference]}` when confirmation is missing; 409 if the revision/reference preview changed or a selected computer needs recovery-record repair |
+| `PUT /api/vpn/connections/{id}` | `VPNInput` plus `expectedRevision`, `affectedComputers:[name]`, `confirmRestart:true` when referenced | 202 `{job,computers:[Reference]}`; 409 `{error,computers:[Reference]}` when confirmation is missing; 409 if the revision/reference preview changed or a selected computer needs recovery-record repair |
 | `DELETE /api/vpn/connections/{id}` | | 204; 409 `{error,computers:[Reference]}` if any computer still selects it |
 | `POST /api/vpn/test` | `VPNInput`, optional `connectionId` to retain saved omitted credentials | 202 `{job}` |
 

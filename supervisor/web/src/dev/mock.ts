@@ -676,7 +676,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     }));
   }
 
-  const cm = /^\/api\/environments\/([^/]+)(?:\/(.+))?$/.exec(path);
+  const cm = /^\/api\/computers\/([^/]+)(?:\/(.+))?$/.exec(path);
   const c = cm?.[1] ? visible().find((x) => x.name === cm[1]) && computers.find((x) => x.name === cm[1]) : undefined;
   if (!cm || !c) return json(res, 404, { error: "no such computer" });
   const sub = cm[2] ?? "";
@@ -870,7 +870,7 @@ function eventSocket(req: IncomingMessage, socket: Duplex): void {
 
 function mockTerminal(req: IncomingMessage, socket: Duplex): void {
   const url = new URL(req.url ?? "/", "http://mock");
-  const m = /^\/api\/environments\/([^/]+)\/terminal$/.exec(url.pathname);
+  const m = /^\/api\/computers\/([^/]+)\/terminal$/.exec(url.pathname);
   if (url.pathname === "/api/events") return eventSocket(req, socket);
   if (!m) return; // Vite's own sockets
   const key = req.headers["sec-websocket-key"];
