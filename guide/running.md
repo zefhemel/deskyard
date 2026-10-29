@@ -51,12 +51,25 @@ mounted the data folder at its host path and named it in `DESKYARD_DATA_DIR`
 (`-v /srv/deskyard:/srv/deskyard -e DESKYARD_DATA_DIR=/srv/deskyard`). The
 supervisor now exits at start, with the instructions, if `DESKYARD_DATA_DIR`
 is set to anything but `/data`. Replace the mount with
-`-v /srv/deskyard:/data` and delete the variable; existing environments, homes
-and volume grants carry over. Environments with a VPN connection are replaced
+`-v /srv/deskyard:/data` and delete the variable; existing computers, homes
+and volume grants carry over. Computers with a VPN connection are replaced
 once on the first start: their desktops restart; homes and volumes are kept.
 The `deskyard-supervisor` binaries that used to
 run without a container are no longer released (the `deskyard` command still
 is).
+
+## Upgrading from "environments"
+
+Computers used to be called environments. Upgrading needs no steps: the
+supervisor reads an older `environments.json` as `computers.json` at the first
+start, and snapshots tagged `environment:NAME` stay listed and restorable.
+Computers that use a VPN restart once, because their VPN gateways are replaced.
+Things that used the old name stop working: the CLI's `-e` option, the
+`DESKYARD_ENVIRONMENT` variable and the `env` commands (now `-c`,
+`DESKYARD_COMPUTER` and `computer`), the `/api/environments` routes and
+`/environments/NAME` links in the web UI (now `/api/computers` and
+`/computers/NAME`). Update scripts and bookmarks. Desktop addresses
+(`/NAME/`) don't change.
 
 ## On a LAN
 
@@ -106,13 +119,13 @@ itself ([With a domain](#with-a-domain)).
 - Observers' desktop streams pass through a filter that forwards only the
   messages needed to receive the picture; their input never reaches the
   desktop.
-- Environments have no password and nothing else of their own facing the
-  network: only Caddy on 8080, which wants a per-environment token that only
-  the supervisor has. Environments publish no ports to the host.
-- The supervisor never serves pages from an environment: it serves the desktop
-  client itself (taken from the environment's image) and proxies only the
+- Computers have no password and nothing else of their own facing the
+  network: only Caddy on 8080, which wants a per-computer token that only
+  the supervisor has. Computers publish no ports to the host.
+- The supervisor never serves pages from a computer: it serves the desktop
+  client itself (taken from the computer's image) and proxies only the
   desktop's WebSocket and, for CLI clients, the browser's CDP.
-- No `sudo` in environments, and every command the supervisor runs in one runs
+- No `sudo` in computers, and every command the supervisor runs in one runs
   as `user`.
 - Over plain HTTP, passwords travel in clear text: keep the default
   `127.0.0.1` publish unless the network is trusted, or set

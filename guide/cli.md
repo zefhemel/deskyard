@@ -1,6 +1,6 @@
 # The deskyard command
 
-`deskyard` is already there inside every environment. To use it from your own
+`deskyard` is already there inside every computer. To use it from your own
 terminal, install it on Linux or macOS:
 
 ```bash
@@ -22,7 +22,7 @@ Sign it in once, in one of two ways:
 - `deskyard login https://desktops.example.com/alice` prints a code and opens
   a browser page where you, signed in to Deskyard, check the code and press
   **Approve**. Any account with full access somewhere can do this. With an
-  environment in the URL, that becomes the default.
+  computer in the URL, that becomes the default.
 - `deskyard auth LINK` signs in with a login link instead, without a browser:
   useful for agents and scripts. A full-access share's link works;
   observe-only links are for the browser.
@@ -34,37 +34,37 @@ on the server and forgets the server. A credential acts with its account's
 access at the time of each request. Then:
 
 ```bash
-deskyard env list                         # the environments you can use
-deskyard -e alice exec -- ls ~            # one command; exit code passed through
-deskyard -e alice shell                   # interactive shell
-deskyard -e alice terminal                # shared terminal; rejoin later
+deskyard computer list                         # the computers you can use
+deskyard -c alice exec -- ls ~            # one command; exit code passed through
+deskyard -c alice shell                   # interactive shell
+deskyard -c alice terminal                # shared terminal; rejoin later
 deskyard cp ./notes.md alice:/workspace/notes.md    # and back
-deskyard -e alice screenshot > s.png      # every screen action works remotely
-deskyard -e alice click 640 400
-deskyard -e alice browser connect --port 9222   # the shared Chromium on local 127.0.0.1:9222
+deskyard -c alice screenshot > s.png      # every screen action works remotely
+deskyard -c alice click 640 400
+deskyard -c alice browser connect --port 9222   # the shared Chromium on local 127.0.0.1:9222
 ```
 
 With `browser connect` running, Playwright's
 `chromium.connect_over_cdp("http://127.0.0.1:9222")` (use
 `browser.contexts[0]`, the shared profile), Puppeteer or chrome-devtools
-tools work as if the browser were local. `-e ENV` (or `--environment ENV`)
-goes before the command and picks one of the default server's environments;
-`-e SERVER/ENV` picks one on another signed-in server. `deskyard env use alice`
+tools work as if the browser were local. `-c COMPUTER` (or `--computer COMPUTER`)
+goes before the command and picks one of the default server's computers;
+`-c SERVER/COMPUTER` picks one on another signed-in server. `deskyard computer use alice`
 saves typing `-e`, `deskyard server list` and `server default NAME` manage the
-servers, and `DESKYARD_ENVIRONMENT` (`ENV` or `SERVER/ENV`) or
+servers, and `DESKYARD_COMPUTER` (`COMPUTER` or `SERVER/COMPUTER`) or
 `DESKYARD_URL` with `DESKYARD_CREDENTIAL` work without a config file. Inside an
-environment, without `-e`, commands act on that environment directly. For
+computer, without `-c`, commands act on that computer directly. For
 command help, use `deskyard --help`, `deskyard guide` (a short manual) and
 `deskyard describe --json` (machine-readable command descriptions).
 
 The CLI can do what its account may do, checked by the server on every
-request: exec, shell, files, browser, forward and `env start|stop|restart`
-need full access to the environment, and `share` works where the account may
+request: exec, shell, files, browser, forward and `computer start|stop|restart`
+need full access to the computer, and `share` works where the account may
 share. Admins also manage the server from it:
 
 ```bash
-deskyard env create bob --image ghcr.io/zefhemel/deskyard-debian-xfce:latest --grant sanne
-deskyard env access bob sanne=observe     # or =full, or =none
+deskyard computer create bob --image ghcr.io/zefhemel/deskyard-debian-xfce:latest --grant sanne
+deskyard computer access bob sanne=observe     # or =full, or =none
 deskyard volume create photos
 deskyard account create sanne --description "Contractor" --grant bob --expires 2w   # prints a login link
 printf '%s' "$PASSWORD" | deskyard account create anna --password-stdin --admin
@@ -74,8 +74,8 @@ deskyard device list --account sanne
 ```
 
 Removing an account, revoking a share or its device, its expiry, or losing the
-grant closes the CLI's open connections at once. An environment's access also
-dies with it: removing an environment and creating a new one with the same
+grant closes the CLI's open connections at once. A computer's access also
+dies with it: removing a computer and creating a new one with the same
 name does not bring back its old grants.
 
 ## Port mapping
@@ -83,17 +83,17 @@ name does not bring back its old grants.
 Reach a server on one machine from the other, with the same sign-in:
 
 ```bash
-deskyard -e alice forward 3000 &      # your 127.0.0.1:3000 is localhost:3000 in the environment
-deskyard -e alice forward -R 5173 &   # the environment's localhost:5173 is your 127.0.0.1:5173
+deskyard -c alice forward 3000 &      # your 127.0.0.1:3000 is localhost:3000 in the computer
+deskyard -c alice forward -R 5173 &   # the computer's localhost:5173 is your 127.0.0.1:5173
 ```
 
-The first lets the environment call a service running on your machine; the second lets you open a dev server running in the environment in your own browser. To use different port numbers, write `LOCAL:ENV` for a plain mapping (`8080:3000`: your 8080 is the environment's 3000) and `ENV:LOCAL` after `-R` (`-R 80:8080`: the environment's 80 is your 8080). Several mappings can share one command (at most 64 plain ones and 256 in all), and one signed-in CLI can hold four such links per environment. Everything goes over the existing HTTPS connection (no extra ports are opened on the engine host) and listens only on `127.0.0.1`. Only *listening* in the environment is limited to ports from 1024 up, so plain `forward 80` is refused while `-R 80:8080` works (the helper just dials). If the connection drops or the environment restarts, `deskyard` reconnects by itself with backoff (up to 30 s): `-R` local ports stay bound meanwhile, and plain mappings come back in the environment once the link is back. People watching the desktop see which ports your CLI maps (up to 64 per signed-in CLI are listed). "Linked to …" and the `out` lines are printed when the link is accepted, a moment before the helper in the environment is known to be running.
+The first lets the computer call a service running on your machine; the second lets you open a dev server running in the computer in your own browser. To use different port numbers, write `LOCAL:COMPUTER` for a plain mapping (`8080:3000`: your 8080 is the computer's 3000) and `COMPUTER:LOCAL` after `-R` (`-R 80:8080`: the computer's 80 is your 8080). Several mappings can share one command (at most 64 plain ones and 256 in all), and one signed-in CLI can hold four such links per computer. Everything goes over the existing HTTPS connection (no extra ports are opened on the engine host) and listens only on `127.0.0.1`. Only *listening* in the computer is limited to ports from 1024 up, so plain `forward 80` is refused while `-R 80:8080` works (the helper just dials). If the connection drops or the computer restarts, `deskyard` reconnects by itself with backoff (up to 30 s): `-R` local ports stay bound meanwhile, and plain mappings come back in the computer once the link is back. People watching the desktop see which ports your CLI maps (up to 64 per signed-in CLI are listed). "Linked to …" and the `out` lines are printed when the link is accepted, a moment before the helper in the computer is known to be running.
 
-## Agents inside an environment
+## Agents inside a computer
 
 The desktop also ships skills for tools such as Claude Code and Codex.
 
-**Inside an environment.** Install an agent into `/workspace` from its
+**Inside a computer.** Install an agent into `/workspace` from its
 terminal and run it there:
 
 ```bash
@@ -101,7 +101,7 @@ curl -fsSL https://claude.ai/install.sh | bash          # Claude Code
 npm i -g @openai/codex                                   # Codex
 ```
 
-Hermes Agent also runs inside an environment:
+Hermes Agent also runs inside a computer:
 
 ```bash
 curl -fsSL https://hermes-agent.nousresearch.com/install.sh -o /tmp/hermes-install.sh
@@ -113,7 +113,7 @@ LANG=C.UTF-8 hermes
 
 This installs Hermes into `/workspace`, uses its local terminal backend,
 and makes the image's three skills available to it. The optional Hermes
-browser and computer-use downloads are skipped; the environment's shared
+browser and computer-use downloads are skipped; the computer's shared
 browser and `deskyard` command remain available through those skills.
 The project space's Hermes Agent trial spike records the
 verified versions, startup checks and limitations. A model conversation

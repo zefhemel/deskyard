@@ -1,13 +1,13 @@
 # Images
 
-The **Images** page holds the catalog of images environments can be created
+The **Images** page holds the catalog of images computers can be created
 from. The built-in choice, visible before download and the default on first
 start, is Debian XFCE: `ghcr.io/zefhemel/deskyard-debian-xfce:latest`. The
-MATE image is retired: it is no longer offered or rebuilt, though environments
+MATE image is retired: it is no longer offered or rebuilt, though computers
 that already use it keep running on the copy they downloaded.
 
 Choose **Install** on an available image to download it, or select it when
-creating an environment to download it on first use. Browsing does not download
+creating a computer to download it on first use. Browsing does not download
 images. Existing saved images and the configured default retain their order;
 custom images remain alongside the built-in choices. Official choices stay
 in the catalog and cannot be removed. Other contract-compatible references
@@ -21,7 +21,7 @@ most scripts (Noto) and Arial/Times-compatible layouts (Liberation); Chinese,
 Japanese and Korean fonts are not included. One full-width taskbar at the
 bottom holds the app menu, launchers, open windows, tray and clock. The look is
 Arc Dark with Papirus icons; Greybird (Xubuntu's theme) can be chosen in
-Settings › Appearance. Existing environments move to the taskbar and the new
+Settings › Appearance. Existing computers move to the taskbar and the new
 look once, unless their owner has already changed those settings. Command-line basics are there too:
 `vim`, `nano`, `less`, `htop`, `wget`, `rsync`, `jq`, `file`, `lsof`,
 zip/xz/bzip2/7-Zip, `ping`, `dig` and `nc`.
@@ -47,24 +47,24 @@ builds use `deskyard-debian-xfce:dev`.
 CI rebuilds it weekly (Debian security updates) and on every change, tagged `latest` and with the date
 (`2026.10.22`). The supervisor checks downloaded images for newer versions daily (or on "Check
 now"); available images stay undownloaded. The catalog shows **Available**,
-**Installed** or **Update available** when environments are behind.
+**Installed** or **Update available** when computers are behind.
 After each check and each upgrade, the supervisor deletes old versions of
 desktop images that nothing uses any more: images it saw a newer pull or
 build of the same tag replace, that no tag names any more, that no container
-runs from, stopped ones included, and that no environment pins. Versions it
+runs from, stopped ones included, and that no computer pins. Versions it
 never saw replaced and tagged images, such as local builds and custom images,
 are never deleted. Another supervisor on the same Docker engine can still
-delete a version it saw replaced while no container uses it; an environment
+delete a version it saw replaced while no container uses it; a computer
 pinned to that version then pulls its reference again at its next start.
 
-Upgrading an environment recreates its container on the new image with the same
-settings and folder; the Images page can upgrade all environments on an image
-at once. Switching an environment to another image works the same way.
+Upgrading a computer recreates its container on the new image with the same
+settings and folder; the Images page can upgrade all computers on an image
+at once. Switching a computer to another image works the same way.
 Each definition pins the image ID its container was built from; if that image
 has disappeared from the engine when the container must be recreated, the
 supervisor pulls the image reference again and records the new ID as a new
-revision. This holds for VPN environments too. If the reference can't be
-pulled either, the environment is left as it is, with an error naming the
+revision. This holds for VPN computers too. If the reference can't be
+pulled either, the computer is left as it is, with an error naming the
 image, until you upgrade it or switch it to another image. Upgrades
 go forward only: Chromium won't open a profile written by a newer version.
 During a settings save, progress appears above the image picker and scrolls
@@ -107,12 +107,12 @@ Snes9x and Genesis Plus GX carry non-commercial restrictions; see the example's 
 
 Desktop images include the upstream Flatpak fix for intermittent GL-extension
 `invalid merge-dirs` launch errors. It retries temporary directory-resolution
-failures while retaining Debian's security patches. Existing environments receive
+failures while retaining Debian's security patches. Existing computers receive
 it through an image upgrade. The rebuilt packages' corresponding source is
 included at `/usr/share/doc/flatpak/deskyard-source/`.
 
 Flatpak apps run inside bubblewrap, which needs namespaces that Docker's
-defaults block. Every environment therefore runs with Docker's default seccomp
+defaults block. Every computer therefore runs with Docker's default seccomp
 profile plus the namespace and mount syscalls, `apparmor=unconfined` and
 `systempaths=unconfined`. These are per-container options; nothing in
 Docker's configuration changes. Chromium also uses them to run with its own
@@ -120,7 +120,7 @@ sandbox.
 
 `systempaths=unconfined` leaves `/proc/sys` writable, and root in the
 container is root on the host for those files. So nothing reachable by
-desktop users or the internet runs as root in an environment: there is no `sudo`, Caddy
+desktop users or the internet runs as root in a computer: there is no `sudo`, Caddy
 runs as its own user, and the supervisor runs every command as `user`.
 
 On Ubuntu 24.04+ hosts, unprivileged user namespaces may be restricted by

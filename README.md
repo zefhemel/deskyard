@@ -5,11 +5,11 @@
 Persistent Linux desktops you can access, share and control from anywhere—
 in your browser or terminal. One app, the **supervisor**, runs them in containers.
 
-![An environment's page: its desktop, with Chromium on this project's GitHub page, and a shared terminal session as a tab next to it](assets/screenshot.png)
+![A computer's page: its desktop, with Chromium on this project's GitHub page, and a shared terminal session as a tab next to it](assets/screenshot.png)
 
 The supervisor is one Go binary with its web UI built in. You sign in with
 your own account and create, open, start, stop, upgrade and remove
-**environments**. An environment is one persistent Linux desktop with its own
+**computers**. A computer is one persistent Linux desktop with its own
 home folder, in the browser at `http://host/<name>/`; everyone with access to
 it opens the same desktop, at the same time if they like.
 
@@ -19,7 +19,7 @@ it opens the same desktop, at the same time if they like.
   phones and tablets.
 - **Shared terminals** next to the desktop, joinable from the browser, the
   desktop itself or your own terminal.
-- **One shared Chromium** whose tabs and sign-ins stay with the environment.
+- **One shared Chromium** whose tabs and sign-ins stay with the computer.
   It starts when you open it or connect through browser tools.
 - **Sharing by link**: full access or observe-only, optionally for a limited
   time, revocable at any time.
@@ -28,16 +28,16 @@ it opens the same desktop, at the same time if they like.
   server.
 - **Persistent installs**: `/workspace` is a plain folder on the host. Tools
   installed with mise, npm, uv or Flatpak survive restarts and image upgrades.
-- **Volumes and backups**: folders shared between environments, and encrypted
+- **Volumes and backups**: folders shared between computers, and encrypted
   restic backups to S3, B2, SFTP or WebDAV storage.
 
 The desktop image is Debian 13, `linux/arm64` and `linux/amd64`. About 0.4 GB
-of RAM per running environment with Chromium open, so several fit on an 8 GB
+of RAM per running computer with Chromium open, so several fit on an 8 GB
 machine.
 
 <p>
-  <img src="assets/environments.png" width="49%" alt="The environments list: each environment's live screen, its terminal sessions, CPU and memory use, VPN and image">
-  <img src="assets/environment.png" width="49%" alt="An environment's overview: its screen, who's viewing, VPN, CPU and memory over the last 15 minutes, and its folder, disk, image and access">
+  <img src="assets/computers.png" width="49%" alt="The computers list: each computer's live screen, its terminal sessions, CPU and memory use, VPN and image">
+  <img src="assets/computer.png" width="49%" alt="A computer's overview: its screen, who's viewing, VPN, CPU and memory over the last 15 minutes, and its folder, disk, image and access">
 </p>
 
 ## Run it
@@ -85,7 +85,7 @@ the same with comments and the HTTPS options.
 On first start the supervisor creates the account `admin` and prints its
 generated password once in its log (`docker logs deskyard`, or
 `docker compose logs supervisor`), unless you set `DESKYARD_ADMIN_PASSWORD`.
-Open <http://localhost:7343>, sign in, and create an environment: name it
+Open <http://localhost:7343>, sign in, and create a computer: name it
 `alice` and its desktop opens at <http://localhost:7343/alice/>. The desktop
 image is downloaded when you create the first one.
 
@@ -118,12 +118,12 @@ the **Images** page. Tests and the rest of the workflow:
 
 ## The `deskyard` command
 
-Inside an environment it's already there. On your own Linux or macOS machine:
+Inside a computer it's already there. On your own Linux or macOS machine:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/zefhemel/deskyard/main/install.sh | sh
 deskyard login https://desktops.example.com/alice   # approve in your browser
-deskyard -e alice shell
+deskyard -c alice shell
 ```
 
 More: [The deskyard command](guide/cli.md).
@@ -137,7 +137,7 @@ Environment variables of the supervisor:
 | `DESKYARD_LISTEN` | `0.0.0.0:7343` | address for plain HTTP inside the container |
 | `DESKYARD_DOMAIN` | | serve HTTPS for this domain on 80/443, with an automatic certificate |
 | `DESKYARD_ENGINE_HOST` | `DOCKER_HOST`, else the default socket | the engine to drive |
-| `DESKYARD_SUBNET` | `10.213.0.0/16` | each environment's network gets a /28 from it |
+| `DESKYARD_SUBNET` | `10.213.0.0/16` | each computer's network gets a /28 from it |
 | `DESKYARD_ADMIN_USER` | `admin` | first start only: the first admin |
 | `DESKYARD_ADMIN_PASSWORD` | generated, printed once | first start only: its password |
 | `DESKYARD_IMAGE` | `ghcr.io/zefhemel/deskyard-debian-xfce:latest` | the catalog's first image |
@@ -147,9 +147,9 @@ Back up the whole data folder (see
 
 ## Guides
 
-- [Running Deskyard](guide/running.md): domains, LANs and plain HTTP, Tailscale, security.
+- [Running Deskyard](guide/running.md): domains, LANs and plain HTTP, Tailscale, security, upgrading from "environments".
 - [Using the desktop](guide/desktop.md): display and touch controls, the iPhone Home Screen, shared terminals.
-- [Environments](guide/environments.md): lifecycle, Docker access, outbound VPN, what persists, reclaiming memory.
+- [Computers](guide/computers.md): lifecycle, Docker access, outbound VPN, what persists, reclaiming memory.
 - [Storage](guide/storage.md): volumes, WebDAV drives, backups and the data folder.
 - [Images](guide/images.md): the catalog, upgrades, custom images, Flatpak and AppImages.
 - [Accounts and sharing](guide/sharing.md): accounts, access levels and share links.

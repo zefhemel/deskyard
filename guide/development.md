@@ -34,9 +34,9 @@ distributed.
 ```
 supervisor/
   cmd/deskyard-supervisor/     the supervisor
-  cmd/deskyard/     the deskyard command (inside environments and for remote access)
+  cmd/deskyard/     the deskyard command (inside computers and for remote access)
   internal/         engine interface and Docker implementation, accounts, auth,
-                    environments, storage remotes and backups, the HTTP server
+                    computers, storage remotes and backups, the HTTP server
                     and proxy, the embedded UI
   web/              the UI: Preact + TypeScript + Tailwind, built with Vite
   tests/            integration tests against a real engine
@@ -94,7 +94,7 @@ OrbStack can't route to the custom bridge networks; Linux CI runs them.
 
 Both suites run under pytest-xdist (`WORKERS`, default 4), then run the
 timing-sensitive tests, marked `serial`, on their own (`pytest --only-serial`).
-Each test gets a new environment, taken from a few started ahead of it. The
+Each test gets a new computer, taken from a few started ahead of it. The
 supervisor suite runs a supervisor per worker, each on its own slice of
 `DESKYARD_TEST_SUBNET` (default 10.215.0.0/20): give checkouts that test at the
 same time different ones. Teardown removes only the containers and networks labelled with that run's supervisor instance, plus managed containers mounting its data folder. The supervisor suite rebuilds the web UI first when
@@ -129,4 +129,4 @@ skips the build and tests that image instead, for example:
 AC_IMAGE=deskyard-debian-xfce:dev uv run pytest -m "not slow and not network"
 ```
 
-For shared-engine VPN verification, use the [scoped VPN test guide](../supervisor/tests/VPN.md). Its `vpnintegration` test binary protects existing resources with a unique ownership label. Do not start an ordinary production supervisor or the full-main Python fixture against a Docker engine holding unrelated environments.
+For shared-engine VPN verification, use the [scoped VPN test guide](../supervisor/tests/VPN.md). Its `vpnintegration` test binary protects existing resources with a unique ownership label. Do not start an ordinary production supervisor or the full-main Python fixture against a Docker engine holding unrelated computers.
