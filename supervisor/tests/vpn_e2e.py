@@ -2,8 +2,9 @@
 prepare prints a private directory; start/check/lifecycle/cleanup consume it.
 Run each phase separately to permit a real browser screen inspection at ready.
 Like the supervisor, the fixture runs only in a container: the vpnintegration
-test binary, cross-compiled for the engine and mounted into deskyard:base, with
-the data folder at /data and the private directory at /e2e.
+test binary, cross-compiled for the engine and started by `make run` in place
+of the supervisor binary, with the data folder at /data and the private
+directory at /e2e.
 """
 
 import argparse
@@ -12,6 +13,7 @@ import json
 import os
 import pathlib
 import secrets
+import socket
 import subprocess
 import tempfile
 import time
@@ -19,9 +21,7 @@ import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 LABEL = "deskyard.vpn.e2e-fixture"
-SUPERVISOR_IMAGE = "deskyard:base"  # as conftest.py: the base image, binary mounted
 INSIDE = "/e2e"  # the private directory inside the fixture supervisor's container
-GOARCH = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64", "arm64": "arm64"}
 
 
 def run(*args, input=None, env=None, check=True):
@@ -41,6 +41,16 @@ def run(*args, input=None, env=None, check=True):
 
 def docker(*args, **kw):
     return run("docker", *args, **kw)
+
+
+def make(*args, **kw):
+    return run("make", "-s", "-C", str(ROOT), *args, **kw)
+
+
+def free_port():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
 
 def write(path, value):
@@ -209,11 +219,8 @@ def prepare(mode):
 def start(d):
     cfg = json.loads((d / "fixture.json").read_text())
     image = os.environ.get("CC_TEST_IMAGE", "deskyard-debian-xfce:selkies")
-    arch = docker("info", "-f", "{{.Architecture}}")
-    if arch not in GOARCH:
-        raise RuntimeError(f"unsupported engine architecture {arch}")
     buildenv = os.environ.copy()
-    buildenv.update(GOOS="linux", GOARCH=GOARCH[arch], CGO_ENABLED="0")
+    buildenv.update(GOOS="linux", GOARCH=make("engine-goarch"), CGO_ENABLED="0")
     run(
         "go",
         "test",
@@ -225,43 +232,26 @@ def start(d):
         "./internal/server",
         env=buildenv,
     )
-    docker("build", "-q", "--target", "base", "-t", SUPERVISOR_IMAGE, str(ROOT))
-    docker(
+    make("cli-linux", "base")
+    port = free_port()
+    run_args = [
+        f"--label {LABEL}={cfg['Scope']}",
+        f"-v {d}:{INSIDE}",
+        f"-e DESKYARD_VPN_E2E_DIR={INSIDE}",
+        "-e DOCKER_HOST=unix:///var/run/docker.sock",
+        f"-e CC_TEST_IMAGE={image}",
+    ]
+    make(
         "run",
-        "-d",
-        "--name",
-        cfg["SelfID"],
-        "--label",
-        f"{LABEL}={cfg['Scope']}",
-        "-v",
-        "/var/run/docker.sock:/var/run/docker.sock",
-        "-v",
-        f"{d / 'data'}:/data",
-        "-v",
-        f"{d}:{INSIDE}",
-        "-e",
-        f"DESKYARD_VPN_E2E_DIR={INSIDE}",
-        "-e",
-        "DOCKER_HOST=unix:///var/run/docker.sock",
-        "-e",
-        f"CC_TEST_IMAGE={image}",
-        "-p",
-        "127.0.0.1::7343",
-        "--entrypoint",
-        f"{INSIDE}/supervisor.test",
-        SUPERVISOR_IMAGE,
-        "-test.run",
-        "^TestVPNEndToEnd$",
-        "-test.v",
+        f"NAME={cfg['SelfID']}",
+        f"DATA={d / 'data'}",
+        f"PORT={port}",
+        f"BIN={d / 'supervisor.test'}",
+        "RUN_ARGS=" + " ".join(run_args),
+        "ARGS=-test.run=^TestVPNEndToEnd -test.v",
     )
     wait_file(d / "ready.json")
-    port = docker(
-        "inspect",
-        "--format",
-        '{{(index (index .NetworkSettings.Ports "7343/tcp") 0).HostPort}}',
-        cfg["SelfID"],
-    )
-    url = "http://127.0.0.1:" + port
+    url = f"http://127.0.0.1:{port}"
     (d / "url").write_text(url)
     print(url)
 

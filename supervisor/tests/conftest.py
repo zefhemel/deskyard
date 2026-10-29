@@ -1,9 +1,9 @@
 """Integration tests: a real supervisor against the local container engine.
 
-The supervisor runs only in a container: each runs the base image
-(deskyard:base) with the socket, its data folder at /data, and the binary
-cross-compiled for the engine's Linux mounted over the image's, as
-`make dev` does, so a code change needs no image build.
+The supervisor runs only in a container: each is started by `make run`,
+as `make dev` does: the base image (deskyard:base) with the socket, its
+data folder at /data, and the binary cross-compiled for the engine's Linux
+mounted over the image's, so a code change needs no image build.
 
 CC_TEST_IMAGE is the desktop image (default deskyard-debian-xfce:test, built from the debian-xfce target in images/Dockerfile;
 these suites don't build it, so build it from this checkout first, as
@@ -13,7 +13,8 @@ under xdist each worker runs its own supervisor on its own slice of it.
 
 What runs once, before any worker starts: the web UI is rebuilt if its
 sources are newer than internal/web/dist, the supervisor is cross-compiled
-(`make linux`), the base image is built, and the deskyard command is built.
+and the base image built (`make linux base`), and the deskyard command is
+built.
 
 The `desktop` fixture takes a desktop from a small pool that each
 supervisor creates ahead of the tests (DESKYARD_TEST_POOL, default 1; 0 is
@@ -48,13 +49,11 @@ import netchange  # noqa: F401  (Chromium's pages survive a desktop's network co
 ROOT = Path(__file__).resolve().parent.parent
 REPO = ROOT.parent
 IMAGE = os.environ.get("CC_TEST_IMAGE", "deskyard-debian-xfce:test")
-SUPERVISOR_IMAGE = "deskyard:base"
 # Another checkout's tests can run at the same time on a different subnet.
 SUBNET = os.environ.get("DESKYARD_TEST_SUBNET", "10.215.0.0/20")
 POOL_SIZE = int(os.environ.get("DESKYARD_TEST_POOL", "1"))
 ADMIN_PASSWORD = "admin-password"
 BIN = ROOT / "bin"
-SUPERVISOR_BIN = BIN / "deskyard-supervisor-linux"  # make linux
 CLI_BIN = BIN / "deskyard-test"
 
 
@@ -91,9 +90,7 @@ def build_once():
             subprocess.run(["make", "web"], cwd=ROOT, check=True)
         else:
             subprocess.run(["npm", "run", "build"], cwd=ROOT / "web", check=True, stdout=subprocess.DEVNULL)
-    subprocess.run(["make", "-C", str(ROOT), "linux"], check=True, stdout=subprocess.DEVNULL)
-    subprocess.run(["docker", "build", "-q", "--target", "base", "-t", SUPERVISOR_IMAGE, str(ROOT)],
-                   check=True, stdout=subprocess.DEVNULL)
+    subprocess.run(["make", "-C", str(ROOT), "linux", "base"], check=True, stdout=subprocess.DEVNULL)
     subprocess.run(["go", "build", "-o", str(CLI_BIN), "./cmd/deskyard"], cwd=ROOT, check=True)
 
 
@@ -222,14 +219,10 @@ class Supervisor:
             "DESKYARD_IMAGE": IMAGE, "DESKYARD_SUBNET": self.subnet,
             "DESKYARD_ACTIVITY_PRESENCE": "12s",
         }
-        docker("rm", "-f", self.container, check=False)  # one that crashed or was killed
-        args = ["run", "-d", "--name", self.container, "-p", f"127.0.0.1:{self.port}:7343",
-                "-v", "/var/run/docker.sock:/var/run/docker.sock", "-v", f"{self.data}:/data",
-                "-v", f"{SUPERVISOR_BIN}:/usr/local/bin/deskyard-supervisor:ro",
-                "-v", f"{BIN / 'desktop-cli'}:/opt/deskyard/cli:ro"]
-        for k, v in env.items():
-            args += ["-e", f"{k}={v}"]
-        docker(*args, SUPERVISOR_IMAGE)
+        # make run replaces one that crashed or was killed.
+        subprocess.run(["make", "-s", "-C", str(ROOT), "run", f"NAME={self.container}", f"DATA={self.data}",
+                        f"PORT={self.port}", "RUN_ARGS=" + " ".join(f"-e {k}={v}" for k, v in env.items())],
+                       check=True, stdout=subprocess.DEVNULL)
         deadline = time.time() + 60
         while time.time() < deadline:
             try:

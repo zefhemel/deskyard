@@ -11,24 +11,34 @@ make test-engine    # the tests that drive a real Docker engine (builds the
                     # desktop image first, unless CC_TEST_IMAGE names one)
 make typecheck      # the UI's TypeScript and tests
 make vet            # Go static checks
-make build          # the UI, then bin/deskyard-supervisor and bin/deskyard
+make build          # the UI, both Linux desktop CLIs and bin/deskyard
 make linux          # the engine-platform supervisor and both Linux desktop CLIs
 make cli-linux      # just the amd64 and arm64 desktop CLIs, bin/desktop-cli/
+make base           # the supervisor's base image, deskyard:base (no binary)
+make run            # (re)start a supervisor container from deskyard:base
 make release VERSION=v1.2.3   # cross-compiled deskyard binaries in dist/
 make image          # the supervisor's container image
 ```
 
-`make dev` builds the supervisor's base image (Alpine, without the binary)
-when its Dockerfile changes, and starts `deskyard-dev` from it with the Docker
-socket, `DEV_DATA` (default `test-instance/` in the top folder) at `/data`, and
-`bin/deskyard-supervisor-linux` bind-mounted over the image's binary and
-`bin/desktop-cli/` mounted read-only at `/opt/deskyard/cli`, on
-`127.0.0.1:DEV_PORT` (default 7343). The same command after every edit rebuilds
-the UI only when its sources changed. Run a second instance beside it with
+`make dev` is `make linux base run`. `make linux` builds
+`bin/deskyard-supervisor-linux` for the Docker engine's architecture (`OUT=`
+another file, `GOARCH=` another architecture; `make engine-goarch` prints the
+engine's). `make base` builds the supervisor's base image (Alpine, without the
+binary), a no-op unless its Dockerfile changed. `make run` starts the container
+`NAME` (default `DEV_NAME`, `deskyard-dev`) from it with the Docker socket,
+`DATA` (default `DEV_DATA`, `test-instance/` in the top folder) at `/data`,
+`BIN` (default `bin/deskyard-supervisor-linux`) bind-mounted over the image's
+binary and `bin/desktop-cli/` mounted read-only at `/opt/deskyard/cli`, on
+`127.0.0.1:PORT` (default `DEV_PORT`, 7343), replacing a container of that
+name. `RUN_ARGS` adds `docker run` options and `ARGS` the binary's arguments;
+the supervisor suite and the VPN fixture start their supervisors with it. The
+same `make dev` after every edit rebuilds the UI only when its sources changed.
+Run a second instance beside it with
 `make dev DEV_DATA=/tmp/scratch DEV_PORT=7344 DEV_NAME=deskyard-dev2`. With
 Compose, run `make linux` and `docker compose up -d --force-recreate` using
-`supervisor/compose.yaml`. The supervisor refuses to run outside a container;
-the `deskyard` command released from `make release` is the only binary
+`supervisor/compose.yaml`, which mounts the same. The supervisor refuses to run
+outside a container (it must find its own container on the engine); the
+`deskyard` command released from `make release` is the only binary
 distributed.
 
 The supervisor publishes the shipped Linux amd64 and arm64 CLIs into
@@ -113,9 +123,8 @@ or run pytest in the suite's folder (`uv run pytest test_ui_audio.py`).
 `build`, `perf`, `webkit` (left out by default) and `serial`.
 
 The supervisor suite always runs the supervisor in a container: each worker
-starts one from the base image with its data folder at `/data` and the
-cross-compiled binary mounted, as `make dev` does, so a code change needs no
-image build. Go engine tests that reach desktops by IP skip on macOS when
+starts one with `make run`, as `make dev` does, with its data folder at `/data`
+and the cross-compiled binary mounted, so a code change needs no image build. Go engine tests that reach desktops by IP skip on macOS when
 OrbStack can't route to the custom bridge networks; Linux CI runs them.
 
 Both suites run under pytest-xdist (`WORKERS`, default 4), then run the

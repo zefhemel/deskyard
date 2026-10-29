@@ -6,10 +6,11 @@
 #   docker compose logs supervisor      # first start: the generated admin password
 #
 # then open http://localhost:7343. After a change, run make linux and
-# docker compose up -d --force-recreate (or just make dev, which does the same without
-# Compose). Only the base image is built, from the Dockerfile; the binary is
-# mounted over it, so a code change needs no image build. The data folder is
-# DESKYARD_DEV_DATA (default ../test-instance), mounted at /data.
+# docker compose up -d --force-recreate (or just make dev: make run starts the
+# same container, with the same mounts and port, without Compose). Only the
+# base image is built, from the Dockerfile; the binary is mounted over it, so
+# a code change needs no image build. The data folder is DESKYARD_DEV_DATA
+# (default ../test-instance), mounted at /data.
 # Production uses the published image instead: see deploy/compose.yaml.
 
 services:
@@ -18,7 +19,6 @@ services:
     build:
       context: .
       target: base
-    restart: unless-stopped
     environment:
       # First start only: the admin's password. Leave it unset and one is
       # generated and printed once in the log.

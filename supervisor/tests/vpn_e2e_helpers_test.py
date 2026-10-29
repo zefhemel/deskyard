@@ -150,40 +150,48 @@ class LifecycleCountersTests(unittest.TestCase):
 
 
 class StartTests(unittest.TestCase):
-    def start(self, arch="aarch64"):
+    def start(self, goarch="arm64"):
         with tempfile.TemporaryDirectory() as tmp:
             d = pathlib.Path(tmp)
             fixture.write(d / "fixture.json", {"mode": "fixture", "Scope": "scope", "SelfID": "owned-supervisor"})
             commands = []
 
-            def docker(*args, **kwargs):
+            def make(*args, **kwargs):
                 commands.append(args)
-                return arch if args[0] == "info" else "54000"
+                if args[0] == "engine-goarch":
+                    if not goarch:
+                        raise RuntimeError("make -s failed: the engine's architecture riscv64 is not supported")
+                    return goarch
+                return ""
 
             with (
                 patch.dict(os.environ, {"CC_TEST_IMAGE": "current-image:validation"}),
                 patch.object(fixture, "run") as build,
-                patch.object(fixture, "docker", side_effect=docker),
+                patch.object(fixture, "make", side_effect=make),
                 patch.object(fixture, "wait_file", return_value={}),
             ):
                 fixture.start(d)
             return d, build, commands
 
-    def test_runs_the_fixture_in_the_base_image_with_data_at_slash_data(self):
+    def test_runs_the_fixture_binary_with_make_run_and_data_at_slash_data(self):
         d, build, commands = self.start()
         self.assertEqual(build.call_args.kwargs["env"]["GOARCH"], "arm64")
         self.assertEqual(build.call_args.kwargs["env"]["GOOS"], "linux")
+        self.assertIn(("cli-linux", "base"), commands)
         run = next(c for c in commands if c[0] == "run")
-        self.assertIn("CC_TEST_IMAGE=current-image:validation", run)
-        self.assertIn(f"{d / 'data'}:/data", run)
-        self.assertIn(f"{d}:{fixture.INSIDE}", run)
-        self.assertIn(f"DESKYARD_VPN_E2E_DIR={fixture.INSIDE}", run)
-        self.assertIn(fixture.SUPERVISOR_IMAGE, run)
-        self.assertNotIn(f"{d}:{d}", run)
+        self.assertIn("NAME=owned-supervisor", run)
+        self.assertIn(f"DATA={d / 'data'}", run)
+        self.assertIn(f"BIN={d / 'supervisor.test'}", run)
+        run_args = next(a for a in run if a.startswith("RUN_ARGS="))
+        self.assertIn("-e CC_TEST_IMAGE=current-image:validation", run_args)
+        self.assertIn(f"-v {d}:{fixture.INSIDE}", run_args)
+        self.assertIn(f"-e DESKYARD_VPN_E2E_DIR={fixture.INSIDE}", run_args)
+        self.assertIn("--label deskyard.vpn.e2e-fixture=scope", run_args)
+        self.assertNotIn(f"{d}:{d}", run_args)
 
     def test_refuses_an_unknown_engine_architecture(self):
         with self.assertRaisesRegex(RuntimeError, "architecture"):
-            self.start(arch="riscv64")
+            self.start(goarch="")
 
 
 if __name__ == "__main__":

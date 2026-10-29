@@ -14,7 +14,8 @@
 # The desktop image the suites test is built from this checkout as TEST_IMAGE
 # (BUILD_IMAGE=0: it's already there, as in CI).
 # The supervisor suite runs the supervisor in a container from the base image,
-# with the binary cross-compiled for the engine mounted (as make dev does).
+# with the binary cross-compiled for the engine mounted (make -C supervisor
+# run, as make dev does).
 # Desktops get /28s from DESKYARD_TEST_SUBNET, split between the supervisor
 # suite's workers: give each checkout testing at once its own.
 
@@ -58,9 +59,9 @@ test-web:
 test-image-build:
 	[ "$(BUILD_IMAGE)" = 0 ] || docker build -q -t $(TEST_IMAGE) --target debian-xfce -f images/Dockerfile .
 
+# CC_TEST_IMAGE (exported above) is the image test-image-build made.
 test-engine: test-image-build
-	$(MAKE) -C supervisor cli-linux
-	cd supervisor && go test -tags engine ./internal/environments/ ./internal/engine/...
+	$(MAKE) -C supervisor test-engine
 
 test-image: test-image-build
 	$(call two_passes,$(IMAGE_TESTS),)

@@ -1,18 +1,23 @@
 # Build, test and release the supervisor and the deskyard command.
 #
-#   make build         web UI + both binaries into bin/
+#   make build         web UI, desktop CLIs and the deskyard command into bin/
 #   make test          Go unit tests, with the race detector
 #   make test-engine   the tests that need a running Docker engine
 #                      (builds the desktop image unless CC_TEST_IMAGE names one)
 # (All of Deskyard's tests: the Makefile one folder up.)
 #   make linux         the supervisor for the engine's Linux architecture,
 #                      into bin/deskyard-supervisor-linux, plus both desktop CLIs
+#                      (OUT= another file, GOARCH= another architecture)
 #   make cli-linux     just the desktop CLIs in bin/desktop-cli/linux-{amd64,arm64}/
-#   make dev           make linux, then (re)start a container from the base
-#                      image with that binary mounted over the image's:
-#                      /data is DEV_DATA, on 127.0.0.1:DEV_PORT. The same
-#                      command after every edit; the image is rebuilt only
-#                      when the Dockerfile changes. See also compose.yaml.
+#   make base          the supervisor's base image, deskyard:base (no binary)
+#   make run           (re)start a supervisor container from deskyard:base with
+#                      BIN mounted over the image's binary: NAME, /data is
+#                      DATA, on 127.0.0.1:PORT (RUN_ARGS: more docker run
+#                      options; ARGS: the binary's arguments)
+#   make dev           make linux base run, by default as DEV_NAME with
+#                      DEV_DATA on DEV_PORT. The same command after every
+#                      edit; the image is rebuilt only when the Dockerfile
+#                      changes. See also compose.yaml.
 #   make release VERSION=v1.2.3   cross-compiled deskyard binaries into dist/
 #   make image         the supervisor's container image
 #
@@ -35,7 +40,7 @@ DEV_DATA ?= $(abspath ../test-instance)
 DEV_PORT ?= 7343
 DEV_NAME ?= deskyard-dev
 
-.PHONY: all web build linux cli-linux dev test test-engine typecheck vet release image clean
+.PHONY: all web build linux engine-goarch cli-linux base run dev test test-engine typecheck vet release image clean
 
 all: build
 
@@ -43,8 +48,8 @@ all: build
 web:
 	cd web && npm ci && npm run build
 
+# The supervisor runs only in a container: make linux builds it for one.
 build: web cli-linux
-	$(GO) build -ldflags "-X main.version=$(VERSION)" -o bin/deskyard-supervisor ./cmd/deskyard-supervisor
 	$(GO) build -ldflags "-X main.version=$(VERSION)" -o bin/deskyard ./cmd/deskyard
 
 # The supervisor for the Docker engine's Linux, to run in a container. The
@@ -63,28 +68,49 @@ cli-linux:
 		mv $$dir/deskyard.next $$dir/deskyard; \
 	done
 
-# The binary's architecture is the Docker engine's, asked only here.
-linux: internal/web/dist/index.html cli-linux
-	@arch=$$(docker info -f '{{.Architecture}}' 2>/dev/null) && test -n "$$arch" || \
-		{ echo "cannot read the engine's architecture: is Docker running?"; exit 1; }; \
+# The Docker engine's architecture as a GOARCH, on stdout, asked only when a
+# target needs it.
+ENGINE_GOARCH = arch=$$(docker info -f '{{.Architecture}}' 2>/dev/null) && test -n "$$arch" || \
+		{ echo "cannot read the engine's architecture: is Docker running?" >&2; exit 1; }; \
 	case $$arch in \
-		x86_64|amd64) goarch=amd64 ;; \
-		aarch64|arm64) goarch=arm64 ;; \
-		*) echo "the engine's architecture $$arch is not supported: Deskyard runs on amd64 and arm64"; exit 1 ;; \
-	esac; \
-	echo "CGO_ENABLED=0 GOOS=linux GOARCH=$$goarch $(GO) build -o bin/deskyard-supervisor-linux ./cmd/deskyard-supervisor"; \
-	CGO_ENABLED=0 GOOS=linux GOARCH=$$goarch $(GO) build -o bin/deskyard-supervisor-linux ./cmd/deskyard-supervisor
+		(x86_64|amd64) echo amd64 ;; \
+		(aarch64|arm64) echo arm64 ;; \
+		(*) echo "the engine's architecture $$arch is not supported: Deskyard runs on amd64 and arm64" >&2; exit 1 ;; \
+	esac
 
-dev: linux
-	mkdir -p $(DEV_DATA)
+engine-goarch:
+	@$(ENGINE_GOARCH)
+
+# The supervisor for Linux: the engine's architecture unless GOARCH names one.
+OUT = bin/deskyard-supervisor-linux
+linux: internal/web/dist/index.html cli-linux
+	@set -e; goarch="$(GOARCH)"; [ -n "$$goarch" ] || goarch=$$($(ENGINE_GOARCH)); \
+	echo "CGO_ENABLED=0 GOOS=linux GOARCH=$$goarch $(GO) build -o $(OUT) ./cmd/deskyard-supervisor"; \
+	CGO_ENABLED=0 GOOS=linux GOARCH=$$goarch $(GO) build -o $(OUT) ./cmd/deskyard-supervisor
+
+base:
 	docker build -q --target base -t deskyard:base .
-	-docker rm -f $(DEV_NAME)
-	docker run -d --name $(DEV_NAME) \
+
+# One way to run a supervisor from this checkout, for make dev and both
+# Python suites: strict mounts, so a missing binary is an error rather than
+# a folder made in its place. compose.yaml mounts the same.
+NAME = $(DEV_NAME)
+DATA = $(DEV_DATA)
+PORT = $(DEV_PORT)
+BIN  = bin/deskyard-supervisor-linux
+RUN_ARGS =
+ARGS =
+run:
+	mkdir -p $(DATA)
+	-@docker rm -f $(NAME) >/dev/null 2>&1
+	docker run -d --name $(NAME) \
 		-v /var/run/docker.sock:/var/run/docker.sock \
-		-v $(DEV_DATA):/data \
-		-v $(CURDIR)/bin/deskyard-supervisor-linux:/usr/local/bin/deskyard-supervisor:ro \
-		-v $(CURDIR)/bin/desktop-cli:/opt/deskyard/cli:ro \
-		-p 127.0.0.1:$(DEV_PORT):7343 deskyard:base
+		-v $(abspath $(DATA)):/data \
+		--mount type=bind,src=$(abspath $(BIN)),dst=/usr/local/bin/deskyard-supervisor,readonly \
+		--mount type=bind,src=$(CURDIR)/bin/desktop-cli,dst=/opt/deskyard/cli,readonly \
+		-p 127.0.0.1:$(PORT):7343 $(RUN_ARGS) deskyard:base $(ARGS)
+
+dev: linux base run
 
 test:
 	$(GO) test -race ./...
@@ -93,6 +119,7 @@ test:
 # image is built from this checkout first (as TEST_IMAGE), so it has the
 # contract this supervisor checks.
 TEST_IMAGE ?= deskyard-debian-xfce:test
+# Every package with engine-tagged tests (grep -rl '//go:build engine' internal).
 ENGINE_PACKAGES := ./internal/environments/ ./internal/engine/... ./internal/storage/
 test-engine: cli-linux
 ifdef CC_TEST_IMAGE
