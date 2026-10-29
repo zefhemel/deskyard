@@ -104,7 +104,7 @@ func (r *pairRuntime) Ensure(_ context.Context, name, _, _ string, _ []vpn.Excep
 	if r.fail {
 		return engine.Container{}, errors.New("provider secret must not leak")
 	}
-	r.gateway.Labels = map[string]string{vpn.LabelRole: "gateway"}
+	r.gateway.Labels = map[string]string{vpn.LabelRole: "gateway", vpn.LabelComputer: name}
 	r.gateway.State = "running" // as vpn.Manager starts a stopped runtime
 	// The gateway sits on the computer's network, served on the local test port.
 	r.gateway.IP = map[string]string{containerName(name): "127.0.0.1"}
@@ -147,6 +147,156 @@ func pairSetup(t *testing.T) (*Service, *pairEngine, *pairRuntime, vpn.Connectio
 }
 
 var noProgress = func(string, float64) {}
+
+// preRename gives alice's computer, running in the VPN runtime pairRuntime
+// made, the runtime a supervisor from before the rename left: labelled under
+// deskyard.vpn.environment, by instance. It returns the runtime's ID.
+func preRename(t *testing.T, s *Service, e *pairEngine, instance string) string {
+	t.Helper()
+	const id = "deskyard-alice.vpn"
+	e.mu.Lock()
+	delete(e.cs, "gateway")
+	e.cs[id] = &engine.Container{ID: id, Name: id, State: "running", Restart: "no", Labels: map[string]string{
+		vpn.LabelRole: "gateway", "deskyard.vpn.environment": "alice", vpn.LabelInstance: instance,
+		vpn.LabelConnection: "c", vpn.LabelRevision: "1"}}
+	e.cs["deskyard-alice"].NetworkContainer = id
+	e.mu.Unlock()
+	r := s.Networking.transition("alice")
+	r.RuntimeID = id
+	if err := s.Networking.saveRecord(r); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func TestUpgradeReplacesLegacyLabelledRuntime(t *testing.T) {
+	s, e, r, conn := pairSetup(t)
+	s.Instance = "this"
+	ctx := context.Background()
+	if _, err := s.Create(ctx, "alice", Settings{Image: "img", VPNConnectionID: conn.ID}, noProgress); err != nil {
+		t.Fatal(err)
+	}
+	legacy := preRename(t, s, e, "this")
+	// Another supervisor's runtime, and VPN test networks from before the
+	// rename: this instance's left over, the other's its own.
+	e.cs["other.vpn"] = &engine.Container{ID: "other.vpn", Name: "other.vpn", State: "running", Labels: map[string]string{
+		vpn.LabelRole: "gateway", "deskyard.vpn.environment": "alice", vpn.LabelInstance: "other"}}
+	e.nets = map[string]engine.Network{
+		"deskyard-vpn-test-1": {ID: "deskyard-vpn-test-1", Name: "deskyard-vpn-test-1", Labels: map[string]string{
+			vpn.LabelRole: "test", "deskyard.vpn.environment": "1", vpn.LabelInstance: "this"}},
+		"deskyard-vpn-test-2": {ID: "deskyard-vpn-test-2", Name: "deskyard-vpn-test-2", Labels: map[string]string{
+			vpn.LabelRole: "test", "deskyard.vpn.environment": "2", vpn.LabelInstance: "other"}},
+	}
+	fresh := reopen(t, s)
+	if err := fresh.ConfigureNetworking(s.Networking.Connections, r, s.Layout.State); err != nil {
+		t.Fatal(err)
+	}
+	ensures := r.ensures
+	if err := fresh.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Inspect(ctx, legacy); !errors.Is(err, engine.ErrNotFound) {
+		t.Fatal("the runtime from before the rename was left")
+	}
+	// Replaced outright: a runtime isn't prepared beside the old one, whose
+	// stable name it would take.
+	if r.ensures != ensures+1 {
+		t.Fatalf("%d runtimes prepared, want 1", r.ensures-ensures)
+	}
+	if _, ok := e.nets["deskyard-vpn-test-1"]; ok {
+		t.Fatal("the VPN test network from before the rename was left")
+	}
+	if _, err := e.Inspect(ctx, "other.vpn"); err != nil {
+		t.Fatal("another supervisor's runtime was removed")
+	}
+	if _, ok := e.nets["deskyard-vpn-test-2"]; !ok {
+		t.Fatal("another supervisor's VPN test network was removed")
+	}
+	g, err := e.Inspect(ctx, "gateway")
+	if err != nil || g.Labels[vpn.LabelComputer] != "alice" || !g.Running() {
+		t.Fatalf("no runtime labelled with its computer: %+v %v", g, err)
+	}
+	got, err := fresh.Get(ctx, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Container.Running() || got.Container.NetworkContainer != "gateway" {
+		t.Fatalf("alice doesn't run in the new runtime: %+v", got.Container)
+	}
+}
+
+// A stopped computer's runtime from before the rename is left for its
+// start, which replaces it.
+func TestUpgradeReplacesStoppedComputersLegacyRuntimeOnStart(t *testing.T) {
+	s, e, r, conn := pairSetup(t)
+	s.Instance = "this"
+	ctx := context.Background()
+	if _, err := s.Create(ctx, "alice", Settings{Image: "img", VPNConnectionID: conn.ID}, noProgress); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Stop(ctx, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	legacy := preRename(t, s, e, "this")
+	e.mu.Lock()
+	e.cs[legacy].State = "exited"
+	e.mu.Unlock()
+	fresh := reopen(t, s)
+	if err := fresh.ConfigureNetworking(s.Networking.Connections, r, s.Layout.State); err != nil {
+		t.Fatal(err)
+	}
+	ensures := r.ensures
+	if err := fresh.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Inspect(ctx, legacy); err != nil || r.ensures != ensures {
+		t.Fatalf("startup touched a stopped computer's runtime: %v, %d ensures", err, r.ensures-ensures)
+	}
+	if err := fresh.Start(ctx, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Inspect(ctx, legacy); !errors.Is(err, engine.ErrNotFound) {
+		t.Fatal("the runtime from before the rename was left")
+	}
+	got, _ := fresh.Get(ctx, "alice")
+	if !got.Container.Running() || got.Container.NetworkContainer != "gateway" {
+		t.Fatalf("alice doesn't run in the new runtime: %+v", got.Container)
+	}
+}
+
+// A replacement interrupted after the computer's container was removed is
+// finished at the next startup, the runtime from before the rename removed.
+func TestUpgradeFinishesInterruptedLegacyReplacement(t *testing.T) {
+	s, e, r, conn := pairSetup(t)
+	s.Instance = "this"
+	ctx := context.Background()
+	if _, err := s.Create(ctx, "alice", Settings{Image: "img", VPNConnectionID: conn.ID}, noProgress); err != nil {
+		t.Fatal(err)
+	}
+	legacy := preRename(t, s, e, "this")
+	tr := s.Networking.transition("alice")
+	tr.Pending, tr.Repair = true, true
+	if err := s.Networking.saveRecord(tr); err != nil {
+		t.Fatal(err)
+	}
+	e.mu.Lock()
+	delete(e.cs, "deskyard-alice")
+	e.mu.Unlock()
+	fresh := reopen(t, s)
+	if err := fresh.ConfigureNetworking(s.Networking.Connections, r, s.Layout.State); err != nil {
+		t.Fatal(err)
+	}
+	if err := fresh.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Inspect(ctx, legacy); !errors.Is(err, engine.ErrNotFound) {
+		t.Fatal("the runtime from before the rename was left")
+	}
+	got, _ := fresh.Get(ctx, "alice")
+	if !got.Container.Running() || got.Container.NetworkContainer != "gateway" {
+		t.Fatalf("alice doesn't run in the new runtime: %+v", got.Container)
+	}
+}
 
 func TestVPNEnableFailureRemainsVisibleAndRecovers(t *testing.T) {
 	s, e, r, conn := pairSetup(t)

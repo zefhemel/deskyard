@@ -207,6 +207,9 @@ func (n *Networking) apply(ctx context.Context, r networkTransition, progress fu
 	if err := n.runtime.Remove(ctx, r.Name); err != nil {
 		return n.fail(r, phaseRuntimeRemove)
 	}
+	if err := s.removeLegacyRuntimes(ctx, r.Name); err != nil {
+		return n.fail(r, phaseRuntimeRemove)
+	}
 	r.RuntimeID = ""
 	n.mu.Lock()
 	delete(n.gateways, r.Name)
@@ -390,6 +393,9 @@ func (n *Networking) finishRemove(ctx context.Context, r networkTransition) erro
 		return errors.New("could not remove computer")
 	}
 	if err := n.runtime.Remove(ctx, r.Name); err != nil {
+		return errors.New("could not remove computer VPN runtime")
+	}
+	if err := s.removeLegacyRuntimes(ctx, r.Name); err != nil {
 		return errors.New("could not remove computer VPN runtime")
 	}
 	n.mu.Lock()

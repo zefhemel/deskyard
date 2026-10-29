@@ -449,3 +449,88 @@ func within(path, dir string) bool {
 	rel, err := filepath.Rel(dir, filepath.Clean(path))
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
+
+// legacyLabelComputer marks VPN runtimes and VPN test resources from before
+// environments were renamed computers: they named the computer they served
+// under this key, now vpn.LabelComputer. Nothing labels with it any more; an
+// upgraded supervisor replaces its runtimes and removes the rest.
+const legacyLabelComputer = "deskyard.vpn.environment"
+
+// legacyVPN reports whether labels are those of a VPN runtime or test
+// resource of this supervisor from before the rename.
+func (s *Service) legacyVPN(labels map[string]string) bool {
+	return labels[vpn.LabelRole] != "" && labels[legacyLabelComputer] != "" && labels[vpn.LabelInstance] == s.Instance
+}
+
+// instanceFilter selects this supervisor's VPN runtimes from the engine,
+// when it has an instance; the caller checks the labels itself.
+func (s *Service) instanceFilter() map[string]string {
+	if s.Instance == "" {
+		return nil
+	}
+	return map[string]string{vpn.LabelInstance: s.Instance}
+}
+
+// legacyRuntimes lists this supervisor's VPN runtimes for name from before
+// the rename, which its replacement removes.
+func (s *Service) legacyRuntimes(ctx context.Context, name string) ([]engine.Container, error) {
+	cs, err := s.Eng.List(ctx, s.instanceFilter())
+	if err != nil {
+		return nil, err
+	}
+	var out []engine.Container
+	for _, c := range cs {
+		if s.legacyVPN(c.Labels) && c.Labels[legacyLabelComputer] == name {
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
+// removeLegacyRuntimes removes name's VPN runtimes from before the rename,
+// once its container is out of their namespace.
+func (s *Service) removeLegacyRuntimes(ctx context.Context, name string) error {
+	cs, err := s.legacyRuntimes(ctx, name)
+	if err != nil {
+		return err
+	}
+	for _, c := range cs {
+		if err := s.Eng.Remove(ctx, c.ID); err != nil && !errors.Is(err, engine.ErrNotFound) {
+			return err
+		}
+	}
+	return nil
+}
+
+// removeLegacyLeftovers removes, at startup, this supervisor's VPN resources
+// from before the rename that serve none of the computers it networks
+// (keep): VPN test runtimes and networks a test left behind, and runtimes
+// whose computer is gone. A computer's own runtime is its replacement's to
+// remove, once its container is out of its namespace. A failure is logged;
+// a leftover serves nothing.
+func (s *Service) removeLegacyLeftovers(ctx context.Context, keep []string) {
+	cs, err := s.Eng.List(ctx, s.instanceFilter())
+	if err != nil {
+		s.Log.Warn("listing VPN runtimes from before the rename", "err", err)
+		return
+	}
+	for _, c := range cs {
+		if s.legacyVPN(c.Labels) && !slices.Contains(keep, c.Labels[legacyLabelComputer]) {
+			if err := s.Eng.Remove(ctx, c.ID); err != nil && !errors.Is(err, engine.ErrNotFound) {
+				s.Log.Warn("removing a VPN runtime from before the rename", "container", c.Name, "err", err)
+			}
+		}
+	}
+	nets, err := s.Eng.Networks(ctx, s.instanceFilter())
+	if err != nil {
+		s.Log.Warn("listing VPN test networks from before the rename", "err", err)
+		return
+	}
+	for _, n := range nets {
+		if s.legacyVPN(n.Labels) {
+			if err := s.Eng.RemoveNetwork(ctx, n.ID); err != nil && !errors.Is(err, engine.ErrNotFound) {
+				s.Log.Warn("removing a VPN test network from before the rename", "network", n.Name, "err", err)
+			}
+		}
+	}
+}

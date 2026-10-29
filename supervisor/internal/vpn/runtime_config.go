@@ -15,7 +15,7 @@ import (
 const GluetunImage = "qmcgaw/gluetun@sha256:c2ee4191762fca6b6a3c3359a731198a95d9c9af4db32d466e223bf3a84e779b"
 const (
 	LabelRole       = "deskyard.vpn.role"
-	LabelComputer   = "deskyard.vpn.environment" // the name of the computer a runtime serves
+	LabelComputer   = "deskyard.vpn.computer" // the name of the computer a runtime serves
 	LabelConnection = "deskyard.vpn.connection-id"
 	LabelRevision   = "deskyard.vpn.revision"
 	// LabelInstance is the supervisor instance owning a runtime, as on computers.

@@ -144,7 +144,7 @@ func TestRuntimePolicyLabelIsStable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const want = "305213d84161315810b2539dc92f65efc02316a570d20fd711e5cad6f9ab1bff"
+	const want = "ff2cec41973b6e1b17525efc35b970ae10739dc3e03508fce49dc3b9c09b0198"
 	if got := cfg.Spec.Labels[labelPolicy]; got != want {
 		t.Fatalf("policy label = %s, want %s", got, want)
 	}

@@ -123,6 +123,14 @@ func (n *Networking) recover(ctx context.Context, r networkTransition, retry boo
 			}
 		}
 		if !replace {
+			// A runtime from before the rename is replaced, as a lost one is.
+			legacy, err := s.legacyRuntimes(ctx, r.Name)
+			if err != nil {
+				return false, n.fail(r, phaseInspect)
+			}
+			replace = len(legacy) > 0
+		}
+		if !replace {
 			g, err := n.runtime.Ensure(ctx, r.Name, containerName(r.Name), conn.ID, def.Network.LANExceptions)
 			if err != nil || c.NetworkContainer != g.ID {
 				replace = true
@@ -202,10 +210,14 @@ func (n *Networking) startedAt(name string, retry bool) {
 
 // Reconcile runs once at startup. It finishes interrupted transitions and
 // repairs the applied state; a failed apply of a change waits for a start,
-// restart or edit, as it does for a direct computer.
+// restart or edit, as it does for a direct computer. A running computer's
+// VPN runtime from before the rename is replaced; a stopped one's is left
+// for its start. Other VPN resources from before the rename are removed.
 func (n *Networking) Reconcile(ctx context.Context) error {
 	var errs []error
-	for _, name := range n.names() {
+	names := n.names()
+	n.service.removeLegacyLeftovers(ctx, names)
+	for _, name := range names {
 		unlock, err := n.lock(ctx, name)
 		if err == nil {
 			_, err = n.recover(ctx, n.transition(name), false)
