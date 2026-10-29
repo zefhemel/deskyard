@@ -246,3 +246,22 @@ def test_existing_home_at_stock_look_gets_arc_once(make_sandbox, volumes, image)
     b.remove()
     c = make_sandbox()
     assert c.exec("xfconf-query -c xsettings -p /Net/ThemeName").stdout.strip() == "Greybird"
+
+
+def test_alt_click_reaches_applications(sandbox):
+    """XFWM must leave Alt-click for applications, including migrated homes."""
+    script = REPO / "native" / "xfce-alt-click.py"
+    docker("cp", str(script), f"{sandbox.name}:/tmp/xfce-alt-click.py")
+    sandbox.exec("/opt/selkies/bin/python /tmp/xfce-alt-click.py", timeout=30)
+
+
+def test_saved_alt_window_modifier_migrates_once(sandbox):
+    """Startup migrates old homes, then leaves later user choices alone."""
+    modifier = "xfconf-query -c xfwm4 -p /general/easy_click"
+    assert sandbox.exec(modifier).stdout.strip() == "Super"
+    sandbox.exec(f"{modifier} -s Alt && rm -f ~/.config/workspace/window-modifiers-v1")
+    sandbox.restart()
+    assert sandbox.exec(modifier).stdout.strip() == "Super"
+    sandbox.exec(f"{modifier} -s Alt")
+    sandbox.restart()
+    assert sandbox.exec(modifier).stdout.strip() == "Alt"

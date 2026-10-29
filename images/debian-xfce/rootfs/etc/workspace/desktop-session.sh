@@ -4,6 +4,7 @@ session_configure() {
         || xfconf-query -c xfce4-session -p /general/SaveOnExit -n -t bool -s true
     /usr/local/bin/workspace-migrate-panel
     /usr/local/bin/workspace-migrate-appearance
+    /usr/local/bin/workspace-migrate-window-modifiers
     /usr/local/bin/workspace-migrate-thunar
 }
 session_start() { startxfce4; }
