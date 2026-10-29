@@ -9,7 +9,7 @@ import pytest
 import requests
 from playwright.sync_api import sync_playwright
 
-from conftest import free_port
+from conftest import docker, free_port
 from helpers import make_credential, wait_until
 
 
@@ -19,6 +19,51 @@ def test_status_and_exec(remote):
     assert r.stdout.strip() == b"1000"
     r = remote("-e", remote.name, "exec", "--", "sh", "-c", "exit 5", check=False)
     assert r.returncode == 5
+
+
+def test_runtime_cli_updates_without_desktop_recreation(supervisor, remote):
+    """New execs see an atomic CLI replacement through the read-only mount."""
+    container = f"deskyard-{remote.name}"
+    before = json.loads(docker("inspect", container).stdout)[0]
+    mounts = [m for m in before["Mounts"] if m["Destination"] == "/opt/deskyard/cli"]
+    if not mounts:
+        pytest.skip("legacy image uses its baked-in CLI")
+    assert len(mounts) == 1 and not mounts[0]["RW"], mounts
+    arch = json.loads(docker("image", "inspect", before["Image"]).stdout)[0]["Architecture"]
+    assert mounts[0]["Source"].endswith(f"/state/cli/linux-{arch}")
+
+    def inside(*args):
+        return remote("-e", remote.name, "exec", "--", *args).stdout.strip()
+
+    assert inside("readlink", "/usr/local/bin/deskyard") == b"/opt/deskyard/cli/deskyard"
+    original = inside("sha256sum", "/usr/local/bin/deskyard")
+    version = inside("/usr/local/bin/deskyard", "--version")
+    path = f"/data/state/cli/linux-{arch}/deskyard"
+    # An appended marker changes the executable bytes without changing ELF
+    # behavior, so no extra platform build is needed for the replacement.
+    docker("exec", supervisor.container, "sh", "-c",
+           f"cp {path} {path}.saved && cp {path} {path}.next && "
+           f"printf runtime-test >> {path}.next && mv {path}.next {path}")
+    try:
+        assert inside("sha256sum", "/usr/local/bin/deskyard") != original
+        assert inside("/usr/local/bin/deskyard", "--version") == version
+        denied = docker("exec", "-u", "0", container, "sh", "-c",
+                        "echo forbidden > /opt/deskyard/cli/new-file", check=False)
+        assert denied.returncode != 0 and "Read-only file system" in denied.stderr, denied
+        after = json.loads(docker("inspect", container).stdout)[0]
+        assert after["Id"] == before["Id"]
+        assert after["State"]["StartedAt"] == before["State"]["StartedAt"]
+    finally:
+        docker("exec", supervisor.container, "mv", f"{path}.saved", path)
+
+    # The restore above is deliberately root-owned, like an administrator's
+    # restore. An unchanged executable must not require chmod at startup.
+    supervisor.stop()
+    supervisor.start()
+    assert inside("/usr/local/bin/deskyard", "--version") == version
+    restarted = json.loads(docker("inspect", container).stdout)[0]
+    assert restarted["Id"] == before["Id"]
+    assert restarted["State"]["StartedAt"] == before["State"]["StartedAt"]
 
 
 def test_environment_flag_and_saved_server(cli, remote, tmp_path):

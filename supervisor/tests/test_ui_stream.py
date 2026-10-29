@@ -291,8 +291,13 @@ def test_selkies_saved_settings_ignored(supervisor, desktop, name):
         follows = lambda: all(abs(v - w) <= 8 for v, w in zip(screen_size(name), frame))  # noqa: E731
         assert wait_until(follows, 10), (screen_size(name), frame)
         assert not (video_settings_lines(name) or [""])[-1].endswith("500 kbps, 10 fps."), video_settings_lines(name)[-2:]
-        # (Selkies saves what it streams with again as it goes.)
+        # Selkies saves the owner's resolved physical size again as it goes.
+        # The transport intentionally uses manual_resolution=true even when
+        # the public Display setting is Auto fit; assert the user's setting
+        # and absence of stale dimensions/quality rather than that private flag.
         kept = page.evaluate(f"""() => ['manual_resolution', 'manual_width', 'manual_height', 'video_bitrate', 'framerate']
             .map(k => localStorage.getItem('{prefix}' + k))""")
-        assert kept[0] != "true" and "640" not in kept and "500" not in kept and "10" not in kept, kept
+        assert "640" not in kept and "480" not in kept and "500" not in kept and "10" not in kept, kept
+        page.get_by_role('button', name='Display', exact=True).click()
+        expect(page.get_by_role('menuitemcheckbox', name='Resolution: Auto fit', exact=True)).to_have_attribute('aria-checked', 'true')
         browser.close()

@@ -1,6 +1,8 @@
 """Retina density, runtime overrides and shared display ownership."""
+import json
+
 import pytest
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 from helpers import SCREEN, PICTURE, signed_in, in_desktop, wait_until, screen_size, mouse_location, to_page
 
 
@@ -39,8 +41,35 @@ def follows_request(name, page):
 
 
 def panel_height(name):
-    area = in_desktop(name, "xprop", "-root", "_NET_WORKAREA").split("=", 1)[1]
-    return screen_size(name)[1] - int(area.split(",")[3])
+    # Measure GTK's actual dock window. XFWM's cached _NET_WORKAREA can lag a
+    # simultaneous RandR/GTK density change even when the panel and its
+    # _NET_WM_STRUT_PARTIAL have the correct size.
+    windows = in_desktop(name, "xdotool", "search", "--onlyvisible", "--class", "^Xfce4-panel$", check=False).split()
+    for window in windows:
+        if "_NET_WM_WINDOW_TYPE_DOCK" in in_desktop(name, "xprop", "-id", window, "_NET_WM_WINDOW_TYPE", check=False):
+            geometry = in_desktop(name, "xdotool", "getwindowgeometry", "--shell", window, check=False)
+            bounds = {k: int(v) for k, v in (line.split("=", 1) for line in geometry.splitlines())}
+            if not {"X", "Y", "WIDTH", "HEIGHT"} <= bounds.keys():
+                continue  # The dock may be remapping during the resize.
+            width, height = screen_size(name)
+            if (bounds["X"] >= 0 and bounds["Y"] >= 0
+                    and bounds["X"] + bounds["WIDTH"] <= width
+                    and bounds["Y"] + bounds["HEIGHT"] <= height):
+                return bounds["HEIGHT"]
+    return 0
+
+
+def panel_diagnostics(name):
+    return {
+        "screen": screen_size(name),
+        "workarea": in_desktop(name, "xprop", "-root", "_NET_WORKAREA"),
+        "panels": in_desktop(name, "bash", "-lc", """
+            for window in $(xdotool search --onlyvisible --class '^Xfce4-panel$'); do
+                xdotool getwindowgeometry --shell "$window"
+                xprop -id "$window" _NET_WM_WINDOW_TYPE _NET_WM_STRUT_PARTIAL
+            done
+        """),
+    }
 
 
 def choose(page, item):
@@ -71,6 +100,57 @@ def test_retina_owner_streams_at_twice_the_frame(owner, name):
     assert abs(requested_size(owner)[0] - 2 * frame_width) <= 2, (requested_size(owner), frame_width)
     assert setting(name, "/Xft/DPI") == "192"
     assert setting(name, "/Gdk/UnscaledDPI") == "98304"
+    assert pointer_lands(owner, name)
+
+
+def test_returning_from_a_terminal_keeps_the_requested_display(owner, name):
+    """Returning from a terminal recreates the viewer. Its handshake must not
+    briefly resize the desktop to the iframe's unscaled CSS size."""
+    assert wait_until(lambda: scale_factor(name) == "2")
+    messages = []
+    resolutions = []
+
+    def watch_socket(socket):
+        if "/screen/" not in socket.url:
+            return
+        socket.on("framesent", lambda data: messages.append(data))
+
+        def received(data):
+            if not isinstance(data, str) or not data.startswith("{"):
+                return
+            value = json.loads(data)
+            if value.get("type") == "stream_resolution" and value.get("displayId") == "primary":
+                resolutions.append([value["width"], value["height"]])
+
+        socket.on("framereceived", received)
+
+    owner.on("websocket", watch_socket)
+    owner.get_by_role("button", name="New terminal", exact=True).click()
+    expect(owner.locator("[data-terminal-pane]:not([hidden]) [data-terminal-state=connected]")).to_be_attached(timeout=15000)
+    for _ in range(3):
+        messages.clear()
+        resolutions.clear()
+        owner.get_by_role("tab", name="Desktop", exact=True).click()
+        owner.wait_for_function(f"{SCREEN}?.display().owner === true")
+        assert follows_request(name, owner)
+        owner.wait_for_timeout(500)  # Include delayed upstream auto-resize.
+        desired = list(requested_size(owner))
+        assert resolutions and all(size == desired for size in resolutions), resolutions
+        for message in messages:
+            if not isinstance(message, str):
+                continue
+            if message.startswith("r,"):
+                assert message.split(",")[1] == f"{desired[0]}x{desired[1]}", message
+            elif message.startswith("s,"):
+                assert message.split(",")[1] == "192", message
+            elif message.startswith("SETTINGS,"):
+                settings = json.loads(message[9:])
+                assert "initialClientWidth" not in settings and "initialClientHeight" not in settings, settings
+                assert settings.get("scaling_dpi", 192) == 192, settings
+        assert scale_factor(name) == "2"
+        owner.get_by_role("tab").nth(1).click()
+    owner.get_by_role("tab", name="Desktop", exact=True).click()
+    owner.wait_for_function(f"{SCREEN}?.display().owner === true")
     assert pointer_lands(owner, name)
 
 
@@ -119,9 +199,12 @@ def test_auto_scaling_follows_the_pixel_ratio(owner, name):
 
 def test_successor_owner_applies_its_own_density(owner, name, supervisor):
     assert wait_until(lambda: scale_factor(name) == "2")
+    # Finish the old owner's native resize before testing ownership handover.
+    assert follows_request(name, owner)
+    assert wait_until(lambda: 80 <= panel_height(name) <= 84)
     successor = open_page(owner.context, supervisor.base, name, 1, owner=False)
     owner.close()
     successor.wait_for_function(f"{SCREEN}?.display().owner === true")
     assert wait_until(lambda: scale_factor(name) == "1")
-    assert wait_until(lambda: 40 <= panel_height(name) <= 42)
+    assert wait_until(lambda: 40 <= panel_height(name) <= 42), panel_diagnostics(name)
     assert follows_request(name, successor)

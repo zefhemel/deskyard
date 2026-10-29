@@ -61,10 +61,14 @@ available viewport. The stream fits proportionally within 3840×2160, so larger
 windows may not achieve a full two physical pixels per logical pixel.
 
 The first viewer controls resolution and scaling for the shared desktop.
+Returning to Desktop from a terminal reconnects the stream while preserving
+the current display size until the viewer's scaling preference is applied.
 Other viewers fit that same picture to their windows. Some applications may
 need reopening to adopt a scale change. Full scaling support requires both an
 updated supervisor and an updated desktop image; upgrade existing environments
 from their image settings after the new image is available.
+After a density change, XFCE can retain a stale work area even though the
+panel scales correctly, allowing maximized windows to overlap the panel.
 
 ## Mobile controls
 
@@ -129,13 +133,15 @@ The create/join walkthrough, screenshots, native keyboard evidence and known lim
 
 The terminal keyboard bar is hidden by default on devices whose primary pointer supports fine movement and hover (typically a laptop or desktop), and shown on touch-first devices. Browsers do not report physical keyboard attachment reliably. Use **Keys → Show keyboard bar** (or **⋯ → Show keyboard bar** on phones) to override the choice for the current terminal tab. Hiding it gives the terminal the space back and clears any one-shot Ctrl/Alt modifiers.
 
-On phones, tap **Keyboard** to open the software keyboard. The compact, single-row key bar scrolls sideways and provides Ctrl+C/D/L, Esc, Tab, arrows, Home/End, PgUp/PgDn and Delete, plus one-shot Ctrl and Alt. Helper taps keep the keyboard open; paste and composition clear modifiers. On short keyboard viewports the environment toolbar shares the bottom key row as a horizontally scrollable strip. If the browser leaves less than the minimum space for a readable terminal row and 44px controls, the page asks you to rotate to portrait or dismiss the keyboard; the shell stays connected. **History** opens tmux history: use PgUp/PgDn, then Esc to return. Mouse-wheel and
+On phones, tap **Keyboard** to open the software keyboard. The compact, single-row key bar scrolls sideways and provides Ctrl+C/D/L, Esc, Tab, arrows, Home/End, PgUp/PgDn and Delete, plus one-shot Ctrl and Alt. Helper taps keep the keyboard open; paste and composition clear modifiers. On short keyboard viewports the environment toolbar shares the bottom key row as a horizontally scrollable strip. If the browser leaves less than the minimum space for a readable terminal row and 44px controls, the page asks you to rotate to portrait or dismiss the keyboard; the shell stays connected. **History** opens tmux history: use PgUp/PgDn, then Esc to return. Drag the terminal output down with one finger to reveal older history, or up
+to move toward live output. Taps still focus the terminal; horizontal and
+multi-finger gestures do not send terminal input. Mouse-wheel and
 two-finger trackpad gestures over a terminal tab also scroll its shared tmux
 history; the first upward movement scrolls immediately. Mouse-aware applications
 (such as `less --mouse` or Vim with mouse support enabled) receive the wheel
 events themselves. For local text selection in a browser terminal, hold Shift
-while dragging on Linux/Windows, or Option on Mac. These terminal defaults need
-an updated desktop image; Mac Option selection also needs the updated supervisor. The font stays readable when clients have different sizes; a passive smaller client may show a cropped tmux view until it interacts.
+while dragging on Linux/Windows, or Option on Mac. Finger scrolling is supplied by the updated supervisor UI. The tmux mouse
+scrolling defaults need an updated desktop image; Mac Option selection also needs the updated supervisor. The font stays readable when clients have different sizes; a passive smaller client may show a cropped tmux view until it interacts.
 
 `deskyard -e alice terminal` joins the environment's shared Bash login shell in `/workspace`; `deskyard terminal build-2` selects another named shell. Inside the environment, ordinary terminal windows and tabs (including **Deskyard Terminal**, the default terminal shortcut and file-manager terminal actions) each open a new shared shell named `terminal-1`, `terminal-2`, and so on, preserving their starting directory. The window/tab title shows the session name, and the browser shows it as a tab. When sessions are already running, the desktop's **Deskyard Terminal** launcher first lists them with their attached clients and running program: type a number to join one, or press Enter for a new session. Within a native shared terminal, press **Ctrl-B then s** and choose its name; outside tmux, `deskyard terminal NAME` joins it. Browser clients switch tabs; remote CLI clients detach and reconnect with the chosen name. Saved emulator defaults migrate at desktop startup; explicit emulator command launches such as `xfce4-terminal -x PROGRAM` still run the requested program directly. Run `deskyard terminal` locally to join `main`. Session names contain 1–64 letters, digits, underscores or dashes and start with a letter or digit. Detach with Ctrl-B then D; reconnecting joins the same shell and running jobs. Sessions end when the environment stops or restarts. Existing environments need an updated image with tmux and the shared terminal helper.
 

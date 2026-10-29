@@ -31,7 +31,10 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     # Once, in the main process: xdist's workers inherit AC_IMAGE.
-    if os.environ.get("PYTEST_XDIST_WORKER") or os.environ.get("AC_IMAGE") or config.option.collectonly:
+    if os.environ.get("PYTEST_XDIST_WORKER") or config.option.collectonly:
+        return
+    subprocess.run(["make", "-C", str(REPO.parent.parent / "supervisor"), "cli-linux"], check=True)
+    if os.environ.get("AC_IMAGE"):
         return
     tag = "deskyard-debian-xfce:test"
     subprocess.run(["docker", "build", "-q", "-t", tag, "-f", str(REPO.parent / "Dockerfile"), "--target", "debian-xfce", str(REPO.parent.parent)], check=True,

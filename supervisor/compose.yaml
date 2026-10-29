@@ -2,11 +2,11 @@
 # this folder:
 #
 #   make linux                          # the binary for the engine's Linux
-#   docker compose up -d --build
+#   docker compose up -d --build --force-recreate
 #   docker compose logs supervisor      # first start: the generated admin password
 #
 # then open http://localhost:7343. After a change, run make linux and
-# docker compose restart (or just make dev, which does the same without
+# docker compose up -d --force-recreate (or just make dev, which does the same without
 # Compose). Only the base image is built, from the Dockerfile; the binary is
 # mounted over it, so a code change needs no image build. The data folder is
 # DESKYARD_DEV_DATA (default ../test-instance), mounted at /data.
@@ -32,6 +32,12 @@ services:
       - type: bind
         source: ./bin/deskyard-supervisor-linux
         target: /usr/local/bin/deskyard-supervisor
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./bin/desktop-cli
+        target: /opt/deskyard/cli
         read_only: true
         bind:
           create_host_path: false

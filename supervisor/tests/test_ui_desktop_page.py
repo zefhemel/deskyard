@@ -40,9 +40,12 @@ def test_desktop_page_shows_stream(supervisor, desktop, name, browser_name, tmp_
         browser, page = signed_in(p, supervisor.base, browser=browser_name)
         open_desktop(page, supervisor.base, name)
         assert page.frames[1].url == f"{supervisor.base}/{name}/screen/"
-        # The picture fills the frame, at the frame's size.
-        pic = page.evaluate(PICTURE)
-        assert abs(pic["width"] - pic["frameWidth"]) <= 2 and abs(pic["height"] - pic["frameHeight"]) <= 2, pic
+        # A first picture can precede the owner's asynchronous Auto-fit resize.
+        # Require the same full-frame geometry once that policy has settled.
+        def fills_frame():
+            pic = page.evaluate(PICTURE)
+            return abs(pic["width"] - pic["frameWidth"]) <= 2 and abs(pic["height"] - pic["frameHeight"]) <= 2
+        assert wait_until(fills_frame), page.evaluate(PICTURE)
         # Selkies' own sidebar and controls are nowhere; ours are, in the spec's order.
         visible = page.frames[1].evaluate("""() => [...document.querySelectorAll('[class*="sidebar"], [id*="sidebar"]')]
             .filter(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'; })

@@ -81,6 +81,8 @@
 }
 .terminal-host .xterm {
   height: 100%;
+  /* Vertical swipes use xterm wheel reports; preserve sideways/pinch gestures. */
+  touch-action: pan-x pinch-zoom;
 }
 .terminal-host .xterm-helper-textarea {
   font-size: 16px !important;

@@ -664,3 +664,36 @@ def test_trackpad_wheel_scrolls_terminal_tab_history(supervisor, desktop, name):
         command(page, 'printf scroll-finished > /workspace/trackpad-scroll-proof')
         eventually(lambda: shell(name, 'cat /workspace/trackpad-scroll-proof 2>/dev/null || true'), 'scroll-finished')
         browser.close()
+
+
+def test_finger_swipes_scroll_terminal_tab_history(supervisor, desktop, name):
+    with sync_playwright() as p:
+        browser, page = signed_in(p, supervisor.base, viewport={"width": 390, "height": 844},
+                                  has_touch=True, is_mobile=True)
+        open_terminal(page, supervisor.base, name)
+        command(page, "printf 'touch-row-%03d\\n' {1..300}")
+        eventually(lambda: int(pane(name, 'history_size')) > 200, True)
+        bounds = page.locator(f'{ACTIVE} .xterm-screen').bounding_box()
+        x = bounds['x'] + bounds['width'] / 2
+        top = bounds['y'] + bounds['height'] * .25
+        bottom = bounds['y'] + bounds['height'] * .75
+        cdp = page.context.new_cdp_session(page)
+
+        def swipe(start, end):
+            cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': x, 'y': start}]})
+            for step in range(1, 13):
+                cdp.send('Input.dispatchTouchEvent', {'type': 'touchMove', 'touchPoints':
+                         [{'x': x, 'y': start + (end - start) * step / 12}]})
+                page.wait_for_timeout(20)
+            cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
+
+        # Drag content down to reveal older tmux output, then back toward live.
+        swipe(top, bottom)
+        eventually(lambda: pane(name, 'pane_in_mode'), '1')
+        eventually(lambda: int(pane(name, 'scroll_position') or '0') > 0, True)
+        position = int(pane(name, 'scroll_position'))
+        swipe(bottom, top)
+        eventually(lambda: int(pane(name, 'scroll_position') or '0') < position, True)
+        page.keyboard.press('Escape')
+        eventually(lambda: pane(name, 'pane_in_mode'), '0')
+        browser.close()
