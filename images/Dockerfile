@@ -93,6 +93,8 @@ RUN --mount=type=bind,from=flatpak,source=/out/debs,target=/tmp/flatpak-debs \
         x11-utils xdg-utils inotify-tools fonts-dejavu-core fonts-noto-color-emoji fonts-liberation2 \
         chromium socat xdotool xclip maim flatpak git openssh-client tmux /tmp/flatpak-debs/*.deb \
         pipewire pipewire-pulse wireplumber pulseaudio-utils \
+        # Native compilation tools are available in every desktop.
+        build-essential \
         # Everyday command-line basics -slim leaves out.
         vim nano less file htop wget rsync jq bash-completion lsof \
         zip unzip xz-utils bzip2 7zip iputils-ping dnsutils netcat-openbsd \

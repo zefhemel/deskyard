@@ -24,7 +24,9 @@ Arc Dark with Papirus icons; Greybird (Xubuntu's theme) can be chosen in
 Settings › Appearance. Existing computers move to the taskbar and the new
 look once, unless their owner has already changed those settings. Command-line basics are there too:
 `vim`, `nano`, `less`, `htop`, `wget`, `rsync`, `jq`, `file`, `lsof`,
-zip/xz/bzip2/7-Zip, `ping`, `dig` and `nc`.
+zip/xz/bzip2/7-Zip, `ping`, `dig` and `nc`. The shared runtime includes
+`build-essential`: GCC, G++, Make and the standard C development headers.
+Existing environments receive these tools after upgrading to an image that includes them.
 
 Open **Software** from the desktop application menu to find
 and install Flatpak apps such as LibreOffice. Flathub is configured for the
