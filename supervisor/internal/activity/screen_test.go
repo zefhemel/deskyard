@@ -13,10 +13,10 @@ func TestParseScreenArgv(t *testing.T) {
 		want ScreenAction
 	}{
 		{[]string{"deskyard", "click", "10", "20"}, ScreenAction{Action: "click", Pos: []int{10, 20}, Button: "left"}},
-		{[]string{"/usr/local/bin/deskyard", "-e", "alice", "drag", "1", "2", "3", "4"}, ScreenAction{Action: "drag", Pos: []int{1, 2, 3, 4}}},
-		{[]string{"deskyard", "--environment=alice", "scroll", "5", "6", "down"}, ScreenAction{Action: "scroll", Pos: []int{5, 6}, Dir: "down", N: 3}},
-		{[]string{"deskyard", "--environment", "a", "scroll", "5", "6", "up", "7"}, ScreenAction{Action: "scroll", Pos: []int{5, 6}, Dir: "up", N: 7}},
-		{[]string{"deskyard", "-e=alice", "click", "1", "2"}, ScreenAction{Action: "click", Pos: []int{1, 2}, Button: "left"}},
+		{[]string{"/usr/local/bin/deskyard", "-c", "alice", "drag", "1", "2", "3", "4"}, ScreenAction{Action: "drag", Pos: []int{1, 2, 3, 4}}},
+		{[]string{"deskyard", "--computer=alice", "scroll", "5", "6", "down"}, ScreenAction{Action: "scroll", Pos: []int{5, 6}, Dir: "down", N: 3}},
+		{[]string{"deskyard", "--computer", "a", "scroll", "5", "6", "up", "7"}, ScreenAction{Action: "scroll", Pos: []int{5, 6}, Dir: "up", N: 7}},
+		{[]string{"deskyard", "-c=alice", "click", "1", "2"}, ScreenAction{Action: "click", Pos: []int{1, 2}, Button: "left"}},
 		{[]string{"deskyard", "double-click", "7", "8"}, ScreenAction{Action: "double-click", Pos: []int{7, 8}}},
 		{[]string{"deskyard", "triple-click", "7", "8"}, ScreenAction{Action: "triple-click", Pos: []int{7, 8}}},
 		{[]string{"deskyard", "move", "7", "8"}, ScreenAction{Action: "move", Pos: []int{7, 8}}},
@@ -44,9 +44,10 @@ func TestParseScreenArgv(t *testing.T) {
 		{"deskyard", "zoom", "5", "5", "1", "1"}, {"deskyard", "type"}, {"deskyard", "key"},
 		{"deskyard", "hold-key", "shift", "soon"}, {"deskyard", "click", "99999999999999999999", "2"},
 		{"deskyard", "-h", "click", "1", "2"}, {"deskyard", "--bogus", "click", "1", "2"},
-		{"deskyard", "-e"}, {"deskyard", "-e=", "click", "1", "2"}, {"deskyard", "--environment=", "click", "1", "2"},
+		{"deskyard", "-c"}, {"deskyard", "-c=", "click", "1", "2"}, {"deskyard", "--computer=", "click", "1", "2"},
+		{"deskyard", "-e", "x", "click", "1", "2"}, {"deskyard", "--environment=x", "click", "1", "2"},
 		{"deskyard", "-d", "alice", "click", "1", "2"}, {"deskyard", "--desktop", "alice", "click", "1", "2"},
-		{"deskyard", "--desktop=alice", "click", "1", "2"}, {"deskyard", "-c=x", "click", "1", "2"},
+		{"deskyard", "--desktop=alice", "click", "1", "2"},
 	}
 	for _, argv := range bad {
 		if got, good := ParseScreenArgv(argv); good {

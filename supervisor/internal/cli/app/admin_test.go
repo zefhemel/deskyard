@@ -189,7 +189,7 @@ func TestAdminVolumes(t *testing.T) {
 	f.Answer("GET /api/volumes", clitest.Answer{JSON: map[string]any{"volumes": []any{map[string]any{"name": "photos", "kind": "local", "folder": "volume/photos/",
 		"created": "2026-10-01T10:00:00Z", "computers": []any{map[string]any{"name": "alice", "readOnly": true}}}}}})
 	r := h.run("volume", "list")
-	if r.code != 0 || !strings.Contains(r.stdout, "photos") || !strings.Contains(r.stdout, "alice (read-only)") {
+	if r.code != 0 || !strings.Contains(r.stdout, "photos") || !strings.Contains(r.stdout, "alice (read-only)") || !strings.Contains(r.stdout, "NAME    COMPUTERS") {
 		t.Errorf("volume list: %+v", r)
 	}
 	wantCall(t, f, "GET", "/api/volumes", "", "")

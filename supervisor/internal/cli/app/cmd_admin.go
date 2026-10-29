@@ -582,17 +582,17 @@ func runVolumeList(a *App, c *call) error {
 		return nil
 	}
 	tw := tabwriter.NewWriter(a.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tENVIRONMENTS\tFOLDER\tCREATED")
+	fmt.Fprintln(tw, "NAME\tCOMPUTERS\tFOLDER\tCREATED")
 	for _, v := range list.Volumes {
-		var envs []string
+		var computers []string
 		for _, e := range v.Computers {
 			if e.ReadOnly {
-				envs = append(envs, e.Name+" (read-only)")
+				computers = append(computers, e.Name+" (read-only)")
 			} else {
-				envs = append(envs, e.Name)
+				computers = append(computers, e.Name)
 			}
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", v.Name, dash(strings.Join(envs, ", ")), v.Folder, when(v.Created))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", v.Name, dash(strings.Join(computers, ", ")), v.Folder, when(v.Created))
 	}
 	return tw.Flush()
 }

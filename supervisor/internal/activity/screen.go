@@ -32,7 +32,7 @@ var (
 )
 
 // ParseScreenArgv recognises a `deskyard` command line that acts on the
-// screen: argv[0]'s base name is deskyard, the global -e/--environment option
+// screen: argv[0]'s base name is deskyard, the global -c/--computer option
 // may come first, and the first other argument is a screen command whose
 // arguments are valid. Anything else (a shell wrapper, exec, help) is not.
 func ParseScreenArgv(argv []string) (ScreenAction, bool) {
@@ -46,13 +46,13 @@ func ParseScreenArgv(argv []string) (ScreenAction, bool) {
 	for len(rest) > 0 {
 		a := rest[0]
 		switch {
-		case a == "-e" || a == "--environment":
+		case a == "-c" || a == "--computer":
 			if len(rest) < 2 || rest[1] == "" {
 				return ScreenAction{}, false
 			}
 			rest = rest[2:]
 			continue
-		case strings.HasPrefix(a, "-e="), strings.HasPrefix(a, "--environment="):
+		case strings.HasPrefix(a, "-c="), strings.HasPrefix(a, "--computer="):
 			if _, v, _ := strings.Cut(a, "="); v == "" {
 				return ScreenAction{}, false
 			}
