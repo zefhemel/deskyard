@@ -33,6 +33,10 @@ def patch(client: Path):
             raise ValueError(f'v1 hook expected {count} occurrences, found {actual}: {old}')
         source = source.replace(old, new)
 
+    # Option must remain a held Linux Alt modifier for clicks and drags.
+    # Keep the neighbouring Command/Super mappings and native key-up tracking.
+    replace(';case P.XK_Alt_L:i=P.XK_Mode_switch;break;case P.XK_Alt_R:i=P.XK_ISO_Level3_Shift', '')
+
     replace('window.selkiesTransport=u', f'window.selkiesTransport=u,{H}.transport(u)')
     replace('window.selkiesTransport=null', f'window.selkiesTransport=null,{H}.transport(null)')
     replace('ke.href', f'{H}.url(ke.href)', 2)

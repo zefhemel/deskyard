@@ -31,6 +31,15 @@ command lines are hidden. Live UI updates and these marks use WebSockets, so
 several viewer tabs also work over plain HTTP without occupying the browser's
 limited HTTP connections.
 
+## Keyboard modifiers
+
+On Mac, both Option keys are sent to the desktop as held Linux Alt keys,
+so Option-click and Option-drag work as Alt-click and Alt-drag. This needs
+an updated desktop image. Option acts as remote Alt rather than macOS's
+alternate-character modifier. Ctrl and Shift retain their normal behavior.
+Focus the desktop before pressing a modifier; a key held before the desktop
+gains focus may not reach it.
+
 ## Paste an image
 
 Paste a screenshot or copied image into the desktop view or a terminal tab
