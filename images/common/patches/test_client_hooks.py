@@ -26,6 +26,9 @@ class ClientHooksTest(unittest.TestCase):
             source = (client / 'src/selkies-core.js').read_text()
             self.assertTrue(source.startswith((ROOT / 'client_defaults.js').read_text()), 'every executable bundle needs the bare-client contract before its hook call sites')
             self.assertIn('window.__deskyardHooks.transport(u)', source)
+            import subprocess
+            for name in module.CORE_FILES:
+                subprocess.run(['node', str(ROOT / 'test_mac_alt.js'), str(client / name)], check=True)
             self.assertEqual(source.count('navigator.mediaDevices.getUserMedia('), 1, 'only the native default may acquire capture directly')
             self.assertIn('!window.__deskyardHooks.pointerMoveOnly&&', source)
             with self.assertRaisesRegex(ValueError, 'SHA-256'):

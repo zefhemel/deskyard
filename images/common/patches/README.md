@@ -55,3 +55,9 @@ The `flatpak` stage builds the CLI and shared library together, runs the determi
 size. This makes GTK panels and widgets follow the viewer's 1×/2× desktop
 scaling without applying font scaling twice. It uses the existing session-bus
 lookup and bounded command execution, and reverses both settings at 1×.
+
+## Mac Alt modifiers
+
+`client_hooks.py` removes the pinned client's Mac/iOS Option-to-Mode_switch/ISO_Level3_Shift mapping in both bundles. Both Option keys retain ordinary held Linux Alt key-down/key-up semantics for mouse clicks and drags; Command mappings and Ctrl/Shift remain unchanged. This is an image-client change, so existing desktops need an image upgrade. It chooses remote Alt semantics over macOS alternate-character modifier behavior.
+
+With a downloaded Selkies 2.1.0 wheel, run `SELKIES_WHEEL=/path/to/selkies-2.1.0-py3-none-any.whl python3 -m unittest discover -s images/common/patches -p 'test_client_hooks.py'`. The package test patches both SHA-checked bundles and runs `test_mac_alt.js` against each: the actual key handlers and wire-send method must retain Alt until key-up on Mac, iOS, Linux and Windows; Ctrl/Shift checks cover unaffected paths. It also tests the native hook defaults and rejects changed client bundles. These checks require Node and do not replace physical Mac browser verification.
