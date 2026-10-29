@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 // These guards must run before any host helper is started.
@@ -183,7 +183,7 @@ func TestReclaimMemoryResultAndFailures(t *testing.T) {
 		if r.StatusCode != tc.want {
 			t.Fatalf("got %d want %d", r.StatusCode, tc.want)
 		}
-		if len(s.Environments.Busy()) != 0 {
+		if len(s.Computers.Busy()) != 0 {
 			t.Fatal("failure left desktop busy")
 		}
 		if !s.memoryReclaim.Enabled {
@@ -221,7 +221,7 @@ func TestReclaimMemoryExcludesConcurrentOperations(t *testing.T) {
 			t.Errorf("%s: %d", action, got)
 		}
 	}
-	if c, err := s.Environments.Get(context.Background(), "bob"); err != nil || c.State != "running" {
+	if c, err := s.Computers.Get(context.Background(), "bob"); err != nil || c.State != "running" {
 		t.Fatal("reclaim changed the running state", c.State, err)
 	}
 	// release before test-server cleanup waits for the handler.
@@ -260,7 +260,7 @@ func TestPowerPublishesFinalStateWithReservation(t *testing.T) {
 		}
 		select {
 		case ev := <-events:
-			c, ok := ev.data.(environments.Environment)
+			c, ok := ev.data.(computers.Computer)
 			if !ok || c.State != tc.state {
 				t.Fatalf("%s published %+v", tc.action, ev.data)
 			}

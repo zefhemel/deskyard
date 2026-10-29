@@ -1,8 +1,8 @@
-// An environment's desktop in a monitor bezel: the live thumbnail when it runs,
+// A computer's desktop in a monitor bezel: the live thumbnail when it runs,
 // Start when it's stopped, progress while it's busy.
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
-import { api, type AgentPresence, type Environment, type Job } from "../api.ts";
+import { api, type AgentPresence, type Computer, type Job } from "../api.ts";
 import { badgeLabel } from "../lib/activity-format.ts";
 import { Avatars } from "./avatar.tsx";
 import { Button, cx, errorMessage, Progress } from "./ui.tsx";
@@ -36,7 +36,7 @@ export function ViewersBadge({
 }
 
 interface MonitorProps {
-  environment: Environment;
+  computer: Computer;
   job?: Job | undefined;
   now: number;
   big?: boolean;
@@ -44,7 +44,7 @@ interface MonitorProps {
   href?: string;
 }
 
-export function Monitor({ environment: c, job, now, big, href }: MonitorProps) {
+export function Monitor({ computer: c, job, now, big, href }: MonitorProps) {
   const [startError, setStartError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [broken, setBroken] = useState(false);

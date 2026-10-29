@@ -1,4 +1,4 @@
-// Who is viewing an environment's desktop, and the port mappings agents set up with
+// Who is viewing a computer's desktop, and the port mappings agents set up with
 // `deskyard forward`. The popover is the desktop bar's; ForwardLines is also
 // the details page's "viewing" card.
 import { useEffect, useRef, useState } from "preact/hooks";
@@ -93,7 +93,7 @@ export function ViewersPopover({
   mics: string[];
   forwards: Forward[];
   agents: AgentPresence[];
-  /** Whether the reader may see the environment's shares (full access, not a share). */
+  /** Whether the reader may see the computer's shares (full access, not a share). */
   canShare?: boolean;
   onClose: () => void;
 }) {
@@ -165,7 +165,7 @@ export function ViewersPopover({
 }
 
 
-/** The shares of the environment the reader may revoke: an admin all of them, others their own. */
+/** The shares of the computer the reader may revoke: an admin all of them, others their own. */
 function useRevocableShares(name: string, enabled: boolean): Set<string> {
   const { me } = useLive();
   const [names, setNames] = useState<Set<string>>(new Set());

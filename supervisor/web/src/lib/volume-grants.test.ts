@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { addGrant, canAddGrant, grantPathError, removeGrant, updateGrant } from "./volume-grants.ts";
-import { environmentSettingsChanged, saveEnvironmentSettings } from "./vpn-form.ts";
+import { computerSettingsChanged, saveComputerSettings } from "./vpn-form.ts";
 
 const volumes = [{ name: "music" }, { name: "photos" }];
 
@@ -76,9 +76,9 @@ test("volume grant edits are a settings change sent as the complete list", async
   const saved = { image: "img", settings: { dockerAccess: false, memoryBytes: 0, nanoCpus: 0, vpnConnectionId: null, lanExceptions: [], volumes: [] } };
   const grants = [{ name: "photos", path: "/share/photos", readOnly: true }];
   const draft = { image: "img", memoryBytes: 0, nanoCpus: 0, vpnConnectionId: "", lan: [], volumes: grants };
-  assert.equal(environmentSettingsChanged(saved, draft), true);
-  assert.deepEqual(await saveEnvironmentSettings(saved, draft, async (body) => body), { volumes: grants });
+  assert.equal(computerSettingsChanged(saved, draft), true);
+  assert.deepEqual(await saveComputerSettings(saved, draft, async (body) => body), { volumes: grants });
   const updated = { ...saved, settings: { ...saved.settings, volumes: grants } };
-  assert.equal(environmentSettingsChanged(updated, draft), false);
-  assert.deepEqual(await saveEnvironmentSettings(updated, { ...draft, volumes: [] }, async (body) => body), { volumes: [] });
+  assert.equal(computerSettingsChanged(updated, draft), false);
+  assert.deepEqual(await saveComputerSettings(updated, { ...draft, volumes: [] }, async (body) => body), { volumes: [] });
 });

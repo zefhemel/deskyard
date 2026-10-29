@@ -1,4 +1,4 @@
-// An environment's or volume's backups: its policy, last result, snapshots,
+// A computer's or volume's backups: its policy, last result, snapshots,
 // and the ways back (browse and download, restore to a folder, here, or as new).
 import { useEffect, useState } from "preact/hooks";
 import { api, type BackupItem, type ItemKind, type PolicyInput, type Repository, type RestoreResult, type Snapshot, type SnapshotEntry } from "../api.ts";
@@ -15,7 +15,7 @@ function when(iso: string): string {
   return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
-/** `stoppers` are the environments a restore here stops: the environment itself, or those granted the volume. */
+/** `stoppers` are the computers a restore here stops: the computer itself, or those granted the volume. */
 export function BackupsPanel({ kind, name, stoppers, hostPath }: { kind: ItemKind; name: string; stoppers: string[]; hostPath?: string }) {
   const item = useFetch(() => api.backup(kind, name), `backup-${kind}-${name}`);
   const overview = useFetch(() => api.backups(), "backups");
@@ -454,7 +454,7 @@ function RestoreHereDialog({
 
 const NAME = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
 
-/** Restores a snapshot as a new environment or volume. Also used for items found in repositories. */
+/** Restores a snapshot as a new computer or volume. Also used for items found in repositories. */
 export function RestoreNewDialog({ kind, name, snapshot: s, onClose }: { kind: ItemKind; name: string; snapshot: { id: string; time: string; repository: string }; onClose: () => void }) {
   const [newName, setNewName] = useState(`${name}-restored`.slice(0, 32).replace(/-+$/, ""));
   const [image, setImage] = useState("");

@@ -65,15 +65,17 @@ func TestObserverCanSeeButNotUse(t *testing.T) {
 	settings := env["settings"].(map[string]any)
 	if env["level"] != "observe" || env["folder"] != "" ||
 		len(settings["volumes"].([]any)) != 0 || settings["vpnConnectionId"] != nil || env["memoryReclaim"] != false {
-		t.Errorf("observer's environment: %s", body)
+		t.Errorf("observer's computer: %s", body)
 	}
 	if _, ok := env["observers"].([]any); !ok {
 		t.Errorf("no observers list: %s", body)
 	}
 
-	var list struct{ Environments []map[string]any }
+	var list struct {
+		Computers []map[string]any `json:"environments"`
+	}
 	_, body = get(t, bob, ts.URL+"/api/environments")
-	if err := json.Unmarshal([]byte(body), &list); err != nil || len(list.Environments) != 1 || list.Environments[0]["level"] != "observe" {
+	if err := json.Unmarshal([]byte(body), &list); err != nil || len(list.Computers) != 1 || list.Computers[0]["level"] != "observe" {
 		t.Errorf("observer's list: %s", body)
 	}
 
@@ -82,16 +84,16 @@ func TestObserverCanSeeButNotUse(t *testing.T) {
 	env = map[string]any{}
 	_ = json.Unmarshal([]byte(body), &env)
 	if env["level"] != "full" || env["folder"] == "" {
-		t.Errorf("full user's environment: %s", body)
+		t.Errorf("full user's computer: %s", body)
 	}
 }
 
 func TestObserverEvents(t *testing.T) {
-	observer := accounts.Account{Username: "bob", Grants: []accounts.Grant{{Environment: "alice", Level: auth.LevelObserve}}}
-	full := accounts.Account{Username: "anna", Grants: []accounts.Grant{{Environment: "alice", Level: auth.LevelFull}}}
-	viewers := event{kind: "viewers", environment: "alice", data: map[string]any{"name": "alice", "viewers": []string{"anna"},
+	observer := accounts.Account{Username: "bob", Grants: []accounts.Grant{{Computer: "alice", Level: auth.LevelObserve}}}
+	full := accounts.Account{Username: "anna", Grants: []accounts.Grant{{Computer: "alice", Level: auth.LevelFull}}}
+	viewers := event{kind: "viewers", computer: "alice", data: map[string]any{"name": "alice", "viewers": []string{"anna"},
 		"forwards": []forwardJSON{{Token: "laptop", Direction: "in", Port: 3000}}, "agents": []string{"x"}}}
-	activity := event{kind: "activity", environment: "alice", data: map[string]any{}}
+	activity := event{kind: "activity", computer: "alice", data: map[string]any{}}
 	if _, ok := eventFor(observer, activity); ok {
 		t.Error("an observer gets activity events")
 	}
@@ -115,7 +117,7 @@ func TestObserverEvents(t *testing.T) {
 	}
 }
 
-// An observer can't follow the environment's jobs: their progress and
+// An observer can't follow the computer's jobs: their progress and
 // results (a restore's folder, say) belong to full users.
 func TestObserverCannotFollowJobs(t *testing.T) {
 	s, ts := newTestServer(t)
@@ -146,8 +148,8 @@ func TestObserverCannotFollowJobs(t *testing.T) {
 	}
 }
 
-// The image catalog names only the environments the account can see.
-func TestImageCatalogListsOnlyVisibleEnvironments(t *testing.T) {
+// The image catalog names only the computers the account can see.
+func TestImageCatalogListsOnlyVisibleComputers(t *testing.T) {
 	s, ts := newTestServer(t)
 	define(t, s, "secret", time.Now())
 	observeAlice(t, s)
@@ -155,7 +157,7 @@ func TestImageCatalogListsOnlyVisibleEnvironments(t *testing.T) {
 	getJSON(t, login(t, ts, "bob"), ts.URL+"/api/images", &images)
 	seen := false
 	for _, img := range images {
-		for _, name := range img.Environments {
+		for _, name := range img.Computers {
 			seen = seen || name == "alice"
 			if name != "alice" {
 				t.Errorf("the observer sees %s on %s", name, img.Ref)
@@ -167,7 +169,7 @@ func TestImageCatalogListsOnlyVisibleEnvironments(t *testing.T) {
 	}
 	images = nil
 	getJSON(t, login(t, ts, "admin"), ts.URL+"/api/images", &images)
-	if all := slices.ContainsFunc(images, func(img catalogImageJSON) bool { return slices.Contains(img.Environments, "secret") }); !all {
+	if all := slices.ContainsFunc(images, func(img catalogImageJSON) bool { return slices.Contains(img.Computers, "secret") }); !all {
 		t.Errorf("the admin misses secret: %+v", images)
 	}
 }

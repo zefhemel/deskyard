@@ -18,8 +18,8 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 // remoteEngine is a running "alice" whose Chromium is served on port and
@@ -74,7 +74,7 @@ func (nopWriteCloser) Close() error                { return nil }
 func newRemoteServer(t *testing.T) (*Server, *httptest.Server, *remoteEngine) {
 	t.Helper()
 	e := &remoteEngine{}
-	s, ts := newTestServerCfg(t, e, environments.Config{Subnet: "10.0.0.0/16", DesktopPort: e.port})
+	s, ts := newTestServerCfg(t, e, computers.Config{Subnet: "10.0.0.0/16", DesktopPort: e.port})
 	observeAlice(t, s)
 	return s, ts, e
 }
@@ -209,7 +209,7 @@ func TestRemovingGrantClosesExec(t *testing.T) {
 	}
 }
 
-// A change while the environment is looked up, before the connection is
+// A change while the computer is looked up, before the connection is
 // registered, still refuses it.
 func TestRemoteAccessRechecksAfterRegistering(t *testing.T) {
 	for _, tc := range []struct {
@@ -234,7 +234,7 @@ func TestRemoteAccessRechecksAfterRegistering(t *testing.T) {
 					t.Error(err)
 				}
 			}}
-			s.Environments.Eng = s.Eng
+			s.Computers.Eng = s.Eng
 			req := httptest.NewRequest(http.MethodGet, "/api/environments/alice/exec", nil)
 			req.Header.Set("Authorization", "Bearer "+bearer)
 			w := httptest.NewRecorder()
@@ -290,21 +290,21 @@ func TestRemoteStatus(t *testing.T) {
 		t.Errorf("status: %s", body)
 	}
 	if code, _, _ := bearerRequest(t, "GET", ts.URL+"/api/environments/beta/status", anna); code != 404 {
-		t.Errorf("an unknown environment: %d", code)
+		t.Errorf("an unknown computer: %d", code)
 	}
 }
 
-func TestRemoteRoutesNeedRunningEnvironment(t *testing.T) {
+func TestRemoteRoutesNeedRunningComputer(t *testing.T) {
 	s, ts := newTestServer(t) // alice is stopped
 	_, admin := issueCredential(t, s, accountNamed(t, s, "admin"))
 	for _, route := range []string{"/exec", "/forward", "/cdp", "/cdp/json/list"} {
 		code, body, _ := bearerRequest(t, "GET", ts.URL+"/api/environments/alice"+route, admin)
 		if code != 409 || !strings.Contains(body, "alice is stopped; someone with access can start it") {
-			t.Errorf("%s on a stopped environment: %d %s", route, code, body)
+			t.Errorf("%s on a stopped computer: %d %s", route, code, body)
 		}
 	}
 	if code, body, _ := bearerRequest(t, "GET", ts.URL+"/api/environments/alice/status", admin); code != 200 || !strings.Contains(body, `"screen":null`) {
-		t.Errorf("status of a stopped environment: %d %s", code, body)
+		t.Errorf("status of a stopped computer: %d %s", code, body)
 	}
 }
 
@@ -318,7 +318,7 @@ func TestRemoteCDPRewritesURLs(t *testing.T) {
 	u, _ := url.Parse(upstream.URL)
 	port, _ := strconv.Atoi(u.Port())
 	e := &remoteEngine{port: port}
-	s, ts := newTestServerCfg(t, e, environments.Config{Subnet: "10.0.0.0/16", DesktopPort: port})
+	s, ts := newTestServerCfg(t, e, computers.Config{Subnet: "10.0.0.0/16", DesktopPort: port})
 	_, admin := issueCredential(t, s, accountNamed(t, s, "admin"))
 	host := strings.TrimPrefix(ts.URL, "http://")
 	for route, upstreamPath := range map[string]string{"/cdp": "/_cdp/json/version", "/cdp/json/list": "/_cdp/json/list"} {

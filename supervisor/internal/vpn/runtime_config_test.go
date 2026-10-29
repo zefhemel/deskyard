@@ -8,7 +8,7 @@ import (
 )
 
 func TestRuntimeConfigUsesPinnedImagePrivateSecretsAndAuthenticatedControl(t *testing.T) {
-	cfg, err := buildRuntime(runtimeInput{Environment: strings.Repeat("a", 32), Network: "alice-net", Connection: Connection{ID: strings.Repeat("b", 32), Provider: "nordvpn", Country: "Netherlands", Revision: 2}, Credentials: CredentialFiles{Username: "/private/user", Password: "/private/password"}, Directory: "/private/runtime"})
+	cfg, err := buildRuntime(runtimeInput{Computer: strings.Repeat("a", 32), Network: "alice-net", Connection: Connection{ID: strings.Repeat("b", 32), Provider: "nordvpn", Country: "Netherlands", Revision: 2}, Credentials: CredentialFiles{Username: "/private/user", Password: "/private/password"}, Directory: "/private/runtime"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,14 +108,14 @@ func decide(rs []firewallRule, dst netip.Addr, iface, proto string, port uint16,
 }
 
 func TestRuntimeRejectsUnsupportedResolverPolicy(t *testing.T) {
-	_, err := buildRuntime(runtimeInput{Environment: strings.Repeat("a", 32), Network: "desktop", Resolver: resolverPolicy(99)})
+	_, err := buildRuntime(runtimeInput{Computer: strings.Repeat("a", 32), Network: "desktop", Resolver: resolverPolicy(99)})
 	if err == nil {
 		t.Fatal("unsupported resolver policy accepted")
 	}
 }
 
 func TestNordVPNUsesProviderDefaultPort(t *testing.T) {
-	cfg, err := buildRuntime(runtimeInput{Environment: strings.Repeat("a", 32), Network: "desktop", Connection: Connection{Provider: "nordvpn", Country: "Netherlands"}})
+	cfg, err := buildRuntime(runtimeInput{Computer: strings.Repeat("a", 32), Network: "desktop", Connection: Connection{Provider: "nordvpn", Country: "Netherlands"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestNordVPNUsesProviderDefaultPort(t *testing.T) {
 }
 
 func policyTestInput() runtimeInput {
-	return runtimeInput{Environment: "alice", Instance: strings.Repeat("c", 32), Network: "alice-net",
+	return runtimeInput{Computer: "alice", Instance: strings.Repeat("c", 32), Network: "alice-net",
 		Connection:  Connection{ID: strings.Repeat("b", 32), Provider: "nordvpn", Country: "Netherlands", Revision: 2},
 		Credentials: CredentialFiles{Username: "/data/secret/vpn/user", Password: "/data/secret/vpn/password"},
 		Directory:   "/data/state/vpn/alice", Reserved: []netip.Prefix{netip.MustParsePrefix("10.213.0.0/16")}}
@@ -136,7 +136,7 @@ func policyTestInput() runtimeInput {
 
 // The policy label is the identity of a versioned record of the runtime's
 // policy, not of engine structs: a new field in engine.ContainerSpec or
-// engine.Mount must not change it, or every running VPN environment would be
+// engine.Mount must not change it, or every running VPN computer would be
 // replaced on upgrade. Changing this value replaces them all, so only do it
 // on purpose (and bump policyIdentityVersion).
 func TestRuntimePolicyLabelIsStable(t *testing.T) {

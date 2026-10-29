@@ -229,7 +229,7 @@ func (e Env) run(ctx context.Context, stdout io.Writer, name string, args ...str
 		return &ExitError{Code: xe.ExitCode()}
 	}
 	if errors.Is(err, exec.ErrNotFound) {
-		return fmt.Errorf("%s is not installed: screen actions only work inside an environment, or remotely with -e NAME", name)
+		return fmt.Errorf("%s is not installed: screen actions only work inside a computer, or remotely with -e NAME", name)
 	}
 	return err
 }

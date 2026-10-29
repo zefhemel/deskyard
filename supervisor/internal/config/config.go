@@ -1,4 +1,4 @@
-// Package config reads the supervisor's settings from the environment.
+// Package config reads the supervisor's settings from the computer.
 package config
 
 import (
@@ -14,7 +14,7 @@ const DefaultImage = "ghcr.io/zefhemel/deskyard-debian-xfce:latest"
 type Config struct {
 	Listen        string // DESKYARD_LISTEN, default 0.0.0.0:7343
 	Domain        string // DESKYARD_DOMAIN: HTTPS on 80/443 with automatic certificates
-	DataDir       string // always DataDir (/data): definitions, state and environment homes
+	DataDir       string // always DataDir (/data): definitions, state and computer homes
 	Layout        Layout // the folders in DataDir
 	EngineHost    string // DESKYARD_ENGINE_HOST, else DOCKER_HOST, else the default socket
 	Subnet        netip.Prefix

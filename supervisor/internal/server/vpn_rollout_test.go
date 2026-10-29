@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 )
@@ -134,21 +134,21 @@ func TestVPNUpdateCancellationBoundary(t *testing.T) {
 			e := &rolloutEngine{listed: make(chan struct{}, 1)}
 			s, ts := newTestServerWith(t, e)
 			admin := login(t, ts, "admin")
-			st := s.Environments.Networking.Connections
+			st := s.Computers.Networking.Connections
 			user, password := "user", "password"
 			conn, err := st.Create(vpn.Input{Name: "Home", Provider: "nordvpn", Country: "Netherlands", Username: &user, Password: &password})
 			if err != nil {
 				t.Fatal(err)
 			}
-			e.consumer = &engine.Container{ID: "original", Name: "deskyard-alice", State: "exited", Restart: "no", NetworkContainer: "gateway", Labels: map[string]string{environments.LabelManaged: "true", environments.LabelName: "alice", environments.LabelRevision: "1", vpn.LabelConnection: conn.ID}}
-			defineEnvironments(t, s)
+			e.consumer = &engine.Container{ID: "original", Name: "deskyard-alice", State: "exited", Restart: "no", NetworkContainer: "gateway", Labels: map[string]string{computers.LabelManaged: "true", computers.LabelName: "alice", computers.LabelRevision: "1", vpn.LabelConnection: conn.ID}}
+			defineComputers(t, s)
 			dir := t.TempDir()
 			record := map[string]any{"name": "alice", "connectionRevision": 1, "appliedConnectionRevision": 1, "appliedRevision": 1, "runtimeId": "gateway"}
 			if err = store.WriteJSON(filepath.Join(dir, "network", "transitions.json"), map[string]any{"version": 1, "transitions": []any{record}}); err != nil {
 				t.Fatal(err)
 			}
 			runtime := &rolloutRuntime{}
-			if err = s.Environments.ConfigureNetworking(st, runtime, dir); err != nil {
+			if err = s.Computers.ConfigureNetworking(st, runtime, dir); err != nil {
 				t.Fatal(err)
 			}
 			s.vpnTests = rolloutTester{e: e}
@@ -156,7 +156,7 @@ func TestVPNUpdateCancellationBoundary(t *testing.T) {
 			if !postcommit {
 				e.stopEntered = make(chan struct{})
 				e.stopRelease = make(chan struct{})
-				go func() { stopDone <- s.Environments.Stop(context.Background(), "alice") }()
+				go func() { stopDone <- s.Computers.Stop(context.Background(), "alice") }()
 				awaitRollout(t, e.stopEntered)
 			} else {
 				runtime.entered = make(chan struct{})
@@ -197,7 +197,7 @@ func TestVPNUpdateCancellationBoundary(t *testing.T) {
 				if code != 204 || saved.Revision != 1 || j.get().Error != "cancelled" || e.creates != 0 {
 					t.Fatalf("cancel before commit: status=%d revision=%d creates=%d job=%+v", code, saved.Revision, e.creates, j.get())
 				}
-				got, _ := s.Environments.Get(context.Background(), "alice")
+				got, _ := s.Computers.Get(context.Background(), "alice")
 				if got.Container.ID != "original" || got.Settings.VPNConnectionID != conn.ID {
 					t.Fatalf("desktop changed: %+v", got)
 				}
@@ -205,7 +205,7 @@ func TestVPNUpdateCancellationBoundary(t *testing.T) {
 				if code != 409 || saved.Revision != 2 || j.get().Status != "done" {
 					t.Fatalf("cancel after commit: status=%d revision=%d job=%+v", code, saved.Revision, j.get())
 				}
-				got, _ := s.Environments.Get(context.Background(), "alice")
+				got, _ := s.Computers.Get(context.Background(), "alice")
 				if got.VPN.State != "blocked" || got.VPN.DesiredRevision != 2 || got.Settings.VPNConnectionID != conn.ID {
 					t.Fatalf("lost pending policy: %+v", got)
 				}
@@ -215,24 +215,24 @@ func TestVPNUpdateCancellationBoundary(t *testing.T) {
 				}
 				runtime.entered = nil
 				runtime.fail = false
-				if err = s.Environments.ConfigureNetworking(st, runtime, dir); err != nil {
+				if err = s.Computers.ConfigureNetworking(st, runtime, dir); err != nil {
 					t.Fatal(err)
 				}
 				// Startup leaves the failed rollout; another edit retries it.
-				if err = s.Environments.Networking.Reconcile(context.Background()); err != nil {
+				if err = s.Computers.Networking.Reconcile(context.Background()); err != nil {
 					t.Fatal(err)
 				}
-				if got, _ = s.Environments.Get(context.Background(), "alice"); got.VPN.AppliedRevision != 1 {
+				if got, _ = s.Computers.Get(context.Background(), "alice"); got.VPN.AppliedRevision != 1 {
 					t.Fatalf("startup retried a failed rollout: %+v", got.VPN)
 				}
 				var ids []string
-				for _, ref := range s.Environments.Networking.References(conn.ID) {
+				for _, ref := range s.Computers.Networking.References(conn.ID) {
 					ids = append(ids, ref.ID)
 				}
-				if _, _, err = s.Environments.Networking.UpdateConnection(context.Background(), conn.ID, 2, ids, vpn.Input{Name: "Again", Provider: "nordvpn", Country: "Germany"}, func(string, float64) {}, nil); err != nil {
+				if _, _, err = s.Computers.Networking.UpdateConnection(context.Background(), conn.ID, 2, ids, vpn.Input{Name: "Again", Provider: "nordvpn", Country: "Germany"}, func(string, float64) {}, nil); err != nil {
 					t.Fatal(err)
 				}
-				got, _ = s.Environments.Get(context.Background(), "alice")
+				got, _ = s.Computers.Get(context.Background(), "alice")
 				if got.VPN.AppliedRevision != 3 || got.Container.NetworkContainer != "gateway" || got.Settings.VPNConnectionID != conn.ID {
 					t.Fatalf("recovery lost selection: %+v", got)
 				}
@@ -248,14 +248,14 @@ func TestVPNUpdateUnselectedReferenceRequiresRepair(t *testing.T) {
 	s, ts := newTestServerWith(t, e)
 	admin := login(t, ts, "admin")
 	user, password := "user", "password"
-	conn, err := s.Environments.Networking.Connections.Create(vpn.Input{Name: "Home", Provider: "nordvpn", Country: "Netherlands", Username: &user, Password: &password})
+	conn, err := s.Computers.Networking.Connections.Create(vpn.Input{Name: "Home", Provider: "nordvpn", Country: "Netherlands", Username: &user, Password: &password})
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.consumer = &engine.Container{ID: "original", Name: "deskyard-alice", State: "exited", Labels: map[string]string{environments.LabelManaged: "true", environments.LabelName: "alice", environments.LabelRevision: "1", vpn.LabelConnection: conn.ID}}
-	defineEnvironments(t, s)
-	if _, err = s.Environments.Defs.Update("alice", func(d *environments.Definition) error {
-		d.Network = environments.Network{Kind: environments.NetworkIsolated}
+	e.consumer = &engine.Container{ID: "original", Name: "deskyard-alice", State: "exited", Labels: map[string]string{computers.LabelManaged: "true", computers.LabelName: "alice", computers.LabelRevision: "1", vpn.LabelConnection: conn.ID}}
+	defineComputers(t, s)
+	if _, err = s.Computers.Defs.Update("alice", func(d *computers.Definition) error {
+		d.Network = computers.Network{Kind: computers.NetworkIsolated}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -269,7 +269,7 @@ func TestVPNUpdateUnselectedReferenceRequiresRepair(t *testing.T) {
 	var body map[string]any
 	json.NewDecoder(resp.Body).Decode(&body)
 	resp.Body.Close()
-	saved, _ := s.Environments.Networking.Connections.Get(conn.ID)
+	saved, _ := s.Computers.Networking.Connections.Get(conn.ID)
 	if resp.StatusCode != 409 || body["job"] != nil || !strings.Contains(body["error"].(string), "repair") || saved.Revision != 1 || e.creates != 0 {
 		t.Fatalf("missing repair conflict: status=%d body=%v revision=%d", resp.StatusCode, body, saved.Revision)
 	}

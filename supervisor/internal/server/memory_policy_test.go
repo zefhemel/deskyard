@@ -48,7 +48,7 @@ func TestMemoryPolicyAPI(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var c environmentJSON
+		var c computerJSON
 		err = json.NewDecoder(res.Body).Decode(&c)
 		res.Body.Close()
 		if err != nil {
@@ -57,11 +57,11 @@ func TestMemoryPolicyAPI(t *testing.T) {
 		if c.MemoryReclaim != value || c.State != "running" {
 			t.Fatalf("%+v", c)
 		}
-		if def, ok := s.Environments.Defs.Get("bob"); !ok || def.MemoryReclaim != value || def.Revision != 1 {
+		if def, ok := s.Computers.Defs.Get("bob"); !ok || def.MemoryReclaim != value || def.Revision != 1 {
 			t.Fatal("preference not saved in the definition", def)
 		}
 	}
-	if e.calls.Load() != 0 || len(s.Environments.Busy()) != 0 {
+	if e.calls.Load() != 0 || len(s.Computers.Busy()) != 0 {
 		t.Fatal("setting operated on desktop")
 	}
 }

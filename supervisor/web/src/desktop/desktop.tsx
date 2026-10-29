@@ -1,20 +1,20 @@
-// The environment page at /<name>/: a thin bar of ours with tabs for the
-// desktop and the environment's shared terminal sessions. The Desktop tab is
+// The computer page at /<name>/: a thin bar of ours with tabs for the
+// desktop and the computer's shared terminal sessions. The Desktop tab is
 // Selkies' web client in a frame (how we drive it is described in
 // selkies.ts); terminal tabs are xterm panes (terminal/terminal.tsx).
 import type { ComponentChildren } from "preact";
 import { createPortal, lazy, Suspense } from "preact/compat";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-import { api, ApiError, type Environment } from "../api.ts";
+import { api, ApiError, type Computer } from "../api.ts";
 import { Avatar, Avatars } from "../components/avatar.tsx";
-import { power } from "../components/environment-menu.tsx";
+import { power } from "../components/computer-menu.tsx";
 import { Menu, type MenuItem } from "../components/menu.tsx";
 import { ViewersPopover } from "../components/viewers-popover.tsx";
 import { notify, notifyError } from "../components/toast.tsx";
 import { Button, cx, Dialog, MORE } from "../components/ui.tsx";
 import { LinkDialog, ShareDialog } from "../dialogs/share.tsx";
-import { useEnvironment, useLive } from "../live.tsx";
+import { useComputer, useLive } from "../live.tsx";
 import { agentTitle } from "../lib/activity-format.ts";
 import { leftNeighbour, loadOrder, orderTabs, saveOrder, vanished } from "../lib/tab-order.ts";
 import { vpnPresentation } from "../lib/vpn-form.ts";
@@ -24,7 +24,7 @@ import { TouchControls, useVisibleViewport } from "./touch-controls.tsx";
 import { ZoomViewport } from "./zoom-viewport.tsx";
 import { AudioControl } from "./audio-panel.tsx";
 import { ClipboardIcon, DisplayIcon, KeyboardIcon, ShieldIcon } from "./bar-icons.tsx";
-import { barButton, type BarSlots, ConnDot, EnvironmentTabs, panelId, pressed, tabId, useTabHooks } from "./tabs.tsx";
+import { barButton, type BarSlots, ConnDot, ComputerTabs, panelId, pressed, tabId, useTabHooks } from "./tabs.tsx";
 import { avSyncWanted, startAvSync } from "./avsync.ts";
 import { ClipboardPopover } from "./clipboard.tsx";
 import { ActivityOverlay } from "./overlay.tsx";
@@ -100,8 +100,8 @@ const TerminalPane = lazy(() => import("../terminal/terminal.tsx").then((m) => (
 
 const validSession = (s: string) => /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(s);
 
-export function EnvironmentPage({ name }: { name: string }) {
-  const c = useEnvironment(name);
+export function ComputerPage({ name }: { name: string }) {
+  const c = useComputer(name);
   const viewport = useVisibleViewport();
   return (
     // data-desktop-page: no scrollbar gutter on this page (index.css).
@@ -114,7 +114,7 @@ export function EnvironmentPage({ name }: { name: string }) {
           </a>
         </Centered>
       ) : (
-        <EnvironmentView environment={c} />
+        <ComputerView computer={c} />
       )}
     </div>
   );
@@ -130,7 +130,7 @@ function Centered({ children }: { children: ComponentChildren }) {
  * shown; a terminal pane stays mounted, hidden, from its first showing until
  * its tab closes, so switching keeps its connection and scrollback.
  */
-function EnvironmentView({ environment: c }: { environment: Environment }) {
+function ComputerView({ computer: c }: { computer: Computer }) {
   const { me } = useLive();
   const { query, route } = useLocation();
   const running = c.state === "running";
@@ -153,7 +153,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
   const [states, setStates] = useState<Record<string, string>>({});
   const [confirm, setConfirm] = useState<{ session: string; others: number; command: string } | null>(null);
   const [viewersOpen, setViewersOpen] = useState(false);
-  // Share, as under Shares on the environment's Access tab: full access, but not a share itself.
+  // Share, as under Shares on the computer's Access tab: full access, but not a share itself.
   const canShare = !observing && !me.share;
   const [sharing, setSharing] = useState(false);
   const [shared, setShared] = useState<{ username: string; link: string } | null>(null);
@@ -211,7 +211,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
     }
   };
 
-  // On load: drop ?create=1 (an explicit open, e.g. an environment card's +),
+  // On load: drop ?create=1 (an explicit open, e.g. a computer card's +),
   // and check that a deep-linked session exists; a link never creates one.
   useEffect(() => {
     const s = query.terminal;
@@ -252,7 +252,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
     }
   }, [listKey, running]);
 
-  // A stopped environment has no terminal tabs.
+  // A stopped computer has no terminal tabs.
   useEffect(() => {
     if (running) return;
     setPending({});
@@ -403,7 +403,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
 
   return (
     <>
-      <div data-environment-bar class="relative flex flex-none flex-wrap items-center gap-x-1.5 bg-bar px-2.5 text-sm text-[#e6ebf1] max-sm:min-h-[46px] sm:h-[46px] sm:flex-nowrap">
+      <div data-computer-bar class="relative flex flex-none flex-wrap items-center gap-x-1.5 bg-bar px-2.5 text-sm text-[#e6ebf1] max-sm:min-h-[46px] sm:h-[46px] sm:flex-nowrap">
         <a href="/" class={cx(barButton, "px-2")} title="Environments" aria-label="Environments">
           ‹
         </a>
@@ -424,7 +424,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
             <ShieldIcon />
           </a>
         )}
-        <EnvironmentTabs
+        <ComputerTabs
           tabs={tabs.map((s) => {
             const t = (c.terminals ?? []).find((x) => x.name === s);
             return { name: s, others: t ? others(t, states[s] === "connected") : 0 };
@@ -477,7 +477,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
       </div>
       {sharing && (
         <ShareDialog
-          environment={c.name}
+          computer={c.name}
           onClose={() => {
             setSharing(false);
             tabHooks.current?.refocus();
@@ -501,7 +501,7 @@ function EnvironmentView({ environment: c }: { environment: Environment }) {
       )}
       <div class="relative flex min-h-0 flex-1 flex-col">
         <div role="tabpanel" id={panelId(null)} aria-labelledby={tabId(null)} hidden={active !== null} class={cx("relative min-h-0 flex-1 flex-col", active === null ? "flex" : "hidden")}>
-          {active === null && <Desktop environment={c} slots={slots} />}
+          {active === null && <Desktop computer={c} slots={slots} />}
         </div>
         {opened
           .filter((s) => tabs.includes(s))
@@ -571,7 +571,7 @@ function EndSessionDialog({ session, others: n, command, onEnd, onClose }: { ses
  * frame takes the pointer, the frame never takes focus, the bar has no input
  * controls) and never asks to change the display.
  */
-function Desktop({ environment: c, slots }: { environment: Environment; slots: BarSlots }) {
+function Desktop({ computer: c, slots }: { computer: Computer; slots: BarSlots }) {
   const observing = c.level === "observe";
   const observingRef = useRef(observing);
   observingRef.current = observing;
@@ -858,7 +858,7 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
       {controlling && touchControls && <TouchControls keyboard={keyboard} trackpad={trackpad} zoom={zoom}
         onKeyboard={toggleKeyboard} onMode={chooseTouchMode} onFit={() => setZoom(1)} onKey={sendKeys} />}
       {!running ? (
-        <Stopped environment={c} />
+        <Stopped computer={c} />
       ) : (
         <ZoomViewport screen={screen} frame={frame} zoom={zoom} onZoom={setZoom}>
         <iframe
@@ -874,7 +874,7 @@ function Desktop({ environment: c, slots }: { environment: Environment; slots: B
         {observing && <div data-observer-cover class="absolute inset-0 cursor-default" aria-hidden="true" />}
         </ZoomViewport>
       )}
-      {running && !observing && <DropZone environment={c.name} frame={frame} frameKey={frameKey} />}
+      {running && !observing && <DropZone computer={c.name} frame={frame} frameKey={frameKey} />}
       {showing && zoom === 1 && <ActivityOverlay name={c.name} geometry={() => selkiesScreenGeometry(frame.current)} />}
     </>
   );
@@ -904,7 +904,7 @@ function NotSecure() {
   );
 }
 
-function Stopped({ environment: c }: { environment: Environment }) {
+function Stopped({ computer: c }: { computer: Computer }) {
   const problem = notice(c);
   if (c.state === "stopped") {
     return (

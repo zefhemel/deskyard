@@ -1,5 +1,5 @@
 // Live state shared by every signed-in page: who is signed in, the
-// environments they can see (kept current through /api/events) and, for
+// computers they can see (kept current through /api/events) and, for
 // admins, containers that conflict with them, the host's numbers and the
 // jobs running on them, whoever started them.
 import { createContext, type ComponentChildren } from "preact";
@@ -11,7 +11,7 @@ import {
   watchJob,
   type ActivityEvent,
   type Conflict,
-  type Environment,
+  type Computer,
   type Host,
   type Job,
   type Me,
@@ -26,18 +26,18 @@ type ActivityListener = (e: ActivityEvent) => void;
 export interface Live {
   me: Me;
   /** null until the first load. */
-  environments: Environment[] | null;
+  computers: Computer[] | null;
   /** This supervisor's containers it can't match to a definition (admins only). */
   conflicts: Conflict[];
   host: Host | null;
-  /** Running jobs by environment name, for busy tiles. */
+  /** Running jobs by computer name, for busy tiles. */
   jobs: Record<string, Job>;
   /** Shared job states, retained across forms and tab navigation. */
   jobTracker: JobTracker;
-  /** Gets the environments and the host again (after a change the events may not cover). */
+  /** Gets the computers and the host again (after a change the events may not cover). */
   refresh: () => void;
   onStats: (listener: StatsListener) => () => void;
-  /** Agent summaries, at most once a second per environment. */
+  /** Agent summaries, at most once a second per computer. */
   onActivity: (listener: ActivityListener) => () => void;
 }
 
@@ -49,20 +49,20 @@ export function useLive(): Live {
   return live;
 }
 
-export function useEnvironment(name: string): Environment | null | undefined {
-  const { environments } = useLive();
-  if (!environments) return undefined;
-  return environments.find((c) => c.name === name) ?? null;
+export function useComputer(name: string): Computer | null | undefined {
+  const { computers } = useLive();
+  if (!computers) return undefined;
+  return computers.find((c) => c.name === name) ?? null;
 }
 
-function upsert(list: Environment[], c: Environment): Environment[] {
+function upsert(list: Computer[], c: Computer): Computer[] {
   const rest = list.filter((x) => x.name !== c.name);
   rest.push(c);
   return rest.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function LiveProvider({ me, children }: { me: Me; children: ComponentChildren }) {
-  const [environments, setEnvironments] = useState<Environment[] | null>(null);
+  const [computers, setComputers] = useState<Computer[] | null>(null);
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
   const [host, setHost] = useState<Host | null>(null);
   const [jobTracker] = useState(() => new JobTracker(watchJob));
@@ -89,10 +89,10 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
     const generation = ++refreshGeneration.current;
     window.clearTimeout(refreshTimer.current);
     const load = (wait: number) => {
-      api.environments().then(
+      api.computers().then(
         (list) => {
           if (refreshGeneration.current !== generation) return;
-          setEnvironments(list.environments);
+          setComputers(list.environments);
           setConflicts(list.conflicts);
         },
         () => {
@@ -112,22 +112,22 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
     // Conflicts come from the supervisor's reconcile pass, which no event
     // reports: admins look again as often as it runs.
     const conflictInterval = me.admin
-      ? window.setInterval(() => api.environments().then((list) => setConflicts(list.conflicts), () => undefined), 30000)
+      ? window.setInterval(() => api.computers().then((list) => setConflicts(list.conflicts), () => undefined), 30000)
       : undefined;
     const es = watchUIEvents("/api/events");
     es.addEventListener("environment", (e: MessageEvent<string>) => {
-      const c = JSON.parse(e.data) as Environment;
-      setEnvironments((list) => (list ? upsert(list, c) : list));
+      const c = JSON.parse(e.data) as Computer;
+      setComputers((list) => (list ? upsert(list, c) : list));
       hostSoon();
     });
     es.addEventListener("removed", (e: MessageEvent<string>) => {
       const { name } = JSON.parse(e.data) as RemovedEvent;
-      setEnvironments((list) => (list ? list.filter((c) => c.name !== name) : list));
+      setComputers((list) => (list ? list.filter((c) => c.name !== name) : list));
       hostSoon();
     });
     es.addEventListener("stats", (e: MessageEvent<string>) => {
       const s = JSON.parse(e.data) as StatsEvent;
-      setEnvironments((list) =>
+      setComputers((list) =>
         list
           ? list.map((c) =>
               c.name === s.name ? { ...c, stats: { cpuPercent: s.cpuPercent, memBytes: s.memBytes, memLimit: s.memLimit } } : c,
@@ -138,7 +138,7 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
     });
     es.addEventListener("viewers", (e: MessageEvent<string>) => {
       const v = JSON.parse(e.data) as ViewersEvent;
-      setEnvironments((list) => (list ? list.map((c) => (c.name === v.name ? { ...c, viewers: v.viewers, observers: v.observers ?? c.observers, mics: v.mics, forwards: v.forwards, agents: v.agents ?? c.agents } : c)) : list));
+      setComputers((list) => (list ? list.map((c) => (c.name === v.name ? { ...c, viewers: v.viewers, observers: v.observers ?? c.observers, mics: v.mics, forwards: v.forwards, agents: v.agents ?? c.agents } : c)) : list));
     });
     es.addEventListener("activity", (e: MessageEvent<string>) => {
       const a = JSON.parse(e.data) as ActivityEvent;
@@ -174,12 +174,12 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
 
   // Discover operations started elsewhere and reconnect after a page reload.
   useEffect(() => {
-    for (const c of environments ?? []) {
+    for (const c of computers ?? []) {
       if (c.job) jobTracker.track(c.job, undefined, c.name);
     }
-  }, [environments, jobTracker]);
+  }, [computers, jobTracker]);
 
-  const jobs = useMemo(() => jobTracker.runningByEnvironment(), [jobTracker, jobVersion]);
+  const jobs = useMemo(() => jobTracker.runningByComputer(), [jobTracker, jobVersion]);
 
   const onStats = useCallback((listener: StatsListener) => {
     statsListeners.current.add(listener);
@@ -196,8 +196,8 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
   }, []);
 
   const value = useMemo<Live>(
-    () => ({ me, environments, conflicts, host, jobs, jobTracker, refresh, onStats, onActivity }),
-    [me, environments, conflicts, host, jobs, jobTracker, refresh, onStats, onActivity, jobVersion],
+    () => ({ me, computers, conflicts, host, jobs, jobTracker, refresh, onStats, onActivity }),
+    [me, computers, conflicts, host, jobs, jobTracker, refresh, onStats, onActivity, jobVersion],
   );
   return <LiveContext.Provider value={value}>{children}</LiveContext.Provider>;
 }

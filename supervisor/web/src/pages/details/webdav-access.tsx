@@ -1,14 +1,14 @@
-// WebDAV on the environment's Access tab: a way into its files, so it sits
+// WebDAV on the computer's Access tab: a way into its files, so it sits
 // with who can use it. Admins switch it; others with full access and a
 // password see where to connect while it's on.
 import { useEffect, useState } from "preact/hooks";
-import { api, type Environment } from "../../api.ts";
+import { api, type Computer } from "../../api.ts";
 import { notify } from "../../components/toast.tsx";
 import { Check, ErrorText, Note } from "../../components/ui.tsx";
 import { useLive } from "../../live.tsx";
 import { davAddress, davInTheClear, davView } from "../../lib/webdav.ts";
 
-export function WebDAVAccess({ environment: c }: { environment: Environment }) {
+export function WebDAVAccess({ computer: c }: { computer: Computer }) {
   const { me } = useLive();
   const view = davView(c, me);
   if (!view) return null;
@@ -17,7 +17,7 @@ export function WebDAVAccess({ environment: c }: { environment: Environment }) {
       <div class="max-w-[620px] px-5 py-5">
         <h2 class="mt-0 mb-1 text-base font-semibold">WebDAV</h2>
         {view === "switch" ? (
-          <WebDAVSwitch environment={c} />
+          <WebDAVSwitch computer={c} />
         ) : (
           <p class="mt-0 mb-0 text-sm text-muted">
             Mount {c.name}&apos;s files as a drive at <span class="mono break-all">{davAddress(c.name)}</span>, signing in with your username and
@@ -30,7 +30,7 @@ export function WebDAVAccess({ environment: c }: { environment: Environment }) {
 }
 
 /** Saves at once, independently of the accounts above. */
-function WebDAVSwitch({ environment: c }: { environment: Environment }) {
+function WebDAVSwitch({ computer: c }: { computer: Computer }) {
   const [enabled, setEnabled] = useState(c.webdav);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);

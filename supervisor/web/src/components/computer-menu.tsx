@@ -1,0 +1,63 @@
+// The ⋯ menu of a computer (tile, details page, desktop page): Restart, Stop, and for
+// admins Settings (unless the page has its own button), the page's own admin actions, and Remove….
+import { useState } from "preact/hooks";
+import { useLocation } from "preact-iso";
+import { api, type Computer } from "../api.ts";
+import { useLive } from "../live.tsx";
+import { RemoveDialog } from "../dialogs/remove-computer.tsx";
+import { Menu, type MenuItem } from "./menu.tsx";
+import { notifyError } from "./toast.tsx";
+import { IconButton, MORE } from "./ui.tsx";
+
+export function power(name: string, action: "start" | "stop" | "restart"): void {
+  api.power(name, action).catch(notifyError);
+}
+
+export function ComputerMenu({
+  computer: c,
+  power: withPower = true,
+  settings = true,
+  adminItems = [],
+  onRemoved,
+}: {
+  computer: Computer;
+  power?: boolean;
+  /** Whether to list Settings (the details page has its own button). */
+  settings?: boolean;
+  /** More admin actions, before Remove…. */
+  adminItems?: MenuItem[];
+  onRemoved?: () => void;
+}) {
+  const { me } = useLive();
+  const { route } = useLocation();
+  const [removing, setRemoving] = useState(false);
+
+  const items: MenuItem[] = [];
+  // Observers can't start or stop it.
+  const powered = withPower && c.level !== "observe";
+  if (powered && c.state === "running") {
+    items.push({ label: "Restart", onSelect: () => power(c.name, "restart") });
+    items.push({ label: "Stop", onSelect: () => power(c.name, "stop") });
+  }
+  if (powered && c.state === "stopped") items.push({ label: "Start", onSelect: () => power(c.name, "start") });
+  if (me.admin) {
+    if (settings) items.push({ label: "Settings", onSelect: () => route(`/environments/${c.name}?tab=settings`) });
+    items.push(...adminItems);
+    items.push({ label: "Remove…", danger: true, separated: true, onSelect: () => setRemoving(true) });
+  }
+  if (!items.length) return null;
+
+  return (
+    <>
+      <Menu
+        items={items}
+        trigger={({ toggle, open }) => (
+          <IconButton aria-label="More actions" aria-haspopup="menu" aria-expanded={open} onClick={toggle}>
+            {MORE}
+          </IconButton>
+        )}
+      />
+      {removing && <RemoveDialog computer={c} onClose={() => setRemoving(false)} onRemoved={onRemoved} />}
+    </>
+  );
+}

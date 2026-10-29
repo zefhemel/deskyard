@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/activity"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 )
 
 const (
@@ -126,7 +126,7 @@ type insideReader struct {
 	s       *Server
 	client  *http.Client
 	mu      sync.Mutex
-	running map[string]*environmentWorker
+	running map[string]*computerWorker
 	cursors map[string]insidePosition
 	healthy map[string]time.Time
 	wakeC   chan struct{}
@@ -144,7 +144,7 @@ func newInsideReader(s *Server) *insideReader {
 				DisableCompression:    true,
 			},
 		},
-		running: map[string]*environmentWorker{},
+		running: map[string]*computerWorker{},
 		cursors: map[string]insidePosition{},
 		healthy: map[string]time.Time{},
 		wakeC:   make(chan struct{}, 1),
@@ -185,12 +185,12 @@ func (ir *insideReader) reconcile(ctx context.Context) {
 	if ir.s.events.count() > 0 {
 		ir.lastUse = time.Now()
 	}
-	list, err := ir.s.Environments.List(ctx)
+	list, err := ir.s.Computers.List(ctx)
 	if err != nil {
 		return
 	}
 	look := time.Since(ir.lastUse) < statsLinger
-	wanted := map[string]environments.Environment{}
+	wanted := map[string]computers.Computer{}
 	live := map[string]bool{}
 	refs := map[string]activity.Ref{}
 	for _, c := range list {
@@ -209,10 +209,10 @@ func (ir *insideReader) reconcile(ctx context.Context) {
 	var starts []func()
 	ir.mu.Lock()
 	for name, worker := range ir.running {
-		if c, ok := wanted[name]; !ok || worker.generation != environmentGeneration(c) {
+		if c, ok := wanted[name]; !ok || worker.generation != computerGeneration(c) {
 			worker.cancel()
 			delete(ir.healthy, name)
-			if !live[name] || (ok && worker.generation != environmentGeneration(c)) {
+			if !live[name] || (ok && worker.generation != computerGeneration(c)) {
 				stopped = append(stopped, refs[name])
 				delete(ir.cursors, name)
 			}
@@ -228,7 +228,7 @@ func (ir *insideReader) reconcile(ctx context.Context) {
 		if _, ok := ir.running[name]; ok {
 			continue
 		}
-		worker := startEnvironmentWorker(ctx, c)
+		worker := startComputerWorker(ctx, c)
 		ir.running[name] = worker
 		position := ir.cursors[name]
 		if position.generation != worker.generation {
@@ -254,7 +254,7 @@ func (ir *insideReader) reconcile(ctx context.Context) {
 
 // follow keeps one desktop's stream connected until ctx ends, resuming from
 // the cursor after errors and restarts.
-func (ir *insideReader) follow(worker *environmentWorker, c environments.Environment, cur insideCursor) {
+func (ir *insideReader) follow(worker *computerWorker, c computers.Computer, cur insideCursor) {
 	ctx := worker.ctx
 	defer close(worker.done)
 	defer worker.cancel()
@@ -273,7 +273,7 @@ func (ir *insideReader) follow(worker *environmentWorker, c environments.Environ
 	backoff := insideBackoffMin
 	for ctx.Err() == nil {
 		wait, err := ir.connect(worker, c, ref, &cur)
-		if errors.Is(err, environments.ErrStopped) {
+		if errors.Is(err, computers.ErrStopped) {
 			return
 		}
 		if wait == 0 {
@@ -291,7 +291,7 @@ func (ir *insideReader) follow(worker *environmentWorker, c environments.Environ
 
 // connect makes one connection and reads it until it ends. It returns how
 // long to wait before the next try (0: use the back-off).
-func (ir *insideReader) connect(worker *environmentWorker, c environments.Environment, ref activity.Ref, cur *insideCursor) (time.Duration, error) {
+func (ir *insideReader) connect(worker *computerWorker, c computers.Computer, ref activity.Ref, cur *insideCursor) (time.Duration, error) {
 	ctx, name := worker.ctx, c.Name
 	defer func() {
 		ir.mu.Lock()
@@ -300,14 +300,14 @@ func (ir *insideReader) connect(worker *environmentWorker, c environments.Enviro
 		}
 		ir.mu.Unlock()
 	}()
-	fresh, err := ir.s.Environments.Get(ctx, name)
+	fresh, err := ir.s.Computers.Get(ctx, name)
 	if err != nil {
 		return 0, err
 	}
-	if environmentGeneration(fresh) != worker.generation {
-		return 0, environments.ErrStopped
+	if computerGeneration(fresh) != worker.generation {
+		return 0, computers.ErrStopped
 	}
-	addr, token, err := ir.s.Environments.Target(ctx, name)
+	addr, token, err := ir.s.Computers.Target(ctx, name)
 	if err != nil {
 		return 0, err
 	}

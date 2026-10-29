@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/activity"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 type activityEngine struct{ fakeEngine }
@@ -52,8 +52,8 @@ func (b *delayedActivityEOF) Close() error { return nil }
 func TestActivityWorkerHandsOffCursorBeforeReattach(t *testing.T) {
 	eng := activityEngine{}
 	s := &Server{Eng: eng, events: newHub(), activity: activity.NewTracker()}
-	s.Environments = environments.New(eng, environments.Config{DataDir: t.TempDir(), DesktopPort: 1}, nil)
-	defineEnvironments(t, s)
+	s.Computers = computers.New(eng, computers.Config{DataDir: t.TempDir(), DesktopPort: 1}, nil)
+	defineComputers(t, s)
 	ir := newInsideReader(s)
 	s.inside = ir
 	ir.lastUse = time.Now()

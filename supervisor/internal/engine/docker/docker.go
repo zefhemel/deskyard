@@ -38,7 +38,7 @@ type Docker struct {
 
 var _ engine.Engine = (*Docker)(nil)
 
-// New connects to host (a DOCKER_HOST-style address), or the environment's
+// New connects to host (a DOCKER_HOST-style address), or the computer's
 // default when host is empty.
 func New(host string) (*Docker, error) {
 	opts := []client.Opt{client.FromEnv, client.WithAPIVersionNegotiation()}

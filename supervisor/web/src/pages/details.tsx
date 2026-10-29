@@ -1,11 +1,11 @@
 import { useEffect, useState } from "preact/hooks";
 import { useLocation, useRoute } from "preact-iso";
-import { api, type AgentPresence, type Environment, type FolderSize, type Forward } from "../api.ts";
+import { api, type AgentPresence, type Computer, type FolderSize, type Forward } from "../api.ts";
 import { agentLabel } from "../lib/activity-format.ts";
 import { VPNStatus } from "../components/vpn.tsx";
 import { Avatars } from "../components/avatar.tsx";
 import { ChartsPanel } from "../components/charts-panel.tsx";
-import { EnvironmentMenu, power } from "../components/environment-menu.tsx";
+import { ComputerMenu, power } from "../components/computer-menu.tsx";
 import { Monitor } from "../components/screen.tsx";
 import { NoticeLine } from "../components/tile.tsx";
 import { useReclaimMemoryItem } from "../components/reclaim-memory.tsx";
@@ -13,7 +13,7 @@ import { ForwardLines } from "../components/viewers-popover.tsx";
 import { Page, useTitle } from "../components/topbar.tsx";
 import { btnClass, Button, cx, Meter, Status, Tag } from "../components/ui.tsx";
 import { UpgradeDialog } from "../dialogs/upgrade.tsx";
-import { useEnvironment, useLive, useNow } from "../live.tsx";
+import { useComputer, useLive, useNow } from "../live.tsx";
 import { bytes, day, limits, names, statusKind, statusLine } from "../lib/format.ts";
 import { AccessTab } from "./details/access-tab.tsx";
 import { WebDAVAccess } from "./details/webdav-access.tsx";
@@ -28,7 +28,7 @@ type Tab = "overview" | "processes" | "settings" | "access" | "backups";
 export function DetailsPage() {
   const { params } = useRoute();
   const name = params.name ?? "";
-  const c = useEnvironment(name);
+  const c = useComputer(name);
   if (c === undefined) {
     return (
       <Page>
@@ -47,7 +47,7 @@ export function DetailsPage() {
       </Page>
     );
   }
-  return <EnvironmentDetail environment={c} />;
+  return <ComputerDetail computer={c} />;
 }
 
 function Crumbs() {
@@ -60,7 +60,7 @@ function Crumbs() {
   );
 }
 
-function EnvironmentDetail({ environment: c }: { environment: Environment }) {
+function ComputerDetail({ computer: c }: { computer: Computer }) {
   const { me, jobs } = useLive();
   const { query, route } = useLocation();
   const now = useNow(10000);
@@ -113,8 +113,8 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
           )}
           {full && me.admin && <Button onClick={() => setTab("settings")}>Settings</Button>}
           {full && (
-            <EnvironmentMenu
-              environment={c}
+            <ComputerMenu
+              computer={c}
               power={false}
               settings={false}
               adminItems={c.state === "running" ? [reclaim] : []}
@@ -124,7 +124,7 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
         </div>
       </div>
 
-      <NoticeLine environment={c} class="-mt-3 mb-5" />
+      <NoticeLine computer={c} class="-mt-3 mb-5" />
       <nav
         class="mb-6 flex gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden border-b border-line"
         role="tablist"
@@ -149,26 +149,26 @@ function EnvironmentDetail({ environment: c }: { environment: Environment }) {
       </nav>
       {tab === "overview" ? (
         <div class="grid grid-cols-[minmax(0,1.55fr)_minmax(320px,1fr)] items-start gap-8 max-[900px]:grid-cols-1">
-          <Monitor environment={c} job={jobs[c.name]} now={now} big />
+          <Monitor computer={c} job={jobs[c.name]} now={now} big />
           <div class="flex flex-col gap-4">
             <ViewersPanel viewers={c.viewers} observers={c.observers} mics={c.mics} forwards={c.forwards} agents={c.agents} observing={!full} />
             {full && <div class="rounded-[10px] border border-line bg-surface px-5 py-[18px]"><VPNStatus vpn={c.vpn} /></div>}
-            <ChartsPanel environment={c} />
-            <Facts environment={c} admin={me.admin} full={full} onTab={setTab} />
+            <ChartsPanel computer={c} />
+            <Facts computer={c} admin={me.admin} full={full} onTab={setTab} />
           </div>
         </div>
       ) : tab === "backups" ? (
         <BackupsPanel kind="environment" name={c.name} stoppers={c.state === "running" ? [c.name] : []} />
       ) : (
         <div class="overflow-hidden rounded-[10px] border border-line bg-surface">
-          {tab === "processes" && <ProcessesTab environment={c} />}
-          {tab === "settings" && <SettingsTab environment={c} />}
+          {tab === "processes" && <ProcessesTab computer={c} />}
+          {tab === "settings" && <SettingsTab computer={c} />}
           {tab === "access" && (
             <>
-              {me.admin && <AccessTab environment={c} />}
-              <WebDAVAccess environment={c} />
+              {me.admin && <AccessTab computer={c} />}
+              <WebDAVAccess computer={c} />
               <div class={me.admin || davView(c, me) ? "border-t border-line" : undefined}>
-                <SharingTab environment={c} />
+                <SharingTab computer={c} />
               </div>
             </>
           )}
@@ -226,14 +226,14 @@ function ViewersPanel({
 }
 
 function Facts({
-  environment: c,
+  computer: c,
   admin,
   full,
   onTab,
 }: {
-  environment: Environment;
+  computer: Computer;
   admin: boolean;
-  /** Observers aren't told the environment's configuration. */
+  /** Observers aren't told the computer's configuration. */
   full: boolean;
   onTab: (t: Tab) => void;
 }) {
@@ -317,13 +317,13 @@ function Facts({
           </>
         )}
       </dl>
-      {upgrading && <UpgradeEnvironment environment={c} onClose={() => setUpgrading(false)} />}
+      {upgrading && <UpgradeComputer computer={c} onClose={() => setUpgrading(false)} />}
     </div>
   );
 }
 
-/** Upgrades one environment. */
-function UpgradeEnvironment({ environment: c, onClose }: { environment: Environment; onClose: () => void }) {
+/** Upgrades one computer. */
+function UpgradeComputer({ computer: c, onClose }: { computer: Computer; onClose: () => void }) {
   return (
     <UpgradeDialog
       title={`Upgrade ${c.name}?`}

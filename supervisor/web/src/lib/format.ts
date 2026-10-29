@@ -1,4 +1,4 @@
-import type { Environment, Settings } from "../api.ts";
+import type { Computer, Settings } from "../api.ts";
 
 const GB = 1024 ** 3;
 
@@ -79,8 +79,8 @@ export function until(iso: string, now = Date.now()): string {
   return `in ${duration(Math.max(0, (Date.parse(iso) - now) / 1000))}`;
 }
 
-/** The status line of an environment: "Running for 3 days", "Stopped", "Creating". */
-export function statusLine(c: Environment, now = Date.now()): string {
+/** The status line of a computer: "Running for 3 days", "Stopped", "Creating". */
+export function statusLine(c: Computer, now = Date.now()): string {
   switch (c.state) {
     case "running":
       return c.startedAt ? `Running for ${since(c.startedAt, now)}` : "Running";
@@ -99,7 +99,7 @@ export function statusLine(c: Environment, now = Date.now()): string {
 
 export type StatusKind = "run" | "busy" | "off";
 
-export function statusKind(c: Pick<Environment, "state">): StatusKind {
+export function statusKind(c: Pick<Computer, "state">): StatusKind {
   if (c.state === "running") return "run";
   if (c.state === "stopped") return "off";
   return "busy";
@@ -111,11 +111,11 @@ export interface Notice {
 }
 
 /**
- * What an environment's tile and page say beyond its state: a container
+ * What a computer's tile and page say beyond its state: a container
  * conflict, why its last change failed, or a saved change (revision ahead of
- * the container's) that isn't applied yet. Busy environments wait for their job.
+ * the container's) that isn't applied yet. Busy computers wait for their job.
  */
-export function notice(c: Pick<Environment, "state" | "revision" | "appliedRevision" | "error" | "conflict">): Notice | null {
+export function notice(c: Pick<Computer, "state" | "revision" | "appliedRevision" | "error" | "conflict">): Notice | null {
   if (c.conflict) return { kind: "error", text: c.conflict };
   if (statusKind(c) === "busy") return null;
   // Without a container there is nothing to be behind: start builds it.

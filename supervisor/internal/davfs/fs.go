@@ -1,5 +1,5 @@
-// Package davfs is an environment's files as one tree: its home at
-// /workspace and its volumes at their paths in the environment, under
+// Package davfs is a computer's files as one tree: its home at
+// /workspace and its volumes at their paths in the computer, under
 // synthesized parent folders, the way the desktop sees them. It implements
 // webdav.FileSystem, without any notion of who is asking: authentication and
 // HTTP are the caller's.

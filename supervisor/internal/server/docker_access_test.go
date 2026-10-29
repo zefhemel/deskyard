@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 )
 
 func TestDockerAccessSettingsAPI(t *testing.T) {
 	e := &hostSettingsEngine{current: alice}
 	e.current.Labels = maps.Clone(alice.Labels)
 	e.current.Image = "img"
-	e.current.Env = map[string]string{environments.TokenEnv: "token"}
+	e.current.Env = map[string]string{computers.TokenEnv: "token"}
 	s, ts := newTestServerWith(t, e)
 	admin := login(t, ts, "admin")
 	anna := login(t, ts, "anna")
@@ -83,13 +83,13 @@ func TestDockerAccessSettingsAPI(t *testing.T) {
 	exposed(true)
 	patch(map[string]any{"nanoCpus": int64(1e9)})
 	exposed(true)
-	d, _ := s.Environments.Get(context.Background(), "alice")
+	d, _ := s.Computers.Get(context.Background(), "alice")
 	if !d.Settings.DockerAccess || d.Container.Env["DESKYARD_DOCKER_ACCESS"] != "1" {
 		t.Fatal("permission lost during unrelated update")
 	}
 	patch(map[string]any{"dockerAccess": false})
 	exposed(false)
-	d, _ = s.Environments.Get(context.Background(), "alice")
+	d, _ = s.Computers.Get(context.Background(), "alice")
 	if d.Container.Env["DESKYARD_DOCKER_ACCESS"] != "" {
 		t.Fatal("revocation retained startup permission")
 	}

@@ -34,7 +34,7 @@ func TestUIEventsWebSocketSnapshotAndUpdate(t *testing.T) {
 	if err = json.Unmarshal(b, &msg); err != nil || msg.Type != "environment" || !strings.Contains(string(msg.Data), `"name":"alice"`) {
 		t.Fatalf("snapshot: %s %v", b, err)
 	}
-	s.events.publish(event{kind: "stats", environment: "alice", data: map[string]string{"name": "alice"}})
+	s.events.publish(event{kind: "stats", computer: "alice", data: map[string]string{"name": "alice"}})
 	_, b, err = ws.Read(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -233,9 +233,9 @@ func TestSocketEventWriterWriteFailureCancels(t *testing.T) {
 	}
 }
 
-// An account learns of no removal of an environment it couldn't see: a
-// removed environment's or a conflict container's name isn't sent to it.
-func TestUIEventsRemovedOnlyForVisibleEnvironments(t *testing.T) {
+// An account learns of no removal of a computer it couldn't see: a
+// removed computer's or a conflict container's name isn't sent to it.
+func TestUIEventsRemovedOnlyForVisibleComputers(t *testing.T) {
 	s, ts := newTestServer(t)
 	anna := login(t, ts, "anna")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -245,7 +245,7 @@ func TestUIEventsRemovedOnlyForVisibleEnvironments(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ws.CloseNow()
-	s.publishEnvironment(ctx, "bobs-secret")
+	s.publishComputer(ctx, "bobs-secret")
 	s.events.publish(event{kind: "marker", data: map[string]string{}})
 	for {
 		_, b, err := ws.Read(ctx)
@@ -253,7 +253,7 @@ func TestUIEventsRemovedOnlyForVisibleEnvironments(t *testing.T) {
 			t.Fatal(err)
 		}
 		if strings.Contains(string(b), "bobs-secret") {
-			t.Fatalf("sent the name of an environment anna can't see: %s", b)
+			t.Fatalf("sent the name of a computer anna can't see: %s", b)
 		}
 		if strings.Contains(string(b), `"marker"`) {
 			return

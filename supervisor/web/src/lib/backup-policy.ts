@@ -47,7 +47,7 @@ export function describeReason(reason: string): string {
   return { scheduled: "Scheduled", manual: "Manual", "pre-restore": "Before a restore" }[reason] ?? "";
 }
 
-/** "environment:alice" → ["environment", "alice"]. */
+/** "computer:alice" → ["computer", "alice"]. */
 export function splitItem(item: string): ["environment" | "volume", string] {
   const i = item.indexOf(":");
   return [item.slice(0, i) as "environment" | "volume", item.slice(i + 1)];

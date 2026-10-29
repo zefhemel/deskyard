@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 // volumeEngine is hostSettingsEngine whose helper containers make and
@@ -23,7 +23,7 @@ import (
 type volumeEngine struct{ hostSettingsEngine }
 
 func (e *volumeEngine) Create(ctx context.Context, s engine.ContainerSpec) (string, error) {
-	if s.Labels[environments.LabelManaged] != "true" && len(s.Mounts) == 1 && len(s.Cmd) > 0 {
+	if s.Labels[computers.LabelManaged] != "true" && len(s.Mounts) == 1 && len(s.Cmd) > 0 {
 		root, target := s.Mounts[0].Source, s.Mounts[0].Target
 		path := filepath.Join(root, strings.TrimPrefix(s.Cmd[len(s.Cmd)-1], target))
 		switch s.Cmd[0] {
@@ -40,7 +40,7 @@ func newVolumeServer(t *testing.T) (*Server, *httptest.Server, func(client *http
 	e := &volumeEngine{hostSettingsEngine{current: alice}}
 	e.current.Labels = maps.Clone(alice.Labels)
 	e.current.Image = "img"
-	e.current.Env = map[string]string{environments.TokenEnv: "token"}
+	e.current.Env = map[string]string{computers.TokenEnv: "token"}
 	s, ts := newTestServerWith(t, e)
 	send := func(client *http.Client, method, path, body string) (int, []byte) {
 		t.Helper()
@@ -83,11 +83,11 @@ type volumeUserTest struct {
 }
 
 type volumeTest struct {
-	Name         string           `json:"name"`
-	Created      time.Time        `json:"created"`
-	Kind         string           `json:"kind"`
-	Folder       string           `json:"folder"`
-	Environments []volumeUserTest `json:"environments"`
+	Name      string           `json:"name"`
+	Created   time.Time        `json:"created"`
+	Kind      string           `json:"kind"`
+	Folder    string           `json:"folder"`
+	Computers []volumeUserTest `json:"environments"`
 }
 
 func TestVolumesAdminOnly(t *testing.T) {
@@ -118,7 +118,7 @@ func TestVolumesCreateListDelete(t *testing.T) {
 		}
 	}
 
-	folder := s.Environments.Layout.VolumeOf("photos")
+	folder := s.Computers.Layout.VolumeOf("photos")
 	code, b = send(admin, "POST", "/api/volumes", `{"name":"photos"}`)
 	if code != 201 {
 		t.Fatalf("create: %d %s", code, b)
@@ -131,7 +131,7 @@ func TestVolumesCreateListDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 	if created.Adopted || created.Volume.Name != "photos" || created.Volume.Kind != "local" ||
-		created.Volume.Folder != folder || created.Volume.Created.IsZero() || created.Volume.Environments == nil {
+		created.Volume.Folder != folder || created.Volume.Created.IsZero() || created.Volume.Computers == nil {
 		t.Fatalf("created: %s", b)
 	}
 	if st, err := os.Stat(folder); err != nil || !st.IsDir() {
@@ -142,7 +142,7 @@ func TestVolumesCreateListDelete(t *testing.T) {
 	}
 
 	// A folder already there is adopted.
-	if err := os.MkdirAll(s.Environments.Layout.VolumeOf("music"), 0o755); err != nil {
+	if err := os.MkdirAll(s.Computers.Layout.VolumeOf("music"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	code, b = send(admin, "POST", "/api/volumes", `{"name":"music"}`)
@@ -175,7 +175,7 @@ func TestVolumesCreateListDelete(t *testing.T) {
 	if code, b := send(admin, "DELETE", "/api/volumes/music?deleteFiles=true", ""); code != 204 {
 		t.Fatalf("delete with files: %d %s", code, b)
 	}
-	if _, err := os.Stat(s.Environments.Layout.VolumeOf("music")); !os.IsNotExist(err) {
+	if _, err := os.Stat(s.Computers.Layout.VolumeOf("music")); !os.IsNotExist(err) {
 		t.Fatalf("files not deleted: %v", err)
 	}
 }
@@ -201,20 +201,20 @@ func TestDeleteGrantedVolume409(t *testing.T) {
 		t.Fatalf("delete granted: %d %s", code, b)
 	}
 	var res struct {
-		Error        string
-		Environments []struct{ ID, Name string }
+		Error     string
+		Computers []struct{ ID, Name string } `json:"environments"`
 	}
 	if err := json.Unmarshal(b, &res); err != nil {
 		t.Fatal(err)
 	}
-	if res.Error != "photos is used by alice" || len(res.Environments) != 1 ||
-		res.Environments[0].ID != "alice" || res.Environments[0].Name != "alice" {
+	if res.Error != "photos is used by alice" || len(res.Computers) != 1 ||
+		res.Computers[0].ID != "alice" || res.Computers[0].Name != "alice" {
 		t.Fatalf("409 body: %s", b)
 	}
-	if _, ok := s.Environments.Vols.Get("photos"); !ok {
+	if _, ok := s.Computers.Vols.Get("photos"); !ok {
 		t.Fatal("volume deleted")
 	}
-	if _, err := os.Stat(s.Environments.Layout.VolumeOf("photos")); err != nil {
+	if _, err := os.Stat(s.Computers.Layout.VolumeOf("photos")); err != nil {
 		t.Fatal("folder deleted")
 	}
 }
@@ -233,11 +233,11 @@ func TestDeleteMountedVolume409(t *testing.T) {
 	}
 	waitJob(t, s, b)
 	// The fake engine doesn't record mounts; give alice's container the grant's.
-	e := s.Environments.Eng.(*volumeEngine)
+	e := s.Computers.Eng.(*volumeEngine)
 	e.mu.Lock()
-	e.current.Mounts = []engine.Mount{{Source: s.Environments.Layout.VolumeOf("photos"), Target: "/share/photos"}}
+	e.current.Mounts = []engine.Mount{{Source: s.Computers.Layout.VolumeOf("photos"), Target: "/share/photos"}}
 	e.mu.Unlock()
-	if _, err := s.Environments.Defs.Update("alice", func(d *environments.Definition) error {
+	if _, err := s.Computers.Defs.Update("alice", func(d *computers.Definition) error {
 		d.Volumes = nil
 		return nil
 	}); err != nil {
@@ -247,10 +247,10 @@ func TestDeleteMountedVolume409(t *testing.T) {
 	if code != 409 || !strings.Contains(string(b), "still mounted by the container of alice") {
 		t.Fatalf("delete mounted: %d %s", code, b)
 	}
-	if _, ok := s.Environments.Vols.Get("photos"); !ok {
+	if _, ok := s.Computers.Vols.Get("photos"); !ok {
 		t.Fatal("volume deleted")
 	}
-	if _, err := os.Stat(s.Environments.Layout.VolumeOf("photos")); err != nil {
+	if _, err := os.Stat(s.Computers.Layout.VolumeOf("photos")); err != nil {
 		t.Fatal("folder deleted")
 	}
 }
@@ -278,7 +278,7 @@ func TestPatchVolumesUnknown400(t *testing.T) {
 	}
 }
 
-func TestEnvironmentJSONHasVolumes(t *testing.T) {
+func TestComputerJSONHasVolumes(t *testing.T) {
 	s, ts, send := newVolumeServer(t)
 	admin := login(t, ts, "admin")
 	code, b := send(admin, "GET", "/api/environments/alice", "")
@@ -303,8 +303,8 @@ func TestEnvironmentJSONHasVolumes(t *testing.T) {
 		t.Fatalf("PATCH: %d %s", code, b)
 	}
 	waitJob(t, s, b)
-	c, _ := s.Environments.Get(context.Background(), "alice")
-	if want := []environments.VolumeGrant{{Name: "photos", Path: "/share/photos"}}; !reflect.DeepEqual(c.Settings.Volumes, want) {
+	c, _ := s.Computers.Get(context.Background(), "alice")
+	if want := []computers.VolumeGrant{{Name: "photos", Path: "/share/photos"}}; !reflect.DeepEqual(c.Settings.Volumes, want) {
 		t.Fatalf("omitting volumes lost them: %+v", c.Settings.Volumes)
 	}
 }
@@ -325,7 +325,7 @@ func TestPatchKeepsDanglingGrant(t *testing.T) {
 	}
 	waitJob(t, s, b)
 	// As though volumes.json were edited by hand.
-	if err := s.Environments.Vols.Delete("photos"); err != nil {
+	if err := s.Computers.Vols.Delete("photos"); err != nil {
 		t.Fatal(err)
 	}
 	for _, body := range []string{`{"memoryBytes":1073741824}`, `{"volumes":[{"name":"photos","readOnly":true}]}`} {
@@ -362,7 +362,7 @@ func TestPatchKeepsDanglingGrant(t *testing.T) {
 func TestCreateVolumeFileInTheWay409(t *testing.T) {
 	s, ts, send := newVolumeServer(t)
 	admin := login(t, ts, "admin")
-	folder := s.Environments.Layout.VolumeOf("photos")
+	folder := s.Computers.Layout.VolumeOf("photos")
 	if err := os.MkdirAll(filepath.Dir(folder), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -384,7 +384,7 @@ func TestVolumeUsage(t *testing.T) {
 	if code, b := send(admin, "POST", "/api/volumes", `{"name":"photos"}`); code != 201 {
 		t.Fatalf("create: %d %s", code, b)
 	}
-	folder := s.Environments.Layout.VolumeOf("photos")
+	folder := s.Computers.Layout.VolumeOf("photos")
 	if err := os.MkdirAll(filepath.Join(folder, "trip"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -412,8 +412,8 @@ func TestFoldersShownAsHostPaths(t *testing.T) {
 	e := &volumeEngine{hostSettingsEngine{current: alice}}
 	e.current.Labels = maps.Clone(alice.Labels)
 	e.current.Image = "img"
-	e.current.Env = map[string]string{environments.TokenEnv: "token"}
-	s, ts := newTestServerCfg(t, e, environments.Config{Subnet: "10.0.0.0/16", DataHost: "/srv/deskyard"})
+	e.current.Env = map[string]string{computers.TokenEnv: "token"}
+	s, ts := newTestServerCfg(t, e, computers.Config{Subnet: "10.0.0.0/16", DataHost: "/srv/deskyard"})
 	admin := login(t, ts, "admin")
 	get := func(path string, v any) {
 		t.Helper()
@@ -429,7 +429,7 @@ func TestFoldersShownAsHostPaths(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, _, err := s.Environments.CreateVolume(context.Background(), "photos", ""); err != nil {
+	if _, _, err := s.Computers.CreateVolume(context.Background(), "photos", ""); err != nil {
 		t.Fatal(err)
 	}
 	var vols struct{ Volumes []volumeTest }
@@ -440,7 +440,7 @@ func TestFoldersShownAsHostPaths(t *testing.T) {
 	var env struct{ Folder string }
 	get("/api/environments/alice", &env)
 	if env.Folder != "/srv/deskyard/home/alice" {
-		t.Errorf("environment folder: %q", env.Folder)
+		t.Errorf("computer folder: %q", env.Folder)
 	}
 	var folder struct{ Path string }
 	get("/api/environments/alice/folder", &folder)

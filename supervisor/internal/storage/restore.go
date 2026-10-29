@@ -12,12 +12,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 // RestoreRequest is a restore of a snapshot: here (replace the item's
-// files), new (a new environment or volume named NewName) or folder (Paths,
+// files), new (a new computer or volume named NewName) or folder (Paths,
 // relative to the item, into a new "Restored …" folder inside the item).
 type RestoreRequest struct {
 	Repository  string   `json:"repository"` // default: the item's policy's
@@ -77,9 +77,9 @@ func (s *Service) helper(ctx context.Context, what string, mounts []engine.Mount
 
 // itemFolder is the host folder holding the item's files.
 func (s *Service) itemFolder(it Item) (string, error) {
-	if it.Kind == KindEnvironment {
+	if it.Kind == KindComputer {
 		if _, ok := s.Env.Definition(it.Name); !ok {
-			return "", fmt.Errorf("environment %s: %w", it.Name, ErrNotFound)
+			return "", fmt.Errorf("computer %s: %w", it.Name, ErrNotFound)
 		}
 		return s.Env.Layout().HomeOf(it.Name), nil
 	}
@@ -133,14 +133,14 @@ func (s *Service) restoreHere(ctx context.Context, it Item, repo Repo, snap Snap
 			return fmt.Errorf("backing up the current files first: %w", err)
 		}
 	}
-	// The environments that have the files open: stopped, and started again
+	// The computers that have the files open: stopped, and started again
 	// afterwards when they were running.
 	var envs []string
-	if it.Kind == KindEnvironment {
+	if it.Kind == KindComputer {
 		envs = []string{it.Name}
 	} else {
 		for _, u := range s.Env.VolumeUsers(it.Name) {
-			envs = append(envs, u.Environment)
+			envs = append(envs, u.Computer)
 		}
 	}
 	// After any backup that holds the lock, so nothing sits stopped waiting.
@@ -197,16 +197,16 @@ func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snaps
 	name := req.NewName
 	layout := s.Env.Layout()
 	var folder string
-	if it.Kind == KindEnvironment {
-		if err := environments.ValidNewName(name); err != nil {
+	if it.Kind == KindComputer {
+		if err := computers.ValidNewName(name); err != nil {
 			return RestoreResult{}, err
 		}
 		if _, ok := s.Env.Definition(name); ok {
-			return RestoreResult{}, fmt.Errorf("environment %q: %w", name, ErrExists)
+			return RestoreResult{}, fmt.Errorf("computer %q: %w", name, ErrExists)
 		}
 		folder = layout.HomeOf(name)
 	} else {
-		if err := environments.ValidName(name); err != nil {
+		if err := computers.ValidName(name); err != nil {
 			return RestoreResult{}, err
 		}
 		if _, ok := s.Env.Volume(name); ok {
@@ -223,7 +223,7 @@ func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snaps
 		return RestoreResult{}, err
 	}
 	defer release()
-	if it.Kind == KindEnvironment {
+	if it.Kind == KindComputer {
 		// As the create API does, so reconcile and other operations leave the
 		// name alone while its home is restored and it is created.
 		releaseName, err := s.Env.Reserve(name, "creating")
@@ -232,7 +232,7 @@ func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snaps
 		}
 		defer releaseName()
 		if _, ok := s.Env.Definition(name); ok {
-			return RestoreResult{}, fmt.Errorf("environment %q: %w", name, ErrExists)
+			return RestoreResult{}, fmt.Errorf("computer %q: %w", name, ErrExists)
 		}
 		if s.ForgetName != nil {
 			if err := s.ForgetName(name); err != nil {
@@ -240,8 +240,8 @@ func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snaps
 			}
 		}
 	}
-	var def environments.Definition
-	if it.Kind == KindEnvironment {
+	var def computers.Definition
+	if it.Kind == KindComputer {
 		var buf bytes.Buffer
 		if err := s.Tool.Dump(ctx, repo, snap.ID, path.Join("/deskyard/environment", it.Name, "definition.json"), false, &buf); err != nil {
 			return RestoreResult{}, err
@@ -288,16 +288,16 @@ func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snaps
 	return res, nil
 }
 
-// settingsFrom is the settings a new environment takes over from a saved
+// settingsFrom is the settings a new computer takes over from a saved
 // definition: image (or image) and resources. What belongs to this
 // machine's other resources is dropped and named.
-func (s *Service) settingsFrom(def environments.Definition, image string) (environments.Settings, []string) {
-	set := environments.Settings{Image: def.Image.Ref, MemoryBytes: def.Limits.MemoryBytes, NanoCPUs: def.Limits.NanoCPUs, Volumes: []environments.VolumeGrant{}}
+func (s *Service) settingsFrom(def computers.Definition, image string) (computers.Settings, []string) {
+	set := computers.Settings{Image: def.Image.Ref, MemoryBytes: def.Limits.MemoryBytes, NanoCPUs: def.Limits.NanoCPUs, Volumes: []computers.VolumeGrant{}}
 	if image != "" {
 		set.Image = image
 	}
 	var dropped []string
-	if def.Network.Kind == environments.NetworkVPN || def.Network.Connection != "" {
+	if def.Network.Kind == computers.NetworkVPN || def.Network.Connection != "" {
 		dropped = append(dropped, "the VPN connection and its LAN exceptions")
 	}
 	if def.DockerAccess {
@@ -351,7 +351,7 @@ func (s *Service) restoreFolder(ctx context.Context, it Item, repo Repo, snap Sn
 	// A host volume's folder may be one the supervisor can't write in (it
 	// belongs to the host's user), so the root helper makes the folder
 	// there. Homes and local volumes are the supervisor's own.
-	if v, ok := s.Env.Volume(it.Name); it.Kind == KindVolume && ok && v.Kind == environments.VolumeHost {
+	if v, ok := s.Env.Volume(it.Name); it.Kind == KindVolume && ok && v.Kind == computers.VolumeHost {
 		if err := s.helper(ctx, "making "+name, []engine.Mount{{Source: folder, Target: "/item", MustExist: true}}, "install", "-d", "-o", "1000", "-g", "1000", "-m", "0755", "/item/"+name); err != nil {
 			return RestoreResult{}, err
 		}

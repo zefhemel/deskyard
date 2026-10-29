@@ -22,7 +22,7 @@ type Layout struct {
 	Secret string // 0700: session key, proxy tokens, VPN credentials, TLS storage
 	State  string // 0700: instance ID, recovery and network journals, VPN scratch
 	Cache  string // disposable: Selkies web clients extracted from images
-	Home   string // home/<name>: each environment's /workspace
+	Home   string // home/<name>: each computer's /workspace
 	Volume string // volume/<name>: each named volume's data
 
 	host string // where Data lives on the engine host; "" when unknown
@@ -116,7 +116,7 @@ func (l Layout) FromHost(p string) string {
 	return p
 }
 
-// HomeOf is the environment's workspace folder.
+// HomeOf is the computer's workspace folder.
 func (l Layout) HomeOf(name string) string { return filepath.Join(l.Home, name) }
 
 // VolumeOf is the named volume's data folder.
@@ -141,7 +141,7 @@ func (l Layout) Prepare() error {
 	return nil
 }
 
-// ErrLegacyLayout: the data folder holds state from before environment
+// ErrLegacyLayout: the data folder holds state from before computer
 // definitions, which this supervisor neither migrates nor deletes.
 var ErrLegacyLayout = errors.New("the data folder has state from an older Deskyard")
 

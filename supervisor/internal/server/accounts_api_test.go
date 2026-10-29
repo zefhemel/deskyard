@@ -18,7 +18,7 @@ func TestAccountLinkForTokenAccount(t *testing.T) {
 	var a accountJSON
 	_ = json.Unmarshal([]byte(body), &a)
 	if code != 201 || a.Kind != "token" || a.Description != "Build agent" || a.LinkPending || a.SharedBy != nil ||
-		len(a.Grants) != 1 || a.Grants[0] != (accounts.Grant{Environment: "alice", Level: auth.LevelFull}) {
+		len(a.Grants) != 1 || a.Grants[0] != (accounts.Grant{Computer: "alice", Level: auth.LevelFull}) {
 		t.Fatalf("create token account: %d %s", code, body)
 	}
 	code, body = send(t, admin, "POST", ts.URL+"/api/accounts/tess/link", ts.URL, "")
@@ -155,7 +155,7 @@ func TestAccessEndpointLevels(t *testing.T) {
 	}
 	_, body := get(t, admin, ts.URL+"/api/environments/alice")
 	if !strings.Contains(body, `"access":[{"username":"anna","level":"observe"},{"username":"bob","level":"full"}]`) {
-		t.Fatalf("environment access: %s", body)
+		t.Fatalf("computer access: %s", body)
 	}
 	for _, req := range []string{
 		`{"grants":[{"username":"nobody","level":"full"}]}`,

@@ -13,7 +13,7 @@ export function VolumeDetailsPage() {
   const { route } = useLocation();
   const name = params.name ?? "";
   const list = useFetch(() => api.volumes(), "volumes");
-  const envs = useFetch(() => api.environments(), "environments");
+  const envs = useFetch(() => api.computers(), "environments");
   const backup = useFetch(() => api.backup("volume", name), `backup-volume-${name}`);
   const [removing, setRemoving] = useState(false);
   const v = list.data?.volumes.find((x) => x.name === name);
@@ -37,7 +37,7 @@ export function VolumeDetailsPage() {
               Delete
             </Button>
           </div>
-          <VolumeCard volume={v} environments={envs.data?.environments} bare />
+          <VolumeCard volume={v} computers={envs.data?.environments} bare />
           <h2 class="mt-8 mb-3 text-xl font-bold">Backups</h2>
           <BackupsPanel
             kind="volume"

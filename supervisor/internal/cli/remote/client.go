@@ -13,19 +13,19 @@ import (
 	"time"
 )
 
-// Client talks to a supervisor's API, and to one environment's remote access
+// Client talks to a supervisor's API, and to one computer's remote access
 // API, with a client credential.
 type Client struct {
-	Alias       string // server name, for messages ("deskyard.example.com")
-	Base        string
-	Environment string // the environment URL and WSURL address; may be empty
-	Token       string // client credential (dyc_…); empty for unauthenticated calls
-	HTTP        *http.Client
+	Alias    string // server name, for messages ("deskyard.example.com")
+	Base     string
+	Computer string // the computer URL and WSURL address; may be empty
+	Token    string // client credential (dyc_…); empty for unauthenticated calls
+	HTTP     *http.Client
 }
 
-// FromServer builds a client for a saved server and one of its environments.
-func FromServer(s *Server, environment string) *Client {
-	return &Client{Alias: s.Name, Base: s.URL, Environment: environment, Token: s.Credential}
+// FromServer builds a client for a saved server and one of its computers.
+func FromServer(s *Server, computer string) *Client {
+	return &Client{Alias: s.Name, Base: s.URL, Computer: computer, Token: s.Credential}
 }
 
 // Info is GET /api/environments/{name}/status.
@@ -42,20 +42,20 @@ type Info struct {
 	API int `json:"api"`
 }
 
-// Label names the environment in messages.
+// Label names the computer in messages.
 func (c *Client) Label() string {
-	if c.Environment != "" {
-		return c.Environment
+	if c.Computer != "" {
+		return c.Computer
 	}
 	if c.Alias != "" {
 		return c.Alias
 	}
-	return "the environment"
+	return "the computer"
 }
 
-// URL is the environment's remote access route p (/exec, /cdp/…).
+// URL is the computer's remote access route p (/exec, /cdp/…).
 func (c *Client) URL(p string) string {
-	return c.Base + "/api/environments/" + url.PathEscape(c.Environment) + p
+	return c.Base + "/api/environments/" + url.PathEscape(c.Computer) + p
 }
 
 // API is the supervisor API route p (/me, /accounts).
@@ -149,8 +149,8 @@ func (c *Client) JSONWithin(ctx context.Context, d time.Duration, method, path s
 	return nil
 }
 
-// Info fetches the environment's description and state; it also checks the
-// credential and the environment's name.
+// Info fetches the computer's description and state; it also checks the
+// credential and the computer's name.
 func (c *Client) Info(ctx context.Context) (*Info, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -224,7 +224,7 @@ func (c *Client) explain(status int, msg string) string {
 		if msg == "" {
 			msg = "the credential was rejected"
 		}
-		login := (&Target{Base: c.Base, Environment: c.Environment}).URL()
+		login := (&Target{Base: c.Base, Computer: c.Computer}).URL()
 		if c.Alias != "" && c.Alias != DefaultName(c.Base) {
 			login += " --name " + c.Alias
 		}
@@ -238,9 +238,9 @@ func (c *Client) explain(status int, msg string) string {
 		switch msg {
 		case "":
 			return fmt.Sprintf("%s has no such API (404): check the URL (expected https://host/%s)", c.Base, name)
-		case "no such environment":
-			if c.Environment != "" {
-				return fmt.Sprintf("%s has no environment %q you can use (404): check the name, or sign in as an account with access to it (deskyard login)", c.Base, c.Environment)
+		case "no such computer":
+			if c.Computer != "" {
+				return fmt.Sprintf("%s has no computer %q you can use (404): check the name, or sign in as an account with access to it (deskyard login)", c.Base, c.Computer)
 			}
 		}
 		return msg + " (404)"

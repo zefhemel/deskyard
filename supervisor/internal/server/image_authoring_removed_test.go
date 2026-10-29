@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 func TestImageAuthoringRoutesRemoved(t *testing.T) {
@@ -62,24 +62,24 @@ func TestRemoveLegacyCustomCatalogEntryPreservesImageAndSource(t *testing.T) {
 }
 
 // A definition references its image whether or not it has a container.
-func TestRemoveImageRefusedForContainerlessEnvironment(t *testing.T) {
+func TestRemoveImageRefusedForContainerlessComputer(t *testing.T) {
 	bt := newCatalogTest(t)
 	ref := "deskyard-custom/existing:latest"
 	bt.e.addImage(ref, "sha256:prebuilt", "user")
 	if err := bt.s.images.put(catalogEntry{Ref: ref, Newest: "sha256:prebuilt", Custom: true}); err != nil {
 		t.Fatal(err)
 	}
-	for _, image := range []environments.ImageRef{{Ref: ref, ID: "sha256:prebuilt"}, {Ref: "elsewhere/other:1", ID: "sha256:prebuilt"}} {
-		def := environments.Definition{Name: "alice", Created: time.Now().UTC(), Revision: 1, Image: image,
-			Network: environments.Network{Kind: environments.NetworkIsolated}, Power: environments.PowerStopped}
-		if err := bt.s.Environments.Defs.Put(def); err != nil {
+	for _, image := range []computers.ImageRef{{Ref: ref, ID: "sha256:prebuilt"}, {Ref: "elsewhere/other:1", ID: "sha256:prebuilt"}} {
+		def := computers.Definition{Name: "alice", Created: time.Now().UTC(), Revision: 1, Image: image,
+			Network: computers.Network{Kind: computers.NetworkIsolated}, Power: computers.PowerStopped}
+		if err := bt.s.Computers.Defs.Put(def); err != nil {
 			t.Fatal(err)
 		}
 		if code, body := bt.do(bt.admin, "DELETE", "/api/images?ref="+ref, nil); code != 409 || !strings.Contains(string(body), "alice") {
-			t.Fatalf("removed an image a stopped environment without a container uses (%+v): %d %s", image, code, body)
+			t.Fatalf("removed an image a stopped computer without a container uses (%+v): %d %s", image, code, body)
 		}
 	}
-	if err := bt.s.Environments.Defs.Delete("alice"); err != nil {
+	if err := bt.s.Computers.Defs.Delete("alice"); err != nil {
 		t.Fatal(err)
 	}
 	if code, body := bt.do(bt.admin, "DELETE", "/api/images?ref="+ref, nil); code != 204 {

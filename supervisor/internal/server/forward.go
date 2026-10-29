@@ -15,8 +15,8 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/forward"
 )
 
@@ -36,7 +36,7 @@ const maxForwardListens = 64
 // desktop. The out ports are as declared; the in ports are the ones the
 // helper confirmed with Listening.
 type forwardLink struct {
-	token   string // the credential's name, as Environment.forwards shows it
+	token   string // the credential's name, as Computer.forwards shows it
 	tokenID string // the credential's id: its cap and activity summary
 	out     []int
 
@@ -269,7 +269,7 @@ func parseForwardStart(b []byte) ([]int, error) {
 // client's WebSocket and `deskyard forward-helper`, run in the desktop as
 // user. Frames are checked for size and type only; Listen and Listening are
 // observed so viewers see which ports are mapped.
-func (s *Server) remoteForward(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
+func (s *Server) remoteForward(w http.ResponseWriter, r *http.Request, c computers.Computer, cred credential) {
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {
 		return
@@ -297,7 +297,7 @@ func (s *Server) remoteForward(w http.ResponseWriter, r *http.Request, c environ
 	}
 	lk := newForwardLink(cred.Name, cred.ID, outs)
 	if !s.forwards.tryAdd(c.Name, lk) {
-		fail(fmt.Sprintf("this credential already has %d forward links open on this environment; close one first", maxLinksPerToken))
+		fail(fmt.Sprintf("this credential already has %d forward links open on this computer; close one first", maxLinksPerToken))
 		return
 	}
 	// The live mappings (listFor) replace this text in the activity API.
@@ -328,7 +328,7 @@ func (s *Server) remoteForward(w http.ResponseWriter, r *http.Request, c environ
 		close(stderrDone)
 	}
 	s.publishViewers(c.Name, c.ID)
-	s.Log.Info("remote forward", "environment", c.Name, "credential", cred.Name, "account", cred.Username, "out", outs)
+	s.Log.Info("remote forward", "computer", c.Name, "credential", cred.Name, "account", cred.Username, "out", outs)
 
 	go keepAlive(ctx, ws)
 	err = relayForward(ctx, ws, p.Stdin, p.Stdout, lk, func() { s.publishViewers(c.Name, c.ID) })
@@ -336,8 +336,8 @@ func (s *Server) remoteForward(w http.ResponseWriter, r *http.Request, c environ
 	switch {
 	case ctx.Err() != nil: // the client left, or its access was revoked
 	case errors.Is(err, errHelperEnded):
-		if cur, err := s.Environments.Get(ctx, c.Name); err != nil || !cur.Running() {
-			_ = ws.Close(websocket.StatusGoingAway, "environment stopped")
+		if cur, err := s.Computers.Get(ctx, c.Name); err != nil || !cur.Running() {
+			_ = ws.Close(websocket.StatusGoingAway, "computer stopped")
 			return
 		}
 		code, _ := p.Wait()
@@ -350,9 +350,9 @@ func (s *Server) remoteForward(w http.ResponseWriter, r *http.Request, c environ
 			fail("the forward helper failed: " + msg)
 			return
 		}
-		_ = ws.Close(websocket.StatusGoingAway, "the environment side closed")
+		_ = ws.Close(websocket.StatusGoingAway, "the computer side closed")
 	case errors.Is(err, errBadFrame):
-		s.Log.Info("remote forward closed", "environment", c.Name, "credential", cred.Name, "err", err)
+		s.Log.Info("remote forward closed", "computer", c.Name, "credential", cred.Name, "err", err)
 		_ = ws.Close(websocket.StatusPolicyViolation, closeReason(err.Error()))
 	}
 }

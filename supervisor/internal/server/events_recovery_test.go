@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 type snapshotEngine struct {
@@ -29,7 +29,7 @@ func TestEventsQueuedLifecycleCannotOverwriteSnapshot(t *testing.T) {
 	s, ts := newTestServerWith(t, eng)
 	client := login(t, ts, "admin")
 	eng.list = func() ([]engine.Container, error) {
-		s.events.publish(event{kind: "environment", environment: "alice", data: environments.Environment{Name: "alice", ID: "alice", State: "running"}})
+		s.events.publish(event{kind: "environment", computer: "alice", data: computers.Computer{Name: "alice", ID: "alice", State: "running"}})
 		return []engine.Container{alice}, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -47,7 +47,7 @@ func TestEventsQueuedLifecycleCannotOverwriteSnapshot(t *testing.T) {
 		if !strings.HasPrefix(line, "data: ") {
 			continue
 		}
-		var c environmentJSON
+		var c computerJSON
 		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &c); err != nil {
 			t.Fatal(err)
 		}

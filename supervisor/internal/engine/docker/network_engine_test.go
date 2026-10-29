@@ -14,7 +14,7 @@ import (
 )
 
 // Docker's refusal of an overlapping subnet is engine.ErrSubnetTaken, which
-// the environments service retries with another subnet.
+// the computers service retries with another subnet.
 func TestCreateNetworkReportsTakenSubnet(t *testing.T) {
 	d, err := New("")
 	if err != nil {

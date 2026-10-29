@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 )
 
@@ -125,7 +125,7 @@ func (s StoredSecrets) names() []string {
 // Validate checks r with the secrets it would have: sec on top of nothing
 // when creating, or on top of the stored ones (assumed complete) when not.
 func (r Remote) Validate(sec Secrets, creating bool) error {
-	if err := environments.ValidName(r.Name); err != nil {
+	if err := computers.ValidName(r.Name); err != nil {
 		return fmt.Errorf("invalid remote name: %w", err)
 	}
 	for field, v := range map[string]string{"root": r.Root, "provider": r.Provider, "endpoint": r.Endpoint, "region": r.Region, "access key ID": r.AccessKeyID, "key ID": r.KeyID, "host": r.Host, "user": r.User, "host key": r.HostKey, "URL": r.URL, "vendor": r.Vendor} {

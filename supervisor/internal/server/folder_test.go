@@ -7,11 +7,11 @@ import (
 	"testing"
 )
 
-// The environment's folder reports its size and the disk holding it, for the
+// The computer's folder reports its size and the disk holding it, for the
 // overview's Disk row.
 func TestFolderReportsSizeAndDisk(t *testing.T) {
 	s, ts := newTestServer(t)
-	home := s.Environments.Layout.HomeOf("alice")
+	home := s.Computers.Layout.HomeOf("alice")
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		t.Fatal(err)
 	}

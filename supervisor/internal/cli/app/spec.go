@@ -71,7 +71,7 @@ var (
 	pngOut   = Output{Type: "png", Desc: "PNG image bytes on stdout, or nothing when FILE is given (the file is written on this machine)"}
 	noOutput = Output{Type: "none", Desc: "nothing"}
 	// flagServer is on every command that manages the server rather than
-	// using an environment.
+	// using a computer.
 	flagServer  = Flag{Name: "--server", Type: "string", Value: "NAME", Desc: "the server to manage (see `deskyard server list`); default: the server -e SERVER/ENV names, else the default server"}
 	flagExpires = Flag{Name: "--expires", Type: "string", Value: "WHEN", Desc: "when the account ends: a time from now (90m, 2h, 7d, 2w) or an RFC 3339 time (2026-12-01T18:00:00Z)"}
 	confirmOut  = Output{Type: "text", Desc: "a confirmation line"}
@@ -291,7 +291,7 @@ func init() {
 			Output: Output{Type: "text", Desc: "a confirmation line"}, Examples: []string{"deskyard env use alice", "deskyard env use work/bob"},
 			Where: whereServer, Exit: exitStd, run: runEnvUse},
 
-		// Environments (on the server)
+		// Computers (on the server)
 		{Name: "env list", Group: "environments", Summary: "list the environments you can see",
 			Usage: "env list [--json]", Desc: "Lists the environments your account can see on the server, with their state, your access level, image and who is viewing. Administrators see every environment, and the containers the server can't match (conflicts) on stderr.",
 			Flags: []Flag{flagJSON, flagServer},

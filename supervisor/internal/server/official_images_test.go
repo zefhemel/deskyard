@@ -103,7 +103,7 @@ func (e discoveryEngine) Pull(ctx context.Context, ref string, p func(engine.Pul
 func TestInstallOfficialImageOnDemand(t *testing.T) {
 	bt := newCatalogTest(t)
 	bt.s.Eng = discoveryEngine{bt.e}
-	bt.s.Environments.Eng = bt.s.Eng
+	bt.s.Computers.Eng = bt.s.Eng
 	j := bt.wait(bt.start("POST", "/api/images/install", map[string]string{"ref": testXFCE}))
 	if j.Status != "done" {
 		t.Fatalf("install: %+v", j)

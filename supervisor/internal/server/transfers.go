@@ -11,13 +11,13 @@ import (
 )
 
 // fileTransfer is a file upload in progress. It goes on only while
-// its account may still use the environment fully, as at its start.
+// its account may still use the computer fully, as at its start.
 type fileTransfer struct {
-	username    string
-	accountID   string
-	epoch       int // the session epoch of its browser login; noSession for a client credential
-	environment string
-	cancel      context.CancelFunc
+	username  string
+	accountID string
+	epoch     int // the session epoch of its browser login; noSession for a client credential
+	computer  string
+	cancel    context.CancelFunc
 }
 
 type transfers struct {
@@ -54,20 +54,20 @@ func (t *transfers) closeAccount(username string) {
 
 func (s *Server) transferAllowed(c *fileTransfer) bool {
 	a, ok := s.accountNow(c.username, c.accountID, time.Now())
-	return ok && (c.epoch == noSession || a.SessionEpoch == c.epoch) && auth.Can(a, auth.View, c.environment)
+	return ok && (c.epoch == noSession || a.SessionEpoch == c.epoch) && auth.Can(a, auth.View, c.computer)
 }
 
-// startTransfer registers a file transfer of the environment for the
+// startTransfer registers a file transfer of the computer for the
 // request's account. Its context ends when the client goes, and when the
-// account may no longer use the environment fully (access lowered or
+// account may no longer use the computer fully (access lowered or
 // removed, the account deleted, expired or its session ended) or the client
 // credential it came with is deleted: the request's blocked reads and
 // writes then fail too, so it can't stream on. done unregisters it.
-func (s *Server) startTransfer(w http.ResponseWriter, r *http.Request, environment string) (ctx context.Context, done func()) {
+func (s *Server) startTransfer(w http.ResponseWriter, r *http.Request, computer string) (ctx context.Context, done func()) {
 	r, untrack := s.trackStream(r)
 	ctx, cancel := context.WithCancel(r.Context())
 	p, _ := s.principal(r)
-	c := &fileTransfer{username: p.account.Username, accountID: p.account.ID, epoch: p.epoch(), environment: environment, cancel: cancel}
+	c := &fileTransfer{username: p.account.Username, accountID: p.account.ID, epoch: p.epoch(), computer: computer, cancel: cancel}
 	s.transfers.mu.Lock()
 	s.transfers.active[c] = true
 	s.transfers.mu.Unlock()

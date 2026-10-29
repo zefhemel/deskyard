@@ -2,7 +2,7 @@ import type { Volume, VolumeGrant } from "../api.ts";
 import { addGrant, canAddGrant, grantPathError, removeGrant, updateGrant } from "../lib/volume-grants.ts";
 import { Button, Check, Field } from "./ui.tsx";
 
-/** Grants of volumes to an environment; `creating` drops the note about recreating its container. */
+/** Grants of volumes to a computer; `creating` drops the note about recreating its container. */
 export function VolumeGrantFields({
   grants,
   volumes,

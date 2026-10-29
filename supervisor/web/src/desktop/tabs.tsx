@@ -1,4 +1,4 @@
-// The environment page's tab strip: Desktop first and fixed, then one tab per
+// The computer page's tab strip: Desktop first and fixed, then one tab per
 // shared terminal session in this viewer's order, then +. Also the pieces of
 // the bar that the active tab fills in (its dot, controls and ⋯ items).
 import { useEffect, useRef, useState } from "preact/hooks";
@@ -71,7 +71,7 @@ export interface TabInfo {
   others: number;
 }
 
-export function EnvironmentTabs({
+export function ComputerTabs({
   tabs,
   active,
   canAdd,

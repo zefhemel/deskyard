@@ -11,11 +11,11 @@ import (
 )
 
 type terminalConnection struct {
-	claims      auth.SessionClaims
-	environment string
-	session     string
-	join        bool // a join-only attachment, which never creates its session
-	cancel      context.CancelFunc
+	claims   auth.SessionClaims
+	computer string
+	session  string
+	join     bool // a join-only attachment, which never creates its session
+	cancel   context.CancelFunc
 
 	// ending counts the requests ending this session that it is part of; end
 	// closes once one of them has ended it, and wake signals a withdrawal.
@@ -44,7 +44,7 @@ func (c *terminalConnection) waitEnding(ctx context.Context) bool {
 	return isClosed(c.end)
 }
 
-type terminalSessionKey struct{ environment, session string }
+type terminalSessionKey struct{ computer, session string }
 
 // terminalEnding is one request ending a session. Its members are the
 // attachments to the session registered before it finished: those present
@@ -113,7 +113,7 @@ func (t *terminalConnections) add(c *terminalConnection) bool {
 		if live.claims.Username == c.claims.Username {
 			users++
 		}
-		if live.environment == c.environment {
+		if live.computer == c.computer {
 			desktops++
 		}
 	}
@@ -124,21 +124,21 @@ func (t *terminalConnections) add(c *terminalConnection) bool {
 	c.wake = make(chan struct{}, 1)
 	t.active[c] = true
 	if c.join {
-		for _, e := range t.endings[terminalSessionKey{c.environment, c.session}] {
+		for _, e := range t.endings[terminalSessionKey{c.computer, c.session}] {
 			e.mark(c)
 		}
 	}
 	return true
 }
 
-// beginEnding marks the attachments to an environment's session as being
+// beginEnding marks the attachments to a computer's session as being
 // ended, until the returned ending finishes.
-func (t *terminalConnections) beginEnding(environment, session string) *terminalEnding {
+func (t *terminalConnections) beginEnding(computer, session string) *terminalEnding {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	e := &terminalEnding{t: t, key: terminalSessionKey{environment, session}}
+	e := &terminalEnding{t: t, key: terminalSessionKey{computer, session}}
 	for c := range t.active {
-		if c.environment == environment && c.session == session {
+		if c.computer == computer && c.session == session {
 			e.mark(c)
 		}
 	}
@@ -192,5 +192,5 @@ func (t *terminalConnections) shutdown() {
 func (s *Server) terminalAllowed(c *terminalConnection) bool {
 	a, ok := s.accountNow(c.claims.Username, c.claims.AccountID, time.Now())
 	return ok && a.SessionEpoch == c.claims.Epoch &&
-		auth.Can(a, auth.View, c.environment) && time.Now().Before(c.claims.Expires)
+		auth.Can(a, auth.View, c.computer) && time.Now().Before(c.claims.Expires)
 }

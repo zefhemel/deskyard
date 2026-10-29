@@ -1,4 +1,4 @@
-// The order of an environment's terminal tabs, kept per viewer in browser
+// The order of a computer's terminal tabs, kept per viewer in browser
 // storage. Desktop is always first and isn't part of the order.
 
 const key = (env: string) => `deskyard.tabs.${env}`;

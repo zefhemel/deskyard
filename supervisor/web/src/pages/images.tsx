@@ -2,7 +2,7 @@ import { useState } from "preact/hooks";
 import { api, type CatalogImage } from "../api.ts";
 import { JobProgress, useJob } from "../components/job.tsx";
 import { notify, notifyError } from "../components/toast.tsx";
-import { EnvironmentChip } from "../components/environment-chip.tsx";
+import { ComputerChip } from "../components/computer-chip.tsx";
 import { Page, PageHead } from "../components/topbar.tsx";
 import { Button, Dialog, ErrorText, Field, Tag } from "../components/ui.tsx";
 import { UPGRADE_NOTE, UpgradeDialog } from "../dialogs/upgrade.tsx";
@@ -83,8 +83,8 @@ function ImageCard({
   onUpgrade: () => void;
   onRemoved: () => void;
 }) {
-  const { environments } = useLive();
-  const env = (name: string) => environments?.find((c) => c.name === name);
+  const { computers } = useLive();
+  const env = (name: string) => computers?.find((c) => c.name === name);
   const install = useJob(onRemoved);
   const remove = () => {
     api.removeImage(img.ref).then(onRemoved, notifyError);
@@ -143,9 +143,9 @@ function ImageCard({
                 const c = env(n);
                 return (
                   <li key={n}>
-                    <EnvironmentChip name={n} environment={c} href={`/environments/${n}?tab=settings`}>
+                    <ComputerChip name={n} computer={c} href={`/environments/${n}?tab=settings`}>
                       <Tag kind={late ? "update" : "ok"}>{late ? `Behind${c?.imageVersion ? ` · ${c.imageVersion}` : ""}` : "Up to date"}</Tag>
-                    </EnvironmentChip>
+                    </ComputerChip>
                   </li>
                 );
               })}

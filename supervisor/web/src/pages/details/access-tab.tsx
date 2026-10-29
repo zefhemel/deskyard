@@ -1,6 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
-import { api, type AccessGrant, type Environment } from "../../api.ts";
-import { AccessPicks } from "../../components/environment-fields.tsx";
+import { api, type AccessGrant, type Computer } from "../../api.ts";
+import { AccessPicks } from "../../components/computer-fields.tsx";
 import { notify } from "../../components/toast.tsx";
 import { Button, ErrorText, errorMessage } from "../../components/ui.tsx";
 import { useFetch } from "../../lib/use-fetch.ts";
@@ -12,7 +12,7 @@ const key = (grants: AccessGrant[]) =>
     .join(",");
 const same = (a: AccessGrant[], b: AccessGrant[]) => key(a) === key(b);
 
-export function AccessTab({ environment: c }: { environment: Environment }) {
+export function AccessTab({ computer: c }: { computer: Computer }) {
   const accounts = useFetch(() => api.accounts(), "accounts");
   const [value, setValue] = useState(c.access);
   const [error, setError] = useState<string | null>(null);

@@ -10,21 +10,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/config"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
-// fakeEnv is the environments service as backups see it: definitions,
+// fakeEnv is the computers service as backups see it: definitions,
 // volumes and a lifecycle log.
 type fakeEnv struct {
 	mu       sync.Mutex
 	layout   config.Layout
-	defs     map[string]environments.Definition
-	vols     map[string]environments.Volume
+	defs     map[string]computers.Definition
+	vols     map[string]computers.Volume
 	running  map[string]bool
 	reserved map[string]bool
 	log      []string
-	created  map[string]environments.Settings
+	created  map[string]computers.Settings
 }
 
 func newFakeEnv(t *testing.T) *fakeEnv {
@@ -33,17 +33,17 @@ func newFakeEnv(t *testing.T) *fakeEnv {
 	if err := layout.Prepare(); err != nil {
 		t.Fatal(err)
 	}
-	return &fakeEnv{layout: layout, defs: map[string]environments.Definition{}, vols: map[string]environments.Volume{},
-		running: map[string]bool{}, reserved: map[string]bool{}, created: map[string]environments.Settings{}}
+	return &fakeEnv{layout: layout, defs: map[string]computers.Definition{}, vols: map[string]computers.Volume{},
+		running: map[string]bool{}, reserved: map[string]bool{}, created: map[string]computers.Settings{}}
 }
 
-func (e *fakeEnv) addEnvironment(t *testing.T, name string, running bool, set environments.Settings) {
+func (e *fakeEnv) addComputer(t *testing.T, name string, running bool, set computers.Settings) {
 	t.Helper()
-	e.defs[name] = environments.Definition{Name: name, Image: environments.ImageRef{Ref: set.Image}, Limits: environments.Limits{MemoryBytes: set.MemoryBytes},
-		Network: environments.Network{Kind: environments.NetworkIsolated, Connection: set.VPNConnectionID}, Volumes: set.Volumes, DockerAccess: set.DockerAccess, Revision: 1}
+	e.defs[name] = computers.Definition{Name: name, Image: computers.ImageRef{Ref: set.Image}, Limits: computers.Limits{MemoryBytes: set.MemoryBytes},
+		Network: computers.Network{Kind: computers.NetworkIsolated, Connection: set.VPNConnectionID}, Volumes: set.Volumes, DockerAccess: set.DockerAccess, Revision: 1}
 	if set.VPNConnectionID != "" {
 		d := e.defs[name]
-		d.Network.Kind = environments.NetworkVPN
+		d.Network.Kind = computers.NetworkVPN
 		e.defs[name] = d
 	}
 	e.running[name] = running
@@ -54,7 +54,7 @@ func (e *fakeEnv) addEnvironment(t *testing.T, name string, running bool, set en
 
 func (e *fakeEnv) addVolume(t *testing.T, name string) {
 	t.Helper()
-	e.vols[name] = environments.Volume{Name: name, Kind: environments.VolumeLocal, Created: time.Now()}
+	e.vols[name] = computers.Volume{Name: name, Kind: computers.VolumeLocal, Created: time.Now()}
 	if err := os.MkdirAll(e.layout.VolumeOf(name), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func (e *fakeEnv) addVolume(t *testing.T, name string) {
 // addHostVolume registers a volume on a host folder, made at path.
 func (e *fakeEnv) addHostVolume(t *testing.T, name, path string) {
 	t.Helper()
-	e.vols[name] = environments.Volume{Name: name, Kind: environments.VolumeHost, HostPath: path, Created: time.Now()}
+	e.vols[name] = computers.Volume{Name: name, Kind: computers.VolumeHost, HostPath: path, Created: time.Now()}
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -74,46 +74,46 @@ func (e *fakeEnv) record(s string) { e.mu.Lock(); e.log = append(e.log, s); e.mu
 func (e *fakeEnv) events() string { e.mu.Lock(); defer e.mu.Unlock(); return strings.Join(e.log, ",") }
 
 func (e *fakeEnv) Layout() config.Layout { return e.layout }
-func (e *fakeEnv) Definition(name string) (environments.Definition, bool) {
+func (e *fakeEnv) Definition(name string) (computers.Definition, bool) {
 	d, ok := e.defs[name]
 	return d, ok
 }
-func (e *fakeEnv) Volume(name string) (environments.Volume, bool) {
+func (e *fakeEnv) Volume(name string) (computers.Volume, bool) {
 	v, ok := e.vols[name]
 	return v, ok
 }
-func (e *fakeEnv) VolumeFolder(v environments.Volume) string {
-	if v.Kind == environments.VolumeHost {
+func (e *fakeEnv) VolumeFolder(v computers.Volume) string {
+	if v.Kind == computers.VolumeHost {
 		return v.HostPath
 	}
 	return e.layout.VolumeOf(v.Name)
 }
-func (e *fakeEnv) VolumeUsers(name string) []environments.VolumeUser {
-	var out []environments.VolumeUser
+func (e *fakeEnv) VolumeUsers(name string) []computers.VolumeUser {
+	var out []computers.VolumeUser
 	for _, d := range e.defs {
 		for _, g := range d.Volumes {
 			if g.Name == name {
-				out = append(out, environments.VolumeUser{Environment: d.Name, ReadOnly: g.ReadOnly})
+				out = append(out, computers.VolumeUser{Computer: d.Name, ReadOnly: g.ReadOnly})
 			}
 		}
 	}
 	return out
 }
-func (e *fakeEnv) Get(_ context.Context, name string) (environments.Environment, error) {
+func (e *fakeEnv) Get(_ context.Context, name string) (computers.Computer, error) {
 	if _, ok := e.defs[name]; !ok {
-		return environments.Environment{}, environments.ErrNotFound
+		return computers.Computer{}, computers.ErrNotFound
 	}
 	state := "stopped"
 	if e.running[name] {
 		state = "running"
 	}
-	return environments.Environment{Name: name, State: state}, nil
+	return computers.Computer{Name: name, State: state}, nil
 }
 func (e *fakeEnv) Reserve(name, state string) (func(), error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.reserved[name] {
-		return nil, environments.ErrBusy
+		return nil, computers.ErrBusy
 	}
 	e.reserved[name] = true
 	e.log = append(e.log, "reserve "+name)
@@ -129,24 +129,24 @@ func (e *fakeEnv) Start(_ context.Context, name string) error {
 	e.running[name] = true
 	return nil
 }
-func (e *fakeEnv) Create(_ context.Context, name string, set environments.Settings, _ func(string, float64)) (environments.Environment, error) {
+func (e *fakeEnv) Create(_ context.Context, name string, set computers.Settings, _ func(string, float64)) (computers.Computer, error) {
 	if _, err := os.Stat(e.layout.HomeOf(name)); err != nil {
-		return environments.Environment{}, fmt.Errorf("no home: %w", err)
+		return computers.Computer{}, fmt.Errorf("no home: %w", err)
 	}
 	e.record("create " + name)
 	e.created[name] = set
-	e.defs[name] = environments.Definition{Name: name}
+	e.defs[name] = computers.Definition{Name: name}
 	e.running[name] = true
-	return environments.Environment{Name: name}, nil
+	return computers.Computer{Name: name}, nil
 }
-func (e *fakeEnv) CreateVolume(_ context.Context, name, hostPath string) (environments.Volume, bool, error) {
+func (e *fakeEnv) CreateVolume(_ context.Context, name, hostPath string) (computers.Volume, bool, error) {
 	e.record("create volume " + name)
-	v := environments.Volume{Name: name, Kind: environments.VolumeLocal}
+	v := computers.Volume{Name: name, Kind: computers.VolumeLocal}
 	e.vols[name] = v
 	return v, true, nil
 }
 
-// testService is a storage service on a fake runner and environments, with
+// testService is a storage service on a fake runner and computers, with
 // one SFTP remote "nas" and repository "home" on it.
 func testService(t *testing.T, f *fakeRunner) (*Service, *fakeEnv) {
 	t.Helper()

@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/storage"
 )
 
@@ -118,10 +118,10 @@ func setUpBackups(t *testing.T, s *Server, send func(*http.Client, string, strin
 	if code, b := send(admin, "POST", "/api/backups/repositories", `{"name":"home","remote":"nas"}`); code != 201 {
 		t.Fatalf("repository: %d %s", code, b)
 	}
-	if err := s.Environments.Vols.Add(environments.Volume{Name: "photos", Created: time.Now().UTC(), Kind: environments.VolumeLocal}); err != nil {
+	if err := s.Computers.Vols.Add(computers.Volume{Name: "photos", Created: time.Now().UTC(), Kind: computers.VolumeLocal}); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(s.Environments.Layout.VolumeOf("photos"), 0o755); err != nil {
+	if err := os.MkdirAll(s.Computers.Layout.VolumeOf("photos"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	policy := `{"repository":"home","enabled":true,"schedule":{"every":"daily","at":"03:00"},"retention":{"daily":7,"weekly":4,"monthly":12}}`
@@ -169,15 +169,15 @@ func TestRestorePathRejected(t *testing.T) {
 	}
 }
 
-func TestEnvironmentRemoveDeletesPolicy(t *testing.T) {
+func TestComputerRemoveDeletesPolicy(t *testing.T) {
 	s, send, admin := newStorageServer(t)
 	setUpBackups(t, s, send, admin)
 	if err := s.storage.Store.PutPolicy(storage.Policy{Item: storage.Item{Kind: "environment", Name: "alice"}, Repository: "home", Enabled: true, Schedule: storage.DefaultSchedule, Retention: storage.DefaultRetention}); err != nil {
 		t.Fatal(err)
 	}
-	_ = s.environmentRemoved("alice")
+	_ = s.computerRemoved("alice")
 	if _, ok := s.storage.Store.Policy(storage.Item{Kind: "environment", Name: "alice"}); ok {
-		t.Fatal("policy of a removed environment kept")
+		t.Fatal("policy of a removed computer kept")
 	}
 	if code, b := send(admin, "DELETE", "/api/volumes/photos", ""); code != 204 {
 		t.Fatalf("delete volume: %d %s", code, b)
@@ -199,7 +199,7 @@ func TestRemoveRefusedDuringBackup(t *testing.T) {
 	}
 }
 
-// A restore as a new environment forgets the grants a failed removal of its
+// A restore as a new computer forgets the grants a failed removal of its
 // name left behind, as creating one does.
 func TestRestoreAsNewForgetsLeftoverGrants(t *testing.T) {
 	s, _, _ := newStorageServer(t)

@@ -15,19 +15,19 @@ export interface JobRun {
 }
 
 /** `onDone` runs once the job finishes successfully. */
-export function useJob(onDone: (job: Job) => void, environment?: string): JobRun {
+export function useJob(onDone: (job: Job) => void, computer?: string): JobRun {
   const { jobTracker } = useLive();
   const [id, setID] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const job: Job | null = starting
     ? { status: "running", message: "Starting", progress: null }
-    : environment ? jobTracker.forEnvironment(environment) : id ? jobTracker.get(id) : null;
+    : computer ? jobTracker.forComputer(computer) : id ? jobTracker.get(id) : null;
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
   const done = useRef(onDone);
   done.current = onDone;
 
-  // Closing the dialog doesn't stop following the job: its progress stays on the environment's tile.
+  // Closing the dialog doesn't stop following the job: its progress stays on the computer's tile.
   useEffect(
     () => () => {
       mounted.current = false;
@@ -48,14 +48,14 @@ export function useJob(onDone: (job: Job) => void, environment?: string): JobRun
             return;
           }
           if (j.status === "done") done.current(j);
-        }, environment);
+        }, computer);
       } catch (e) {
         setError(errorMessage(e));
       } finally {
         setStarting(false);
       }
     },
-    [jobTracker, environment],
+    [jobTracker, computer],
   );
 
   return { job, error: error || (job?.status === "failed" ? job.error || job.message || "Failed" : null), running: job?.status === "running", start };

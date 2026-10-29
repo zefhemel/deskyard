@@ -1,13 +1,13 @@
 import { VPNStatus } from "./vpn.tsx";
-import { api, type Environment, type Job } from "../api.ts";
+import { api, type Computer, type Job } from "../api.ts";
 import { limits, memoryOf, notice, statusKind, statusLine } from "../lib/format.ts";
-import { EnvironmentMenu } from "./environment-menu.tsx";
+import { ComputerMenu } from "./computer-menu.tsx";
 import { notifyError } from "./toast.tsx";
 import { loadOrder, orderTabs } from "../lib/tab-order.ts";
 import { Monitor } from "./screen.tsx";
 import { cx, Meter, Status, Tag } from "./ui.tsx";
 
-export function Meters({ environment: c }: { environment: Environment }) {
+export function Meters({ computer: c }: { computer: Computer }) {
   const cpu = Math.round(c.stats?.cpuPercent ?? 0);
   const mem = c.stats?.memBytes ?? 0;
   const memLimit = c.stats?.memLimit ?? 0;
@@ -29,7 +29,7 @@ export function Meters({ environment: c }: { environment: Environment }) {
   );
 }
 
-export function ImageLine({ environment: c, admin }: { environment: Environment; admin: boolean }) {
+export function ImageLine({ computer: c, admin }: { computer: Computer; admin: boolean }) {
   if (!c.imageTitle && !c.imageVersion) return null;
   return (
     <div class="mt-2 text-[12.5px] text-muted">
@@ -45,7 +45,7 @@ export function ImageLine({ environment: c, admin }: { environment: Environment;
 }
 
 /** A conflict, a failed change or one not applied yet; nothing when there's none. */
-export function NoticeLine({ environment: c, class: extra }: { environment: Environment; class?: string }) {
+export function NoticeLine({ computer: c, class: extra }: { computer: Computer; class?: string }) {
   const n = notice(c);
   if (!n) return null;
   return (
@@ -55,8 +55,8 @@ export function NoticeLine({ environment: c, class: extra }: { environment: Envi
   );
 }
 
-/** The volumes an environment is granted, linked to the Volumes page for admins. */
-export function VolumesLine({ environment: c, admin }: { environment: Environment; admin: boolean }) {
+/** The volumes a computer is granted, linked to the Volumes page for admins. */
+export function VolumesLine({ computer: c, admin }: { computer: Computer; admin: boolean }) {
   const grants = c.settings.volumes ?? [];
   if (!grants.length) return null;
   return (
@@ -74,10 +74,10 @@ export function VolumesLine({ environment: c, admin }: { environment: Environmen
 }
 
 /**
- * A running environment's ways in: its desktop, each terminal session in this
+ * A running computer's ways in: its desktop, each terminal session in this
  * viewer's tab order (joining, never creating), and + to open a terminal.
  */
-function SessionLinks({ environment: c }: { environment: Environment }) {
+function SessionLinks({ computer: c }: { computer: Computer }) {
   const sessions = c.terminals ?? [];
   const order = orderTabs(sessions.map((t) => t.name), loadOrder(c.name));
   const shown = order.length > 4 ? order.slice(0, 3) : order;
@@ -124,12 +124,12 @@ function SessionLinks({ environment: c }: { environment: Environment }) {
   );
 }
 
-export function Tile({ environment: c, job, now, admin, backupFailed }: { environment: Environment; job: Job | undefined; now: number; admin: boolean; backupFailed?: boolean }) {
+export function Tile({ computer: c, job, now, admin, backupFailed }: { computer: Computer; job: Job | undefined; now: number; admin: boolean; backupFailed?: boolean }) {
   const kind = statusKind(c);
   const busy = kind === "busy";
   return (
     <article class="relative">
-      <Monitor environment={c} job={job} now={now} href={`/environments/${c.name}`} />
+      <Monitor computer={c} job={job} now={now} href={`/environments/${c.name}`} />
       <div class="px-0.5 pt-3">
         <div class="flex items-center gap-2.5">
           <div class="flex min-w-0 flex-col gap-0.5">
@@ -142,24 +142,24 @@ export function Tile({ environment: c, job, now, admin, backupFailed }: { enviro
           </div>
           {!busy && (
             <div class="ml-auto flex gap-1">
-              <EnvironmentMenu environment={c} />
+              <ComputerMenu computer={c} />
             </div>
           )}
         </div>
-        <NoticeLine environment={c} class="mt-2" />
+        <NoticeLine computer={c} class="mt-2" />
         {backupFailed && (
           <a href={`/environments/${c.name}?tab=backups`} class="mt-2 block text-[13px] text-danger">
             Its backup failed or is overdue
           </a>
         )}
         {c.state === "running" && (
-          <SessionLinks environment={c} />
+          <SessionLinks computer={c} />
         )}
-        {c.state === "running" && <Meters environment={c} />}
+        {c.state === "running" && <Meters computer={c} />}
         {c.state === "stopped" && <div class={cx("mt-2.5 text-[13px] text-muted")}>{limits(c.settings)}</div>}
         <div class="mt-2"><VPNStatus vpn={c.vpn} compact /></div>
-        <VolumesLine environment={c} admin={admin} />
-        {!busy && <ImageLine environment={c} admin={admin} />}
+        <VolumesLine computer={c} admin={admin} />
+        {!busy && <ImageLine computer={c} admin={admin} />}
       </div>
     </article>
   );

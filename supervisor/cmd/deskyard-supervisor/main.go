@@ -18,10 +18,10 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine/docker"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/server"
 	"github.com/zefhemel/deskyard/supervisor/internal/tlsserve"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
@@ -125,7 +125,7 @@ func run(log *slog.Logger) error {
 	hostLayout := cfg.Layout.WithHost(host)
 	eng = engine.WithHostPaths(eng, hostLayout.ToHost, hostLayout.FromHost)
 	// Nor are an older supervisor's containers that use this data folder.
-	if err := environments.New(eng, environments.Config{DataDir: cfg.DataDir, DataHost: host}, log).CheckLegacyContainers(ctx); err != nil {
+	if err := computers.New(eng, computers.Config{DataDir: cfg.DataDir, DataHost: host}, log).CheckLegacyContainers(ctx); err != nil {
 		return err
 	}
 	if err := cfg.Layout.Prepare(); err != nil {
@@ -148,7 +148,7 @@ func run(log *slog.Logger) error {
 		fmt.Fprintf(os.Stderr, "\n  First start: an admin account was created.\n  Username: %s\n  Password: %s\n  (Shown once. Change it after signing in.)\n\n", cfg.AdminUser, generated)
 	}
 
-	comps, err := environments.Open(eng, environments.Config{
+	comps, err := computers.Open(eng, computers.Config{
 		DataDir: cfg.DataDir, DataHost: host, Subnet: cfg.Subnet.String(), SelfID: selfID,
 	}, instance, log)
 	if err != nil {
@@ -163,7 +163,7 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	if err := comps.Reconcile(ctx); err != nil {
-		log.Warn("reconciling environments", "err", err)
+		log.Warn("reconciling computers", "err", err)
 	}
 
 	ui, err := fs.Sub(web.Dist, "dist")
@@ -172,7 +172,7 @@ func run(log *slog.Logger) error {
 	}
 	srv, err := server.New(server.Options{
 		StartupContext: ctx,
-		Log:            log, Eng: eng, Environments: comps, Accounts: accts, Layout: cfg.Layout,
+		Log:            log, Eng: eng, Computers: comps, Accounts: accts, Layout: cfg.Layout,
 		UI: ui, Secure: cfg.Domain != "", DefaultImage: cfg.DefaultImage,
 		ActivityPresence: cfg.ActivityPresence,
 	})

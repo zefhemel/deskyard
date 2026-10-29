@@ -4,12 +4,12 @@ import { fileSize, names, shortDuration } from "./format.ts";
 
 export { shortDuration };
 
-/** The overlay label: the name, or "Claude Code (in this environment)". */
+/** The overlay label: the name, or "Claude Code (in this computer)". */
 export function agentLabel(a: Pick<AgentPresence, "name" | "inside">): string {
   return a.inside ? `${a.name} (in this environment)` : a.name;
 }
 
-/** "deploy-bot · zef's CLI" or "Claude Code · in this environment". */
+/** "deploy-bot · zef's CLI" or "Claude Code · in this computer". */
 export function agentTitle(a: AgentPresence): string {
   return a.inside ? `${a.name} · in this environment` : `${a.name} · ${a.owner}'s CLI`;
 }
@@ -76,7 +76,7 @@ export function recentLine(r: ActivityRecent): string {
   }
 }
 
-/** The wall tile's badge text: people first, then agents; inside agents always say "(in this environment)". */
+/** The wall tile's badge text: people first, then agents; inside agents always say "(in this computer)". */
 export function badgeLabel(viewers: string[], agents: AgentPresence[], long = false): string {
   const people = long
     ? `${names(viewers)} ${viewers.length === 1 ? "is" : "are"} viewing`

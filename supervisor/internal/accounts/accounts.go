@@ -1,5 +1,5 @@
-// Package accounts keeps the supervisor's accounts and which environments
-// each may use at which level, in accounts.json. Grants key on environment
+// Package accounts keeps the supervisor's accounts and which computers
+// each may use at which level, in accounts.json. Grants key on computer
 // names.
 package accounts
 
@@ -21,10 +21,10 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 )
 
-// Grant lets an account use an environment at a level.
+// Grant lets an account use a computer at a level.
 type Grant struct {
-	Environment string     `json:"environment"`
-	Level       auth.Level `json:"level"`
+	Computer string     `json:"environment"`
+	Level    auth.Level `json:"level"`
 }
 
 // Sharer is the account that created a share, by ID so a recreated
@@ -53,8 +53,8 @@ type Account struct {
 	LastLogin    time.Time  `json:"lastLogin,omitzero"`
 }
 
-// Level is how far the account may use the named environment; admins have
-// full access to every environment.
+// Level is how far the account may use the named computer; admins have
+// full access to every computer.
 func (a Account) Level(name string) auth.Level {
 	if a.Admin {
 		return auth.LevelFull
@@ -62,7 +62,7 @@ func (a Account) Level(name string) auth.Level {
 	return grantLevel(a.Grants, name)
 }
 
-// HasAccess reports whether the account has full use of the named environment.
+// HasAccess reports whether the account has full use of the named computer.
 func (a Account) HasAccess(name string) bool { return a.Level(name) == auth.LevelFull }
 
 func (a Account) IsShare() bool     { return a.SharedBy != nil }
@@ -72,29 +72,29 @@ func (a Account) HasPassword() bool { return a.PasswordHash != "" }
 // expired account is treated as deleted.
 func (a Account) Expired(now time.Time) bool { return a.Expires != nil && now.After(*a.Expires) }
 
-// GrantNames lists the environments the account has a grant of, at any level.
+// GrantNames lists the computers the account has a grant of, at any level.
 func (a Account) GrantNames() []string {
 	out := make([]string, len(a.Grants))
 	for i, g := range a.Grants {
-		out[i] = g.Environment
+		out[i] = g.Computer
 	}
 	return out
 }
 
 func grantLevel(grants []Grant, name string) auth.Level {
 	for _, g := range grants {
-		if g.Environment == name {
+		if g.Computer == name {
 			return g.Level
 		}
 	}
 	return auth.LevelNone
 }
 
-// withLevel is grants with the named environment at level; LevelNone drops it.
+// withLevel is grants with the named computer at level; LevelNone drops it.
 func withLevel(grants []Grant, name string, level auth.Level) []Grant {
-	out := slices.DeleteFunc(slices.Clone(grants), func(g Grant) bool { return g.Environment == name })
+	out := slices.DeleteFunc(slices.Clone(grants), func(g Grant) bool { return g.Computer == name })
 	if level != auth.LevelNone {
-		out = append(out, Grant{Environment: name, Level: level})
+		out = append(out, Grant{Computer: name, Level: level})
 	}
 	return out
 }
@@ -109,19 +109,19 @@ func rank(l auth.Level) int {
 	return 0
 }
 
-// Lowered maps the environments after grants less than before to their
+// Lowered maps the computers after grants less than before to their
 // new level (LevelNone: the grant is gone).
 func Lowered(before, after []Grant) map[string]auth.Level {
 	out := map[string]auth.Level{}
 	for _, g := range before {
-		if l := grantLevel(after, g.Environment); rank(l) < rank(g.Level) {
-			out[g.Environment] = l
+		if l := grantLevel(after, g.Computer); rank(l) < rank(g.Level) {
+			out[g.Computer] = l
 		}
 	}
 	return out
 }
 
-// Capped is grants with each environment in caps at most at its level
+// Capped is grants with each computer in caps at most at its level
 // there; LevelNone drops the grant.
 func Capped(grants []Grant, caps map[string]auth.Level) []Grant {
 	out := slices.Clone(grants)
@@ -139,10 +139,10 @@ func validGrants(grants []Grant) error {
 		if !auth.ValidLevel(g.Level) {
 			return fmt.Errorf("%q is not an access level: use full or observe", g.Level)
 		}
-		if g.Environment == "" || seen[g.Environment] {
-			return fmt.Errorf("a grant needs one environment, once: %q", g.Environment)
+		if g.Computer == "" || seen[g.Computer] {
+			return fmt.Errorf("a grant needs one computer, once: %q", g.Computer)
 		}
-		seen[g.Environment] = true
+		seen[g.Computer] = true
 	}
 	return nil
 }
@@ -182,11 +182,11 @@ type file struct {
 	Accounts []Account `json:"accounts"`
 }
 
-// loaded is an account as stored, including the environments list grants
+// loaded is an account as stored, including the computers list grants
 // replaced.
 type loaded struct {
 	Account
-	Environments []string `json:"environments"`
+	Computers []string `json:"environments"`
 }
 
 // Store is safe for concurrent use; every change is written to disk at once.
@@ -216,7 +216,7 @@ func Load(dataDir string) (*Store, error) {
 	if err := store.ReadJSON(s.path, &f); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
-	// Accounts without an ID get one, and an environments list becomes full
+	// Accounts without an ID get one, and a computers list becomes full
 	// grants; the file is rewritten so they keep them.
 	changed := false
 	for _, l := range f.Accounts {
@@ -225,10 +225,10 @@ func Load(dataDir string) (*Store, error) {
 			a.ID = randomID()
 			changed = true
 		}
-		if l.Environments != nil {
-			for _, name := range l.Environments {
+		if l.Computers != nil {
+			for _, name := range l.Computers {
 				if grantLevel(a.Grants, name) == auth.LevelNone {
-					a.Grants = append(a.Grants, Grant{Environment: name, Level: auth.LevelFull})
+					a.Grants = append(a.Grants, Grant{Computer: name, Level: auth.LevelFull})
 				}
 			}
 			changed = true
@@ -516,7 +516,7 @@ func (s *Store) TouchLogin(username string) error {
 }
 
 // SetAccess makes exactly the given regular accounts able to use the named
-// environment, each at its level; every other regular account loses its
+// computer, each at its level; every other regular account loses its
 // grant of it. Admins (full everywhere) and shares (whose one grant is set
 // when they are shared) are left alone.
 func (s *Store) SetAccess(name string, levels map[string]auth.Level) error {
@@ -548,7 +548,7 @@ func (s *Store) SetAccess(name string, levels map[string]auth.Level) error {
 }
 
 // WithAccess maps the regular accounts (not admins, not shares) with a grant
-// of the named environment to their level.
+// of the named computer to their level.
 func (s *Store) WithAccess(name string) map[string]auth.Level {
 	out := map[string]auth.Level{}
 	for _, a := range s.List() {
@@ -559,13 +559,13 @@ func (s *Store) WithAccess(name string) map[string]auth.Level {
 	return out
 }
 
-// Forget removes every grant of the named environment, when it is removed or
+// Forget removes every grant of the named computer, when it is removed or
 // before its name is used again.
 func (s *Store) Forget(name string) error {
 	return s.Retain(func(n string) bool { return n != name })
 }
 
-// Retain keeps only the grants of environments keep accepts; at startup it
+// Retain keeps only the grants of computers keep accepts; at startup it
 // drops those of names without a definition. It writes only on a change.
 func (s *Store) Retain(keep func(name string) bool) error {
 	s.mu.Lock()
@@ -573,7 +573,7 @@ func (s *Store) Retain(keep func(name string) bool) error {
 	next, changed := s.next(), false
 	for i := range next {
 		n := len(next[i].Grants)
-		next[i].Grants = slices.DeleteFunc(next[i].Grants, func(g Grant) bool { return !keep(g.Environment) })
+		next[i].Grants = slices.DeleteFunc(next[i].Grants, func(g Grant) bool { return !keep(g.Computer) })
 		if len(next[i].Grants) != n {
 			changed = true
 		}

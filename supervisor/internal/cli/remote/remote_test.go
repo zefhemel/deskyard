@@ -28,7 +28,7 @@ func TestParseURL(t *testing.T) {
 		{"https://host/cc/api/environments/alice/exec", "https://host/cc", "alice"},
 		{"https://host/cc/api/me", "https://host/cc", ""},
 		{" https://host/alice ", "https://host", "alice"},
-		// The web UI's page of an environment.
+		// The web UI's page of a computer.
 		{"https://host/environments/alice", "https://host", "alice"},
 		{"https://host/cc/environments/alice/", "https://host/cc", "alice"},
 	}
@@ -38,7 +38,7 @@ func TestParseURL(t *testing.T) {
 			t.Errorf("ParseURL(%q): %v", c.in, err)
 			continue
 		}
-		if got.Base != c.base || got.Environment != c.name {
+		if got.Base != c.base || got.Computer != c.name {
 			t.Errorf("ParseURL(%q) = %+v, want base %q name %q", c.in, got, c.base, c.name)
 		}
 	}
@@ -47,7 +47,7 @@ func TestParseURL(t *testing.T) {
 			t.Errorf("ParseURL(%q) succeeded, want an error", bad)
 		}
 	}
-	if u := (Target{Base: "https://h/p", Environment: "a"}).URL(); u != "https://h/p/a" {
+	if u := (Target{Base: "https://h/p", Computer: "a"}).URL(); u != "https://h/p/a" {
 		t.Errorf("URL() = %q", u)
 	}
 }
@@ -61,7 +61,7 @@ func TestConfigRoundTrip(t *testing.T) {
 	if len(c.Servers) != 0 || c.Default != "" {
 		t.Fatalf("missing file should be empty: %+v", c)
 	}
-	c.Add(&Server{Name: "h", URL: "https://h", Username: "zef", Credential: "dyc_0000000a_s", Environment: "alice"})
+	c.Add(&Server{Name: "h", URL: "https://h", Username: "zef", Credential: "dyc_0000000a_s", Computer: "alice"})
 	c.Add(&Server{Name: "k", URL: "https://k", Username: "zef", Credential: "dyc_0000000b_s"})
 	if c.Default != "h" {
 		t.Fatalf("first server should be the default, got %q", c.Default)
@@ -179,7 +179,7 @@ func TestValidName(t *testing.T) {
 }
 
 func TestClientPaths(t *testing.T) {
-	c := &Client{Base: "https://h/pre", Environment: "alice"}
+	c := &Client{Base: "https://h/pre", Computer: "alice"}
 	if got := c.URL("/exec"); got != "https://h/pre/api/environments/alice/exec" {
 		t.Errorf("URL = %q", got)
 	}
@@ -193,7 +193,7 @@ func TestClientPaths(t *testing.T) {
 
 func TestInfoAndErrors(t *testing.T) {
 	f := clitest.New(t, "alice")
-	c := &Client{Alias: "srv", Base: f.URL, Environment: "alice", Token: clitest.Credential}
+	c := &Client{Alias: "srv", Base: f.URL, Computer: "alice", Token: clitest.Credential}
 	info, err := c.Info(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -210,8 +210,8 @@ func TestInfoAndErrors(t *testing.T) {
 	}
 
 	other := *c
-	other.Environment = "bob"
-	if _, err := other.Info(context.Background()); !IsStatus(err, 404) || !strings.Contains(err.Error(), `no environment "bob"`) {
+	other.Computer = "bob"
+	if _, err := other.Info(context.Background()); !IsStatus(err, 404) || !strings.Contains(err.Error(), `no computer "bob"`) {
 		t.Errorf("404 error = %v", err)
 	}
 
@@ -235,7 +235,7 @@ func TestJSON(t *testing.T) {
 	if err := c.JSON(context.Background(), "GET", "/environments/alice", nil, &env); err != nil || env.Name != "alice" {
 		t.Errorf("GET: %+v %v", env, err)
 	}
-	if err := c.JSON(context.Background(), "GET", "/environments/nope", nil, &env); !IsStatus(err, 404) || !strings.Contains(err.Error(), "no such environment") {
+	if err := c.JSON(context.Background(), "GET", "/environments/nope", nil, &env); !IsStatus(err, 404) || !strings.Contains(err.Error(), "no such computer") {
 		t.Errorf("404: %v", err)
 	}
 	var out map[string]any
@@ -265,7 +265,7 @@ func TestDoDoesNotFollowRedirects(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 	for _, hc := range []*http.Client{nil, {}} {
-		c := &Client{Base: srv.URL, Environment: "alice", Token: clitest.Credential, HTTP: hc}
+		c := &Client{Base: srv.URL, Computer: "alice", Token: clitest.Credential, HTTP: hc}
 		req, _ := http.NewRequest("GET", c.URL("/x"), nil)
 		resp, err := c.Do(req)
 		if err != nil {
@@ -285,7 +285,7 @@ func TestRedirectErrorNamesTheTarget(t *testing.T) {
 		http.Redirect(w, r, "https://deskyard.example.com"+r.URL.Path, http.StatusPermanentRedirect)
 	}))
 	defer srv.Close()
-	c := &Client{Base: srv.URL, Environment: "alice", Token: clitest.Credential}
+	c := &Client{Base: srv.URL, Computer: "alice", Token: clitest.Credential}
 	err := c.JSON(context.Background(), http.MethodGet, "/me", nil, nil)
 	if !IsStatus(err, http.StatusPermanentRedirect) || !strings.Contains(err.Error(), "deskyard login https://deskyard.example.com") || strings.Contains(err.Error(), "<a") {
 		t.Fatalf("%v", err)

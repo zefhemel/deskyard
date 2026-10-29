@@ -410,7 +410,9 @@ func TestCrossMountMoveOfReadOnlyFolders(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	t.Cleanup(func() { _ = filepath.WalkDir(filepath.Dir(d.home), func(p string, e fs.DirEntry, _ error) error { return os.Chmod(p, 0o755) }) })
+	t.Cleanup(func() {
+		_ = filepath.WalkDir(filepath.Dir(d.home), func(p string, e fs.DirEntry, _ error) error { return os.Chmod(p, 0o755) })
+	})
 	// The copy arrives whole with the folders' modes; what of the read-only
 	// source can't be removed stays, and the move still succeeds.
 	if err := f.Rename(context.Background(), "/workspace/cache", "/share/projects/cache"); err != nil {

@@ -11,8 +11,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
-import type { AccessGrant, Account, Environment, Grant, Job, Level, Share } from "../api.ts";
-import { accounts, activityOf, cliLogins, conflicts, credentials, environments, FOLDER, images, links, type MockAccount, processRows, refreshImages, volumes } from "./mock-data.ts";
+import type { AccessGrant, Account, Computer, Grant, Job, Level, Share } from "../api.ts";
+import { accounts, activityOf, cliLogins, conflicts, credentials, computers, FOLDER, images, links, type MockAccount, processRows, refreshImages, volumes } from "./mock-data.ts";
 
 
 const GB = 1024 ** 3;
@@ -48,7 +48,7 @@ function broadcast(event: string, data: unknown): void {
   // One session at a time here: events go out as that account would get them.
   const m = me();
   if (event === "environment" && m) {
-    const c = data as Environment;
+    const c = data as Computer;
     if (levelOf(m, c.name) === null) return;
     data = asSeenBy(c, m);
   }
@@ -71,13 +71,13 @@ function accountJSON(a: MockAccount): Account {
   return { ...rest, kind: password === null ? "token" : "password", linkPending: [...links.values()].includes(a.username), grants: [...a.grants].sort((x, y) => x.environment.localeCompare(y.environment)) };
 }
 
-/** An account's level on an environment, or null without access. */
+/** An account's level on a computer, or null without access. */
 function levelOf(a: MockAccount, env: string): Level | null {
   if (a.admin) return "full";
   return a.grants.find((g) => g.environment === env)?.level ?? null;
 }
 
-/** The regular accounts granted an environment, as admins see it. */
+/** The regular accounts granted a computer, as admins see it. */
 function accessOf(env: string): AccessGrant[] {
   return accounts
     .filter((a) => !a.admin && !a.sharedBy)
@@ -85,10 +85,10 @@ function accessOf(env: string): AccessGrant[] {
     .sort((x, y) => x.username.localeCompare(y.username));
 }
 
-const blankVPN: Environment["vpn"] = { state: "disabled", changedAt: "0001-01-01T00:00:00Z", exitIpObservedAt: "0001-01-01T00:00:00Z", desiredRevision: 0, appliedRevision: 0, idle: false };
+const blankVPN: Computer["vpn"] = { state: "disabled", changedAt: "0001-01-01T00:00:00Z", exitIpObservedAt: "0001-01-01T00:00:00Z", desiredRevision: 0, appliedRevision: 0, idle: false };
 
-/** An environment as an account sees it: an observer's has its configuration blanked. */
-function asSeenBy(c: Environment, a: MockAccount): Environment {
+/** A computer as an account sees it: an observer's has its configuration blanked. */
+function asSeenBy(c: Computer, a: MockAccount): Computer {
   const level = levelOf(a, c.name) ?? "full";
   if (level === "observe") {
     return {
@@ -99,16 +99,16 @@ function asSeenBy(c: Environment, a: MockAccount): Environment {
   return { ...c, level, access: a.admin ? accessOf(c.name) : [] };
 }
 
-function visible(): Environment[] {
+function visible(): Computer[] {
   const m = me();
   if (!m) return [];
-  return environments
+  return computers
     .filter((c) => levelOf(m, c.name) !== null)
     .map((c) => asSeenBy(c, m))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function viewersOf(c: Environment) {
+function viewersOf(c: Computer) {
   return { name: c.name, viewers: c.viewers, observers: c.observers, mics: c.mics, forwards: c.forwards, agents: c.agents };
 }
 
@@ -122,9 +122,9 @@ function newLink(req: IncomingMessage, username: string): string {
   return `http://${req.headers.host ?? "localhost:5173"}/link#${code}`;
 }
 
-/** The environments a redeemed link or approved CLI login reports. */
-function environmentsOf(a: MockAccount) {
-  return environments
+/** The computers a redeemed link or approved CLI login reports. */
+function computersOf(a: MockAccount) {
+  return computers
     .filter((c) => levelOf(a, c.name) !== null)
     .map((c) => ({ name: c.name, level: levelOf(a, c.name)! }))
     .sort((x, y) => x.name.localeCompare(y.name));
@@ -132,7 +132,7 @@ function environmentsOf(a: MockAccount) {
 
 function shareJSON(a: MockAccount): Share {
   const g = a.grants[0]!;
-  const env = environments.find((c) => c.name === g.environment);
+  const env = computers.find((c) => c.name === g.environment);
   return {
     username: a.username, environment: g.environment, level: g.level, sharedBy: a.sharedBy!, expires: a.expires, created: a.created,
     lastLogin: a.lastLogin, lastUsed: a.lastLogin, linkPending: [...links.values()].includes(a.username), connected: env?.viewers.includes(a.username) ?? false,
@@ -146,7 +146,7 @@ function removeAccount(a: MockAccount): void {
   if (i >= 0) accounts.splice(i, 1);
   for (const [code, u] of links) if (u === a.username) links.delete(code);
   delete credentials[a.username];
-  for (const c of environments) {
+  for (const c of computers) {
     if (!c.viewers.includes(a.username)) continue;
     c.viewers = c.viewers.filter((v) => v !== a.username);
     c.observers = c.observers.filter((v) => v !== a.username);
@@ -154,7 +154,7 @@ function removeAccount(a: MockAccount): void {
   }
 }
 
-/** Ends the shares of an environment made by an account that no longer has full access to it. */
+/** Ends the shares of a computer made by an account that no longer has full access to it. */
 function endOrphanShares(): void {
   for (const share of accounts.filter((x) => x.sharedBy)) {
     const sharer = accounts.find((x) => x.id === share.sharedBy!.id);
@@ -166,7 +166,7 @@ function checkGrants(grants: unknown): string | null {
   if (!Array.isArray(grants)) return null;
   const seen = new Set<string>();
   for (const g of grants as Grant[]) {
-    if (!environments.some((c) => c.name === g.environment)) return `no environment ${g.environment}`;
+    if (!computers.some((c) => c.name === g.environment)) return `no environment ${g.environment}`;
     if (g.level !== "full" && g.level !== "observe") return `the level must be full or observe`;
     if (seen.has(g.environment)) return `${g.environment} is listed twice`;
     seen.add(g.environment);
@@ -202,7 +202,7 @@ async function signedOut(req: IncomingMessage, res: ServerResponse, path: string
     if (b.client === "cli") {
       const id = hex(8);
       (credentials[a.username] ??= []).unshift({ id, kind: "cli", name: String(b.name ?? "deskyard CLI"), created: a.lastLogin, lastUsed: null });
-      json(res, 200, { credential: `dyc_${id}_${randomBytes(32).toString("base64url")}`, username: a.username, environments: environmentsOf(a) });
+      json(res, 200, { credential: `dyc_${id}_${randomBytes(32).toString("base64url")}`, username: a.username, environments: computersOf(a) });
       return true;
     }
     session = a.username;
@@ -236,7 +236,7 @@ async function signedOut(req: IncomingMessage, res: ServerResponse, path: string
       else {
         const id = hex(8);
         (credentials[a.username] ??= []).unshift({ id, kind: "cli", name: r.client, created: new Date().toISOString(), lastUsed: null });
-        json(res, 200, { credential: `dyc_${id}_${randomBytes(32).toString("base64url")}`, username: a.username, environments: environmentsOf(a) });
+        json(res, 200, { credential: `dyc_${id}_${randomBytes(32).toString("base64url")}`, username: a.username, environments: computersOf(a) });
       }
     }
     return true;
@@ -244,11 +244,11 @@ async function signedOut(req: IncomingMessage, res: ServerResponse, path: string
   return false;
 }
 
-function changed(c: Environment): void {
+function changed(c: Computer): void {
   broadcast("environment", c);
 }
 
-function setState(c: Environment, state: Environment["state"], later?: Environment["state"]): void {
+function setState(c: Computer, state: Computer["state"], later?: Computer["state"]): void {
   c.state = state;
   if (state === "running" || state === "stopped") c.power = state;
   if (state === "running") {
@@ -271,10 +271,10 @@ function setState(c: Environment, state: Environment["state"], later?: Environme
 }
 
 let jobSeq = 1;
-function job(messages: string[], after: () => void, environment?: string): { job: string } {
+function job(messages: string[], after: () => void, computer?: string): { job: string } {
   const id = `job${jobSeq++}`;
-  const steps: Job[] = messages.map((m, i) => ({ status: "running", message: m, progress: (i + 1) / (messages.length + 1), environment }));
-  steps.push({ status: "done", message: "Done", progress: 1, environment });
+  const steps: Job[] = messages.map((m, i) => ({ status: "running", message: m, progress: (i + 1) / (messages.length + 1), environment: computer }));
+  steps.push({ status: "done", message: "Done", progress: 1, environment: computer });
   jobs.set(id, { steps, after });
   // The job finishes on its own schedule, whether or not anyone follows it.
   setTimeout(after, steps.length * 700);
@@ -307,7 +307,7 @@ function host() {
 }
 
 function volumeJSON(v: (typeof volumes)[number]) {
-  const users = environments
+  const users = computers
     .flatMap((c) => c.settings.volumes.filter((g) => g.name === v.name).map((g) => ({ name: c.name, readOnly: g.readOnly })))
     .sort((a, b) => a.name.localeCompare(b.name));
   return { ...v, folder: `${FOLDER}/volume/${v.name}`, environments: users };
@@ -325,7 +325,7 @@ function unknownVolume(grants: unknown): string | null {
 function startTimers(): void {
 setInterval(() => {
   const t = new Date().toISOString();
-  for (const c of environments) {
+  for (const c of computers) {
     if (c.state !== "running" || !c.stats) continue;
     const s = c.stats;
     s.cpuPercent = Math.max(0.5, Math.min(99, s.cpuPercent * 0.7 + (s.cpuPercent + (Math.random() - 0.5) * 30) * 0.3));
@@ -334,18 +334,18 @@ setInterval(() => {
   }
 }, 5000);
 setInterval(() => {
-  const alice = environments.find((c) => c.name === "alice");
+  const alice = computers.find((c) => c.name === "alice");
   if (!alice || alice.state !== "running") return;
   alice.viewers = alice.viewers.includes("anna") ? alice.viewers.filter((v) => v !== "anna") : [...alice.viewers, "anna"].sort();
   broadcast("viewers", viewersOf(alice));
 }, 20000);
 // The agents' summaries move on, as they would from the supervisor (once a second at most).
 setInterval(() => {
-  for (const c of environments) if (c.agents.length) broadcast("activity", activityOf(c));
+  for (const c of computers) if (c.agents.length) broadcast("activity", activityOf(c));
 }, 5000);
 }
 
-function history(c: Environment) {
+function history(c: Computer) {
   const out = [];
   let cpu = c.stats?.cpuPercent ?? 10;
   let mem = c.stats?.memBytes ?? GB;
@@ -506,7 +506,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
 
   if (path === "/api/validate-name") {
     const name = url.searchParams.get("name") ?? "";
-    if (environments.some((c) => c.name === name)) return json(res, 200, { ok: false, error: "an environment with that name already exists", folderExists: false });
+    if (computers.some((c) => c.name === name)) return json(res, 200, { ok: false, error: "an environment with that name already exists", folderExists: false });
     if (RESERVED.includes(name)) return json(res, 200, { ok: false, error: `${name} is reserved.`, folderExists: false });
     return json(res, 200, { ok: true, folderExists: name === "old-project", folder: `${FOLDER}/home/${name}` });
   }
@@ -517,14 +517,14 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     if (bad) return json(res, 400, { error: bad });
     const name = String(b.name);
     const img = images.find((i) => i.ref === b.image) ?? images[0]!;
-    const c: Environment = {
+    const c: Computer = {
       name, state: "creating", power: "running", revision: 1, appliedRevision: 0, error: "", conflict: "",
       startedAt: "", created: new Date().toISOString(), job: null, folder: `${FOLDER}/home/${name}`, image: img.ref, imageTitle: img.title,
-      memoryReclaim: true, webdav: false, imageVersion: img.version, updateAvailable: null, settings: { dockerAccess: b.dockerAccess === true, memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), vpnConnectionId: null, lanExceptions: [], volumes: (b.volumes as Environment["settings"]["volumes"]) ?? [] },
+      memoryReclaim: true, webdav: false, imageVersion: img.version, updateAvailable: null, settings: { dockerAccess: b.dockerAccess === true, memoryBytes: Number(b.memoryBytes), nanoCpus: Number(b.nanoCpus), vpnConnectionId: null, lanExceptions: [], volumes: (b.volumes as Computer["settings"]["volumes"]) ?? [] },
       vpn: blankVPN, level: "full", access: [], viewers: [], observers: [], mics: [], terminal: true, terminals: [], forwards: [], agents: [], stats: null,
     };
     for (const g of (b.access as AccessGrant[]) ?? []) accounts.find((a) => a.username === g.username)?.grants.push({ environment: name, level: g.level });
-    environments.push(c);
+    computers.push(c);
     changed(c);
     return json(res, 202, job(["Pulling image, 120 of 820 MB", "Pulling image, 540 of 820 MB", "Creating the container", "Starting"], () => setState(c, "running"), name));
   }
@@ -623,7 +623,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     if (typeof b.password === "string" && b.password) a.password = b.password;
     if (Array.isArray(b.grants)) a.grants = b.grants as Grant[];
     endOrphanShares();
-    for (const c of environments) changed(c);
+    for (const c of computers) changed(c);
     return json(res, 200, accountJSON(a));
   }
   const shareMatch = /^\/api\/shares\/([^/]+)(\/link)?$/.exec(path);
@@ -668,7 +668,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   if (path === "/api/images/upgrade") {
     const b = await readBody(req);
     return json(res, 202, job(["Upgrading", "Starting"], () => {
-      for (const c of environments) if (c.image === b.ref && c.updateAvailable) {
+      for (const c of computers) if (c.image === b.ref && c.updateAvailable) {
         c.imageVersion = c.updateAvailable;
         c.updateAvailable = null;
         changed(c);
@@ -677,7 +677,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   }
 
   const cm = /^\/api\/environments\/([^/]+)(?:\/(.+))?$/.exec(path);
-  const c = cm?.[1] ? visible().find((x) => x.name === cm[1]) && environments.find((x) => x.name === cm[1]) : undefined;
+  const c = cm?.[1] ? visible().find((x) => x.name === cm[1]) && computers.find((x) => x.name === cm[1]) : undefined;
   if (!cm || !c) return json(res, 404, { error: "no such environment" });
   const sub = cm[2] ?? "";
   // Observers may watch, and nothing else.
@@ -731,7 +731,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   }
   if (sub === "" && method === "GET") return json(res, 200, visible().find((x) => x.name === c.name));
   if (sub === "" && method === "DELETE") {
-    environments.splice(environments.indexOf(c), 1);
+    computers.splice(computers.indexOf(c), 1);
     for (const a of [...accounts]) {
       if (a.sharedBy && a.grants[0]?.environment === c.name) removeAccount(a);
       else a.grants = a.grants.filter((g) => g.environment !== c.name);
@@ -751,7 +751,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
       if (typeof b.memoryBytes === "number") c.settings.memoryBytes = b.memoryBytes;
       if (typeof b.nanoCpus === "number") c.settings.nanoCpus = b.nanoCpus;
       if (typeof b.dockerAccess === "boolean") c.settings.dockerAccess = b.dockerAccess;
-      if (Array.isArray(b.volumes)) c.settings.volumes = b.volumes as Environment["settings"]["volumes"];
+      if (Array.isArray(b.volumes)) c.settings.volumes = b.volumes as Computer["settings"]["volumes"];
       if (typeof b.image === "string") c.image = b.image;
       changed(c);
     }, c.name));
@@ -832,7 +832,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
 
 // A pretend shared terminal over a hand-rolled WebSocket (no dependency):
 // join-only unless ?create=1, {"ended":true} for a missing or ended session,
-// and an echoing prompt. Enough to click through the environment page's tabs.
+// and an echoing prompt. Enough to click through the computer page's tabs.
 const attachments = new Map<string, Set<(ended: boolean) => void>>();
 
 function endAttachments(env: string, session: string): void {
@@ -874,7 +874,7 @@ function mockTerminal(req: IncomingMessage, socket: Duplex): void {
   if (url.pathname === "/api/events") return eventSocket(req, socket);
   if (!m) return; // Vite's own sockets
   const key = req.headers["sec-websocket-key"];
-  const c = environments.find((x) => x.name === m[1]);
+  const c = computers.find((x) => x.name === m[1]);
   const session = url.searchParams.get("session") ?? "";
   if (!key || !c) return void socket.destroy();
   accept(socket, key);

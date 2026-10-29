@@ -156,12 +156,12 @@ func TestObserverStreamIsFiltered(t *testing.T) {
 		t.Run(string(level), func(t *testing.T) {
 			up := &recordingUpstream{}
 			s, _ := newTestServerRunning(t, "bob", up)
-			c, err := s.Environments.Get(context.Background(), "bob")
+			c, err := s.Computers.Get(context.Background(), "bob")
 			if err != nil {
 				t.Fatal(err)
 			}
 			a, err := s.Accounts.Create(accounts.NewAccount{Username: "olga", Password: "pw",
-				Grants: []accounts.Grant{{Environment: c.ID, Level: level}}})
+				Grants: []accounts.Grant{{Computer: c.ID, Level: level}}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -212,17 +212,17 @@ func TestObserverStreamIsFiltered(t *testing.T) {
 func TestStreamRechecksLevelOnceRegistered(t *testing.T) {
 	up := &recordingUpstream{}
 	s, _ := newTestServerRunning(t, "bob", up)
-	c, err := s.Environments.Get(context.Background(), "bob")
+	c, err := s.Computers.Get(context.Background(), "bob")
 	if err != nil {
 		t.Fatal(err)
 	}
 	authorized, err := s.Accounts.Create(accounts.NewAccount{Username: "olga", Password: "pw",
-		Grants: []accounts.Grant{{Environment: c.ID, Level: auth.LevelFull}}})
+		Grants: []accounts.Grant{{Computer: c.ID, Level: auth.LevelFull}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Accounts.Update("olga", func(a *accounts.Account) {
-		a.Grants = []accounts.Grant{{Environment: c.ID, Level: auth.LevelObserve}}
+		a.Grants = []accounts.Grant{{Computer: c.ID, Level: auth.LevelObserve}}
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -251,12 +251,12 @@ func TestStreamRechecksLevelOnceRegistered(t *testing.T) {
 func TestStreamRechecksSessionOnceRegistered(t *testing.T) {
 	up := &recordingUpstream{}
 	s, _ := newTestServerRunning(t, "bob", up)
-	c, err := s.Environments.Get(context.Background(), "bob")
+	c, err := s.Computers.Get(context.Background(), "bob")
 	if err != nil {
 		t.Fatal(err)
 	}
 	signedIn, err := s.Accounts.Create(accounts.NewAccount{Username: "olga", Password: "pw",
-		Grants: []accounts.Grant{{Environment: c.ID, Level: auth.LevelFull}}})
+		Grants: []accounts.Grant{{Computer: c.ID, Level: auth.LevelFull}}})
 	if err != nil {
 		t.Fatal(err)
 	}

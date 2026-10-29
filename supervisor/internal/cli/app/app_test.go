@@ -48,14 +48,14 @@ func newHarness(t *testing.T) *harness {
 }
 
 // save signs the harness in to f as the server name (the first is the
-// default), with the fake's credential and environment env.
+// default), with the fake's credential and computer env.
 func (h *harness) save(name string, f *clitest.Fake, env string) {
 	h.t.Helper()
 	cfg, err := remote.Load(h.config)
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	cfg.Add(&remote.Server{Name: name, URL: f.URL, Username: clitest.Username, Credential: clitest.Credential, Environment: env})
+	cfg.Add(&remote.Server{Name: name, URL: f.URL, Username: clitest.Username, Credential: clitest.Credential, Computer: env})
 	if err := cfg.Save(h.config); err != nil {
 		h.t.Fatal(err)
 	}
@@ -244,10 +244,10 @@ func TestNoServerChosen(t *testing.T) {
 	f := clitest.New(t, "alice")
 	h.save("srv", f, "")
 	r = h.run("size")
-	if r.code != 1 || !strings.Contains(r.stderr, "no environment chosen on srv: use -e ENV, or choose a default with `deskyard env use ENV`") {
-		t.Errorf("no environment: %+v", r)
+	if r.code != 1 || !strings.Contains(r.stderr, "no computer chosen on srv: use -e ENV, or choose a default with `deskyard env use ENV`") {
+		t.Errorf("no computer: %+v", r)
 	}
-	// Inside an environment, no environment chosen means here.
+	// Inside a computer, no computer chosen means here.
 	h.inside = true
 	if r := h.run("browser", "connect"); r.code != 0 || r.stdout != "http://127.0.0.1:9221\n" {
 		t.Errorf("inside: %+v", r)
@@ -271,12 +271,12 @@ func fastLogin(t *testing.T) {
 	t.Cleanup(func() { loginInterval = old })
 }
 
-func TestLoginSavesCredentialAndEnvironment(t *testing.T) {
+func TestLoginSavesCredentialAndComputer(t *testing.T) {
 	fastLogin(t)
 	f := clitest.New(t, "alice")
 	f.LoginPending = 2
 	h := newHarness(t)
-	r := h.run("login", f.EnvironmentURL())
+	r := h.run("login", f.ComputerURL())
 	if r.code != 0 {
 		t.Fatalf("login: %+v", r)
 	}
@@ -294,7 +294,7 @@ func TestLoginSavesCredentialAndEnvironment(t *testing.T) {
 	}
 	cfg := h.servers()
 	s := cfg.Servers["127.0.0.1"]
-	if s == nil || cfg.Default != "127.0.0.1" || s.URL != f.URL || s.Username != clitest.Username || s.Environment != "alice" || !f.Valid(s.Credential) || s.Credential == clitest.Credential {
+	if s == nil || cfg.Default != "127.0.0.1" || s.URL != f.URL || s.Username != clitest.Username || s.Computer != "alice" || !f.Valid(s.Credential) || s.Credential == clitest.Credential {
 		t.Fatalf("servers.json: %+v %+v", cfg, s)
 	}
 	if runtime.GOOS != "windows" {
@@ -314,7 +314,7 @@ func TestLoginSavesCredentialAndEnvironment(t *testing.T) {
 		t.Fatalf("login --no-browser: %+v %v", r, h.opened)
 	}
 	s2 := h.servers().Servers["127.0.0.1"]
-	if s2.Credential == s.Credential || f.Valid(s.Credential) || s2.Environment != "alice" {
+	if s2.Credential == s.Credential || f.Valid(s.Credential) || s2.Computer != "alice" {
 		t.Errorf("relogin: %+v (old still valid: %v)", s2, f.Valid(s.Credential))
 	}
 
@@ -339,7 +339,7 @@ func TestLoginRetriesWhenTheServerCantSave(t *testing.T) {
 	}
 }
 
-func TestLoginRejectsUnknownEnvironment(t *testing.T) {
+func TestLoginRejectsUnknownComputer(t *testing.T) {
 	fastLogin(t)
 	f := clitest.New(t, "alice")
 	f.Grants = append(f.Grants, clitest.Grant{Name: "seen", Level: "observe"})
@@ -367,7 +367,7 @@ func TestAuthLinkSavesServer(t *testing.T) {
 	}
 	cfg := h.servers()
 	s := cfg.Servers["work"]
-	if s == nil || cfg.Default != "work" || s.URL != f.URL || s.Environment != "alice" || !f.Valid(s.Credential) {
+	if s == nil || cfg.Default != "work" || s.URL != f.URL || s.Computer != "alice" || !f.Valid(s.Credential) {
 		t.Fatalf("servers.json: %+v %+v", cfg, s)
 	}
 	if c := f.Clients(); len(c) != 1 || !strings.HasPrefix(c[0], "deskyard CLI on ") {
@@ -384,13 +384,13 @@ func TestAuthLinkSavesServer(t *testing.T) {
 		t.Errorf("observe: %+v", r)
 	}
 
-	// Several environments: none is chosen.
+	// Several computers: none is chosen.
 	k := clitest.New(t, "alice")
 	k.Grants = append(k.Grants, clitest.Grant{Name: "bob", Level: "full"})
 	if r := h.run("auth", k.LinkURL(), "--name", "multi"); r.code != 0 || !strings.Contains(r.stdout, "env use") {
 		t.Errorf("several: %+v", r)
 	}
-	if s := h.servers().Servers["multi"]; s == nil || s.Environment != "" {
+	if s := h.servers().Servers["multi"]; s == nil || s.Computer != "" {
 		t.Errorf("several: %+v", s)
 	}
 }
@@ -487,23 +487,23 @@ func TestServerCommands(t *testing.T) {
 		t.Errorf("default nope: %+v", r)
 	}
 
-	// env use checks the environment, then saves it for the server.
-	if r = h.run("env", "use", "nope"); r.code != 1 || !strings.Contains(r.stderr, `no environment "nope"`) {
+	// env use checks the computer, then saves it for the server.
+	if r = h.run("env", "use", "nope"); r.code != 1 || !strings.Contains(r.stderr, `no computer "nope"`) {
 		t.Errorf("env use nope: %+v", r)
 	}
-	if r = h.run("env", "use", "bob"); r.code != 0 || h.servers().Servers["two"].Environment != "bob" {
+	if r = h.run("env", "use", "bob"); r.code != 0 || h.servers().Servers["two"].Computer != "bob" {
 		t.Errorf("env use: %+v", r)
 	}
 	if r := h.run("status", "--json"); !strings.Contains(r.stdout, `"name": "bob"`) || !strings.Contains(r.stdout, `"server": "two"`) {
 		t.Errorf("status: %+v", r)
 	}
 	f.Grants = append(f.Grants, clitest.Grant{Name: "work", Level: "full"})
-	if r = h.run("env", "use", "srv/work"); r.code != 0 || h.servers().Servers["srv"].Environment != "work" {
+	if r = h.run("env", "use", "srv/work"); r.code != 0 || h.servers().Servers["srv"].Computer != "work" {
 		t.Errorf("env use srv/work: %+v", r)
 	}
-	// An environment the account can only observe is the browser's.
+	// A computer the account can only observe is the browser's.
 	f.Grants = append(f.Grants, clitest.Grant{Name: "demo", Level: "observe"})
-	if r = h.run("env", "use", "srv/demo"); r.code != 1 || !strings.Contains(r.stderr, "observe") || h.servers().Servers["srv"].Environment != "work" {
+	if r = h.run("env", "use", "srv/demo"); r.code != 1 || !strings.Contains(r.stderr, "observe") || h.servers().Servers["srv"].Computer != "work" {
 		t.Errorf("env use srv/demo: %+v", r)
 	}
 }
@@ -527,19 +527,19 @@ func TestEnvRemote(t *testing.T) {
 	}
 	f := clitest.New(t, "alice")
 	h := newHarness(t)
-	h.env["DESKYARD_URL"] = f.EnvironmentURL()
+	h.env["DESKYARD_URL"] = f.ComputerURL()
 	h.env["DESKYARD_CREDENTIAL"] = clitest.Credential
 	if r := h.run("size"); r.code != 0 || r.stdout != "1280 800\n" {
 		t.Errorf("%+v", r)
 	}
-	// DESKYARD_URL is the default server: -e ENV picks among its environments.
+	// DESKYARD_URL is the default server: -e ENV picks among its computers.
 	f.Grants = append(f.Grants, clitest.Grant{Name: "bob", Level: "full"})
 	if r := h.run("-e", "bob", "status", "--json"); !strings.Contains(r.stdout, `"name": "bob"`) {
 		t.Errorf("-e bob: %+v", r)
 	}
 	h.env["DESKYARD_URL"] = f.URL
-	if r := h.run("size"); r.code != 1 || !strings.Contains(r.stderr, "no environment chosen") {
-		t.Errorf("no environment: %+v", r)
+	if r := h.run("size"); r.code != 1 || !strings.Contains(r.stderr, "no computer chosen") {
+		t.Errorf("no computer: %+v", r)
 	}
 }
 
@@ -626,13 +626,13 @@ func TestCpRemote(t *testing.T) {
 	if r := h.run("cp", "alice:/a", "alice:/b"); r.code != 2 {
 		t.Errorf("two remotes: %+v", r)
 	}
-	// NAME: is an environment on -e's server.
+	// NAME: is a computer on -e's server.
 	g := clitest.New(t, "bob")
 	h.save("other", g, "")
 	if r := h.run("-e", "other/bob", "cp", filepath.Join(local, "a.txt"), "bob:"+g.Dir+"/"); r.code != 0 {
 		t.Fatalf("upload to other: %+v", r)
 	}
-	if reqs := g.Requests(); len(reqs) == 0 || reqs[len(reqs)-1].Environment != "bob" {
+	if reqs := g.Requests(); len(reqs) == 0 || reqs[len(reqs)-1].Computer != "bob" {
 		t.Errorf("went elsewhere: %+v", reqs)
 	}
 }
@@ -690,7 +690,7 @@ func TestForwardArgs(t *testing.T) {
 	}
 	h.inside = true
 	r := h.run("forward", "3000")
-	if r.code != 2 || !strings.Contains(r.stderr, "forward maps ports between this machine and an environment; choose one with -e ENV") {
+	if r.code != 2 || !strings.Contains(r.stderr, "forward maps ports between this machine and a computer; choose one with -e ENV") {
 		t.Errorf("inside: %+v", r)
 	}
 	if r := h.run("forward", "--help"); r.code != 0 || !strings.Contains(r.stdout, "-R") {
@@ -842,7 +842,7 @@ func TestForwardReconnects(t *testing.T) {
 	if n := len(f.ForwardStarts()); n != 2 {
 		t.Errorf("%d connections, want 2", n)
 	}
-	if !strings.Contains(stderr.String(), "Lost alice (environment stopped), retrying in") {
+	if !strings.Contains(stderr.String(), "Lost alice (computer stopped), retrying in") {
 		t.Errorf("stderr: %s", stderr.String())
 	}
 	if got, err := roundTrip(outLocal, "c"); got != "echo c" {
@@ -914,14 +914,14 @@ func TestForwardArgsCaps(t *testing.T) {
 	}
 	h := newHarness(t)
 	r := h.run(append([]string{"-e", "x", "forward"}, build(65, 0)...)...)
-	if r.code != 2 || !strings.Contains(r.stderr, "at most 64 mappings into the environment") {
+	if r.code != 2 || !strings.Contains(r.stderr, "at most 64 mappings into the computer") {
 		t.Errorf("65 ins: exit %d, stderr %q", r.code, r.stderr)
 	}
 }
 
-// twoEnvironments signs in to two servers: a (the default, environment
-// alice, also granting work) and b (environment bob), each a fake.
-func twoEnvironments(t *testing.T) (*harness, *clitest.Fake, *clitest.Fake) {
+// twoComputers signs in to two servers: a (the default, computer
+// alice, also granting work) and b (computer bob), each a fake.
+func twoComputers(t *testing.T) (*harness, *clitest.Fake, *clitest.Fake) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the fake runs commands with sh")
 	}
@@ -933,14 +933,14 @@ func twoEnvironments(t *testing.T) (*harness, *clitest.Fake, *clitest.Fake) {
 	return h, alice, bob
 }
 
-func TestEnvironmentFlagServerSlashEnv(t *testing.T) {
-	h, alice, bob := twoEnvironments(t)
+func TestComputerFlagServerSlashEnv(t *testing.T) {
+	h, alice, bob := twoComputers(t)
 	last := func(f *clitest.Fake) string {
 		reqs := f.Requests()
 		if len(reqs) == 0 {
 			return ""
 		}
-		return reqs[len(reqs)-1].Environment
+		return reqs[len(reqs)-1].Computer
 	}
 	for _, args := range [][]string{
 		{"-e", "b/bob", "screenshot"},
@@ -954,18 +954,18 @@ func TestEnvironmentFlagServerSlashEnv(t *testing.T) {
 			t.Errorf("%v: %+v", args, r)
 		}
 		if len(alice.Requests()) != na || len(bob.Requests()) != nb+1 || last(bob) != "bob" {
-			t.Errorf("%v: went to the wrong environment (alice %d→%d, bob %d→%d)", args, na, len(alice.Requests()), nb, len(bob.Requests()))
+			t.Errorf("%v: went to the wrong computer (alice %d→%d, bob %d→%d)", args, na, len(alice.Requests()), nb, len(bob.Requests()))
 		}
 	}
-	// -e ENV picks among the default server's environments.
+	// -e ENV picks among the default server's computers.
 	if r := h.run("-e", "work", "screenshot"); r.code != 0 || last(alice) != "work" {
 		t.Errorf("-e work: %+v", r)
 	}
-	// Without -e the default server's environment is used.
+	// Without -e the default server's computer is used.
 	if r := h.run("screenshot"); r.code != 0 || last(alice) != "alice" {
 		t.Errorf("default: %+v", r)
 	}
-	if r := h.run("-e", "bob", "size"); r.code != 1 || !strings.Contains(r.stderr, `no environment "bob"`) {
+	if r := h.run("-e", "bob", "size"); r.code != 1 || !strings.Contains(r.stderr, `no computer "bob"`) {
 		t.Errorf("-e bob on a: %+v", r)
 	}
 	// DESKYARD_ENVIRONMENT picks one with the same syntax; -e wins over it.
@@ -983,7 +983,7 @@ func TestEnvironmentFlagServerSlashEnv(t *testing.T) {
 }
 
 func TestOldTargetFlagsAreUnknown(t *testing.T) {
-	h, alice, bob := twoEnvironments(t)
+	h, alice, bob := twoComputers(t)
 	for _, args := range [][]string{
 		{"-d", "bob", "screenshot"},
 		{"--desktop", "bob", "screenshot"},
@@ -1004,12 +1004,12 @@ func TestOldTargetFlagsAreUnknown(t *testing.T) {
 		t.Errorf("-d message: %q", r.stderr)
 	}
 	if len(alice.Requests())+len(bob.Requests()) != 0 {
-		t.Errorf("a refused command reached an environment")
+		t.Errorf("a refused command reached a computer")
 	}
 }
 
-func TestGlobalEnvironmentAndExecEnv(t *testing.T) {
-	h, alice, bob := twoEnvironments(t)
+func TestGlobalComputerAndExecEnv(t *testing.T) {
+	h, alice, bob := twoComputers(t)
 	r := h.run("-e", "b/bob", "exec", "-e", "CI=1", "--", "true")
 	if r.code != 0 {
 		t.Fatalf("%+v", r)
@@ -1033,7 +1033,7 @@ func TestErrorPrefix(t *testing.T) {
 	}
 }
 
-func TestHelpNamesEnvironment(t *testing.T) {
+func TestHelpNamesComputer(t *testing.T) {
 	h := newHarness(t)
 	for _, args := range [][]string{{"--help"}, {"guide"}, {"describe", "--json"}, {"exec", "--help"}} {
 		out := h.run(args...).stdout
@@ -1086,7 +1086,7 @@ func TestLoginRefusesLinksAndPages(t *testing.T) {
 	}
 	for _, page := range []string{"accounts", "link", "volumes", "volumes/photos"} {
 		r = h.run("login", f.URL+"/"+page, "--no-browser")
-		if r.code != 2 || !strings.Contains(r.stderr, "isn't an environment") {
+		if r.code != 2 || !strings.Contains(r.stderr, "isn't a computer") {
 			t.Errorf("login %s: %+v", page, r)
 		}
 	}

@@ -62,13 +62,13 @@ func TestCLILoginApprove(t *testing.T) {
 
 	code, body := pollCLILogin(t, ts, start.ID, start.PollSecret)
 	var res struct {
-		Credential   string
-		Username     string
-		Environments []environmentLevel
+		Credential string
+		Username   string
+		Computers  []computerLevel `json:"environments"`
 	}
 	_ = json.Unmarshal([]byte(body), &res)
 	if code != 200 || !strings.HasPrefix(res.Credential, "dyc_") || res.Username != "bob" ||
-		len(res.Environments) != 1 || res.Environments[0] != (environmentLevel{Name: "alice", Level: "full"}) {
+		len(res.Computers) != 1 || res.Computers[0] != (computerLevel{Name: "alice", Level: "full"}) {
 		t.Fatalf("approved poll: %d %s", code, body)
 	}
 	if code, body := sendBearer(t, "GET", ts.URL+"/api/me", res.Credential, ""); code != 200 || !strings.Contains(body, `"username":"bob"`) {

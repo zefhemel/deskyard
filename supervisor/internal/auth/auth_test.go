@@ -165,7 +165,7 @@ func TestCanByLevel(t *testing.T) {
 		}
 	}
 	if Can(observer, Observe, "") {
-		t.Error("observe without an environment")
+		t.Error("observe without a computer")
 	}
 	for _, l := range []Level{LevelNone, "admin", "FULL"} {
 		if ValidLevel(l) {

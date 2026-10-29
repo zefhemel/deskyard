@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -282,12 +282,12 @@ func TestTerminalCapabilityJSON(t *testing.T) {
 			e.supported = supported
 			e.state = state
 			s, ts := newTestServerWith(t, e)
-			c, err := s.Environments.Get(context.Background(), "alice")
+			c, err := s.Computers.Get(context.Background(), "alice")
 			if err != nil {
 				t.Fatal(err)
 			}
 			a, _ := s.Accounts.Get("admin")
-			b, _ := json.Marshal(s.environmentJSON(context.Background(), c, a))
+			b, _ := json.Marshal(s.computerJSON(context.Background(), c, a))
 			var v map[string]any
 			json.Unmarshal(b, &v)
 			if v["terminal"] != supported {
@@ -298,7 +298,7 @@ func TestTerminalCapabilityJSON(t *testing.T) {
 	}
 }
 func TestTerminalRuntimeGeneration(t *testing.T) {
-	first := environments.Environment{Container: engine.Container{ID: "same"}, StartedAt: time.Unix(1, 0)}
+	first := computers.Computer{Container: engine.Container{ID: "same"}, StartedAt: time.Unix(1, 0)}
 	next := first
 	next.StartedAt = time.Unix(2, 0)
 	if terminalGeneration(first) == terminalGeneration(next) {
@@ -318,7 +318,7 @@ func TestTerminalCookieLogoutIsolation(t *testing.T) {
 	claims, _ := s.Sessions.Claims(req)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	live := &terminalConnection{claims: claims, environment: "alice", cancel: cancel}
+	live := &terminalConnection{claims: claims, computer: "alice", cancel: cancel}
 	if !s.terminals.add(live) {
 		t.Fatal("register")
 	}
@@ -328,7 +328,7 @@ func TestTerminalCookieLogoutIsolation(t *testing.T) {
 	claims2, _ := s.Sessions.Claims(req2)
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	defer cancel2()
-	other := &terminalConnection{claims: claims2, environment: "alice", cancel: cancel2}
+	other := &terminalConnection{claims: claims2, computer: "alice", cancel: cancel2}
 	s.terminals.add(other)
 	defer s.terminals.remove(other)
 	rec := httptest.NewRecorder()
@@ -340,7 +340,7 @@ func TestTerminalCookieLogoutIsolation(t *testing.T) {
 	if ctx.Err() == nil || ctx2.Err() != nil {
 		t.Fatal("logout not isolated")
 	}
-	if s.terminals.add(&terminalConnection{claims: claims, environment: "alice", cancel: func() {}}) {
+	if s.terminals.add(&terminalConnection{claims: claims, computer: "alice", cancel: func() {}}) {
 		t.Fatal("logout race permits new connection")
 	}
 }
@@ -459,10 +459,10 @@ func TestTerminalLogoutOrigin(t *testing.T) {
 func TestTerminalRefusesLifecycleJoin(t *testing.T) {
 	e := newTerminalEngine()
 	s, ts := newTestServerWith(t, e)
-	if err := s.Environments.Begin("alice", ""); err != nil {
+	if err := s.Computers.Begin("alice", ""); err != nil {
 		t.Fatal(err)
 	}
-	defer s.Environments.Done("alice")
+	defer s.Computers.Done("alice")
 	if got := status(t, login(t, ts, "admin"), "GET", ts.URL+"/api/environments/alice/terminal?session=main", ts.URL); got != 409 {
 		t.Fatalf("join during stop got %d", got)
 	}
@@ -587,7 +587,7 @@ func TestLinkRedemptionEndsAnotherAccountsBrowserLogin(t *testing.T) {
 	claims, _ := s.Sessions.Claims(req)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	live := &terminalConnection{claims: claims, environment: "alice", cancel: cancel}
+	live := &terminalConnection{claims: claims, computer: "alice", cancel: cancel}
 	if !s.terminals.add(live) {
 		t.Fatal("register")
 	}

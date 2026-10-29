@@ -18,7 +18,7 @@ type accountJSON struct {
 	Kind        string           `json:"kind"` // "password" or "token"
 	Admin       bool             `json:"admin"`
 	Description string           `json:"description"`
-	Grants      []accounts.Grant `json:"grants"` // of defined environments, sorted
+	Grants      []accounts.Grant `json:"grants"` // of defined computers, sorted
 	SharedBy    *accounts.Sharer `json:"sharedBy"`
 	Expires     *time.Time       `json:"expires"`
 	LinkPending bool             `json:"linkPending"`
@@ -33,7 +33,7 @@ func accountKind(a accounts.Account) string {
 	return "token"
 }
 
-// toAccountJSON shows a with its grants of defined environments.
+// toAccountJSON shows a with its grants of defined computers.
 func (s *Server) toAccountJSON(a accounts.Account) accountJSON {
 	if held, ok := s.unsaved.apply(a); ok {
 		a = held
@@ -43,23 +43,23 @@ func (s *Server) toAccountJSON(a accounts.Account) accountJSON {
 		Created: a.Created, LastLogin: since(a.LastLogin)}
 }
 
-// definedGrants is a's grants of defined environments, sorted by environment.
+// definedGrants is a's grants of defined computers, sorted by computer.
 func (s *Server) definedGrants(a accounts.Account) []accounts.Grant {
 	out := []accounts.Grant{}
 	for _, g := range a.Grants {
-		if _, ok := s.Environments.Defs.Get(g.Environment); ok {
+		if _, ok := s.Computers.Defs.Get(g.Computer); ok {
 			out = append(out, g)
 		}
 	}
-	slices.SortFunc(out, func(x, y accounts.Grant) int { return strings.Compare(x.Environment, y.Environment) })
+	slices.SortFunc(out, func(x, y accounts.Grant) int { return strings.Compare(x.Computer, y.Computer) })
 	return out
 }
 
-// checkGrants writes 400 for a grant of an undefined environment.
+// checkGrants writes 400 for a grant of an undefined computer.
 func (s *Server) checkGrants(w http.ResponseWriter, grants []accounts.Grant) bool {
 	for _, g := range grants {
-		if _, ok := s.Environments.Defs.Get(g.Environment); !ok {
-			writeError(w, http.StatusBadRequest, "no environment "+g.Environment)
+		if _, ok := s.Computers.Defs.Get(g.Computer); !ok {
+			writeError(w, http.StatusBadRequest, "no computer "+g.Computer)
 			return false
 		}
 	}

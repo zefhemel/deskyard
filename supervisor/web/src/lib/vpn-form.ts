@@ -1,4 +1,4 @@
-import type { EnvironmentVPNSettings, LANException, VPNInput, VPNStatus, VPNUpdate, VPNReference, Job, Settings, SettingsPatch, VolumeGrant } from "../api.ts";
+import type { ComputerVPNSettings, LANException, VPNInput, VPNStatus, VPNUpdate, VPNReference, Job, Settings, SettingsPatch, VolumeGrant } from "../api.ts";
 
 export interface ConnectionForm {
   name: string;
@@ -34,7 +34,7 @@ export function connectionUpdate(form: ConnectionForm, preview: { revision: numb
   };
 }
 
-export function environmentVPNPatch(original: EnvironmentVPNSettings, selection: string, rules: LANException[]): Partial<EnvironmentVPNSettings> {
+export function computerVPNPatch(original: ComputerVPNSettings, selection: string, rules: LANException[]): Partial<ComputerVPNSettings> {
   const id = selection || null;
   return {
     ...(id !== original.vpnConnectionId ? { vpnConnectionId: id } : {}),
@@ -125,7 +125,7 @@ export class CandidateTestSession {
   }
 }
 
-export interface EnvironmentSettingsDraft {
+export interface ComputerSettingsDraft {
   dockerAccess?: boolean;
   image: string;
   memoryBytes: number;
@@ -134,13 +134,13 @@ export interface EnvironmentSettingsDraft {
   lan: ExceptionRow[];
   volumes?: VolumeGrant[];
 }
-type SavedEnvironmentSettings = { image: string; settings: Settings };
-function environmentSettingsPatch(saved: SavedEnvironmentSettings, draft: EnvironmentSettingsDraft): SettingsPatch {
+type SavedComputerSettings = { image: string; settings: Settings };
+function computerSettingsPatch(saved: SavedComputerSettings, draft: ComputerSettingsDraft): SettingsPatch {
   const rules =
     !draft.vpnConnectionId || JSON.stringify(draft.lan) === JSON.stringify(exceptionRows(saved.settings.lanExceptions))
       ? saved.settings.lanExceptions
       : parseExceptions(draft.lan);
-  const patch: SettingsPatch = environmentVPNPatch(saved.settings, draft.vpnConnectionId, rules);
+  const patch: SettingsPatch = computerVPNPatch(saved.settings, draft.vpnConnectionId, rules);
   if (draft.image !== saved.image) patch.image = draft.image;
   if (draft.memoryBytes !== saved.settings.memoryBytes) patch.memoryBytes = draft.memoryBytes;
   if (draft.nanoCpus !== saved.settings.nanoCpus) patch.nanoCpus = draft.nanoCpus;
@@ -148,19 +148,19 @@ function environmentSettingsPatch(saved: SavedEnvironmentSettings, draft: Enviro
   if (draft.volumes !== undefined && JSON.stringify(draft.volumes) !== JSON.stringify(saved.settings.volumes ?? [])) patch.volumes = draft.volumes;
   return patch;
 }
-export function environmentSettingsChanged(saved: SavedEnvironmentSettings, draft: EnvironmentSettingsDraft): boolean {
+export function computerSettingsChanged(saved: SavedComputerSettings, draft: ComputerSettingsDraft): boolean {
   try {
-    return Object.keys(environmentSettingsPatch(saved, draft)).length > 0;
+    return Object.keys(computerSettingsPatch(saved, draft)).length > 0;
   } catch {
     return true;
   } // An invalid visible draft still needs correction or Undo.
 }
-export function saveEnvironmentSettings<T>(
-  saved: SavedEnvironmentSettings,
-  draft: EnvironmentSettingsDraft,
+export function saveComputerSettings<T>(
+  saved: SavedComputerSettings,
+  draft: ComputerSettingsDraft,
   begin: (patch: SettingsPatch) => Promise<T>,
 ): Promise<T> | null {
-  const patch = environmentSettingsPatch(saved, draft);
+  const patch = computerSettingsPatch(saved, draft);
   return Object.keys(patch).length ? begin(patch) : null;
 }
 

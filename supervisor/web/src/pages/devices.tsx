@@ -113,10 +113,10 @@ function DeviceRow({ device: d, revoke, onChanged }: { device: Credential; revok
 
 /** The account's WebDAV drives and its WebDAV password. */
 function WebDAVSection({ devices, onChanged }: { devices: Credential[] | undefined; onChanged: () => void }) {
-  const { me, environments } = useLive();
+  const { me, computers } = useLive();
   const [password, setPassword] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const drives = (environments ?? []).filter((c) => c.webdav && c.level === "full").map((c) => c.name);
+  const drives = (computers ?? []).filter((c) => c.webdav && c.level === "full").map((c) => c.name);
   const has = devices?.some((d) => d.kind === "webdav") ?? false;
   const change = async (make: boolean) => {
     setBusy(true);

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/activity"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 type statsRequest struct {
@@ -45,8 +45,8 @@ func (e *collectorEngine) setState(state string) { e.mu.Lock(); e.state = state;
 func TestStatsOldWorkerCannotCancelReplacement(t *testing.T) {
 	eng := &collectorEngine{state: "running", requested: make(chan statsRequest, 2)}
 	s := &Server{Eng: eng, events: newHub()}
-	s.Environments = environments.New(eng, environments.Config{DataDir: t.TempDir()}, nil)
-	defineEnvironments(t, s)
+	s.Computers = computers.New(eng, computers.Config{DataDir: t.TempDir()}, nil)
+	defineComputers(t, s)
 	sc := newStatsCollector(s)
 	sc.lastUse = time.Now()
 	ctx, cancel := context.WithCancel(context.Background())

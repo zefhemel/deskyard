@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 type commandEngine struct {
@@ -35,7 +35,7 @@ func TestExecStreamCancellationReleasesConsumerAndStderr(t *testing.T) {
 			defer cancel()
 			done := make(chan error, 1)
 			go func() {
-				done <- s.execStream(ctx, environments.Environment{}, 0, []string{"query"}, func(r io.Reader) error {
+				done <- s.execStream(ctx, computers.Computer{}, 0, []string{"query"}, func(r io.Reader) error {
 					close(entered)
 					if mode == "stderr" {
 						return nil
@@ -63,7 +63,7 @@ func TestExecOutputRejectsOversizedQueryButAllowsScreenshot(t *testing.T) {
 	for _, cmd := range [][]string{{"ps"}, {"deskyard", "screenshot", "-"}} {
 		t.Run(strings.Join(cmd, " "), func(t *testing.T) {
 			s := &Server{Eng: &commandEngine{process: &engine.Process{Stdout: strings.NewReader(strings.Repeat("x", (1<<20)+1)), Wait: func() (int, error) { return 0, nil }, Close: func() {}}}}
-			out, err := s.execOutput(context.Background(), environments.Environment{}, cmd...)
+			out, err := s.execOutput(context.Background(), computers.Computer{}, cmd...)
 			if cmd[0] == "ps" {
 				if !errors.Is(err, engine.ErrOutputLimit) {
 					t.Fatalf("got %v", err)

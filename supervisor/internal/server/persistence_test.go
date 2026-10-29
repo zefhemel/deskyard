@@ -81,7 +81,7 @@ func TestServerUsesVisibleLayout(t *testing.T) {
 	if s.clients.dir != filepath.Join(l.Cache, "client") {
 		t.Errorf("client cache in %s", s.clients.dir)
 	}
-	if got := s.Environments.Layout.HomeOf("alice"); got != filepath.Join(l.Data, "home", "alice") {
+	if got := s.Computers.Layout.HomeOf("alice"); got != filepath.Join(l.Data, "home", "alice") {
 		t.Errorf("home in %s", got)
 	}
 }

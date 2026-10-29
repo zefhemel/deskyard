@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 )
@@ -20,28 +20,28 @@ import (
 type journalEngine struct{ rolloutEngine }
 
 func (*journalEngine) ImageInspect(context.Context, string) (engine.Image, error) {
-	return engine.Image{ID: "image", Labels: map[string]string{environments.LabelContract: environments.Contract}}, nil
+	return engine.Image{ID: "image", Labels: map[string]string{computers.LabelContract: computers.Contract}}, nil
 }
 
 func TestVPNJournalErrorsAreSafeInPowerHTTPAndDesktopJobs(t *testing.T) {
 	e := &journalEngine{}
 	s, ts := newTestServerWith(t, e)
 	admin := login(t, ts, "admin")
-	st := s.Environments.Networking.Connections
+	st := s.Computers.Networking.Connections
 	u, p := "user", "password"
 	conn, err := st.Create(vpn.Input{Name: "Home", Provider: "nordvpn", Country: "Netherlands", Username: &u, Password: &p})
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.consumer = &engine.Container{ID: "consumer", Name: "deskyard-alice", State: "exited", Labels: map[string]string{environments.LabelManaged: "true", environments.LabelName: "alice", environments.LabelRevision: "1", vpn.LabelConnection: conn.ID}}
-	defineEnvironments(t, s)
+	e.consumer = &engine.Container{ID: "consumer", Name: "deskyard-alice", State: "exited", Labels: map[string]string{computers.LabelManaged: "true", computers.LabelName: "alice", computers.LabelRevision: "1", vpn.LabelConnection: conn.ID}}
+	defineComputers(t, s)
 	dir := filepath.Join(t.TempDir(), "private-state-sentinel")
 	path := filepath.Join(dir, "network", "transitions.json")
 	record := map[string]any{"name": "alice", "connectionRevision": 1, "appliedConnectionRevision": 1, "appliedRevision": 1, "runtimeId": "gateway"}
 	if err = store.WriteJSON(path, map[string]any{"version": 1, "transitions": []any{record}}); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.Environments.ConfigureNetworking(st, &rolloutRuntime{}, dir); err != nil {
+	if err = s.Computers.ConfigureNetworking(st, &rolloutRuntime{}, dir); err != nil {
 		t.Fatal(err)
 	}
 	// A real filesystem failure, after loading a valid durable record. Keep
@@ -102,7 +102,7 @@ func TestVPNJournalErrorsAreSafeInPowerHTTPAndDesktopJobs(t *testing.T) {
 					t.Errorf("private cause in public response: %s", body)
 				}
 			}
-			got, err := s.Environments.Get(context.Background(), "alice")
+			got, err := s.Computers.Get(context.Background(), "alice")
 			if err != nil || got.Settings.VPNConnectionID != conn.ID {
 				t.Fatalf("failed persistence changed selected policy: %+v %v", got.VPN, err)
 			}

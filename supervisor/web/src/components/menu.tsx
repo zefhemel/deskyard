@@ -17,7 +17,7 @@ export interface MenuItem {
 }
 
 interface MenuProps {
-  /** The items, or a function giving them when the menu opens (the environment page's ⋯ adds the active tab's). */
+  /** The items, or a function giving them when the menu opens (the computer page's ⋯ adds the active tab's). */
   items: MenuItem[] | (() => MenuItem[]);
   /** Renders the trigger; `open` tells whether the menu is showing. */
   trigger: (props: { open: boolean; toggle: () => void }) => ComponentChildren;

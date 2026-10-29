@@ -16,8 +16,8 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/activity"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 )
 
@@ -26,7 +26,7 @@ import (
 func createShare(t *testing.T, s *Server, sharer accounts.Account, username string, level auth.Level) (accounts.Account, credential) {
 	t.Helper()
 	a, err := s.Accounts.Create(accounts.NewAccount{Username: username,
-		Grants:   []accounts.Grant{{Environment: "alice", Level: level}},
+		Grants:   []accounts.Grant{{Computer: "alice", Level: level}},
 		SharedBy: &accounts.Sharer{Username: sharer.Username, ID: sharer.ID}})
 	if err != nil {
 		t.Fatal(err)
@@ -57,7 +57,7 @@ func TestShareEndsWhenSharerLosesAccess(t *testing.T) {
 	s, _ := newTestServer(t)
 	bob := createBob(t, s)
 	if _, err := s.Accounts.Update("bob", func(a *accounts.Account) {
-		a.Grants = []accounts.Grant{{Environment: "alice", Level: auth.LevelFull}}
+		a.Grants = []accounts.Grant{{Computer: "alice", Level: auth.LevelFull}}
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestShareEndsWhenSharerLosesAccess(t *testing.T) {
 		t.Fatal("the sweep removed a share whose sharer has full access")
 	}
 	if _, err := s.Accounts.Update("bob", func(a *accounts.Account) {
-		a.Grants = []accounts.Grant{{Environment: "alice", Level: auth.LevelObserve}}
+		a.Grants = []accounts.Grant{{Computer: "alice", Level: auth.LevelObserve}}
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestShareEndsWhenSharerDeleted(t *testing.T) {
 	s, _ := newTestServer(t)
 	bob := createBob(t, s)
 	if _, err := s.Accounts.Update("bob", func(a *accounts.Account) {
-		a.Grants = []accounts.Grant{{Environment: "alice", Level: auth.LevelFull}}
+		a.Grants = []accounts.Grant{{Computer: "alice", Level: auth.LevelFull}}
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -108,17 +108,17 @@ func TestShareEndsWhenSharerDeleted(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := s.Accounts.Create(accounts.NewAccount{Username: "bob", Password: "pw",
-		Grants: []accounts.Grant{{Environment: "alice", Level: auth.LevelFull}}}); err != nil {
+		Grants: []accounts.Grant{{Computer: "alice", Level: auth.LevelFull}}}); err != nil {
 		t.Fatal(err)
 	}
 	shareGone(t, s, share)
 }
 
-func TestShareEndsWhenEnvironmentRemoved(t *testing.T) {
+func TestShareEndsWhenComputerRemoved(t *testing.T) {
 	s, _ := newTestServer(t)
 	admin, _ := s.Accounts.Get("admin")
 	share, _ := createShare(t, s, admin, "sanne", auth.LevelFull)
-	if err := s.environmentRemoved("alice"); err != nil {
+	if err := s.computerRemoved("alice"); err != nil {
 		t.Fatal(err)
 	}
 	shareGone(t, s, share)
@@ -176,7 +176,7 @@ func TestExpiredShareDeletedAndConnectionsClosed(t *testing.T) {
 	defer s.credentials.track(c.ID, "alice", cancel)()
 	stream, cancelStream := context.WithCancel(context.Background())
 	defer cancelStream()
-	cn := &conn{username: "sanne", environment: "alice", level: auth.LevelFull, cancel: cancelStream}
+	cn := &conn{username: "sanne", computer: "alice", level: auth.LevelFull, cancel: cancelStream}
 	s.viewers.add("alice", cn)
 	defer s.viewers.remove("alice", cn)
 	expire(t, s, "sanne")
@@ -198,7 +198,7 @@ func TestExpiryClosesConnectionsWhenTheDeletionFails(t *testing.T) {
 	defer s.credentials.track(c.ID, "alice", cancel)()
 	stream, cancelStream := context.WithCancel(context.Background())
 	defer cancelStream()
-	cn := &conn{username: "sanne", environment: "alice", level: auth.LevelFull, cancel: cancelStream}
+	cn := &conn{username: "sanne", computer: "alice", level: auth.LevelFull, cancel: cancelStream}
 	s.viewers.add("alice", cn)
 	defer s.viewers.remove("alice", cn)
 	expire(t, s, "sanne")
@@ -272,7 +272,7 @@ func TestOrphanedShareRefusedWhenTheDeletionFails(t *testing.T) {
 	// bob loses full access, but deleting his share fails.
 	s.Accounts.OnChange = nil
 	if _, err := s.Accounts.Update("bob", func(a *accounts.Account) {
-		a.Grants = []accounts.Grant{{Environment: "alice", Level: auth.LevelObserve}}
+		a.Grants = []accounts.Grant{{Computer: "alice", Level: auth.LevelObserve}}
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +313,7 @@ func TestDowngradeClosesViewerStream(t *testing.T) {
 	bob, _ = s.Accounts.Get("bob")
 	term, cancelTerm := context.WithCancel(context.Background())
 	defer cancelTerm()
-	tc := &terminalConnection{environment: "alice", session: "main", cancel: cancelTerm,
+	tc := &terminalConnection{computer: "alice", session: "main", cancel: cancelTerm,
 		claims: auth.SessionClaims{Username: "bob", AccountID: bob.ID, Epoch: bob.SessionEpoch, ID: "sess-1", Expires: time.Now().Add(time.Hour)}}
 	if !s.terminals.add(tc) {
 		t.Fatal("the terminal wasn't registered")
@@ -327,12 +327,12 @@ func TestDowngradeClosesViewerStream(t *testing.T) {
 	}
 	full, cancelFull := context.WithCancel(context.Background())
 	defer cancelFull()
-	stream := &conn{username: "bob", environment: "alice", level: auth.LevelFull, cancel: cancelFull}
+	stream := &conn{username: "bob", computer: "alice", level: auth.LevelFull, cancel: cancelFull}
 	s.viewers.add("alice", stream)
 	defer s.viewers.remove("alice", stream)
 	watch, cancelWatch := context.WithCancel(context.Background())
 	defer cancelWatch()
-	watcher := &conn{username: "bob", environment: "alice", level: auth.LevelFull, cancel: cancelWatch}
+	watcher := &conn{username: "bob", computer: "alice", level: auth.LevelFull, cancel: cancelWatch}
 	s.screenWatchers.add("alice", watcher)
 	defer s.screenWatchers.remove("alice", watcher)
 	if err := s.Accounts.SetAccess("alice", map[string]auth.Level{"bob": auth.LevelObserve}); err != nil {
@@ -346,7 +346,7 @@ func TestDowngradeClosesViewerStream(t *testing.T) {
 	observing, cancelObserving := context.WithCancel(context.Background())
 	defer cancelObserving()
 	bob, _ = s.Accounts.Get("bob")
-	obs := &conn{username: "bob", accountID: bob.ID, epoch: bob.SessionEpoch, environment: "alice", level: auth.LevelObserve, cancel: cancelObserving}
+	obs := &conn{username: "bob", accountID: bob.ID, epoch: bob.SessionEpoch, computer: "alice", level: auth.LevelObserve, cancel: cancelObserving}
 	s.viewers.add("alice", obs)
 	defer s.viewers.remove("alice", obs)
 	if _, err := s.Accounts.Update("bob", func(a *accounts.Account) { a.Description = "a colleague" }); err != nil {
@@ -372,17 +372,17 @@ func TestTokensJSONRemovedAtStartup(t *testing.T) {
 	}
 }
 
-// define defines (or redefines) the named environment as created then.
+// define defines (or redefines) the named computer as created then.
 func define(t *testing.T, s *Server, name string, created time.Time) {
 	t.Helper()
-	def := environments.Definition{Name: name, Created: created.UTC(), Revision: 1, Image: environments.ImageRef{Ref: "img"},
-		Network: environments.Network{Kind: environments.NetworkIsolated}, Power: environments.PowerStopped}
-	if err := s.Environments.Defs.Put(def); err != nil {
+	def := computers.Definition{Name: name, Created: created.UTC(), Revision: 1, Image: computers.ImageRef{Ref: "img"},
+		Network: computers.Network{Kind: computers.NetworkIsolated}, Power: computers.PowerStopped}
+	if err := s.Computers.Defs.Put(def); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestStartupDropsGrantsOfUndefinedEnvironments(t *testing.T) {
+func TestStartupDropsGrantsOfUndefinedComputers(t *testing.T) {
 	s, _ := newTestServer(t)
 	define(t, s, "carol", time.Now())
 	if err := s.Accounts.SetAccess("carol", fullAccess("anna")); err != nil {
@@ -391,7 +391,7 @@ func TestStartupDropsGrantsOfUndefinedEnvironments(t *testing.T) {
 	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Environments.Defs.Delete("carol"); err != nil {
+	if err := s.Computers.Defs.Delete("carol"); err != nil {
 		t.Fatal(err)
 	}
 	restarted := restart(t, s)
@@ -404,7 +404,7 @@ func TestStartupDropsGrantsOfUndefinedEnvironments(t *testing.T) {
 type failingCreateEngine struct{ fakeEngine }
 
 func (failingCreateEngine) ImageInspect(context.Context, string) (engine.Image, error) {
-	return engine.Image{ID: "sha256:img", Labels: map[string]string{environments.LabelContract: environments.Contract}}, nil
+	return engine.Image{ID: "sha256:img", Labels: map[string]string{computers.LabelContract: computers.Contract}}, nil
 }
 func (failingCreateEngine) Networks(context.Context, map[string]string) ([]engine.Network, error) {
 	return nil, errors.New("no networks in this test")
@@ -417,7 +417,7 @@ func TestCreateDropsLeftoverGrantsOfTheName(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A removal that deleted the definition but not the grant.
-	if err := s.Environments.Defs.Delete("carol"); err != nil {
+	if err := s.Computers.Defs.Delete("carol"); err != nil {
 		t.Fatal(err)
 	}
 	admin := login(t, ts, "admin")
@@ -439,7 +439,7 @@ func TestCreateDropsLeftoverGrantsOfTheName(t *testing.T) {
 		t.Fatal("create job timed out")
 	}
 	if a, _ := s.Accounts.Get("anna"); a.HasAccess("carol") {
-		t.Fatal("new environment inherited the removed one's grant")
+		t.Fatal("new computer inherited the removed one's grant")
 	}
 }
 
@@ -474,7 +474,7 @@ func TestRemovalWhoseFolderDeletionFailsStillPurgesAccess(t *testing.T) {
 	s.events.subs[sub] = true
 	s.events.mu.Unlock()
 	// A folder the supervisor can't delete itself.
-	home := s.Environments.Layout.HomeOf("alice")
+	home := s.Computers.Layout.HomeOf("alice")
 	if err := os.WriteFile(filepath.Join(home, "file"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -486,7 +486,7 @@ func TestRemovalWhoseFolderDeletionFailsStillPurgesAccess(t *testing.T) {
 	if code := status(t, admin, "DELETE", ts.URL+"/api/environments/alice?files=1", ts.URL); code < 400 {
 		t.Fatalf("failed folder deletion reported %d", code)
 	}
-	if _, ok := s.Environments.Defs.Get("alice"); ok {
+	if _, ok := s.Computers.Defs.Get("alice"); ok {
 		t.Fatal("test did not delete the definition")
 	}
 	if a, _ := s.Accounts.Get("anna"); a.HasAccess("alice") {
@@ -501,25 +501,25 @@ func TestRemovalWhoseFolderDeletionFailsStillPurgesAccess(t *testing.T) {
 	for removed := false; !removed; {
 		select {
 		case e := <-sub.c:
-			removed = e.kind == "removed" && e.environment == "alice"
+			removed = e.kind == "removed" && e.computer == "alice"
 		default:
 			t.Fatal("removal not published")
 		}
 	}
 }
 
-// A creation that fails but leaves the environment defined, to be recovered,
+// A creation that fails but leaves the computer defined, to be recovered,
 // still applies the requested access.
-func TestCreateFailureKeepingTheEnvironmentAppliesAccess(t *testing.T) {
+func TestCreateFailureKeepingTheComputerAppliesAccess(t *testing.T) {
 	e := &journalEngine{}
 	s, ts := newTestServerWith(t, e)
-	st := s.Environments.Networking.Connections
+	st := s.Computers.Networking.Connections
 	u, p := "user", "password"
 	conn, err := st.Create(vpn.Input{Name: "Home", Provider: "nordvpn", Country: "Netherlands", Username: &u, Password: &p})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = s.Environments.ConfigureNetworking(st, &rolloutRuntime{fail: true}, t.TempDir()); err != nil {
+	if err = s.Computers.ConfigureNetworking(st, &rolloutRuntime{fail: true}, t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 	admin := login(t, ts, "admin")
@@ -543,26 +543,26 @@ func TestCreateFailureKeepingTheEnvironmentAppliesAccess(t *testing.T) {
 	if j := s.jobs.get(res.Job); j.state.Status != "failed" {
 		t.Fatal("test's creation did not fail")
 	}
-	if _, ok := s.Environments.Defs.Get("carol"); !ok {
+	if _, ok := s.Computers.Defs.Get("carol"); !ok {
 		t.Fatal("test's failed creation did not keep the definition")
 	}
 	if a, _ := s.Accounts.Get("anna"); !a.HasAccess("carol") {
-		t.Error("environment kept for recovery lost its requested access")
+		t.Error("computer kept for recovery lost its requested access")
 	}
 }
 
 // trackCredential registers a live connection of a new credential of the
-// account to the environment, as exec does.
-func trackCredential(t *testing.T, s *Server, a accounts.Account, environment string) context.Context {
+// account to the computer, as exec does.
+func trackCredential(t *testing.T, s *Server, a accounts.Account, computer string) context.Context {
 	t.Helper()
 	c, _ := issueCredential(t, s, a)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	t.Cleanup(s.credentials.track(c.ID, environment, cancel))
+	t.Cleanup(s.credentials.track(c.ID, computer, cancel))
 	return ctx
 }
 
-func TestGrantRemovalClosesOnlyThatEnvironmentsConnections(t *testing.T) {
+func TestGrantRemovalClosesOnlyThatComputersConnections(t *testing.T) {
 	s, _ := newTestServer(t)
 	define(t, s, "bob", time.Now())
 	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
@@ -586,7 +586,7 @@ func TestGrantRemovalClosesOnlyThatEnvironmentsConnections(t *testing.T) {
 		t.Fatal("a removed grant left its connection open")
 	}
 	if onBob.Err() != nil {
-		t.Fatal("removing one grant closed another environment's connection")
+		t.Fatal("removing one grant closed another computer's connection")
 	}
 }
 

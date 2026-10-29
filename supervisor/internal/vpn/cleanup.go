@@ -17,11 +17,11 @@ func ownsLabels(actual, expected map[string]string) bool {
 	return true
 }
 
-// These helpers deliberately do not acquire the environment lock: Ensure already
+// These helpers deliberately do not acquire the computer lock: Ensure already
 // holds it. A unique attempt prevents ambiguous creation cleanup from deleting
 // a pre-existing resource that merely collided on its stable name.
-func (m *Manager) removeRuntimeAttempt(ctx context.Context, environment, name, attempt string) error {
-	labels := m.runtimeLabels(environment)
+func (m *Manager) removeRuntimeAttempt(ctx context.Context, computer, name, attempt string) error {
+	labels := m.runtimeLabels(computer)
 	labels[labelAttempt] = attempt
 	containers, err := m.eng.List(ctx, labels)
 	if err != nil {
@@ -34,7 +34,7 @@ func (m *Manager) removeRuntimeAttempt(ctx context.Context, environment, name, a
 			}
 		}
 	}
-	if err = os.RemoveAll(m.directory(environment)); err != nil {
+	if err = os.RemoveAll(m.directory(computer)); err != nil {
 		return errors.New("VPN runtime private file cleanup failed")
 	}
 	return nil

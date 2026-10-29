@@ -22,30 +22,30 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/activity"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/storage"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 )
 
 type Server struct {
-	Log          *slog.Logger
-	Eng          engine.Engine
-	Environments *environments.Service
-	Accounts     *accounts.Store
-	Sessions     *auth.Sessions
-	Throttle     *auth.Throttle
-	Layout       config.Layout
-	UI           fs.FS // the built web UI (index.html, assets/…)
+	Log       *slog.Logger
+	Eng       engine.Engine
+	Computers *computers.Service
+	Accounts  *accounts.Store
+	Sessions  *auth.Sessions
+	Throttle  *auth.Throttle
+	Layout    config.Layout
+	UI        fs.FS // the built web UI (index.html, assets/…)
 
 	vpnTests  vpnTester
 	jobs      *jobs
 	events    *hub
 	viewers   *viewers
 	terminals *terminalConnections
-	// terminalSessions caches running environments' shared terminal sessions.
+	// terminalSessions caches running computers' shared terminal sessions.
 	terminalSessions *terminalSessions
 	forwards         *forwards
 	viewersPub       *throttle
@@ -59,11 +59,11 @@ type Server struct {
 	cliLogins        *cliLogins // pending deskyard logins
 	images           *catalog
 	storage          *storage.Service // storage remotes and backups
-	reconcile        chan struct{}    // wakes the environments' reconcile loop
+	reconcile        chan struct{}    // wakes the computers' reconcile loop
 
 	memoryReclaim engine.MemoryReclaimSupport
 
-	davLocks     davLockSystems    // each environment's WebDAV locks
+	davLocks     davLockSystems    // each computer's WebDAV locks
 	davPasswords *davPasswordCache // account passwords WebDAV clients sent that checked out
 
 	activity       *activity.Tracker
@@ -83,7 +83,7 @@ type Server struct {
 type Options struct {
 	Log          *slog.Logger
 	Eng          engine.Engine
-	Environments *environments.Service
+	Computers    *computers.Service
 	Accounts     *accounts.Store
 	Layout       config.Layout // the data folder; stores at its top, secrets, journals and caches below
 	UI           fs.FS
@@ -101,9 +101,9 @@ func New(o Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	manager := vpn.NewManager(o.Eng, connections, o.Layout.State).ForInstance(o.Environments.Instance)
-	if o.Environments.Networking == nil {
-		if err := o.Environments.ConfigureNetworking(connections, manager, o.Layout.State); err != nil {
+	manager := vpn.NewManager(o.Eng, connections, o.Layout.State).ForInstance(o.Computers.Instance)
+	if o.Computers.Networking == nil {
+		if err := o.Computers.ConfigureNetworking(connections, manager, o.Layout.State); err != nil {
 			return nil, err
 		}
 	}
@@ -113,7 +113,7 @@ func New(o Options) (*Server, error) {
 	}
 	s := &Server{
 		vpnTests: manager,
-		Log:      o.Log, Eng: o.Eng, Environments: o.Environments, Accounts: o.Accounts,
+		Log:      o.Log, Eng: o.Eng, Computers: o.Computers, Accounts: o.Accounts,
 		Sessions: &auth.Sessions{Key: key, Secure: o.Secure}, Throttle: &auth.Throttle{},
 		Layout: o.Layout, UI: o.UI,
 		jobs: newJobs(), events: newHub(), viewers: newViewers(), terminals: newTerminalConnections(), forwards: newForwards(), viewersPub: newThrottle(viewersInterval), streamDials: newDialGates(),
@@ -141,31 +141,31 @@ func New(o Options) (*Server, error) {
 		o.Log.Error("deleting credentials of unfinished link redemptions", "err", err)
 	}
 	// Grants of names without a definition are left over from a
-	// removal whose cleanup didn't persist; a later environment of the name
+	// removal whose cleanup didn't persist; a later computer of the name
 	// must not inherit them.
-	if err := s.Accounts.Retain(func(name string) bool { _, ok := s.Environments.Defs.Get(name); return ok }); err != nil {
-		return nil, fmt.Errorf("dropping grants of removed environments: %w", err)
+	if err := s.Accounts.Retain(func(name string) bool { _, ok := s.Computers.Defs.Get(name); return ok }); err != nil {
+		return nil, fmt.Errorf("dropping grants of removed computers: %w", err)
 	}
 	s.credentials.onGone = func(c credential) { s.activity.Forget(c.ID) }
 	if s.images, err = loadCatalog(o.Layout.Data, o.DefaultImage); err != nil {
 		return nil, err
 	}
-	s.Environments.ImageUsed = func(ref, id string) {
+	s.Computers.ImageUsed = func(ref, id string) {
 		if err := s.images.noteLocal(ref, id); err != nil {
 			s.Log.Warn("recording local image", "ref", ref, "err", err)
 		}
 	}
 	run := o.StorageRunner
 	if run == nil {
-		helpers := &storage.EngineRunner{Eng: o.Eng, BinDir: filepath.Join(o.Layout.Cache, "storage"), Instance: o.Environments.Instance}
+		helpers := &storage.EngineRunner{Eng: o.Eng, BinDir: filepath.Join(o.Layout.Cache, "storage"), Instance: o.Computers.Instance}
 		run = helpers
 	}
-	if s.storage, err = storage.Open(o.Layout, o.Environments.Instance, run, storage.EnvironmentsOf(o.Environments), o.Log); err != nil {
+	if s.storage, err = storage.Open(o.Layout, o.Computers.Instance, run, storage.ComputersOf(o.Computers), o.Log); err != nil {
 		return nil, err
 	}
-	s.Environments.ItemBusy = s.storage.Busy
+	s.Computers.ItemBusy = s.storage.Busy
 	// As creating one does: what a removal of the name failed to purge
-	// doesn't carry over to an environment restored under it.
+	// doesn't carry over to a computer restored under it.
 	s.storage.ForgetName = func(name string) error {
 		if err := s.forgetAccess(name); err != nil {
 			return err
@@ -173,10 +173,10 @@ func New(o Options) (*Server, error) {
 		s.activity.ForgetDesktop(name)
 		return nil
 	}
-	s.Environments.ConflictsChanged = s.events.refresh
-	s.Environments.Removed = s.environmentRemoved
-	// An environment whose pinned image was pulled again has a new revision.
-	s.Environments.Repinned = func([]environments.Repin) { s.events.refresh() }
+	s.Computers.ConflictsChanged = s.events.refresh
+	s.Computers.Removed = s.computerRemoved
+	// A computer whose pinned image was pulled again has a new revision.
+	s.Computers.Repinned = func([]computers.Repin) { s.events.refresh() }
 	o.Accounts.OnChange = s.accountsChanged
 	o.Accounts.HeldSessionEpoch = func(a accounts.Account) int {
 		a, _ = s.unsaved.apply(a)
@@ -192,9 +192,9 @@ func New(o Options) (*Server, error) {
 func (s *Server) Run(ctx context.Context) {
 	context.AfterFunc(ctx, s.terminals.shutdown)
 	s.inside = newInsideReader(s)
-	go s.Environments.Networking.Run(ctx, func(name string) { s.publishEnvironment(ctx, name) })
+	go s.Computers.Networking.Run(ctx, func(name string) { s.publishComputer(ctx, name) })
 	go s.watchEngine(ctx)
-	go s.Environments.Run(ctx, s.reconcile)
+	go s.Computers.Run(ctx, s.reconcile)
 	go s.stats.run(ctx)
 	go s.inside.run(ctx)
 	go s.expireLoop(ctx)
@@ -232,7 +232,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.api.ServeHTTP(w, r)
 	case first == "assets" || strings.Contains(first, "."):
 		s.serveStatic(w, r)
-	case first == "" || environments.IsReserved(first):
+	case first == "" || computers.IsReserved(first):
 		s.serveIndex(w, r)
 	default:
 		s.serveDesktop(w, r, first, rest)

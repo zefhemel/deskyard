@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Environment } from "../api.ts";
+import type { Computer } from "../api.ts";
 import { notice, selfFirst } from "./format.ts";
 
-type Seen = Pick<Environment, "state" | "revision" | "appliedRevision" | "error" | "conflict">;
+type Seen = Pick<Computer, "state" | "revision" | "appliedRevision" | "error" | "conflict">;
 const applied: Seen = { state: "running", revision: 3, appliedRevision: 3, error: "", conflict: "" };
 
 test("an applied environment has nothing to say", () => {

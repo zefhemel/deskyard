@@ -168,7 +168,7 @@ func TestInsideMonitoringContinuesWithoutUIForAutoReclaim(t *testing.T) {
 	if !following || s.events.count() != 0 {
 		t.Fatal("eligible desktop was not followed without UI")
 	}
-	if err := s.Environments.SetMemoryReclaim("bob", false); err != nil {
+	if err := s.Computers.SetMemoryReclaim("bob", false); err != nil {
 		t.Fatal(err)
 	}
 	ir.reconcile(ctx)

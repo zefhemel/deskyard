@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 // pruneEngine adds image pruning to the catalog engine. Like Docker, it
@@ -56,7 +56,7 @@ func TestCheckRemovesOnlyUnusedImagesThisCatalogReplaced(t *testing.T) {
 		oldImage("sha256:custom", "custom"),
 	}}
 	bt.s.Eng = e
-	bt.s.Environments.Eng = e
+	bt.s.Computers.Eng = e
 	// The catalog's newest version of img moved away from these.
 	for _, id := range []string{"sha256:unused", "sha256:stopped-container", "sha256:pinned", "sha256:custom", "sha256:base1"} {
 		if err := bt.s.images.noteLocal("img", id); err != nil {
@@ -65,11 +65,11 @@ func TestCheckRemovesOnlyUnusedImagesThisCatalogReplaced(t *testing.T) {
 	}
 	// A stopped container of another supervisor still uses one version...
 	bt.e.desktops = append(bt.e.desktops, engine.Container{ID: "c1", Name: "deskyard-other", ImageID: "sha256:stopped-container", State: "exited"})
-	// ...and a stopped environment without a container pins another.
-	def := environments.Definition{Name: "alice", Created: time.Now().UTC(), Revision: 1,
-		Image:   environments.ImageRef{Ref: "img", ID: "sha256:pinned"},
-		Network: environments.Network{Kind: environments.NetworkIsolated}, Power: environments.PowerStopped}
-	if err := bt.s.Environments.Defs.Put(def); err != nil {
+	// ...and a stopped computer without a container pins another.
+	def := computers.Definition{Name: "alice", Created: time.Now().UTC(), Revision: 1,
+		Image:   computers.ImageRef{Ref: "img", ID: "sha256:pinned"},
+		Network: computers.Network{Kind: computers.NetworkIsolated}, Power: computers.PowerStopped}
+	if err := bt.s.Computers.Defs.Put(def); err != nil {
 		t.Fatal(err)
 	}
 	if j := bt.wait(bt.start("POST", "/api/images/check", nil)); j.Status != "done" {

@@ -295,7 +295,7 @@ function DeleteConnection({ connection, onClose, onDeleted }: { connection: Save
       onClose();
     } catch (e) {
       setError(errorMessage(e));
-      if (e instanceof ApiError) setRefs(e.environments);
+      if (e instanceof ApiError) setRefs(e.computers);
       onDeleted();
     } finally {
       setBusy(false);

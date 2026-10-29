@@ -47,12 +47,12 @@ type Service struct {
 	Store   *Store
 	State   *State
 	Tool    Tool
-	Env     Environments
+	Env     Computers
 	Loc     *time.Location
 	Now     func() time.Time
 	Log     *slog.Logger
 	// ForgetName, when set, is called under the reservation before an
-	// environment is restored under a new name, so what a removal of that
+	// computer is restored under a new name, so what a removal of that
 	// name failed to purge (its grants) doesn't carry over.
 	ForgetName func(name string) error
 
@@ -72,7 +72,7 @@ type listing struct {
 
 // Open loads the remotes, repositories, policies and run state from layout,
 // for the supervisor instance.
-func Open(layout config.Layout, instance string, run Runner, env Environments, log *slog.Logger) (*Service, error) {
+func Open(layout config.Layout, instance string, run Runner, env Computers, log *slog.Logger) (*Service, error) {
 	remotes, err := LoadRemotes(filepath.Join(layout.Data, "storage-remotes.json"), layout.Secret)
 	if err != nil {
 		return nil, err
@@ -128,7 +128,7 @@ func (s *Service) Hold(it Item, what string) (release func(), err error) {
 	}), nil
 }
 
-// Busy reports, for the environments service, whether an item is held.
+// Busy reports, for the computers service, whether an item is held.
 func (s *Service) Busy(kind, name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -343,14 +343,14 @@ func (s *Service) PutPolicy(p Policy) error {
 	return s.Store.PutPolicy(p)
 }
 
-// ItemGone drops the policy and run state of a removed environment or a
+// ItemGone drops the policy and run state of a removed computer or a
 // deleted volume. Their snapshots stay.
 func (s *Service) ItemGone(it Item) error {
 	return errors.Join(s.Store.DeletePolicy(it), s.State.Forget(it))
 }
 
 func (s *Service) exists(it Item) bool {
-	if it.Kind == KindEnvironment {
+	if it.Kind == KindComputer {
 		_, ok := s.Env.Definition(it.Name)
 		return ok
 	}
@@ -365,10 +365,10 @@ func (s *Service) exists(it Item) bool {
 func (s *Service) itemSource(it Item) (root string, mounts []engine.Mount, cleanup func(), err error) {
 	cleanup = func() {}
 	switch it.Kind {
-	case KindEnvironment:
+	case KindComputer:
 		def, ok := s.Env.Definition(it.Name)
 		if !ok {
-			return "", nil, cleanup, fmt.Errorf("environment %s doesn't exist", it.Name)
+			return "", nil, cleanup, fmt.Errorf("computer %s doesn't exist", it.Name)
 		}
 		b, err := json.MarshalIndent(def, "", "  ")
 		if err != nil {
@@ -641,7 +641,7 @@ func (s *Service) snapshotOf(ctx context.Context, repoName string, it Item, id s
 
 // itemRoot is where an item's files are in its snapshots.
 func itemRoot(it Item) string {
-	if it.Kind == KindEnvironment {
+	if it.Kind == KindComputer {
 		return path.Join("/deskyard/environment", it.Name, "home")
 	}
 	return path.Join("/deskyard/volume", it.Name)

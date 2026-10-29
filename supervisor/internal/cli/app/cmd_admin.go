@@ -22,7 +22,7 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/cli/remote"
 )
 
-// The administrator commands: environments, volumes, accounts, shares and
+// The administrator commands: computers, volumes, accounts, shares and
 // signed-in devices, all through the server's API (supervisor/API.md). The
 // server decides who may do what; its refusals are printed as they come.
 
@@ -31,7 +31,7 @@ var timeNow = time.Now
 
 // apiClient is the client for the server the command talks to: --server,
 // else the server -e SERVER/ENV or DESKYARD_ENVIRONMENT names, else the
-// default one. env names the environment the command is about, for messages.
+// default one. env names the computer the command is about, for messages.
 func (a *App) apiClient(c *call, env string) (*remote.Client, error) {
 	name := c.str("--server", "")
 	if name == "" {
@@ -141,7 +141,7 @@ func levelOf(c *call, what, s string, allowed ...string) (name, level string, er
 	return "", "", usagef(c.cmd, "%s %q: the level is one of %s", what, s, strings.Join(allowed, ", "))
 }
 
-// ---- environments
+// ---- computers
 
 type envDetail struct {
 	Name         string  `json:"name"`
@@ -178,8 +178,8 @@ func runEnvList(a *App, c *call) error {
 		return err
 	}
 	var list struct {
-		Environments []envDetail `json:"environments"`
-		Conflicts    []struct {
+		Computers []envDetail `json:"environments"`
+		Conflicts []struct {
 			Name    string `json:"name"`
 			Message string `json:"message"`
 		} `json:"conflicts"`
@@ -187,12 +187,12 @@ func runEnvList(a *App, c *call) error {
 	if done, err := getJSON(a, c, cl, "/environments", &list); done || err != nil {
 		return err
 	}
-	if len(list.Environments) == 0 {
-		fmt.Fprintln(a.Stdout, "No environments you can see.")
+	if len(list.Computers) == 0 {
+		fmt.Fprintln(a.Stdout, "No computers you can see.")
 	} else {
 		tw := tabwriter.NewWriter(a.Stdout, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(tw, "NAME\tSTATE\tACCESS\tIMAGE\tVIEWERS")
-		for _, e := range list.Environments {
+		for _, e := range list.Computers {
 			state := e.State
 			if e.Error != "" || e.Conflict != "" {
 				state += " (problem: see env show)"
@@ -265,7 +265,7 @@ func runEnvShow(a *App, c *call) error {
 	if e.Conflict != "" {
 		fmt.Fprintf(tw, "conflict:\t%s\n", e.Conflict)
 	}
-	fmt.Fprintf(tw, "url:\t%s\n", (&remote.Target{Base: cl.Base, Environment: e.Name}).URL())
+	fmt.Fprintf(tw, "url:\t%s\n", (&remote.Target{Base: cl.Base, Computer: e.Name}).URL())
 	return tw.Flush()
 }
 
@@ -384,7 +384,7 @@ func runEnvCreate(a *App, c *call) error {
 		}
 		return err
 	}
-	fmt.Fprintf(a.Stdout, "Created %s: %s\n", name, (&remote.Target{Base: cl.Base, Environment: name}).URL())
+	fmt.Fprintf(a.Stdout, "Created %s: %s\n", name, (&remote.Target{Base: cl.Base, Computer: name}).URL())
 	return nil
 }
 
@@ -471,7 +471,7 @@ func runEnvRemove(a *App, c *call) error {
 	if c.bool("--delete-files") {
 		fmt.Fprintf(a.Stdout, "Removed %s and its files.\n", name)
 	} else {
-		fmt.Fprintf(a.Stdout, "Removed %s; its files are kept (an environment created with the same name reuses them).\n", name)
+		fmt.Fprintf(a.Stdout, "Removed %s; its files are kept (a computer created with the same name reuses them).\n", name)
 	}
 	return nil
 }
@@ -565,10 +565,10 @@ func runVolumeList(a *App, c *call) error {
 	}
 	var list struct {
 		Volumes []struct {
-			Name         string  `json:"name"`
-			Folder       string  `json:"folder"`
-			Created      *string `json:"created"`
-			Environments []struct {
+			Name      string  `json:"name"`
+			Folder    string  `json:"folder"`
+			Created   *string `json:"created"`
+			Computers []struct {
 				Name     string `json:"name"`
 				ReadOnly bool   `json:"readOnly"`
 			} `json:"environments"`
@@ -585,7 +585,7 @@ func runVolumeList(a *App, c *call) error {
 	fmt.Fprintln(tw, "NAME\tENVIRONMENTS\tFOLDER\tCREATED")
 	for _, v := range list.Volumes {
 		var envs []string
-		for _, e := range v.Environments {
+		for _, e := range v.Computers {
 			if e.ReadOnly {
 				envs = append(envs, e.Name+" (read-only)")
 			} else {
@@ -640,8 +640,8 @@ func runVolumeRemove(a *App, c *call) error {
 // ---- accounts
 
 type grant struct {
-	Environment string `json:"environment"`
-	Level       string `json:"level"`
+	Computer string `json:"environment"`
+	Level    string `json:"level"`
 }
 
 type account struct {
@@ -662,9 +662,9 @@ func formatGrants(gs []grant) string {
 	var out []string
 	for _, g := range gs {
 		if g.Level == "full" {
-			out = append(out, g.Environment)
+			out = append(out, g.Computer)
 		} else {
-			out = append(out, g.Environment+" ("+g.Level+")")
+			out = append(out, g.Computer+" ("+g.Level+")")
 		}
 	}
 	return strings.Join(out, ", ")
@@ -839,7 +839,7 @@ func runAccountUpdate(a *App, c *call) error {
 		return err
 	}
 	if len(changes) > 0 {
-		// grants replaces the whole list: keep the environments not named.
+		// grants replaces the whole list: keep the computers not named.
 		var list []account
 		if err := cl.JSON(c.ctx, http.MethodGet, "/accounts", nil, &list); err != nil {
 			return err
@@ -855,7 +855,7 @@ func runAccountUpdate(a *App, c *call) error {
 		}
 		grants := []grant{}
 		for _, g := range cur.Grants {
-			if _, named := changes[g.Environment]; !named {
+			if _, named := changes[g.Computer]; !named {
 				grants = append(grants, g)
 			}
 		}

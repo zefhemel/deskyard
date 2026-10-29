@@ -13,13 +13,13 @@ import (
 )
 
 // Server is one saved server: a supervisor the CLI signed in to, with the
-// client credential it got and the environment commands use by default.
+// client credential it got and the computer commands use by default.
 type Server struct {
-	Name        string `json:"-"`
-	URL         string `json:"url"` // supervisor base URL, no trailing slash
-	Username    string `json:"username"`
-	Credential  string `json:"credential"`            // dyc_…
-	Environment string `json:"environment,omitempty"` // default environment; may be empty
+	Name       string `json:"-"`
+	URL        string `json:"url"` // supervisor base URL, no trailing slash
+	Username   string `json:"username"`
+	Credential string `json:"credential"`            // dyc_…
+	Computer   string `json:"environment,omitempty"` // default computer; may be empty
 }
 
 // Config is the content of servers.json.

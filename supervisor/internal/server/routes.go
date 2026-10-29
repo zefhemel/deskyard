@@ -8,7 +8,7 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/storage"
 )
 
@@ -43,16 +43,16 @@ func (s *Server) routes() {
 	h("PUT /api/vpn/connections/{id}", s.handleUpdateVPN)
 	h("DELETE /api/vpn/connections/{id}", s.handleDeleteVPN)
 	h("POST /api/vpn/test", s.handleTestVPN)
-	h("GET /api/environments", s.handleListEnvironments)
-	h("POST /api/environments", s.handleCreateEnvironment)
+	h("GET /api/environments", s.handleListComputers)
+	h("POST /api/environments", s.handleCreateComputer)
 	h("GET /api/validate-name", s.handleValidateName)
 	h("GET /api/environments/{name}/terminal", s.handleTerminal)
 	h("GET /api/environments/{name}/terminal/sessions", s.handleTerminalSessions)
 	h("POST /api/environments/{name}/terminal/sessions", s.handleCreateTerminalSession)
 	h("DELETE /api/environments/{name}/terminal/sessions/{session}", s.handleEndTerminalSession)
-	h("GET /api/environments/{name}", s.handleGetEnvironment)
-	h("PATCH /api/environments/{name}", s.handleUpdateEnvironment)
-	h("DELETE /api/environments/{name}", s.handleRemoveEnvironment)
+	h("GET /api/environments/{name}", s.handleGetComputer)
+	h("PATCH /api/environments/{name}", s.handleUpdateComputer)
+	h("DELETE /api/environments/{name}", s.handleRemoveComputer)
 	h("POST /api/environments/{name}/reclaim-memory", s.handleReclaimMemory)
 	h("PUT /api/environments/{name}/memory-policy", s.handleMemoryPolicy)
 	h("PUT /api/environments/{name}/webdav", s.handleWebDAVSetting)
@@ -269,16 +269,16 @@ func (s *Server) handleSignOutEverywhere(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- helpers for environment routes -------------------------------------------------------
+// --- helpers for computer routes -------------------------------------------------------
 
-// environmentFor resolves {name} for the signed-in account, writing 404 when it
+// computerFor resolves {name} for the signed-in account, writing 404 when it
 // doesn't exist or the account has no grant of it (at any level), and 403
 // when the action isn't allowed: an observer may only watch.
-func (s *Server) environmentFor(w http.ResponseWriter, r *http.Request, action auth.Action) (environments.Environment, accounts.Account, bool) {
+func (s *Server) computerFor(w http.ResponseWriter, r *http.Request, action auth.Action) (computers.Computer, accounts.Account, bool) {
 	a, _ := s.account(r)
-	c, err := s.Environments.Get(r.Context(), r.PathValue("name"))
+	c, err := s.Computers.Get(r.Context(), r.PathValue("name"))
 	if err != nil || !auth.Can(a, auth.Observe, c.ID) {
-		writeError(w, http.StatusNotFound, "no such environment")
+		writeError(w, http.StatusNotFound, "no such computer")
 		return c, a, false
 	}
 	if !auth.Can(a, action, c.ID) {
@@ -302,11 +302,11 @@ func requireAdmin(w http.ResponseWriter, a accounts.Account) bool {
 
 func errorStatus(err error) int {
 	switch {
-	case errors.Is(err, environments.ErrNotFound), errors.Is(err, accounts.ErrNotFound):
+	case errors.Is(err, computers.ErrNotFound), errors.Is(err, accounts.ErrNotFound):
 		return http.StatusNotFound
-	case errors.Is(err, environments.ErrExists), errors.Is(err, accounts.ErrExists),
-		errors.Is(err, environments.ErrBusy), errors.Is(err, accounts.ErrLastAdmin), errors.Is(err, environments.ErrStopped),
-		errors.Is(err, environments.ErrConflict), errors.Is(err, storage.ErrBusy):
+	case errors.Is(err, computers.ErrExists), errors.Is(err, accounts.ErrExists),
+		errors.Is(err, computers.ErrBusy), errors.Is(err, accounts.ErrLastAdmin), errors.Is(err, computers.ErrStopped),
+		errors.Is(err, computers.ErrConflict), errors.Is(err, storage.ErrBusy):
 		return http.StatusConflict
 	case errors.Is(err, accounts.ErrNotSaved):
 		return http.StatusInternalServerError
@@ -320,7 +320,7 @@ func timeout(r *http.Request, d time.Duration) (context.Context, context.CancelF
 }
 
 // removalContext is a removal's: 5 minutes, also when its client leaves,
-// as stopping it partway would leave the environment or volume forgotten
+// as stopping it partway would leave the computer or volume forgotten
 // and its files half deleted.
 func removalContext(r *http.Request) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Minute)

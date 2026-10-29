@@ -1,8 +1,8 @@
 // New account and Edit account: how it signs in (a password, or login links),
-// description, admin, environments with their level, and expiry.
+// description, admin, computers with their level, and expiry.
 import { useState } from "preact/hooks";
 import { api, type Account, type AccountChange, type Grant } from "../api.ts";
-import { LevelPicks } from "../components/environment-fields.tsx";
+import { LevelPicks } from "../components/computer-fields.tsx";
 import { notifyError } from "../components/toast.tsx";
 import { Button, Check, Dialog, ErrorText, errorMessage, Field, Seg } from "../components/ui.tsx";
 import { useLive } from "../live.tsx";
@@ -18,7 +18,7 @@ const kinds: { value: Kind; label: string }[] = [
 
 /** `link` is the new account's first login link, for a token account. */
 export function AccountDialog({ account, onClose, onSaved }: { account: Account | null; onClose: () => void; onSaved: (link?: { username: string; link: string }) => void }) {
-  const { environments } = useLive();
+  const { computers } = useLive();
   const isNew = account === null;
   const share = account?.sharedBy ?? null;
   const [username, setUsername] = useState("");
@@ -73,7 +73,7 @@ export function AccountDialog({ account, onClose, onSaved }: { account: Account 
     }
   };
 
-  const names = (environments ?? []).map((c) => c.name);
+  const names = (computers ?? []).map((c) => c.name);
   // Keep names the account has even if this list hasn't loaded them.
   for (const g of picked) if (!names.includes(g.environment)) names.push(g.environment);
   names.sort();

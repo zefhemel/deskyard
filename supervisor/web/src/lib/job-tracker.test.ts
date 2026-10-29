@@ -25,8 +25,8 @@ test("local and discovered followers share one transport and terminal state", ()
   send("one", failed);
   assert.deepEqual(opened, ["one"]);
   assert.equal(tracker.get("one"), failed);
-  assert.equal(tracker.forEnvironment("alice"), failed);
-  assert.deepEqual(tracker.runningByEnvironment(), {});
+  assert.equal(tracker.forComputer("alice"), failed);
+  assert.deepEqual(tracker.runningByComputer(), {});
   assert.equal(local.at(-1), failed);
   assert.equal(discovered.at(-1), failed);
   const remounted: Job[] = [];
@@ -41,7 +41,7 @@ test("old completion cannot replace a newer environment operation", () => {
   tracker.track("new", undefined, "alice");
   send("new", running);
   send("old", failed);
-  assert.equal(tracker.forEnvironment("alice"), running);
+  assert.equal(tracker.forComputer("alice"), running);
 });
 
 test("removing a callback keeps shared progress; disposing closes streams and ignores late output", () => {
@@ -51,20 +51,20 @@ test("removing a callback keeps shared progress; disposing closes streams and ig
   unsubscribe();
   send("one", running);
   assert.equal(seen.length, 1);
-  assert.equal(tracker.forEnvironment("alice"), running);
+  assert.equal(tracker.forComputer("alice"), running);
   tracker.dispose();
   assert.deepEqual(closed, ["one"]);
   send("one", failed);
-  assert.equal(tracker.forEnvironment("alice"), null);
+  assert.equal(tracker.forComputer("alice"), null);
 });
 
 test("discovered jobs publish Starting before the transport sends any payload", () => {
   const { tracker } = setup();
   const seen: string[] = [];
-  tracker.subscribe(() => seen.push(tracker.forEnvironment("alice")?.message ?? "missing"));
+  tracker.subscribe(() => seen.push(tracker.forComputer("alice")?.message ?? "missing"));
   tracker.track("one", undefined, "alice");
   assert.deepEqual(seen, ["Starting"]);
-  assert.equal(tracker.runningByEnvironment().alice?.status, "running");
+  assert.equal(tracker.runningByComputer().alice?.status, "running");
   tracker.track("one", undefined, "alice");
   assert.deepEqual(seen, ["Starting"]);
 });

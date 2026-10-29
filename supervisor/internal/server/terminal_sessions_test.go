@@ -15,8 +15,8 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/terminal"
 )
 
@@ -80,7 +80,7 @@ func (e *terminalSessionsEngine) setList(out string) {
 	e.list = out
 }
 
-func environmentTerminals(t *testing.T, c *http.Client, url string) []terminal.Session {
+func computerTerminals(t *testing.T, c *http.Client, url string) []terminal.Session {
 	t.Helper()
 	resp, body := get(t, c, url+"/api/environments/alice")
 	if resp.StatusCode != 200 {
@@ -105,8 +105,8 @@ func TestTerminalSessionsJSONCarriesDetails(t *testing.T) {
 		t.Fatalf("%d %s", resp.StatusCode, body)
 	}
 	want := []terminal.Session{{Name: "main", Clients: 3, Command: "vim"}, {Name: "terminal-1", Clients: 0, Command: "bash"}}
-	if got := environmentTerminals(t, admin, ts.URL); !slices.Equal(got, want) {
-		t.Fatalf("environment JSON terminals %+v", got)
+	if got := computerTerminals(t, admin, ts.URL); !slices.Equal(got, want) {
+		t.Fatalf("computer JSON terminals %+v", got)
 	}
 }
 
@@ -264,12 +264,12 @@ func TestTerminalCacheClearedWhenStopped(t *testing.T) {
 		t.Fatalf("running %+v", got)
 	}
 	// A restart is a new lifetime: its predecessor's sessions are gone.
-	c, err := s.Environments.Get(ctx, "alice")
+	c, err := s.Computers.Get(ctx, "alice")
 	if err != nil {
 		t.Fatal(err)
 	}
 	c.StartedAt = c.StartedAt.Add(time.Second)
-	if got := s.terminalSessions.forEnvironment(c); len(got) != 0 {
+	if got := s.terminalSessions.forComputer(c); len(got) != 0 {
 		t.Fatalf("restarted %+v", got)
 	}
 	e.state = "exited"
@@ -279,9 +279,9 @@ func TestTerminalCacheClearedWhenStopped(t *testing.T) {
 		t.Fatalf("stopped %+v", got)
 	}
 	if e.calls.Load() != calls {
-		t.Fatal("polled a stopped environment")
+		t.Fatal("polled a stopped computer")
 	}
-	if got := environmentTerminals(t, login(t, ts, "admin"), ts.URL); len(got) != 0 {
+	if got := computerTerminals(t, login(t, ts, "admin"), ts.URL); len(got) != 0 {
 		t.Fatalf("stopped JSON %+v", got)
 	}
 }
@@ -309,7 +309,7 @@ func TestTerminalCachePublishesOnlyChanges(t *testing.T) {
 		for {
 			select {
 			case ev := <-sub.c:
-				if ev.kind == "environment" && ev.environment == "alice" {
+				if ev.kind == "environment" && ev.computer == "alice" {
 					n++
 				}
 			default:
@@ -335,7 +335,7 @@ func TestTerminalCachePublishesOnlyChanges(t *testing.T) {
 	}
 	// A restart keeping the container ID lists equal sessions: pages showed
 	// none for the new lifetime, so they must hear about them.
-	c, err := s.Environments.Get(ctx, "alice")
+	c, err := s.Computers.Get(ctx, "alice")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,7 +346,7 @@ func TestTerminalCachePublishesOnlyChanges(t *testing.T) {
 	if n := published(); n != 1 {
 		t.Fatalf("restart with an equal list published %d", n)
 	}
-	if got := s.terminalSessions.forEnvironment(c); len(got) != 1 {
+	if got := s.terminalSessions.forComputer(c); len(got) != 1 {
 		t.Fatalf("restarted lifetime %+v", got)
 	}
 }
@@ -357,7 +357,7 @@ func TestTerminalCachePublishesOnlyChanges(t *testing.T) {
 func TestTerminalEndingMembership(t *testing.T) {
 	conns := newTerminalConnections()
 	attach := func(user, session string, join bool) *terminalConnection {
-		c := &terminalConnection{claims: auth.SessionClaims{ID: user, Username: user}, environment: "alice", session: session, join: join, cancel: func() {}}
+		c := &terminalConnection{claims: auth.SessionClaims{ID: user, Username: user}, computer: "alice", session: session, join: join, cancel: func() {}}
 		if !conns.add(c) {
 			t.Fatal("register")
 		}
@@ -417,13 +417,13 @@ func TestDeleteSessionOutlivesRequest(t *testing.T) {
 	}
 }
 
-// A poll lists at most a few environments at a time.
+// A poll lists at most a few computers at a time.
 func TestTerminalCachePollBounded(t *testing.T) {
 	e := newTerminalSessionsEngine()
 	for i := range 9 {
 		name := fmt.Sprintf("env%d", i)
 		e.others = append(e.others, engine.Container{ID: "o" + name, Name: "deskyard-" + name, State: "running", ImageID: "sha256:abc",
-			Labels: map[string]string{environments.LabelManaged: "true", environments.LabelName: name, environments.LabelRevision: "1"}})
+			Labels: map[string]string{computers.LabelManaged: "true", computers.LabelName: name, computers.LabelRevision: "1"}})
 	}
 	var running, peak atomic.Int32
 	e.listHook = func() {
@@ -440,7 +440,7 @@ func TestTerminalCachePollBounded(t *testing.T) {
 	s, _ := newTestServerWith(t, e)
 	s.terminalSessions.poll(context.Background())
 	if got := e.calls.Load(); got != 10 {
-		t.Fatalf("listed %d environments", got)
+		t.Fatalf("listed %d computers", got)
 	}
 	if p := peak.Load(); p > terminalSessionsParallel || p < 2 {
 		t.Fatalf("peak concurrency %d", p)
@@ -461,13 +461,13 @@ func TestTerminalCacheStopsWithContext(t *testing.T) {
 	}
 }
 
-func TestEnvironmentJSONHasTerminals(t *testing.T) {
+func TestComputerJSONHasTerminals(t *testing.T) {
 	for _, state := range []string{"running", "exited"} {
 		t.Run(state, func(t *testing.T) {
 			e := newTerminalSessionsEngine()
 			e.state = state
 			_, ts := newTestServerWith(t, e)
-			if got := environmentTerminals(t, login(t, ts, "admin"), ts.URL); len(got) != 0 {
+			if got := computerTerminals(t, login(t, ts, "admin"), ts.URL); len(got) != 0 {
 				t.Fatalf("%+v", got)
 			}
 			resp, body := get(t, login(t, ts, "admin"), ts.URL+"/api/environments")
@@ -487,9 +487,9 @@ func TestTerminalPageRouteRemoved(t *testing.T) {
 			t.Errorf("%s: %d", path, got)
 		}
 	}
-	// The environment page is the one address, with its tab in the query.
+	// The computer page is the one address, with its tab in the query.
 	if resp, body := get(t, admin, ts.URL+"/alice/?terminal=main"); resp.StatusCode != 200 || !strings.Contains(body, "<!doctype html>") {
-		t.Errorf("environment page: %d %s", resp.StatusCode, body)
+		t.Errorf("computer page: %d %s", resp.StatusCode, body)
 	}
 }
 

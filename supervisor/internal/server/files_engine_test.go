@@ -17,9 +17,9 @@ import (
 	"testing/fstest"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 // filesEngine is a running "alice" whose /workspace is a real folder on this
@@ -203,12 +203,12 @@ func newFilesServer(t *testing.T) (*Server, *httptest.Server, string) {
 	_, _ = accts.Create(accounts.NewAccount{Username: "ben", Password: "pw"})
 	e := &filesEngine{root: root}
 	s, err := New(Options{Log: log, Eng: e, Accounts: accts, Layout: config.NewLayout(dir), DefaultImage: "img",
-		Environments: environments.New(e, environments.Config{DataDir: dir, Subnet: "10.0.0.0/16"}, log),
-		UI:           fstest.MapFS{"index.html": {Data: []byte("ui")}}})
+		Computers: computers.New(e, computers.Config{DataDir: dir, Subnet: "10.0.0.0/16"}, log),
+		UI:        fstest.MapFS{"index.html": {Data: []byte("ui")}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defineEnvironments(t, s)
+	defineComputers(t, s)
 	// Granted once alice is defined: startup drops grants of undefined names.
 	if err := accts.SetAccess("alice", fullAccess("ben")); err != nil {
 		t.Fatal(err)

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 func TestCreateRepositoryInitShowsKey(t *testing.T) {
@@ -97,15 +97,15 @@ func policyOf(it Item) Policy {
 	return Policy{Item: it, Repository: "home", Enabled: true, Schedule: DefaultSchedule, Retention: DefaultRetention}
 }
 
-func TestBackUpEnvironmentMountsHomeAndDefinition(t *testing.T) {
+func TestBackUpComputerMountsHomeAndDefinition(t *testing.T) {
 	f := &fakeRunner{reply: resticReply}
 	s, env := testService(t, f)
-	env.addEnvironment(t, "alice", true, environments.Settings{Image: "img"})
-	it := Item{KindEnvironment, "alice"}
+	env.addComputer(t, "alice", true, computers.Settings{Image: "img"})
+	it := Item{KindComputer, "alice"}
 	if err := s.Store.PutPolicy(policyOf(it)); err != nil {
 		t.Fatal(err)
 	}
-	var defSeen environments.Definition
+	var defSeen computers.Definition
 	f.reply = func(c Call) (string, Result, error) {
 		if c.Args[1] == "backup" {
 			for _, m := range c.Mounts {

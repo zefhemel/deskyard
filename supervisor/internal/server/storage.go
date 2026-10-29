@@ -354,9 +354,9 @@ func (s *Server) handleDeleteBackup(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// jobEnvironment is the environment a job about it shows on, if any.
-func jobEnvironment(it storage.Item) string {
-	if it.Kind == storage.KindEnvironment {
+// jobComputer is the computer a job about it shows on, if any.
+func jobComputer(it storage.Item) string {
+	if it.Kind == storage.KindComputer {
 		return it.Name
 	}
 	return ""
@@ -379,7 +379,7 @@ func (s *Server) handleRunBackup(w http.ResponseWriter, r *http.Request) {
 		storageError(w, err)
 		return
 	}
-	id := s.jobs.start(user, jobEnvironment(it), func(ctx context.Context, progress func(string, float64)) error {
+	id := s.jobs.start(user, jobComputer(it), func(ctx context.Context, progress func(string, float64)) error {
 		return s.storage.BackUp(ctx, it, storage.ReasonManual, progress)
 	})
 	s.Log.Info("backing up", "item", it, "by", user)
@@ -485,7 +485,7 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	env := jobEnvironment(it)
+	env := jobComputer(it)
 	if req.Mode == "new" {
 		env = ""
 	}

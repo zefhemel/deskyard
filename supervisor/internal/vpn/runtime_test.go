@@ -221,7 +221,7 @@ func TestEnsureCleansFailedOwnedRuntimeAndSanitizesError(t *testing.T) {
 func TestRemoveScopesOwnership(t *testing.T) {
 	m, e, _ := managerFixture(t)
 	id := strings.Repeat("e", 32)
-	e.containers = []engine.Container{{ID: "owned", Labels: map[string]string{LabelRole: runtimeRole, LabelEnvironment: id}}, {ID: "unrelated", Labels: map[string]string{LabelEnvironment: id}}, {ID: "other-desktop", Labels: map[string]string{LabelRole: runtimeRole, LabelEnvironment: strings.Repeat("f", 32)}}}
+	e.containers = []engine.Container{{ID: "owned", Labels: map[string]string{LabelRole: runtimeRole, LabelComputer: id}}, {ID: "unrelated", Labels: map[string]string{LabelComputer: id}}, {ID: "other-desktop", Labels: map[string]string{LabelRole: runtimeRole, LabelComputer: strings.Repeat("f", 32)}}}
 	if err := m.Remove(context.Background(), id); err != nil {
 		t.Fatal(err)
 	}
@@ -230,17 +230,17 @@ func TestRemoveScopesOwnership(t *testing.T) {
 	}
 }
 
-// Runtimes are keyed by environment name, which two supervisors on one
+// Runtimes are keyed by computer name, which two supervisors on one
 // engine may share: an instance only finds, and removes, its own.
 func TestInstanceScopesRuntimesByName(t *testing.T) {
 	m, e, c := managerFixture(t)
 	m.ForInstance("mine")
-	e.containers = []engine.Container{{ID: "theirs", Labels: map[string]string{LabelRole: runtimeRole, LabelEnvironment: "alice", LabelInstance: "theirs"}}}
+	e.containers = []engine.Container{{ID: "theirs", Labels: map[string]string{LabelRole: runtimeRole, LabelComputer: "alice", LabelInstance: "theirs"}}}
 	if _, err := m.Ensure(context.Background(), "alice", "desktop", c.ID, nil); err != nil {
 		t.Fatal(err)
 	}
 	spec := e.specs[len(e.specs)-1]
-	if spec.Name != "deskyard-alice.vpn" || spec.Labels[LabelEnvironment] != "alice" || spec.Labels[LabelInstance] != "mine" {
+	if spec.Name != "deskyard-alice.vpn" || spec.Labels[LabelComputer] != "alice" || spec.Labels[LabelInstance] != "mine" {
 		t.Fatalf("runtime identity: %s %v", spec.Name, spec.Labels)
 	}
 	if err := m.Remove(context.Background(), "alice"); err != nil {

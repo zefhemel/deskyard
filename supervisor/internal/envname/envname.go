@@ -1,4 +1,4 @@
-// Package envname knows the top-level paths an environment can't be named
+// Package envname knows the top-level paths a computer can't be named
 // after, for the supervisor and the CLI alike.
 package envname
 

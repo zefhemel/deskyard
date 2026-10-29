@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 type hostSettingsEngine struct {
@@ -36,12 +36,12 @@ func (e *hostSettingsEngine) List(context.Context, map[string]string) ([]engine.
 	return []engine.Container{e.current}, nil
 }
 func (e *hostSettingsEngine) ImageInspect(context.Context, string) (engine.Image, error) {
-	return engine.Image{ID: "img", Labels: map[string]string{environments.LabelContract: environments.Contract}}, nil
+	return engine.Image{ID: "img", Labels: map[string]string{computers.LabelContract: computers.Contract}}, nil
 }
 func (e *hostSettingsEngine) Create(_ context.Context, s engine.ContainerSpec) (string, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if s.Labels[environments.LabelManaged] == "true" {
+	if s.Labels[computers.LabelManaged] == "true" {
 		e.current = engine.Container{ID: s.Name, Name: s.Name, Image: s.Image, ImageID: "img", Labels: s.Labels, Env: s.Env, State: "exited"}
 	}
 	return s.Name, nil
@@ -65,7 +65,7 @@ func TestHostVolumeSettingsAPI(t *testing.T) {
 	e := &hostSettingsEngine{current: alice}
 	e.current.Labels = maps.Clone(alice.Labels)
 	e.current.Image = "img"
-	e.current.Env = map[string]string{environments.TokenEnv: "token"}
+	e.current.Env = map[string]string{computers.TokenEnv: "token"}
 	s, ts := newTestServerWith(t, e)
 	admin := login(t, ts, "admin")
 	anna := login(t, ts, "anna")
@@ -108,7 +108,7 @@ func TestHostVolumeSettingsAPI(t *testing.T) {
 	if code, _ := send(anna, "PATCH", "/api/environments/alice", `{"volumes":[]}`); code != 403 {
 		t.Fatalf("non-admin: %d", code)
 	}
-	grants := []environments.VolumeGrant{{Name: "photos", Path: "/mnt/photos", ReadOnly: true}}
+	grants := []computers.VolumeGrant{{Name: "photos", Path: "/mnt/photos", ReadOnly: true}}
 	patch := func(body any) {
 		t.Helper()
 		raw, _ := json.Marshal(body)
@@ -141,7 +141,7 @@ func TestHostVolumeSettingsAPI(t *testing.T) {
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatal(err)
 	}
-	var gotGrants []environments.VolumeGrant
+	var gotGrants []computers.VolumeGrant
 	if err := json.Unmarshal(got.Settings["volumes"], &gotGrants); err != nil || !reflect.DeepEqual(gotGrants, grants) {
 		t.Fatalf("not exposed by API: %s", b)
 	}
@@ -149,7 +149,7 @@ func TestHostVolumeSettingsAPI(t *testing.T) {
 		t.Fatalf("settings still have mounts: %s", b)
 	}
 	patch(map[string]any{"nanoCpus": int64(1e9)})
-	c, _ := s.Environments.Get(context.Background(), "alice")
+	c, _ := s.Computers.Get(context.Background(), "alice")
 	if !reflect.DeepEqual(c.Settings.Volumes, grants) {
 		t.Fatal("omitting volumes lost them")
 	}

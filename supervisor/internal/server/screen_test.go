@@ -17,8 +17,8 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 func get(t *testing.T, c *http.Client, url string) (*http.Response, string) {
@@ -182,9 +182,9 @@ func (u *upstream) last() *http.Request {
 	return u.reqs[len(u.reqs)-1]
 }
 
-// newTestServerRunning is a server with one running environment whose desktop
+// newTestServerRunning is a server with one running computer whose desktop
 // is up, served on a local port: its address is 127.0.0.1 and the desktops'
-// port is the test seam environments.Config.DesktopPort.
+// port is the test seam computers.Config.DesktopPort.
 func newTestServerRunning(t *testing.T, name string, up http.Handler) (*Server, *httptest.Server) {
 	srv := httptest.NewServer(up)
 	t.Cleanup(srv.Close)
@@ -192,9 +192,9 @@ func newTestServerRunning(t *testing.T, name string, up http.Handler) (*Server, 
 	p, _ := strconv.Atoi(port)
 	c := engine.Container{ID: "c-" + name, Name: "deskyard-" + name, State: "running", ImageID: "sha256:abc",
 		IP:     map[string]string{"deskyard-" + name: "127.0.0.1"},
-		Env:    map[string]string{environments.TokenEnv: "tok-" + name},
-		Labels: map[string]string{environments.LabelManaged: "true", environments.LabelName: name, environments.LabelRevision: "1"}}
-	return newTestServerCfg(t, fakeEngine{others: []engine.Container{c}}, environments.Config{Subnet: "10.0.0.0/16", DesktopPort: p})
+		Env:    map[string]string{computers.TokenEnv: "tok-" + name},
+		Labels: map[string]string{computers.LabelManaged: "true", computers.LabelName: name, computers.LabelRevision: "1"}}
+	return newTestServerCfg(t, fakeEngine{others: []engine.Container{c}}, computers.Config{Subnet: "10.0.0.0/16", DesktopPort: p})
 }
 
 type viewersState struct {

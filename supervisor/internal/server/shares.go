@@ -9,11 +9,11 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 )
 
-// A share is a token account with one grant of an environment, made by
+// A share is a token account with one grant of a computer, made by
 // Share on it. It ends with its sharer's full access (sweep).
 type shareJSON struct {
 	Username    string          `json:"username"`
-	Environment string          `json:"environment"`
+	Computer    string          `json:"environment"`
 	Level       auth.Level      `json:"level"`
 	SharedBy    accounts.Sharer `json:"sharedBy"`
 	Expires     *time.Time      `json:"expires"`
@@ -43,17 +43,17 @@ func (s *Server) toShareJSON(a accounts.Account) shareJSON {
 	}
 	j.LastUsed = since(used)
 	if len(a.Grants) > 0 {
-		j.Environment, j.Level = a.Grants[0].Environment, a.Grants[0].Level
-		j.Connected = slices.Contains(s.viewers.names(j.Environment), a.Username) || s.credentials.connected(a.ID)
+		j.Computer, j.Level = a.Grants[0].Computer, a.Grants[0].Level
+		j.Connected = slices.Contains(s.viewers.names(j.Computer), a.Username) || s.credentials.connected(a.ID)
 	}
 	return j
 }
 
-// sharesOf lists the shares of the named environment, sorted by username.
+// sharesOf lists the shares of the named computer, sorted by username.
 func (s *Server) sharesOf(name string) []shareJSON {
 	out := []shareJSON{}
 	for _, a := range s.Accounts.List() {
-		if a.IsShare() && len(a.Grants) > 0 && a.Grants[0].Environment == name {
+		if a.IsShare() && len(a.Grants) > 0 && a.Grants[0].Computer == name {
 			out = append(out, s.toShareJSON(a))
 		}
 	}
@@ -61,7 +61,7 @@ func (s *Server) sharesOf(name string) []shareJSON {
 }
 
 func (s *Server) handleListShares(w http.ResponseWriter, r *http.Request) {
-	c, _, ok := s.environmentFor(w, r, auth.View)
+	c, _, ok := s.computerFor(w, r, auth.View)
 	if !ok {
 		return
 	}
@@ -69,7 +69,7 @@ func (s *Server) handleListShares(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
-	c, me, ok := s.environmentFor(w, r, auth.Observe)
+	c, me, ok := s.computerFor(w, r, auth.Observe)
 	if !ok {
 		return
 	}
@@ -98,7 +98,7 @@ func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a, err := s.Accounts.Create(accounts.NewAccount{Username: req.Username, Expires: req.Expires,
-		Grants:   []accounts.Grant{{Environment: c.Name, Level: req.Level}},
+		Grants:   []accounts.Grant{{Computer: c.Name, Level: req.Level}},
 		SharedBy: &accounts.Sharer{Username: me.Username, ID: me.ID}})
 	if err != nil {
 		writeError(w, errorStatus(err), err.Error())
@@ -114,7 +114,7 @@ func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "the link couldn't be saved")
 		return
 	}
-	s.Log.Info("shared", "environment", c.Name, "share", a.Username, "level", req.Level, "by", me.Username)
+	s.Log.Info("shared", "computer", c.Name, "share", a.Username, "level", req.Level, "by", me.Username)
 	s.events.refresh()
 	writeJSON(w, http.StatusCreated, map[string]any{"share": s.toShareJSON(a), "link": s.linkURL(r, code)})
 }

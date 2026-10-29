@@ -15,13 +15,13 @@ import (
 // from, whether that tab's mic is on, and a way to close it (when access is
 // revoked or changes level, or its browser session ends).
 type conn struct {
-	username    string
-	accountID   string
-	epoch       int    // the session epoch of the browser login it came from; noSession for a client credential
-	tab         string // the page's id for its browser tab ("" if it sent none)
-	environment string
-	level       auth.Level // the account's level when it opened; another level closes it
-	cancel      context.CancelFunc
+	username  string
+	accountID string
+	epoch     int    // the session epoch of the browser login it came from; noSession for a client credential
+	tab       string // the page's id for its browser tab ("" if it sent none)
+	computer  string
+	level     auth.Level // the account's level when it opened; another level closes it
+	cancel    context.CancelFunc
 	// guarded by viewers.mu: whether the tab's page last said its mic is on,
 	// and the sequence number it said it with (a page numbers its reports;
 	// older ones lose).
@@ -128,12 +128,12 @@ func (v *viewers) mics(name string) []string {
 // revoke closes the connections of an account whose level on their desktop
 // is no longer the one they were opened at: access removed, or lowered or
 // raised (the page reconnects at the new level).
-func (v *viewers) revoke(username string, level func(environment string) auth.Level) {
+func (v *viewers) revoke(username string, level func(computer string) auth.Level) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	for _, conns := range v.byName {
 		for c := range conns {
-			if c.username == username && level(c.environment) != c.level {
+			if c.username == username && level(c.computer) != c.level {
 				c.cancel()
 			}
 		}
@@ -171,13 +171,13 @@ func (v *viewers) closeAll(name string) {
 // publishViewers tells the UI who is on a desktop and what is mapped. Calls
 // are coalesced per desktop (see throttle), so a client churning mappings
 // can't flood the event stream.
-func (s *Server) publishViewers(name, environment string) {
-	s.viewersPub.do(name, func() { s.sendViewers(name, environment) })
-	s.publishActivity(name, environment) // a token's forward item follows its mappings
+func (s *Server) publishViewers(name, computer string) {
+	s.viewersPub.do(name, func() { s.sendViewers(name, computer) })
+	s.publishActivity(name, computer) // a token's forward item follows its mappings
 }
 
-func (s *Server) sendViewers(name, environment string) {
-	s.events.publish(event{kind: "viewers", environment: environment,
+func (s *Server) sendViewers(name, computer string) {
+	s.events.publish(event{kind: "viewers", computer: computer,
 		data: map[string]any{"name": name, "viewers": s.viewers.names(name), "observers": s.viewers.observers(name), "mics": s.viewers.mics(name), "forwards": s.forwards.list(name),
 			"agents": s.activity.Present(name)}})
 }

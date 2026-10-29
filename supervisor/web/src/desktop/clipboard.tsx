@@ -6,7 +6,7 @@ import { Button } from "../components/ui.tsx";
 import { NeedsHttps } from "./needs-https.tsx";
 import { insecureContext } from "./selkies.ts";
 
-// Unsent drafts per environment: they survive closing the popover and
+// Unsent drafts per computer: they survive closing the popover and
 // switching to a terminal tab (which unmounts the desktop).
 const drafts = new Map<string, string>();
 

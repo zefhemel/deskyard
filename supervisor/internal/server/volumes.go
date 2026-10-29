@@ -10,29 +10,29 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/storage"
 )
 
-// volumeUserJSON is an environment whose definition grants a volume.
+// volumeUserJSON is a computer whose definition grants a volume.
 type volumeUserJSON struct {
 	Name     string `json:"name"`
 	ReadOnly bool   `json:"readOnly"`
 }
 
 type volumeJSON struct {
-	Name         string           `json:"name"`
-	Created      time.Time        `json:"created"`
-	Kind         string           `json:"kind"`
-	HostPath     string           `json:"hostPath,omitempty"`
-	Folder       string           `json:"folder"`
-	Environments []volumeUserJSON `json:"environments"`
+	Name      string           `json:"name"`
+	Created   time.Time        `json:"created"`
+	Kind      string           `json:"kind"`
+	HostPath  string           `json:"hostPath,omitempty"`
+	Folder    string           `json:"folder"`
+	Computers []volumeUserJSON `json:"environments"`
 }
 
-func (s *Server) volumeJSON(v environments.Volume) volumeJSON {
-	j := volumeJSON{Name: v.Name, Created: v.Created, Kind: v.Kind, HostPath: v.HostPath, Folder: s.Environments.Layout.ToHost(s.Environments.VolumeFolder(v)), Environments: []volumeUserJSON{}}
-	for _, u := range s.Environments.VolumeUsers(v.Name) {
-		j.Environments = append(j.Environments, volumeUserJSON{Name: u.Environment, ReadOnly: u.ReadOnly})
+func (s *Server) volumeJSON(v computers.Volume) volumeJSON {
+	j := volumeJSON{Name: v.Name, Created: v.Created, Kind: v.Kind, HostPath: v.HostPath, Folder: s.Computers.Layout.ToHost(s.Computers.VolumeFolder(v)), Computers: []volumeUserJSON{}}
+	for _, u := range s.Computers.VolumeUsers(v.Name) {
+		j.Computers = append(j.Computers, volumeUserJSON{Name: u.Computer, ReadOnly: u.ReadOnly})
 	}
 	return j
 }
@@ -43,7 +43,7 @@ func (s *Server) handleListVolumes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := []volumeJSON{}
-	for _, v := range s.Environments.Vols.List() {
+	for _, v := range s.Computers.Vols.List() {
 		out = append(out, s.volumeJSON(v))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"volumes": out})
@@ -62,24 +62,24 @@ func (s *Server) handleCreateVolume(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
-	if err := environments.ValidName(req.Name); err != nil {
+	if err := computers.ValidName(req.Name); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if req.HostPath != "" {
-		if err := environments.ValidHostPath(s.Environments.Layout, req.HostPath); err != nil {
+		if err := computers.ValidHostPath(s.Computers.Layout, req.HostPath); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 	}
 	ctx, cancel := timeout(r, 2*time.Minute)
 	defer cancel()
-	v, adopted, err := s.Environments.CreateVolume(ctx, req.Name, req.HostPath)
+	v, adopted, err := s.Computers.CreateVolume(ctx, req.Name, req.HostPath)
 	switch {
-	case errors.Is(err, environments.ErrExists):
+	case errors.Is(err, computers.ErrExists):
 		writeError(w, http.StatusConflict, "a volume with that name already exists")
 		return
-	case errors.Is(err, environments.ErrConflict):
+	case errors.Is(err, computers.ErrConflict):
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	case err != nil && req.HostPath != "":
@@ -110,24 +110,24 @@ func (s *Server) handleDeleteVolume(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := removalContext(r)
 	defer cancel()
-	err := s.Environments.DeleteVolume(ctx, name, deleteFiles)
-	var inUse *environments.VolumeInUseError
+	err := s.Computers.DeleteVolume(ctx, name, deleteFiles)
+	var inUse *computers.VolumeInUseError
 	switch {
 	case errors.As(err, &inUse):
-		// The environments shape of a VPN conflict, which the UI's ApiError reads.
-		refs := make([]map[string]string, len(inUse.Environments))
-		for i, env := range inUse.Environments {
+		// The computers shape of a VPN conflict, which the UI's ApiError reads.
+		refs := make([]map[string]string, len(inUse.Computers))
+		for i, env := range inUse.Computers {
 			refs[i] = map[string]string{"id": env, "name": env}
 		}
 		writeJSON(w, http.StatusConflict, map[string]any{
-			"error":        fmt.Sprintf("%s is used by %s", name, strings.Join(inUse.Environments, ", ")),
+			"error":        fmt.Sprintf("%s is used by %s", name, strings.Join(inUse.Computers, ", ")),
 			"environments": refs,
 		})
 		return
-	case errors.Is(err, environments.ErrNotFound):
+	case errors.Is(err, computers.ErrNotFound):
 		writeError(w, http.StatusNotFound, "no such volume")
 		return
-	case errors.Is(err, environments.ErrConflict), errors.Is(err, storage.ErrBusy):
+	case errors.Is(err, computers.ErrConflict), errors.Is(err, storage.ErrBusy):
 		// A container still mounts it while its grant's removal is applied,
 		// or a backup or restore uses it.
 		writeError(w, http.StatusConflict, err.Error())
@@ -155,20 +155,20 @@ func refuseHostFolders(w http.ResponseWriter, raw json.RawMessage) bool {
 	return false
 }
 
-// checkVolumeGrants validates an environment's grants, writing 400 unless
+// checkVolumeGrants validates a computer's grants, writing 400 unless
 // every volume granted that cur doesn't already grant exists. A grant of a
-// volume since deleted is reported in the environment's error instead, so
+// volume since deleted is reported in the computer's error instead, so
 // it doesn't block other changes.
-func (s *Server) checkVolumeGrants(w http.ResponseWriter, cur, grants []environments.VolumeGrant) bool {
-	if err := environments.ValidateVolumeGrants(grants); err != nil {
+func (s *Server) checkVolumeGrants(w http.ResponseWriter, cur, grants []computers.VolumeGrant) bool {
+	if err := computers.ValidateVolumeGrants(grants); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return false
 	}
 	for _, g := range grants {
-		if slices.ContainsFunc(cur, func(c environments.VolumeGrant) bool { return c.Name == g.Name }) {
+		if slices.ContainsFunc(cur, func(c computers.VolumeGrant) bool { return c.Name == g.Name }) {
 			continue
 		}
-		if _, ok := s.Environments.Vols.Get(g.Name); !ok {
+		if _, ok := s.Computers.Vols.Get(g.Name); !ok {
 			writeError(w, http.StatusBadRequest, "no volume "+g.Name)
 			return false
 		}
@@ -185,14 +185,14 @@ func (s *Server) handleVolumeUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
-	if _, ok := s.Environments.Vols.Get(name); !ok {
+	if _, ok := s.Computers.Vols.Get(name); !ok {
 		writeError(w, http.StatusNotFound, "no such volume")
 		return
 	}
-	bytes, complete := s.Environments.VolumeSize(name)
+	bytes, complete := s.Computers.VolumeSize(name)
 	out := map[string]any{"bytes": bytes, "complete": complete}
-	v, _ := s.Environments.Vols.Get(name)
-	if free, size, ok := environments.DiskSpace(s.Environments.VolumeFolder(v)); ok {
+	v, _ := s.Computers.Vols.Get(name)
+	if free, size, ok := computers.DiskSpace(s.Computers.VolumeFolder(v)); ok {
 		out["diskFree"], out["diskSize"] = free, size
 	}
 	writeJSON(w, http.StatusOK, out)

@@ -13,36 +13,36 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 )
 
-// davServer is a test server whose environment alice has WebDAV on, with
+// davServer is a test server whose computer alice has WebDAV on, with
 // the volumes projects (writable), photos (read-only) and a host volume.
 func davServer(t *testing.T) (*Server, *httptest.Server) {
 	t.Helper()
 	s, ts := newTestServer(t)
 	now := time.Now().UTC()
-	for _, v := range []environments.Volume{
-		{Name: "projects", Created: now, Kind: environments.VolumeLocal},
-		{Name: "photos", Created: now, Kind: environments.VolumeLocal},
-		{Name: "outside", Created: now, Kind: environments.VolumeHost, HostPath: t.TempDir()},
+	for _, v := range []computers.Volume{
+		{Name: "projects", Created: now, Kind: computers.VolumeLocal},
+		{Name: "photos", Created: now, Kind: computers.VolumeLocal},
+		{Name: "outside", Created: now, Kind: computers.VolumeHost, HostPath: t.TempDir()},
 	} {
-		if err := s.Environments.Vols.Add(v); err != nil {
+		if err := s.Computers.Vols.Add(v); err != nil {
 			t.Fatal(err)
 		}
-		if v.Kind == environments.VolumeLocal {
-			if err := os.MkdirAll(s.Environments.Layout.VolumeOf(v.Name), 0o755); err != nil {
+		if v.Kind == computers.VolumeLocal {
+			if err := os.MkdirAll(s.Computers.Layout.VolumeOf(v.Name), 0o755); err != nil {
 				t.Fatal(err)
 			}
 		}
 	}
-	if _, err := s.Environments.Defs.Update("alice", func(d *environments.Definition) error {
-		d.Volumes = []environments.VolumeGrant{{Name: "projects"}, {Name: "photos", ReadOnly: true}, {Name: "outside", Path: "/srv/outside"}}
+	if _, err := s.Computers.Defs.Update("alice", func(d *computers.Definition) error {
+		d.Volumes = []computers.VolumeGrant{{Name: "projects"}, {Name: "photos", ReadOnly: true}, {Name: "outside", Path: "/srv/outside"}}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Environments.SetWebDAV("alice", true); err != nil {
+	if err := s.Computers.SetWebDAV("alice", true); err != nil {
 		t.Fatal(err)
 	}
 	return s, ts
@@ -133,15 +133,15 @@ func TestDAVWhoMayConnect(t *testing.T) {
 		}
 	}
 	// A token account with full use has no password to give.
-	if _, err := s.Accounts.Create(accounts.NewAccount{Username: "sanne", Grants: []accounts.Grant{{Environment: "alice", Level: auth.LevelFull}}}); err != nil {
+	if _, err := s.Accounts.Create(accounts.NewAccount{Username: "sanne", Grants: []accounts.Grant{{Computer: "alice", Level: auth.LevelFull}}}); err != nil {
 		t.Fatal(err)
 	}
 	if res := dav(t, ts, "PROPFIND", "/alice/dav/", "sanne", "", "", depth); res.StatusCode != 401 {
 		t.Fatalf("token account: %d", res.StatusCode)
 	}
 	forgive(s, "admin", "sanne")
-	// Switched off, or no such environment: 404.
-	if err := s.Environments.SetWebDAV("alice", false); err != nil {
+	// Switched off, or no such computer: 404.
+	if err := s.Computers.SetWebDAV("alice", false); err != nil {
 		t.Fatal(err)
 	}
 	for _, p := range []string{"/alice/dav/", "/nobody/dav/"} {
@@ -153,8 +153,8 @@ func TestDAVWhoMayConnect(t *testing.T) {
 
 func TestDAVFiles(t *testing.T) {
 	s, ts := davServer(t)
-	home := s.Environments.Layout.HomeOf("alice")
-	projects := s.Environments.Layout.VolumeOf("projects")
+	home := s.Computers.Layout.HomeOf("alice")
+	projects := s.Computers.Layout.VolumeOf("projects")
 	write := func(path, content string) int {
 		return dav(t, ts, "PUT", path, "admin", "pw", content, nil).StatusCode
 	}
@@ -351,7 +351,7 @@ func TestDAVSettingAPI(t *testing.T) {
 	if got := put(admin, `{"webdav":false}`); got != 204 {
 		t.Fatal(got)
 	}
-	if def, _ := s.Environments.Defs.Get("alice"); def.WebDAV {
+	if def, _ := s.Computers.Defs.Get("alice"); def.WebDAV {
 		t.Fatal("not saved")
 	}
 	if got := put(admin, `{"webdav":true}`); got != 204 {
@@ -359,7 +359,7 @@ func TestDAVSettingAPI(t *testing.T) {
 	}
 	for client, want := range map[*http.Client]bool{admin: true, anna: true} {
 		res, _ := client.Get(ts.URL + "/api/environments/alice")
-		var c environmentJSON
+		var c computerJSON
 		_ = json.NewDecoder(res.Body).Decode(&c)
 		res.Body.Close()
 		if c.WebDAV != want {
@@ -384,8 +384,8 @@ func tokenLogin(t *testing.T, s *Server, ts *httptest.Server, username string) *
 
 func TestDAVLocksAndOverwrites(t *testing.T) {
 	s, ts := davServer(t)
-	home := s.Environments.Layout.HomeOf("alice")
-	projects := s.Environments.Layout.VolumeOf("projects")
+	home := s.Computers.Layout.HomeOf("alice")
+	projects := s.Computers.Layout.VolumeOf("projects")
 	lockBody := `<?xml version="1.0" encoding="utf-8"?><D:lockinfo xmlns:D="DAV:"><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockinfo>`
 
 	// No locks on the tree's own folders or read-only places.

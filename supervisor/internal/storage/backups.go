@@ -12,27 +12,27 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 )
 
 // Item kinds: what a backup policy and its snapshots are of.
 const (
-	KindEnvironment = "environment" // the definition and home folder
-	KindVolume      = "volume"
+	KindComputer = "environment" // the definition and home folder
+	KindVolume   = "volume"
 )
 
-// Item is an environment or a volume, by name.
+// Item is a computer or a volume, by name.
 type Item struct {
 	Kind, Name string
 }
 
 // ParseItem checks kind and name.
 func ParseItem(kind, name string) (Item, error) {
-	if kind != KindEnvironment && kind != KindVolume {
-		return Item{}, fmt.Errorf("backups are of an environment or a volume, not %q", kind)
+	if kind != KindComputer && kind != KindVolume {
+		return Item{}, fmt.Errorf("backups are of a computer or a volume, not %q", kind)
 	}
-	if err := environments.ValidName(name); err != nil {
+	if err := computers.ValidName(name); err != nil {
 		return Item{}, err
 	}
 	return Item{kind, name}, nil
@@ -76,10 +76,10 @@ type Repository struct {
 const DefaultFolder = "deskyard-backups"
 
 func (r Repository) validate() error {
-	if err := environments.ValidName(r.Name); err != nil {
+	if err := computers.ValidName(r.Name); err != nil {
 		return fmt.Errorf("invalid repository name: %w", err)
 	}
-	if err := environments.ValidName(r.Remote); err != nil {
+	if err := computers.ValidName(r.Remote); err != nil {
 		return fmt.Errorf("invalid remote: %w", err)
 	}
 	if r.Folder == "" || strings.HasPrefix(r.Folder, "/") || strings.ContainsAny(r.Folder, "\r\n\x00\\:") || slices.Contains(strings.Split(r.Folder, "/"), "..") || len(r.Folder) > 1024 {

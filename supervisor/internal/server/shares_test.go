@@ -110,7 +110,7 @@ func TestShareFlow(t *testing.T) {
 		code, body := send(t, http.DefaultClient, "POST", ts.URL+"/api/links/inspect", "", `{"link":"`+linkCode+`"}`)
 		var info linkInfoJSON
 		_ = json.Unmarshal([]byte(body), &info)
-		if code != 200 || info.Username != "sanne" || len(info.Grants) != 1 || info.Grants[0] != (accounts.Grant{Environment: "alice", Level: auth.LevelObserve}) ||
+		if code != 200 || info.Username != "sanne" || len(info.Grants) != 1 || info.Grants[0] != (accounts.Grant{Computer: "alice", Level: auth.LevelObserve}) ||
 			info.SharedBy == nil || *info.SharedBy != (accounts.Sharer{Username: "bob", ID: bobAccount.ID}) {
 			t.Fatalf("inspect: %d %s", code, body)
 		}
@@ -147,10 +147,10 @@ func TestShareFlow(t *testing.T) {
 	if code := getJSON(t, bob, ts.URL+"/api/environments/alice/shares", &shares); code != 200 || len(shares) != 1 {
 		t.Fatalf("shares: %d %+v", code, shares)
 	}
-	if sh := shares[0]; sh.Username != "sanne" || sh.Environment != "alice" || sh.LinkPending || sh.LastLogin == nil || sh.SharedBy.ID != bobAccount.ID {
+	if sh := shares[0]; sh.Username != "sanne" || sh.Computer != "alice" || sh.LinkPending || sh.LastLogin == nil || sh.SharedBy.ID != bobAccount.ID {
 		t.Fatalf("share listed as %+v", sh)
 	}
-	// Shares stay off the environment's access list.
+	// Shares stay off the computer's access list.
 	admin := login(t, ts, "admin")
 	_, body = get(t, admin, ts.URL+"/api/environments/alice")
 	if strings.Contains(body, "sanne") || !strings.Contains(body, `"access":[{"username":"bob","level":"full"}]`) {
@@ -168,13 +168,13 @@ func TestShareCannotShare(t *testing.T) {
 	linkCode := shareAlice(t, ts, admin, "carla", auth.LevelFull)
 	code, body := redeemCLI(t, ts, linkCode)
 	var res struct {
-		Credential   string
-		Username     string
-		Environments []struct{ Name, Level string }
+		Credential string
+		Username   string
+		Computers  []struct{ Name, Level string } `json:"environments"`
 	}
 	_ = json.Unmarshal([]byte(body), &res)
 	if code != 200 || res.Username != "carla" || !strings.HasPrefix(res.Credential, "dyc_") ||
-		len(res.Environments) != 1 || res.Environments[0].Name != "alice" || res.Environments[0].Level != "full" {
+		len(res.Computers) != 1 || res.Computers[0].Name != "alice" || res.Computers[0].Level != "full" {
 		t.Fatalf("CLI redemption: %d %s", code, body)
 	}
 	code, body = sendBearer(t, "POST", ts.URL+"/api/environments/alice/shares", res.Credential, `{"username":"dirk","level":"observe"}`)
@@ -237,7 +237,7 @@ func TestNewLinkByOtherUserForbidden(t *testing.T) {
 			t.Fatalf("anna %s %s: %d %s", req[0], req[1], code, body)
 		}
 	}
-	// Full users see every share of the environment.
+	// Full users see every share of the computer.
 	var shares []shareJSON
 	if getJSON(t, anna, ts.URL+"/api/environments/alice/shares", &shares); len(shares) != 1 {
 		t.Fatalf("anna's shares: %+v", shares)
@@ -278,7 +278,7 @@ func TestRevokeShareClosesStream(t *testing.T) {
 	defer s.credentials.track(creds[0].ID, "alice", cancelExec)()
 	stream, cancelStream := context.WithCancel(context.Background())
 	defer cancelStream()
-	cn := &conn{username: "sanne", environment: "alice", level: auth.LevelFull, cancel: cancelStream}
+	cn := &conn{username: "sanne", computer: "alice", level: auth.LevelFull, cancel: cancelStream}
 	s.viewers.add("alice", cn)
 	defer s.viewers.remove("alice", cn)
 

@@ -83,7 +83,7 @@ func fixedNow(t *testing.T, now time.Time) {
 	t.Cleanup(func() { timeNow = old })
 }
 
-func TestAdminEnvironments(t *testing.T) {
+func TestAdminComputers(t *testing.T) {
 	h, f := adminHarness(t)
 	alice := map[string]any{"name": "alice", "state": "running", "power": "running", "level": "full", "image": "ghcr.io/x/cc:latest",
 		"imageTitle": "Debian XFCE", "imageVersion": "2026.10.22", "error": "", "conflict": "",
@@ -99,8 +99,10 @@ func TestAdminEnvironments(t *testing.T) {
 	}
 	wantCall(t, f, "GET", "/api/environments", "", "")
 	r = h.run("env", "list", "--json")
-	var list struct{ Environments []map[string]any }
-	if json.Unmarshal([]byte(r.stdout), &list); len(list.Environments) != 1 || list.Environments[0]["name"] != "alice" {
+	var list struct {
+		Computers []map[string]any `json:"environments"`
+	}
+	if json.Unmarshal([]byte(r.stdout), &list); len(list.Computers) != 1 || list.Computers[0]["name"] != "alice" {
 		t.Errorf("env list --json: %+v", r)
 	}
 
@@ -270,7 +272,7 @@ func TestAdminAccounts(t *testing.T) {
 	h.stdin = ""
 
 	// update sends only what was given; --grant changes the listed
-	// environments and keeps the others.
+	// computers and keeps the others.
 	f.Answer("PATCH /api/accounts/anna", clitest.Answer{JSON: anna})
 	if r = h.run("account", "update", "anna", "--grant", "bob=full", "--grant", "alice=none", "--grant", "carl=observe", "--expires", "never", "--no-admin"); r.code != 0 {
 		t.Errorf("account update: %+v", r)

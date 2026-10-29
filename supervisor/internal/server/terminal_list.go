@@ -7,10 +7,10 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/terminal"
 )
 
-// handleTerminalSessions lists the environment's shared terminal sessions
-// now, refreshing the cache that the environment JSON carries.
+// handleTerminalSessions lists the computer's shared terminal sessions
+// now, refreshing the cache that the computer JSON carries.
 func (s *Server) handleTerminalSessions(w http.ResponseWriter, r *http.Request) {
-	c, ok := s.terminalSessionsEnvironment(w, r, "listing", nil)
+	c, ok := s.terminalSessionsComputer(w, r, "listing", nil)
 	if !ok {
 		return
 	}

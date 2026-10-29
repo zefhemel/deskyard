@@ -12,15 +12,15 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/activity"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 )
 
-// hub fans out UI events (/api/events). Every event concerns one environment;
-// each subscriber only receives events of environments its account can see.
+// hub fans out UI events (/api/events). Every event concerns one computer;
+// each subscriber only receives events of computers its account can see.
 type event struct {
-	kind        string // environment, removed, stats, viewers, activity
-	environment string // "" for events everyone may see
-	data        any
+	kind     string // computer, removed, stats, viewers, activity
+	computer string // "" for events everyone may see
+	data     any
 }
 
 type subscriber struct {
@@ -53,7 +53,7 @@ func (h *hub) publish(e event) {
 	}
 }
 
-// refresh asks every subscriber to resend its full environment list (access
+// refresh asks every subscriber to resend its full computer list (access
 // or conflicts changed).
 func (h *hub) refresh() {
 	h.mu.Lock()
@@ -76,10 +76,10 @@ func (h *hub) count() int {
 // not: an observer gets no activity, and viewers events without the
 // mappings and clients full users have open.
 func eventFor(a accounts.Account, e event) (event, bool) {
-	if e.environment == "" {
+	if e.computer == "" {
 		return e, true
 	}
-	switch level := a.Level(e.environment); {
+	switch level := a.Level(e.computer); {
 	case level == auth.LevelNone:
 		return e, false
 	case level == auth.LevelFull:
@@ -125,7 +125,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		b, _ := json.Marshal(v)
 		sse.send(kind, string(b))
 	}
-	visible := map[string]bool{}  // environment names this stream has shown
+	visible := map[string]bool{}  // computer names this stream has shown
 	conflicts := []conflictJSON{} // the conflicts this stream has shown
 	// The stream ends once the account is gone, expired or replaced, also
 	// when deleting it failed, once its browser login ended (a bumped
@@ -136,7 +136,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		if !ok || !who.signedIn(acct) {
 			return false
 		}
-		list, err := s.Environments.List(r.Context())
+		list, err := s.Computers.List(r.Context())
 		if err != nil {
 			return false
 		}
@@ -144,7 +144,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		for _, c := range list {
 			if auth.Can(acct, auth.Observe, c.ID) {
 				now[c.Name] = true
-				send("environment", s.environmentJSON(r.Context(), c, acct))
+				send("environment", s.computerJSON(r.Context(), c, acct))
 			}
 		}
 		for name := range visible {
@@ -177,7 +177,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			// Lifecycle payloads can have queued before the snapshot. Resolve
 			// current state rather than allowing an old payload to undo it.
 			name := ""
-			if c, ok := e.data.(environments.Environment); ok {
+			if c, ok := e.data.(computers.Computer); ok {
 				name = c.Name
 			}
 			if e.kind == "removed" {
@@ -186,13 +186,13 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if name != "" {
-				c, err := s.Environments.Get(r.Context(), name)
-				if err != nil && !errors.Is(err, environments.ErrNotFound) {
+				c, err := s.Computers.Get(r.Context(), name)
+				if err != nil && !errors.Is(err, computers.ErrNotFound) {
 					return
 				}
 				if err == nil && auth.Can(acct, auth.Observe, c.ID) {
 					visible[name] = true
-					send("environment", s.environmentJSON(r.Context(), c, acct))
+					send("environment", s.computerJSON(r.Context(), c, acct))
 				} else if visible[name] {
 					// Only of one it could see: others' names aren't its to know.
 					delete(visible, name)
@@ -219,17 +219,17 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// publishEnvironment sends the current state of one environment to the UI.
-func (s *Server) publishEnvironment(ctx context.Context, name string) {
-	c, err := s.Environments.Get(ctx, name)
+// publishComputer sends the current state of one computer to the UI.
+func (s *Server) publishComputer(ctx context.Context, name string) {
+	c, err := s.Computers.Get(ctx, name)
 	if err != nil {
 		s.events.publish(event{kind: "removed", data: map[string]string{"name": name}})
 		return
 	}
-	s.events.publish(event{kind: "environment", environment: c.Name, data: c})
+	s.events.publish(event{kind: "environment", computer: c.Name, data: c})
 }
 
-// watchEngine turns engine events about environments into UI events.
+// watchEngine turns engine events about computers into UI events.
 func (s *Server) watchEngine(ctx context.Context) {
 	for ctx.Err() == nil {
 		evs, err := s.Eng.Events(ctx)
@@ -238,11 +238,11 @@ func (s *Server) watchEngine(ctx context.Context) {
 			continue
 		}
 		for e := range evs {
-			if s.Environments.Networking != nil {
-				s.Environments.Networking.NotifyEngineEvent(e)
+			if s.Computers.Networking != nil {
+				s.Computers.Networking.NotifyEngineEvent(e)
 			}
-			name := e.Labels[environments.LabelName]
-			if name == "" || !environments.IsEnvironment(e.Labels) {
+			name := e.Labels[computers.LabelName]
+			if name == "" || !computers.IsComputer(e.Labels) {
 				continue
 			}
 			switch e.Action {
@@ -252,7 +252,7 @@ func (s *Server) watchEngine(ctx context.Context) {
 			switch e.Action {
 			case "die", "destroy", "create":
 				// A crash or a lost container is reconciled now; a created
-				// one may duplicate an environment.
+				// one may duplicate a computer.
 				select {
 				case s.reconcile <- struct{}{}:
 				default:
@@ -260,7 +260,7 @@ func (s *Server) watchEngine(ctx context.Context) {
 			}
 			switch e.Action {
 			case "start", "die", "stop", "create", "destroy", "restart", "pause", "unpause":
-				s.publishEnvironment(ctx, name)
+				s.publishComputer(ctx, name)
 				s.stats.wake()
 				s.inside.wake()
 			}

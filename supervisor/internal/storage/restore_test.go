@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 )
 
 const snapsJSON = `[
@@ -21,7 +21,7 @@ const snapsJSON = `[
 
 // restoreReply answers like a repository holding snapsJSON; restores fail
 // when failRestore.
-func restoreReply(def environments.Definition, failRestore *bool) func(Call) (string, Result, error) {
+func restoreReply(def computers.Definition, failRestore *bool) func(Call) (string, Result, error) {
 	return func(c Call) (string, Result, error) {
 		switch c.Args[1] {
 		case "snapshots":
@@ -48,12 +48,12 @@ func restoreCalls(f *fakeRunner) []Call {
 	return out
 }
 
-func TestRestoreHereEnvironmentStopsAndStarts(t *testing.T) {
+func TestRestoreHereComputerStopsAndStarts(t *testing.T) {
 	f := &fakeRunner{}
 	s, env := testService(t, f)
-	f.reply = restoreReply(environments.Definition{}, nil)
-	env.addEnvironment(t, "alice", true, environments.Settings{Image: "img"})
-	it := Item{KindEnvironment, "alice"}
+	f.reply = restoreReply(computers.Definition{}, nil)
+	env.addComputer(t, "alice", true, computers.Settings{Image: "img"})
+	it := Item{KindComputer, "alice"}
 	_ = s.Store.PutPolicy(policyOf(it))
 	if _, err := s.Restore(context.Background(), it, RestoreRequest{Snapshot: "e1", Mode: "here"}, nil); err != nil {
 		t.Fatal(err)
@@ -82,9 +82,9 @@ func TestRestoreHereEnvironmentStopsAndStarts(t *testing.T) {
 func TestRestoreHereStoppedStaysStopped(t *testing.T) {
 	f := &fakeRunner{}
 	s, env := testService(t, f)
-	f.reply = restoreReply(environments.Definition{}, nil)
-	env.addEnvironment(t, "alice", false, environments.Settings{Image: "img"})
-	if _, err := s.Restore(context.Background(), Item{KindEnvironment, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "here"}, nil); err != nil {
+	f.reply = restoreReply(computers.Definition{}, nil)
+	env.addComputer(t, "alice", false, computers.Settings{Image: "img"})
+	if _, err := s.Restore(context.Background(), Item{KindComputer, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "here"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := env.events(); got != "reserve alice" {
@@ -96,9 +96,9 @@ func TestRestoreHereFailureLeavesStopped(t *testing.T) {
 	fail := true
 	f := &fakeRunner{}
 	s, env := testService(t, f)
-	f.reply = restoreReply(environments.Definition{}, &fail)
-	env.addEnvironment(t, "alice", true, environments.Settings{Image: "img"})
-	it := Item{KindEnvironment, "alice"}
+	f.reply = restoreReply(computers.Definition{}, &fail)
+	env.addComputer(t, "alice", true, computers.Settings{Image: "img"})
+	it := Item{KindComputer, "alice"}
 	_ = s.Store.PutPolicy(policyOf(it))
 	_, err := s.Restore(context.Background(), it, RestoreRequest{Snapshot: "e1", Mode: "here"}, nil)
 	if err == nil || !strings.Contains(err.Error(), "connection lost") || !strings.Contains(err.Error(), "stopped") {
@@ -112,9 +112,9 @@ func TestRestoreHereFailureLeavesStopped(t *testing.T) {
 func TestRestoreHereBackupFirst(t *testing.T) {
 	f := &fakeRunner{}
 	s, env := testService(t, f)
-	f.reply = restoreReply(environments.Definition{}, nil)
-	env.addEnvironment(t, "alice", false, environments.Settings{Image: "img"})
-	it := Item{KindEnvironment, "alice"}
+	f.reply = restoreReply(computers.Definition{}, nil)
+	env.addComputer(t, "alice", false, computers.Settings{Image: "img"})
+	it := Item{KindComputer, "alice"}
 	_ = s.Store.PutPolicy(policyOf(it))
 	if _, err := s.Restore(context.Background(), it, RestoreRequest{Snapshot: "e1", Mode: "here", BackupFirst: true}, nil); err != nil {
 		t.Fatal(err)
@@ -139,10 +139,10 @@ func TestRestoreHereBackupFirst(t *testing.T) {
 func TestRestoreHereVolumeStopsUsers(t *testing.T) {
 	f := &fakeRunner{}
 	s, env := testService(t, f)
-	f.reply = restoreReply(environments.Definition{}, nil)
+	f.reply = restoreReply(computers.Definition{}, nil)
 	env.addVolume(t, "photos")
-	env.addEnvironment(t, "alice", true, environments.Settings{Image: "img", Volumes: []environments.VolumeGrant{{Name: "photos"}}})
-	env.addEnvironment(t, "bob", false, environments.Settings{Image: "img", Volumes: []environments.VolumeGrant{{Name: "photos"}}})
+	env.addComputer(t, "alice", true, computers.Settings{Image: "img", Volumes: []computers.VolumeGrant{{Name: "photos"}}})
+	env.addComputer(t, "bob", false, computers.Settings{Image: "img", Volumes: []computers.VolumeGrant{{Name: "photos"}}})
 	it := Item{KindVolume, "photos"}
 	if _, err := s.Restore(context.Background(), it, RestoreRequest{Repository: "home", Snapshot: "v1", Mode: "here"}, nil); err != nil {
 		t.Fatal(err)
@@ -156,15 +156,15 @@ func TestRestoreHereVolumeStopsUsers(t *testing.T) {
 	}
 }
 
-func TestRestoreAsNewEnvironmentDropsMachineSettings(t *testing.T) {
-	def := environments.Definition{Name: "alice", Image: environments.ImageRef{Ref: "ghcr.io/x/desk:1", ID: "sha256:1"}, Limits: environments.Limits{MemoryBytes: 2 << 30, NanoCPUs: 2e9},
-		Network: environments.Network{Kind: environments.NetworkVPN, Connection: "vpn-1"}, DockerAccess: true,
-		Volumes: []environments.VolumeGrant{{Name: "photos", Path: "/mnt/p", ReadOnly: true}, {Name: "gone", Path: "/share/gone"}}}
+func TestRestoreAsNewComputerDropsMachineSettings(t *testing.T) {
+	def := computers.Definition{Name: "alice", Image: computers.ImageRef{Ref: "ghcr.io/x/desk:1", ID: "sha256:1"}, Limits: computers.Limits{MemoryBytes: 2 << 30, NanoCPUs: 2e9},
+		Network: computers.Network{Kind: computers.NetworkVPN, Connection: "vpn-1"}, DockerAccess: true,
+		Volumes: []computers.VolumeGrant{{Name: "photos", Path: "/mnt/p", ReadOnly: true}, {Name: "gone", Path: "/share/gone"}}}
 	f := &fakeRunner{}
 	s, env := testService(t, f)
 	f.reply = restoreReply(def, nil)
 	env.addVolume(t, "photos")
-	res, err := s.Restore(context.Background(), Item{KindEnvironment, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-copy"}, nil)
+	res, err := s.Restore(context.Background(), Item{KindComputer, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-copy"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestRestoreAsNewEnvironmentDropsMachineSettings(t *testing.T) {
 	}
 	set := env.created["alice-copy"]
 	if set.Image != "ghcr.io/x/desk:1" || set.MemoryBytes != 2<<30 || set.NanoCPUs != 2e9 || set.VPNConnectionID != "" || set.DockerAccess ||
-		len(set.Volumes) != 1 || set.Volumes[0] != (environments.VolumeGrant{Name: "photos", Path: "/mnt/p", ReadOnly: true}) {
+		len(set.Volumes) != 1 || set.Volumes[0] != (computers.VolumeGrant{Name: "photos", Path: "/mnt/p", ReadOnly: true}) {
 		t.Fatalf("settings %+v", set)
 	}
 	dropped := strings.Join(res.Dropped, ";")
@@ -195,7 +195,7 @@ func TestRestoreAsNewEnvironmentDropsMachineSettings(t *testing.T) {
 		}
 	}
 	// A chosen image replaces the saved one.
-	if _, err := s.Restore(context.Background(), Item{KindEnvironment, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-two", NewImage: "other:2"}, nil); err != nil {
+	if _, err := s.Restore(context.Background(), Item{KindComputer, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-two", NewImage: "other:2"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if env.created["alice-two"].Image != "other:2" {
@@ -206,13 +206,13 @@ func TestRestoreAsNewEnvironmentDropsMachineSettings(t *testing.T) {
 func TestRestoreAsNewRefusesExistingName(t *testing.T) {
 	f := &fakeRunner{}
 	s, env := testService(t, f)
-	f.reply = restoreReply(environments.Definition{}, nil)
-	env.addEnvironment(t, "bob", false, environments.Settings{Image: "img"})
+	f.reply = restoreReply(computers.Definition{}, nil)
+	env.addComputer(t, "bob", false, computers.Settings{Image: "img"})
 	env.addVolume(t, "music")
 	for _, tc := range []struct {
 		it   Item
 		name string
-	}{{Item{KindEnvironment, "alice"}, "bob"}, {Item{KindVolume, "photos"}, "music"}, {Item{KindEnvironment, "alice"}, "api"}} {
+	}{{Item{KindComputer, "alice"}, "bob"}, {Item{KindVolume, "photos"}, "music"}, {Item{KindComputer, "alice"}, "api"}} {
 		if _, err := s.Restore(context.Background(), tc.it, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: tc.name}, nil); err == nil {
 			t.Errorf("restored %s as %s", tc.it, tc.name)
 		}
@@ -221,7 +221,7 @@ func TestRestoreAsNewRefusesExistingName(t *testing.T) {
 	if err := os.MkdirAll(env.layout.HomeOf("carol"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Restore(context.Background(), Item{KindEnvironment, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "carol"}, nil); err == nil {
+	if _, err := s.Restore(context.Background(), Item{KindComputer, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "carol"}, nil); err == nil {
 		t.Error("restored over an existing folder")
 	}
 	if len(restoreCalls(f)) != 0 {
@@ -232,7 +232,7 @@ func TestRestoreAsNewRefusesExistingName(t *testing.T) {
 func TestRestoreAsNewVolume(t *testing.T) {
 	f := &fakeRunner{}
 	s, env := testService(t, f)
-	f.reply = restoreReply(environments.Definition{}, nil)
+	f.reply = restoreReply(computers.Definition{}, nil)
 	res, err := s.Restore(context.Background(), Item{KindVolume, "photos"}, RestoreRequest{Repository: "home", Snapshot: "v1", Mode: "new", NewName: "photos-old"}, nil)
 	if err != nil || res.Created != "photos-old" {
 		t.Fatalf("%+v %v", res, err)
@@ -245,9 +245,9 @@ func TestRestoreAsNewVolume(t *testing.T) {
 func TestRestoreToFolderNeverDeletes(t *testing.T) {
 	f := &fakeRunner{}
 	s, env := testService(t, f)
-	f.reply = restoreReply(environments.Definition{}, nil)
-	env.addEnvironment(t, "alice", true, environments.Settings{Image: "img"})
-	it := Item{KindEnvironment, "alice"}
+	f.reply = restoreReply(computers.Definition{}, nil)
+	env.addComputer(t, "alice", true, computers.Settings{Image: "img"})
+	it := Item{KindComputer, "alice"}
 	first := "Restored 2026-10-26 0300"
 	if err := os.MkdirAll(filepath.Join(env.layout.HomeOf("alice"), first), 0o755); err != nil {
 		t.Fatal(err)
@@ -279,7 +279,7 @@ func TestRestoreToFolderNeverDeletes(t *testing.T) {
 
 // noHelpers answers like restoreReply but fails any root helper command
 // (install, chown) the supervisor should have no need of.
-func noHelpers(def environments.Definition) func(Call) (string, Result, error) {
+func noHelpers(def computers.Definition) func(Call) (string, Result, error) {
 	inner := restoreReply(def, nil)
 	return func(c Call) (string, Result, error) {
 		if c.Args[0] == "install" || c.Args[0] == "chown" {
@@ -292,7 +292,7 @@ func noHelpers(def environments.Definition) func(Call) (string, Result, error) {
 func TestRestoreAsNewWithoutHelper(t *testing.T) {
 	f := &fakeRunner{}
 	s, env := testService(t, f)
-	f.reply = noHelpers(environments.Definition{})
+	f.reply = noHelpers(computers.Definition{})
 	if _, err := s.Restore(context.Background(), Item{KindVolume, "photos"}, RestoreRequest{Repository: "home", Snapshot: "v1", Mode: "new", NewName: "photos-old"}, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -304,7 +304,7 @@ func TestRestoreAsNewWithoutHelper(t *testing.T) {
 func TestRestoreToFolderLocalWithoutHelper(t *testing.T) {
 	f := &fakeRunner{}
 	s, env := testService(t, f)
-	f.reply = noHelpers(environments.Definition{})
+	f.reply = noHelpers(computers.Definition{})
 	env.addVolume(t, "photos")
 	res, err := s.Restore(context.Background(), Item{KindVolume, "photos"}, RestoreRequest{Repository: "home", Snapshot: "v1", Mode: "folder", Paths: []string{"a.txt"}}, nil)
 	if err != nil {
@@ -319,7 +319,7 @@ func TestRestoreToFolderLocalWithoutHelper(t *testing.T) {
 func TestRestoreToFolderHostUsesHelper(t *testing.T) {
 	f := &fakeRunner{}
 	s, env := testService(t, f)
-	f.reply = restoreReply(environments.Definition{}, nil)
+	f.reply = restoreReply(computers.Definition{}, nil)
 	host := t.TempDir()
 	env.addHostVolume(t, "photos", host)
 	res, err := s.Restore(context.Background(), Item{KindVolume, "photos"}, RestoreRequest{Repository: "home", Snapshot: "v1", Mode: "folder", Paths: []string{"a.txt"}}, nil)
@@ -358,7 +358,7 @@ func TestBrowseAndDownload(t *testing.T) {
 `
 	f := &fakeRunner{}
 	s, env := testService(t, f)
-	base := restoreReply(environments.Definition{}, nil)
+	base := restoreReply(computers.Definition{}, nil)
 	f.reply = func(c Call) (string, Result, error) {
 		switch c.Args[1] {
 		case "ls":
@@ -368,8 +368,8 @@ func TestBrowseAndDownload(t *testing.T) {
 		}
 		return base(c)
 	}
-	env.addEnvironment(t, "alice", true, environments.Settings{Image: "img"})
-	it := Item{KindEnvironment, "alice"}
+	env.addComputer(t, "alice", true, computers.Settings{Image: "img"})
+	it := Item{KindComputer, "alice"}
 	entries, err := s.Browse(context.Background(), it, "home", "e1", "docs")
 	if err != nil {
 		t.Fatal(err)
@@ -404,15 +404,15 @@ func TestBrowseAndDownload(t *testing.T) {
 	}
 }
 
-// Every environment using the volume is reserved before any is stopped: one
+// Every computer using the volume is reserved before any is stopped: one
 // that is busy stops nothing.
 func TestRestoreHereVolumeBusyUserStopsNothing(t *testing.T) {
 	f := &fakeRunner{}
 	s, env := testService(t, f)
-	f.reply = restoreReply(environments.Definition{}, nil)
+	f.reply = restoreReply(computers.Definition{}, nil)
 	env.addVolume(t, "photos")
-	env.addEnvironment(t, "alice", true, environments.Settings{Image: "img", Volumes: []environments.VolumeGrant{{Name: "photos"}}})
-	env.addEnvironment(t, "bob", true, environments.Settings{Image: "img", Volumes: []environments.VolumeGrant{{Name: "photos"}}})
+	env.addComputer(t, "alice", true, computers.Settings{Image: "img", Volumes: []computers.VolumeGrant{{Name: "photos"}}})
+	env.addComputer(t, "bob", true, computers.Settings{Image: "img", Volumes: []computers.VolumeGrant{{Name: "photos"}}})
 	env.reserved["bob"], env.reserved["alice"] = false, false
 	// Whichever comes second is busy.
 	release, _ := env.Reserve("bob", "upgrading")
@@ -426,13 +426,13 @@ func TestRestoreHereVolumeBusyUserStopsNothing(t *testing.T) {
 	}
 }
 
-// The new environment's name is reserved while its home is restored and it
+// The new computer's name is reserved while its home is restored and it
 // is created, as the create API does.
 func TestRestoreAsNewReservesName(t *testing.T) {
 	f := &fakeRunner{}
 	s, env := testService(t, f)
-	f.reply = restoreReply(environments.Definition{Image: environments.ImageRef{Ref: "img"}}, nil)
-	if _, err := s.Restore(context.Background(), Item{KindEnvironment, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-copy"}, nil); err != nil {
+	f.reply = restoreReply(computers.Definition{Image: computers.ImageRef{Ref: "img"}}, nil)
+	if _, err := s.Restore(context.Background(), Item{KindComputer, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-copy"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := env.events(); got != "reserve alice-copy,create alice-copy,stop alice-copy" {
@@ -440,7 +440,7 @@ func TestRestoreAsNewReservesName(t *testing.T) {
 	}
 	release, _ := env.Reserve("carol", "creating")
 	defer release()
-	if _, err := s.Restore(context.Background(), Item{KindEnvironment, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "carol"}, nil); err == nil {
+	if _, err := s.Restore(context.Background(), Item{KindComputer, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "carol"}, nil); err == nil {
 		t.Fatal("restored into a name being created")
 	}
 	if _, err := os.Stat(env.layout.HomeOf("carol")); !os.IsNotExist(err) {
@@ -449,25 +449,25 @@ func TestRestoreAsNewReservesName(t *testing.T) {
 }
 
 // Grants a failed removal of the name left behind must not carry over to the
-// environment restored under it: the restore forgets them under the
+// computer restored under it: the restore forgets them under the
 // reservation, and stops when it can't.
 func TestRestoreAsNewForgetsTheNamesGrants(t *testing.T) {
 	f := &fakeRunner{}
 	s, env := testService(t, f)
-	f.reply = restoreReply(environments.Definition{Image: environments.ImageRef{Ref: "img"}}, nil)
+	f.reply = restoreReply(computers.Definition{Image: computers.ImageRef{Ref: "img"}}, nil)
 	var forgot []string
 	s.ForgetName = func(name string) error {
 		forgot = append(forgot, name+" after "+env.events())
 		return nil
 	}
-	if _, err := s.Restore(context.Background(), Item{KindEnvironment, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-copy"}, nil); err != nil {
+	if _, err := s.Restore(context.Background(), Item{KindComputer, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-copy"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(forgot) != 1 || forgot[0] != "alice-copy after reserve alice-copy" {
 		t.Fatalf("forgot %q", forgot)
 	}
 	s.ForgetName = func(string) error { return errors.New("disk full") }
-	if _, err := s.Restore(context.Background(), Item{KindEnvironment, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-two"}, nil); err == nil {
+	if _, err := s.Restore(context.Background(), Item{KindComputer, "alice"}, RestoreRequest{Repository: "home", Snapshot: "e1", Mode: "new", NewName: "alice-two"}, nil); err == nil {
 		t.Fatal("restored although its grants couldn't be forgotten")
 	}
 	if _, ok := env.created["alice-two"]; ok || len(restoreCalls(f)) != 1 {

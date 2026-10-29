@@ -203,7 +203,7 @@ export function TerminalPane({ name, session, active, create, slots, alive, onSt
       size: () => [term.cols, term.rows],
       socket: (url) => new WebSocket(url) as unknown as Socket,
       preflight: async () => {
-        const current = await api.environment(name);
+        const current = await api.computer(name);
         if (!current.terminal)
           throw new Error(
             "Upgrade this environment's image to use shared terminals.",

@@ -26,8 +26,8 @@ func TestReclaimCgroupRejectsOtherTargetsAndTraversal(t *testing.T) {
 			if (err == nil) != tc.valid {
 				t.Fatalf("valid=%v error=%v", tc.valid, err)
 			}
-			if err != nil && (strings.Contains(err.Error(), "desktop") || !strings.Contains(err.Error(), "environment")) {
-				t.Errorf("error should name the environment, not the desktop: %v", err)
+			if err != nil && (strings.Contains(err.Error(), "desktop") || !strings.Contains(err.Error(), "computer")) {
+				t.Errorf("error should name the computer, not the desktop: %v", err)
 			}
 		})
 	}

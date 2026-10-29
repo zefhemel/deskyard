@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 	"net/http"
 )
@@ -32,10 +32,10 @@ func vpnError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, vpn.ErrNotFound):
 		writeError(w, 400, "VPN connection not found")
-	case errors.Is(err, environments.ErrRecoveryRequired):
+	case errors.Is(err, computers.ErrRecoveryRequired):
 		writeError(w, 409, err.Error())
 	case errors.Is(err, vpn.ErrConflict):
-		writeError(w, 409, "VPN connection or environment references changed; refresh and confirm again")
+		writeError(w, 409, "VPN connection or computer references changed; refresh and confirm again")
 	case errors.Is(err, vpn.ErrValidation):
 		writeError(w, 400, err.Error())
 	default:
@@ -47,18 +47,18 @@ func (s *Server) handleListVPN(w http.ResponseWriter, r *http.Request) {
 	if !requireAdmin(w, a) {
 		return
 	}
-	cs, err := s.Environments.Networking.Connections.List()
+	cs, err := s.Computers.Networking.Connections.List()
 	if err != nil {
 		vpnError(w, err)
 		return
 	}
 	type entry struct {
 		vpn.Connection
-		Environments []environments.ConnectionReference `json:"environments"`
+		Computers []computers.ConnectionReference `json:"environments"`
 	}
 	out := []entry{}
 	for _, c := range cs {
-		out = append(out, entry{c, s.Environments.Networking.References(c.ID)})
+		out = append(out, entry{c, s.Computers.Networking.References(c.ID)})
 	}
 	writeJSON(w, 200, map[string]any{"connections": out, "countries": vpn.Countries()})
 }
@@ -72,7 +72,7 @@ func (s *Server) handleCreateVPN(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "bad request")
 		return
 	}
-	c, err := s.Environments.Networking.Connections.Create(in)
+	c, err := s.Computers.Networking.Connections.Create(in)
 	if err != nil {
 		vpnError(w, err)
 		return
@@ -85,9 +85,9 @@ func (s *Server) handleDeleteVPN(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	if err := s.Environments.Networking.DeleteConnection(id); err != nil {
+	if err := s.Computers.Networking.DeleteConnection(id); err != nil {
 		if errors.Is(err, vpn.ErrConflict) {
-			writeJSON(w, 409, map[string]any{"error": "VPN connection is referenced by environments", "environments": s.Environments.Networking.References(id)})
+			writeJSON(w, 409, map[string]any{"error": "VPN connection is referenced by computers", "environments": s.Computers.Networking.References(id)})
 			return
 		}
 		vpnError(w, err)
@@ -109,7 +109,7 @@ func (s *Server) handleTestVPN(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.ConnectionID != "" {
-		if _, err := s.Environments.Networking.Connections.Get(req.ConnectionID); err != nil {
+		if _, err := s.Computers.Networking.Connections.Get(req.ConnectionID); err != nil {
 			vpnError(w, err)
 			return
 		}
@@ -138,22 +138,22 @@ func (s *Server) handleUpdateVPN(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req struct {
 		vpn.Input
-		ExpectedRevision     uint64   `json:"expectedRevision"`
-		AffectedEnvironments []string `json:"affectedEnvironments"`
-		ConfirmRestart       bool     `json:"confirmRestart"`
+		ExpectedRevision  uint64   `json:"expectedRevision"`
+		AffectedComputers []string `json:"affectedEnvironments"`
+		ConfirmRestart    bool     `json:"confirmRestart"`
 	}
 	if readJSON(r, &req) != nil {
 		writeError(w, 400, "bad request")
 		return
 	}
-	n := s.Environments.Networking
-	if err := n.CheckUpdate(id, req.ExpectedRevision, req.AffectedEnvironments); err != nil {
+	n := s.Computers.Networking
+	if err := n.CheckUpdate(id, req.ExpectedRevision, req.AffectedComputers); err != nil {
 		vpnError(w, err)
 		return
 	}
 	refs := n.References(id)
 	if len(refs) > 0 && !req.ConfirmRestart {
-		writeJSON(w, 409, map[string]any{"error": "confirmRestart required; affected environments' sessions will disconnect", "environments": refs})
+		writeJSON(w, 409, map[string]any{"error": "confirmRestart required; affected computers' sessions will disconnect", "environments": refs})
 		return
 	}
 	jobID := s.jobs.startCommittedResult(a.Username, func(ctx context.Context, progress func(string, float64), commit func(func() error) error) (any, error) {
@@ -164,7 +164,7 @@ func (s *Server) handleUpdateVPN(w http.ResponseWriter, r *http.Request) {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		c, results, err := n.UpdateConnection(ctx, id, req.ExpectedRevision, req.AffectedEnvironments, req.Input, progress, func(save func() error) error {
+		c, results, err := n.UpdateConnection(ctx, id, req.ExpectedRevision, req.AffectedComputers, req.Input, progress, func(save func() error) error {
 			if err := commit(save); err != nil {
 				return err
 			}
@@ -175,11 +175,11 @@ func (s *Server) handleUpdateVPN(w http.ResponseWriter, r *http.Request) {
 		})
 		if c.ID != "" {
 			for _, ref := range refs {
-				s.publishEnvironment(context.WithoutCancel(ctx), ref.Name)
+				s.publishComputer(context.WithoutCancel(ctx), ref.Name)
 			}
 		}
 		if err != nil {
-			return nil, errors.New("VPN update failed; refresh connection and environment status before retrying")
+			return nil, errors.New("VPN update failed; refresh connection and computer status before retrying")
 		}
 		return map[string]any{"connection": c, "environments": results}, nil
 	})

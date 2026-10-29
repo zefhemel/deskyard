@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -37,7 +37,7 @@ func (e *catalogEngine) addImage(ref, id, user string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.images[id] = engine.Image{ID: id, User: user, Arch: "arm64", Labels: map[string]string{
-		environments.LabelContract: environments.Contract, "deskyard.kind": "desktop", "org.opencontainers.image.title": "Debian XFCE"}}
+		computers.LabelContract: computers.Contract, "deskyard.kind": "desktop", "org.opencontainers.image.title": "Debian XFCE"}}
 	e.tags[ref] = id
 }
 
@@ -158,12 +158,12 @@ func (bt *catalogTest) catalog() map[string]catalogImageJSON {
 	return out
 }
 
-func withEnvironment(t *testing.T, bt *catalogTest, files map[string]string) string {
+func withComputer(t *testing.T, bt *catalogTest, files map[string]string) string {
 	t.Helper()
 	bt.e.desktops = []engine.Container{{ID: "c1", Name: "deskyard-alice", Image: "img", ImageID: "sha256:base1", State: "exited",
-		Labels: map[string]string{environments.LabelManaged: "true", environments.LabelName: "alice", environments.LabelRevision: "1"}}}
-	defineEnvironments(t, bt.s)
-	folder := bt.s.Environments.Layout.HomeOf("alice")
+		Labels: map[string]string{computers.LabelManaged: "true", computers.LabelName: "alice", computers.LabelRevision: "1"}}}
+	defineComputers(t, bt.s)
+	folder := bt.s.Computers.Layout.HomeOf("alice")
 	for p, data := range files {
 		full := filepath.Join(folder, filepath.FromSlash(p))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {

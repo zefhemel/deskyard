@@ -16,12 +16,12 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/davfs"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
-// WebDAV at /<name>/dav/: the environment's home and local volumes, for
-// Finder and other WebDAV clients, while the environment runs or not. Only
+// WebDAV at /<name>/dav/: the computer's home and local volumes, for
+// Finder and other WebDAV clients, while the computer runs or not. Only
 // HTTP Basic auth is accepted, never the browser session: the account's
 // password, or its WebDAV password when it has one. Files are always served
 // as downloads, so nothing from a desktop renders on this origin.
@@ -39,7 +39,7 @@ const (
 )
 
 // davAllowed reports whether a may use name's files over WebDAV: a password
-// account, not a share, with full use of the environment.
+// account, not a share, with full use of the computer.
 func davAllowed(a accounts.Account, name string) bool {
 	return a.HasPassword() && !a.IsShare() && auth.Can(a, auth.View, name)
 }
@@ -49,7 +49,7 @@ func (s *Server) serveDAV(w http.ResponseWriter, r *http.Request, name string) {
 	if !ok {
 		return
 	}
-	c, err := s.Environments.Get(r.Context(), name)
+	c, err := s.Computers.Get(r.Context(), name)
 	if err != nil || !c.WebDAV || !davAllowed(a, c.Name) {
 		http.NotFound(w, r) // the same for missing, invisible and switched off
 		return
@@ -142,16 +142,16 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
-// davMounts is the environment's tree: its home, and its local volumes at
+// davMounts is the computer's tree: its home, and its local volumes at
 // their paths. Host volumes are outside the data folder and left out.
-func (s *Server) davMounts(c environments.Environment) []davfs.Mount {
-	mounts := []davfs.Mount{{At: "/workspace", Folder: s.Environments.Layout.HomeOf(c.Name)}}
+func (s *Server) davMounts(c computers.Computer) []davfs.Mount {
+	mounts := []davfs.Mount{{At: "/workspace", Folder: s.Computers.Layout.HomeOf(c.Name)}}
 	for _, g := range c.Settings.Volumes {
-		v, ok := s.Environments.Vols.Get(g.Name)
-		if !ok || v.Kind == environments.VolumeHost {
+		v, ok := s.Computers.Vols.Get(g.Name)
+		if !ok || v.Kind == computers.VolumeHost {
 			continue
 		}
-		mounts = append(mounts, davfs.Mount{At: environments.GrantPath(g), Folder: s.Environments.Layout.VolumeOf(g.Name), ReadOnly: g.ReadOnly})
+		mounts = append(mounts, davfs.Mount{At: computers.GrantPath(g), Folder: s.Computers.Layout.VolumeOf(g.Name), ReadOnly: g.ReadOnly})
 	}
 	return mounts
 }
@@ -289,7 +289,7 @@ func (pc *davPasswordCache) check(a accounts.Account, password string) bool {
 	return true
 }
 
-// davLockSystems holds each environment's WebDAV locks, in memory.
+// davLockSystems holds each computer's WebDAV locks, in memory.
 type davLockSystems struct {
 	mu  sync.Mutex
 	all map[string]webdav.LockSystem
@@ -315,10 +315,10 @@ func (l *davLockSystems) forget(name string) {
 
 // --- API -----------------------------------------------------------------------------------
 
-// handleWebDAVSetting switches WebDAV for an environment, without touching
+// handleWebDAVSetting switches WebDAV for a computer, without touching
 // its container. Switching it off drops its locks.
 func (s *Server) handleWebDAVSetting(w http.ResponseWriter, r *http.Request) {
-	c, _, ok := s.environmentFor(w, r, auth.Manage)
+	c, _, ok := s.computerFor(w, r, auth.Manage)
 	if !ok {
 		return
 	}
@@ -329,14 +329,14 @@ func (s *Server) handleWebDAVSetting(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "webdav must be a boolean")
 		return
 	}
-	if err := s.Environments.SetWebDAV(c.Name, *req.WebDAV); err != nil {
+	if err := s.Computers.SetWebDAV(c.Name, *req.WebDAV); err != nil {
 		writeError(w, errorStatus(err), err.Error())
 		return
 	}
 	if !*req.WebDAV {
 		s.davLocks.forget(c.Name)
 	}
-	s.publishEnvironment(r.Context(), c.Name)
+	s.publishComputer(r.Context(), c.Name)
 	w.WriteHeader(http.StatusNoContent)
 }
 

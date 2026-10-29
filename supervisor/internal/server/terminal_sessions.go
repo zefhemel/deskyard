@@ -12,13 +12,13 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/terminal"
 )
 
 // terminalSessionsInterval is how often the shared terminal sessions of
-// running environments are listed regardless of events. The desktop's tmux
+// running computers are listed regardless of events. The desktop's tmux
 // hooks report opens, ends and attaches on its activity stream (see changed),
 // so this is only a safety net, for instance for a program started in a
 // session or an event lost while the stream restarted.
@@ -28,15 +28,15 @@ const terminalSessionsInterval = 60 * time.Second
 // change events, so that a desktop sending many costs a few execs a second.
 const terminalChangeGap = 250 * time.Millisecond
 
-// terminalSessions caches each running environment's public shared terminal
-// sessions for the environment JSON. Entries belong to one running lifetime of
-// the container; a stopped, restarted or removed environment has none.
+// terminalSessions caches each running computer's public shared terminal
+// sessions for the computer JSON. Entries belong to one running lifetime of
+// the container; a stopped, restarted or removed computer has none.
 type terminalSessions struct {
 	s       *Server
 	mu      sync.Mutex
 	seq     uint64
 	entries map[string]terminalSessionsEntry
-	// changing has an entry while a change refresh runs for that environment;
+	// changing has an entry while a change refresh runs for that computer;
 	// true when another change arrived meanwhile.
 	changing map[string]bool
 }
@@ -51,20 +51,20 @@ func newTerminalSessions(s *Server) *terminalSessions {
 	return &terminalSessions{s: s, entries: map[string]terminalSessionsEntry{}, changing: map[string]bool{}}
 }
 
-func terminalCapable(c environments.Environment) bool {
+func terminalCapable(c computers.Computer) bool {
 	return c.ImageLabels["deskyard.terminal"] == "tmux-v1"
 }
 
-// get returns the cached sessions of the named environment, never nil.
+// get returns the cached sessions of the named computer, never nil.
 func (t *terminalSessions) get(name string) []terminal.Session {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return append([]terminal.Session{}, t.entries[name].sessions...)
 }
 
-// forEnvironment is get for this running lifetime of c: a restarted
-// environment shows no sessions of its previous lifetime.
-func (t *terminalSessions) forEnvironment(c environments.Environment) []terminal.Session {
+// forComputer is get for this running lifetime of c: a restarted
+// computer shows no sessions of its previous lifetime.
+func (t *terminalSessions) forComputer(c computers.Computer) []terminal.Session {
 	if c.State != "running" || !terminalCapable(c) {
 		return []terminal.Session{}
 	}
@@ -82,7 +82,7 @@ func (t *terminalSessions) forEnvironment(c environments.Environment) []terminal
 var errTerminalHelper = errors.New("terminal helper failed")
 
 // list runs the image's fixed list helper.
-func (t *terminalSessions) list(ctx context.Context, c environments.Environment) ([]terminal.Session, error) {
+func (t *terminalSessions) list(ctx context.Context, c computers.Computer) ([]terminal.Session, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	result, err := engine.Run(ctx, t.s.Eng, c.Container.ID, engine.ExecSpec{Cmd: []string{"deskyard", "terminal-list"}, User: "user", WorkDir: "/workspace", Env: execEnv}, engine.RunOptions{StdoutLimit: terminal.MaxListOutput, StderrLimit: 4096})
@@ -95,10 +95,10 @@ func (t *terminalSessions) list(ctx context.Context, c environments.Environment)
 	return terminal.ParseSessions(result.Stdout)
 }
 
-// refresh lists c's sessions now, stores them and publishes the environment
-// when its list changed. An environment that isn't running, or whose image
+// refresh lists c's sessions now, stores them and publishes the computer
+// when its list changed. A computer that isn't running, or whose image
 // has no shared terminal, has its entry cleared instead.
-func (t *terminalSessions) refresh(ctx context.Context, c environments.Environment) ([]terminal.Session, error) {
+func (t *terminalSessions) refresh(ctx context.Context, c computers.Computer) ([]terminal.Session, error) {
 	if c.State != "running" || !terminalCapable(c) {
 		t.clear(ctx, c.Name)
 		return []terminal.Session{}, nil
@@ -117,11 +117,11 @@ func (t *terminalSessions) refresh(ctx context.Context, c environments.Environme
 
 // refreshLater refreshes in the background after a change made through this
 // supervisor, outliving the request that made it.
-func (t *terminalSessions) refreshLater(ctx context.Context, c environments.Environment) {
+func (t *terminalSessions) refreshLater(ctx context.Context, c computers.Computer) {
 	go func() { _, _ = t.refresh(context.WithoutCancel(ctx), c) }()
 }
 
-// changed refreshes the named environment's sessions after its desktop
+// changed refreshes the named computer's sessions after its desktop
 // reported a change. Changes reported while a refresh runs fold into one more
 // refresh after it.
 func (t *terminalSessions) changed(ctx context.Context, name string) {
@@ -139,9 +139,9 @@ func (t *terminalSessions) changed(ctx context.Context, name string) {
 	ctx = context.WithoutCancel(ctx)
 	go func() {
 		for {
-			if c, err := t.s.Environments.Get(ctx, name); err == nil {
+			if c, err := t.s.Computers.Get(ctx, name); err == nil {
 				if _, err := t.refresh(ctx, c); err != nil {
-					t.s.Log.Debug("listing shared terminals", "environment", name, "err", err)
+					t.s.Log.Debug("listing shared terminals", "computer", name, "err", err)
 				}
 			}
 			time.Sleep(terminalChangeGap)
@@ -166,7 +166,7 @@ func (t *terminalSessions) store(ctx context.Context, name string, e terminalSes
 	}
 	t.entries[name] = e
 	t.mu.Unlock()
-	// Publish when what the environment JSON shows changes. It shows no
+	// Publish when what the computer JSON shows changes. It shows no
 	// sessions of an earlier lifetime, so after a restart an equal list is
 	// still news.
 	var shown []terminal.Session
@@ -174,7 +174,7 @@ func (t *terminalSessions) store(ctx context.Context, name string, e terminalSes
 		shown = old.sessions
 	}
 	if !slices.Equal(shown, e.sessions) {
-		t.s.publishEnvironment(ctx, name)
+		t.s.publishComputer(ctx, name)
 	}
 }
 
@@ -184,14 +184,14 @@ func (t *terminalSessions) clear(ctx context.Context, name string) {
 	delete(t.entries, name)
 	t.mu.Unlock()
 	if had && len(old.sessions) > 0 {
-		t.s.publishEnvironment(ctx, name)
+		t.s.publishComputer(ctx, name)
 	}
 }
 
 // terminalSessionsParallel bounds the list execs one poll runs at a time.
 const terminalSessionsParallel = 4
 
-// run polls every running environment with a shared terminal until ctx ends,
+// run polls every running computer with a shared terminal until ctx ends,
 // with up to a second of jitter so it doesn't run in step with other loops.
 func (t *terminalSessions) run(ctx context.Context) {
 	for {
@@ -206,11 +206,11 @@ func (t *terminalSessions) run(ctx context.Context) {
 	}
 }
 
-// poll refreshes running terminal-capable environments, a few at a time so
-// that one slow container doesn't delay the others yet many environments
+// poll refreshes running terminal-capable computers, a few at a time so
+// that one slow container doesn't delay the others yet many computers
 // don't make as many simultaneous execs, and clears every other entry.
 func (t *terminalSessions) poll(ctx context.Context) {
-	list, err := t.s.Environments.List(ctx)
+	list, err := t.s.Computers.List(ctx)
 	if err != nil {
 		return
 	}
@@ -232,7 +232,7 @@ func (t *terminalSessions) poll(ctx context.Context) {
 			}
 			defer func() { <-slots }()
 			if _, err := t.refresh(ctx, c); err != nil && ctx.Err() == nil {
-				t.s.Log.Debug("listing shared terminals", "environment", c.Name, "err", err)
+				t.s.Log.Debug("listing shared terminals", "computer", c.Name, "err", err)
 			}
 		}()
 	}
@@ -250,10 +250,10 @@ func (t *terminalSessions) poll(ctx context.Context) {
 	}
 }
 
-// terminalSessionsEnvironment is the shared precondition of the session
+// terminalSessionsComputer is the shared precondition of the session
 // routes: View permission, like attaching, and a running capable desktop.
-func (s *Server) terminalSessionsEnvironment(w http.ResponseWriter, r *http.Request, verb string, session *string) (environments.Environment, bool) {
-	c, _, ok := s.environmentFor(w, r, auth.View)
+func (s *Server) terminalSessionsComputer(w http.ResponseWriter, r *http.Request, verb string, session *string) (computers.Computer, bool) {
+	c, _, ok := s.computerFor(w, r, auth.View)
 	if !ok {
 		return c, false
 	}
@@ -262,7 +262,7 @@ func (s *Server) terminalSessionsEnvironment(w http.ResponseWriter, r *http.Requ
 		return c, false
 	}
 	if c.State != "running" {
-		writeError(w, 409, "start the environment before "+verb+" terminals")
+		writeError(w, 409, "start the computer before "+verb+" terminals")
 		return c, false
 	}
 	if !terminalCapable(c) {
@@ -275,7 +275,7 @@ func (s *Server) terminalSessionsEnvironment(w http.ResponseWriter, r *http.Requ
 // handleCreateTerminalSession starts the next free terminal-N, detached; the
 // caller then attaches to it by name.
 func (s *Server) handleCreateTerminalSession(w http.ResponseWriter, r *http.Request) {
-	c, ok := s.terminalSessionsEnvironment(w, r, "opening", nil)
+	c, ok := s.terminalSessionsComputer(w, r, "opening", nil)
 	if !ok {
 		return
 	}
@@ -296,7 +296,7 @@ func (s *Server) handleCreateTerminalSession(w http.ResponseWriter, r *http.Requ
 // which are told it ended so that they don't reconnect.
 func (s *Server) handleEndTerminalSession(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
-	c, ok := s.terminalSessionsEnvironment(w, r, "ending", &session)
+	c, ok := s.terminalSessionsComputer(w, r, "ending", &session)
 	if !ok {
 		return
 	}
@@ -322,7 +322,7 @@ func (s *Server) handleEndTerminalSession(w http.ResponseWriter, r *http.Request
 		if err == nil {
 			err = errors.New(strings.TrimSpace(string(result.Stderr)))
 		}
-		s.Log.Warn("ending shared terminal", "environment", c.Name, "session", session, "err", err)
+		s.Log.Warn("ending shared terminal", "computer", c.Name, "session", session, "err", err)
 		writeError(w, 502, "could not end the shared terminal; upgrade the desktop image if its helper is unavailable")
 	}
 }

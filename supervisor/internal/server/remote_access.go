@@ -19,13 +19,13 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/activity"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
 	"github.com/zefhemel/deskyard/supervisor/internal/cli/transfer"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
-// remoteHandler serves a remote access route of an environment for a client
+// remoteHandler serves a remote access route of a computer for a client
 // credential with full access to it.
-type remoteHandler func(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential)
+type remoteHandler func(w http.ResponseWriter, r *http.Request, c computers.Computer, cred credential)
 
 // remote authenticates a remote access route (exec, forward, CDP, status):
 // a client credential only, since a browser has no use for them. The
@@ -55,7 +55,7 @@ func (s *Server) remote(next remoteHandler) http.Handler {
 			return
 		}
 		if ctx.Err() != nil {
-			// Revoked while the environment was looked up: answer as the
+			// Revoked while the computer was looked up: answer as the
 			// request would now.
 			if _, _, _, ok := s.remoteTarget(w, r, bearer); ok {
 				writeError(w, http.StatusUnauthorized, "the credential is unknown, revoked or expired")
@@ -67,14 +67,14 @@ func (s *Server) remote(next remoteHandler) http.Handler {
 }
 
 // remoteTarget checks the credential and its account's full access to the
-// environment, writing the error when either fails.
-func (s *Server) remoteTarget(w http.ResponseWriter, r *http.Request, bearer string) (*http.Request, environments.Environment, credential, bool) {
+// computer, writing the error when either fails.
+func (s *Server) remoteTarget(w http.ResponseWriter, r *http.Request, bearer string) (*http.Request, computers.Computer, credential, bool) {
 	r, ok := s.withCredential(r, bearer)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "the credential is unknown, revoked or expired")
-		return r, environments.Environment{}, credential{}, false
+		return r, computers.Computer{}, credential{}, false
 	}
-	c, _, ok := s.environmentFor(w, r, auth.View)
+	c, _, ok := s.computerFor(w, r, auth.View)
 	if !ok {
 		return r, c, credential{}, false
 	}
@@ -82,8 +82,8 @@ func (s *Server) remoteTarget(w http.ResponseWriter, r *http.Request, bearer str
 	return r, c, cred, true
 }
 
-// running writes 409 unless the environment runs.
-func running(w http.ResponseWriter, c environments.Environment) bool {
+// running writes 409 unless the computer runs.
+func running(w http.ResponseWriter, c computers.Computer) bool {
 	if !c.Running() {
 		writeError(w, http.StatusConflict, c.Name+" is stopped; someone with access can start it")
 		return false
@@ -91,13 +91,13 @@ func running(w http.ResponseWriter, c environments.Environment) bool {
 	return true
 }
 
-func (s *Server) handleRemoteExec(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
+func (s *Server) handleRemoteExec(w http.ResponseWriter, r *http.Request, c computers.Computer, cred credential) {
 	if running(w, c) {
 		s.remoteExec(w, r, c, cred)
 	}
 }
 
-func (s *Server) handleRemoteForward(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
+func (s *Server) handleRemoteForward(w http.ResponseWriter, r *http.Request, c computers.Computer, cred credential) {
 	if running(w, c) {
 		s.remoteForward(w, r, c, cred)
 	}
@@ -105,19 +105,19 @@ func (s *Server) handleRemoteForward(w http.ResponseWriter, r *http.Request, c e
 
 // handleRemoteCDP serves /cdp/{rest...}, and handleRemoteCDPRoot /cdp
 // (Chromium's /json/version).
-func (s *Server) handleRemoteCDP(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
+func (s *Server) handleRemoteCDP(w http.ResponseWriter, r *http.Request, c computers.Computer, cred credential) {
 	if running(w, c) {
 		s.remoteCDP(w, r, c, cred, "/"+r.PathValue("rest"))
 	}
 }
 
-func (s *Server) handleRemoteCDPRoot(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
+func (s *Server) handleRemoteCDPRoot(w http.ResponseWriter, r *http.Request, c computers.Computer, cred credential) {
 	if running(w, c) {
 		s.remoteCDP(w, r, c, cred, "")
 	}
 }
 
-func (s *Server) handleRemoteStatus(w http.ResponseWriter, r *http.Request, c environments.Environment, _ credential) {
+func (s *Server) handleRemoteStatus(w http.ResponseWriter, r *http.Request, c computers.Computer, _ credential) {
 	res := map[string]any{
 		"name": c.Name, "state": c.State, "image": c.Image, "api": 1,
 		"imageTitle": c.ImageLabels["org.opencontainers.image.title"], "imageVersion": c.ImageLabels["org.opencontainers.image.version"],
@@ -137,13 +137,13 @@ func (s *Server) handleRemoteStatus(w http.ResponseWriter, r *http.Request, c en
 	writeJSON(w, http.StatusOK, res)
 }
 
-// execEnv overrides variables of the container's environment that a
+// execEnv overrides variables of the container's computer that a
 // command run for a client must not see.
 // DESKYARD_ACTIVITY=off keeps the in-desktop CLI from recording what the
 // supervisor already records.
 var execEnv = []string{"WORKSPACE_PROXY_TOKEN=", "DESKYARD_ACTIVITY=off"}
 
-// execEnvFor is the environment of a command run for a client: the client's
+// execEnvFor is the computer of a command run for a client: the client's
 // variables, then execEnv, so that the client can't override it.
 func execEnvFor(agentEnv map[string]string) []string {
 	forced := map[string]bool{}
@@ -174,7 +174,7 @@ type execControl struct {
 	EOF    bool   `json:"eof"`
 }
 
-func (s *Server) remoteExec(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential) {
+func (s *Server) remoteExec(w http.ResponseWriter, r *http.Request, c computers.Computer, cred credential) {
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {
 		return
@@ -199,7 +199,7 @@ func (s *Server) remoteExec(w http.ResponseWriter, r *http.Request, c environmen
 	if start.Cwd == "" {
 		start.Cwd = "/workspace"
 	}
-	s.Log.Info("remote exec", "environment", c.Name, "credential", cred.Name, "account", cred.Username, "argv", activity.DisplayCommand(start.Argv), "tty", start.Tty)
+	s.Log.Info("remote exec", "computer", c.Name, "credential", cred.Name, "account", cred.Username, "argv", activity.DisplayCommand(start.Argv), "tty", start.Tty)
 	var p *engine.Process
 	if session, shared := terminalSession(start.Argv, start.Tty); shared {
 		// `deskyard terminal NAME` is an explicit open: it creates the session.
@@ -319,8 +319,8 @@ func (s *Server) remoteExec(w http.ResponseWriter, r *http.Request, c environmen
 
 // remoteCDP proxies the shared Chromium's DevTools protocol through the
 // desktop's Caddy (/_cdp/), pointing /json URLs back through this route.
-func (s *Server) remoteCDP(w http.ResponseWriter, r *http.Request, c environments.Environment, cred credential, rest string) {
-	addr, tok, err := s.Environments.Target(r.Context(), c.Name)
+func (s *Server) remoteCDP(w http.ResponseWriter, r *http.Request, c computers.Computer, cred credential, rest string) {
+	addr, tok, err := s.Computers.Target(r.Context(), c.Name)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
@@ -362,13 +362,13 @@ func (s *Server) remoteCDP(w http.ResponseWriter, r *http.Request, c environment
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			if !errors.Is(err, context.Canceled) {
-				s.Log.Debug("cdp proxy", "environment", c.Name, "err", err)
+				s.Log.Debug("cdp proxy", "computer", c.Name, "err", err)
 			}
 			writeError(w, http.StatusBadGateway, "the browser didn't answer")
 		},
 	}
 	if strings.HasPrefix(rest, "/devtools/") {
-		s.Log.Info("remote browser connect", "environment", c.Name, "credential", cred.Name, "account", cred.Username)
+		s.Log.Info("remote browser connect", "computer", c.Name, "credential", cred.Name, "account", cred.Username)
 		defer s.activity.BrowserOpen(refOf(c), s.agentOf(cred))()
 	} else {
 		s.activity.BrowserTouch(refOf(c), s.agentOf(cred))

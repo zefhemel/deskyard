@@ -13,13 +13,13 @@ import (
 )
 
 // levelOf is how far the account (ok: it exists) may use the named
-// environment now; an expired account may use nothing.
-func levelOf(a accounts.Account, ok bool, now time.Time) func(environment string) auth.Level {
-	return func(environment string) auth.Level {
+// computer now; an expired account may use nothing.
+func levelOf(a accounts.Account, ok bool, now time.Time) func(computer string) auth.Level {
+	return func(computer string) auth.Level {
 		if !ok || a.Expired(now) {
 			return auth.LevelNone
 		}
-		return a.Level(environment)
+		return a.Level(computer)
 	}
 }
 
@@ -46,8 +46,8 @@ func (s *Server) accountNow(username, id string, now time.Time) (accounts.Accoun
 }
 
 // orphanedShare reports whether share has lost its reason to exist: its
-// environment is gone (it has no grant), or its sharer (by ID, from
-// sharers) is gone, expired or no longer full on the environment. Admins
+// computer is gone (it has no grant), or its sharer (by ID, from
+// sharers) is gone, expired or no longer full on the computer. Admins
 // are full everywhere, so their shares stay while they are admins.
 func orphanedShare(share accounts.Account, sharers map[string]accounts.Account, now time.Time) bool {
 	if share.SharedBy == nil {
@@ -57,13 +57,13 @@ func orphanedShare(share accounts.Account, sharers map[string]accounts.Account, 
 		return true
 	}
 	sharer, ok := sharers[share.SharedBy.Username]
-	return !ok || sharer.ID != share.SharedBy.ID || levelOf(sharer, true, now)(share.Grants[0].Environment) != auth.LevelFull
+	return !ok || sharer.ID != share.SharedBy.ID || levelOf(sharer, true, now)(share.Grants[0].Computer) != auth.LevelFull
 }
 
 // sweep makes links, credentials and shares follow the accounts: it deletes
 // the shares whose sharer lost them, the links and credentials whose account
 // is gone (also when one of the same name replaced it), and closes the
-// connections credentials hold to environments their account may no longer
+// connections credentials hold to computers their account may no longer
 // use fully. It runs on every account change and once at startup, and first
 // retries saving the revocations that couldn't be saved. Failed writes are
 // logged and the connections are closed anyway.
@@ -97,7 +97,7 @@ func (s *Server) sweep() {
 	for _, c := range s.credentials.list("") {
 		a, ok := s.accountState(c.Username)
 		level := levelOf(a, ok && a.ID == c.AccountID && !orphanedShare(a, byName, now), now)
-		s.credentials.closeWhere(c.ID, func(environment string) bool { return environment != "" && level(environment) != auth.LevelFull })
+		s.credentials.closeWhere(c.ID, func(computer string) bool { return computer != "" && level(computer) != auth.LevelFull })
 	}
 }
 

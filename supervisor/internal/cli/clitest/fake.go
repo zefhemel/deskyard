@@ -35,7 +35,7 @@ const Link = "dyl_9f8e7d6c_linksecret"
 // Username is the account every credential of the fake belongs to.
 const Username = "zef"
 
-// Grant is one of the account's environments, as login answers list them.
+// Grant is one of the account's computers, as login answers list them.
 type Grant struct {
 	Name  string `json:"name"`
 	Level string `json:"level"`
@@ -49,20 +49,20 @@ type ExecRequest struct {
 	TTY  bool              `json:"tty"`
 	Cols int               `json:"cols"`
 	Rows int               `json:"rows"`
-	// Environment is the environment the request was for (from the path).
-	Environment string `json:"-"`
+	// Computer is the computer the request was for (from the path).
+	Computer string `json:"-"`
 }
 
 // Fake is a running fake supervisor.
 type Fake struct {
 	*httptest.Server
-	Name    string // the first environment
+	Name    string // the first computer
 	Dir     string // stands in for /workspace
 	Stopped bool
-	// Desktop handles argv[0] == "deskyard" (the command inside an environment);
+	// Desktop handles argv[0] == "deskyard" (the command inside a computer);
 	// the default answers size and screenshot.
 	Desktop func(args []string, stdout, stderr io.Writer) int
-	// Grants are the account's environments (default: Name at full). The
+	// Grants are the account's computers (default: Name at full). The
 	// remote access routes serve the full ones, answer 403 for observed
 	// ones and 404 for the rest.
 	Grants []Grant
@@ -112,11 +112,11 @@ type Call struct {
 	Body                string // the raw body; "" without one
 }
 
-// New starts a fake whose account has the full environment name.
+// New starts a fake whose account has the full computer name.
 func New(t testing.TB, name string) *Fake {
 	f := &Fake{Name: name, Dir: t.TempDir(), Grants: []Grant{{name, "full"}}, credentials: map[string]bool{Credential: true}}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/environments/{name}", f.auth(f.environment))
+	mux.HandleFunc("GET /api/environments/{name}", f.auth(f.computer))
 	mux.HandleFunc("GET /api/environments/{name}/status", f.auth(f.remote(f.info)))
 	mux.HandleFunc("/api/environments/{name}/exec", f.auth(f.remote(f.exec)))
 	mux.HandleFunc("/api/environments/{name}/cdp/", f.auth(f.remote(f.cdp)))
@@ -131,8 +131,8 @@ func New(t testing.TB, name string) *Fake {
 	return f
 }
 
-// EnvironmentURL is the environment's URL, as given to `deskyard login`.
-func (f *Fake) EnvironmentURL() string { return f.Server.URL + "/" + f.Name }
+// ComputerURL is the computer's URL, as given to `deskyard login`.
+func (f *Fake) ComputerURL() string { return f.Server.URL + "/" + f.Name }
 
 // LinkURL is the login link as the web UI shows it.
 func (f *Fake) LinkURL() string { return f.Server.URL + "/link#" + Link }
@@ -232,7 +232,7 @@ func (f *Fake) remote(h http.HandlerFunc) http.HandlerFunc {
 		name := r.PathValue("name")
 		switch f.level(name) {
 		case "":
-			writeErr(w, http.StatusNotFound, "no such environment")
+			writeErr(w, http.StatusNotFound, "no such computer")
 			return
 		case "observe":
 			writeErr(w, http.StatusForbidden, "observe-only access can't do that")
@@ -246,7 +246,7 @@ func (f *Fake) remote(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func (f *Fake) environment(w http.ResponseWriter, r *http.Request) {
+func (f *Fake) computer(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	_, canned := f.Answers[r.Method+" "+r.URL.Path]
 	f.mu.Unlock()
@@ -256,7 +256,7 @@ func (f *Fake) environment(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.PathValue("name")
 	if f.level(name) == "" {
-		writeErr(w, http.StatusNotFound, "no such environment")
+		writeErr(w, http.StatusNotFound, "no such computer")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"name": name, "state": "running", "level": f.level(name)})
@@ -461,7 +461,7 @@ func (f *Fake) exec(w http.ResponseWriter, r *http.Request) {
 		c.Close(websocket.StatusNormalClosure, "")
 		return
 	}
-	req.Environment = r.PathValue("name")
+	req.Computer = r.PathValue("name")
 	f.mu.Lock()
 	f.Execs = append(f.Execs, req)
 	f.mu.Unlock()

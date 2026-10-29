@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 )
 
@@ -229,7 +229,7 @@ func normRef(ref string) string {
 
 // updateFor returns the version a desktop could upgrade to, if any.
 // Custom images' refs end in :latest, which every rebuild moves.
-func (c *catalog) updateFor(comp environments.Environment) *string {
+func (c *catalog) updateFor(comp computers.Computer) *string {
 	newest := c.newest(comp.Image)
 	if newest == "" || comp.ImageID == "" || newest == comp.ImageID {
 		return nil
@@ -273,7 +273,7 @@ func (s *Server) checkImages(ctx context.Context, progress func(string, float64)
 			}
 			continue
 		}
-		s.Environments.ForgetImage(e.Ref)
+		s.Computers.ForgetImage(e.Ref)
 		img, err := s.Eng.ImageInspect(ctx, e.Ref)
 		if err != nil {
 			errs = append(errs, err)
@@ -291,7 +291,7 @@ func (s *Server) checkImages(ctx context.Context, progress func(string, float64)
 // pruneImages deletes desktop image versions that nothing uses any more:
 // ones this supervisor's catalog replaced with a newer pull or build of
 // their tag, that no tag names any more, that no container runs from and
-// that no environment definition or catalog entry pins. Versions this
+// that no computer definition or catalog entry pins. Versions this
 // catalog never had are never touched: another supervisor on the same
 // engine may pin them without a container. Tagged images, local builds and
 // custom images included, are never touched either, and the engine refuses
@@ -311,7 +311,7 @@ func (s *Server) pruneImages(ctx context.Context) {
 		s.Log.Warn("listing old desktop images", "err", err)
 		return
 	}
-	keep, err := s.Environments.ImagesInUse(ctx)
+	keep, err := s.Computers.ImagesInUse(ctx)
 	if err != nil {
 		s.Log.Warn("listing images in use", "err", err)
 		return
@@ -393,29 +393,29 @@ func (c *catalog) checkLoop(ctx context.Context, s *Server) {
 // --- API ----------------------------------------------------------------------------------
 
 type catalogImageJSON struct {
-	Installed    bool       `json:"installed"`
-	Official     bool       `json:"official"`
-	Ref          string     `json:"ref"`
-	Title        string     `json:"title"`
-	Version      string     `json:"version"`
-	Description  string     `json:"description"`
-	Environments []string   `json:"environments"`
-	Behind       []string   `json:"behind"`
-	Checked      *time.Time `json:"checked"`
+	Installed   bool       `json:"installed"`
+	Official    bool       `json:"official"`
+	Ref         string     `json:"ref"`
+	Title       string     `json:"title"`
+	Version     string     `json:"version"`
+	Description string     `json:"description"`
+	Computers   []string   `json:"environments"`
+	Behind      []string   `json:"behind"`
+	Checked     *time.Time `json:"checked"`
 	// Size and Built describe the downloaded image; omitted until it is.
 	Size  int64      `json:"size,omitempty"`
 	Built *time.Time `json:"built,omitempty"`
 }
 
 // handleListImages lists the catalog; each image names only the
-// environments using it that the account can see.
+// computers using it that the account can see.
 func (s *Server) handleListImages(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(r)
-	all, _ := s.Environments.List(r.Context())
-	list := slices.DeleteFunc(all, func(c environments.Environment) bool { return !auth.Can(a, auth.Observe, c.ID) })
+	all, _ := s.Computers.List(r.Context())
+	list := slices.DeleteFunc(all, func(c computers.Computer) bool { return !auth.Can(a, auth.Observe, c.ID) })
 	out := []catalogImageJSON{}
 	for _, e := range s.images.entries() {
-		j := catalogImageJSON{Ref: e.Ref, Checked: e.Checked, Environments: []string{}, Behind: []string{}}
+		j := catalogImageJSON{Ref: e.Ref, Checked: e.Checked, Computers: []string{}, Behind: []string{}}
 		if image, ok := officialImageFor(e.Ref); ok {
 			j.Official, j.Title, j.Description = true, image.Title, image.Description
 		}
@@ -436,7 +436,7 @@ func (s *Server) handleListImages(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, c := range list {
 			if sameRef(c.Image, e.Ref) {
-				j.Environments = append(j.Environments, c.Name)
+				j.Computers = append(j.Computers, c.Name)
 				if s.images.updateFor(c) != nil {
 					j.Behind = append(j.Behind, c.Name)
 				}
@@ -491,8 +491,8 @@ func (s *Server) handleInstallImage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) pullCatalogImage(username, ref string) string {
 	return s.jobs.start(username, "", func(ctx context.Context, progress func(string, float64)) error {
-		s.Environments.ForgetImage(ref)
-		img, err := s.Environments.EnsureImage(ctx, ref, progress)
+		s.Computers.ForgetImage(ref)
+		img, err := s.Computers.EnsureImage(ctx, ref, progress)
 		if err != nil {
 			return err
 		}
@@ -526,11 +526,11 @@ func (s *Server) handleRemoveImage(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// imageUser names an environment whose definition references ref or pins
+// imageUser names a computer whose definition references ref or pins
 // its newest image, with or without a container, or "" if there is none.
 func (s *Server) imageUser(ref string) string {
 	newest := s.images.newest(ref)
-	for _, def := range s.Environments.Defs.List() {
+	for _, def := range s.Computers.Defs.List() {
 		if sameRef(def.Image.Ref, ref) || (newest != "" && def.Image.ID == newest) {
 			return def.Name
 		}
@@ -561,12 +561,12 @@ func (s *Server) handleUpgradeImage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "an image reference is required")
 		return
 	}
-	behindOn := func(ctx context.Context) ([]environments.Environment, error) {
-		list, err := s.Environments.List(ctx)
+	behindOn := func(ctx context.Context) ([]computers.Computer, error) {
+		list, err := s.Computers.List(ctx)
 		if err != nil {
 			return nil, err
 		}
-		var behind []environments.Environment
+		var behind []computers.Computer
 		for _, c := range list {
 			if sameRef(c.Image, req.Ref) && s.images.updateFor(c) != nil {
 				behind = append(behind, c)
@@ -581,18 +581,18 @@ func (s *Server) handleUpgradeImage(w http.ResponseWriter, r *http.Request) {
 		}
 		var errs []error
 		for i, c := range behind {
-			release, err := s.Environments.Reserve(c.Name, "upgrading")
+			release, err := s.Computers.Reserve(c.Name, "upgrading")
 			if err != nil {
 				errs = append(errs, err)
 				continue
 			}
-			s.publishEnvironment(ctx, c.Name)
+			s.publishComputer(ctx, c.Name)
 			s.viewers.closeAll(c.Name)
-			_, err = s.Environments.Recreate(ctx, c.Name, c.Settings, func(msg string, _ float64) {
+			_, err = s.Computers.Recreate(ctx, c.Name, c.Settings, func(msg string, _ float64) {
 				progress(c.Name+": "+msg, float64(i)/float64(len(behind)))
 			})
 			release()
-			s.publishEnvironment(ctx, c.Name)
+			s.publishComputer(ctx, c.Name)
 			if err != nil {
 				errs = append(errs, err)
 			}

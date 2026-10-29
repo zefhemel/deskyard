@@ -8,19 +8,19 @@ import (
 	"strings"
 )
 
-// Target is a parsed environment URL: the supervisor's base URL and the
-// environment's name (empty when the URL names only the supervisor).
+// Target is a parsed computer URL: the supervisor's base URL and the
+// computer's name (empty when the URL names only the supervisor).
 type Target struct {
-	Base        string // scheme://host[:port][/prefix], no trailing slash
-	Environment string
+	Base     string // scheme://host[:port][/prefix], no trailing slash
+	Computer string
 }
 
-// ParseURL splits an environment URL such as https://host/alice or
+// ParseURL splits a computer URL such as https://host/alice or
 // http://127.0.0.1:8080/prefix/alice into the supervisor base URL and the
-// environment name (the last path segment). A URL without a path names only
+// computer name (the last path segment). A URL without a path names only
 // the supervisor. A pasted API URL (…/api/environments/alice/exec) names the
-// supervisor before /api and the environment after environments/, and so
-// does the web UI's page of an environment (…/environments/alice).
+// supervisor before /api and the computer after computers/, and so
+// does the web UI's page of a computer (…/environments/alice).
 func ParseURL(raw string) (Target, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
@@ -41,7 +41,7 @@ func ParseURL(raw string) (Target, error) {
 		api := strings.Split(strings.Trim(("/" + path + "/")[i+len("/api/"):], "/"), "/")
 		t := Target{Base: u.Scheme + "://" + u.Host + prefix(strings.Trim(path[:max(i-1, 0)], "/"))}
 		if len(api) >= 2 && api[0] == "environments" {
-			t.Environment = api[1]
+			t.Computer = api[1]
 		}
 		return t, nil
 	}
@@ -54,8 +54,8 @@ func ParseURL(raw string) (Target, error) {
 		base = base[:len(base)-1]
 	}
 	return Target{
-		Base:        u.Scheme + "://" + u.Host + prefix(strings.Join(base, "/")),
-		Environment: name,
+		Base:     u.Scheme + "://" + u.Host + prefix(strings.Join(base, "/")),
+		Computer: name,
 	}, nil
 }
 
@@ -66,12 +66,12 @@ func prefix(p string) string {
 	return "/" + p
 }
 
-// URL is the human-facing environment URL (base + name).
+// URL is the human-facing computer URL (base + name).
 func (t Target) URL() string {
-	if t.Environment == "" {
+	if t.Computer == "" {
 		return t.Base
 	}
-	return t.Base + "/" + t.Environment
+	return t.Base + "/" + t.Computer
 }
 
 // ParseLink splits a login link such as https://host/link#dyl_… into the

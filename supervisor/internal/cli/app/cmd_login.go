@@ -72,10 +72,10 @@ func clientName() string {
 
 // loginAnswer is what CLI login and link redemption return.
 type loginAnswer struct {
-	Status       string `json:"status"` // "pending" while a CLI login waits
-	Credential   string `json:"credential"`
-	Username     string `json:"username"`
-	Environments []struct {
+	Status     string `json:"status"` // "pending" while a CLI login waits
+	Credential string `json:"credential"`
+	Username   string `json:"username"`
+	Computers  []struct {
 		Name  string `json:"name"`
 		Level string `json:"level"`
 	} `json:"environments"`
@@ -114,14 +114,14 @@ func runLogin(a *App, c *call) error {
 	if err != nil {
 		return usagef(c.cmd, "%v", err)
 	}
-	if envname.IsReserved(t.Environment) {
-		return usagef(c.cmd, "%s/%s is a page of Deskyard, it isn't an environment: run `deskyard login %s`, or add an environment's name to it", t.Base, t.Environment, t.Base)
+	if envname.IsReserved(t.Computer) {
+		return usagef(c.cmd, "%s/%s is a page of Deskyard, it isn't a computer: run `deskyard login %s`, or add a computer's name to it", t.Base, t.Computer, t.Base)
 	}
 	// Below a page, such as a volume's (…/volumes/photos).
 	if u, err := url.Parse(t.Base); err == nil {
 		if dir, page := path.Split(u.Path); page != "" && envname.IsReserved(page) {
 			u.Path = strings.TrimSuffix(dir, "/")
-			return usagef(c.cmd, "%s is a page of Deskyard, it isn't an environment: run `deskyard login %s`, or add an environment's name to it", t.URL(), u)
+			return usagef(c.cmd, "%s is a page of Deskyard, it isn't a computer: run `deskyard login %s`, or add a computer's name to it", t.URL(), u)
 		}
 	}
 	name, err := serverName(a, c, t.Base)
@@ -177,7 +177,7 @@ func runLogin(a *App, c *call) error {
 		case ans.Credential == "":
 			continue // pending
 		}
-		return a.saveLogin(c, cl, ans, t.Environment)
+		return a.saveLogin(c, cl, ans, t.Computer)
 	}
 }
 
@@ -209,13 +209,13 @@ func runAuth(a *App, c *call) error {
 }
 
 // saveLogin saves the server cl signed in to with ans. want is the
-// environment the login URL named: the account must have full access to it,
+// computer the login URL named: the account must have full access to it,
 // or the new credential is revoked again and nothing is saved. Without one,
-// the account's only full environment becomes the default, or the server's
+// the account's only full computer becomes the default, or the server's
 // previous default when it is still allowed.
 func (a *App) saveLogin(c *call, cl *remote.Client, ans loginAnswer, want string) error {
 	var full, observed []string
-	for _, e := range ans.Environments {
+	for _, e := range ans.Computers {
 		if e.Level == "full" {
 			full = append(full, e.Name)
 		} else {
@@ -244,15 +244,15 @@ func (a *App) saveLogin(c *call, cl *remote.Client, ans loginAnswer, want string
 		if len(full) > 0 {
 			yours = strings.Join(full, ", ")
 		}
-		return fmt.Errorf("%s can't use the environment %q from the CLI (environments with full access: %s): run `deskyard login %s` again with one of them, or without one",
+		return fmt.Errorf("%s can't use the computer %q from the CLI (computers with full access: %s): run `deskyard login %s` again with one of them, or without one",
 			ans.Username, want, yours, cl.Base)
 	case want != "":
 	case len(full) == 1:
 		env = full[0]
-	case old != nil && old.URL == cl.Base && has(old.Environment):
-		env = old.Environment
+	case old != nil && old.URL == cl.Base && has(old.Computer):
+		env = old.Computer
 	}
-	cfg.Add(&remote.Server{Name: cl.Alias, URL: cl.Base, Username: ans.Username, Credential: ans.Credential, Environment: env})
+	cfg.Add(&remote.Server{Name: cl.Alias, URL: cl.Base, Username: ans.Username, Credential: ans.Credential, Computer: env})
 	if err := cfg.Save(path); err != nil {
 		a.revoke(c.ctx, cl.Base, ans.Credential)
 		return fmt.Errorf("saving %s: %v", path, err)
@@ -264,11 +264,11 @@ func (a *App) saveLogin(c *call, cl *remote.Client, ans loginAnswer, want string
 	fmt.Fprintf(a.Stdout, "Signed in to %s as %s (%s).\n", cl.Alias, ans.Username, cl.Base)
 	switch {
 	case env != "":
-		fmt.Fprintf(a.Stdout, "Commands use the environment %s; try `deskyard status`.\n", env)
+		fmt.Fprintf(a.Stdout, "Commands use the computer %s; try `deskyard status`.\n", env)
 	case len(full) > 0:
-		fmt.Fprintf(a.Stdout, "Your environments: %s. Choose one with `deskyard env use ENV`, or -e ENV per command.\n", strings.Join(full, ", "))
+		fmt.Fprintf(a.Stdout, "Your computers: %s. Choose one with `deskyard env use ENV`, or -e ENV per command.\n", strings.Join(full, ", "))
 	default:
-		fmt.Fprintln(a.Stdout, "This account has no environment it can use from the CLI yet.")
+		fmt.Fprintln(a.Stdout, "This account has no computer it can use from the CLI yet.")
 	}
 	if len(observed) > 0 {
 		fmt.Fprintf(a.Stdout, "Observe only, in the browser: %s.\n", strings.Join(observed, ", "))
@@ -332,15 +332,15 @@ func runServerList(a *App, c *call) error {
 	}
 	if c.bool("--json") {
 		type row struct {
-			Name        string `json:"name"`
-			URL         string `json:"url"`
-			Username    string `json:"username"`
-			Environment string `json:"environment"`
-			Default     bool   `json:"default"`
+			Name     string `json:"name"`
+			URL      string `json:"url"`
+			Username string `json:"username"`
+			Computer string `json:"environment"`
+			Default  bool   `json:"default"`
 		}
 		rows := []row{}
 		for _, s := range cfg.Sorted() {
-			rows = append(rows, row{s.Name, s.URL, s.Username, s.Environment, s.Name == cfg.Default})
+			rows = append(rows, row{s.Name, s.URL, s.Username, s.Computer, s.Name == cfg.Default})
 		}
 		enc := json.NewEncoder(a.Stdout)
 		enc.SetIndent("", "  ")
@@ -351,13 +351,13 @@ func runServerList(a *App, c *call) error {
 		return nil
 	}
 	tw := tabwriter.NewWriter(a.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "  NAME\tURL\tUSER\tENVIRONMENT\tCREDENTIAL")
+	fmt.Fprintln(tw, "  NAME\tURL\tUSER\tCOMPUTER\tCREDENTIAL")
 	for _, s := range cfg.Sorted() {
 		mark := " "
 		if s.Name == cfg.Default {
 			mark = "*"
 		}
-		env := s.Environment
+		env := s.Computer
 		if env == "" {
 			env = "-"
 		}
@@ -417,10 +417,10 @@ func runEnvUse(a *App, c *call) error {
 	if got.Level != "full" {
 		return fmt.Errorf("%s can only observe %s, in the browser: the CLI needs full access", srv.Username, env)
 	}
-	srv.Environment = env
+	srv.Computer = env
 	if err := cfg.Save(path); err != nil {
 		return fmt.Errorf("saving %s: %v", path, err)
 	}
-	fmt.Fprintf(a.Stdout, "Commands on %s now use the environment %s.\n", srv.Name, env)
+	fmt.Fprintf(a.Stdout, "Commands on %s now use the computer %s.\n", srv.Name, env)
 	return nil
 }

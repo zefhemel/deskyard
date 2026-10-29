@@ -21,10 +21,10 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine/docker"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/integration"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 	"github.com/zefhemel/deskyard/supervisor/internal/web"
@@ -155,9 +155,9 @@ func TestVPNEndToEnd(t *testing.T) {
 		}
 		return vpn.FixturePeer{Endpoint: addr, PublicKey: cfg.PublicKey, PrivateKeyFile: cfg.Keys[n], Address: fmt.Sprintf("10.77.0.%d/32", n+2)}, nil
 	}
-	makeService := func() *environments.Service {
+	makeService := func() *computers.Service {
 		// Open reads the saved definitions, so a fresh service recovers from them.
-		ds, err := environments.Open(eng, environments.Config{DataDir: layout.Data, DataHost: dataHost, Subnet: "10.219.0.0/16", SelfID: cfg.SelfID}, instance, log)
+		ds, err := computers.Open(eng, computers.Config{DataDir: layout.Data, DataHost: dataHost, Subnet: "10.219.0.0/16", SelfID: cfg.SelfID}, instance, log)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -186,7 +186,7 @@ func TestVPNEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	ui, _ := fs.Sub(web.Dist, "dist")
-	s, err := New(Options{Log: log, Eng: eng, Environments: ds, Accounts: accts, Layout: layout, UI: ui, DefaultImage: os.Getenv("CC_TEST_IMAGE")})
+	s, err := New(Options{Log: log, Eng: eng, Computers: ds, Accounts: accts, Layout: layout, UI: ui, DefaultImage: os.Getenv("CC_TEST_IMAGE")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,10 +230,10 @@ func TestVPNEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var dsList []environments.Environment
+	var dsList []computers.Computer
 	for _, suffix := range []string{"a", "b"} {
 		name := "vpe-" + cfg.Scope[:6] + "-" + suffix
-		d, err := ds.Create(ctx, name, environments.Settings{Image: os.Getenv("CC_TEST_IMAGE"), VPNConnectionID: conn.ID}, func(msg string, _ float64) { t.Log(msg) })
+		d, err := ds.Create(ctx, name, computers.Settings{Image: os.Getenv("CC_TEST_IMAGE"), VPNConnectionID: conn.ID}, func(msg string, _ float64) { t.Log(msg) })
 		if err != nil {
 			t.Fatal("initial create", err)
 		}
@@ -243,7 +243,7 @@ func TestVPNEndToEnd(t *testing.T) {
 		t.Fatal("shared namespace")
 	}
 	write("ready.json", map[string]any{"listen": listener.Addr().String(), "names": []string{dsList[0].Name, dsList[1].Name}, "containers": []string{dsList[0].Container.ID, dsList[1].Container.ID}, "gateways": []string{dsList[0].Container.NetworkContainer, dsList[1].Container.NetworkContainer}})
-	t.Log("READY: two real Selkies environments with independent controlled VPN namespaces")
+	t.Log("READY: two real Selkies computers with independent controlled VPN namespaces")
 	waitFile("continue")
 	stopBackground()
 	// Application restart/idle/start preserve the runtime; its loss requires a new
@@ -284,10 +284,10 @@ func TestVPNEndToEnd(t *testing.T) {
 			t.Fatal("retry from persisted failure", err)
 		}
 	}
-	s.Environments = fresh
+	s.Computers = fresh
 	ds = fresh
 	current, err = ds.Get(ctx, d.Name)
-	if err != nil || current.ID != d.ID || current.Container.Env[environments.TokenEnv] != d.Container.Env[environments.TokenEnv] || current.Container.NetworkContainer == gateway {
+	if err != nil || current.ID != d.ID || current.Container.Env[computers.TokenEnv] != d.Container.Env[computers.TokenEnv] || current.Container.NetworkContainer == gateway {
 		t.Fatal("replacement identity/namespace", err)
 	}
 	write("recovered.json", map[string]string{"container": current.Container.ID, "gateway": current.Container.NetworkContainer})
@@ -305,14 +305,14 @@ func TestVPNEndToEnd(t *testing.T) {
 		}
 	}
 	if cs, err := ds.List(ctx); err != nil || len(cs) != 0 {
-		t.Fatal("environment removal inventory", err)
+		t.Fatal("computer removal inventory", err)
 	}
 	t.Log("PASS idle/start/restart, gateway stop, persisted supervisor recovery, same-image recreate and pair removal")
 }
 
 // Preserve a safe manager boundary if an intermittent recovery failure recurs.
 type e2eObservedRuntime struct {
-	environments.VPNRuntime
+	computers.VPNRuntime
 	t *testing.T
 }
 

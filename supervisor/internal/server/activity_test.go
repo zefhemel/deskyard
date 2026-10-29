@@ -15,8 +15,8 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/activity"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/config"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/forward"
 )
 
@@ -29,13 +29,13 @@ var (
 func TestAgentsInDesktopJSON(t *testing.T) {
 	s, _ := newTestServer(t)
 	ctx := context.Background()
-	c, err := s.Environments.Get(ctx, "alice")
+	c, err := s.Computers.Get(ctx, "alice")
 	if err != nil {
 		t.Fatal(err)
 	}
 	admin, _ := s.Accounts.Get("admin")
 
-	j := s.environmentJSON(ctx, c, admin)
+	j := s.computerJSON(ctx, c, admin)
 	if j.Agents == nil || len(j.Agents) != 0 {
 		t.Fatalf("no activity: agents = %#v", j.Agents)
 	}
@@ -45,7 +45,7 @@ func TestAgentsInDesktopJSON(t *testing.T) {
 	}
 
 	s.activity.Screen(aliceRef, bot, click)
-	j = s.environmentJSON(ctx, c, admin)
+	j = s.computerJSON(ctx, c, admin)
 	if len(j.Agents) != 1 || j.Agents[0].ID != "tok1" || j.Agents[0].Name != "deploy-bot" || !j.Agents[0].Active {
 		t.Fatalf("agents = %#v", j.Agents)
 	}
@@ -123,8 +123,8 @@ func TestPresenceChangePublishesViewers(t *testing.T) {
 	s.activity.Screen(aliceRef, bot, click)
 	select {
 	case e := <-evs:
-		if e.kind != "viewers" || e.environment != "alice" {
-			t.Fatalf("first event = %s %s", e.kind, e.environment)
+		if e.kind != "viewers" || e.computer != "alice" {
+			t.Fatalf("first event = %s %s", e.kind, e.computer)
 		}
 		b, _ := json.Marshal(e.data)
 		var d struct {
@@ -150,8 +150,8 @@ func TestPresenceChangePublishesViewers(t *testing.T) {
 		case e := <-evs:
 			if e.kind == "activity" {
 				activities++
-				if e.environment != "alice" {
-					t.Errorf("activity environment = %q", e.environment)
+				if e.computer != "alice" {
+					t.Errorf("activity computer = %q", e.computer)
 				}
 				if a, ok := e.data.(activityJSON); !ok || a.Name != "alice" || len(a.Agents) != 1 {
 					t.Errorf("activity data = %#v", e.data)
@@ -177,7 +177,7 @@ func TestPresenceKnob(t *testing.T) {
 		accts, _ := accounts.Load(dir)
 		e := fakeEngine{}
 		s, err := New(Options{Log: log, Eng: e, Accounts: accts, Layout: config.NewLayout(dir), DefaultImage: "img",
-			Environments:     environments.New(e, environments.Config{DataDir: dir, Subnet: "10.0.0.0/16"}, log),
+			Computers:        computers.New(e, computers.Config{DataDir: dir, Subnet: "10.0.0.0/16"}, log),
 			ActivityPresence: c.presence})
 		if err != nil {
 			t.Fatal(err)

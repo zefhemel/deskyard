@@ -1,5 +1,5 @@
 // Fake data for the dev-server mock (mock.ts). Never part of the build.
-import type { Account, ActivityEvent, AgentPresence, AgentSummary, CatalogImage, Conflict, Credential, Environment } from "../api.ts";
+import type { Account, ActivityEvent, AgentPresence, AgentSummary, CatalogImage, Conflict, Credential, Computer } from "../api.ts";
 
 const GB = 1024 ** 3;
 const HOUR = 3600 * 1000;
@@ -27,7 +27,7 @@ function agent(name: string, owner: string, inside: boolean, secsAgo: number): A
   };
 }
 
-function environment(c: Partial<Environment> & { name: string }): Environment {
+function computer(c: Partial<Computer> & { name: string }): Computer {
   return {
     state: "running",
     power: c.state === "stopped" ? "stopped" : "running",
@@ -62,8 +62,8 @@ function environment(c: Partial<Environment> & { name: string }): Environment {
   };
 }
 
-export const environments: Environment[] = [
-  environment({
+export const computers: Computer[] = [
+  computer({
     name: "alice",
     startedAt: iso(3 * DAY),
     imageVersion: "2026.10.15",
@@ -79,7 +79,7 @@ export const environments: Environment[] = [
     terminals: [{ name: "main", clients: 1, command: "bash" }, { name: "terminal-1", clients: 0, command: "htop" }, { name: "build", clients: 2, command: "zsh" }],
     stats: { cpuPercent: 34, memBytes: 1.4 * GB, memLimit: 2 * GB },
   }),
-  environment({
+  computer({
     name: "research",
     startedAt: iso(5 * HOUR),
     settings: { dockerAccess: false, memoryBytes: 0, nanoCpus: 0, vpnConnectionId: null, lanExceptions: [], volumes: [{ name: "photos", path: "/mnt/photos", readOnly: true }] },
@@ -87,24 +87,24 @@ export const environments: Environment[] = [
     terminals: [{ name: "main", clients: 0, command: "bash" }],
     stats: { cpuPercent: 8, memBytes: 0.9 * GB, memLimit: 16 * GB },
   }),
-  environment({
+  computer({
     name: "build-bot",
     startedAt: iso(12 * 60 * 1000),
     settings: { dockerAccess: false, memoryBytes: 4 * GB, nanoCpus: 4e9, vpnConnectionId: null, lanExceptions: [], volumes: [] },
     agents: [agent("a terminal", "", true, 1)],
     stats: { cpuPercent: 91, memBytes: 3.1 * GB, memLimit: 4 * GB },
   }),
-  environment({
+  computer({
     name: "notes",
     startedAt: iso(2 * DAY),
     imageVersion: "2026.10.15",
     updateAvailable: "2026.10.22",
     stats: { cpuPercent: 2, memBytes: 0.7 * GB, memLimit: 16 * GB },
   }),
-  environment({ name: "data-lab", state: "creating", startedAt: "", imageVersion: "" }),
+  computer({ name: "data-lab", state: "creating", startedAt: "", imageVersion: "" }),
   // A saved change that applies on the next start.
-  environment({ name: "scratch", state: "stopped", startedAt: "", imageVersion: "2026.10.15", updateAvailable: "2026.10.22", revision: 3, appliedRevision: 2 }),
-  environment({
+  computer({ name: "scratch", state: "stopped", startedAt: "", imageVersion: "2026.10.15", updateAvailable: "2026.10.22", revision: 3, appliedRevision: 2 }),
+  computer({
     name: "work",
     state: "stopped",
     startedAt: "",
@@ -118,10 +118,10 @@ export const environments: Environment[] = [
     error: "mount source /srv/photos is missing on the engine host",
   }),
   // Defined but without a container: it's built on start.
-  environment({ name: "archive", state: "stopped", power: "stopped", startedAt: "", appliedRevision: 0 }),
+  computer({ name: "archive", state: "stopped", power: "stopped", startedAt: "", appliedRevision: 0 }),
 ];
 
-/** Volumes as in volumes.json; who uses each comes from the environments' grants. */
+/** Volumes as in volumes.json; who uses each comes from the computers' grants. */
 export const volumes: { name: string; created: string; kind: "local" }[] = [
   { name: "photos", created: iso(20 * DAY), kind: "local" },
   { name: "datasets", created: iso(4 * DAY), kind: "local" },
@@ -229,10 +229,10 @@ export const processRows: [number, string, number, number, string, string][] = [
   [1, "root", 0.0, 24576, "3-01:12:46", "/usr/bin/python3 /usr/bin/supervisord -c /etc/supervisor/supervisord.conf"],
 ];
 
-/** Which environments use which image, recomputed from the environments. */
+/** Which computers use which image, recomputed from the computers. */
 export function refreshImages(): void {
   for (const img of images) {
-    const on = environments.filter((c) => c.image === img.ref);
+    const on = computers.filter((c) => c.image === img.ref);
     img.environments = on.map((c) => c.name);
     img.behind = on.filter((c) => c.updateAvailable).map((c) => c.name);
   }
@@ -274,6 +274,6 @@ function summaryOf(a: AgentPresence): AgentSummary {
   return { ...a, now: [], recent: [{ kind: "screen", t: ago(280), action: "screenshot", count: 1 }] };
 }
 
-export function activityOf(c: Environment): ActivityEvent {
+export function activityOf(c: Computer): ActivityEvent {
   return { name: c.name, agents: c.agents.map(summaryOf) };
 }

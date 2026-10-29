@@ -39,8 +39,8 @@ var forwardBackoff = func(n int) time.Duration {
 const forwardLinkWait = 10 * time.Second
 
 // portMap is one mapping. Forward (not reverse): this machine's
-// 127.0.0.1:local is reachable in the environment as localhost:env. Reverse:
-// the environment's localhost:env is reachable here as 127.0.0.1:local.
+// 127.0.0.1:local is reachable in the computer as localhost:env. Reverse:
+// the computer's localhost:env is reachable here as 127.0.0.1:local.
 type portMap struct {
 	reverse    bool
 	local, env int
@@ -68,7 +68,7 @@ func parsePort(s string) (int, bool) {
 
 // parseForwardArgs reads PORT[:PORT] mappings; -R (or --reverse) makes the
 // next one reverse.
-// Limits on one forward command; the supervisor and the environment's helper
+// Limits on one forward command; the supervisor and the computer's helper
 // enforce the same ones.
 const (
 	maxForwardMappings = 256
@@ -105,7 +105,7 @@ func parseForwardArgs(cmd *Command, args []string) ([]*portMap, error) {
 		}
 		for _, o := range maps {
 			if !reverse && !o.reverse && o.env == m.env {
-				return nil, usagef(cmd, "environment port %d is mapped twice", m.env)
+				return nil, usagef(cmd, "computer port %d is mapped twice", m.env)
 			}
 			if reverse && o.reverse && o.local == m.local {
 				return nil, usagef(cmd, "local port %d is mapped twice", m.local)
@@ -118,7 +118,7 @@ func parseForwardArgs(cmd *Command, args []string) ([]*portMap, error) {
 		}
 		if !m.reverse {
 			if ins++; ins > maxForwardIns {
-				return nil, usagef(cmd, "at most %d mappings into the environment (without -R) at once", maxForwardIns)
+				return nil, usagef(cmd, "at most %d mappings into the computer (without -R) at once", maxForwardIns)
 			}
 		}
 	}
@@ -141,7 +141,7 @@ func runForward(a *App, c *call) error {
 		return err
 	}
 	if cl == nil {
-		return usagef(c.cmd, "forward maps ports between this machine and an environment; choose one with -e ENV")
+		return usagef(c.cmd, "forward maps ports between this machine and a computer; choose one with -e ENV")
 	}
 	ctx, stop := signal.NotifyContext(c.ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -166,7 +166,7 @@ func runForward(a *App, c *call) error {
 }
 
 // forwarder keeps the mappings of one `deskyard forward` and its link to the
-// environment, reconnecting as needed.
+// computer, reconnecting as needed.
 type forwarder struct {
 	a    *App
 	cl   *remote.Client
@@ -259,7 +259,7 @@ func lostReason(err error) string {
 	case err == nil, errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, net.ErrClosed):
 		return "connection closed"
 	case remote.IsStatus(err, http.StatusConflict):
-		return "environment stopped"
+		return "computer stopped"
 	case errors.As(err, &ce):
 		if ce.Reason != "" {
 			return ce.Reason
@@ -400,7 +400,7 @@ func (fw *forwarder) waitLink(ctx context.Context, d time.Duration) *forward.Mux
 	}
 }
 
-// listenIn sets up a forward mapping on one link: the environment listens, and
+// listenIn sets up a forward mapping on one link: the computer listens, and
 // each connection there is carried to this machine's port. A refused listen
 // is reported and retried with backoff while the link lasts.
 func (fw *forwarder) listenIn(ctx context.Context, mux *forward.Mux, tr *wsTransport, m *portMap) {
@@ -575,7 +575,7 @@ func (t *wsTransport) Close() error {
 	return t.c.Close(websocket.StatusNormalClosure, "")
 }
 
-// ---- forward-helper (hidden; the supervisor runs it in the environment)
+// ---- forward-helper (hidden; the supervisor runs it in the computer)
 
 func runForwardHelper(a *App, c *call) error {
 	ctx, stop := signal.NotifyContext(c.ctx, os.Interrupt, syscall.SIGTERM)

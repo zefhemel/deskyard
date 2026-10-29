@@ -24,7 +24,7 @@ type App struct {
 	Getenv         func(string) string
 	// ConfigPath overrides servers.json's location (tests).
 	ConfigPath string
-	// Inside reports whether this process runs inside an environment, where
+	// Inside reports whether this process runs inside a computer, where
 	// commands act locally when no remote is chosen.
 	Inside  func() bool
 	HTTP    *http.Client
@@ -48,7 +48,7 @@ func New(version string) *App {
 	return &App{
 		Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr,
 		Getenv:      os.Getenv,
-		Inside:      insideEnvironment,
+		Inside:      insideComputer,
 		Version:     version,
 		Record:      activity.Send,
 		Caller:      defaultCaller(os.Getenv),
@@ -56,9 +56,9 @@ func New(version string) *App {
 	}
 }
 
-// insideEnvironment: environment images create /etc/workspace (see
+// insideComputer: computer images create /etc/workspace (see
 // images/Dockerfile) and run Linux.
-func insideEnvironment() bool {
+func insideComputer() bool {
 	if runtime.GOOS != "linux" {
 		return false
 	}
@@ -136,7 +136,7 @@ func (a *App) run(ctx context.Context, argv []string) error {
 		switch {
 		case arg == "-e" || arg == "--environment":
 			if len(argv) < 2 || argv[1] == "" {
-				return usagef(nil, "%s needs an environment: deskyard -e ENV COMMAND, or -e SERVER/ENV (see `deskyard server list`)", arg)
+				return usagef(nil, "%s needs a computer: deskyard -e ENV COMMAND, or -e SERVER/ENV (see `deskyard server list`)", arg)
 			}
 			if _, _, err := splitSelector(argv[1]); err != nil {
 				return usagef(nil, "%s: %v", arg, err)
@@ -146,7 +146,7 @@ func (a *App) run(ctx context.Context, argv []string) error {
 		case strings.HasPrefix(arg, "-e="), strings.HasPrefix(arg, "--environment="):
 			flag, v, _ := strings.Cut(arg, "=")
 			if v == "" {
-				return usagef(nil, "%s needs an environment: deskyard -e ENV COMMAND, or -e SERVER/ENV (see `deskyard server list`)", flag)
+				return usagef(nil, "%s needs a computer: deskyard -e ENV COMMAND, or -e SERVER/ENV (see `deskyard server list`)", flag)
 			}
 			if _, _, err := splitSelector(v); err != nil {
 				return usagef(nil, "%s: %v", flag, err)
@@ -159,7 +159,7 @@ func (a *App) run(ctx context.Context, argv []string) error {
 			return runVersion(a, nil)
 		case arg == "-d" || arg == "--desktop" || strings.HasPrefix(arg, "--desktop="):
 			name, _, _ := strings.Cut(arg, "=")
-			return usagef(nil, "unknown option %q (choose an environment with -e ENV before the command)", name)
+			return usagef(nil, "unknown option %q (choose a computer with -e ENV before the command)", name)
 		case strings.HasPrefix(arg, "-") && arg != "-":
 			return usagef(nil, "unknown option %q (options for a command go after it, e.g. deskyard exec --json -- ls)", arg)
 		}
@@ -348,12 +348,12 @@ func splitSelector(sel string) (server, env string, err error) {
 		return "", sel, nil
 	}
 	if server == "" || env == "" || strings.Contains(env, "/") {
-		return "", "", fmt.Errorf("%q isn't an environment: write ENV, or SERVER/ENV for another server", sel)
+		return "", "", fmt.Errorf("%q isn't a computer: write ENV, or SERVER/ENV for another server", sel)
 	}
 	return server, env, nil
 }
 
-// selector is the environment chosen with -e, else DESKYARD_ENVIRONMENT.
+// selector is the computer chosen with -e, else DESKYARD_ENVIRONMENT.
 func (a *App) selector() (string, error) {
 	if a.envFlag != "" {
 		return a.envFlag, nil
@@ -365,10 +365,10 @@ func (a *App) selector() (string, error) {
 	return sel, nil
 }
 
-// target picks the server and environment to talk to: -e, else
-// DESKYARD_ENVIRONMENT, else the default server's environment. It returns
-// nil, nil when the command should act locally (inside an environment with
-// no environment chosen).
+// target picks the server and computer to talk to: -e, else
+// DESKYARD_ENVIRONMENT, else the default server's computer. It returns
+// nil, nil when the command should act locally (inside a computer with
+// no computer chosen).
 func (a *App) target() (*remote.Client, error) {
 	sel, err := a.selector()
 	if err != nil {
@@ -378,7 +378,7 @@ func (a *App) target() (*remote.Client, error) {
 }
 
 // resolve finds the client for ENV or SERVER/ENV ("" = the default
-// server's environment).
+// server's computer).
 func (a *App) resolve(sel string) (*remote.Client, error) {
 	name, env, err := splitSelector(sel)
 	if err != nil {
@@ -389,7 +389,7 @@ func (a *App) resolve(sel string) (*remote.Client, error) {
 		return nil, err
 	}
 	if env == "" && srv != nil {
-		env = srv.Environment
+		env = srv.Computer
 	}
 	if sel == "" && env == "" && a.Inside != nil && a.Inside() {
 		return nil, nil
@@ -398,7 +398,7 @@ func (a *App) resolve(sel string) (*remote.Client, error) {
 		return nil, a.noServer()
 	}
 	if env == "" {
-		return nil, fmt.Errorf("no environment chosen on %s: use -e ENV, or choose a default with `deskyard env use ENV`", srv.Name)
+		return nil, fmt.Errorf("no computer chosen on %s: use -e ENV, or choose a default with `deskyard env use ENV`", srv.Name)
 	}
 	c := remote.FromServer(srv, env)
 	c.HTTP = a.HTTP
@@ -460,5 +460,5 @@ func (a *App) envServer() (*remote.Server, error) {
 	if cred == "" {
 		return nil, errors.New("DESKYARD_URL is set but DESKYARD_CREDENTIAL isn't: set it to a client credential (dyc_…) from `deskyard login` or `deskyard auth`")
 	}
-	return &remote.Server{Name: remote.DefaultName(t.Base), URL: t.Base, Credential: cred, Environment: t.Environment}, nil
+	return &remote.Server{Name: remote.DefaultName(t.Base), URL: t.Base, Credential: cred, Computer: t.Computer}, nil
 }

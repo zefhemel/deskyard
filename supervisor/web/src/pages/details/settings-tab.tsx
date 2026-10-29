@@ -1,9 +1,9 @@
 import { VPNFields, VPNStatus } from "../../components/vpn.tsx";
-import { environmentSettingsChanged, saveEnvironmentSettings, exceptionRows, type ExceptionRow } from "../../lib/vpn-form.ts";
+import { computerSettingsChanged, saveComputerSettings, exceptionRows, type ExceptionRow } from "../../lib/vpn-form.ts";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-import { api, type Environment, type Host } from "../../api.ts";
-import { DockerAccessField, cpuOptions, ImagePick, memoryOptions } from "../../components/environment-fields.tsx";
+import { api, type Computer, type Host } from "../../api.ts";
+import { DockerAccessField, cpuOptions, ImagePick, memoryOptions } from "../../components/computer-fields.tsx";
 import { JobProgress, useJob } from "../../components/job.tsx";
 import { notify } from "../../components/toast.tsx";
 import { Button, Check, cx, ErrorText, Field, Note, Seg } from "../../components/ui.tsx";
@@ -12,7 +12,7 @@ import { useFetch } from "../../lib/use-fetch.ts";
 import { VolumeGrantFields } from "../../components/volume-grants.tsx";
 import { UPGRADE_NOTE } from "../../dialogs/upgrade.tsx";
 
-export function SettingsTab({ environment: c }: { environment: Environment }) {
+export function SettingsTab({ computer: c }: { computer: Computer }) {
   const vpn = useFetch(() => api.vpnConnections(), "vpn-connections");
   const [vpnID, setVPNID] = useState(c.settings.vpnConnectionId ?? "");
   const [lan, setLAN] = useState<ExceptionRow[]>(exceptionRows(c.settings.lanExceptions ?? []));
@@ -43,14 +43,14 @@ export function SettingsTab({ environment: c }: { environment: Environment }) {
   const pick = (id: Section) => route(`/environments/${c.name}?tab=settings${id === "general" ? "" : `&section=${id}`}`, true);
   const edited: Record<Section, boolean> = {
     general: image !== c.image || memory !== c.settings.memoryBytes || cpus !== c.settings.nanoCpus || dockerAccess !== (c.settings.dockerAccess ?? false),
-    networking: environmentSettingsChanged(c, { ...draft, image: c.image, memoryBytes: c.settings.memoryBytes, nanoCpus: c.settings.nanoCpus, dockerAccess: c.settings.dockerAccess ?? false, volumes: savedVolumes }),
+    networking: computerSettingsChanged(c, { ...draft, image: c.image, memoryBytes: c.settings.memoryBytes, nanoCpus: c.settings.nanoCpus, dockerAccess: c.settings.dockerAccess ?? false, volumes: savedVolumes }),
     volumes: JSON.stringify(grants) !== JSON.stringify(savedVolumes),
   };
-  const changed = environmentSettingsChanged(c, draft);
+  const changed = computerSettingsChanged(c, draft);
   const save = () => {
     try {
       setVPNError(null);
-      void saveEnvironmentSettings(c, draft, (body) => run.start(() => api.updateSettings(c.name, body)));
+      void saveComputerSettings(c, draft, (body) => run.start(() => api.updateSettings(c.name, body)));
     } catch (e) {
       setVPNError(e instanceof Error ? e.message : String(e));
     }
@@ -154,7 +154,7 @@ export function SettingsTab({ environment: c }: { environment: Environment }) {
             )}
           </div>
         </form>
-        {section === "general" && <MemoryPolicy environment={c} host={host} />}
+        {section === "general" && <MemoryPolicy computer={c} host={host} />}
       </div>
     </div>
   );
@@ -168,7 +168,7 @@ const SECTIONS: { id: Section; label: string }[] = [
 ];
 
 /** This preference saves independently of container settings. */
-function MemoryPolicy({ environment: c, host }: { environment: Environment; host: Host | null }) {
+function MemoryPolicy({ computer: c, host }: { computer: Computer; host: Host | null }) {
   const [enabled, setEnabled] = useState(c.memoryReclaim);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);

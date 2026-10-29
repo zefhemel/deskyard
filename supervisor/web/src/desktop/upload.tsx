@@ -17,7 +17,7 @@ function isFolder(item: DataTransferItem | undefined, file: File): boolean {
 const STALE_MS = 1000;
 
 /**
- * Dropping files anywhere on the desktop page copies them into the environment's
+ * Dropping files anywhere on the desktop page copies them into the computer's
  * ~/Desktop. A drag over the screen fires its events in the iframe's own
  * window, which never reach the page, so the same listeners go on both the
  * page and the frame (re-attached whenever the frame loads). In the frame
@@ -29,18 +29,18 @@ const STALE_MS = 1000;
  * when dragover events stop coming (the pointer left the window, or Escape
  * ended the drag), and on drop or dragend.
  */
-export function DropZone({ environment, frame, frameKey, onDone }: { environment: string; frame: RefObject<HTMLIFrameElement | null>; frameKey: number; onDone?: () => void }) {
+export function DropZone({ computer, frame, frameKey, onDone }: { computer: string; frame: RefObject<HTMLIFrameElement | null>; frameKey: number; onDone?: () => void }) {
   const [over, setOver] = useState(false);
   const lastSeen = useRef(0);
-  const environmentRef = useRef(environment);
-  environmentRef.current = environment;
+  const computerRef = useRef(computer);
+  computerRef.current = computer;
 
   const upload = (dt: DataTransfer | null) => {
     if (!dt) return;
     const items = Array.from(dt.items);
     Array.from(dt.files).forEach((f, i) => {
       if (isFolder(items[i], f)) notify(`${f.name} is a folder: drop files, not folders`, { error: true, ms: 6000 });
-      else void send(environmentRef.current, f).then(onDone);
+      else void send(computerRef.current, f).then(onDone);
     });
   };
 
@@ -138,15 +138,15 @@ export function DropZone({ environment, frame, frameKey, onDone }: { environment
         upload(e.dataTransfer);
       }}
     >
-      Drop to copy into {environment}
+      Drop to copy into {computer}
     </div>
   );
 }
 
-async function send(environment: string, file: File): Promise<void> {
+async function send(computer: string, file: File): Promise<void> {
   const toast = notifyLive(`Copying ${file.name}…`);
   try {
-    const r = await uploadFile(environment, file, (f) => toast.set(`Copying ${file.name}… ${Math.round(f * 100)}%`));
+    const r = await uploadFile(computer, file, (f) => toast.set(`Copying ${file.name}… ${Math.round(f * 100)}%`));
     toast.finish(`Copied ${file.name} to ${r.path.split("/").pop()} (${bytes(r.bytes)})`);
   } catch (e) {
     toast.finish(`${file.name}: ${errorMessage(e)}`, { error: true });

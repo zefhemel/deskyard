@@ -138,7 +138,7 @@ func TestControlledWireGuard(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		config, err := buildRuntime(runtimeInput{Environment: id, Network: network, Directory: dir, Fixture: f, Reserved: reserved, Exceptions: exceptions})
+		config, err := buildRuntime(runtimeInput{Computer: id, Network: network, Directory: dir, Fixture: f, Reserved: reserved, Exceptions: exceptions})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -310,7 +310,7 @@ func TestControlledWireGuard(t *testing.T) {
 	_, _ = rand.Read(otherRandom)
 	otherID := hex.EncodeToString(otherRandom)
 	otherDir := filepath.Join(dir, "other")
-	otherConfig, e := buildRuntime(runtimeInput{Environment: otherID, Network: otherNet, Directory: otherDir, Fixture: f})
+	otherConfig, e := buildRuntime(runtimeInput{Computer: otherID, Network: otherNet, Directory: otherDir, Fixture: f})
 	if e != nil {
 		t.Fatal(e)
 	}

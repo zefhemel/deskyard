@@ -21,7 +21,7 @@ func TestFailedMutationKeepsPublishedAccounts(t *testing.T) {
 				if _, err := s.EnsureAdmin("admin", "password"); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := s.Create(NewAccount{Username: "anna", Password: "password", Grants: []Grant{{Environment: "old", Level: auth.LevelFull}}}); err != nil {
+				if _, err := s.Create(NewAccount{Username: "anna", Password: "password", Grants: []Grant{{Computer: "old", Level: auth.LevelFull}}}); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -41,7 +41,7 @@ func TestFailedMutationKeepsPublishedAccounts(t *testing.T) {
 			case "create":
 				_, err = s.Create(NewAccount{Username: "bob", Password: "password"})
 			case "update":
-				_, err = s.Update("anna", func(a *Account) { a.Admin = true; a.Grants[0].Environment = "changed" })
+				_, err = s.Update("anna", func(a *Account) { a.Admin = true; a.Grants[0].Computer = "changed" })
 			case "delete":
 				err = s.Delete("anna")
 			case "deleteWhere":

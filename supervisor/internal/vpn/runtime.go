@@ -15,8 +15,8 @@ import (
 
 const SetupTimeout = 2 * time.Minute
 
-// Manager owns gateway containers only, one per environment, keyed by its
-// name. The lifecycle caller holds its environment operation lock, stops/recreates namespace consumers, and never replaces a
+// Manager owns gateway containers only, one per computer, keyed by its
+// name. The lifecycle caller holds its computer operation lock, stops/recreates namespace consumers, and never replaces a
 // live dependency merely because Ensure reports a conflicting configuration.
 type Manager struct {
 	eng          engine.Engine
@@ -36,14 +36,14 @@ func NewManager(eng engine.Engine, store *Store, stateDir string) *Manager {
 
 // ForInstance scopes m to the runtimes of supervisor instance: those it makes
 // carry its label, and only those are found, so another supervisor's runtime
-// for an environment of the same name is never touched.
+// for a computer of the same name is never touched.
 func (m *Manager) ForInstance(instance string) *Manager {
 	m.instance = instance
 	return m
 }
 
-// A slow gateway must not prevent five-second observations of other environments.
-func (m *Manager) lockEnvironment(ctx context.Context, id string) (func(), error) {
+// A slow gateway must not prevent five-second observations of other computers.
+func (m *Manager) lockComputer(ctx context.Context, id string) (func(), error) {
 	m.mu.Lock()
 	if m.locks == nil {
 		m.locks = map[string]chan struct{}{}
@@ -84,20 +84,20 @@ func (m *Manager) directory(id string) string {
 	return filepath.Join(m.stateDir, "vpn", "runtime", id)
 }
 func (m *Manager) runtimeLabels(id string) map[string]string {
-	labels := map[string]string{LabelRole: runtimeRole, LabelEnvironment: id}
+	labels := map[string]string{LabelRole: runtimeRole, LabelComputer: id}
 	if m.instance != "" {
 		labels[LabelInstance] = m.instance
 	}
 	return labels
 }
 
-func (m *Manager) Ensure(ctx context.Context, environment, network, connectionID string, exceptions []Exception) (result engine.Container, resultErr error) {
+func (m *Manager) Ensure(ctx context.Context, computer, network, connectionID string, exceptions []Exception) (result engine.Container, resultErr error) {
 	ctx, cancel := context.WithTimeout(ctx, m.setupTimeout)
 	defer cancel()
-	if !validRuntime(environment) {
-		return engine.Container{}, invalid("environment", "invalid identity")
+	if !validRuntime(computer) {
+		return engine.Container{}, invalid("computer", "invalid identity")
 	}
-	unlock, lockErr := m.lockEnvironment(ctx, environment)
+	unlock, lockErr := m.lockComputer(ctx, computer)
 	if lockErr != nil {
 		return engine.Container{}, lockErr
 	}
@@ -142,17 +142,17 @@ func (m *Manager) Ensure(ctx context.Context, environment, network, connectionID
 		}
 	}
 	if !found {
-		return engine.Container{}, errors.New("VPN environment network is unavailable")
+		return engine.Container{}, errors.New("VPN computer network is unavailable")
 	}
 	reserved, err := effectiveNetworkReservations(configured, discovered, exceptions)
 	if err != nil {
 		return engine.Container{}, err
 	}
-	config, err := m.buildRuntime(runtimeInput{Environment: environment, Instance: m.instance, Network: network, Connection: connection, Credentials: credentials, Directory: m.directory(environment), Exceptions: exceptions, Reserved: reserved})
+	config, err := m.buildRuntime(runtimeInput{Computer: computer, Instance: m.instance, Network: network, Connection: connection, Credentials: credentials, Directory: m.directory(computer), Exceptions: exceptions, Reserved: reserved})
 	if err != nil {
 		return engine.Container{}, err
 	}
-	existing, err := m.eng.List(ctx, m.runtimeLabels(environment))
+	existing, err := m.eng.List(ctx, m.runtimeLabels(computer))
 	if err != nil {
 		return engine.Container{}, errors.New("VPN runtime discovery failed")
 	}
@@ -190,7 +190,7 @@ func (m *Manager) Ensure(ctx context.Context, environment, network, connectionID
 	if imageErr != nil {
 		return engine.Container{}, errors.New("VPN pinned runtime image could not be prepared")
 	}
-	if err = prepareRuntime(config, m.directory(environment)); err != nil {
+	if err = prepareRuntime(config, m.directory(computer)); err != nil {
 		return engine.Container{}, errors.New("VPN private runtime configuration could not be prepared")
 	}
 	attempt, err := newID()
@@ -205,7 +205,7 @@ func (m *Manager) Ensure(ctx context.Context, environment, network, connectionID
 		if !success {
 			cleanup, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			if cleanupErr := m.removeRuntimeAttempt(cleanup, environment, config.Spec.Name, attempt); cleanupErr != nil {
+			if cleanupErr := m.removeRuntimeAttempt(cleanup, computer, config.Spec.Name, attempt); cleanupErr != nil {
 				result = engine.Container{}
 				resultErr = errors.Join(resultErr, errors.New("VPN runtime cleanup failed; reconciliation is required"))
 			}
@@ -229,16 +229,16 @@ func (m *Manager) Ensure(ctx context.Context, environment, network, connectionID
 	return c, nil
 }
 
-func (m *Manager) Remove(ctx context.Context, environment string) error {
-	if !validRuntime(environment) {
-		return invalid("environment", "invalid identity")
+func (m *Manager) Remove(ctx context.Context, computer string) error {
+	if !validRuntime(computer) {
+		return invalid("computer", "invalid identity")
 	}
-	unlock, lockErr := m.lockEnvironment(ctx, environment)
+	unlock, lockErr := m.lockComputer(ctx, computer)
 	if lockErr != nil {
 		return lockErr
 	}
 	defer unlock()
-	cs, err := m.eng.List(ctx, m.runtimeLabels(environment))
+	cs, err := m.eng.List(ctx, m.runtimeLabels(computer))
 	if err != nil {
 		return errors.New("VPN runtime discovery failed")
 	}
@@ -248,9 +248,9 @@ func (m *Manager) Remove(ctx context.Context, environment string) error {
 		}
 	}
 	m.mu.Lock()
-	delete(m.observations, environment)
+	delete(m.observations, computer)
 	m.mu.Unlock()
-	if err = os.RemoveAll(m.directory(environment)); err != nil {
+	if err = os.RemoveAll(m.directory(computer)); err != nil {
 		return errors.New("VPN private runtime cleanup failed")
 	}
 	return nil

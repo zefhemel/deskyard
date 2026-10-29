@@ -1,9 +1,9 @@
 import { useEffect, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-import { api, ApiError, type BackupItem, type Environment, type Volume, type VolumeUsage, type VPNReference } from "../api.ts";
+import { api, ApiError, type BackupItem, type Computer, type Volume, type VolumeUsage, type VPNReference } from "../api.ts";
 import { Page, PageHead } from "../components/topbar.tsx";
 import { notify } from "../components/toast.tsx";
-import { EnvironmentChip } from "../components/environment-chip.tsx";
+import { ComputerChip } from "../components/computer-chip.tsx";
 import { Button, Check, Dialog, ErrorText, Field, Meter, Note, Seg, Tag, errorMessage } from "../components/ui.tsx";
 import { bytes } from "../lib/format.ts";
 import { useFetch } from "../lib/use-fetch.ts";
@@ -54,7 +54,7 @@ const NAME = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
 
 function VolumesTab() {
   const list = useFetch(() => api.volumes(), "volumes");
-  const envs = useFetch(() => api.environments(), "environments");
+  const envs = useFetch(() => api.computers(), "environments");
   const backups = useFetch(() => api.backups(), "backups");
   const [creating, setCreating] = useState(false);
   const [removing, setRemoving] = useState<Volume | null>(null);
@@ -79,7 +79,7 @@ function VolumesTab() {
       ) : (
         <div class="grid gap-3">
           {volumes.map((v) => (
-            <VolumeCard key={v.name} volume={v} environments={envs.data?.environments} backup={backups.data?.items.find((i) => i.item === `volume:${v.name}`)} onDelete={() => setRemoving(v)} />
+            <VolumeCard key={v.name} volume={v} computers={envs.data?.environments} backup={backups.data?.items.find((i) => i.item === `volume:${v.name}`)} onDelete={() => setRemoving(v)} />
           ))}
         </div>
       )}
@@ -96,7 +96,7 @@ export function BackupTag({ backup }: { backup: BackupItem | undefined }) {
 }
 
 /** A volume's card; `bare` leaves out its name and actions, for its own page. */
-export function VolumeCard({ volume: v, environments, backup, onDelete, bare }: { volume: Volume; environments: Environment[] | undefined; backup?: BackupItem; onDelete?: () => void; bare?: boolean }) {
+export function VolumeCard({ volume: v, computers, backup, onDelete, bare }: { volume: Volume; computers: Computer[] | undefined; backup?: BackupItem; onDelete?: () => void; bare?: boolean }) {
   // Sizing walks the whole folder, so each card asks for its own.
   const [usage, setUsage] = useState<VolumeUsage | null>(null);
   useEffect(() => {
@@ -143,13 +143,13 @@ export function VolumeCard({ volume: v, environments, backup, onDelete, bare }: 
           {v.environments.length ? (
             <ul class="m-0 flex list-none flex-wrap gap-2 p-0" aria-label={`Environments using ${v.name}`}>
               {v.environments.map((g) => {
-                const c = environments?.find((e) => e.name === g.name);
+                const c = computers?.find((e) => e.name === g.name);
                 return (
                   <li key={g.name}>
-                    <EnvironmentChip name={g.name} environment={c} href={`/environments/${g.name}?tab=settings&section=volumes`}>
+                    <ComputerChip name={g.name} computer={c} href={`/environments/${g.name}?tab=settings&section=volumes`}>
                       <span class="mono text-xs text-muted">{c?.settings.volumes.find((x) => x.name === v.name)?.path ?? ""}</span>
                       <Tag kind={g.readOnly ? "plain" : "ok"}>{g.readOnly ? "Read only" : "Read & write"}</Tag>
-                    </EnvironmentChip>
+                    </ComputerChip>
                   </li>
                 );
               })}
@@ -285,7 +285,7 @@ export function DeleteVolume({ volume: v, onClose, onDeleted }: { volume: Volume
       onClose();
     } catch (e) {
       setError(errorMessage(e));
-      if (e instanceof ApiError && e.status === 409) setRefs(e.environments);
+      if (e instanceof ApiError && e.status === 409) setRefs(e.computers);
       onDeleted();
     } finally {
       setBusy(false);

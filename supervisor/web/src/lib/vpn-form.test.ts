@@ -2,13 +2,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   connectionInput,
-  environmentVPNPatch,
+  computerVPNPatch,
   parseExceptions,
   vpnPresentation,
   connectionUpdate,
   CandidateTestSession,
-  environmentSettingsChanged,
-  saveEnvironmentSettings,
+  computerSettingsChanged,
+  saveComputerSettings,
 } from "./vpn-form.ts";
 
 const form = { name: "Travel", country: "Poland", username: "", password: "" };
@@ -24,9 +24,9 @@ test("blank edit credentials are independently omitted, replacement preserves th
 });
 test("environment patch omits unchanged settings and sends explicit null to disable VPN", () => {
   const original = { vpnConnectionId: "v1", lanExceptions: [] };
-  assert.deepEqual(environmentVPNPatch(original, "v1", []), {});
-  assert.deepEqual(environmentVPNPatch(original, "", []), { vpnConnectionId: null });
-  assert.deepEqual(environmentVPNPatch({ vpnConnectionId: null, lanExceptions: [] }, "v1", []), { vpnConnectionId: "v1" });
+  assert.deepEqual(computerVPNPatch(original, "v1", []), {});
+  assert.deepEqual(computerVPNPatch(original, "", []), { vpnConnectionId: null });
+  assert.deepEqual(computerVPNPatch({ vpnConnectionId: null, lanExceptions: [] }, "v1", []), { vpnConnectionId: "v1" });
 });
 test("LAN rows retain explicit transport and inclusive port limits and normalize private addresses", () => {
   assert.deepEqual(parseExceptions([{ destination: "192.168.2.34/24", protocol: "tcp", ports: "443, 8000-8002" }]), [
@@ -49,8 +49,8 @@ test("invalid LAN addresses, protocols and port ranges never become payloads", (
 });
 test("clearing exceptions sends empty rules but unrelated edits retain them", () => {
   const original = { vpnConnectionId: "v1", lanExceptions: [{ destination: "10.1.1.1", protocol: "tcp" as const, ports: [{ start: 443, end: 443 }] }] };
-  assert.deepEqual(environmentVPNPatch(original, "v1", []), { lanExceptions: [] });
-  assert.deepEqual(environmentVPNPatch(original, "", original.lanExceptions), { vpnConnectionId: null });
+  assert.deepEqual(computerVPNPatch(original, "v1", []), { lanExceptions: [] });
+  assert.deepEqual(computerVPNPatch(original, "", original.lanExceptions), { vpnConnectionId: null });
 });
 const status = {
   connectionId: "v1",
@@ -152,14 +152,14 @@ test("accepted canonical LAN settings clear dirty state and repeated saves make 
     };
     return { job: "settings-1" };
   };
-  assert.equal(environmentSettingsChanged(saved, draft), true);
-  assert.deepEqual(await saveEnvironmentSettings(saved, draft, begin), { job: "settings-1" });
-  assert.equal(environmentSettingsChanged(saved, draft), false);
-  assert.equal(await saveEnvironmentSettings(saved, draft, begin), null);
+  assert.equal(computerSettingsChanged(saved, draft), true);
+  assert.deepEqual(await saveComputerSettings(saved, draft, begin), { job: "settings-1" });
+  assert.equal(computerSettingsChanged(saved, draft), false);
+  assert.equal(await saveComputerSettings(saved, draft, begin), null);
   assert.equal(requests, 1);
   const reformatted = { ...draft, lan: [{ destination: "192.168.1.20/32", protocol: "tcp", ports: "443, 8001-8002,8000,443" }] };
-  assert.equal(environmentSettingsChanged(saved, reformatted), false);
-  assert.equal(await saveEnvironmentSettings(saved, reformatted, begin), null);
+  assert.equal(computerSettingsChanged(saved, reformatted), false);
+  assert.equal(await saveComputerSettings(saved, reformatted, begin), null);
   assert.equal(requests, 1);
 });
 
@@ -178,7 +178,7 @@ test("No VPN ignores hidden LAN drafts without discarding them and omits saved r
   const hiddenRows = [{ destination: "unfinished", protocol: "tcp", ports: "" }];
   const draft = { image: "img", memoryBytes: 0, nanoCpus: 0, vpnConnectionId: "", lan: hiddenRows };
   let requests = 0;
-  await saveEnvironmentSettings(saved, draft, async (body) => {
+  await saveComputerSettings(saved, draft, async (body) => {
     requests++;
     assert.deepEqual(body, { vpnConnectionId: null });
     return { job: "disable" };
@@ -199,10 +199,10 @@ test("pending explicit No VPN describes the network transition without asking fo
 test("Docker permission-only changes save once and can be revoked", async () => {
   const saved = { image: "img", settings: { dockerAccess: false, memoryBytes: 0, nanoCpus: 0, vpnConnectionId: null, lanExceptions: [], volumes: [] } };
   const draft = { image: "img", dockerAccess: true, memoryBytes: 0, nanoCpus: 0, vpnConnectionId: "", lan: [] };
-  assert.equal(environmentSettingsChanged(saved, draft), true);
-  assert.deepEqual(await saveEnvironmentSettings(saved, draft, async (body) => body), { dockerAccess: true });
+  assert.equal(computerSettingsChanged(saved, draft), true);
+  assert.deepEqual(await saveComputerSettings(saved, draft, async (body) => body), { dockerAccess: true });
   const updated = { ...saved, settings: { ...saved.settings, dockerAccess: true } };
-  assert.equal(environmentSettingsChanged(updated, draft), false);
-  assert.equal(await saveEnvironmentSettings(updated, draft, async (body) => body), null);
-  assert.deepEqual(await saveEnvironmentSettings(updated, { ...draft, dockerAccess: false }, async (body) => body), { dockerAccess: false });
+  assert.equal(computerSettingsChanged(updated, draft), false);
+  assert.equal(await saveComputerSettings(updated, draft, async (body) => body), null);
+  assert.deepEqual(await saveComputerSettings(updated, { ...draft, dockerAccess: false }, async (body) => body), { dockerAccess: false });
 });

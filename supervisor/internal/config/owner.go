@@ -20,7 +20,7 @@ const defaultSocket = "/var/run/docker.sock"
 // the supervisor's own files recursively (the top-level JSON stores, secret/,
 // state/, cache/) and the data folder, home/, volume/ and each direct child
 // of home/ and volume/ without recursing: the contents of homes and volumes
-// are left alone, since an environment re-owns its home when it starts.
+// are left alone, since a computer re-owns its home when it starts.
 //
 // All of it goes through an os.Root on the data folder, so no path escapes
 // it, and a home/, volume/, secret/, state/ or cache/ that is not a real

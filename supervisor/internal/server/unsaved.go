@@ -16,7 +16,7 @@ type unsavedRevocation struct {
 	id       string
 	deleted  bool
 	demoted  bool
-	caps     map[string]auth.Level // environment → the most it may still use
+	caps     map[string]auth.Level // computer → the most it may still use
 	epoch    int                   // the least session epoch its cookies may name
 }
 

@@ -26,18 +26,18 @@ func runCp(a *App, c *call) error {
 	src, dst := transfer.ParseEndpoint(c.args[0]), transfer.ParseEndpoint(c.args[1])
 	switch {
 	case src.IsRemote && dst.IsRemote:
-		return usagef(c.cmd, "both sides are on environments; copy to this machine first, then on")
+		return usagef(c.cmd, "both sides are on computers; copy to this machine first, then on")
 	case !src.IsRemote && !dst.IsRemote:
 		if a.envFlag == "" && a.Inside != nil && a.Inside() {
 			if src.Path == "-" || dst.Path == "-" {
-				return usagef(c.cmd, "- needs an environment on the other side")
+				return usagef(c.cmd, "- needs a computer on the other side")
 			}
 			end := a.recordCommand([]string{"cp", c.args[0], c.args[1]})
 			err := transfer.LocalCopy(src.Path, dst.Path)
 			end(0, err)
 			return err
 		}
-		return usagef(c.cmd, "neither side is in an environment: write the environment side as ENV:/path, e.g. deskyard cp ./file alice:/workspace/ (an empty ENV, :/path, means the chosen environment)")
+		return usagef(c.cmd, "neither side is in a computer: write the computer side as ENV:/path, e.g. deskyard cp ./file alice:/workspace/ (an empty ENV, :/path, means the chosen computer)")
 	}
 	rp := src
 	if dst.IsRemote {
@@ -48,7 +48,7 @@ func runCp(a *App, c *call) error {
 		return err
 	}
 	run := func(ctx context.Context, req execws.Request, sio execws.IO) (int, error) {
-		if cl == nil { // this environment, :/path given while inside
+		if cl == nil { // this computer, :/path given while inside
 			code, err := a.localExec(req, sio.Stdin, orDiscard(sio.Stdout), orDiscard(sio.Stderr))
 			return code, err
 		}
@@ -61,7 +61,7 @@ func runCp(a *App, c *call) error {
 }
 
 // cpTarget is the client for cp's ENV:/path side: ENV on the chosen server
-// (-e SERVER/…, else the default one), or for :/path the chosen environment.
+// (-e SERVER/…, else the default one), or for :/path the chosen computer.
 func (a *App) cpTarget(env string) (*remote.Client, error) {
 	if env == "" {
 		return a.target()
@@ -96,7 +96,7 @@ func runBrowserConnect(a *App, c *call) error {
 	}
 	if cl == nil {
 		fmt.Fprintln(a.Stdout, "http://127.0.0.1:9221")
-		fmt.Fprintln(a.Stderr, "You are inside the environment: the shared Chromium's CDP is already at http://127.0.0.1:9221; connect to it directly (connect_over_cdp(\"http://127.0.0.1:9221\")).")
+		fmt.Fprintln(a.Stderr, "You are inside the computer: the shared Chromium's CDP is already at http://127.0.0.1:9221; connect to it directly (connect_over_cdp(\"http://127.0.0.1:9221\")).")
 		return nil
 	}
 	ctx, stop := signal.NotifyContext(c.ctx, os.Interrupt, syscall.SIGTERM)
@@ -160,7 +160,7 @@ func runStatus(a *App, c *call) error {
 			return err
 		}
 		st = status{Name: info.Name, State: info.State, Image: info.Image, ImageTitle: info.ImageTitle, ImageVersion: info.ImageVersion,
-			Screen: screen{info.Screen.Width, info.Screen.Height}, Server: cl.Alias, URL: (&remote.Target{Base: cl.Base, Environment: info.Name}).URL()}
+			Screen: screen{info.Screen.Width, info.Screen.Height}, Server: cl.Alias, URL: (&remote.Target{Base: cl.Base, Computer: info.Name}).URL()}
 	}
 	if c.bool("--json") {
 		enc := json.NewEncoder(a.Stdout)
@@ -177,7 +177,7 @@ func runStatus(a *App, c *call) error {
 		fmt.Fprintf(tw, "screen:\t%dx%d\n", st.Screen.Width, st.Screen.Height)
 	}
 	if st.Local {
-		fmt.Fprintf(tw, "where:\tlocal (inside this environment)\n")
+		fmt.Fprintf(tw, "where:\tlocal (inside this computer)\n")
 	} else {
 		fmt.Fprintf(tw, "server:\t%s\n", st.Server)
 		fmt.Fprintf(tw, "url:\t%s\n", st.URL)

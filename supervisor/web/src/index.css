@@ -32,7 +32,7 @@
     scrollbar-gutter: stable;
     background: var(--color-ground);
   }
-  /* The environment page owns its viewport; no application scrollbar gutter. */
+  /* The computer page owns its viewport; no application scrollbar gutter. */
   html:has([data-desktop-page]) {
     scrollbar-gutter: auto;
   }

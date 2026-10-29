@@ -41,7 +41,7 @@ func TestIdleMemoryReclaim(t *testing.T) {
 				s.viewers.add("bob", v)
 				s.viewers.remove("bob", v)
 			case "operation":
-				if err := s.Environments.Begin("bob", ""); err != nil {
+				if err := s.Computers.Begin("bob", ""); err != nil {
 					t.Fatal(err)
 				}
 			case "agent":
@@ -49,7 +49,7 @@ func TestIdleMemoryReclaim(t *testing.T) {
 			case "inside agent":
 				s.activity.Inside(activity.Ref{Name: "bob", ID: "bob"}, activity.Event{Agent: "terminal", Kind: "cmd-start", ID: "cmd", Cmd: "sleep", T: now})
 			case "opt out":
-				if err := s.Environments.SetMemoryReclaim("bob", false); err != nil {
+				if err := s.Computers.SetMemoryReclaim("bob", false); err != nil {
 					t.Fatal(err)
 				}
 			case "unsupported":
@@ -64,7 +64,7 @@ func TestIdleMemoryReclaim(t *testing.T) {
 				t.Fatalf("calls %d, blocked %v", got, blocked)
 			}
 			if blocker == "operation" {
-				s.Environments.Done("bob")
+				s.Computers.Done("bob")
 				tick()
 				if e.calls.Load() != 1 {
 					t.Fatal("busy consumed attempt")
@@ -72,7 +72,7 @@ func TestIdleMemoryReclaim(t *testing.T) {
 			}
 			if blocker == "viewer" || blocker == "opt out" {
 				if blocker == "opt out" {
-					if err := s.Environments.SetMemoryReclaim("bob", true); err != nil {
+					if err := s.Computers.SetMemoryReclaim("bob", true); err != nil {
 						t.Fatal(err)
 					}
 					tick()

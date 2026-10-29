@@ -69,11 +69,11 @@ func TestPasswordChangeBumpsEpochAndAccess(t *testing.T) {
 	}
 }
 
-func TestRetainDropsGrantsOfUndefinedEnvironments(t *testing.T) {
+func TestRetainDropsGrantsOfUndefinedComputers(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := Load(dir)
 	_, _ = s.EnsureAdmin("admin", "x")
-	if _, err := s.Create(NewAccount{Username: "anna", Password: "pw", Grants: []Grant{{Environment: "alice", Level: auth.LevelFull}, {Environment: "gone", Level: auth.LevelObserve}}}); err != nil {
+	if _, err := s.Create(NewAccount{Username: "anna", Password: "pw", Grants: []Grant{{Computer: "alice", Level: auth.LevelFull}, {Computer: "gone", Level: auth.LevelObserve}}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Retain(func(name string) bool { return name == "alice" }); err != nil {
@@ -98,7 +98,7 @@ func readFile(t *testing.T, dir string) string {
 	return string(b)
 }
 
-func TestLegacyEnvironmentsBecomeFullGrants(t *testing.T) {
+func TestLegacyComputersBecomeFullGrants(t *testing.T) {
 	dir := t.TempDir()
 	legacy := `{"accounts":[{"username":"bob","passwordHash":"x","environments":["alice"],"tokenEpoch":2}]}`
 	if err := os.WriteFile(filepath.Join(dir, "accounts.json"), []byte(legacy), 0o600); err != nil {
@@ -124,14 +124,14 @@ func TestLegacyEnvironmentsBecomeFullGrants(t *testing.T) {
 
 func TestTokenAccountHasNoPassword(t *testing.T) {
 	s, _ := Load(t.TempDir())
-	a, err := s.Create(NewAccount{Username: "sanne", Grants: []Grant{{Environment: "alice", Level: auth.LevelObserve}}})
+	a, err := s.Create(NewAccount{Username: "sanne", Grants: []Grant{{Computer: "alice", Level: auth.LevelObserve}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if a.HasPassword() || a.PasswordHash != "" || a.ID == "" || a.Level("alice") != auth.LevelObserve || a.HasAccess("alice") {
 		t.Fatalf("token account: %+v", a)
 	}
-	if _, err := s.Create(NewAccount{Username: "piet", Grants: []Grant{{Environment: "alice", Level: "admin"}}}); err == nil {
+	if _, err := s.Create(NewAccount{Username: "piet", Grants: []Grant{{Computer: "alice", Level: "admin"}}}); err == nil {
 		t.Fatal("invalid level accepted")
 	}
 }
@@ -222,8 +222,8 @@ func TestSetAccessLevels(t *testing.T) {
 // the new level doesn't allow are closed, not the account's other ones.
 func TestLoweredGrantKeepsSessionEpoch(t *testing.T) {
 	s, _ := Load(t.TempDir())
-	_, _ = s.Create(NewAccount{Username: "bob", Password: "pw", Grants: []Grant{{Environment: "alice", Level: auth.LevelFull}}})
-	a, _ := s.Update("bob", func(a *Account) { a.Grants = append(a.Grants, Grant{Environment: "carol", Level: auth.LevelObserve}) })
+	_, _ = s.Create(NewAccount{Username: "bob", Password: "pw", Grants: []Grant{{Computer: "alice", Level: auth.LevelFull}}})
+	a, _ := s.Update("bob", func(a *Account) { a.Grants = append(a.Grants, Grant{Computer: "carol", Level: auth.LevelObserve}) })
 	if a.SessionEpoch != 0 {
 		t.Fatal("added grant bumped the epoch")
 	}
@@ -257,8 +257,8 @@ func TestBumpStartsFromHeldSessionEpoch(t *testing.T) {
 }
 
 func TestLoweredLevels(t *testing.T) {
-	before := []Grant{{Environment: "alice", Level: auth.LevelFull}, {Environment: "beta", Level: auth.LevelFull}, {Environment: "carol", Level: auth.LevelObserve}}
-	after := []Grant{{Environment: "alice", Level: auth.LevelObserve}, {Environment: "beta", Level: auth.LevelFull}, {Environment: "dora", Level: auth.LevelFull}}
+	before := []Grant{{Computer: "alice", Level: auth.LevelFull}, {Computer: "beta", Level: auth.LevelFull}, {Computer: "carol", Level: auth.LevelObserve}}
+	after := []Grant{{Computer: "alice", Level: auth.LevelObserve}, {Computer: "beta", Level: auth.LevelFull}, {Computer: "dora", Level: auth.LevelFull}}
 	got := Lowered(before, after)
 	if len(got) != 2 || got["alice"] != auth.LevelObserve || got["carol"] != auth.LevelNone {
 		t.Fatalf("lowered %v", got)
@@ -295,7 +295,7 @@ func TestShareAndExpiry(t *testing.T) {
 	s, _ := Load(t.TempDir())
 	past := time.Now().Add(-time.Minute)
 	a, _ := s.Create(NewAccount{Username: "sanne", SharedBy: &Sharer{Username: "zef", ID: "z1"}, Expires: &past,
-		Grants: []Grant{{Environment: "alice", Level: auth.LevelFull}}})
+		Grants: []Grant{{Computer: "alice", Level: auth.LevelFull}}})
 	if !a.IsShare() || !a.Expired(time.Now()) || a.Expired(past.Add(-time.Second)) {
 		t.Fatalf("share: %+v", a)
 	}
@@ -308,7 +308,7 @@ func TestSetAccessLeavesAdminsAndSharesAlone(t *testing.T) {
 	s, _ := Load(t.TempDir())
 	_, _ = s.EnsureAdmin("admin", "x")
 	admin, _ := s.Get("admin")
-	if _, err := s.Create(NewAccount{Username: "sanne", Grants: []Grant{{Environment: "alice", Level: auth.LevelObserve}},
+	if _, err := s.Create(NewAccount{Username: "sanne", Grants: []Grant{{Computer: "alice", Level: auth.LevelObserve}},
 		SharedBy: &Sharer{Username: "admin", ID: admin.ID}}); err != nil {
 		t.Fatal(err)
 	}

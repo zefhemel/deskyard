@@ -20,9 +20,9 @@ import (
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 )
 
@@ -43,7 +43,7 @@ type fakeEngine struct {
 }
 
 var alice = engine.Container{ID: "c1", Name: "deskyard-alice", State: "exited", ImageID: "sha256:abc",
-	Labels: map[string]string{environments.LabelManaged: "true", environments.LabelName: "alice", environments.LabelRevision: "1"}}
+	Labels: map[string]string{computers.LabelManaged: "true", computers.LabelName: "alice", computers.LabelRevision: "1"}}
 
 func (e fakeEngine) all() []engine.Container { return append([]engine.Container{alice}, e.others...) }
 
@@ -92,11 +92,11 @@ func newTestServer(t *testing.T) (*Server, *httptest.Server) {
 }
 
 func newTestServerWith(t *testing.T, e engine.Engine) (*Server, *httptest.Server) {
-	return newTestServerCfg(t, e, environments.Config{Subnet: "10.0.0.0/16"})
+	return newTestServerCfg(t, e, computers.Config{Subnet: "10.0.0.0/16"})
 }
 
 // newTestServerCfg is newTestServerWith with the desktops' config (DataDir is set here).
-func newTestServerCfg(t *testing.T, e engine.Engine, cfg environments.Config) (*Server, *httptest.Server) {
+func newTestServerCfg(t *testing.T, e engine.Engine, cfg computers.Config) (*Server, *httptest.Server) {
 	dir := t.TempDir()
 	cfg.DataDir = dir
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -104,48 +104,48 @@ func newTestServerCfg(t *testing.T, e engine.Engine, cfg environments.Config) (*
 	_, _ = accts.EnsureAdmin("admin", "pw")
 	_, _ = accts.Create(accounts.NewAccount{Username: "anna", Password: "pw"})
 	s, err := New(Options{Log: log, Eng: e, Accounts: accts, Layout: config.NewLayout(dir), DefaultImage: "img",
-		Environments: environments.New(e, cfg, log),
-		UI:           fstest.MapFS{"index.html": {Data: []byte("<!doctype html>ui")}, "assets/a.js": {Data: []byte("js")}}})
+		Computers: computers.New(e, cfg, log),
+		UI:        fstest.MapFS{"index.html": {Data: []byte("<!doctype html>ui")}, "assets/a.js": {Data: []byte("js")}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defineEnvironments(t, s)
+	defineComputers(t, s)
 	ts := httptest.NewServer(s)
 	t.Cleanup(ts.Close)
 	return s, ts
 }
 
-// defineEnvironments defines every environment container the engine has
+// defineComputers defines every computer container the engine has
 // that isn't defined yet, as if the supervisor had created it. An engine
 // that can't list (as some tests make it) defines nothing.
-func defineEnvironments(t *testing.T, s *Server) {
+func defineComputers(t *testing.T, s *Server) {
 	t.Helper()
 	cs, err := s.Eng.List(context.Background(), nil)
 	if err != nil {
 		return
 	}
 	for _, c := range cs {
-		name := c.Labels[environments.LabelName]
-		if !environments.IsEnvironment(c.Labels) || name == "" {
+		name := c.Labels[computers.LabelName]
+		if !computers.IsComputer(c.Labels) || name == "" {
 			continue
 		}
-		if _, ok := s.Environments.Defs.Get(name); ok {
+		if _, ok := s.Computers.Defs.Get(name); ok {
 			continue
 		}
-		revision, _ := strconv.ParseUint(c.Labels[environments.LabelRevision], 10, 64)
-		def := environments.Definition{Name: name, Created: time.Now().UTC(), Revision: max(revision, 1),
-			Image:   environments.ImageRef{Ref: cmp.Or(c.Image, "img"), ID: c.ImageID},
-			Network: environments.Network{Kind: environments.NetworkIsolated}, MemoryReclaim: true, Power: environments.PowerStopped}
+		revision, _ := strconv.ParseUint(c.Labels[computers.LabelRevision], 10, 64)
+		def := computers.Definition{Name: name, Created: time.Now().UTC(), Revision: max(revision, 1),
+			Image:   computers.ImageRef{Ref: cmp.Or(c.Image, "img"), ID: c.ImageID},
+			Network: computers.Network{Kind: computers.NetworkIsolated}, MemoryReclaim: true, Power: computers.PowerStopped}
 		if c.Running() {
-			def.Power = environments.PowerRunning
+			def.Power = computers.PowerRunning
 		}
 		if conn := c.Labels[vpn.LabelConnection]; conn != "" {
-			def.Network = environments.Network{Kind: environments.NetworkVPN, Connection: conn}
+			def.Network = computers.Network{Kind: computers.NetworkVPN, Connection: conn}
 		}
-		if err := s.Environments.Defs.Put(def); err != nil {
+		if err := s.Computers.Defs.Put(def); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.MkdirAll(s.Environments.Layout.HomeOf(name), 0o755); err != nil {
+		if err := os.MkdirAll(s.Computers.Layout.HomeOf(name), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -159,7 +159,7 @@ func restart(t *testing.T, s *Server) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	restarted, err := New(Options{Log: s.Log, Eng: s.Eng, Environments: s.Environments, Accounts: persistedAccounts, Layout: s.Layout, DefaultImage: "img"})
+	restarted, err := New(Options{Log: s.Log, Eng: s.Eng, Computers: s.Computers, Accounts: persistedAccounts, Layout: s.Layout, DefaultImage: "img"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -391,12 +391,12 @@ func TestSignOutEverywhereClosesDesktopStreams(t *testing.T) {
 	admin, _ := s.Accounts.Get("admin")
 	stream, closeStream := context.WithCancel(context.Background())
 	defer closeStream()
-	cn := &conn{username: "admin", accountID: admin.ID, epoch: admin.SessionEpoch, environment: "alice", level: auth.LevelFull, cancel: closeStream}
+	cn := &conn{username: "admin", accountID: admin.ID, epoch: admin.SessionEpoch, computer: "alice", level: auth.LevelFull, cancel: closeStream}
 	s.viewers.add("alice", cn)
 	defer s.viewers.remove("alice", cn)
 	watch, closeWatch := context.WithCancel(context.Background())
 	defer closeWatch()
-	cli := &conn{username: "admin", accountID: admin.ID, epoch: noSession, environment: "alice", level: auth.LevelFull, cancel: closeWatch}
+	cli := &conn{username: "admin", accountID: admin.ID, epoch: noSession, computer: "alice", level: auth.LevelFull, cancel: closeWatch}
 	s.screenWatchers.add("alice", cli)
 	defer s.screenWatchers.remove("alice", cli)
 	if got := status(t, here, "POST", ts.URL+"/api/me/sign-out-everywhere", ts.URL); got != 204 {

@@ -7,8 +7,8 @@ import { AccountsPage } from "./pages/accounts.tsx";
 import { CliLoginPage } from "./pages/cli-login.tsx";
 import { DetailsPage } from "./pages/details.tsx";
 import { DevicesPage } from "./pages/devices.tsx";
-import { EnvironmentsPage } from "./pages/environments.tsx";
-import { EnvironmentPage } from "./desktop/desktop.tsx";
+import { ComputersPage } from "./pages/computers.tsx";
+import { ComputerPage } from "./desktop/desktop.tsx";
 import { VPNPage } from "./pages/vpn.tsx";
 import { ImagesPage } from "./pages/images.tsx";
 import { StoragePage } from "./pages/volumes.tsx";
@@ -18,7 +18,7 @@ import { LoginPage } from "./pages/login.tsx";
 import { NotFound } from "./pages/not-found.tsx";
 
 /**
- * `/<name>/` (one segment with a trailing slash) is an environment's page, with
+ * `/<name>/` (one segment with a trailing slash) is a computer's page, with
  * its desktop and terminal tabs; the UI's own pages have no trailing slash.
  */
 export function desktopName(path: string): string | null {
@@ -61,10 +61,10 @@ function SignedIn() {
   return (
     <LiveProvider me={me}>
       {desktop ? (
-        <EnvironmentPage key={desktop} name={desktop} />
+        <ComputerPage key={desktop} name={desktop} />
       ) : (
         <Router>
-          <Route path="/" component={EnvironmentsPage} />
+          <Route path="/" component={ComputersPage} />
           <Route path="/environments/:name" component={DetailsPage} />
           <Route path="/account" component={DevicesPage} />
           <Route path="/_vpn" component={me.admin ? VPNPage : NotFound} />

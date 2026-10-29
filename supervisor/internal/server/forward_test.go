@@ -21,9 +21,9 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/accounts"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/config"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/forward"
 )
 
@@ -341,12 +341,12 @@ func TestForwardLinkCapPerToken(t *testing.T) {
 		_, _ = accts.EnsureAdmin("admin", "pw")
 		e := &forwardEngine{}
 		s, err := New(Options{Log: log, Eng: e, Accounts: accts, Layout: config.NewLayout(dir), DefaultImage: "img",
-			Environments: environments.New(e, environments.Config{DataDir: dir, Subnet: "10.0.0.0/16"}, log),
-			UI:           fstest.MapFS{"index.html": {Data: []byte("ui")}}})
+			Computers: computers.New(e, computers.Config{DataDir: dir, Subnet: "10.0.0.0/16"}, log),
+			UI:        fstest.MapFS{"index.html": {Data: []byte("ui")}}})
 		if err != nil {
 			t.Fatal(err)
 		}
-		defineEnvironments(t, s)
+		defineComputers(t, s)
 		srv := httptest.NewServer(s)
 		t.Cleanup(srv.Close)
 		// Both of one account and named alike: the cap is per credential.

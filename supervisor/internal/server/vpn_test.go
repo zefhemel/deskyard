@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 	"io"
 	"net/http"
@@ -139,10 +139,10 @@ func TestVPNJobsAreSanitizedAndExposeResults(t *testing.T) {
 }
 func TestVPNRegularUserCanReadSelectedStatus(t *testing.T) {
 	c := alice
-	c.Labels = map[string]string{environments.LabelManaged: "true", environments.LabelName: "bob", environments.LabelRevision: "1", vpn.LabelConnection: "selected-vpn"}
+	c.Labels = map[string]string{computers.LabelManaged: "true", computers.LabelName: "bob", computers.LabelRevision: "1", vpn.LabelConnection: "selected-vpn"}
 	c.ID = "bob"
 	c.Name = "deskyard-bob"
-	c.Env = map[string]string{environments.TokenEnv: "proxy-secret"}
+	c.Env = map[string]string{computers.TokenEnv: "proxy-secret"}
 	s, ts := newTestServerWith(t, fakeEngine{others: []engine.Container{c}})
 	s.Accounts.SetAccess("bob", fullAccess("anna"))
 	user := login(t, ts, "anna")
@@ -161,7 +161,7 @@ func TestVPNFilesystemFailuresDoNotExposePrivateCauses(t *testing.T) {
 	s, ts := newTestServer(t)
 	admin := login(t, ts, "admin")
 	u, p := "private-user", "private-password"
-	c, err := s.Environments.Networking.Connections.Create(vpn.Input{Name: "Europe", Provider: "nordvpn", Country: "Netherlands", Username: &u, Password: &p})
+	c, err := s.Computers.Networking.Connections.Create(vpn.Input{Name: "Europe", Provider: "nordvpn", Country: "Netherlands", Username: &u, Password: &p})
 	if err != nil {
 		t.Fatal(err)
 	}

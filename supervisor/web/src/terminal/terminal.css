@@ -171,11 +171,11 @@
   overflow-x: auto;
   white-space: nowrap;
 }
-/* Below the compact budget the environment bar leaves the flow and shares the
+/* Below the compact budget the computer bar leaves the flow and shares the
    bottom 44px row with the keys, as one sideways-scrolling strip on the left,
    so the terminal keeps its readable row. Below the minimum the instruction
    covers the whole page. */
-[data-desktop-page]:has(.terminal-pane[data-layout="ultra"]:not([hidden])) [data-environment-bar] {
+[data-desktop-page]:has(.terminal-pane[data-layout="ultra"]:not([hidden])) [data-computer-bar] {
   position: absolute;
   bottom: 0;
   left: 0;
@@ -189,7 +189,7 @@
   padding: 0;
   gap: 0;
 }
-[data-desktop-page]:has(.terminal-pane[data-layout="ultra"]:not([hidden])) [data-environment-bar] > * {
+[data-desktop-page]:has(.terminal-pane[data-layout="ultra"]:not([hidden])) [data-computer-bar] > * {
   flex: none;
   order: 0;
   flex-basis: auto;
@@ -202,7 +202,7 @@
 .terminal-pane[data-layout="ultra"] .terminal-warning {
   left: min(50%, 300px);
 }
-[data-desktop-page]:has(.terminal-pane[data-layout="insufficient"]:not([hidden])) [data-environment-bar] {
+[data-desktop-page]:has(.terminal-pane[data-layout="insufficient"]:not([hidden])) [data-computer-bar] {
   display: none;
 }
 /* Keep xterm, transport and its focused textarea alive; cover and clip the
@@ -219,7 +219,7 @@
   line-height: 16px;
 }
 
-/* Resolve environment values independently of the chosen layout tier. */
+/* Resolve computer values independently of the chosen layout tier. */
 .terminal-insets {
   position: absolute;
   visibility: hidden;

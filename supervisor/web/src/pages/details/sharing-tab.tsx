@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import { api, type Environment, type Share } from "../../api.ts";
+import { api, type Computer, type Share } from "../../api.ts";
 import { Avatar } from "../../components/avatar.tsx";
 import { notify, notifyError } from "../../components/toast.tsx";
 import { Button, Tag } from "../../components/ui.tsx";
@@ -12,13 +12,13 @@ import { useFetch } from "../../lib/use-fetch.ts";
 const th = "border-b border-line px-4 py-[11px] text-left text-[13px] font-semibold text-muted";
 const td = "border-b border-hairline px-4 py-[13px] align-middle";
 
-export function SharingTab({ environment: c }: { environment: Environment }) {
+export function SharingTab({ computer: c }: { computer: Computer }) {
   const { me } = useLive();
   const shares = useFetch(() => api.shares(c.name), c.name);
   const [sharing, setSharing] = useState(false);
   const [link, setLink] = useState<{ username: string; link: string } | null>(null);
 
-  // Who is connected follows the environment's viewers.
+  // Who is connected follows the computer's viewers.
   const viewers = c.viewers.join(",");
   useEffect(() => {
     if (shares.data) shares.reload();
@@ -72,7 +72,7 @@ export function SharingTab({ environment: c }: { environment: Environment }) {
       )}
       {sharing && (
         <ShareDialog
-          environment={c.name}
+          computer={c.name}
           onClose={() => setSharing(false)}
           onShared={(username, l) => {
             setSharing(false);

@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 // Dropping files onto a desktop's screen: one POST per file, the raw file as
@@ -70,12 +70,12 @@ rm -f "$part"
 printf %s "$final"`
 
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
-	c, _, ok := s.environmentFor(w, r, auth.View)
+	c, _, ok := s.computerFor(w, r, auth.View)
 	if !ok {
 		return
 	}
 	if !c.Running() {
-		writeError(w, http.StatusConflict, environments.ErrStopped.Error())
+		writeError(w, http.StatusConflict, computers.ErrStopped.Error())
 		return
 	}
 	name := r.URL.Query().Get("name")
@@ -104,9 +104,9 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, errTooBig):
 			writeError(w, http.StatusRequestEntityTooLarge, err.Error())
 		case r.Context().Err() != nil:
-			s.Log.Info("upload abandoned", "environment", c.Name, "name", name)
+			s.Log.Info("upload abandoned", "computer", c.Name, "name", name)
 		case stopped:
-			s.Log.Info("upload stopped: access ended", "environment", c.Name, "name", name)
+			s.Log.Info("upload stopped: access ended", "computer", c.Name, "name", name)
 		default:
 			writeError(w, http.StatusBadGateway, "upload failed: "+err.Error())
 		}
@@ -127,13 +127,13 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "upload failed: "+err.Error())
 		return
 	}
-	s.Log.Info("upload", "environment", c.Name, "name", final.String(), "bytes", n)
+	s.Log.Info("upload", "computer", c.Name, "name", final.String(), "bytes", n)
 	writeJSON(w, http.StatusOK, map[string]any{"path": uploadDir + "/" + final.String(), "bytes": n})
 }
 
 // streamIn copies body into the file at part (creating ~/Desktop first),
 // counting against the cap.
-func (s *Server) streamIn(ctx context.Context, c environments.Environment, part string, body io.Reader) (int64, error) {
+func (s *Server) streamIn(ctx context.Context, c computers.Computer, part string, body io.Reader) (int64, error) {
 	p, err := s.Eng.Exec(ctx, c.Container.ID, engine.ExecSpec{
 		Cmd:  []string{"sh", "-c", `mkdir -p "$1" && cat > "$2"`, "sh", uploadDir, part},
 		User: "user", WorkDir: filesRoot, Env: append([]string{"LC_ALL=C"}, execEnv...), Stdin: true,
@@ -199,17 +199,17 @@ func copyCapped(dst io.Writer, src io.Reader, limit int64) (int64, error) {
 }
 
 // dropPart deletes an unfinished upload, whatever happened to the request.
-func (s *Server) dropPart(c environments.Environment, part string) {
+func (s *Server) dropPart(c computers.Computer, part string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if _, err := s.execOutput(ctx, c, "rm", "-f", "--", part); err != nil {
-		s.Log.Warn("couldn't remove an unfinished upload", "environment", c.Name, "part", part, "err", err)
+		s.Log.Warn("couldn't remove an unfinished upload", "computer", c.Name, "part", part, "err", err)
 	}
 }
 
 // execStream runs cmd as the desktop's user and hands its stdout to fn. An exit
 // code above okUpTo is an error, as is fn's.
-func (s *Server) execStream(ctx context.Context, c environments.Environment, okUpTo int, cmd []string, fn func(stdout io.Reader) error) error {
+func (s *Server) execStream(ctx context.Context, c computers.Computer, okUpTo int, cmd []string, fn func(stdout io.Reader) error) error {
 	result, err := engine.Run(ctx, s.Eng, c.Container.ID, engine.ExecSpec{Cmd: cmd, User: "user", WorkDir: filesRoot, Env: append([]string{"LC_ALL=C"}, execEnv...)}, engine.RunOptions{Consume: fn, StderrLimit: 4096})
 	if err != nil {
 		return err

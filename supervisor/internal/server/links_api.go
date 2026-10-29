@@ -33,29 +33,29 @@ func (s *Server) baseURL(r *http.Request) string {
 }
 
 // canUseCLI reports whether the account may sign in a CLI: an admin, or one
-// with full access to some environment.
+// with full access to some computer.
 func (s *Server) canUseCLI(a accounts.Account) bool {
 	return a.Admin || slices.ContainsFunc(s.definedGrants(a), func(g accounts.Grant) bool { return g.Level == auth.LevelFull })
 }
 
-type environmentLevel struct {
+type computerLevel struct {
 	Name  string     `json:"name"`
 	Level auth.Level `json:"level"`
 }
 
-// cliEnvironments lists what a CLI signed in as a may use: its grants of
-// defined environments, or every environment at full for an admin, sorted
+// cliComputers lists what a CLI signed in as a may use: its grants of
+// defined computers, or every computer at full for an admin, sorted
 // by name.
-func (s *Server) cliEnvironments(a accounts.Account) []environmentLevel {
-	out := []environmentLevel{}
+func (s *Server) cliComputers(a accounts.Account) []computerLevel {
+	out := []computerLevel{}
 	if a.Admin {
-		for _, d := range s.Environments.Defs.List() {
-			out = append(out, environmentLevel{Name: d.Name, Level: auth.LevelFull})
+		for _, d := range s.Computers.Defs.List() {
+			out = append(out, computerLevel{Name: d.Name, Level: auth.LevelFull})
 		}
 		return out
 	}
 	for _, g := range s.definedGrants(a) {
-		out = append(out, environmentLevel{Name: g.Environment, Level: g.Level})
+		out = append(out, computerLevel{Name: g.Computer, Level: g.Level})
 	}
 	return out
 }
@@ -192,13 +192,13 @@ func (s *Server) handleRedeemLink(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Log.Info("signed in with a link", "account", a.Username, "client", req.Client, "ip", clientIP(r))
 	if req.Client == "cli" {
-		writeJSON(w, http.StatusOK, map[string]any{"credential": bearer, "username": a.Username, "environments": s.cliEnvironments(a)})
+		writeJSON(w, http.StatusOK, map[string]any{"credential": bearer, "username": a.Username, "environments": s.cliComputers(a)})
 		return
 	}
 	s.replaceSession(w, r, a)
 	next := "/"
 	if grants := s.definedGrants(a); !a.Admin && len(grants) == 1 {
-		next = "/" + grants[0].Environment + "/"
+		next = "/" + grants[0].Computer + "/"
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"username": a.Username, "next": next})
 }

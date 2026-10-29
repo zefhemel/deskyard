@@ -5,15 +5,15 @@ package auth
 type Action int
 
 const (
-	View           Action = iota // use an environment fully: its desktop, terminal, processes and activity
+	View           Action = iota // use a computer fully: its desktop, terminal, processes and activity
 	Power                        // start, stop, restart
 	Manage                       // create, remove, change settings, upgrade
 	ManageAccounts               // accounts, access, image catalog
-	Share                        // share an environment with a new token account
-	Observe                      // watch an environment's desktop, nothing else
+	Share                        // share a computer with a new token account
+	Observe                      // watch a computer's desktop, nothing else
 )
 
-// Level is how far a grant lets an account use an environment.
+// Level is how far a grant lets an account use a computer.
 type Level string
 
 const (
@@ -32,7 +32,7 @@ type Subject interface {
 	IsShare() bool
 }
 
-// Can decides action on the named environment ("" for none).
+// Can decides action on the named computer ("" for none).
 func Can(a Subject, action Action, name string) bool {
 	if a.IsAdmin() {
 		return true

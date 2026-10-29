@@ -62,7 +62,7 @@ func TestRewriteJSON(t *testing.T) {
 
 func forwarder(t *testing.T) (*clitest.Fake, *httptest.Server) {
 	f := clitest.New(t, "alice")
-	c := &remote.Client{Alias: "alice", Base: f.URL, Environment: "alice", Token: clitest.Credential}
+	c := &remote.Client{Alias: "alice", Base: f.URL, Computer: "alice", Token: clitest.Credential}
 	fw := &Forwarder{Client: c}
 	srv := httptest.NewServer(fw)
 	fw.Local = strings.TrimPrefix(srv.URL, "http://")
@@ -151,7 +151,7 @@ func TestForwarderPassesErrors(t *testing.T) {
 
 func TestProbeAndServe(t *testing.T) {
 	f := clitest.New(t, "alice")
-	c := &remote.Client{Alias: "alice", Base: f.URL, Environment: "alice", Token: clitest.Credential}
+	c := &remote.Client{Alias: "alice", Base: f.URL, Computer: "alice", Token: clitest.Credential}
 	ver, err := Probe(context.Background(), c)
 	if err != nil || ver["Browser"] != "Chrome/141.0" {
 		t.Fatalf("probe: %v %v", ver, err)
@@ -194,7 +194,7 @@ func TestForwarderRefusesDotSegments(t *testing.T) {
 	})
 	up := httptest.NewServer(mux)
 	t.Cleanup(up.Close)
-	fw := &Forwarder{Client: &remote.Client{Base: up.URL, Environment: "alice", Token: clitest.Credential}}
+	fw := &Forwarder{Client: &remote.Client{Base: up.URL, Computer: "alice", Token: clitest.Credential}}
 	srv := httptest.NewServer(fw)
 	t.Cleanup(srv.Close)
 	fw.Local = strings.TrimPrefix(srv.URL, "http://")

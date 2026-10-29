@@ -13,7 +13,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/zefhemel/deskyard/supervisor/internal/auth"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/terminal"
 )
 
@@ -24,7 +24,7 @@ func (s *Server) terminalOrigin(r *http.Request) bool {
 	u, err := url.Parse(r.Header.Get("Origin"))
 	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host == r.Host && u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == "" && !u.ForceQuery && (!(s.Sessions.Secure || r.TLS != nil) || u.Scheme == "https")
 }
-func terminalGeneration(c environments.Environment) string {
+func terminalGeneration(c computers.Computer) string {
 	return c.Container.ID + ":" + c.StartedAt.UTC().Format(time.RFC3339Nano)
 }
 
@@ -43,7 +43,7 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 403, "cross-origin request refused")
 		return
 	}
-	c, _, ok := s.environmentFor(w, r, auth.View)
+	c, _, ok := s.computerFor(w, r, auth.View)
 	if !ok {
 		return
 	}
@@ -56,7 +56,7 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if c.State != "running" {
-		writeError(w, 409, "start the environment before opening a terminal")
+		writeError(w, 409, "start the computer before opening a terminal")
 		return
 	}
 	if c.ImageLabels["deskyard.terminal"] != "tmux-v1" {
@@ -73,26 +73,26 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 	claims := *who.claims
 	ctx, cancel := context.WithDeadline(r.Context(), claims.Expires)
 	defer cancel()
-	live := &terminalConnection{claims: claims, environment: c.ID, session: session, join: !create, cancel: cancel}
+	live := &terminalConnection{claims: claims, computer: c.ID, session: session, join: !create, cancel: cancel}
 	if !s.terminals.add(live) {
 		writeError(w, 429, "terminal login ended or connection limit reached")
 		return
 	}
 	defer s.terminals.remove(live)
-	viewer := &conn{username: claims.Username, accountID: claims.AccountID, epoch: claims.Epoch, environment: c.ID, level: auth.LevelFull, cancel: cancel}
+	viewer := &conn{username: claims.Username, accountID: claims.AccountID, epoch: claims.Epoch, computer: c.ID, level: auth.LevelFull, cancel: cancel}
 	s.viewers.add(c.Name, viewer)
 	s.publishViewers(c.Name, c.ID)
 	defer func() { s.viewers.remove(c.Name, viewer); s.publishViewers(c.Name, c.ID) }()
 	// Recheck after registration: account/lifecycle changes before joining cannot
 	// disappear between the initial permission check and cancellation hooks.
-	current, err := s.Environments.Get(ctx, c.Name)
+	current, err := s.Computers.Get(ctx, c.Name)
 	if !s.terminalAllowed(live) || ctx.Err() != nil {
 		writeError(w, 401, "terminal login ended")
 		return
 	}
-	_, busy := s.Environments.Busy()[c.Name]
+	_, busy := s.Computers.Busy()[c.Name]
 	if busy || err != nil || current.State != "running" || terminalGeneration(current) != terminalGeneration(c) {
-		writeError(w, 409, "environment changed; reopen the terminal")
+		writeError(w, 409, "computer changed; reopen the terminal")
 		return
 	}
 	ws, err := websocket.Accept(w, r, nil)

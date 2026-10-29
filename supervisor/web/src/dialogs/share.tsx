@@ -1,4 +1,4 @@
-// Share an environment (a token account with one grant and a login link), and
+// Share a computer (a token account with one grant and a login link), and
 // the dialog that shows a login link once.
 import { useState } from "preact/hooks";
 import { api, type Level } from "../api.ts";
@@ -64,7 +64,7 @@ export function TimeLimitField({
   );
 }
 
-export function ShareDialog({ environment, onClose, onShared }: { environment: string; onClose: () => void; onShared: (username: string, link: string) => void }) {
+export function ShareDialog({ computer, onClose, onShared }: { computer: string; onClose: () => void; onShared: (username: string, link: string) => void }) {
   const [username, setUsername] = useState("");
   const [level, setLevel] = useState<Level>("full");
   const [limit, setLimit] = useState<TimeLimit>("none");
@@ -80,7 +80,7 @@ export function ShareDialog({ environment, onClose, onShared }: { environment: s
     setBusy(true);
     setError(null);
     try {
-      const r = await api.createShare(environment, { username, level, expires: when ? when.toISOString() : null });
+      const r = await api.createShare(computer, { username, level, expires: when ? when.toISOString() : null });
       onShared(r.share.username, r.link);
     } catch (e) {
       setError(errorMessage(e));
@@ -90,7 +90,7 @@ export function ShareDialog({ environment, onClose, onShared }: { environment: s
 
   return (
     <Dialog
-      title={`Share ${environment}`}
+      title={`Share ${computer}`}
       intro="Makes a link that signs someone in to this environment, once. Send it the way you like."
       onClose={onClose}
       onSubmit={() => void submit()}

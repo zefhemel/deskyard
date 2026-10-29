@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
-	"github.com/zefhemel/deskyard/supervisor/internal/environments"
 )
 
 const idleMemoryDelay = 15 * time.Minute
@@ -41,7 +41,7 @@ func (s *Server) reclaimIdle(ctx context.Context, now time.Time, states map[stri
 	if !s.memoryReclaim.Enabled {
 		return
 	}
-	list, err := s.Environments.List(ctx)
+	list, err := s.Computers.List(ctx)
 	if err != nil {
 		return
 	}
@@ -65,11 +65,11 @@ func (s *Server) reclaimIdle(ctx context.Context, now time.Time, states map[stri
 		if st.attempted || now.Sub(st.since) < idleMemoryDelay {
 			continue
 		}
-		release, err := s.Environments.Reserve(c.Name, "")
+		release, err := s.Computers.Reserve(c.Name, "")
 		if err != nil {
 			continue
 		}
-		s.reclaimIdleEnvironment(ctx, now, c, st)
+		s.reclaimIdleComputer(ctx, now, c, st)
 		release()
 	}
 	for id := range states {
@@ -79,10 +79,10 @@ func (s *Server) reclaimIdle(ctx context.Context, now time.Time, states map[stri
 	}
 }
 
-func (s *Server) reclaimIdleEnvironment(ctx context.Context, now time.Time, c environments.Environment, st *idleMemory) {
+func (s *Server) reclaimIdleComputer(ctx context.Context, now time.Time, c computers.Computer, st *idleMemory) {
 	// Re-read after acquiring the lifecycle reservation, so a completed restart
 	// or newly arrived viewer cannot be hidden by the earlier list snapshot.
-	fresh, err := s.Environments.Get(ctx, c.Name)
+	fresh, err := s.Computers.Get(ctx, c.Name)
 	if err != nil || fresh.ID != c.ID || fresh.Container.ID != st.container || fresh.Container.State != "running" || !fresh.StartedAt.Equal(st.started) {
 		return
 	}
@@ -104,8 +104,8 @@ func (s *Server) reclaimIdleEnvironment(ctx context.Context, now time.Time, c en
 	defer cancel()
 	result, err := reclaimer.ReclaimMemory(request, c.Container.ID)
 	if err != nil {
-		s.Log.Warn("automatic memory reclamation failed", "environment", c.Name, "err", err)
+		s.Log.Warn("automatic memory reclamation failed", "computer", c.Name, "err", err)
 		return
 	}
-	s.Log.Info("reclaimed memory", "environment", c.Name, "trigger", "automatic", "before", result.BeforeBytes, "after", result.AfterBytes, "partial", result.Partial)
+	s.Log.Info("reclaimed memory", "computer", c.Name, "trigger", "automatic", "before", result.BeforeBytes, "after", result.AfterBytes, "partial", result.Partial)
 }

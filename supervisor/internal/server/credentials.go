@@ -35,8 +35,8 @@ type credential struct {
 
 // credentialConn is a live connection made with a credential.
 type credentialConn struct {
-	environment string
-	cancel      context.CancelFunc
+	computer string
+	cancel   context.CancelFunc
 }
 
 type credentialStore struct {
@@ -180,18 +180,18 @@ func (cs *credentialStore) retain(valid func(c credential) bool) error {
 	return cs.remove(func(c credential) bool { return !valid(c) })
 }
 
-// track registers a live connection of credential id to the environment so
+// track registers a live connection of credential id to the computer so
 // revocation closes it; the returned function unregisters it. A connection
-// to no environment ("") closes only when the credential or its account
+// to no computer ("") closes only when the credential or its account
 // goes: it checks its access itself.
-func (cs *credentialStore) track(id, environment string, cancel context.CancelFunc) func() {
+func (cs *credentialStore) track(id, computer string, cancel context.CancelFunc) func() {
 	cs.mu.Lock()
 	cs.nextID++
 	n := cs.nextID
 	if cs.open[id] == nil {
 		cs.open[id] = map[int]credentialConn{}
 	}
-	cs.open[id][n] = credentialConn{environment: environment, cancel: cancel}
+	cs.open[id][n] = credentialConn{computer: computer, cancel: cancel}
 	cs.mu.Unlock()
 	return func() {
 		cs.mu.Lock()
@@ -210,13 +210,13 @@ func (cs *credentialStore) has(id string) bool {
 	return slices.ContainsFunc(cs.all, func(c credential) bool { return c.ID == id })
 }
 
-// closeWhere closes the connections of credential id to the environments fn
+// closeWhere closes the connections of credential id to the computers fn
 // accepts, such as those its account lost access to.
-func (cs *credentialStore) closeWhere(id string, fn func(environment string) bool) {
+func (cs *credentialStore) closeWhere(id string, fn func(computer string) bool) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	for n, conn := range cs.open[id] {
-		if fn(conn.environment) {
+		if fn(conn.computer) {
 			conn.cancel()
 			delete(cs.open[id], n)
 		}

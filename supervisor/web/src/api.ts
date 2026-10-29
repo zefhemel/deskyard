@@ -5,18 +5,18 @@ export interface Me {
   admin: boolean;
   /** token: an account without a password, which signs in through login links. */
   kind: "password" | "token";
-  /** Made by Share on an environment; shares can't share. */
+  /** Made by Share on a computer; shares can't share. */
   share: boolean;
 }
 
-/** What an account may do on an environment: everything, or watch its desktop. Admins are full everywhere. */
+/** What an account may do on a computer: everything, or watch its desktop. Admins are full everywhere. */
 export type Level = "full" | "observe";
-/** An account's grant of an environment. */
+/** An account's grant of a computer. */
 export interface Grant {
   environment: string;
   level: Level;
 }
-/** An environment's grant to an account. */
+/** A computer's grant to an account. */
 export interface AccessGrant {
   username: string;
   level: Level;
@@ -37,7 +37,7 @@ export interface Host {
   memUsed: number;
 }
 
-export type EnvironmentState = "running" | "stopped" | "starting" | "creating" | "upgrading" | "removing";
+export type ComputerState = "running" | "stopped" | "starting" | "creating" | "upgrading" | "removing";
 
 export interface Stats {
   cpuPercent: number;
@@ -46,13 +46,13 @@ export interface Stats {
 }
 
 
-/** A volume granted to an environment, mounted at path (by default /share/<name>). */
+/** A volume granted to a computer, mounted at path (by default /share/<name>). */
 export interface VolumeGrant {
   name: string;
   path: string;
   readOnly: boolean;
 }
-/** A named volume; environments are those whose definitions grant it. */
+/** A named volume; computers are those whose definitions grant it. */
 export interface Volume {
   name: string;
   created: string;
@@ -76,7 +76,7 @@ export interface VPNConnection {
   id: string; name: string; provider: "nordvpn"; country: string;
   revision: number; credentialsConfigured: boolean;
 }
-/** An environment using a connection; its id is its name. */
+/** A computer using a connection; its id is its name. */
 export interface SavedVPNConnection extends VPNConnection { environments: VPNReference[] }
 export interface VPNInput { name: string; provider: "nordvpn"; country: string; username?: string; password?: string }
 export interface VPNUpdate extends VPNInput { expectedRevision: number; affectedEnvironments: string[]; confirmRestart: boolean }
@@ -88,19 +88,19 @@ export interface VPNStatus {
   desiredRevision: number; appliedRevision: number; idle: boolean;
 }
 export interface VPNRollout { connection: VPNConnection; environments: (VPNReference & {error?: string})[] }
-export interface EnvironmentVPNSettings { vpnConnectionId: string | null; lanExceptions: LANException[] }
-export interface SettingsPatch extends Partial<EnvironmentVPNSettings> {
+export interface ComputerVPNSettings { vpnConnectionId: string | null; lanExceptions: LANException[] }
+export interface SettingsPatch extends Partial<ComputerVPNSettings> {
   image?: string; memoryBytes?: number; nanoCpus?: number; dockerAccess?: boolean; volumes?: VolumeGrant[];
 }
 
-export interface Settings extends EnvironmentVPNSettings {
+export interface Settings extends ComputerVPNSettings {
   dockerAccess: boolean;
   volumes: VolumeGrant[];
   memoryBytes: number;
   nanoCpus: number;
 }
 
-/** A shared terminal session (a tmux session) in a running environment. */
+/** A shared terminal session (a tmux session) in a running computer. */
 export interface TerminalSession {
   name: string;
   /** Attached clients: native terminals, the CLI and browsers, this page included. */
@@ -109,7 +109,7 @@ export interface TerminalSession {
   command: string;
 }
 
-export interface Environment {
+export interface Computer {
   /** Image supports named shared terminals. */
   terminal: boolean;
   /** Its shared terminal sessions: empty when stopped or without terminal support. */
@@ -118,10 +118,10 @@ export interface Environment {
   memoryReclaim: boolean;
   /** Its home and local volumes are served over WebDAV at /<name>/dav/. */
   webdav: boolean;
-  /** The environment's identity everywhere: there is no separate ID. */
+  /** The computer's identity everywhere: there is no separate ID. */
   name: string;
   /** Observed; power is the desired state. */
-  state: EnvironmentState;
+  state: ComputerState;
   power: "running" | "stopped";
   /** The definition's revision, counting container-affecting changes. */
   revision: number;
@@ -142,7 +142,7 @@ export interface Environment {
   updateAvailable: string | null;
   settings: Settings;
   vpn: VPNStatus;
-  /** The signed-in account's level here. An observer's environment has its configuration blanked. */
+  /** The signed-in account's level here. An observer's computer has its configuration blanked. */
   level: Level;
   /** The regular accounts granted it (admins only; shares are listed by its shares). */
   access: AccessGrant[];
@@ -151,9 +151,9 @@ export interface Environment {
   observers: string[];
   /** Viewers with a mic on (per stream; gone when the stream closes). */
   mics: string[];
-  /** Port mappings agents have set up with `deskyard forward`; port is the environment's. */
+  /** Port mappings agents have set up with `deskyard forward`; port is the computer's. */
   forwards: Forward[];
-  /** Agents at work in the environment: from outside (a CLI credential) or inside (a program). */
+  /** Agents at work in the computer: from outside (a CLI credential) or inside (a program). */
   agents: AgentPresence[];
   stats: Stats | null;
 }
@@ -170,8 +170,8 @@ export interface Conflict {
   message: string;
 }
 
-export interface EnvironmentList {
-  environments: Environment[];
+export interface ComputerList {
+  environments: Computer[];
   conflicts: Conflict[];
 }
 
@@ -195,7 +195,7 @@ export interface NameCheck {
   ok: boolean;
   error?: string;
   folderExists: boolean;
-  /** The folder the environment's files would live in (when the name is valid). */
+  /** The folder the computer's files would live in (when the name is valid). */
   folder?: string;
 }
 
@@ -231,7 +231,7 @@ export interface AccountChange {
   expires?: string | null;
 }
 
-/** A token account with one grant, made by Share on an environment. */
+/** A token account with one grant, made by Share on a computer. */
 export interface Share {
   username: string;
   environment: string;
@@ -244,7 +244,7 @@ export interface Share {
   /** The last redemption, CLI request or browser request (since the server started). */
   lastUsed: string | null;
   linkPending: boolean;
-  /** It has a desktop, terminal or CLI connection open on the environment now. */
+  /** It has a desktop, terminal or CLI connection open on the computer now. */
   connected: boolean;
 }
 
@@ -319,7 +319,7 @@ export interface StatsEvent extends Stats {
 export interface Forward {
   /** The name of the client credential that set it up (its wire name is token). */
   token: string;
-  /** in: this machine's port appears in the environment; out: the environment's port appears there. */
+  /** in: this machine's port appears in the computer; out: the computer's port appears there. */
   direction: "in" | "out";
   port: number;
 }
@@ -332,11 +332,11 @@ export interface ViewersEvent {
   agents: AgentPresence[];
 }
 
-// Agent activity: who is at work in an environment and what they did in the last 15 minutes.
+// Agent activity: who is at work in a computer and what they did in the last 15 minutes.
 export interface AgentPresence {
   id: string;
   name: string;
-  /** The credential's account; empty for agents inside the environment. */
+  /** The credential's account; empty for agents inside the computer. */
   owner: string;
   inside: boolean;
   color: string;
@@ -393,8 +393,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
-    /** The environments a VPN or volume conflict names. */
-    readonly environments: VPNReference[] = [],
+    /** The computers a VPN or volume conflict names. */
+    readonly computers: VPNReference[] = [],
     /** What a storage conflict is: needsKey, wrongKey, inUse or busy. */
     readonly code = "",
   ) {
@@ -429,19 +429,19 @@ async function request<T>(method: string, path: string, body?: unknown, signal?:
   }
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
-    let environments: VPNReference[] = [];
+    let computers: VPNReference[] = [];
     let code = "";
     try {
       const data: unknown = await res.json();
       if (data && typeof data === "object") {
         if ("error" in data && typeof data.error === "string") message = data.error;
-        if ("environments" in data && Array.isArray(data.environments)) environments = data.environments as VPNReference[];
+        if ("environments" in data && Array.isArray(data.environments)) computers = data.environments as VPNReference[];
         if ("code" in data && typeof data.code === "string") code = data.code;
       }
     } catch {
       // not JSON
     }
-    throw new ApiError(res.status, message, environments, code);
+    throw new ApiError(res.status, message, computers, code);
   }
   if (res.status === 204) return undefined as T;
   const text = await res.text();
@@ -530,7 +530,7 @@ export interface RunState {
   warnings?: string[];
 }
 export type ItemKind = "environment" | "volume";
-/** An environment's or volume's backups: its policy (null without one), last run and what it's doing. */
+/** A computer's or volume's backups: its policy (null without one), last run and what it's doing. */
 export interface BackupItem {
   item: string;
   policy: Policy | null;
@@ -610,21 +610,21 @@ export const api = {
   removeWebDAVPassword: () => request<void>("DELETE", "/api/me/webdav-password"),
   host: () => request<Host>("GET", "/api/host"),
 
-  environments: () => request<EnvironmentList>("GET", "/api/environments"),
-  environment: (name: string) => request<Environment>("GET", c(name)),
+  computers: () => request<ComputerList>("GET", "/api/environments"),
+  computer: (name: string) => request<Computer>("GET", c(name)),
   terminalSessions: (name: string, signal?: AbortSignal) =>
     request<{ sessions: TerminalSession[] }>("GET", `${c(name)}/terminal/sessions`, undefined, signal),
   /** Starts the next free terminal-N, detached; the tab then opens it. */
   createTerminal: (name: string) => request<{ name: string }>("POST", `${c(name)}/terminal/sessions`),
   /** Ends a session for everyone attached to it. */
   endTerminal: (name: string, session: string) => request<void>("DELETE", `${c(name)}/terminal/sessions/${enc(session)}`),
-  createEnvironment: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: AccessGrant[]; dockerAccess: boolean; volumes?: VolumeGrant[] } & EnvironmentVPNSettings) =>
+  createComputer: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: AccessGrant[]; dockerAccess: boolean; volumes?: VolumeGrant[] } & ComputerVPNSettings) =>
     request<JobRef>("POST", "/api/environments", body),
   power: (name: string, action: "start" | "stop" | "restart") => request<void>("POST", `${c(name)}/${action}`),
   setMemoryPolicy: (name: string, memoryReclaim: boolean) => request<void>("PUT", `${c(name)}/memory-policy`, { memoryReclaim }),
   setWebDAV: (name: string, webdav: boolean) => request<void>("PUT", `${c(name)}/webdav`, { webdav }),
   reclaimMemory: (name: string) => request<MemoryReclaim>("POST", `${c(name)}/reclaim-memory`),
-  removeEnvironment: (name: string, files: boolean) => request<void>("DELETE", c(name) + (files ? "?files=1" : "")),
+  removeComputer: (name: string, files: boolean) => request<void>("DELETE", c(name) + (files ? "?files=1" : "")),
   updateSettings: (name: string, body: SettingsPatch) =>
     request<JobRef>("PATCH", c(name), body),
   setAccess: (name: string, grants: AccessGrant[]) => request<void>("PUT", `${c(name)}/access`, { grants }),
@@ -719,11 +719,11 @@ export const api = {
   cancelJob: (id: string) => request<void>("POST", `/api/jobs/${enc(id)}/cancel`),
 };
 
-/** Uploads one file into the environment's ~/Desktop, reporting progress as 0..1. */
-export function uploadFile(environment: string, file: File, onProgress: (fraction: number) => void): Promise<Uploaded> {
+/** Uploads one file into the computer's ~/Desktop, reporting progress as 0..1. */
+export function uploadFile(computer: string, file: File, onProgress: (fraction: number) => void): Promise<Uploaded> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${c(environment)}/upload?name=${enc(file.name)}`);
+    xhr.open("POST", `${c(computer)}/upload?name=${enc(file.name)}`);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total);
     };
