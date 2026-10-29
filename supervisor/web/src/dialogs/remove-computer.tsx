@@ -31,7 +31,7 @@ export function RemoveDialog({ computer: c, onClose, onRemoved }: { computer: Co
       title={`Remove ${c.name}?`}
       intro={
         <>
-          The environment is stopped and removed, with its container, access grants and shares. {files ? "Its files in " : "Its files stay in "}
+          The computer is stopped and removed, with its container, access grants and shares. {files ? "Its files in " : "Its files stay in "}
           <span class="mono">{c.folder}</span>
           {size && ` (${size.complete ? "" : "at least "}${bytes(size.bytes)})`}
           {files ? " are deleted too." : "."}
@@ -51,7 +51,7 @@ export function RemoveDialog({ computer: c, onClose, onRemoved }: { computer: Co
       }
     >
       <Check id="rm-files" checked={files} onChange={setFiles} title="Also delete its files">
-        Everything installed and saved in the environment, including browser logins. This can't be undone.
+        Everything installed and saved in the computer, including browser logins. This can't be undone.
       </Check>
       <ErrorText error={error} />
     </Dialog>

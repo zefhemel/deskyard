@@ -41,10 +41,10 @@ def test_host_volume_ui(supervisor, admin, desktop, name, tmp_path):
         page.get_by_label("Path", exact=True).fill(str(source))
         page.get_by_role("button", name="Create volume").last.click()
         expect(page.get_by_role("heading", name=volume)).to_be_visible()
-        page.goto(f"{supervisor.base}/environments/{name}?tab=settings&section=volumes")
+        page.goto(f"{supervisor.base}/computers/{name}?tab=settings&section=volumes")
         page.get_by_role("button", name="Add volume").click()
         page.get_by_label("Volume", exact=True).select_option(volume)
-        page.get_by_label("Path in the environment", exact=True).fill("/mnt/external")
+        page.get_by_label("Path in the computer", exact=True).fill("/mnt/external")
         page.get_by_role("checkbox", name="Read only", exact=False).check()
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         with page.expect_response(lambda r: r.request.method == "PATCH" and r.url.endswith(f"/api/computers/{name}")) as sent:

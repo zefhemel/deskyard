@@ -35,7 +35,7 @@ test("local and discovered followers share one transport and terminal state", ()
   assert.deepEqual(opened, ["one"]);
 });
 
-test("old completion cannot replace a newer environment operation", () => {
+test("old completion cannot replace a newer computer operation", () => {
   const { tracker, send } = setup();
   tracker.track("old", undefined, "alice");
   tracker.track("new", undefined, "alice");

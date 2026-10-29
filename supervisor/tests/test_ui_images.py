@@ -52,7 +52,7 @@ def mock_page(p, base, path):
 def test_settings_reattaches_visible_image_pull_progress(mock_ui, width, outcome):
     """A settings download stays visible after reload and switching tabs."""
     with sync_playwright() as p:
-        browser, page = mock_page(p, mock_ui, "/environments/alice?tab=settings")
+        browser, page = mock_page(p, mock_ui, "/computers/alice?tab=settings")
         page.set_viewport_size({"width": width, "height": 900})
         desktops = page.request.get(mock_ui + "/api/computers").json()
         alice = next(c for c in desktops["computers"] if c["name"] == "alice")
@@ -72,7 +72,7 @@ def test_settings_reattaches_visible_image_pull_progress(mock_ui, width, outcome
         })();""")
         page.reload()
         page.wait_for_function("window.testJobs.length === 1")
-        expect(page.get_by_role("region", name="Environment operation", exact=True)).to_contain_text("Starting")
+        expect(page.get_by_role("region", name="Computer operation", exact=True)).to_contain_text("Starting")
         expect(page.get_by_role("radio").first).to_be_disabled()
 
         def update(status, message, progress):
@@ -80,7 +80,7 @@ def test_settings_reattaches_visible_image_pull_progress(mock_ui, width, outcome
                           {"status": status, "message": message, "progress": progress, "computer": "alice"})
 
         update("running", "Pulling image, 120 of 820 MB", 0.146)
-        panel = page.get_by_role("region", name="Environment operation", exact=True)
+        panel = page.get_by_role("region", name="Computer operation", exact=True)
         expect(panel).to_be_visible()
         expect(panel).to_contain_text("120 of 820 MB")
         expect(panel).to_contain_text("15%")
@@ -108,14 +108,14 @@ def test_settings_reattaches_visible_image_pull_progress(mock_ui, width, outcome
 
 def test_settings_save_brings_pending_progress_into_view(mock_ui):
     with sync_playwright() as p:
-        browser, page = mock_page(p, mock_ui, "/environments/alice?tab=settings")
+        browser, page = mock_page(p, mock_ui, "/computers/alice?tab=settings")
         page.set_viewport_size({"width": 390, "height": 900})
         pending = []
         page.route("**/api/computers/alice", lambda route: pending.append(route)
                    if route.request.method == "PATCH" else route.continue_())
         page.get_by_role("radio", name="Python lab", exact=False).check()
         page.locator('form button[type="submit"]').click()
-        panel = page.get_by_role("region", name="Environment operation", exact=True)
+        panel = page.get_by_role("region", name="Computer operation", exact=True)
         expect(panel).to_contain_text("Starting")
         expect(panel).to_be_in_viewport()
         assert len(pending) == 1
@@ -235,7 +235,7 @@ def test_tile_screen_opens_overview_and_button_opens_desktop(mock_ui, width):
         browser, page = mock_page(p, mock_ui, "/")
         page.set_viewport_size({"width": width, "height": 900})
         page.get_by_title("alice's overview").click()
-        page.wait_for_url(mock_ui + "/environments/alice")
+        page.wait_for_url(mock_ui + "/computers/alice")
         page.go_back()
         page.get_by_title("Open alice's desktop").click()
         page.wait_for_url(mock_ui + "/alice/")
@@ -248,8 +248,8 @@ def test_volumes_page_shows_size_and_tiles_link_volumes(mock_ui):
         card = page.locator("#volume-photos")
         expect(card.get_by_label("Size")).to_contain_text("19 GB")
         expect(card.get_by_label("Size")).to_contain_text("212 GB free of 460 GB")
-        users = card.get_by_role("list", name="Environments using photos")
-        expect(users.get_by_role("link", name=re.compile(r"\balice.*share.photos.*Read & write"))).to_have_attribute("href", "/environments/alice?tab=settings&section=volumes")
+        users = card.get_by_role("list", name="Computers using photos")
+        expect(users.get_by_role("link", name=re.compile(r"\balice.*share.photos.*Read & write"))).to_have_attribute("href", "/computers/alice?tab=settings&section=volumes")
         expect(users.get_by_role("link", name=re.compile(r"\bresearch.*mnt.photos.*Read only"))).to_be_visible()
         page.goto(mock_ui + "/")
         page.get_by_role("article").filter(has_text="alice").get_by_label("Volumes").get_by_role("link", name="photos").click()
@@ -260,25 +260,25 @@ def test_volumes_page_shows_size_and_tiles_link_volumes(mock_ui):
 @pytest.mark.parametrize("width", [390, 1280])
 def test_settings_sections_keep_unsaved_changes(mock_ui, width):
     with sync_playwright() as p:
-        browser, page = mock_page(p, mock_ui, "/environments/alice?tab=settings")
+        browser, page = mock_page(p, mock_ui, "/computers/alice?tab=settings")
         page.set_viewport_size({"width": width, "height": 900})
         nav = page.get_by_role("navigation", name="Settings sections")
         expect(nav.get_by_role("button", name="General")).to_have_attribute("aria-current", "page")
         nav.get_by_role("button", name="Volumes").click()
-        page.wait_for_url("**/environments/alice?tab=settings&section=volumes")
-        page.get_by_label("Path in the environment").fill("/srv/photos")
+        page.wait_for_url("**/computers/alice?tab=settings&section=volumes")
+        page.get_by_label("Path in the computer").fill("/srv/photos")
         nav.get_by_role("button", name="General").click()
         expect(nav.get_by_role("button", name="Volumes").get_by_title("Unsaved changes")).to_be_visible()
         nav.get_by_role("button", name="Volumes").click()
-        expect(page.get_by_label("Path in the environment")).to_have_value("/srv/photos")
+        expect(page.get_by_label("Path in the computer")).to_have_value("/srv/photos")
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         browser.close()
 
 
-def test_environment_bar_shares(mock_ui):
+def test_computer_bar_shares(mock_ui):
     with sync_playwright() as p:
         browser, page = mock_page(p, mock_ui, "/alice/")
-        bar = page.locator("[data-environment-bar]")
+        bar = page.locator("[data-computer-bar]")
         bar.get_by_role("button", name="Share", exact=True).click()
         dialog = page.get_by_role("dialog").filter(has=page.get_by_role("heading", name="Share alice"))
         dialog.get_by_label("Name").fill("guest")
@@ -309,7 +309,7 @@ def test_viewers_panel_revokes_a_share(mock_ui):
 def test_access_tab_has_accounts_and_shares(mock_ui):
     with sync_playwright() as p:
         # An old Sharing link opens Access, which now holds both.
-        browser, page = mock_page(p, mock_ui, "/environments/alice?tab=sharing")
+        browser, page = mock_page(p, mock_ui, "/computers/alice?tab=sharing")
         expect(page.get_by_role("heading", name="Accounts")).to_be_visible()
         expect(page.get_by_role("heading", name="Shares")).to_be_visible()
         expect(page.get_by_role("button", name="Share", exact=True)).to_be_visible()

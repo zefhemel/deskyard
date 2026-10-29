@@ -18,10 +18,10 @@ export function ComputersPage() {
 
   return (
     <Page>
-      <PageHead title="Environments" sub={me.admin ? undefined : "The environments you can use. Ask an admin for more."}>
+      <PageHead title="Computers" sub={me.admin ? undefined : "The computers you can use. Ask an admin for more."}>
         {me.admin && (
           <Button variant="primary" onClick={() => setCreating(true)}>
-            New environment
+            New computer
           </Button>
         )}
       </PageHead>
@@ -53,7 +53,7 @@ function Conflicts({ conflicts }: { conflicts: Conflict[] }) {
         {conflicts.length === 1 ? "A container conflict" : `${conflicts.length} container conflicts`}
       </h2>
       <p class="mb-2 text-muted">
-        Deskyard leaves these containers alone until they are removed with the container engine. A duplicate blocks its environment's start, stop
+        Deskyard leaves these containers alone until they are removed with the container engine. A duplicate blocks its computer's start, stop
         and settings.
       </p>
       <ul class="m-0 flex list-none flex-col gap-1 p-0">
@@ -72,13 +72,13 @@ function Empty({ admin, onCreate }: { admin: boolean; onCreate: () => void }) {
     <div class="rounded-[10px] border border-dashed border-line px-6 py-12 text-center text-muted">
       {admin ? (
         <>
-          <p class="mb-4">No environments yet.</p>
+          <p class="mb-4">No computers yet.</p>
           <Button variant="primary" onClick={onCreate}>
-            New environment
+            New computer
           </Button>
         </>
       ) : (
-        <p>You can't use any environments yet. Ask an admin for access.</p>
+        <p>You can't use any computers yet. Ask an admin for access.</p>
       )}
     </div>
   );

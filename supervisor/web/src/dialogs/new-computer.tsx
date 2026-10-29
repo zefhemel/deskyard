@@ -85,7 +85,7 @@ export function NewComputerDialog({ onClose }: { onClose: () => void }) {
             and its files in <span class="mono">{folder}</span>
           </>
         )}
-        {check.folderExists && <span class="text-busy">. That folder already exists: the environment will reuse the existing folder.</span>}
+        {check.folderExists && <span class="text-busy">. That folder already exists: the computer will reuse the existing folder.</span>}
       </>
     );
   }
@@ -106,7 +106,7 @@ export function NewComputerDialog({ onClose }: { onClose: () => void }) {
   return (
     <>
       <Dialog
-        title="New environment"
+        title="New computer"
         onClose={onClose}
         onSubmit={submit}
         footer={
@@ -115,7 +115,7 @@ export function NewComputerDialog({ onClose }: { onClose: () => void }) {
               {run.running ? "Close" : "Cancel"}
             </Button>
             <Button type="submit" variant="primary" disabled={!ready}>
-              {run.running ? "Creating…" : "Create environment"}
+              {run.running ? "Creating…" : "Create computer"}
             </Button>
           </>
         }

@@ -6,7 +6,7 @@ import { notice, selfFirst } from "./format.ts";
 type Seen = Pick<Computer, "state" | "revision" | "appliedRevision" | "error" | "conflict">;
 const applied: Seen = { state: "running", revision: 3, appliedRevision: 3, error: "", conflict: "" };
 
-test("an applied environment has nothing to say", () => {
+test("an applied computer has nothing to say", () => {
   assert.equal(notice(applied), null);
   // Stopped without a container: it's built on start, which isn't news.
   assert.equal(notice({ ...applied, state: "stopped", appliedRevision: 0 }), null);
@@ -31,10 +31,10 @@ test("a failed apply shows the error and that the change is still ahead", () => 
   assert.deepEqual(notice({ ...applied, error: "VPN connection v1 was deleted" }), { kind: "error", text: "VPN connection v1 was deleted" });
 });
 
-test("a conflict wins, and busy environments wait for their job", () => {
-  assert.deepEqual(notice({ ...applied, error: "x", conflict: "several containers claim this environment" }), {
+test("a conflict wins, and busy computers wait for their job", () => {
+  assert.deepEqual(notice({ ...applied, error: "x", conflict: "several containers claim this computer" }), {
     kind: "error",
-    text: "several containers claim this environment",
+    text: "several containers claim this computer",
   });
   assert.equal(notice({ ...applied, state: "upgrading", revision: 4 }), null);
   assert.equal(notice({ ...applied, state: "creating", revision: 1, appliedRevision: 0, error: "x" }), null);

@@ -42,7 +42,7 @@ export function DetailsPage() {
         <Crumbs />
         <h1 class="mb-3 text-[30px] font-bold">{name}</h1>
         <p class="text-muted">
-          There's no environment with this name, or you can't use it.
+          There's no computer with this name, or you can't use it.
         </p>
       </Page>
     );
@@ -54,7 +54,7 @@ function Crumbs() {
   return (
     <div class="mb-2 text-sm">
       <a href="/" class="text-muted no-underline hover:underline">
-        Environments
+        Computers
       </a>
     </div>
   );
@@ -78,7 +78,7 @@ function ComputerDetail({ computer: c }: { computer: Computer }) {
   const asked = query.tab === "sharing" ? "access" : query.tab;
   const tab: Tab = tabs.find((t) => t.id === asked)?.id ?? "overview";
   const setTab = (t: Tab) =>
-    route(`/environments/${c.name}${t === "overview" ? "" : `?tab=${t}`}`, true);
+    route(`/computers/${c.name}${t === "overview" ? "" : `?tab=${t}`}`, true);
   const reclaim = useReclaimMemoryItem(c.name, !!c.job);
   useTitle(tab === "overview" ? undefined : tabs.find((t) => t.id === tab)?.label, c.name);
 

@@ -108,9 +108,9 @@ export function ComputerPage({ name }: { name: string }) {
     <div data-desktop-page data-software-keyboard={String(viewport?.keyboard ?? false)} class="fixed inset-0 flex flex-col bg-glass" style={viewport ? { top: `${viewport.top}px`, bottom: "auto", height: `${viewport.height}px` } : undefined}>
       {c === undefined ? null : c === null ? (
         <Centered>
-          <p>There's no environment named {name}, or you can't use it.</p>
+          <p>There's no computer named {name}, or you can't use it.</p>
           <a href="/" class="text-[#9ec0ff]">
-            Back to the environments
+            Back to the computers
           </a>
         </Centered>
       ) : (
@@ -396,15 +396,15 @@ function ComputerView({ computer: c }: { computer: Computer }) {
           { label: "Stop", onSelect: () => power(c.name, "stop") },
         ]
       : []),
-    { label: "Details", onSelect: () => route(`/environments/${c.name}`), separated: running },
-    ...(me.admin ? [{ label: "Settings", onSelect: () => route(`/environments/${c.name}?tab=settings`) }] : []),
+    { label: "Details", onSelect: () => route(`/computers/${c.name}`), separated: running },
+    ...(me.admin ? [{ label: "Settings", onSelect: () => route(`/computers/${c.name}?tab=settings`) }] : []),
   ];
   const present = c.viewers.length > 0 || c.forwards.length > 0 || c.agents.length > 0;
 
   return (
     <>
       <div data-computer-bar class="relative flex flex-none flex-wrap items-center gap-x-1.5 bg-bar px-2.5 text-sm text-[#e6ebf1] max-sm:min-h-[46px] sm:h-[46px] sm:flex-nowrap">
-        <a href="/" class={cx(barButton, "px-2")} title="Environments" aria-label="Environments">
+        <a href="/" class={cx(barButton, "px-2")} title="Computers" aria-label="Computers">
           ‹
         </a>
         <span class="min-w-0 shrink-0 truncate text-[15px] font-bold text-white max-sm:hidden sm:max-w-[22vw]">{c.name}</span>
@@ -416,7 +416,7 @@ function ComputerView({ computer: c }: { computer: Computer }) {
         )}
         {c.vpn && c.vpn.state !== "disabled" && (
           <a
-            href={`/environments/${c.name}?tab=settings&section=networking`}
+            href={`/computers/${c.name}?tab=settings&section=networking`}
             class={cx(barButton, "px-1.5", c.vpn.state === "blocked" ? "text-[#ffb7ad]!" : c.vpn.state === "connected" ? "text-[#3ac08a]!" : "text-busy!")}
             title={[vpnPresentation(c.vpn).label, vpnPresentation(c.vpn).detail].filter(Boolean).join(": ")}
             aria-label={vpnPresentation(c.vpn).label}

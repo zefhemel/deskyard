@@ -1,4 +1,4 @@
-"""The environment page's terminal tabs against real tmux. Viewport emulation is not native mobile QA."""
+"""The computer page's terminal tabs against real tmux. Viewport emulation is not native mobile QA."""
 import os
 import pty
 import re
@@ -24,12 +24,12 @@ def pane(name, field, session='main'):
 
 
 def sessions(name):
-    """The environment's public sessions, from the image's own helper."""
+    """The computer's public sessions, from the image's own helper."""
     return [line.split('\t')[0] for line in shell(name, 'deskyard terminal-list').splitlines() if line]
 
 
 def create_session(name):
-    """A session opened inside the environment, as the desktop's terminal does."""
+    """A session opened inside the computer, as the desktop's terminal does."""
     return docker('exec', '-u', 'user', 'deskyard-' + name, 'deskyard', 'terminal-create').stdout.strip()
 
 
@@ -328,7 +328,7 @@ def test_terminal_compact_budget_with_reopen_and_safe_bottom(supervisor, desktop
 
 
 def test_tabs_list_existing_sessions(supervisor, desktop, name, cli, remote):
-    """Sessions opened inside the environment and through the CLI are tabs, and new ones appear within a poll."""
+    """Sessions opened inside the computer and through the CLI are tabs, and new ones appear within a poll."""
     native = create_session(name)
     process = cli_session(cli, remote, name, 'from-cli')
     try:
@@ -566,8 +566,8 @@ def test_tabs_on_phone(supervisor, desktop, name):
         assert geometry['page'] <= 390, geometry
         assert geometry['tabsTop'] >= more.bounding_box()['y'] + more.bounding_box()['height'] - 1, geometry
         assert tablist.evaluate('e => e.parentElement.scrollWidth > e.parentElement.clientWidth'), 'expected the tabs to overflow sideways'
-        for label in ('Environments', 'Paste', 'More'):
-            box = page.get_by_role('button' if label != 'Environments' else 'link', name=label, exact=True).bounding_box()
+        for label in ('Computers', 'Paste', 'More'):
+            box = page.get_by_role('button' if label != 'Computers' else 'link', name=label, exact=True).bounding_box()
             assert box and box['x'] >= 0 and box['x'] + box['width'] <= 390, (label, box)
         # Every tab and + are reachable by scrolling the row.
         last = page.get_by_role('tab', name=tab_name('terminal-6'))

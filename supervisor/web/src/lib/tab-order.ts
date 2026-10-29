@@ -1,7 +1,7 @@
 // The order of a computer's terminal tabs, kept per viewer in browser
 // storage. Desktop is always first and isn't part of the order.
 
-const key = (env: string) => `deskyard.tabs.${env}`;
+const key = (computer: string) => `deskyard.tabs.${computer}`;
 
 /** Stored order first, then sessions it doesn't know sorted by name; gone sessions are dropped. */
 export function orderTabs(sessions: string[], stored: string[]): string[] {

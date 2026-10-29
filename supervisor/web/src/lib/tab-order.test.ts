@@ -33,7 +33,7 @@ test("closing a tab goes to its left neighbour, Desktop (null) for the first", (
   assert.equal(leftNeighbour(["a", "b"], "x"), null);
 });
 
-test("the order is kept per environment and survives a failing storage", () => {
+test("the order is kept per computer and survives a failing storage", () => {
   const data = new Map<string, string>();
   const fake = {
     getItem: (k: string) => data.get(k) ?? null,

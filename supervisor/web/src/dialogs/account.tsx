@@ -140,24 +140,24 @@ export function AccountDialog({ account, onClose, onSaved }: { account: Account 
       </Field>
       {share ? (
         <p class="mb-[18px] text-sm text-muted">
-          A share: {levelLabel(account?.grants[0]?.level ?? "full").toLowerCase()} of {account?.grants[0]?.computer ?? "its environment"}, by{" "}
+          A share: {levelLabel(account?.grants[0]?.level ?? "full").toLowerCase()} of {account?.grants[0]?.computer ?? "its computer"}, by{" "}
           {share.username}. Its access is set when it is shared.
         </p>
       ) : (
         <>
           <Check id="acc-admin" checked={admin} onChange={setAdmin} title="Admin">
-            Can use every environment, create and change environments, and manage accounts and images.
+            Can use every computer, create and change computers, and manage accounts and images.
           </Check>
           {!admin && (
             <Field
-              label={`Environments ${who} can use`}
-              hint={isNew ? "Observe only is watching the desktop, nothing else." : `Taking an environment away, or lowering it to observe only, closes ${who}'s open desktop and connections on it.`}
+              label={`Computers ${who} can use`}
+              hint={isNew ? "Observe only is watching the desktop, nothing else." : `Taking a computer away, or lowering it to observe only, closes ${who}'s open desktop and connections on it.`}
             >
               <LevelPicks
                 names={names}
                 value={picked.map((g) => ({ name: g.computer, level: g.level }))}
                 onChange={(picks) => setPicked(picks.map((p) => ({ computer: p.name, level: p.level })))}
-                empty="There are no environments yet."
+                empty="There are no computers yet."
               />
             </Field>
           )}

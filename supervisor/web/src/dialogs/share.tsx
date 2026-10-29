@@ -91,7 +91,7 @@ export function ShareDialog({ computer, onClose, onShared }: { computer: string;
   return (
     <Dialog
       title={`Share ${computer}`}
-      intro="Makes a link that signs someone in to this environment, once. Send it the way you like."
+      intro="Makes a link that signs someone in to this computer, once. Send it the way you like."
       onClose={onClose}
       onSubmit={() => void submit()}
       footer={

@@ -75,7 +75,7 @@ export function AccountsPage() {
                     </td>
                     <td class={td}>
                       {a.admin ? (
-                        <span class="text-muted">Every environment</span>
+                        <span class="text-muted">Every computer</span>
                       ) : a.grants.length ? (
                         <div class="flex flex-wrap gap-[5px]">
                           {a.grants.map((g) => (
@@ -86,7 +86,7 @@ export function AccountsPage() {
                           ))}
                         </div>
                       ) : (
-                        <span class="text-muted">No environments yet</span>
+                        <span class="text-muted">No computers yet</span>
                       )}
                       {a.sharedBy && <div class="mt-1 text-[13px] text-muted">Shared by {a.sharedBy.username}</div>}
                     </td>
@@ -187,7 +187,7 @@ function DeleteAccountDialog({ account: a, self, onClose, onDeleted }: { account
       intro={
         <>
           {a.username} is signed out everywhere: browsers and signed-in devices, with their open desktops, terminals and connections. Its login
-          link stops working{a.sharedBy ? "" : ", and the shares it made end"}. Environments stay.
+          link stops working{a.sharedBy ? "" : ", and the shares it made end"}. Computers stay.
           {self && " This is your own account: you'll be signed out."}
         </>
       }

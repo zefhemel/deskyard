@@ -22,7 +22,7 @@ def test_forwards_shown(cli, remote, forwards, supervisor, name):
         chip.click()
         expect(page.get_by_text(f"{remote.client}: {p} in")).to_be_visible()
 
-        page.goto(f"{supervisor.base}/environments/{name}")
+        page.goto(f"{supervisor.base}/computers/{name}")
         expect(page.get_by_text(f"{remote.client}: {p} in")).to_be_visible(timeout=15000)
 
         page.goto(f"{supervisor.base}/{name}/")
@@ -65,7 +65,7 @@ def check_agent_presence_and_summary(base, name, title):
         expect(page.get_by_text("clicked", exact=True)).to_be_visible()
         expect(page.get_by_text("true · exit 0")).to_be_visible()
 
-        page.goto(f"{base}/environments/{name}")
+        page.goto(f"{base}/computers/{name}")
         expect(page.locator("[data-agent]").first).to_be_visible(timeout=15000)
 
         page.goto(f"{base}/")

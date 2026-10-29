@@ -463,7 +463,7 @@ export function RestoreNewDialog({ kind, name, snapshot: s, onClose }: { kind: I
   const run = useJob((j) => setResult((j.result as RestoreResult) ?? {}));
   const valid = NAME.test(newName);
   if (result) {
-    const href = kind === "computer" ? `/environments/${result.created}` : `/volumes/${result.created}`;
+    const href = kind === "computer" ? `/computers/${result.created}` : `/volumes/${result.created}`;
     return (
       <Dialog title={`Restored as ${result.created}`} onClose={onClose} onSubmit={() => (location.href = href)} footer={<><Button variant="quiet" onClick={onClose}>Close</Button><Button type="submit" variant="primary">Open {result.created}</Button></>}>
         <p class="text-sm" role="status">
@@ -494,7 +494,7 @@ export function RestoreNewDialog({ kind, name, snapshot: s, onClose }: { kind: I
         </>
       }
     >
-      <Field label={kind === "computer" ? "New environment's name" : "New volume's name"} htmlFor="restore-name" hint={newName && !valid ? <span class="text-danger">Use 2–32 lowercase letters, digits and dashes, starting with a letter.</span> : undefined}>
+      <Field label={kind === "computer" ? "New computer's name" : "New volume's name"} htmlFor="restore-name" hint={newName && !valid ? <span class="text-danger">Use 2–32 lowercase letters, digits and dashes, starting with a letter.</span> : undefined}>
         <input type="text" id="restore-name" value={newName} autocomplete="off" spellcheck={false} onInput={(e) => setNewName(e.currentTarget.value.toLowerCase())} />
       </Field>
       {kind === "computer" && (

@@ -10,7 +10,7 @@ from helpers import bearer, make_account, make_credential, signed_in
 
 
 def reclaim_item(page):
-    """Open the environment page's ⋯ menu and return its Reclaim memory item."""
+    """Open the computer page's ⋯ menu and return its Reclaim memory item."""
     page.get_by_role("button", name="More actions").click()
     return page.get_by_role("menuitem", name="Reclaim memory")
 
@@ -21,7 +21,7 @@ def test_reclaim_button_preserves_browser_state(admin, supervisor, desktop, name
     if not support["enabled"]:
         with sync_playwright() as pw:
             browser, page = signed_in(pw, supervisor.base)
-            page.goto(f"{supervisor.base}/environments/{name}")
+            page.goto(f"{supervisor.base}/computers/{name}")
             expect(page.get_by_role("heading", name=name, exact=True)).to_be_visible(timeout=15000)
             expect(reclaim_item(page)).to_be_disabled(timeout=15000)
             expect(page.get_by_text("Unavailable:", exact=False)).to_be_visible()
@@ -41,7 +41,7 @@ def test_reclaim_button_preserves_browser_state(admin, supervisor, desktop, name
         remote.close()  # Disconnect; leave the browser and state alive.
 
         browser, page = signed_in(pw, supervisor.base)
-        page.goto(f"{supervisor.base}/environments/{name}")
+        page.goto(f"{supervisor.base}/computers/{name}")
         expect(page.get_by_role("heading", name=name, exact=True)).to_be_visible(timeout=15000)
         button = reclaim_item(page)
         expect(button).to_be_enabled(timeout=15000)
@@ -78,7 +78,7 @@ def test_reclaim_button_preserves_browser_state(admin, supervisor, desktop, name
         regular = supervisor.client().login(user, "pw")
         assert regular.post(f"/api/computers/{name}/reclaim-memory").status_code == 403
         regular_browser, regular_page = signed_in(pw, supervisor.base, user=user, password="pw")
-        regular_page.goto(f"{supervisor.base}/environments/{name}")
+        regular_page.goto(f"{supervisor.base}/computers/{name}")
         expect(regular_page.get_by_role("heading", name=name, exact=True)).to_be_visible(timeout=15000)
         expect(regular_page.get_by_role("button", name="More actions")).to_have_count(0)
         regular_browser.close()
@@ -102,7 +102,7 @@ def test_reclaim_button_disabled_for_unsupported_host(supervisor, desktop, name)
             "total": 1,
             "memoryReclaim": {"enabled": False, "reason": "The Linux host has no swap."},
         }))
-        page.goto(f"{supervisor.base}/environments/{name}")
+        page.goto(f"{supervisor.base}/computers/{name}")
         expect(page.get_by_role("heading", name=name, exact=True)).to_be_visible(timeout=15000)
         expect(reclaim_item(page)).to_be_disabled(timeout=15000)
         expect(page.get_by_text("Unavailable: The Linux host has no swap.", exact=True)).to_be_visible()
@@ -114,7 +114,7 @@ def test_automatic_memory_opt_out_saves_without_restart(admin, supervisor, deskt
     assert before["memoryReclaim"] is True
     with sync_playwright() as pw:
         browser, page = signed_in(pw, supervisor.base)
-        page.goto(f"{supervisor.base}/environments/{name}?tab=settings")
+        page.goto(f"{supervisor.base}/computers/{name}?tab=settings")
         toggle = page.get_by_role("checkbox", name="Automatically reclaim idle memory")
         expect(toggle).to_be_checked(timeout=15000)
         with page.expect_response(lambda r: r.url.endswith("/memory-policy") and r.request.method == "PUT") as response:

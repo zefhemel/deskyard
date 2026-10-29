@@ -9,7 +9,7 @@ var reserved = map[string]bool{
 	"api": true, "login": true, "logout": true, "assets": true, "static": true,
 	"healthz": true, "favicon.ico": true, "robots.txt": true,
 	// The UI's own pages.
-	"desktops": true, "environments": true, "images": true, "accounts": true,
+	"desktops": true, "environments": true, "computers": true, "images": true, "accounts": true,
 	"volumes": true, "link": true, "cli-login": true, "account": true,
 }
 

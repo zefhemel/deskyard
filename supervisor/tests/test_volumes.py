@@ -1,4 +1,4 @@
-"""Named volumes: shared folders granted to environments at /share/<volume>."""
+"""Named volumes: shared folders granted to computers at /share/<volume>."""
 
 import uuid
 
@@ -125,7 +125,7 @@ def test_volume_deletion_rules(supervisor, admin, name):
         assert r.json()["adopted"] is True and r.json()["volume"]["folder"] == str(folder)
         apply(admin, name, volumes=[{"name": vol, "readOnly": False}])
         assert in_desktop(name, "cat", f"/share/{vol}/data.txt") == "precious\n"
-        # Removing the environment with its files leaves the volume's alone.
+        # Removing the computer with its files leaves the volume's alone.
         assert admin.delete(f"/api/computers/{name}?files=1").status_code == 204
         assert (folder / "data.txt").read_text() == "precious\n"
         assert (supervisor.data / "volume").is_dir()
@@ -180,7 +180,7 @@ def test_volumes_ui(supervisor, admin, desktop, name):
             assert sent.value.status == 201
             expect(page.get_by_role("heading", name=vol, exact=True)).to_be_visible()
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-            page.goto(f"{supervisor.base}/environments/{name}?tab=settings&section=volumes")
+            page.goto(f"{supervisor.base}/computers/{name}?tab=settings&section=volumes")
             section = page.get_by_role("region", name="Volumes", exact=True)
             section.get_by_role("button", name="Add volume").click()
             section.get_by_label("Volume", exact=True).select_option(vol)

@@ -129,7 +129,7 @@ export const volumes: { name: string; created: string; kind: "local" }[] = [
 
 /** Containers of this supervisor's that it can't match to a definition. */
 export const conflicts: Conflict[] = [
-  { name: "old-lab", kind: "unknown", containers: ["deskyard-old-lab"], message: "deskyard-old-lab claims environment old-lab, which isn't defined" },
+  { name: "old-lab", kind: "unknown", containers: ["deskyard-old-lab"], message: "deskyard-old-lab claims computer old-lab, which isn't defined" },
 ];
 
 /** An account as accounts.json holds it: password null for a token account; linkPending comes from `links`. */

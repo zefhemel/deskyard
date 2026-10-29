@@ -41,9 +41,9 @@ export function ImagesPage() {
             ))}
           </div>
         ) : (
-          <p class="text-muted">The catalog is empty: add an image to create environments from.</p>
+          <p class="text-muted">The catalog is empty: add an image to create computers from.</p>
         ))}
-      <p class="mt-4 text-sm text-muted">Upgrading recreates an environment's container on the newest version and restarts it if it's running. {UPGRADE_NOTE}</p>
+      <p class="mt-4 text-sm text-muted">Upgrading recreates a computer's container on the newest version and restarts it if it's running. {UPGRADE_NOTE}</p>
       {adding && (
         <AddImageDialog
           onClose={() => setAdding(false)}
@@ -55,14 +55,14 @@ export function ImagesPage() {
       )}
       {upgrading && (
         <UpgradeDialog
-          title={`Upgrade ${plural(upgrading.behind.length, "environment")}?`}
+          title={`Upgrade ${plural(upgrading.behind.length, "computer")}?`}
           intro={
             <>
               {upgrading.behind.join(", ")} {upgrading.behind.length === 1 ? "is" : "are"} recreated on {upgrading.title} {upgrading.version}; running
               ones restart.
             </>
           }
-          action={`Upgrade ${plural(upgrading.behind.length, "environment")}`}
+          action={`Upgrade ${plural(upgrading.behind.length, "computer")}`}
           begin={() => api.upgradeImage(upgrading.ref)}
           onClose={() => {
             setUpgrading(null);
@@ -110,7 +110,7 @@ function ImageCard({
           )}
           {behind && (
             <Button variant="primary" class={small} onClick={onUpgrade}>
-              Upgrade {plural(img.behind.length, "environment")}…
+              Upgrade {plural(img.behind.length, "computer")}…
             </Button>
           )}
           {img.computers.length === 0 && !img.official && (
@@ -134,16 +134,16 @@ function ImageCard({
         <dd class="mono min-w-0 break-all">{img.ref}</dd>
         <dt class="mt-2 text-muted sm:mt-0">Checked</dt>
         <dd class="min-w-0">{img.checked ? `Pulled ${ago(img.checked).toLowerCase()}` : <span class="text-muted">Not yet</span>}</dd>
-        <dt class="mt-2 text-muted sm:mt-0">Environments</dt>
+        <dt class="mt-2 text-muted sm:mt-0">Computers</dt>
         <dd class="min-w-0">
           {img.computers.length ? (
-            <ul class="m-0 flex list-none flex-wrap gap-2 p-0" aria-label={`Environments using ${img.title || img.ref}`}>
+            <ul class="m-0 flex list-none flex-wrap gap-2 p-0" aria-label={`Computers using ${img.title || img.ref}`}>
               {img.computers.map((n) => {
                 const late = img.behind.includes(n);
                 const c = env(n);
                 return (
                   <li key={n}>
-                    <ComputerChip name={n} computer={c} href={`/environments/${n}?tab=settings`}>
+                    <ComputerChip name={n} computer={c} href={`/computers/${n}?tab=settings`}>
                       <Tag kind={late ? "update" : "ok"}>{late ? `Behind${c?.imageVersion ? ` · ${c.imageVersion}` : ""}` : "Up to date"}</Tag>
                     </ComputerChip>
                   </li>
@@ -151,7 +151,7 @@ function ImageCard({
               })}
             </ul>
           ) : (
-            <span class="text-muted">No environment uses it.</span>
+            <span class="text-muted">No computer uses it.</span>
           )}
         </dd>
       </dl>

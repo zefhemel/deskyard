@@ -40,7 +40,7 @@ export function SettingsTab({ computer: c }: { computer: Computer }) {
   const draft = { image, dockerAccess, memoryBytes: memory, nanoCpus: cpus, vpnConnectionId: vpnID, lan, volumes: grants };
   const { query, route } = useLocation();
   const section: Section = SECTIONS.find((x) => x.id === query.section)?.id ?? "general";
-  const pick = (id: Section) => route(`/environments/${c.name}?tab=settings${id === "general" ? "" : `&section=${id}`}`, true);
+  const pick = (id: Section) => route(`/computers/${c.name}?tab=settings${id === "general" ? "" : `&section=${id}`}`, true);
   const edited: Record<Section, boolean> = {
     general: image !== c.image || memory !== c.settings.memoryBytes || cpus !== c.settings.nanoCpus || dockerAccess !== (c.settings.dockerAccess ?? false),
     networking: computerSettingsChanged(c, { ...draft, image: c.image, memoryBytes: c.settings.memoryBytes, nanoCpus: c.settings.nanoCpus, dockerAccess: c.settings.dockerAccess ?? false, volumes: savedVolumes }),
@@ -91,8 +91,8 @@ export function SettingsTab({ computer: c }: { computer: Computer }) {
           }}
         >
           {saving && (
-            <section ref={progressPanel} aria-label="Environment operation" aria-live="polite">
-              <h2 class="mb-2 text-sm font-semibold">Environment operation</h2>
+            <section ref={progressPanel} aria-label="Computer operation" aria-live="polite">
+              <h2 class="mb-2 text-sm font-semibold">Computer operation</h2>
               <JobProgress job={job} />
             </section>
           )}
@@ -191,7 +191,7 @@ function MemoryPolicy({ computer: c, host }: { computer: Computer; host: Host | 
     <section class="mt-6 border-t border-line pt-5">
       <fieldset disabled={saving} class="m-0 min-w-0 border-0 p-0">
         <Check id="auto-reclaim" checked={enabled} onChange={(v) => void save(v)} title="Automatically reclaim idle memory">
-          Reclaim once after 15 minutes with no viewers, when CLI activity and environment operations are idle. A returning viewer resets the timer. Apps keep running; their next interaction may be slower. This preference saves immediately without restarting the environment.
+          Reclaim once after 15 minutes with no viewers, when CLI activity and computer operations are idle. A returning viewer resets the timer. Apps keep running; their next interaction may be slower. This preference saves immediately without restarting the computer.
         </Check>
       </fieldset>
       {host && !host.memoryReclaim.enabled && <Note>Unavailable on this host: {host.memoryReclaim.reason}</Note>}

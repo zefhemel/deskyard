@@ -22,7 +22,7 @@ test("blank edit credentials are independently omitted, replacement preserves th
   });
   assert.throws(() => connectionInput(form, false), /service credentials/i);
 });
-test("environment patch omits unchanged settings and sends explicit null to disable VPN", () => {
+test("computer patch omits unchanged settings and sends explicit null to disable VPN", () => {
   const original = { vpnConnectionId: "v1", lanExceptions: [] };
   assert.deepEqual(computerVPNPatch(original, "v1", []), {});
   assert.deepEqual(computerVPNPatch(original, "", []), { vpnConnectionId: null });
@@ -74,7 +74,7 @@ test("idle status explains the provider connection and pending revision remains 
   assert.match(vpnPresentation({ ...status, state: "stopped", idle: true }).detail, /provider connection/);
   assert.match(vpnPresentation(status).detail, /2.*1/);
 });
-test("shared edit submits the exact preview revision and the affected environments by name", () => {
+test("shared edit submits the exact preview revision and the affected computers by name", () => {
   assert.deepEqual(
     connectionUpdate(form, {
       revision: 7,

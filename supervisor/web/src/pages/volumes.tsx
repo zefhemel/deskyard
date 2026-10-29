@@ -54,7 +54,7 @@ const NAME = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
 
 function VolumesTab() {
   const list = useFetch(() => api.volumes(), "volumes");
-  const envs = useFetch(() => api.computers(), "environments");
+  const envs = useFetch(() => api.computers(), "computers");
   const backups = useFetch(() => api.backups(), "backups");
   const [creating, setCreating] = useState(false);
   const [removing, setRemoving] = useState<Volume | null>(null);
@@ -138,15 +138,15 @@ export function VolumeCard({ volume: v, computers, backup, onDelete, bare }: { v
         </dd>
         <dt class="mt-2 text-muted sm:mt-0">{v.kind === "host" ? "Host folder" : "Folder"}</dt>
         <dd class="mono min-w-0 break-all">{v.folder}</dd>
-        <dt class="mt-2 text-muted sm:mt-0">Environments</dt>
+        <dt class="mt-2 text-muted sm:mt-0">Computers</dt>
         <dd class="min-w-0">
           {v.computers.length ? (
-            <ul class="m-0 flex list-none flex-wrap gap-2 p-0" aria-label={`Environments using ${v.name}`}>
+            <ul class="m-0 flex list-none flex-wrap gap-2 p-0" aria-label={`Computers using ${v.name}`}>
               {v.computers.map((g) => {
                 const c = computers?.find((e) => e.name === g.name);
                 return (
                   <li key={g.name}>
-                    <ComputerChip name={g.name} computer={c} href={`/environments/${g.name}?tab=settings&section=volumes`}>
+                    <ComputerChip name={g.name} computer={c} href={`/computers/${g.name}?tab=settings&section=volumes`}>
                       <span class="mono text-xs text-muted">{c?.settings.volumes.find((x) => x.name === v.name)?.path ?? ""}</span>
                       <Tag kind={g.readOnly ? "plain" : "ok"}>{g.readOnly ? "Read only" : "Read & write"}</Tag>
                     </ComputerChip>
@@ -155,7 +155,7 @@ export function VolumeCard({ volume: v, computers, backup, onDelete, bare }: { v
               })}
             </ul>
           ) : (
-            <span class="text-muted">None. Grant it in an environment's settings.</span>
+            <span class="text-muted">None. Grant it in a computer's settings.</span>
           )}
         </dd>
       </dl>
@@ -309,11 +309,11 @@ export function DeleteVolume({ volume: v, onClose, onDeleted }: { volume: Volume
     >
       {refs.length ? (
         <p class="mb-4 text-sm">
-          Remove the volume from these environments' settings first:{" "}
+          Remove the volume from these computers' settings first:{" "}
           {refs.map((d, i) => (
             <span key={d.id}>
               {i ? ", " : ""}
-              <a href={`/environments/${d.name}?tab=settings`}>{d.name}</a>
+              <a href={`/computers/${d.name}?tab=settings`}>{d.name}</a>
             </span>
           ))}
           .

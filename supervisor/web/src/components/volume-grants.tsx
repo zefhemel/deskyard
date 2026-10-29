@@ -18,7 +18,7 @@ export function VolumeGrantFields({
     <section class="mt-6 border-t border-line pt-5 first:mt-0 first:border-t-0 first:pt-0" aria-label="Volumes">
       <h2 class="mb-1 text-base font-semibold">Volumes</h2>
       <p class="mb-4 text-sm text-muted">
-        {creating ? "Volumes shared with this environment." : "Saving recreates the container."}
+        {creating ? "Volumes shared with this computer." : "Saving recreates the container."}
       </p>
       {!volumes.length && !grants.length && (
         <p class="mb-4 text-sm text-muted">
@@ -43,7 +43,7 @@ export function VolumeGrantFields({
               </select>
             </Field>
             <Field
-              label="Path in the environment"
+              label="Path in the computer"
               htmlFor={`volume-path-${index}`}
               hint={pathError ? <span class="text-danger">{pathError}</span> : undefined}
             >

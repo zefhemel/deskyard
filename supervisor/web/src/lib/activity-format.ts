@@ -6,12 +6,12 @@ export { shortDuration };
 
 /** The overlay label: the name, or "Claude Code (in this computer)". */
 export function agentLabel(a: Pick<AgentPresence, "name" | "inside">): string {
-  return a.inside ? `${a.name} (in this environment)` : a.name;
+  return a.inside ? `${a.name} (in this computer)` : a.name;
 }
 
 /** "deploy-bot · zef's CLI" or "Claude Code · in this computer". */
 export function agentTitle(a: AgentPresence): string {
-  return a.inside ? `${a.name} · in this environment` : `${a.name} · ${a.owner}'s CLI`;
+  return a.inside ? `${a.name} · in this computer` : `${a.name} · ${a.owner}'s CLI`;
 }
 
 /** What an agent is doing now: "npm test · 2 min", "using the browser", "ports 3000 in · 5173 out". */

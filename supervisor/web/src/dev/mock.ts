@@ -166,7 +166,7 @@ function checkGrants(grants: unknown): string | null {
   if (!Array.isArray(grants)) return null;
   const seen = new Set<string>();
   for (const g of grants as Grant[]) {
-    if (!computers.some((c) => c.name === g.computer)) return `no environment ${g.computer}`;
+    if (!computers.some((c) => c.name === g.computer)) return `no computer ${g.computer}`;
     if (g.level !== "full" && g.level !== "observe") return `the level must be full or observe`;
     if (seen.has(g.computer)) return `${g.computer} is listed twice`;
     seen.add(g.computer);
@@ -175,7 +175,7 @@ function checkGrants(grants: unknown): string | null {
 }
 
 const USERNAME = /^[a-z][a-z0-9._-]{0,31}$/;
-const RESERVED = ["api", "login", "logout", "assets", "static", "healthz", "desktops", "environments", "images", "accounts", "volumes", "link", "cli-login", "account"];
+const RESERVED = ["api", "login", "logout", "assets", "static", "healthz", "desktops", "environments", "computers", "images", "accounts", "volumes", "link", "cli-login", "account"];
 
 /** The routes that need no session: link sign-in and the CLI's side of `deskyard login`. */
 async function signedOut(req: IncomingMessage, res: ServerResponse, path: string, method: string): Promise<boolean> {
@@ -506,7 +506,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
 
   if (path === "/api/validate-name") {
     const name = url.searchParams.get("name") ?? "";
-    if (computers.some((c) => c.name === name)) return json(res, 200, { ok: false, error: "an environment with that name already exists", folderExists: false });
+    if (computers.some((c) => c.name === name)) return json(res, 200, { ok: false, error: "a computer with that name already exists", folderExists: false });
     if (RESERVED.includes(name)) return json(res, 200, { ok: false, error: `${name} is reserved.`, folderExists: false });
     return json(res, 200, { ok: true, folderExists: name === "old-project", folder: `${FOLDER}/home/${name}` });
   }
@@ -706,11 +706,11 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   }
 
   if (sub === "terminal/sessions" && method === "GET") {
-    if (c.state !== "running" || !c.terminal) return json(res, 409, { error: "Environment terminal unavailable" });
+    if (c.state !== "running" || !c.terminal) return json(res, 409, { error: "Computer terminal unavailable" });
     return json(res, 200, { sessions: c.terminals });
   }
   if (sub === "terminal/sessions" && method === "POST") {
-    if (c.state !== "running" || !c.terminal) return json(res, 409, { error: "Environment terminal unavailable" });
+    if (c.state !== "running" || !c.terminal) return json(res, 409, { error: "Computer terminal unavailable" });
     let n = 1;
     while (c.terminals.some((t) => t.name === `terminal-${n}`)) n++;
     const name = `terminal-${n}`;
@@ -722,7 +722,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   if (ts && method === "DELETE") {
     const name = decodeURIComponent(ts[1]!);
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(name)) return json(res, 400, { error: "invalid session name" });
-    if (c.state !== "running" || !c.terminal) return json(res, 409, { error: "Environment terminal unavailable" });
+    if (c.state !== "running" || !c.terminal) return json(res, 409, { error: "Computer terminal unavailable" });
     if (!c.terminals.some((t) => t.name === name)) return json(res, 404, { error: "no such session" });
     endAttachments(c.name, name);
     c.terminals = c.terminals.filter((t) => t.name !== name);
@@ -768,7 +768,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     return json(res, 204);
   }
   if (sub === "reclaim-memory") {
-    if (c.state !== "running") return json(res, 409, { error: "The environment is stopped" });
+    if (c.state !== "running") return json(res, 409, { error: "The computer is stopped" });
     const beforeBytes = c.stats?.memBytes ?? 512 * 1024 * 1024;
     const afterBytes = Math.max(0, beforeBytes - 128 * 1024 * 1024);
     if (c.stats) c.stats.memBytes = afterBytes;

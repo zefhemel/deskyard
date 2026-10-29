@@ -14,7 +14,7 @@ export function VPNPage() {
   const [removing, setRemoving] = useState<SavedVPNConnection | null>(null);
   return (
     <Page>
-      <PageHead title="VPN connections" sub="Reusable NordVPN settings; each environment has its own connection.">
+      <PageHead title="VPN connections" sub="Reusable NordVPN settings; each computer has its own connection.">
         <Button variant="primary" disabled={!list.data} onClick={() => setEditing(null)}>
           Add connection
         </Button>
@@ -40,12 +40,12 @@ export function VPNPage() {
                       {c.computers.map((d, i) => (
                         <span key={d.id}>
                           {i > 0 ? ", " : ""}
-                          <a href={`/environments/${d.name}`}>{d.name}</a>
+                          <a href={`/computers/${d.name}`}>{d.name}</a>
                         </span>
                       ))}
                     </>
                   ) : (
-                    "No environments use this connection."
+                    "No computers use this connection."
                   )}
                 </p>
               </div>
@@ -56,8 +56,8 @@ export function VPNPage() {
         </div>
       )}
       <p class="mt-5 max-w-[760px] text-sm text-muted">
-        Use NordVPN service credentials, which differ from your account login. A test uses a temporary connection and leaves environments unchanged. Stopped
-        environments may keep a provider connection in use.
+        Use NordVPN service credentials, which differ from your account login. A test uses a temporary connection and leaves computers unchanged. Stopped
+        computers may keep a provider connection in use.
       </p>
       {editing !== undefined && list.data && (
         <ConnectionDialog
@@ -141,7 +141,7 @@ function ConnectionDialog({
         await candidate.start(form, !!preview, begin);
       } else {
         const input = connectionInput(form, !!preview);
-        if (preview?.computers.length && !confirmed) throw new Error("Confirm the affected environments' restart before saving.");
+        if (preview?.computers.length && !confirmed) throw new Error("Confirm the affected computers' restart before saving.");
         if (!preview) {
           setBusy(true);
           const saved = await api.createVPN(input);
@@ -184,7 +184,7 @@ function ConnectionDialog({
             Test connection
           </Button>
           <Button type="submit" variant="primary" disabled={active || (!!preview?.computers.length && !confirmed)}>
-            {active ? "Working…" : preview?.computers.length ? "Save and restart affected environments" : "Save connection"}
+            {active ? "Working…" : preview?.computers.length ? "Save and restart affected computers" : "Save connection"}
           </Button>
         </>
       }
@@ -235,10 +235,10 @@ function ConnectionDialog({
               Saving validates the candidate first, then restarts: <b>{preview.computers.map((d) => d.name).join(", ")}</b>. Open sessions briefly disconnect;
               files are kept. A failed validation keeps the saved connection.
             </p>
-            <Check id="vpn-confirm" checked={confirmed} onChange={setConfirmed} title="Restart these affected environments" />
+            <Check id="vpn-confirm" checked={confirmed} onChange={setConfirmed} title="Restart these affected computers" />
           </Note>
         ) : (
-          <Note>Test connection checks these settings without changing an environment. A successful test describes availability at that time.</Note>
+          <Note>Test connection checks these settings without changing a computer. A successful test describes availability at that time.</Note>
         )}
       </fieldset>
       <JobProgress job={run.job} />
@@ -265,7 +265,7 @@ function ConnectionResult({ job, action }: { job: Job | null; action: "test" | "
             {d.name}:{" "}
             {d.error ? (
               <>
-                <span class="text-danger">{d.error}</span> <a href={`/environments/${d.name}`}>Retry start or restart</a>
+                <span class="text-danger">{d.error}</span> <a href={`/computers/${d.name}`}>Retry start or restart</a>
               </>
             ) : (
               "Applied"
@@ -319,11 +319,11 @@ function DeleteConnection({ connection, onClose, onDeleted }: { connection: Save
     >
       {refs.length ? (
         <p class="text-sm">
-          Choose another connection or No VPN in these environments' settings first:{" "}
+          Choose another connection or No VPN in these computers' settings first:{" "}
           {refs.map((d, i) => (
             <span key={d.id}>
               {i ? ", " : ""}
-              <a href={`/environments/${d.name}?tab=settings`}>{d.name}</a>
+              <a href={`/computers/${d.name}?tab=settings`}>{d.name}</a>
             </span>
           ))}
           .

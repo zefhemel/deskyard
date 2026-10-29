@@ -63,7 +63,7 @@ export function CliLoginPage() {
         <p role={state.kind === "gone" ? "alert" : undefined} class="mb-6 text-muted">
           {text}
         </p>
-        <a href="/">Go to your environments</a>
+        <a href="/">Go to your computers</a>
       </Card>
     );
   }

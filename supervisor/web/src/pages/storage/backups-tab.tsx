@@ -11,7 +11,7 @@ const NAME = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
 
 function itemHref(item: string): string {
   const [kind, name] = splitItem(item);
-  return kind === "computer" ? `/environments/${name}?tab=backups` : `/volumes/${name}`;
+  return kind === "computer" ? `/computers/${name}?tab=backups` : `/volumes/${name}`;
 }
 
 export function BackupsTab() {
@@ -58,7 +58,7 @@ export function BackupsTab() {
 
       <section aria-label="Backed up" class="mt-8">
         <h2 class="mb-2 text-lg font-semibold">Backed up</h2>
-        {o && !o.items.length && <p class="text-sm text-muted">Nothing yet. Set up backups on an environment's Backups tab or a volume's page.</p>}
+        {o && !o.items.length && <p class="text-sm text-muted">Nothing yet. Set up backups on a computer's Backups tab or a volume's page.</p>}
         {!!o?.items.length && (
           <ul class="m-0 list-none divide-y divide-hairline rounded-[10px] border border-line bg-surface p-0">
             {o.items.map((i) => (
@@ -67,7 +67,7 @@ export function BackupsTab() {
                   <a href={itemHref(i.item)} class="font-semibold">
                     {splitItem(i.item)[1]}
                   </a>{" "}
-                  <span class="text-sm text-muted">{splitItem(i.item)[0] === "computer" ? "environment" : "volume"}</span>
+                  <span class="text-sm text-muted">{splitItem(i.item)[0] === "computer" ? "computer" : "volume"}</span>
                 </span>
                 {i.policy && <span class="text-sm text-muted">{i.policy.enabled ? describeSchedule(i.policy.schedule) : "Paused"} · {i.policy.repository}</span>}
                 <span class="text-sm">{isTime(i.state.lastSuccess) ? ago(i.state.lastSuccess) : "Never"}</span>
@@ -90,7 +90,7 @@ export function BackupsTab() {
         <div class="mb-2 flex flex-wrap items-center gap-3">
           <div class="mr-auto">
             <h2 class="text-lg font-semibold">Other backups</h2>
-            <p class="text-sm text-muted">Of removed environments and volumes, and other machines.</p>
+            <p class="text-sm text-muted">Of removed computers and volumes, and other machines.</p>
           </div>
           <Button disabled={looking || !o?.repositories.length} onClick={() => void look()}>
             {looking ? "Looking…" : catalog ? "Refresh" : "Show"}
@@ -120,7 +120,7 @@ function Catalog({ overview: o }: { overview: BackupsOverview }) {
             <li key={`${c.repository} ${c.host} ${c.item}`} class="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
               <div class="mr-auto min-w-0">
                 <div>
-                  <span class="font-semibold">{splitItem(c.item)[1]}</span> <span class="text-sm text-muted">{splitItem(c.item)[0] === "computer" ? "environment" : "volume"}</span>
+                  <span class="font-semibold">{splitItem(c.item)[1]}</span> <span class="text-sm text-muted">{splitItem(c.item)[0] === "computer" ? "computer" : "volume"}</span>
                 </div>
                 <div class="text-sm text-muted">
                   {c.snapshots} snapshot{c.snapshots === 1 ? "" : "s"}, latest {day(c.latest)} · {c.repository}

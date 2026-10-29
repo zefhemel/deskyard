@@ -65,7 +65,7 @@ function SignedIn() {
       ) : (
         <Router>
           <Route path="/" component={ComputersPage} />
-          <Route path="/environments/:name" component={DetailsPage} />
+          <Route path="/computers/:name" component={DetailsPage} />
           <Route path="/account" component={DevicesPage} />
           <Route path="/_vpn" component={me.admin ? VPNPage : NotFound} />
           <Route path="/images" component={me.admin ? ImagesPage : NotFound} />

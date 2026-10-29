@@ -48,7 +48,7 @@ def test_desktop_page_shows_stream(supervisor, desktop, name, browser_name, tmp_
             .filter(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'; })
             .map(e => String(e.className))""")
         assert visible == []
-        expect(page.get_by_role("link", name="Environments", exact=True)).to_have_attribute("href", "/")
+        expect(page.get_by_role("link", name="Computers", exact=True)).to_have_attribute("href", "/")
         xs = []
         for n in ("Audio", "Display", "Clipboard", "Keys", "More"):
             b = page.get_by_role("button", name=n, exact=True)

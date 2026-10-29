@@ -123,7 +123,7 @@ export class TerminalConnection {
         ) {
           if (this.generation && this.generation !== message.generation)
             this.options.warning(
-              "The environment restarted. Previous shells and jobs ended.",
+              "The computer restarted. Previous shells and jobs ended.",
             );
           this.options.reset?.();
           this.generation = message.generation;

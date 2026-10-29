@@ -5,7 +5,7 @@ export function NotFound() {
     <Page>
       <PageHead title="Not found" />
       <p class="text-muted">
-        There's nothing here. <a href="/">Back to the environments</a>
+        There's nothing here. <a href="/">Back to the computers</a>
       </p>
     </Page>
   );

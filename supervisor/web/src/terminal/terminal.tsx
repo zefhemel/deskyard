@@ -206,11 +206,11 @@ export function TerminalPane({ name, session, active, create, slots, alive, onSt
         const current = await api.computer(name);
         if (!current.terminal)
           throw new Error(
-            "Upgrade this environment's image to use shared terminals.",
+            "Upgrade this computer's image to use shared terminals.",
           );
         if (current.state !== "running")
           throw new Error(
-            `Environment is ${current.state}. Open its details to start it.`,
+            `Computer is ${current.state}. Open its details to start it.`,
           );
       },
       // Drain old writes before resetting parser/private modes; new output follows this barrier.

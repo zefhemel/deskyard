@@ -141,9 +141,9 @@ function WebDAVSection({ devices, onChanged }: { devices: Credential[] | undefin
     <section class="mb-8">
       <h2 class="mb-1 text-lg font-semibold">WebDAV</h2>
       <p class="mb-3.5 text-sm text-muted">
-        Mount an environment as a drive: in Finder, Go → Connect to Server; on an iPhone or iPad, a WebDAV app such as Owlfiles. Sign in as{" "}
+        Mount a computer as a drive: in Finder, Go → Connect to Server; on an iPhone or iPad, a WebDAV app such as Owlfiles. Sign in as{" "}
         <span class="mono">{me.username}</span> with your password, or with a WebDAV password if you make one. It shows the home folder and the local volumes,
-        also while the environment is stopped.
+        also while the computer is stopped.
       </p>
       {drives.length ? (
         <ul class="mb-3.5 space-y-1.5 text-sm">
@@ -157,7 +157,7 @@ function WebDAVSection({ devices, onChanged }: { devices: Credential[] | undefin
           ))}
         </ul>
       ) : (
-        <p class="mb-3.5 text-sm text-muted">None of your environments has WebDAV switched on. An admin switches it on in an environment&apos;s Access tab.</p>
+        <p class="mb-3.5 text-sm text-muted">None of your computers has WebDAV switched on. An admin switches it on in a computer&apos;s Access tab.</p>
       )}
       {davInTheClear() && <Note danger>This page is on plain HTTP, so a password given to a WebDAV client crosses the network readable. Windows refuses to connect this way.</Note>}
       {password && (

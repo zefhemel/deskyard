@@ -26,7 +26,7 @@ def test_catalog_only_imports_prebuilt_images(mock_ui):
 
 def test_desktop_menu_has_no_image_creation(mock_ui):
     with sync_playwright() as p:
-        browser, page = mock_page(p, mock_ui, "/environments/research")
+        browser, page = mock_page(p, mock_ui, "/computers/research")
         page.get_by_role("button", name="More actions", exact=True).click()
         expect(page.get_by_role("menuitem", name="New image from this desktop…")).to_have_count(0)
         browser.close()
@@ -37,7 +37,7 @@ def test_docker_permission_create_and_settings(mock_ui):
     import uuid
     with sync_playwright() as p:
         browser, page = mock_page(p, mock_ui, "/")
-        page.get_by_role("button", name="New environment", exact=True).click()
+        page.get_by_role("button", name="New computer", exact=True).click()
         dialog = page.get_by_role("dialog")
         permission = dialog.get_by_role("checkbox", name="Docker daemon access", exact=True)
         expect(permission).not_to_be_checked()
@@ -46,10 +46,10 @@ def test_docker_permission_create_and_settings(mock_ui):
         dialog.get_by_label("Name", exact=True).fill(name)
         permission.check()
         with page.expect_request(lambda r: r.method == "POST" and r.url.endswith("/api/computers")) as sent:
-            dialog.get_by_role("button", name="Create environment", exact=True).click()
+            dialog.get_by_role("button", name="Create computer", exact=True).click()
         assert json.loads(sent.value.post_data)["dockerAccess"] is True
         expect(dialog).to_have_count(0, timeout=15000)
-        page.goto(mock_ui + "/environments/" + name + "?tab=settings")
+        page.goto(mock_ui + "/computers/" + name + "?tab=settings")
         permission = page.get_by_role("checkbox", name="Docker daemon access", exact=True)
         # The mock's Vite server compiles the Settings tab on first use: slow on a busy runner.
         expect(permission).to_be_checked(timeout=15000)

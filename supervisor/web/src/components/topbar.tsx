@@ -12,7 +12,7 @@ import { Menu } from "./menu.tsx";
 import { cx, Meter } from "./ui.tsx";
 
 const nav = [
-  { href: "/", label: "Environments", match: (p: string) => p === "/" || p.startsWith("/environments/") },
+  { href: "/", label: "Computers", match: (p: string) => p === "/" || p.startsWith("/computers/") },
   { href: "/images", label: "Images", match: (p: string) => p === "/images" },
   { href: "/volumes", label: "Storage", match: (p: string) => p === "/volumes" || p.startsWith("/volumes/") },
   { href: "/_vpn", label: "Networking", match: (p: string) => p === "/_vpn" },

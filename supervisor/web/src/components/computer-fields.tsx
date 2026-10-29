@@ -126,7 +126,7 @@ export function AccessPicks({
     >
       {admins.map((a) => (
         <Pick key={a.username} checked disabled>
-          {a.username} <Tag kind="admin">admin</Tag> <span class="text-muted max-sm:hidden">admins can use every environment</span>
+          {a.username} <Tag kind="admin">admin</Tag> <span class="text-muted max-sm:hidden">admins can use every computer</span>
         </Pick>
       ))}
     </LevelPicks>
@@ -142,7 +142,7 @@ export function DockerAccessField({ value, onChange }: { value: boolean; onChang
       <div>
         <label for="docker-access" class="font-semibold">Docker daemon access</label>
         <p id="docker-access-hint" class="mt-0.5 text-[13px] text-muted">
-          Allows everyone using this environment to control the host Docker daemon and its containers, with root-equivalent access to the host.
+          Allows everyone using this computer to control the host Docker daemon and its containers, with root-equivalent access to the host.
         </p>
       </div>
     </div>

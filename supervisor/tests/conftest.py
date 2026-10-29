@@ -416,7 +416,7 @@ def remote(cli, admin, desktop, name, tmp_path):
     """Runs the deskyard command against the test's desktop, as an agent elsewhere:
     remote(*args), signed in (`deskyard auth`) to the supervisor as a token account
     (remote.username) with full access to the desktop, which is the server's
-    default environment. remote.client names its credential, as the desktop's
+    default computer. remote.client names its credential, as the desktop's
     agents and forwards list it."""
     from helpers import login_link
 

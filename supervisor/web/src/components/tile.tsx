@@ -129,12 +129,12 @@ export function Tile({ computer: c, job, now, admin, backupFailed }: { computer:
   const busy = kind === "busy";
   return (
     <article class="relative">
-      <Monitor computer={c} job={job} now={now} href={`/environments/${c.name}`} />
+      <Monitor computer={c} job={job} now={now} href={`/computers/${c.name}`} />
       <div class="px-0.5 pt-3">
         <div class="flex items-center gap-2.5">
           <div class="flex min-w-0 flex-col gap-0.5">
             <h2 class="truncate text-[17px] leading-tight font-semibold">
-              <a href={`/environments/${c.name}`} class="text-ink no-underline hover:underline">
+              <a href={`/computers/${c.name}`} class="text-ink no-underline hover:underline">
                 {c.name}
               </a>
             </h2>
@@ -148,7 +148,7 @@ export function Tile({ computer: c, job, now, admin, backupFailed }: { computer:
         </div>
         <NoticeLine computer={c} class="mt-2" />
         {backupFailed && (
-          <a href={`/environments/${c.name}?tab=backups`} class="mt-2 block text-[13px] text-danger">
+          <a href={`/computers/${c.name}?tab=backups`} class="mt-2 block text-[13px] text-danger">
             Its backup failed or is overdue
           </a>
         )}

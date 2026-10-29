@@ -41,7 +41,7 @@ export function ComputerMenu({
   }
   if (powered && c.state === "stopped") items.push({ label: "Start", onSelect: () => power(c.name, "start") });
   if (me.admin) {
-    if (settings) items.push({ label: "Settings", onSelect: () => route(`/environments/${c.name}?tab=settings`) });
+    if (settings) items.push({ label: "Settings", onSelect: () => route(`/computers/${c.name}?tab=settings`) });
     items.push(...adminItems);
     items.push({ label: "Remove…", danger: true, separated: true, onSelect: () => setRemoving(true) });
   }

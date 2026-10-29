@@ -13,7 +13,7 @@ export function VolumeDetailsPage() {
   const { route } = useLocation();
   const name = params.name ?? "";
   const list = useFetch(() => api.volumes(), "volumes");
-  const envs = useFetch(() => api.computers(), "environments");
+  const envs = useFetch(() => api.computers(), "computers");
   const backup = useFetch(() => api.backup("volume", name), `backup-volume-${name}`);
   const [removing, setRemoving] = useState(false);
   const v = list.data?.volumes.find((x) => x.name === name);
