@@ -466,3 +466,17 @@ func TestFoldersShownAsHostPaths(t *testing.T) {
 		t.Errorf("validate-name folder: %q", check.Folder)
 	}
 }
+
+func TestCreateVolumeHeldByRestore409(t *testing.T) {
+	s, ts, send := newVolumeServer(t)
+	admin := login(t, ts, "admin")
+	release, err := s.Environments.HoldFiles(environments.Item{Kind: environments.KindVolume, Name: "photos"}, "restoring", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	code, b := send(admin, "POST", "/api/volumes", `{"name":"photos"}`)
+	if code != 409 {
+		t.Fatalf("held name: %d %s", code, b)
+	}
+}

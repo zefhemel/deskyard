@@ -72,7 +72,7 @@ func (s *Server) handleCreateVolume(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, environments.ErrExists):
 		writeError(w, http.StatusConflict, "a volume with that name already exists")
 		return
-	case errors.Is(err, environments.ErrConflict):
+	case errors.Is(err, environments.ErrConflict), errors.Is(err, environments.ErrItemBusy):
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	case err != nil && req.HostPath != "":
