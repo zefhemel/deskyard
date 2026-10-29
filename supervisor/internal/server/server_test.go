@@ -213,7 +213,7 @@ func TestUnauthenticated(t *testing.T) {
 			t.Errorf("%s: %d", p, got)
 		}
 	}
-	for _, p := range []string{"/", "/alice/", "/environments/alice", "/accounts"} {
+	for _, p := range []string{"/", "/alice/", "/computers/alice", "/accounts"} {
 		if got := status(t, anon, "GET", ts.URL+p, ""); got != 302 {
 			t.Errorf("%s: %d", p, got)
 		}

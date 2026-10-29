@@ -21,15 +21,18 @@ def test_status_and_exec(remote):
     assert r.returncode == 5
 
 
-def test_environment_flag_and_saved_server(cli, remote, tmp_path):
-    """-e names the environment; the old -d is an unknown option."""
-    assert remote.name in remote("--environment", remote.name, "status").stdout.decode()
-    assert remote.name in remote(f"-e={remote.name}", "status").stdout.decode()
+def test_computer_flag_and_saved_server(cli, remote, tmp_path):
+    """-c names the computer; the old -d, -e and --environment are unknown options."""
+    assert remote.name in remote("--computer", remote.name, "status").stdout.decode()
+    assert remote.name in remote(f"-c={remote.name}", "status").stdout.decode()
     r = remote("-d", remote.name, "status", check=False)
     assert r.returncode == 2 and r.stderr.decode().startswith("deskyard:"), r.stderr
+    for old in (["-e", remote.name], ["--environment", remote.name]):
+        r = remote(*old, "status", check=False)
+        assert r.returncode == 2 and r.stderr.decode().startswith("deskyard:"), (old, r.stderr)
     saved = json.loads((tmp_path / "config" / "deskyard" / "servers.json").read_text())
     entry = saved["servers"][saved["default"]]
-    assert entry["environment"] == remote.name and entry["username"] == remote.username, saved
+    assert entry["computer"] == remote.name and entry["username"] == remote.username, saved
     assert entry["credential"].startswith("dyc_") and "desktop" not in entry, saved
 
 

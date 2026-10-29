@@ -81,10 +81,10 @@ def video_settings_lines(name) -> list[str]:
 
 # --- accounts, client credentials, exec ------------------------------------------------------
 
-def make_account(admin, environments, password="pw") -> str:
-    """A password account with full access to the environments."""
+def make_account(admin, computers, password="pw") -> str:
+    """A password account with full access to the computers."""
     user = "u" + uuid.uuid4().hex[:5]
-    grants = [{"computer": e, "level": "full"} for e in environments]
+    grants = [{"computer": e, "level": "full"} for e in computers]
     r = admin.post("/api/accounts", json={"username": user, "password": password, "admin": False, "grants": grants})
     assert r.status_code == 201, r.text
     return user
@@ -99,7 +99,7 @@ def login_link(admin, user) -> str:
 
 def make_credential(admin, name, client="test", expires=None) -> dict:
     """A client credential, as `deskyard auth` gets one, of a new token account
-    with full access to the environment: {"credential", "id", "username"}. The
+    with full access to the computer: {"credential", "id", "username"}. The
     credential is named client; activity lists it as an agent with that name."""
     user = "c" + uuid.uuid4().hex[:5]
     r = admin.post("/api/accounts", json={"username": user, "grants": [{"computer": name, "level": "full"}], "expires": expires})
