@@ -21,6 +21,10 @@ PANEL = "xfce4-panel"
 TOKEN = "test-token"
 DEFAULT_ENV = {"WORKSPACE_PROXY_TOKEN": TOKEN}
 TOKEN_HEADER = {"X-Deskyard-Token": TOKEN}
+# Images built from this checkout run the desktop session in its own
+# namespace, which the desktop user's commands join to see what the session
+# sees. Root's commands can't join it and run beside it.
+WORKSPACE_EXEC = "/usr/local/bin/workspace-exec"
 
 
 def docker(*args: str, check: bool = True, input: str | None = None) -> subprocess.CompletedProcess:
@@ -30,13 +34,14 @@ def docker(*args: str, check: bool = True, input: str | None = None) -> subproce
 class Sandbox:
     def __init__(self, name: str):
         self.name = name
-        self.userns = json.loads(docker("inspect", name).stdout)[0]["Config"]["Labels"].get("deskyard.fuse") == "userns-v1"
+
+    def _exec(self, user: str, join_session: bool = True) -> list[str]:
+        argv = ["docker", "exec", "-u", user, self.name]
+        return argv + [WORKSPACE_EXEC] if user == "user" and join_session else argv
 
     def exec(self, cmd: str, user: str = "user", login: bool = True, check: bool = True,
              timeout: float = 300, join_session: bool = True) -> subprocess.CompletedProcess:
-        argv = ["docker", "exec", "-u", user, self.name]
-        if self.userns and user == "user" and join_session:
-            argv += ["/usr/local/bin/workspace-exec"]
+        argv = self._exec(user, join_session)
         argv += ["bash", "-lc", cmd] if login else shlex.split(cmd)
         res = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
         if check and res.returncode != 0:
@@ -44,9 +49,7 @@ class Sandbox:
         return res
 
     def exec_bytes(self, cmd: str, user: str = "user") -> bytes:
-        prefix = ["/usr/local/bin/workspace-exec"] if self.userns and user == "user" else []
-        res = subprocess.run(["docker", "exec", "-u", user, self.name, *prefix, "bash", "-lc", cmd],
-                             capture_output=True, check=True)
+        res = subprocess.run([*self._exec(user), "bash", "-lc", cmd], capture_output=True, check=True)
         return res.stdout
 
     def port(self, container_port: int) -> int:
@@ -124,8 +127,7 @@ def run_args(image: str, *, home: str, env: dict[str, str] | None = None,
     if info["Config"]["Labels"].get("deskyard.cli") == "runtime-v1":
         cli = ROOT / "supervisor" / "bin" / "desktop-cli" / f"linux-{info['Architecture']}"
         argv += ["--mount", f"type=bind,src={cli},dst=/opt/deskyard/cli,readonly"]
-    if info["Config"]["Labels"].get("deskyard.fuse") == "userns-v1":
-        argv += ["--device", "/dev/fuse"]
+    argv += ["--device", "/dev/fuse"]  # FUSE document portals, in the session's namespace
     for k, v in (DEFAULT_ENV if env is None else env).items():
         argv += ["-e", f"{k}={v}"]
     return name, argv + [image]

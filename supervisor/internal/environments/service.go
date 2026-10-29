@@ -622,7 +622,7 @@ func (s *Service) createContainer(ctx context.Context, name string, revision uin
 		}
 		spec.Mounts = append(spec.Mounts, engine.Mount{Source: dir, Target: desktopcli.Target, ReadOnly: true, MustExist: true})
 	}
-	if img.Labels["deskyard.fuse"] == "userns-v1" {
+	if img.Labels[labelFUSE] == fuseUserNS {
 		spec.Devices = append(spec.Devices, "/dev/fuse")
 	}
 	if set.DockerAccess {
