@@ -1,6 +1,6 @@
 deskyard computer use: set a server's default computer
 
-Usage: deskyard [-c COMPUTER] computer use COMPUTER|SERVER/COMPUTER
+Usage: deskyard [-c COMPUTER] computer use [SERVER/]COMPUTER
 
 Checks that you can see COMPUTER on the default server (or SERVER), then makes
 it that server's default computer, used when -c isn't given.

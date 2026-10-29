@@ -40,7 +40,7 @@ type App struct {
 	callerName string
 	callerSet  bool
 
-	envFlag string // -c/--computer: COMPUTER or SERVER/COMPUTER
+	computerFlag string // -c/--computer: COMPUTER or SERVER/COMPUTER
 }
 
 // New returns an App wired to the process.
@@ -141,7 +141,7 @@ func (a *App) run(ctx context.Context, argv []string) error {
 			if _, _, err := splitSelector(argv[1]); err != nil {
 				return usagef(nil, "%s: %v", arg, err)
 			}
-			a.envFlag, argv = argv[1], argv[2:]
+			a.computerFlag, argv = argv[1], argv[2:]
 			continue
 		case strings.HasPrefix(arg, "-c="), strings.HasPrefix(arg, "--computer="):
 			flag, v, _ := strings.Cut(arg, "=")
@@ -151,7 +151,7 @@ func (a *App) run(ctx context.Context, argv []string) error {
 			if _, _, err := splitSelector(v); err != nil {
 				return usagef(nil, "%s: %v", flag, err)
 			}
-			a.envFlag, argv = v, argv[1:]
+			a.computerFlag, argv = v, argv[1:]
 			continue
 		case arg == "-h" || arg == "--help":
 			return a.printHelp(nil)
@@ -355,8 +355,8 @@ func splitSelector(sel string) (server, env string, err error) {
 
 // selector is the computer chosen with -c, else DESKYARD_COMPUTER.
 func (a *App) selector() (string, error) {
-	if a.envFlag != "" {
-		return a.envFlag, nil
+	if a.computerFlag != "" {
+		return a.computerFlag, nil
 	}
 	sel := a.Getenv("DESKYARD_COMPUTER")
 	if _, _, err := splitSelector(sel); err != nil {

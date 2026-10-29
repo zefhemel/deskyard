@@ -616,9 +616,9 @@ export const api = {
     request<{ sessions: TerminalSession[] }>("GET", `${c(name)}/terminal/sessions`, undefined, signal),
   /** Starts the next free terminal-N, detached; the tab then opens it. */
   createTerminal: (name: string) => request<{ name: string }>("POST", `${c(name)}/terminal/sessions`),
-  /** Ends a session for everyone attached to it. */
+  /** Gives a session a new name. */
   renameTerminal: (name: string, session: string, next: string) => request<{ name: string }>("PATCH", `${c(name)}/terminal/sessions/${enc(session)}`, { name: next }),
-
+  /** Ends a session for everyone attached to it. */
   endTerminal: (name: string, session: string) => request<void>("DELETE", `${c(name)}/terminal/sessions/${enc(session)}`),
   createComputer: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: AccessGrant[]; dockerAccess: boolean; volumes?: VolumeGrant[] } & ComputerVPNSettings) =>
     request<JobRef>("POST", "/api/computers", body),

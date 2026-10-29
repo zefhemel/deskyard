@@ -28,13 +28,13 @@ New here? Run `+"`deskyard guide`"+` and `+"`deskyard COMMAND --help`"+`.
 	}
 	fmt.Fprint(w, `
 Choosing a computer:
-  Sign in to a server first: `+"`deskyard login https://host/COMPUTER`"+`. Commands then
-  use a computer on a server: -c COMPUTER on the default server, or
-  -c SERVER/COMPUTER (also --computer, before the command), else
+  Sign in to a server first: `+"`deskyard login https://host/COMPUTER`"+`.
+  Commands then use a computer on a server: -c COMPUTER on the default
+  server, or -c SERVER/COMPUTER (also --computer, before the command), else
   $DESKYARD_COMPUTER, else the default server's computer
-  (`+"`deskyard computer use COMPUTER`"+`). $DESKYARD_URL + $DESKYARD_CREDENTIAL replace the
-  default server. Inside a computer with none chosen, commands act on it
-  directly.
+  (`+"`deskyard computer use COMPUTER`"+`). $DESKYARD_URL + $DESKYARD_CREDENTIAL
+  replace the default server. Inside a computer with none chosen, commands
+  act on it directly.
 
 Environment variables:
 `)

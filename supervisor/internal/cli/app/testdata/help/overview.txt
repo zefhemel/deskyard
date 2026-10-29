@@ -38,12 +38,12 @@ Servers and sign-in:
   logout [SERVER]                      revoke this CLI's credential and forget the server
   server list [--json]                 list the servers you are signed in to
   server default [NAME]                set or show the default server
-  computer use COMPUTER|SERVER/COMPUTER set a server's default computer
+  computer use [SERVER/]COMPUTER       set a server's default computer
 
 Computers (on the server):
   computer list [--json]               list the computers you can see
   computer show NAME [--json]          show a computer's state and settings
-  computer create NAME --image REF [OPTIONS] create a computer (admin)
+  computer create NAME --image REF     create a computer (admin)
   computer remove NAME [--delete-files] remove a computer (admin)
   computer start NAME                  start a computer
   computer stop NAME                   stop a computer
@@ -80,13 +80,13 @@ Information:
   version                              print the version
 
 Choosing a computer:
-  Sign in to a server first: `deskyard login https://host/COMPUTER`. Commands then
-  use a computer on a server: -c COMPUTER on the default server, or
-  -c SERVER/COMPUTER (also --computer, before the command), else
+  Sign in to a server first: `deskyard login https://host/COMPUTER`.
+  Commands then use a computer on a server: -c COMPUTER on the default
+  server, or -c SERVER/COMPUTER (also --computer, before the command), else
   $DESKYARD_COMPUTER, else the default server's computer
-  (`deskyard computer use COMPUTER`). $DESKYARD_URL + $DESKYARD_CREDENTIAL replace the
-  default server. Inside a computer with none chosen, commands act on it
-  directly.
+  (`deskyard computer use COMPUTER`). $DESKYARD_URL + $DESKYARD_CREDENTIAL
+  replace the default server. Inside a computer with none chosen, commands
+  act on it directly.
 
 Environment variables:
   DESKYARD_COMPUTER    computer to use when -c isn't given (COMPUTER or SERVER/COMPUTER)

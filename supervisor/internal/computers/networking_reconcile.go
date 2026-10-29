@@ -124,6 +124,7 @@ func (n *Networking) recover(ctx context.Context, r networkTransition, retry boo
 		}
 		if !replace {
 			// A runtime from before the rename is replaced, as a lost one is.
+			// Compatibility code, removable with legacyRuntimes.
 			legacy, err := s.legacyRuntimes(ctx, r.Name)
 			if err != nil {
 				return false, n.fail(r, phaseInspect)
@@ -216,6 +217,7 @@ func (n *Networking) startedAt(name string, retry bool) {
 func (n *Networking) Reconcile(ctx context.Context) error {
 	var errs []error
 	names := n.names()
+	// Compatibility code, removable with removeLegacyLeftovers.
 	n.service.removeLegacyLeftovers(ctx, names)
 	for _, name := range names {
 		unlock, err := n.lock(ctx, name)

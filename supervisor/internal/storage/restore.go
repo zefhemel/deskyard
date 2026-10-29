@@ -78,16 +78,16 @@ func (s *Service) helper(ctx context.Context, what string, mounts []engine.Mount
 // itemFolder is the host folder holding the item's files.
 func (s *Service) itemFolder(it Item) (string, error) {
 	if it.Kind == KindComputer {
-		if _, ok := s.Env.Definition(it.Name); !ok {
+		if _, ok := s.Computers.Definition(it.Name); !ok {
 			return "", fmt.Errorf("computer %s: %w", it.Name, ErrNotFound)
 		}
-		return s.Env.Layout().HomeOf(it.Name), nil
+		return s.Computers.Layout().HomeOf(it.Name), nil
 	}
-	v, ok := s.Env.Volume(it.Name)
+	v, ok := s.Computers.Volume(it.Name)
 	if !ok {
 		return "", fmt.Errorf("volume %s: %w", it.Name, ErrNotFound)
 	}
-	return s.Env.VolumeFolder(v), nil
+	return s.Computers.VolumeFolder(v), nil
 }
 
 // Restore restores a snapshot of it as req says.
@@ -139,7 +139,7 @@ func (s *Service) restoreHere(ctx context.Context, it Item, repo Repo, snap Snap
 	if it.Kind == KindComputer {
 		envs = []string{it.Name}
 	} else {
-		for _, u := range s.Env.VolumeUsers(it.Name) {
+		for _, u := range s.Computers.VolumeUsers(it.Name) {
 			envs = append(envs, u.Computer)
 		}
 	}
@@ -148,7 +148,7 @@ func (s *Service) restoreHere(ctx context.Context, it Item, repo Repo, snap Snap
 	defer s.opMu.Unlock()
 	// Every one is reserved before any is stopped, so a busy one stops none.
 	for _, name := range envs {
-		release, err := s.Env.Reserve(name, "restoring")
+		release, err := s.Computers.Reserve(name, "restoring")
 		if err != nil {
 			return fmt.Errorf("%s is busy: %w", name, err)
 		}
@@ -157,14 +157,14 @@ func (s *Service) restoreHere(ctx context.Context, it Item, repo Repo, snap Snap
 	var restart []string
 	startAgain := func() {
 		for _, name := range restart {
-			_ = s.Env.Start(context.WithoutCancel(ctx), name)
+			_ = s.Computers.Start(context.WithoutCancel(ctx), name)
 		}
 	}
 	for _, name := range envs {
-		c, err := s.Env.Get(ctx, name)
+		c, err := s.Computers.Get(ctx, name)
 		if err == nil && c.Running() {
 			progress("Stopping "+name, -1)
-			if err = s.Env.Stop(ctx, name); err == nil {
+			if err = s.Computers.Stop(ctx, name); err == nil {
 				restart = append(restart, name)
 				continue
 			}
@@ -186,7 +186,7 @@ func (s *Service) restoreHere(ctx context.Context, it Item, repo Repo, snap Snap
 	}
 	for _, name := range restart {
 		progress("Starting "+name, -1)
-		if err := s.Env.Start(ctx, name); err != nil {
+		if err := s.Computers.Start(ctx, name); err != nil {
 			return fmt.Errorf("the files are restored, but starting %s failed: %w", name, err)
 		}
 	}
@@ -195,13 +195,13 @@ func (s *Service) restoreHere(ctx context.Context, it Item, repo Repo, snap Snap
 
 func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snapshot, req RestoreRequest, progress func(string, float64)) (RestoreResult, error) {
 	name := req.NewName
-	layout := s.Env.Layout()
+	layout := s.Computers.Layout()
 	var folder string
 	if it.Kind == KindComputer {
 		if err := computers.ValidNewName(name); err != nil {
 			return RestoreResult{}, err
 		}
-		if _, ok := s.Env.Definition(name); ok {
+		if _, ok := s.Computers.Definition(name); ok {
 			return RestoreResult{}, fmt.Errorf("computer %q: %w", name, ErrExists)
 		}
 		folder = layout.HomeOf(name)
@@ -209,7 +209,7 @@ func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snaps
 		if err := computers.ValidName(name); err != nil {
 			return RestoreResult{}, err
 		}
-		if _, ok := s.Env.Volume(name); ok {
+		if _, ok := s.Computers.Volume(name); ok {
 			return RestoreResult{}, fmt.Errorf("volume %q: %w", name, ErrExists)
 		}
 		folder = layout.VolumeOf(name)
@@ -226,12 +226,12 @@ func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snaps
 	if it.Kind == KindComputer {
 		// As the create API does, so reconcile and other operations leave the
 		// name alone while its home is restored and it is created.
-		releaseName, err := s.Env.Reserve(name, "creating")
+		releaseName, err := s.Computers.Reserve(name, "creating")
 		if err != nil {
 			return RestoreResult{}, fmt.Errorf("%s is busy: %w", name, err)
 		}
 		defer releaseName()
-		if _, ok := s.Env.Definition(name); ok {
+		if _, ok := s.Computers.Definition(name); ok {
 			return RestoreResult{}, fmt.Errorf("computer %q: %w", name, ErrExists)
 		}
 		if s.ForgetName != nil {
@@ -243,6 +243,7 @@ func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snaps
 	var def computers.Definition
 	if it.Kind == KindComputer {
 		var buf bytes.Buffer
+		// Older snapshots keep the /deskyard/environment path.
 		if err := s.Tool.Dump(ctx, repo, snap.ID, path.Join("/deskyard/environment", it.Name, "definition.json"), false, &buf); err != nil {
 			return RestoreResult{}, err
 		}
@@ -270,7 +271,7 @@ func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snaps
 	}
 	res := RestoreResult{Created: name}
 	if it.Kind == KindVolume {
-		if _, _, err := s.Env.CreateVolume(ctx, name, ""); err != nil {
+		if _, _, err := s.Computers.CreateVolume(ctx, name, ""); err != nil {
 			removeFolder()
 			return RestoreResult{}, err
 		}
@@ -278,11 +279,11 @@ func (s *Service) restoreNew(ctx context.Context, it Item, repo Repo, snap Snaps
 	}
 	set, dropped := s.settingsFrom(def, req.NewImage)
 	res.Dropped = dropped
-	if _, err := s.Env.Create(ctx, name, set, progress); err != nil {
+	if _, err := s.Computers.Create(ctx, name, set, progress); err != nil {
 		removeFolder()
 		return RestoreResult{}, err
 	}
-	if err := s.Env.Stop(ctx, name); err != nil {
+	if err := s.Computers.Stop(ctx, name); err != nil {
 		return res, fmt.Errorf("created %s, but stopping it failed: %w", name, err)
 	}
 	return res, nil
@@ -304,7 +305,7 @@ func (s *Service) settingsFrom(def computers.Definition, image string) (computer
 		dropped = append(dropped, "Docker access")
 	}
 	for _, g := range def.Volumes {
-		if _, ok := s.Env.Volume(g.Name); ok {
+		if _, ok := s.Computers.Volume(g.Name); ok {
 			set.Volumes = append(set.Volumes, g)
 		} else {
 			dropped = append(dropped, fmt.Sprintf("volume %s, which doesn't exist here", g.Name))
@@ -351,7 +352,7 @@ func (s *Service) restoreFolder(ctx context.Context, it Item, repo Repo, snap Sn
 	// A host volume's folder may be one the supervisor can't write in (it
 	// belongs to the host's user), so the root helper makes the folder
 	// there. Homes and local volumes are the supervisor's own.
-	if v, ok := s.Env.Volume(it.Name); it.Kind == KindVolume && ok && v.Kind == computers.VolumeHost {
+	if v, ok := s.Computers.Volume(it.Name); it.Kind == KindVolume && ok && v.Kind == computers.VolumeHost {
 		if err := s.helper(ctx, "making "+name, []engine.Mount{{Source: folder, Target: "/item", MustExist: true}}, "install", "-d", "-o", "1000", "-g", "1000", "-m", "0755", "/item/"+name); err != nil {
 			return RestoreResult{}, err
 		}

@@ -933,7 +933,7 @@
       "name": "computer use",
       "group": "servers",
       "summary": "set a server's default computer",
-      "usage": "computer use COMPUTER|SERVER/COMPUTER",
+      "usage": "computer use [SERVER/]COMPUTER",
       "description": "Checks that you can see COMPUTER on the default server (or SERVER), then makes it that server's default computer, used when -c isn't given.",
       "arguments": [
         {
@@ -1031,7 +1031,7 @@
       "name": "computer create",
       "group": "computers",
       "summary": "create a computer (admin)",
-      "usage": "computer create NAME --image REF [OPTIONS]",
+      "usage": "computer create NAME --image REF",
       "description": "Creates a computer from an image and starts it, printing the progress (pulling the image, starting the desktop) on stderr until it is ready; Ctrl-C stops following, not the creation. Its files are in home/NAME/ in the server's data folder; a folder left by an earlier computer of that name is reused. Administrators have access to every computer; --grant gives it to other accounts.",
       "arguments": [
         {

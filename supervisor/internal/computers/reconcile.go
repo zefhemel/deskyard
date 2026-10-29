@@ -473,6 +473,8 @@ func (s *Service) instanceFilter() map[string]string {
 
 // legacyRuntimes lists this supervisor's VPN runtimes for name from before
 // the rename, which its replacement removes.
+// Removable once every install has started on this version; see the
+// Computer terminology feature page, "Compatibility code".
 func (s *Service) legacyRuntimes(ctx context.Context, name string) ([]engine.Container, error) {
 	cs, err := s.Eng.List(ctx, s.instanceFilter())
 	if err != nil {
@@ -508,6 +510,8 @@ func (s *Service) removeLegacyRuntimes(ctx context.Context, name string) error {
 // whose computer is gone. A computer's own runtime is its replacement's to
 // remove, once its container is out of its namespace. A failure is logged;
 // a leftover serves nothing.
+// Removable once every install has started on this version; see the
+// Computer terminology feature page, "Compatibility code".
 func (s *Service) removeLegacyLeftovers(ctx context.Context, keep []string) {
 	cs, err := s.Eng.List(ctx, s.instanceFilter())
 	if err != nil {

@@ -1,6 +1,6 @@
 deskyard computer create: create a computer (admin)
 
-Usage: deskyard [-c COMPUTER] computer create NAME --image REF [OPTIONS]
+Usage: deskyard [-c COMPUTER] computer create NAME --image REF
 
 Creates a computer from an image and starts it, printing the progress (pulling
 the image, starting the desktop) on stderr until it is ready; Ctrl-C stops

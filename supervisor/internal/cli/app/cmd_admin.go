@@ -143,7 +143,7 @@ func levelOf(c *call, what, s string, allowed ...string) (name, level string, er
 
 // ---- computers
 
-type envDetail struct {
+type computerDetail struct {
 	Name         string  `json:"name"`
 	State        string  `json:"state"`
 	Power        string  `json:"power"`
@@ -178,7 +178,7 @@ func runEnvList(a *App, c *call) error {
 		return err
 	}
 	var list struct {
-		Computers []envDetail `json:"computers"`
+		Computers []computerDetail `json:"computers"`
 		Conflicts []struct {
 			Name    string `json:"name"`
 			Message string `json:"message"`
@@ -209,7 +209,7 @@ func runEnvList(a *App, c *call) error {
 	return nil
 }
 
-func imageName(e envDetail) string {
+func imageName(e computerDetail) string {
 	if e.ImageTitle != "" {
 		return strings.TrimSpace(e.ImageTitle + " " + e.ImageVersion)
 	}
@@ -222,7 +222,7 @@ func runEnvShow(a *App, c *call) error {
 	if err != nil {
 		return err
 	}
-	var e envDetail
+	var e computerDetail
 	if done, err := getJSON(a, c, cl, "/computers/"+url.PathEscape(name), &e); done || err != nil {
 		return err
 	}
@@ -513,7 +513,7 @@ func runEnvAccess(a *App, c *call) error {
 	}
 	path := "/computers/" + url.PathEscape(name)
 	if len(changes) == 0 {
-		var e envDetail
+		var e computerDetail
 		if done, err := getJSON(a, c, cl, path, &e); done || err != nil {
 			return err
 		}
@@ -528,7 +528,7 @@ func runEnvAccess(a *App, c *call) error {
 		}
 		return tw.Flush()
 	}
-	var e envDetail
+	var e computerDetail
 	if err := cl.JSON(c.ctx, http.MethodGet, path, nil, &e); err != nil {
 		return err
 	}

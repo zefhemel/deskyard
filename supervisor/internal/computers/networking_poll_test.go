@@ -118,7 +118,7 @@ func TestVPNFailedDisableShowsDiagnosticAndRetriesOnStart(t *testing.T) {
 	}
 	intent, _ = s.Networking.record("alice")
 	if !got.Container.Running() || got.ID != d.ID || got.Container.NetworkContainer != "" || got.Container.Restart != "unless-stopped" || got.Settings.VPNConnectionID != "" || intent.Pending || intent.Error != "" {
-		t.Errorf("explicit direct intent not recovered: environment=%+v intent=%+v", got, intent)
+		t.Errorf("explicit direct intent not recovered: computer=%+v intent=%+v", got, intent)
 	}
 	if got.VPN.State != "disabled" || got.VPN.Reason != "" {
 		t.Errorf("completed disable not published: %+v", got.VPN)

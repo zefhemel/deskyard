@@ -68,8 +68,10 @@ Things that used the old name stop working: the CLI's `-e` option, the
 `DESKYARD_ENVIRONMENT` variable and the `env` commands (now `-c`,
 `DESKYARD_COMPUTER` and `computer`), the `/api/environments` routes and
 `/environments/NAME` links in the web UI (now `/api/computers` and
-`/computers/NAME`). Update scripts and bookmarks. Desktop addresses
-(`/NAME/`) don't change.
+`/computers/NAME`). Update scripts and bookmarks. An older `deskyard` CLI on other machines
+stops working against an upgraded server and must be reinstalled with the
+install command in [the CLI guide](cli.md). Desktop addresses (`/NAME/`)
+don't change.
 
 ## On a LAN
 

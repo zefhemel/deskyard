@@ -43,14 +43,14 @@ const (
 
 // Service runs storage remotes and backups.
 type Service struct {
-	Remotes *Remotes
-	Store   *Store
-	State   *State
-	Tool    Tool
-	Env     Computers
-	Loc     *time.Location
-	Now     func() time.Time
-	Log     *slog.Logger
+	Remotes   *Remotes
+	Store     *Store
+	State     *State
+	Tool      Tool
+	Computers Computers
+	Loc       *time.Location
+	Now       func() time.Time
+	Log       *slog.Logger
 	// ForgetName, when set, is called under the reservation before an
 	// computer is restored under a new name, so what a removal of that
 	// name failed to purge (its grants) doesn't carry over.
@@ -72,7 +72,7 @@ type listing struct {
 
 // Open loads the remotes, repositories, policies and run state from layout,
 // for the supervisor instance.
-func Open(layout config.Layout, instance string, run Runner, env Computers, log *slog.Logger) (*Service, error) {
+func Open(layout config.Layout, instance string, run Runner, comps Computers, log *slog.Logger) (*Service, error) {
 	remotes, err := LoadRemotes(filepath.Join(layout.Data, "storage-remotes.json"), layout.Secret)
 	if err != nil {
 		return nil, err
@@ -90,7 +90,7 @@ func Open(layout config.Layout, instance string, run Runner, env Computers, log 
 		host = host[:12]
 	}
 	return &Service{
-		Remotes: remotes, Store: st, State: state, Env: env, Loc: time.Local, Now: time.Now, Log: log,
+		Remotes: remotes, Store: st, State: state, Computers: comps, Loc: time.Local, Now: time.Now, Log: log,
 		Tool:   Tool{Run: run, Host: "deskyard-" + host, CacheDir: filepath.Join(layout.Cache, "restic")},
 		layout: layout, held: map[Item]string{}, remoteOp: map[string]int{}, listings: map[string]listing{},
 	}, nil
@@ -351,10 +351,10 @@ func (s *Service) ItemGone(it Item) error {
 
 func (s *Service) exists(it Item) bool {
 	if it.Kind == KindComputer {
-		_, ok := s.Env.Definition(it.Name)
+		_, ok := s.Computers.Definition(it.Name)
 		return ok
 	}
-	_, ok := s.Env.Volume(it.Name)
+	_, ok := s.Computers.Volume(it.Name)
 	return ok
 }
 
@@ -366,7 +366,7 @@ func (s *Service) itemSource(it Item) (root string, mounts []engine.Mount, clean
 	cleanup = func() {}
 	switch it.Kind {
 	case KindComputer:
-		def, ok := s.Env.Definition(it.Name)
+		def, ok := s.Computers.Definition(it.Name)
 		if !ok {
 			return "", nil, cleanup, fmt.Errorf("computer %s doesn't exist", it.Name)
 		}
@@ -380,18 +380,20 @@ func (s *Service) itemSource(it Item) (root string, mounts []engine.Mount, clean
 		if err := store.WriteFile(file, append(b, '\n')); err != nil {
 			return "", nil, cleanup, err
 		}
+		// The snapshot path keeps /deskyard/environment on purpose: renaming it would
+		// split restic's host+paths retention groups and break dumps of older snapshots.
 		root = "/deskyard/environment/" + it.Name
 		return root, []engine.Mount{
-			{Source: s.Env.Layout().HomeOf(it.Name), Target: root + "/home", ReadOnly: true, MustExist: true},
+			{Source: s.Computers.Layout().HomeOf(it.Name), Target: root + "/home", ReadOnly: true, MustExist: true},
 			{Source: file, Target: root + "/definition.json", ReadOnly: true, MustExist: true},
 		}, func() { os.Remove(file) }, nil
 	default:
-		v, ok := s.Env.Volume(it.Name)
+		v, ok := s.Computers.Volume(it.Name)
 		if !ok {
 			return "", nil, cleanup, fmt.Errorf("volume %s doesn't exist", it.Name)
 		}
 		root = "/deskyard/volume/" + it.Name
-		return root, []engine.Mount{{Source: s.Env.VolumeFolder(v), Target: root, ReadOnly: true, MustExist: true}}, cleanup, nil
+		return root, []engine.Mount{{Source: s.Computers.VolumeFolder(v), Target: root, ReadOnly: true, MustExist: true}}, cleanup, nil
 	}
 }
 
@@ -642,6 +644,7 @@ func (s *Service) snapshotOf(ctx context.Context, repoName string, it Item, id s
 // itemRoot is where an item's files are in its snapshots.
 func itemRoot(it Item) string {
 	if it.Kind == KindComputer {
+		// Same path as the backup; see itemSource.
 		return path.Join("/deskyard/environment", it.Name, "home")
 	}
 	return path.Join("/deskyard/volume", it.Name)

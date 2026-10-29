@@ -172,7 +172,9 @@ func DefaultName(base string) string {
 
 // UnmarshalJSON reads a server entry, taking the default computer from the
 // legacy "environment" key of older servers.json files when "computer" is
-// absent. Saving writes only "computer".
+// absent. Saving writes only "computer". Removable once every install has
+// started on this version; see the Computer terminology feature page,
+// "Compatibility code".
 func (s *Server) UnmarshalJSON(data []byte) error {
 	type plain Server
 	var aux struct {

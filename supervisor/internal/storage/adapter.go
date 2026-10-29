@@ -25,14 +25,16 @@ type Computers interface {
 }
 
 // ComputersOf adapts the computers service.
-func ComputersOf(s *computers.Service) Computers { return envAdapter{s} }
+func ComputersOf(s *computers.Service) Computers { return computersAdapter{s} }
 
-type envAdapter struct{ *computers.Service }
+type computersAdapter struct{ *computers.Service }
 
-func (a envAdapter) Layout() config.Layout { return a.Service.Layout }
+func (a computersAdapter) Layout() config.Layout { return a.Service.Layout }
 
-func (a envAdapter) Definition(name string) (computers.Definition, bool) {
+func (a computersAdapter) Definition(name string) (computers.Definition, bool) {
 	return a.Service.Defs.Get(name)
 }
 
-func (a envAdapter) Volume(name string) (computers.Volume, bool) { return a.Service.Vols.Get(name) }
+func (a computersAdapter) Volume(name string) (computers.Volume, bool) {
+	return a.Service.Vols.Get(name)
+}

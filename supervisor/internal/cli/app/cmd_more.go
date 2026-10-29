@@ -28,7 +28,7 @@ func runCp(a *App, c *call) error {
 	case src.IsRemote && dst.IsRemote:
 		return usagef(c.cmd, "both sides are on computers; copy to this machine first, then on")
 	case !src.IsRemote && !dst.IsRemote:
-		if a.envFlag == "" && a.Inside != nil && a.Inside() {
+		if a.computerFlag == "" && a.Inside != nil && a.Inside() {
 			if src.Path == "-" || dst.Path == "-" {
 				return usagef(c.cmd, "- needs a computer on the other side")
 			}

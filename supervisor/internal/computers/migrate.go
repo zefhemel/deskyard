@@ -12,6 +12,9 @@ import (
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
 )
 
+// This file is removable once every install has started on this version; see
+// the Computer terminology feature page, "Compatibility code".
+
 // legacyDefinitionsName is the definitions file of supervisors from before
 // computers were called computers.
 const legacyDefinitionsName = "environments.json"

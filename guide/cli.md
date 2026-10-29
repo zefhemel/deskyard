@@ -50,9 +50,9 @@ With `browser connect` running, Playwright's
 tools work as if the browser were local. `-c COMPUTER` (or `--computer COMPUTER`)
 goes before the command and picks one of the default server's computers;
 `-c SERVER/COMPUTER` picks one on another signed-in server. `deskyard computer use alice`
-saves typing `-e`, `deskyard server list` and `server default NAME` manage the
+saves typing `-c`, `deskyard server list` and `server default NAME` manage the
 servers, and `DESKYARD_COMPUTER` (`COMPUTER` or `SERVER/COMPUTER`) or
-`DESKYARD_URL` with `DESKYARD_CREDENTIAL` work without a config file. Inside an
+`DESKYARD_URL` with `DESKYARD_CREDENTIAL` work without a config file. Inside a
 computer, without `-c`, commands act on that computer directly. For
 command help, use `deskyard --help`, `deskyard guide` (a short manual) and
 `deskyard describe --json` (machine-readable command descriptions).

@@ -192,7 +192,8 @@ type loaded struct {
 
 // loadedGrant is a grant as stored. Grants saved before computers were called
 // computers name theirs under "environment", read only when "computer" is
-// absent.
+// absent. Removable once every install has started on this version; see the
+// Computer terminology feature page, "Compatibility code".
 type loadedGrant struct {
 	Grant
 	Environment *string `json:"environment"`

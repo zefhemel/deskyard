@@ -24,7 +24,10 @@ const (
 
 // legacyKindComputer is KindComputer before computers were called computers:
 // their older snapshots are tagged environment:NAME, and older backups.json
-// files key them so. It is read, never written.
+// files key them so. It is read, never written. The tag is read permanently
+// (remote repositories keep it); the backups.json keys are removable once every
+// install has started on this version, see the Computer terminology feature
+// page, "Compatibility code".
 const legacyKindComputer = "environment"
 
 // Item is a computer or a volume, by name.
@@ -363,7 +366,9 @@ func LoadState(path string) (*State, error) {
 
 // rekeyItems keys run states saved under a computer's old tag
 // (environment:NAME) by its tag; a state already under the new tag wins. Keys
-// that aren't item tags are kept as they are.
+// that aren't item tags are kept as they are. Removable once every install has
+// started on this version; see the Computer terminology feature page,
+// "Compatibility code".
 func rekeyItems(items map[string]RunState) map[string]RunState {
 	out := make(map[string]RunState, len(items))
 	for key, rs := range items {
