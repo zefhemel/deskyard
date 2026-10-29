@@ -178,13 +178,13 @@ func runEnvList(a *App, c *call) error {
 		return err
 	}
 	var list struct {
-		Computers []envDetail `json:"environments"`
+		Computers []envDetail `json:"computers"`
 		Conflicts []struct {
 			Name    string `json:"name"`
 			Message string `json:"message"`
 		} `json:"conflicts"`
 	}
-	if done, err := getJSON(a, c, cl, "/environments", &list); done || err != nil {
+	if done, err := getJSON(a, c, cl, "/computers", &list); done || err != nil {
 		return err
 	}
 	if len(list.Computers) == 0 {
@@ -223,7 +223,7 @@ func runEnvShow(a *App, c *call) error {
 		return err
 	}
 	var e envDetail
-	if done, err := getJSON(a, c, cl, "/environments/"+url.PathEscape(name), &e); done || err != nil {
+	if done, err := getJSON(a, c, cl, "/computers/"+url.PathEscape(name), &e); done || err != nil {
 		return err
 	}
 	tw := tabwriter.NewWriter(a.Stdout, 0, 0, 1, ' ', 0)
@@ -373,7 +373,7 @@ func runEnvCreate(a *App, c *call) error {
 	var job struct {
 		Job string `json:"job"`
 	}
-	if err := cl.JSON(c.ctx, http.MethodPost, "/environments", body, &job); err != nil {
+	if err := cl.JSON(c.ctx, http.MethodPost, "/computers", body, &job); err != nil {
 		return err
 	}
 	ctx, stop := signal.NotifyContext(c.ctx, os.Interrupt, syscall.SIGTERM)
@@ -461,7 +461,7 @@ func runEnvRemove(a *App, c *call) error {
 	if err != nil {
 		return err
 	}
-	path := "/environments/" + url.PathEscape(name)
+	path := "/computers/" + url.PathEscape(name)
 	if c.bool("--delete-files") {
 		path += "?files=1"
 	}
@@ -484,7 +484,7 @@ func runEnvPower(a *App, c *call) error {
 	if err != nil {
 		return err
 	}
-	if err := cl.JSON(c.ctx, http.MethodPost, "/environments/"+url.PathEscape(name)+"/"+action, nil, nil); err != nil {
+	if err := cl.JSON(c.ctx, http.MethodPost, "/computers/"+url.PathEscape(name)+"/"+action, nil, nil); err != nil {
 		return err
 	}
 	done := map[string]string{"start": "Starting", "stop": "Stopping", "restart": "Restarting"}[action]
@@ -511,7 +511,7 @@ func runEnvAccess(a *App, c *call) error {
 	if err != nil {
 		return err
 	}
-	path := "/environments/" + url.PathEscape(name)
+	path := "/computers/" + url.PathEscape(name)
 	if len(changes) == 0 {
 		var e envDetail
 		if done, err := getJSON(a, c, cl, path, &e); done || err != nil {
@@ -571,7 +571,7 @@ func runVolumeList(a *App, c *call) error {
 			Computers []struct {
 				Name     string `json:"name"`
 				ReadOnly bool   `json:"readOnly"`
-			} `json:"environments"`
+			} `json:"computers"`
 		} `json:"volumes"`
 	}
 	if done, err := getJSON(a, c, cl, "/volumes", &list); done || err != nil {
@@ -918,7 +918,7 @@ func runShareList(a *App, c *call) error {
 		LinkPending bool    `json:"linkPending"`
 		Connected   bool    `json:"connected"`
 	}
-	if done, err := getJSON(a, c, cl, "/environments/"+url.PathEscape(env)+"/shares", &list); done || err != nil {
+	if done, err := getJSON(a, c, cl, "/computers/"+url.PathEscape(env)+"/shares", &list); done || err != nil {
 		return err
 	}
 	if len(list) == 0 {
@@ -964,7 +964,7 @@ func runShareCreate(a *App, c *call) error {
 	var ans struct {
 		Link string `json:"link"`
 	}
-	if err := cl.JSON(c.ctx, http.MethodPost, "/environments/"+url.PathEscape(env)+"/shares", body, &ans); err != nil {
+	if err := cl.JSON(c.ctx, http.MethodPost, "/computers/"+url.PathEscape(env)+"/shares", body, &ans); err != nil {
 		return err
 	}
 	what := "full access to"

@@ -196,13 +196,13 @@ func TestActivityRoutes(t *testing.T) {
 	s, ts := newTestServer(t)
 	admin := login(t, ts, "admin")
 	anna := login(t, ts, "anna")
-	for _, p := range []string{"/api/environments/alice/activity", "/api/environments/alice/screen-events"} {
+	for _, p := range []string{"/api/computers/alice/activity", "/api/computers/alice/screen-events"} {
 		if got := status(t, anna, "GET", ts.URL+p, ""); got != 404 {
 			t.Errorf("anna %s: %d", p, got)
 		}
 	}
 	s.activity.Screen(aliceRef, bot, click)
-	resp, err := admin.Get(ts.URL + "/api/environments/alice/activity")
+	resp, err := admin.Get(ts.URL + "/api/computers/alice/activity")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestScreenEventsStream(t *testing.T) {
 	s, ts := newTestServer(t)
 	_ = s.Accounts.SetAccess("alice", fullAccess("anna"))
 	anna := login(t, ts, "anna")
-	resp, err := anna.Get(ts.URL + "/api/environments/alice/screen-events")
+	resp, err := anna.Get(ts.URL + "/api/computers/alice/screen-events")
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("screen-events: %v %v", err, resp)
 	}

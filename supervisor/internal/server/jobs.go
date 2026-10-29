@@ -21,7 +21,7 @@ type jobState struct {
 	Message  string   `json:"message"`
 	Progress *float64 `json:"progress"`
 	Error    string   `json:"error,omitempty"`
-	Computer string   `json:"environment,omitempty"`
+	Computer string   `json:"computer,omitempty"`
 }
 
 // maxJobHistory is how many updates a job keeps for its followers. A verbose job

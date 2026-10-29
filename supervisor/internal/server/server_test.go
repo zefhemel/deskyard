@@ -208,7 +208,7 @@ func status(t *testing.T, c *http.Client, method, url, origin string) int {
 func TestUnauthenticated(t *testing.T) {
 	_, ts := newTestServer(t)
 	anon := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	for _, p := range []string{"/api/me", "/api/environments", "/api/events", "/api/accounts"} {
+	for _, p := range []string{"/api/me", "/api/computers", "/api/events", "/api/accounts"} {
 		if got := status(t, anon, "GET", ts.URL+p, ""); got != 401 {
 			t.Errorf("%s: %d", p, got)
 		}
@@ -258,19 +258,19 @@ func TestOriginAndPermissions(t *testing.T) {
 	_, ts := newTestServer(t)
 	admin := login(t, ts, "admin")
 	anna := login(t, ts, "anna")
-	if got := status(t, admin, "POST", ts.URL+"/api/environments/alice/start", "https://evil.example"); got != 403 {
+	if got := status(t, admin, "POST", ts.URL+"/api/computers/alice/start", "https://evil.example"); got != 403 {
 		t.Errorf("foreign origin: %d", got)
 	}
-	if got := status(t, admin, "POST", ts.URL+"/api/environments/alice/start", ""); got != 403 {
+	if got := status(t, admin, "POST", ts.URL+"/api/computers/alice/start", ""); got != 403 {
 		t.Errorf("no origin: %d", got)
 	}
-	if got := status(t, anna, "GET", ts.URL+"/api/environments/alice", ""); got != 404 {
+	if got := status(t, anna, "GET", ts.URL+"/api/computers/alice", ""); got != 404 {
 		t.Errorf("anna sees alice: %d", got)
 	}
 	if got := status(t, anna, "GET", ts.URL+"/alice/screen/", ""); got != 404 {
 		t.Errorf("anna gets alice's client: %d", got)
 	}
-	if got := status(t, admin, "GET", ts.URL+"/api/environments/alice", ""); got != 200 {
+	if got := status(t, admin, "GET", ts.URL+"/api/computers/alice", ""); got != 200 {
 		t.Errorf("admin: %d", got)
 	}
 	if got := status(t, admin, "GET", ts.URL+"/nosuch/", ""); got != 404 {

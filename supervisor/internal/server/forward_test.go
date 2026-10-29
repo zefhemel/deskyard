@@ -356,7 +356,7 @@ func TestForwardLinkCapPerToken(t *testing.T) {
 		defer cancel()
 		dial := func(tok string) (*websocket.Conn, string) {
 			t.Helper()
-			ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/api/environments/alice/forward",
+			ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/api/computers/alice/forward",
 				&websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer " + tok}}})
 			if err != nil {
 				t.Fatal(err)

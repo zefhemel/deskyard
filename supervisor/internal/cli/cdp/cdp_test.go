@@ -23,16 +23,16 @@ import (
 func TestRewriteURL(t *testing.T) {
 	const local = "127.0.0.1:9222"
 	cases := []struct{ in, want string }{
-		{"wss://host/api/environments/alice/cdp/devtools/browser/abc", "ws://127.0.0.1:9222/devtools/browser/abc"},
-		{"ws://host:8080/pre/api/environments/alice/cdp/devtools/page/P1", "ws://127.0.0.1:9222/devtools/page/P1"},
+		{"wss://host/api/computers/alice/cdp/devtools/browser/abc", "ws://127.0.0.1:9222/devtools/browser/abc"},
+		{"ws://host:8080/pre/api/computers/alice/cdp/devtools/page/P1", "ws://127.0.0.1:9222/devtools/page/P1"},
 		{"ws://localhost:9221/devtools/page/P1", "ws://127.0.0.1:9222/devtools/page/P1"},
-		{"/api/environments/alice/cdp/devtools/inspector.html?ws=host/api/environments/alice/cdp/devtools/page/P1",
+		{"/api/computers/alice/cdp/devtools/inspector.html?ws=host/api/computers/alice/cdp/devtools/page/P1",
 			"/devtools/inspector.html?ws=127.0.0.1:9222/devtools/page/P1"},
-		{"/devtools/inspector.html?wss=host/api/environments/alice/cdp/devtools/page/P1",
+		{"/devtools/inspector.html?wss=host/api/computers/alice/cdp/devtools/page/P1",
 			"/devtools/inspector.html?ws=127.0.0.1:9222/devtools/page/P1"},
-		{"https://chrome-devtools-frontend.appspot.com/serve_rev/@abc/inspector.html?ws=host/api/environments/alice/cdp/devtools/page/P1",
+		{"https://chrome-devtools-frontend.appspot.com/serve_rev/@abc/inspector.html?ws=host/api/computers/alice/cdp/devtools/page/P1",
 			"https://chrome-devtools-frontend.appspot.com/serve_rev/@abc/inspector.html?ws=127.0.0.1:9222/devtools/page/P1"},
-		{"http://host/pre/api/environments/bob-2/cdp/devtools/inspector.html?ws=host/pre/api/environments/bob-2/cdp/devtools/page/P1",
+		{"http://host/pre/api/computers/bob-2/cdp/devtools/inspector.html?ws=host/pre/api/computers/bob-2/cdp/devtools/page/P1",
 			"http://127.0.0.1:9222/devtools/inspector.html?ws=127.0.0.1:9222/devtools/page/P1"},
 		{"about:blank", "about:blank"},
 		{"https://example.com/?ws=1", "https://example.com/?ws=1"},
@@ -46,7 +46,7 @@ func TestRewriteURL(t *testing.T) {
 }
 
 func TestRewriteJSON(t *testing.T) {
-	in := `[{"id":"P1","url":"https://example.com/","webSocketDebuggerUrl":"wss://h/api/environments/alice/cdp/devtools/page/P1","n":1.5}]`
+	in := `[{"id":"P1","url":"https://example.com/","webSocketDebuggerUrl":"wss://h/api/computers/alice/cdp/devtools/page/P1","n":1.5}]`
 	out := RewriteJSON([]byte(in), "127.0.0.1:9333")
 	var v []map[string]any
 	if err := json.Unmarshal(out, &v); err != nil {
@@ -183,7 +183,7 @@ func TestForwarderRefusesDotSegments(t *testing.T) {
 	var mu sync.Mutex
 	var leaked []string
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/environments/alice/cdp/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/computers/alice/cdp/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("{}"))
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

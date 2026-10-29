@@ -168,7 +168,7 @@ class Client(requests.Session):
         kw.setdefault("timeout", 60)
         if url.startswith("/"):
             url = self.base + url
-        if self.before_create and method.upper() == "POST" and url.split("?")[0] == self.base + "/api/environments":
+        if self.before_create and method.upper() == "POST" and url.split("?")[0] == self.base + "/api/computers":
             self.before_create()
         return super().request(method, url, *a, **kw)
 
@@ -189,7 +189,7 @@ class Client(requests.Session):
 
     def start_create(self, name: str, **kw) -> str:
         """Starts creating a desktop; returns the job."""
-        r = self.post("/api/environments", json={"name": name, "image": IMAGE, **kw})
+        r = self.post("/api/computers", json={"name": name, "image": IMAGE, **kw})
         assert r.status_code == 202, r.text
         return r.json()["job"]
 
@@ -199,7 +199,7 @@ class Client(requests.Session):
         return self.desktop(name)
 
     def desktop(self, name: str) -> dict:
-        r = self.get(f"/api/environments/{name}")
+        r = self.get(f"/api/computers/{name}")
         assert r.status_code == 200, r.text
         return r.json()
 
@@ -329,7 +329,7 @@ class DesktopPool:
     def close(self):
         self.settle()
         for name, _ in self.waiting:
-            self.admin.delete(f"/api/environments/{name}?files=1")
+            self.admin.delete(f"/api/computers/{name}?files=1")
         self.waiting = []
 
 
@@ -402,7 +402,7 @@ def name(request) -> str:
 def desktop(admin, name, request):
     """A running desktop, removed (with its files) afterwards."""
     yield request.node.pooled_desktop
-    admin.delete(f"/api/environments/{name}?files=1")
+    admin.delete(f"/api/computers/{name}?files=1")
 
 
 @pytest.fixture(scope="session")

@@ -26,7 +26,7 @@ func TestObserverCanSeeButNotUse(t *testing.T) {
 	s, ts := newTestServer(t)
 	observeAlice(t, s)
 	bob := login(t, ts, "bob")
-	base := ts.URL + "/api/environments/alice"
+	base := ts.URL + "/api/computers/alice"
 	for _, path := range []string{base, base + "/stats", ts.URL + "/alice/"} {
 		if got := status(t, bob, "GET", path, ""); got != 200 {
 			t.Errorf("observer GET %s: %d", path, got)
@@ -72,9 +72,9 @@ func TestObserverCanSeeButNotUse(t *testing.T) {
 	}
 
 	var list struct {
-		Computers []map[string]any `json:"environments"`
+		Computers []map[string]any `json:"computers"`
 	}
-	_, body = get(t, bob, ts.URL+"/api/environments")
+	_, body = get(t, bob, ts.URL+"/api/computers")
 	if err := json.Unmarshal([]byte(body), &list); err != nil || len(list.Computers) != 1 || list.Computers[0]["level"] != "observe" {
 		t.Errorf("observer's list: %s", body)
 	}
@@ -133,7 +133,7 @@ func TestObserverCannotFollowJobs(t *testing.T) {
 	})
 	bob := login(t, ts, "bob")
 	var env map[string]any
-	getJSON(t, bob, ts.URL+"/api/environments/alice", &env)
+	getJSON(t, bob, ts.URL+"/api/computers/alice", &env)
 	if env["job"] != nil {
 		t.Errorf("observer sees the job: %v", env["job"])
 	}
@@ -142,7 +142,7 @@ func TestObserverCannotFollowJobs(t *testing.T) {
 	}
 	anna := login(t, ts, "anna")
 	env = nil
-	getJSON(t, anna, ts.URL+"/api/environments/alice", &env)
+	getJSON(t, anna, ts.URL+"/api/computers/alice", &env)
 	if env["job"] != id {
 		t.Errorf("full user misses the job: %v", env["job"])
 	}

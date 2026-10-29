@@ -47,7 +47,7 @@ def test_host_volume_ui(supervisor, admin, desktop, name, tmp_path):
         page.get_by_label("Path in the environment", exact=True).fill("/mnt/external")
         page.get_by_role("checkbox", name="Read only", exact=False).check()
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-        with page.expect_response(lambda r: r.request.method == "PATCH" and r.url.endswith(f"/api/environments/{name}")) as sent:
+        with page.expect_response(lambda r: r.request.method == "PATCH" and r.url.endswith(f"/api/computers/{name}")) as sent:
             page.get_by_role("button", name="Save and restart", exact=True).click()
         assert sent.value.status == 202
         state = admin.wait_job(sent.value.json()["job"])
@@ -60,7 +60,7 @@ def test_host_volume_ui(supervisor, admin, desktop, name, tmp_path):
         attempted = docker("exec", "-u", "user", f"deskyard-{name}", "sh", "-c", "echo no >> /mnt/external/kept.txt", check=False)
         assert attempted.returncode != 0 and "Read-only file system" in attempted.stderr
         browser.close()
-    changed = wait_settings(admin, name, admin.patch(f"/api/environments/{name}", json={"volumes": []}))
+    changed = wait_settings(admin, name, admin.patch(f"/api/computers/{name}", json={"volumes": []}))
     assert changed["settings"]["volumes"] == []
     assert docker("exec", "-u", "user", f"deskyard-{name}", "test", "-e", "/mnt/external/kept.txt", check=False).returncode != 0
     assert admin.delete(f"/api/volumes/{volume}").status_code == 204
@@ -78,18 +78,18 @@ def test_host_volume_create_preserve_and_keep_host_files(admin, name, tmp_path):
         assert in_desktop(name, "sh", "-c", "echo desktop-data > /mnt/host/new.txt") == ""
         assert (source / "new.txt").read_text() == "desktop-data\n"
         # Unrelated settings must carry the grant into the replacement container.
-        changed = wait_settings(admin, name, admin.patch(f"/api/environments/{name}", json={"memoryBytes": 2 << 30}))
+        changed = wait_settings(admin, name, admin.patch(f"/api/computers/{name}", json={"memoryBytes": 2 << 30}))
         assert changed["settings"]["volumes"] == grants and changed["created"] == desktop["created"]
         assert changed["revision"] == changed["appliedRevision"] == desktop["revision"] + 1
         assert in_desktop(name, "cat", "/mnt/host/new.txt") == "desktop-data\n"
-        assert admin.post(f"/api/environments/{name}/stop").status_code == 204
-        changed = wait_settings(admin, name, admin.patch(f"/api/environments/{name}", json={"volumes": [{**grants[0], "readOnly": True}]}))
+        assert admin.post(f"/api/computers/{name}/stop").status_code == 204
+        changed = wait_settings(admin, name, admin.patch(f"/api/computers/{name}", json={"volumes": [{**grants[0], "readOnly": True}]}))
         assert changed["state"] == "stopped"
-        assert admin.post(f"/api/environments/{name}/start").status_code == 204
+        assert admin.post(f"/api/computers/{name}/start").status_code == 204
         attempted = docker("exec", "-u", "user", f"deskyard-{name}", "sh", "-c", "echo no >> /mnt/host/new.txt", check=False)
         assert attempted.returncode != 0 and "Read-only file system" in attempted.stderr
     finally:
-        admin.delete(f"/api/environments/{name}?files=1")
+        admin.delete(f"/api/computers/{name}?files=1")
         admin.delete(f"/api/volumes/{volume}?deleteFiles=true")  # refused for a host volume
         admin.delete(f"/api/volumes/{volume}")
     assert (source / "kept.txt").read_text() == "host data\n"
@@ -109,5 +109,5 @@ def test_missing_host_folder_does_not_create_it_or_stop_desktop(admin, desktop, 
 
 
 def test_host_folders_are_refused(admin, desktop, name):
-    result = admin.patch(f"/api/environments/{name}", json={"mounts": [{"source": "/tmp", "target": "/mnt/tmp", "readOnly": True}]})
+    result = admin.patch(f"/api/computers/{name}", json={"mounts": [{"source": "/tmp", "target": "/mnt/tmp", "readOnly": True}]})
     assert result.status_code == 400 and "host volume" in result.text

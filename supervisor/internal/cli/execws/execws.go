@@ -1,5 +1,5 @@
 // Package execws is the client side of the remote access API's exec WebSocket
-// (GET /api/environments/{name}/exec, see supervisor/API.md).
+// (GET /api/computers/{name}/exec, see supervisor/API.md).
 package execws
 
 import (

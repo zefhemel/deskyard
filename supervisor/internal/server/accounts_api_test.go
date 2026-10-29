@@ -145,7 +145,7 @@ func TestAccessEndpointLevels(t *testing.T) {
 	createShare(t, s, adminAccount, "sanne", auth.LevelObserve)
 	admin := login(t, ts, "admin")
 	put := func(body string) (int, string) {
-		return send(t, admin, "PUT", ts.URL+"/api/environments/alice/access", ts.URL, body)
+		return send(t, admin, "PUT", ts.URL+"/api/computers/alice/access", ts.URL, body)
 	}
 	if code, body := put(`{"grants":[{"username":"anna","level":"observe"},{"username":"bob","level":"full"}]}`); code != 204 {
 		t.Fatalf("set access: %d %s", code, body)
@@ -153,7 +153,7 @@ func TestAccessEndpointLevels(t *testing.T) {
 	if a, b := accountNamed(t, s, "anna"), accountNamed(t, s, "bob"); a.Level("alice") != auth.LevelObserve || b.Level("alice") != auth.LevelFull {
 		t.Fatalf("levels: anna %q bob %q", a.Level("alice"), b.Level("alice"))
 	}
-	_, body := get(t, admin, ts.URL+"/api/environments/alice")
+	_, body := get(t, admin, ts.URL+"/api/computers/alice")
 	if !strings.Contains(body, `"access":[{"username":"anna","level":"observe"},{"username":"bob","level":"full"}]`) {
 		t.Fatalf("computer access: %s", body)
 	}
@@ -177,7 +177,7 @@ func TestAccessEndpointLevels(t *testing.T) {
 	if sh, ok := s.Accounts.Get("sanne"); !ok || sh.Level("alice") != auth.LevelObserve {
 		t.Fatal("setting access changed a share")
 	}
-	if code, _ := send(t, login(t, ts, "anna"), "PUT", ts.URL+"/api/environments/alice/access", ts.URL, `{"grants":[]}`); code == 204 {
+	if code, _ := send(t, login(t, ts, "anna"), "PUT", ts.URL+"/api/computers/alice/access", ts.URL, `{"grants":[]}`); code == 204 {
 		t.Fatal("a regular account set access")
 	}
 }

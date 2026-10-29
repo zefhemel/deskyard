@@ -180,7 +180,7 @@ function customImage(slug: string, title: string, description: string, over: Par
     title,
     version: "2026-10-20 09:14",
     description,
-    environments: [],
+    computers: [],
     behind: [],
     checked: null,
     installed: true,
@@ -195,7 +195,7 @@ export const images: CatalogImage[] = [
     title: "Debian XFCE",
     version: "2026.10.22",
     description: "Debian trixie with XFCE, everyday apps, Chromium, Flatpak, mise and uv",
-    environments: [],
+    computers: [],
     behind: [],
     checked: iso(2 * HOUR),
     ...PLAIN,
@@ -206,7 +206,7 @@ export const images: CatalogImage[] = [
     title: "Debian XFCE, beta",
     version: "2026.10.22-beta",
     description: "Next week's image, for trying changes",
-    environments: [],
+    computers: [],
     behind: [],
     checked: iso(2 * HOUR),
     ...PLAIN,
@@ -233,7 +233,7 @@ export const processRows: [number, string, number, number, string, string][] = [
 export function refreshImages(): void {
   for (const img of images) {
     const on = computers.filter((c) => c.image === img.ref);
-    img.environments = on.map((c) => c.name);
+    img.computers = on.map((c) => c.name);
     img.behind = on.filter((c) => c.updateAvailable).map((c) => c.name);
   }
 }

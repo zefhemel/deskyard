@@ -324,7 +324,7 @@ def check(d):
         ).stdout
         assert png.startswith(b"\x89PNG")
         (d / (name + ".png")).write_bytes(png)
-        activity = json.loads(req("/api/environments/" + name + "/activity"))
+        activity = json.loads(req("/api/computers/" + name + "/activity"))
         assert activity["agents"], activity
         # Production screen proxy performs authenticated Caddy dialing.
         assert req("/" + name + "/screen/api/websockets") == b""

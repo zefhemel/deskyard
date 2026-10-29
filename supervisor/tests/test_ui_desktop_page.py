@@ -141,7 +141,7 @@ def test_keys_menu(supervisor, desktop, name, browser_name):
 
 @pytest.mark.parametrize("browser_name", BROWSERS)
 def test_stopped_desktop_page(supervisor, admin, desktop, name, browser_name):
-    admin.post(f"/api/environments/{name}/stop")
+    admin.post(f"/api/computers/{name}/stop")
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base, browser=browser_name)
         page.goto(f"{supervisor.base}/{name}/")

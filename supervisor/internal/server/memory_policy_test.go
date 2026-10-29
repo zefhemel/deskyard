@@ -16,7 +16,7 @@ func TestMemoryPolicyAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	put := func(client *http.Client, body, origin string) int {
-		req, _ := http.NewRequest("PUT", ts.URL+"/api/environments/bob/memory-policy", strings.NewReader(body))
+		req, _ := http.NewRequest("PUT", ts.URL+"/api/computers/bob/memory-policy", strings.NewReader(body))
 		req.Header.Set("Origin", origin)
 		res, err := client.Do(req)
 		if err != nil {
@@ -44,7 +44,7 @@ func TestMemoryPolicyAPI(t *testing.T) {
 		if got := put(admin, body, ts.URL); got != 204 {
 			t.Fatal(got)
 		}
-		res, err := admin.Get(ts.URL + "/api/environments/bob")
+		res, err := admin.Get(ts.URL + "/api/computers/bob")
 		if err != nil {
 			t.Fatal(err)
 		}

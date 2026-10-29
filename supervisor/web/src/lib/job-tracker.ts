@@ -63,7 +63,7 @@ export class JobTracker {
     const entry = this.entries.get(id);
     if (!entry || entry.state.status !== "running") return;
     entry.state = state;
-    if (state.environment) this.assignComputer(state.environment, id, entry);
+    if (state.computer) this.assignComputer(state.computer, id, entry);
     for (const callback of entry.callbacks) callback(state);
     if (state.status !== "running") entry.callbacks.clear();
     for (const listener of this.listeners) listener(state);

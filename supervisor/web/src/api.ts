@@ -60,7 +60,7 @@ export interface Volume {
   /** A host volume's folder on the engine host. */
   hostPath?: string;
   folder: string;
-  environments: VolumeGrant[];
+  computers: VolumeGrant[];
 }
 /** The size of a volume's files, and the disk holding it (absent when unknown). */
 export interface VolumeUsage {
@@ -77,9 +77,9 @@ export interface VPNConnection {
   revision: number; credentialsConfigured: boolean;
 }
 /** A computer using a connection; its id is its name. */
-export interface SavedVPNConnection extends VPNConnection { environments: VPNReference[] }
+export interface SavedVPNConnection extends VPNConnection { computers: VPNReference[] }
 export interface VPNInput { name: string; provider: "nordvpn"; country: string; username?: string; password?: string }
-export interface VPNUpdate extends VPNInput { expectedRevision: number; affectedEnvironments: string[]; confirmRestart: boolean }
+export interface VPNUpdate extends VPNInput { expectedRevision: number; affectedComputers: string[]; confirmRestart: boolean }
 export interface LANException { destination: string; protocol: "tcp" | "udp"; ports: {start: number; end: number}[] }
 export interface VPNStatus {
   state: "disabled" | "stopped" | "connecting" | "connected" | "reconnecting" | "blocked";
@@ -87,7 +87,7 @@ export interface VPNStatus {
   connectionId?: string; name?: string; provider?: "nordvpn"; country?: string;
   desiredRevision: number; appliedRevision: number; idle: boolean;
 }
-export interface VPNRollout { connection: VPNConnection; environments: (VPNReference & {error?: string})[] }
+export interface VPNRollout { connection: VPNConnection; computers: (VPNReference & {error?: string})[] }
 export interface ComputerVPNSettings { vpnConnectionId: string | null; lanExceptions: LANException[] }
 export interface SettingsPatch extends Partial<ComputerVPNSettings> {
   image?: string; memoryBytes?: number; nanoCpus?: number; dockerAccess?: boolean; volumes?: VolumeGrant[];
@@ -171,7 +171,7 @@ export interface Conflict {
 }
 
 export interface ComputerList {
-  environments: Computer[];
+  computers: Computer[];
   conflicts: Conflict[];
 }
 
@@ -204,7 +204,7 @@ export interface Job {
   message: string;
   progress: number | null;
   error?: string;
-  environment?: string;
+  computer?: string;
   result?: VPNStatus | VPNRollout | RestoreResult;
 }
 
@@ -234,7 +234,7 @@ export interface AccountChange {
 /** A token account with one grant, made by Share on a computer. */
 export interface Share {
   username: string;
-  environment: string;
+  computer: string;
   level: Level;
   sharedBy: Sharer;
   expires: string | null;
@@ -283,7 +283,7 @@ export interface CatalogImage {
   title: string;
   version: string;
   description: string;
-  environments: string[];
+  computers: string[];
   behind: string[];
   checked: string | null;
   /** Bytes on disk, once downloaded. */
@@ -371,7 +371,7 @@ export interface ActivityEvent {
   name: string;
   agents: AgentSummary[];
 }
-/** A screen action an agent made, from GET /api/environments/{name}/screen-events. */
+/** A screen action an agent made, from GET /api/computers/{name}/screen-events. */
 export interface ScreenEvent {
   agent: Pick<AgentPresence, "id" | "name" | "color" | "inside">;
   t: string;
@@ -435,7 +435,7 @@ async function request<T>(method: string, path: string, body?: unknown, signal?:
       const data: unknown = await res.json();
       if (data && typeof data === "object") {
         if ("error" in data && typeof data.error === "string") message = data.error;
-        if ("environments" in data && Array.isArray(data.environments)) computers = data.environments as VPNReference[];
+        if ("computers" in data && Array.isArray(data.computers)) computers = data.computers as VPNReference[];
         if ("code" in data && typeof data.code === "string") code = data.code;
       }
     } catch {
@@ -449,7 +449,7 @@ async function request<T>(method: string, path: string, body?: unknown, signal?:
 }
 
 const enc = encodeURIComponent;
-const c = (name: string) => `/api/environments/${enc(name)}`;
+const c = (name: string) => `/api/computers/${enc(name)}`;
 
 export interface MemoryReclaim {
   requestedBytes: number;
@@ -610,7 +610,7 @@ export const api = {
   removeWebDAVPassword: () => request<void>("DELETE", "/api/me/webdav-password"),
   host: () => request<Host>("GET", "/api/host"),
 
-  computers: () => request<ComputerList>("GET", "/api/environments"),
+  computers: () => request<ComputerList>("GET", "/api/computers"),
   computer: (name: string) => request<Computer>("GET", c(name)),
   terminalSessions: (name: string, signal?: AbortSignal) =>
     request<{ sessions: TerminalSession[] }>("GET", `${c(name)}/terminal/sessions`, undefined, signal),
@@ -619,7 +619,7 @@ export const api = {
   /** Ends a session for everyone attached to it. */
   endTerminal: (name: string, session: string) => request<void>("DELETE", `${c(name)}/terminal/sessions/${enc(session)}`),
   createComputer: (body: { name: string; image: string; memoryBytes: number; nanoCpus: number; access: AccessGrant[]; dockerAccess: boolean; volumes?: VolumeGrant[] } & ComputerVPNSettings) =>
-    request<JobRef>("POST", "/api/environments", body),
+    request<JobRef>("POST", "/api/computers", body),
   power: (name: string, action: "start" | "stop" | "restart") => request<void>("POST", `${c(name)}/${action}`),
   setMemoryPolicy: (name: string, memoryReclaim: boolean) => request<void>("PUT", `${c(name)}/memory-policy`, { memoryReclaim }),
   setWebDAV: (name: string, webdav: boolean) => request<void>("PUT", `${c(name)}/webdav`, { webdav }),

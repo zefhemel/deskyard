@@ -18,7 +18,7 @@ type Target struct {
 // ParseURL splits a computer URL such as https://host/alice or
 // http://127.0.0.1:8080/prefix/alice into the supervisor base URL and the
 // computer name (the last path segment). A URL without a path names only
-// the supervisor. A pasted API URL (…/api/environments/alice/exec) names the
+// the supervisor. A pasted API URL (…/api/computers/alice/exec) names the
 // supervisor before /api and the computer after computers/, and so
 // does the web UI's page of a computer (…/environments/alice).
 func ParseURL(raw string) (Target, error) {
@@ -40,7 +40,7 @@ func ParseURL(raw string) (Target, error) {
 	if i := strings.Index("/"+path+"/", "/api/"); i >= 0 {
 		api := strings.Split(strings.Trim(("/" + path + "/")[i+len("/api/"):], "/"), "/")
 		t := Target{Base: u.Scheme + "://" + u.Host + prefix(strings.Trim(path[:max(i-1, 0)], "/"))}
-		if len(api) >= 2 && api[0] == "environments" {
+		if len(api) >= 2 && api[0] == "computers" {
 			t.Computer = api[1]
 		}
 		return t, nil

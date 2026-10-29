@@ -25,12 +25,12 @@ function setup() {
 test("reconnect delivers new events and ignores the old socket", () => {
   const { feed, wires, retries } = setup();
   const seen: string[] = [];
-  feed.addEventListener("environment", e => seen.push(e.data));
-  wires[0]!.message('{"type":"environment","data":{"name":"alice"}}');
+  feed.addEventListener("computer", e => seen.push(e.data));
+  wires[0]!.message('{"type":"computer","data":{"name":"alice"}}');
   wires[0]!.onclose?.({} as CloseEvent);
   retries.shift()!();
-  wires[0]!.message('{"type":"environment","data":{"name":"stale"}}');
-  wires[1]!.message('{"type":"environment","data":{"name":"bob"}}');
+  wires[0]!.message('{"type":"computer","data":{"name":"stale"}}');
+  wires[1]!.message('{"type":"computer","data":{"name":"bob"}}');
   assert.deepEqual(seen, ['{"name":"alice"}', '{"name":"bob"}']);
   feed.close();
 });

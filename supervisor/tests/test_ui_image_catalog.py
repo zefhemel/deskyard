@@ -14,8 +14,8 @@ def test_catalog_only_imports_prebuilt_images(mock_ui):
             expect(page.get_by_role("button", name=name, exact=True)).to_have_count(0)
         assert not any("/api/recipes" in url for url in requests)
         for method, route in (("GET", "/api/recipes"), ("POST", "/api/recipes"),
-                              ("GET", "/api/environments/research/image-scan"),
-                              ("POST", "/api/environments/research/image")):
+                              ("GET", "/api/computers/research/image-scan"),
+                              ("POST", "/api/computers/research/image")):
             assert page.request.fetch(mock_ui + route, method=method).status == 404
         page.get_by_role("button", name="Add image", exact=True).click()
         page.get_by_label("Image reference", exact=True).fill("example.test/desktop:ready")
@@ -45,7 +45,7 @@ def test_docker_permission_create_and_settings(mock_ui):
         name = "docker-" + uuid.uuid4().hex[:8]
         dialog.get_by_label("Name", exact=True).fill(name)
         permission.check()
-        with page.expect_request(lambda r: r.method == "POST" and r.url.endswith("/api/environments")) as sent:
+        with page.expect_request(lambda r: r.method == "POST" and r.url.endswith("/api/computers")) as sent:
             dialog.get_by_role("button", name="Create environment", exact=True).click()
         assert json.loads(sent.value.post_data)["dockerAccess"] is True
         expect(dialog).to_have_count(0, timeout=15000)
@@ -58,7 +58,7 @@ def test_docker_permission_create_and_settings(mock_ui):
         page.get_by_role("button", name="Undo changes", exact=True).click()
         expect(permission).to_be_checked()
         permission.uncheck()
-        with page.expect_request(lambda r: r.method == "PATCH" and r.url.endswith("/api/environments/" + name)) as sent:
+        with page.expect_request(lambda r: r.method == "PATCH" and r.url.endswith("/api/computers/" + name)) as sent:
             page.get_by_role("button", name="Save and restart", exact=True).click()
         assert json.loads(sent.value.post_data) == {"dockerAccess": False}
         expect(page.get_by_role("button", name="Save and restart", exact=True)).to_be_disabled(timeout=15000)

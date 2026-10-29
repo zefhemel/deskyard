@@ -408,7 +408,7 @@ def test_switching_keeps_scrollback_and_reconnects_desktop(supervisor, desktop, 
 
 def test_end_session_for_everyone(supervisor, admin, desktop, name):
     def details(session):
-        listed = admin.get(f'/api/environments/{name}/terminal/sessions').json()['sessions']
+        listed = admin.get(f'/api/computers/{name}/terminal/sessions').json()['sessions']
         return next((s for s in listed if s['name'] == session), None)
 
     with sync_playwright() as p:
@@ -473,7 +473,7 @@ def test_closed_session_stays_closed(supervisor, admin, desktop, name):
     shell(name, f'deskyard terminal-kill {gone}')
     # A join to a session that doesn't exist says so, and creates nothing.
     cookie = '; '.join(f'{k}={v}' for k, v in admin.cookies.items())
-    with connect(admin.base.replace('http:', 'ws:') + f'/api/environments/{name}/terminal?session={gone}',
+    with connect(admin.base.replace('http:', 'ws:') + f'/api/computers/{name}/terminal?session={gone}',
                  origin=admin.base, additional_headers={'Cookie': cookie}) as ws:
         ws.send('{"cols":80,"rows":24}')
         assert ws.recv(timeout=10) == '{"ended":true}'

@@ -226,7 +226,7 @@ func waitState(t *testing.T, c *http.Client, url string, want viewersState) {
 
 func postMic(t *testing.T, c *http.Client, base, name, body string) int {
 	t.Helper()
-	req, _ := http.NewRequest("POST", base+"/api/environments/"+name+"/mic", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", base+"/api/computers/"+name+"/mic", strings.NewReader(body))
 	req.Header.Set("Origin", base)
 	resp, err := c.Do(req)
 	if err != nil {
@@ -241,7 +241,7 @@ func TestStreamProxyAndMics(t *testing.T) {
 	_, ts := newTestServerRunning(t, "bob", up)
 	admin := login(t, ts, "admin")
 	cookie := admin.Jar.Cookies(nil)[0]
-	api := ts.URL + "/api/environments/bob"
+	api := ts.URL + "/api/computers/bob"
 
 	// The reconnect probe reaches Selkies, without the session.
 	if got := status(t, admin, "GET", ts.URL+"/bob/screen/api/websockets", ""); got != 204 {
@@ -436,7 +436,7 @@ func TestMicBadgeEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ws.CloseNow()
-	api := ts.URL + "/api/environments/bob"
+	api := ts.URL + "/api/computers/bob"
 	waitState(t, admin, api, viewersState{Viewers: []string{"admin"}, Mics: []string{}})
 	post := func(path, body string) int {
 		req, _ := http.NewRequest("POST", api+path, strings.NewReader(body))

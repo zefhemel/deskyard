@@ -186,7 +186,7 @@ export function TerminalPane({ name, session, active, create, slots, alive, onSt
         Math.max(1, Math.min(300, proposed.rows)),
       );
     const endpoint = new URL(
-      `/api/environments/${encodeURIComponent(name)}/terminal`,
+      `/api/computers/${encodeURIComponent(name)}/terminal`,
       location.href,
     );
     endpoint.protocol = location.protocol === "https:" ? "wss:" : "ws:";

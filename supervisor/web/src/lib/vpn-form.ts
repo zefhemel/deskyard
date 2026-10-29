@@ -25,12 +25,12 @@ export function connectionInput(form: ConnectionForm, editing: boolean): VPNInpu
   };
 }
 
-export function connectionUpdate(form: ConnectionForm, preview: { revision: number; environments: VPNReference[] }): VPNUpdate {
+export function connectionUpdate(form: ConnectionForm, preview: { revision: number; computers: VPNReference[] }): VPNUpdate {
   return {
     ...connectionInput(form, true),
     expectedRevision: preview.revision,
-    affectedEnvironments: preview.environments.map((d) => d.name),
-    confirmRestart: preview.environments.length > 0,
+    affectedComputers: preview.computers.map((d) => d.name),
+    confirmRestart: preview.computers.length > 0,
   };
 }
 

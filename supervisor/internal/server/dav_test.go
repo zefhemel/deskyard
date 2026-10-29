@@ -333,7 +333,7 @@ func TestDAVSettingAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	put := func(c *http.Client, body string) int {
-		req, _ := http.NewRequest("PUT", ts.URL+"/api/environments/alice/webdav", strings.NewReader(body))
+		req, _ := http.NewRequest("PUT", ts.URL+"/api/computers/alice/webdav", strings.NewReader(body))
 		req.Header.Set("Origin", ts.URL)
 		res, err := c.Do(req)
 		if err != nil {
@@ -358,7 +358,7 @@ func TestDAVSettingAPI(t *testing.T) {
 		t.Fatal(got)
 	}
 	for client, want := range map[*http.Client]bool{admin: true, anna: true} {
-		res, _ := client.Get(ts.URL + "/api/environments/alice")
+		res, _ := client.Get(ts.URL + "/api/computers/alice")
 		var c computerJSON
 		_ = json.NewDecoder(res.Body).Decode(&c)
 		res.Body.Close()

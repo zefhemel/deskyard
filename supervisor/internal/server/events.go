@@ -144,7 +144,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		for _, c := range list {
 			if auth.Can(acct, auth.Observe, c.ID) {
 				now[c.Name] = true
-				send("environment", s.computerJSON(r.Context(), c, acct))
+				send("computer", s.computerJSON(r.Context(), c, acct))
 			}
 		}
 		for name := range visible {
@@ -192,7 +192,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 				}
 				if err == nil && auth.Can(acct, auth.Observe, c.ID) {
 					visible[name] = true
-					send("environment", s.computerJSON(r.Context(), c, acct))
+					send("computer", s.computerJSON(r.Context(), c, acct))
 				} else if visible[name] {
 					// Only of one it could see: others' names aren't its to know.
 					delete(visible, name)
@@ -226,7 +226,7 @@ func (s *Server) publishComputer(ctx context.Context, name string) {
 		s.events.publish(event{kind: "removed", data: map[string]string{"name": name}})
 		return
 	}
-	s.events.publish(event{kind: "environment", computer: c.Name, data: c})
+	s.events.publish(event{kind: "computer", computer: c.Name, data: c})
 }
 
 // watchEngine turns engine events about computers into UI events.

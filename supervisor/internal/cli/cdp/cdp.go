@@ -26,7 +26,7 @@ import (
 )
 
 // Forwarder is an http.Handler that proxies to
-// {base}/api/environments/{name}/cdp/….
+// {base}/api/computers/{name}/cdp/….
 type Forwarder struct {
 	Client *remote.Client
 	// Local is the host:port clients use to reach this forwarder
@@ -237,7 +237,7 @@ func rewriteValue(v any, local string) any {
 	return v
 }
 
-var cdpPathRE = regexp.MustCompile(`/api/environments/[^/]+/cdp/`)
+var cdpPathRE = regexp.MustCompile(`/api/computers/[^/]+/cdp/`)
 
 // devtoolsTail returns the part of a path from "/devtools/" on, or "".
 func devtoolsTail(p string) string {
@@ -292,7 +292,7 @@ func RewriteURL(s, local string) string {
 	q.Del(key)
 	q.Set("ws", local+tail)
 	// A front end served through the remote access API
-	// (/api/environments/NAME/cdp/devtools/…) is served by the forwarder at
+	// (/api/computers/NAME/cdp/devtools/…) is served by the forwarder at
 	// /devtools/….
 	if loc := cdpPathRE.FindStringIndex(u.Path); loc != nil {
 		u.Path = u.Path[loc[1]-1:]

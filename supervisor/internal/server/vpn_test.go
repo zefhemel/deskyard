@@ -56,7 +56,7 @@ func TestVPNAdminRoutesAndRedaction(t *testing.T) {
 func TestVPNMissingSelectionIsValidationError(t *testing.T) {
 	_, ts := newTestServer(t)
 	admin := login(t, ts, "admin")
-	for _, route := range []struct{ method, path, body string }{{"POST", "/api/environments", `{"name":"test-vpn","vpnConnectionId":"missing"}`}, {"PATCH", "/api/environments/alice", `{"vpnConnectionId":"missing"}`}} {
+	for _, route := range []struct{ method, path, body string }{{"POST", "/api/computers", `{"name":"test-vpn","vpnConnectionId":"missing"}`}, {"PATCH", "/api/computers/alice", `{"vpnConnectionId":"missing"}`}} {
 		req, _ := http.NewRequest(route.method, ts.URL+route.path, strings.NewReader(route.body))
 		req.Header.Set("Origin", ts.URL)
 		resp, err := admin.Do(req)
@@ -146,7 +146,7 @@ func TestVPNRegularUserCanReadSelectedStatus(t *testing.T) {
 	s, ts := newTestServerWith(t, fakeEngine{others: []engine.Container{c}})
 	s.Accounts.SetAccess("bob", fullAccess("anna"))
 	user := login(t, ts, "anna")
-	resp, err := user.Get(ts.URL + "/api/environments/bob")
+	resp, err := user.Get(ts.URL + "/api/computers/bob")
 	if err != nil {
 		t.Fatal(err)
 	}

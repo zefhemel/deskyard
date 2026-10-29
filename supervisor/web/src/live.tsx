@@ -92,7 +92,7 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
       api.computers().then(
         (list) => {
           if (refreshGeneration.current !== generation) return;
-          setComputers(list.environments);
+          setComputers(list.computers);
           setConflicts(list.conflicts);
         },
         () => {
@@ -115,7 +115,7 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
       ? window.setInterval(() => api.computers().then((list) => setConflicts(list.conflicts), () => undefined), 30000)
       : undefined;
     const es = watchUIEvents("/api/events");
-    es.addEventListener("environment", (e: MessageEvent<string>) => {
+    es.addEventListener("computer", (e: MessageEvent<string>) => {
       const c = JSON.parse(e.data) as Computer;
       setComputers((list) => (list ? upsert(list, c) : list));
       hostSoon();

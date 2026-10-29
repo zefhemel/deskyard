@@ -38,7 +38,7 @@ func TestDockerAccessSettingsAPI(t *testing.T) {
 		return resp.StatusCode, b
 	}
 	for _, method := range []string{"POST", "PATCH"} {
-		path := "/api/environments"
+		path := "/api/computers"
 		if method == "PATCH" {
 			path += "/alice"
 		}
@@ -48,7 +48,7 @@ func TestDockerAccessSettingsAPI(t *testing.T) {
 	}
 	exposed := func(want bool) {
 		t.Helper()
-		code, b := send(admin, "GET", "/api/environments/alice", nil)
+		code, b := send(admin, "GET", "/api/computers/alice", nil)
 		var got struct {
 			Settings struct {
 				DockerAccess bool `json:"dockerAccess"`
@@ -60,7 +60,7 @@ func TestDockerAccessSettingsAPI(t *testing.T) {
 	}
 	patch := func(body map[string]any) {
 		t.Helper()
-		code, b := send(admin, "PATCH", "/api/environments/alice", body)
+		code, b := send(admin, "PATCH", "/api/computers/alice", body)
 		if code != 202 {
 			t.Fatalf("PATCH %d %s", code, b)
 		}

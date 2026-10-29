@@ -332,7 +332,7 @@ func (s *Server) remoteCDP(w http.ResponseWriter, r *http.Request, c computers.C
 	if r.TLS != nil {
 		wsScheme = "wss"
 	}
-	public := r.Host + "/api/environments/" + c.Name + "/cdp/devtools/"
+	public := r.Host + "/api/computers/" + c.Name + "/cdp/devtools/"
 	rp := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.Out.URL.Scheme = "http"

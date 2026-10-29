@@ -87,8 +87,8 @@ func TestHostVolumeSettingsAPI(t *testing.T) {
 	}
 	// Host folders were replaced by host volumes: a request with any is refused.
 	for _, req := range []struct{ method, path, body string }{
-		{"PATCH", "/api/environments/alice", `{"mounts":[{"source":"/host/data","target":"/mnt/data","readOnly":true}]}`},
-		{"POST", "/api/environments", `{"name":"new-desktop","mounts":[{"source":"/host/data","target":"/mnt/data"}]}`},
+		{"PATCH", "/api/computers/alice", `{"mounts":[{"source":"/host/data","target":"/mnt/data","readOnly":true}]}`},
+		{"POST", "/api/computers", `{"name":"new-desktop","mounts":[{"source":"/host/data","target":"/mnt/data"}]}`},
 	} {
 		if code, b := send(admin, req.method, req.path, req.body); code != 400 || !strings.Contains(string(b), "host volume") {
 			t.Fatalf("%s %s with host folders: %d %s", req.method, req.path, code, b)
@@ -102,17 +102,17 @@ func TestHostVolumeSettingsAPI(t *testing.T) {
 	if code != 201 || !strings.Contains(string(b), `"kind":"host"`) || !strings.Contains(string(b), `"hostPath":"`+source+`"`) || !strings.Contains(string(b), `"folder":"`+source+`"`) {
 		t.Fatalf("create host volume: %d %s", code, b)
 	}
-	if code, b := send(admin, "PATCH", "/api/environments/alice", `{"volumes":[{"name":"photos","path":"/workspace/photos"}]}`); code != 400 {
+	if code, b := send(admin, "PATCH", "/api/computers/alice", `{"volumes":[{"name":"photos","path":"/workspace/photos"}]}`); code != 400 {
 		t.Fatalf("unsafe grant path: %d %s", code, b)
 	}
-	if code, _ := send(anna, "PATCH", "/api/environments/alice", `{"volumes":[]}`); code != 403 {
+	if code, _ := send(anna, "PATCH", "/api/computers/alice", `{"volumes":[]}`); code != 403 {
 		t.Fatalf("non-admin: %d", code)
 	}
 	grants := []computers.VolumeGrant{{Name: "photos", Path: "/mnt/photos", ReadOnly: true}}
 	patch := func(body any) {
 		t.Helper()
 		raw, _ := json.Marshal(body)
-		code, b := send(admin, "PATCH", "/api/environments/alice", string(raw))
+		code, b := send(admin, "PATCH", "/api/computers/alice", string(raw))
 		if code != 202 {
 			t.Fatalf("PATCH: %d %s", code, b)
 		}
@@ -131,7 +131,7 @@ func TestHostVolumeSettingsAPI(t *testing.T) {
 		}
 	}
 	patch(map[string]any{"volumes": grants})
-	code, b = send(admin, "GET", "/api/environments/alice", "")
+	code, b = send(admin, "GET", "/api/computers/alice", "")
 	if code != 200 {
 		t.Fatal(code)
 	}

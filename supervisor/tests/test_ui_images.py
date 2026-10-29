@@ -54,10 +54,10 @@ def test_settings_reattaches_visible_image_pull_progress(mock_ui, width, outcome
     with sync_playwright() as p:
         browser, page = mock_page(p, mock_ui, "/environments/alice?tab=settings")
         page.set_viewport_size({"width": width, "height": 900})
-        desktops = page.request.get(mock_ui + "/api/environments").json()
-        alice = next(c for c in desktops["environments"] if c["name"] == "alice")
+        desktops = page.request.get(mock_ui + "/api/computers").json()
+        alice = next(c for c in desktops["computers"] if c["name"] == "alice")
         alice.update(state="upgrading", job="settings-download")
-        page.route("**/api/environments", lambda route: route.fulfill(json=desktops))
+        page.route("**/api/computers", lambda route: route.fulfill(json=desktops))
         # Control only the job transport, keeping its connection open until
         # completion. The real LiveProvider owns/replays the received state.
         page.add_init_script("""(() => {
@@ -77,7 +77,7 @@ def test_settings_reattaches_visible_image_pull_progress(mock_ui, width, outcome
 
         def update(status, message, progress):
             page.evaluate("j => window.testJobs[0].onmessage({data: JSON.stringify(j)})",
-                          {"status": status, "message": message, "progress": progress, "environment": "alice"})
+                          {"status": status, "message": message, "progress": progress, "computer": "alice"})
 
         update("running", "Pulling image, 120 of 820 MB", 0.146)
         panel = page.get_by_role("region", name="Environment operation", exact=True)
@@ -111,7 +111,7 @@ def test_settings_save_brings_pending_progress_into_view(mock_ui):
         browser, page = mock_page(p, mock_ui, "/environments/alice?tab=settings")
         page.set_viewport_size({"width": 390, "height": 900})
         pending = []
-        page.route("**/api/environments/alice", lambda route: pending.append(route)
+        page.route("**/api/computers/alice", lambda route: pending.append(route)
                    if route.request.method == "PATCH" else route.continue_())
         page.get_by_role("radio", name="Python lab", exact=False).check()
         page.locator('form button[type="submit"]').click()
@@ -136,7 +136,7 @@ def test_desktop_list_recovers_after_failed_first_load(mock_ui):
             else:
                 route.continue_()
 
-        page.route("**/api/environments", desktops)
+        page.route("**/api/computers", desktops)
         page.goto(mock_ui + "/login")
         page.fill("#u", "zef")
         page.fill("#p", "x")
@@ -162,10 +162,10 @@ def test_loopback_ui_survives_browser_network_loss(mock_ui):
         bootstrapped = page.evaluate("""async () => {
             const {api} = await import('/src/api.ts');
             await api.login('zef', 'x');
-            return {me: await api.me(), environments: (await api.environments()).environments};
+            return {me: await api.me(), computers: (await api.computers()).computers};
         }""")
         assert bootstrapped["me"]["username"] == "zef"
-        assert any(desktop["name"] == "alice" for desktop in bootstrapped["environments"])
+        assert any(desktop["name"] == "alice" for desktop in bootstrapped["computers"])
         assert len(logins) == 1
         context.set_offline(False)
         page.goto(mock_ui + "/")
@@ -200,7 +200,7 @@ def test_desktop_list_ignores_failures_from_replaced_refreshes(mock_ui):
             else:
                 route.continue_()
 
-        page.route("**/api/environments", desktops)
+        page.route("**/api/computers", desktops)
         page.goto(mock_ui + "/login")
         page.fill("#u", "zef")
         page.fill("#p", "x")
@@ -213,7 +213,7 @@ def test_desktop_list_ignores_failures_from_replaced_refreshes(mock_ui):
         page.wait_for_timeout(1500)  # past the first retry deadline
         assert len(attempts) == 2
 
-        with page.expect_request("**/api/environments"):
+        with page.expect_request("**/api/computers"):
             page.evaluate("testStreams[0].onopen()")
         # Use client-side navigation so the provider unmounts while its
         # request is still alive in this document.

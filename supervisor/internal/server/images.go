@@ -399,7 +399,7 @@ type catalogImageJSON struct {
 	Title       string     `json:"title"`
 	Version     string     `json:"version"`
 	Description string     `json:"description"`
-	Computers   []string   `json:"environments"`
+	Computers   []string   `json:"computers"`
 	Behind      []string   `json:"behind"`
 	Checked     *time.Time `json:"checked"`
 	// Size and Built describe the downloaded image; omitted until it is.

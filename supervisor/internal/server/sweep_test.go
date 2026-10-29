@@ -266,7 +266,7 @@ func TestOrphanedShareRefusedWhenTheDeletionFails(t *testing.T) {
 	}
 	share, _ := createShare(t, s, bob, "sanne", auth.LevelFull)
 	_, bearer := issueCredential(t, s, share)
-	if code, _, _ := bearerRequest(t, "GET", ts.URL+"/api/environments/alice", bearer); code != 200 {
+	if code, _, _ := bearerRequest(t, "GET", ts.URL+"/api/computers/alice", bearer); code != 200 {
 		t.Fatalf("the share before its sharer lost access: %d", code)
 	}
 	// bob loses full access, but deleting his share fails.
@@ -282,7 +282,7 @@ func TestOrphanedShareRefusedWhenTheDeletionFails(t *testing.T) {
 	if _, ok := s.Accounts.Get("sanne"); !ok {
 		t.Fatal("deleted the share although writing accounts.json fails")
 	}
-	for _, path := range []string{"/api/me", "/api/environments/alice"} {
+	for _, path := range []string{"/api/me", "/api/computers/alice"} {
 		if code, _, _ := bearerRequest(t, "GET", ts.URL+path, bearer); code != http.StatusUnauthorized {
 			t.Errorf("the orphaned share's GET %s: %d", path, code)
 		}
@@ -421,7 +421,7 @@ func TestCreateDropsLeftoverGrantsOfTheName(t *testing.T) {
 		t.Fatal(err)
 	}
 	admin := login(t, ts, "admin")
-	req, _ := http.NewRequest("POST", ts.URL+"/api/environments", strings.NewReader(`{"name":"carol","image":"img"}`))
+	req, _ := http.NewRequest("POST", ts.URL+"/api/computers", strings.NewReader(`{"name":"carol","image":"img"}`))
 	req.Header.Set("Origin", ts.URL)
 	resp, err := admin.Do(req)
 	if err != nil {
@@ -483,7 +483,7 @@ func TestRemovalWhoseFolderDeletionFailsStillPurgesAccess(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(home, 0o755) })
 	admin := login(t, ts, "admin")
-	if code := status(t, admin, "DELETE", ts.URL+"/api/environments/alice?files=1", ts.URL); code < 400 {
+	if code := status(t, admin, "DELETE", ts.URL+"/api/computers/alice?files=1", ts.URL); code < 400 {
 		t.Fatalf("failed folder deletion reported %d", code)
 	}
 	if _, ok := s.Computers.Defs.Get("alice"); ok {
@@ -523,7 +523,7 @@ func TestCreateFailureKeepingTheComputerAppliesAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	admin := login(t, ts, "admin")
-	req, _ := http.NewRequest("POST", ts.URL+"/api/environments", strings.NewReader(`{"name":"carol","image":"img","access":[{"username":"anna","level":"full"}],"vpnConnectionId":"`+conn.ID+`"}`))
+	req, _ := http.NewRequest("POST", ts.URL+"/api/computers", strings.NewReader(`{"name":"carol","image":"img","access":[{"username":"anna","level":"full"}],"vpnConnectionId":"`+conn.ID+`"}`))
 	req.Header.Set("Origin", ts.URL)
 	resp, err := admin.Do(req)
 	if err != nil {
@@ -617,7 +617,7 @@ func TestDemotionClosesCredentialConnections(t *testing.T) {
 	if conn.Err() == nil {
 		t.Fatal("a demotion left the credential's connection open")
 	}
-	if code, _, _ := bearerRequest(t, "GET", ts.URL+"/api/environments/alice/status", bearer); code != 404 {
+	if code, _, _ := bearerRequest(t, "GET", ts.URL+"/api/computers/alice/status", bearer); code != 404 {
 		t.Fatalf("a demoted account's credential on alice: %d", code)
 	}
 }

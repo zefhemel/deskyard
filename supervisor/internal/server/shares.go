@@ -13,7 +13,7 @@ import (
 // Share on it. It ends with its sharer's full access (sweep).
 type shareJSON struct {
 	Username    string          `json:"username"`
-	Computer    string          `json:"environment"`
+	Computer    string          `json:"computer"`
 	Level       auth.Level      `json:"level"`
 	SharedBy    accounts.Sharer `json:"sharedBy"`
 	Expires     *time.Time      `json:"expires"`

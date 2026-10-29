@@ -284,7 +284,7 @@ function joining(options: { create?: boolean; alive?: () => boolean } = {}) {
   const timers: (() => void)[] = [];
   const states: [string, string | undefined][] = [];
   const c = new TerminalConnection({
-    url: "ws://test/api/environments/a/terminal?session=main",
+    url: "ws://test/api/computers/a/terminal?session=main",
     create: options.create,
     alive: options.alive,
     size: () => [80, 24],

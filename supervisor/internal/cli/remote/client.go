@@ -28,7 +28,7 @@ func FromServer(s *Server, computer string) *Client {
 	return &Client{Alias: s.Name, Base: s.URL, Computer: computer, Token: s.Credential}
 }
 
-// Info is GET /api/environments/{name}/status.
+// Info is GET /api/computers/{name}/status.
 type Info struct {
 	Name         string `json:"name"`
 	State        string `json:"state"`
@@ -55,7 +55,7 @@ func (c *Client) Label() string {
 
 // URL is the computer's remote access route p (/exec, /cdp/…).
 func (c *Client) URL(p string) string {
-	return c.Base + "/api/environments/" + url.PathEscape(c.Computer) + p
+	return c.Base + "/api/computers/" + url.PathEscape(c.Computer) + p
 }
 
 // API is the supervisor API route p (/me, /accounts).

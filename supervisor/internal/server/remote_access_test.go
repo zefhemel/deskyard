@@ -93,7 +93,7 @@ func accountNamed(t *testing.T, s *Server, username string) accounts.Account {
 func startExec(t *testing.T, ctx context.Context, ts *httptest.Server, e *remoteEngine, bearer string) *websocket.Conn {
 	t.Helper()
 	before := e.execs.Load()
-	ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+"/api/environments/alice/exec",
+	ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+"/api/computers/alice/exec",
 		&websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer " + bearer}}})
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +130,7 @@ func closedSoon(t *testing.T, ctx context.Context, ws *websocket.Conn, what stri
 
 func TestRemoteExecNeedsCredential(t *testing.T) {
 	s, ts, e := newRemoteServer(t)
-	execURL := ts.URL + "/api/environments/alice/exec"
+	execURL := ts.URL + "/api/computers/alice/exec"
 
 	if code := status(t, &http.Client{}, "GET", execURL, ""); code != 401 {
 		t.Errorf("anonymous: %d", code)
@@ -165,7 +165,7 @@ func TestRemoteExecNeedsCredential(t *testing.T) {
 	defer cancel()
 	startExec(t, ctx, ts, e, anna)
 
-	for _, old := range []string{"/api/agent/v1/exec", "/api/agent/v1/", "/api/environments/alice/tokens"} {
+	for _, old := range []string{"/api/agent/v1/exec", "/api/agent/v1/", "/api/computers/alice/tokens"} {
 		if code, _, _ := bearerRequest(t, "GET", ts.URL+old, anna); code != 404 {
 			t.Errorf("removed route %s: %d", old, code)
 		}
@@ -182,7 +182,7 @@ func TestRevokingCredentialClosesExec(t *testing.T) {
 		t.Fatal(err)
 	}
 	closedSoon(t, ctx, ws, "deleting the credential")
-	if code, _, _ := bearerRequest(t, "GET", ts.URL+"/api/environments/alice/status", anna); code != 401 {
+	if code, _, _ := bearerRequest(t, "GET", ts.URL+"/api/computers/alice/status", anna); code != 401 {
 		t.Errorf("a deleted credential: %d", code)
 	}
 }
@@ -202,7 +202,7 @@ func TestRemovingGrantClosesExec(t *testing.T) {
 				t.Fatal(err)
 			}
 			closedSoon(t, ctx, ws, "a lowered grant")
-			if code, _, _ := bearerRequest(t, "GET", ts.URL+"/api/environments/alice/exec", anna); code != 403 && code != 404 {
+			if code, _, _ := bearerRequest(t, "GET", ts.URL+"/api/computers/alice/exec", anna); code != 403 && code != 404 {
 				t.Errorf("after the change: %d", code)
 			}
 		})
@@ -235,7 +235,7 @@ func TestRemoteAccessRechecksAfterRegistering(t *testing.T) {
 				}
 			}}
 			s.Computers.Eng = s.Eng
-			req := httptest.NewRequest(http.MethodGet, "/api/environments/alice/exec", nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/computers/alice/exec", nil)
 			req.Header.Set("Authorization", "Bearer "+bearer)
 			w := httptest.NewRecorder()
 			s.ServeHTTP(w, req)
@@ -277,7 +277,7 @@ func (e *accessChangeEngine) Inspect(_ context.Context, id string) (engine.Conta
 func TestRemoteStatus(t *testing.T) {
 	s, ts, _ := newRemoteServer(t)
 	_, anna := issueCredential(t, s, accountNamed(t, s, "anna"))
-	code, body, _ := bearerRequest(t, "GET", ts.URL+"/api/environments/alice/status", anna)
+	code, body, _ := bearerRequest(t, "GET", ts.URL+"/api/computers/alice/status", anna)
 	var st struct {
 		Name, State string
 		API         int
@@ -289,7 +289,7 @@ func TestRemoteStatus(t *testing.T) {
 	if st.Name != "alice" || st.State != "running" || st.API != 1 || st.Screen == nil || st.Screen.Width != 1280 {
 		t.Errorf("status: %s", body)
 	}
-	if code, _, _ := bearerRequest(t, "GET", ts.URL+"/api/environments/beta/status", anna); code != 404 {
+	if code, _, _ := bearerRequest(t, "GET", ts.URL+"/api/computers/beta/status", anna); code != 404 {
 		t.Errorf("an unknown computer: %d", code)
 	}
 }
@@ -298,12 +298,12 @@ func TestRemoteRoutesNeedRunningComputer(t *testing.T) {
 	s, ts := newTestServer(t) // alice is stopped
 	_, admin := issueCredential(t, s, accountNamed(t, s, "admin"))
 	for _, route := range []string{"/exec", "/forward", "/cdp", "/cdp/json/list"} {
-		code, body, _ := bearerRequest(t, "GET", ts.URL+"/api/environments/alice"+route, admin)
+		code, body, _ := bearerRequest(t, "GET", ts.URL+"/api/computers/alice"+route, admin)
 		if code != 409 || !strings.Contains(body, "alice is stopped; someone with access can start it") {
 			t.Errorf("%s on a stopped computer: %d %s", route, code, body)
 		}
 	}
-	if code, body, _ := bearerRequest(t, "GET", ts.URL+"/api/environments/alice/status", admin); code != 200 || !strings.Contains(body, `"screen":null`) {
+	if code, body, _ := bearerRequest(t, "GET", ts.URL+"/api/computers/alice/status", admin); code != 200 || !strings.Contains(body, `"screen":null`) {
 		t.Errorf("status of a stopped computer: %d %s", code, body)
 	}
 }
@@ -322,15 +322,15 @@ func TestRemoteCDPRewritesURLs(t *testing.T) {
 	_, admin := issueCredential(t, s, accountNamed(t, s, "admin"))
 	host := strings.TrimPrefix(ts.URL, "http://")
 	for route, upstreamPath := range map[string]string{"/cdp": "/_cdp/json/version", "/cdp/json/list": "/_cdp/json/list"} {
-		code, body, _ := bearerRequest(t, "GET", ts.URL+"/api/environments/alice"+route, admin)
+		code, body, _ := bearerRequest(t, "GET", ts.URL+"/api/computers/alice"+route, admin)
 		if code != 200 {
 			t.Fatalf("%s: %d %s", route, code, body)
 		}
 		if got := paths.Load().(string); got != upstreamPath+" auth= cookie=" {
 			t.Errorf("%s reached Chromium as %q", route, got)
 		}
-		if !strings.Contains(body, `"ws://`+host+`/api/environments/alice/cdp/devtools/browser/x"`) ||
-			!strings.Contains(body, `ws=`+host+`/api/environments/alice/cdp/devtools/page/y`) {
+		if !strings.Contains(body, `"ws://`+host+`/api/computers/alice/cdp/devtools/browser/x"`) ||
+			!strings.Contains(body, `ws=`+host+`/api/computers/alice/cdp/devtools/page/y`) {
 			t.Errorf("%s URLs not rewritten: %s", route, body)
 		}
 	}

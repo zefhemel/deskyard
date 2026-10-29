@@ -21,15 +21,15 @@ def drop_volume(admin, vol):
     for v in admin.get("/api/volumes").json()["volumes"]:
         if v["name"] != vol:
             continue
-        for env in v["environments"]:
-            r = admin.patch(f"/api/environments/{env['name']}", json={"volumes": []})
+        for env in v["computers"]:
+            r = admin.patch(f"/api/computers/{env['name']}", json={"volumes": []})
             if r.status_code == 202:
                 admin.wait_job(r.json()["job"])
     admin.delete(f"/api/volumes/{vol}?deleteFiles=true")
 
 
 def apply(admin, name, **patch) -> dict:
-    r = admin.patch(f"/api/environments/{name}", json=patch)
+    r = admin.patch(f"/api/computers/{name}", json=patch)
     assert r.status_code == 202, r.text
     state = admin.wait_job(r.json()["job"])
     assert state["status"] == "done", state
@@ -53,7 +53,7 @@ def test_shared_volume_modes(admin, desktop, name):
         admin.create(b, volumes=[{"name": vol, "readOnly": True}])
         assert admin.desktop(b)["settings"]["volumes"] == [{"name": vol, "path": f"/share/{vol}", "readOnly": True}]
         listed = next(v for v in admin.get("/api/volumes").json()["volumes"] if v["name"] == vol)
-        assert listed["environments"] == [{"name": x, "readOnly": x == b} for x in sorted([a, b])]
+        assert listed["computers"] == [{"name": x, "readOnly": x == b} for x in sorted([a, b])]
         assert in_desktop(a, "sh", "-c", f"echo from-a > /share/{vol}/a.txt") == ""
         assert in_desktop(b, "cat", f"/share/{vol}/a.txt") == "from-a\n"
         attempted = user_write(b, f"/share/{vol}/a.txt")
@@ -63,7 +63,7 @@ def test_shared_volume_modes(admin, desktop, name):
         assert docker("exec", f"deskyard-{name}", "test", "-e", f"/share/{vol}", check=False).returncode != 0
     finally:
         for env in (a, b):
-            admin.delete(f"/api/environments/{env}?files=1")
+            admin.delete(f"/api/computers/{env}?files=1")
         drop_volume(admin, vol)
 
 
@@ -113,7 +113,7 @@ def test_volume_deletion_rules(supervisor, admin, name):
         assert in_desktop(name, "sh", "-c", f"echo precious > /share/{vol}/data.txt") == ""
         r = admin.delete(f"/api/volumes/{vol}?deleteFiles=true")
         assert r.status_code == 409, r.text
-        assert r.json()["environments"] == [{"id": name, "name": name}]
+        assert r.json()["computers"] == [{"id": name, "name": name}]
         assert name in r.json()["error"]
         apply(admin, name, volumes=[])
         assert admin.delete(f"/api/volumes/{vol}").status_code == 204
@@ -126,11 +126,11 @@ def test_volume_deletion_rules(supervisor, admin, name):
         apply(admin, name, volumes=[{"name": vol, "readOnly": False}])
         assert in_desktop(name, "cat", f"/share/{vol}/data.txt") == "precious\n"
         # Removing the environment with its files leaves the volume's alone.
-        assert admin.delete(f"/api/environments/{name}?files=1").status_code == 204
+        assert admin.delete(f"/api/computers/{name}?files=1").status_code == 204
         assert (folder / "data.txt").read_text() == "precious\n"
         assert (supervisor.data / "volume").is_dir()
     finally:
-        admin.delete(f"/api/environments/{name}?files=1")
+        admin.delete(f"/api/computers/{name}?files=1")
         drop_volume(admin, vol)
     assert not folder.exists()
 
@@ -147,22 +147,22 @@ def test_missing_volume_folder_blocks_start(supervisor, admin, name):
     aside = supervisor.data / "volume" / f"{vol}.aside"
     try:
         admin.create(name, volumes=[{"name": vol, "readOnly": True}])
-        assert admin.post(f"/api/environments/{name}/stop").status_code == 204
+        assert admin.post(f"/api/computers/{name}/stop").status_code == 204
         rename(folder, aside)
-        r = admin.post(f"/api/environments/{name}/start")
+        r = admin.post(f"/api/computers/{name}/start")
         assert r.status_code >= 400 and str(folder) in r.text, r.text
         assert not folder.exists()
         d = admin.desktop(name)
         assert d["state"] != "running" and str(folder) in d.get("error", ""), d
         rename(aside, folder)
-        r = admin.post(f"/api/environments/{name}/start")
+        r = admin.post(f"/api/computers/{name}/start")
         assert r.status_code == 204, r.text
         d = wait_until(lambda: (d := admin.desktop(name))["state"] == "running" and d, 60, 1)
         assert d and not d.get("error"), admin.desktop(name)
     finally:
         if aside.exists() and not folder.exists():
             rename(aside, folder)
-        admin.delete(f"/api/environments/{name}?files=1")
+        admin.delete(f"/api/computers/{name}?files=1")
         drop_volume(admin, vol)
 
 
@@ -187,7 +187,7 @@ def test_volumes_ui(supervisor, admin, desktop, name):
             expect(section.get_by_role("checkbox", name="Read only", exact=False)).not_to_be_checked()
             section.scroll_into_view_if_needed()
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-            with page.expect_response(lambda r: r.request.method == "PATCH" and r.url.endswith(f"/api/environments/{name}")) as sent:
+            with page.expect_response(lambda r: r.request.method == "PATCH" and r.url.endswith(f"/api/computers/{name}")) as sent:
                 page.get_by_role("button", name="Save and restart", exact=True).click()
             assert sent.value.status == 202
             state = admin.wait_job(sent.value.json()["job"])

@@ -72,7 +72,7 @@ func fullOnAlice(t *testing.T, s *Server) accounts.Account {
 // shareAlice shares alice through the API as c and returns the link's code.
 func shareAlice(t *testing.T, ts *httptest.Server, c *http.Client, username string, level auth.Level) string {
 	t.Helper()
-	code, body := send(t, c, "POST", ts.URL+"/api/environments/alice/shares", ts.URL, `{"username":"`+username+`","level":"`+string(level)+`"}`)
+	code, body := send(t, c, "POST", ts.URL+"/api/computers/alice/shares", ts.URL, `{"username":"`+username+`","level":"`+string(level)+`"}`)
 	if code != http.StatusCreated {
 		t.Fatalf("share: %d %s", code, body)
 	}
@@ -125,10 +125,10 @@ func TestShareFlow(t *testing.T) {
 	if code != 200 || !strings.Contains(body, `"username":"sanne"`) || !strings.Contains(body, `"next":"/alice/"`) {
 		t.Fatalf("redeem: %d %s", code, body)
 	}
-	if got := status(t, sanne, "GET", ts.URL+"/api/environments/alice", ""); got != 200 {
+	if got := status(t, sanne, "GET", ts.URL+"/api/computers/alice", ""); got != 200 {
 		t.Fatalf("share GET alice: %d", got)
 	}
-	if got := status(t, sanne, "GET", ts.URL+"/api/environments/alice/processes", ""); got != 403 {
+	if got := status(t, sanne, "GET", ts.URL+"/api/computers/alice/processes", ""); got != 403 {
 		t.Fatalf("observe share GET processes: %d", got)
 	}
 	_, body = get(t, sanne, ts.URL+"/api/me")
@@ -144,7 +144,7 @@ func TestShareFlow(t *testing.T) {
 	}
 
 	var shares []shareJSON
-	if code := getJSON(t, bob, ts.URL+"/api/environments/alice/shares", &shares); code != 200 || len(shares) != 1 {
+	if code := getJSON(t, bob, ts.URL+"/api/computers/alice/shares", &shares); code != 200 || len(shares) != 1 {
 		t.Fatalf("shares: %d %+v", code, shares)
 	}
 	if sh := shares[0]; sh.Username != "sanne" || sh.Computer != "alice" || sh.LinkPending || sh.LastLogin == nil || sh.SharedBy.ID != bobAccount.ID {
@@ -152,12 +152,12 @@ func TestShareFlow(t *testing.T) {
 	}
 	// Shares stay off the computer's access list.
 	admin := login(t, ts, "admin")
-	_, body = get(t, admin, ts.URL+"/api/environments/alice")
+	_, body = get(t, admin, ts.URL+"/api/computers/alice")
 	if strings.Contains(body, "sanne") || !strings.Contains(body, `"access":[{"username":"bob","level":"full"}]`) {
 		t.Fatalf("access lists the share: %s", body)
 	}
 	// Observers can't list shares.
-	if got := status(t, sanne, "GET", ts.URL+"/api/environments/alice/shares", ""); got != 403 {
+	if got := status(t, sanne, "GET", ts.URL+"/api/computers/alice/shares", ""); got != 403 {
 		t.Fatalf("observer lists shares: %d", got)
 	}
 }
@@ -170,21 +170,21 @@ func TestShareCannotShare(t *testing.T) {
 	var res struct {
 		Credential string
 		Username   string
-		Computers  []struct{ Name, Level string } `json:"environments"`
+		Computers  []struct{ Name, Level string } `json:"computers"`
 	}
 	_ = json.Unmarshal([]byte(body), &res)
 	if code != 200 || res.Username != "carla" || !strings.HasPrefix(res.Credential, "dyc_") ||
 		len(res.Computers) != 1 || res.Computers[0].Name != "alice" || res.Computers[0].Level != "full" {
 		t.Fatalf("CLI redemption: %d %s", code, body)
 	}
-	code, body = sendBearer(t, "POST", ts.URL+"/api/environments/alice/shares", res.Credential, `{"username":"dirk","level":"observe"}`)
+	code, body = sendBearer(t, "POST", ts.URL+"/api/computers/alice/shares", res.Credential, `{"username":"dirk","level":"observe"}`)
 	if code != 403 || !strings.Contains(body, "shares can't share") {
 		t.Fatalf("a share shared: %d %s", code, body)
 	}
 
 	// Observers can't share either.
 	observeAlice(t, s)
-	code, body = send(t, login(t, ts, "bob"), "POST", ts.URL+"/api/environments/alice/shares", ts.URL, `{"username":"dirk","level":"observe"}`)
+	code, body = send(t, login(t, ts, "bob"), "POST", ts.URL+"/api/computers/alice/shares", ts.URL, `{"username":"dirk","level":"observe"}`)
 	if code != 403 || !strings.Contains(body, "observe-only") {
 		t.Fatalf("an observer shared: %d %s", code, body)
 	}
@@ -194,11 +194,11 @@ func TestShareCannotShare(t *testing.T) {
 	// Bad requests.
 	for _, req := range []string{`{"username":"Not Valid","level":"full"}`, `{"username":"dirk","level":"write"}`,
 		`{"username":"dirk","level":"full","expires":"2001-01-01T00:00:00Z"}`} {
-		if code, body := send(t, admin, "POST", ts.URL+"/api/environments/alice/shares", ts.URL, req); code != 400 {
+		if code, body := send(t, admin, "POST", ts.URL+"/api/computers/alice/shares", ts.URL, req); code != 400 {
 			t.Errorf("share %s: %d %s", req, code, body)
 		}
 	}
-	if code, _ := send(t, admin, "POST", ts.URL+"/api/environments/alice/shares", ts.URL, `{"username":"anna","level":"full"}`); code != 409 {
+	if code, _ := send(t, admin, "POST", ts.URL+"/api/computers/alice/shares", ts.URL, `{"username":"anna","level":"full"}`); code != 409 {
 		t.Errorf("share in use name: %d", code)
 	}
 }
@@ -239,7 +239,7 @@ func TestNewLinkByOtherUserForbidden(t *testing.T) {
 	}
 	// Full users see every share of the computer.
 	var shares []shareJSON
-	if getJSON(t, anna, ts.URL+"/api/environments/alice/shares", &shares); len(shares) != 1 {
+	if getJSON(t, anna, ts.URL+"/api/computers/alice/shares", &shares); len(shares) != 1 {
 		t.Fatalf("anna's shares: %+v", shares)
 	}
 	for _, path := range []string{"/api/shares/anna/link", "/api/shares/nobody/link"} {
@@ -283,7 +283,7 @@ func TestRevokeShareClosesStream(t *testing.T) {
 	defer s.viewers.remove("alice", cn)
 
 	var shares []shareJSON
-	if getJSON(t, bob, ts.URL+"/api/environments/alice/shares", &shares); len(shares) != 1 || !shares[0].Connected {
+	if getJSON(t, bob, ts.URL+"/api/computers/alice/shares", &shares); len(shares) != 1 || !shares[0].Connected {
 		t.Fatalf("connected share listed as %+v", shares)
 	}
 	if code, body := send(t, bob, "DELETE", ts.URL+"/api/shares/sanne", ts.URL, ""); code != 204 {

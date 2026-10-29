@@ -294,5 +294,5 @@ func (s *Server) handleCLILoginToken(w http.ResponseWriter, r *http.Request) {
 		s.Log.Warn("recording account login", "account", a.Username, "err", err)
 	}
 	s.Log.Info("signed in a CLI", "account", a.Username, "client", client, "ip", clientIP(r))
-	writeJSON(w, http.StatusOK, map[string]any{"credential": bearer, "username": a.Username, "environments": s.cliComputers(a)})
+	writeJSON(w, http.StatusOK, map[string]any{"credential": bearer, "username": a.Username, "computers": s.cliComputers(a)})
 }

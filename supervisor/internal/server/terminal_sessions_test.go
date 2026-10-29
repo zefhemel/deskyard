@@ -82,7 +82,7 @@ func (e *terminalSessionsEngine) setList(out string) {
 
 func computerTerminals(t *testing.T, c *http.Client, url string) []terminal.Session {
 	t.Helper()
-	resp, body := get(t, c, url+"/api/environments/alice")
+	resp, body := get(t, c, url+"/api/computers/alice")
 	if resp.StatusCode != 200 {
 		t.Fatalf("%d %s", resp.StatusCode, body)
 	}
@@ -100,7 +100,7 @@ func TestTerminalSessionsJSONCarriesDetails(t *testing.T) {
 	e.list = "main\t3\tvim\nterminal-1\t0\tbash\n_deskyard_" + strings.Repeat("a", 32) + "\t1\tbash\n"
 	_, ts := newTestServerWith(t, e)
 	admin := login(t, ts, "admin")
-	resp, body := get(t, admin, ts.URL+"/api/environments/alice/terminal/sessions")
+	resp, body := get(t, admin, ts.URL+"/api/computers/alice/terminal/sessions")
 	if resp.StatusCode != 200 || strings.TrimSpace(body) != `{"sessions":[{"name":"main","clients":3,"command":"vim"},{"name":"terminal-1","clients":0,"command":"bash"}]}` {
 		t.Fatalf("%d %s", resp.StatusCode, body)
 	}
@@ -125,7 +125,7 @@ func TestCreateSessionRoute(t *testing.T) {
 			e.state = tc.state
 			e.created = tc.created
 			_, ts := newTestServerWith(t, e)
-			req, _ := http.NewRequest("POST", ts.URL+"/api/environments/alice/terminal/sessions", nil)
+			req, _ := http.NewRequest("POST", ts.URL+"/api/computers/alice/terminal/sessions", nil)
 			req.Header.Set("Origin", ts.URL)
 			resp, err := login(t, ts, tc.user).Do(req)
 			if err != nil {
@@ -163,7 +163,7 @@ func TestDeleteSessionRoute(t *testing.T) {
 			e.state = tc.state
 			e.killCode = tc.code
 			_, ts := newTestServerWith(t, e)
-			if got := status(t, login(t, ts, tc.user), "DELETE", ts.URL+"/api/environments/alice/terminal/sessions/"+tc.session, ts.URL); got != tc.want {
+			if got := status(t, login(t, ts, tc.user), "DELETE", ts.URL+"/api/computers/alice/terminal/sessions/"+tc.session, ts.URL); got != tc.want {
 				t.Fatalf("status %d want %d", got, tc.want)
 			}
 			ran := e.ran("deskyard", "terminal-kill", tc.session)
@@ -185,14 +185,14 @@ func TestDeleteSessionClosesAttachments(t *testing.T) {
 			admin := login(t, ts, "admin")
 			ws := terminalDial(t, ts, admin)
 			terminalReady(t, ws)
-			if got := status(t, admin, "DELETE", ts.URL+"/api/environments/alice/terminal/sessions/other", ts.URL); got != 204 {
+			if got := status(t, admin, "DELETE", ts.URL+"/api/computers/alice/terminal/sessions/other", ts.URL); got != 204 {
 				t.Fatal(got)
 			}
 			if clientExits {
 				// tmux detaches the browser's client as its session is killed.
 				e.onKill = func() { e.outW.Close(); time.Sleep(50 * time.Millisecond) }
 			}
-			if got := status(t, admin, "DELETE", ts.URL+"/api/environments/alice/terminal/sessions/main", ts.URL); got != 204 {
+			if got := status(t, admin, "DELETE", ts.URL+"/api/computers/alice/terminal/sessions/main", ts.URL); got != 204 {
 				t.Fatal(got)
 			}
 			typ, b := terminalRead(t, ws)
@@ -309,7 +309,7 @@ func TestTerminalCachePublishesOnlyChanges(t *testing.T) {
 		for {
 			select {
 			case ev := <-sub.c:
-				if ev.kind == "environment" && ev.computer == "alice" {
+				if ev.kind == "computer" && ev.computer == "alice" {
 					n++
 				}
 			default:
@@ -407,7 +407,7 @@ func TestDeleteSessionOutlivesRequest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	e.onKill = func() { cancel(); time.Sleep(100 * time.Millisecond) }
-	req, _ := http.NewRequestWithContext(ctx, "DELETE", ts.URL+"/api/environments/alice/terminal/sessions/main", nil)
+	req, _ := http.NewRequestWithContext(ctx, "DELETE", ts.URL+"/api/computers/alice/terminal/sessions/main", nil)
 	req.Header.Set("Origin", ts.URL)
 	if resp, err := admin.Do(req); err == nil {
 		resp.Body.Close()
@@ -470,7 +470,7 @@ func TestComputerJSONHasTerminals(t *testing.T) {
 			if got := computerTerminals(t, login(t, ts, "admin"), ts.URL); len(got) != 0 {
 				t.Fatalf("%+v", got)
 			}
-			resp, body := get(t, login(t, ts, "admin"), ts.URL+"/api/environments")
+			resp, body := get(t, login(t, ts, "admin"), ts.URL+"/api/computers")
 			if resp.StatusCode != 200 || !strings.Contains(body, `"terminals":[]`) {
 				t.Fatalf("list %s", body)
 			}

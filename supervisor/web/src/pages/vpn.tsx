@@ -34,10 +34,10 @@ export function VPNPage() {
                   NordVPN · {c.country} · Revision {c.revision}
                 </p>
                 <p class="mt-1 text-sm">
-                  {c.environments.length ? (
+                  {c.computers.length ? (
                     <>
                       Used by{" "}
-                      {c.environments.map((d, i) => (
+                      {c.computers.map((d, i) => (
                         <span key={d.id}>
                           {i > 0 ? ", " : ""}
                           <a href={`/environments/${d.name}`}>{d.name}</a>
@@ -141,11 +141,11 @@ function ConnectionDialog({
         await candidate.start(form, !!preview, begin);
       } else {
         const input = connectionInput(form, !!preview);
-        if (preview?.environments.length && !confirmed) throw new Error("Confirm the affected environments' restart before saving.");
+        if (preview?.computers.length && !confirmed) throw new Error("Confirm the affected environments' restart before saving.");
         if (!preview) {
           setBusy(true);
           const saved = await api.createVPN(input);
-          setPreview({ ...saved, environments: [] });
+          setPreview({ ...saved, computers: [] });
           setForm({ ...form, username: "", password: "" });
           onSaved();
           onClose();
@@ -183,8 +183,8 @@ function ConnectionDialog({
           <Button disabled={active} onClick={() => void start("test")}>
             Test connection
           </Button>
-          <Button type="submit" variant="primary" disabled={active || (!!preview?.environments.length && !confirmed)}>
-            {active ? "Working…" : preview?.environments.length ? "Save and restart affected environments" : "Save connection"}
+          <Button type="submit" variant="primary" disabled={active || (!!preview?.computers.length && !confirmed)}>
+            {active ? "Working…" : preview?.computers.length ? "Save and restart affected environments" : "Save connection"}
           </Button>
         </>
       }
@@ -229,10 +229,10 @@ function ConnectionDialog({
             onInput={(e) => patch({ password: e.currentTarget.value })}
           />
         </Field>
-        {preview?.environments.length ? (
+        {preview?.computers.length ? (
           <Note>
             <p class="mb-2">
-              Saving validates the candidate first, then restarts: <b>{preview.environments.map((d) => d.name).join(", ")}</b>. Open sessions briefly disconnect;
+              Saving validates the candidate first, then restarts: <b>{preview.computers.map((d) => d.name).join(", ")}</b>. Open sessions briefly disconnect;
               files are kept. A failed validation keeps the saved connection.
             </p>
             <Check id="vpn-confirm" checked={confirmed} onChange={setConfirmed} title="Restart these affected environments" />
@@ -256,11 +256,11 @@ function ConnectionDialog({
 function ConnectionResult({ job, action }: { job: Job | null; action: "test" | "save" }) {
   if (job?.status !== "done") return null;
   const result = job.result;
-  if (result && "environments" in result)
+  if (result && "computers" in result)
     return (
       <div class="text-sm" role="status">
         <p class="mb-2">Saved revision {result.connection.revision}.</p>
-        {result.environments.map((d) => (
+        {result.computers.map((d) => (
           <p key={d.id} class="mb-2">
             {d.name}:{" "}
             {d.error ? (
@@ -283,7 +283,7 @@ function ConnectionResult({ job, action }: { job: Job | null; action: "test" | "
 }
 
 function DeleteConnection({ connection, onClose, onDeleted }: { connection: SavedVPNConnection; onClose: () => void; onDeleted: () => void }) {
-  const [refs, setRefs] = useState<VPNReference[]>(connection.environments);
+  const [refs, setRefs] = useState<VPNReference[]>(connection.computers);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const remove = async () => {

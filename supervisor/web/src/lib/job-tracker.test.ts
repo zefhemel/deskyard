@@ -13,8 +13,8 @@ function setup() {
   });
   return { tracker, opened, closed, send: (id: string, job: Job) => updates.get(id)!(job) };
 }
-const running: Job = { status: "running", message: "Downloading", progress: 0.2, environment: "alice" };
-const failed: Job = { status: "failed", message: "Failed", error: "Download interrupted", progress: null, environment: "alice" };
+const running: Job = { status: "running", message: "Downloading", progress: 0.2, computer: "alice" };
+const failed: Job = { status: "failed", message: "Failed", error: "Download interrupted", progress: null, computer: "alice" };
 
 test("local and discovered followers share one transport and terminal state", () => {
   const { tracker, opened, send } = setup();

@@ -43,15 +43,29 @@ func TestOldDesktopRoutesGone(t *testing.T) {
 			t.Errorf("%s %s: %d", r.method, r.path, got)
 		}
 	}
-	if got := status(t, admin, "GET", ts.URL+"/api/environments/alice", ""); got != 200 {
+	if got := status(t, admin, "GET", ts.URL+"/api/computers/alice", ""); got != 200 {
 		t.Fatalf("new route: %d", got)
+	}
+}
+
+func TestOldEnvironmentsPathIsGone(t *testing.T) {
+	_, ts := newTestServer(t)
+	admin := login(t, ts, "admin")
+	for _, r := range []struct{ method, path string }{
+		{"GET", "/api/environments"}, {"POST", "/api/environments"},
+		{"GET", "/api/environments/alice"}, {"POST", "/api/environments/alice/start"},
+		{"GET", "/api/environments/alice/exec"}, {"GET", "/api/environments/alice/cdp/devtools/"},
+	} {
+		if got := status(t, admin, r.method, ts.URL+r.path, ts.URL); got != 404 {
+			t.Errorf("%s %s: %d", r.method, r.path, got)
+		}
 	}
 }
 
 func TestMissingComputerIs404(t *testing.T) {
 	_, ts := newTestServer(t)
 	admin := login(t, ts, "admin")
-	res, err := admin.Get(ts.URL + "/api/environments/nobody")
+	res, err := admin.Get(ts.URL + "/api/computers/nobody")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +79,7 @@ func TestMissingComputerIs404(t *testing.T) {
 // computerList is the list response, decoded loosely so that renamed or
 // leftover fields show.
 type computerList struct {
-	Computers []map[string]any `json:"environments"`
+	Computers []map[string]any `json:"computers"`
 	Conflicts []map[string]any `json:"conflicts"`
 }
 
@@ -76,7 +90,7 @@ func TestComputerListShowsDefinitionState(t *testing.T) {
 		t.Fatal(err)
 	}
 	var list computerList
-	if got := getJSON(t, admin, ts.URL+"/api/environments", &list); got != 200 {
+	if got := getJSON(t, admin, ts.URL+"/api/computers", &list); got != 200 {
 		t.Fatal(got)
 	}
 	if len(list.Computers) != 1 || list.Conflicts == nil {
@@ -105,7 +119,7 @@ func TestComputerListReportsConflictsToAdmins(t *testing.T) {
 	s.Computers.ReconcileOnce(context.Background())
 	admin, anna := login(t, ts, "admin"), login(t, ts, "anna")
 	var list computerList
-	getJSON(t, admin, ts.URL+"/api/environments", &list)
+	getJSON(t, admin, ts.URL+"/api/computers", &list)
 	if len(list.Conflicts) != 1 {
 		t.Fatalf("%+v", list.Conflicts)
 	}
@@ -117,7 +131,7 @@ func TestComputerListReportsConflictsToAdmins(t *testing.T) {
 		t.Fatalf("%+v", c)
 	}
 	list = computerList{}
-	getJSON(t, anna, ts.URL+"/api/environments", &list)
+	getJSON(t, anna, ts.URL+"/api/computers", &list)
 	if list.Conflicts == nil || len(list.Conflicts) != 0 {
 		t.Fatalf("anna sees %+v", list.Conflicts)
 	}
@@ -156,7 +170,7 @@ func TestJobAndAccountJSONUseComputerNames(t *testing.T) {
 		t.Fatalf("job %+v", got)
 	}
 	b, _ := json.Marshal(jobState{Status: "running", Computer: "alice"})
-	if !strings.Contains(string(b), `"environment":"alice"`) {
+	if !strings.Contains(string(b), `"computer":"alice"`) {
 		t.Fatal(string(b))
 	}
 }
@@ -202,10 +216,10 @@ func TestEventsSendConflictsToAdmins(t *testing.T) {
 		}
 		return got
 	}
-	if got := snapshot("admin"); !strings.Contains(got["environment"], `"name":"alice"`) || !strings.Contains(got["conflicts"], `"kind":"unknown"`) {
+	if got := snapshot("admin"); !strings.Contains(got["computer"], `"name":"alice"`) || !strings.Contains(got["conflicts"], `"kind":"unknown"`) {
 		t.Fatalf("admin: %v", got)
 	}
-	if got := snapshot("anna"); got["environment"] == "" || got["conflicts"] != "" {
+	if got := snapshot("anna"); got["computer"] == "" || got["conflicts"] != "" {
 		t.Fatalf("anna: %v", got)
 	}
 }
@@ -214,7 +228,7 @@ func TestEventsSendConflictsToAdmins(t *testing.T) {
 // the computer forgotten and its files half deleted.
 func TestRemovalOutlivesItsClient(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	r := httptest.NewRequest("DELETE", "/api/environments/alice?files=1", nil).WithContext(ctx)
+	r := httptest.NewRequest("DELETE", "/api/computers/alice?files=1", nil).WithContext(ctx)
 	removal, stop := removalContext(r)
 	defer stop()
 	cancel()

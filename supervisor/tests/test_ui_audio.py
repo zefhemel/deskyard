@@ -280,7 +280,7 @@ BADGE_WATCH = """(name) => {
   window.__w = setInterval(async () => {
     const before = live();
     let d;
-    try { d = await (await fetch('/api/environments/' + name)).json(); } catch { return; }
+    try { d = await (await fetch('/api/computers/' + name)).json(); } catch { return; }
     window.__n++;
     if (before && live() && !d.mics.includes('admin')) window.__viol.push(d.mics);
   }, 30);

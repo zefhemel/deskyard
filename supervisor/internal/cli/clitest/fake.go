@@ -75,7 +75,7 @@ type Fake struct {
 	LoginSaveFails int
 	// Answers are the answers to the other /api/ routes, keyed by "METHOD
 	// /api/path" (no query); a route without one answers 404 "no such
-	// route". An answer for GET /api/environments/{name} replaces the
+	// route". An answer for GET /api/computers/{name} replaces the
 	// built-in one.
 	Answers map[string]Answer
 
@@ -116,11 +116,11 @@ type Call struct {
 func New(t testing.TB, name string) *Fake {
 	f := &Fake{Name: name, Dir: t.TempDir(), Grants: []Grant{{name, "full"}}, credentials: map[string]bool{Credential: true}}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/environments/{name}", f.auth(f.computer))
-	mux.HandleFunc("GET /api/environments/{name}/status", f.auth(f.remote(f.info)))
-	mux.HandleFunc("/api/environments/{name}/exec", f.auth(f.remote(f.exec)))
-	mux.HandleFunc("/api/environments/{name}/cdp/", f.auth(f.remote(f.cdp)))
-	mux.HandleFunc("/api/environments/{name}/forward", f.auth(f.remote(f.forward)))
+	mux.HandleFunc("GET /api/computers/{name}", f.auth(f.computer))
+	mux.HandleFunc("GET /api/computers/{name}/status", f.auth(f.remote(f.info)))
+	mux.HandleFunc("/api/computers/{name}/exec", f.auth(f.remote(f.exec)))
+	mux.HandleFunc("/api/computers/{name}/cdp/", f.auth(f.remote(f.cdp)))
+	mux.HandleFunc("/api/computers/{name}/forward", f.auth(f.remote(f.forward)))
 	mux.HandleFunc("DELETE /api/me/credentials/{id}", f.auth(f.deleteCredential))
 	mux.HandleFunc("POST /api/cli-login", f.startLogin)
 	mux.HandleFunc("POST /api/cli-login/{id}/token", f.pollLogin)
@@ -327,7 +327,7 @@ func (f *Fake) issueLocked() map[string]any {
 	f.issued++
 	cred := fmt.Sprintf("dyc_%08x_issued", f.issued)
 	f.credentials[cred] = true
-	return map[string]any{"credential": cred, "username": Username, "environments": f.Grants}
+	return map[string]any{"credential": cred, "username": Username, "computers": f.Grants}
 }
 
 func (f *Fake) hasFull() bool {
@@ -531,7 +531,7 @@ func (f *Fake) exec(w http.ResponseWriter, r *http.Request) {
 // with URLs pointing back through the remote access API, and an echo
 // WebSocket at /devtools/….
 func (f *Fake) cdp(w http.ResponseWriter, r *http.Request) {
-	api := "/api/environments/" + r.PathValue("name") + "/cdp"
+	api := "/api/computers/" + r.PathValue("name") + "/cdp"
 	rest := strings.TrimPrefix(r.URL.Path, api)
 	host := r.Host
 	switch {

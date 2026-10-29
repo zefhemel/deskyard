@@ -29,7 +29,7 @@ func TestEventsQueuedLifecycleCannotOverwriteSnapshot(t *testing.T) {
 	s, ts := newTestServerWith(t, eng)
 	client := login(t, ts, "admin")
 	eng.list = func() ([]engine.Container, error) {
-		s.events.publish(event{kind: "environment", computer: "alice", data: computers.Computer{Name: "alice", ID: "alice", State: "running"}})
+		s.events.publish(event{kind: "computer", computer: "alice", data: computers.Computer{Name: "alice", ID: "alice", State: "running"}})
 		return []engine.Container{alice}, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

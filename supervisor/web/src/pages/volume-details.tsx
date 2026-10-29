@@ -37,13 +37,13 @@ export function VolumeDetailsPage() {
               Delete
             </Button>
           </div>
-          <VolumeCard volume={v} computers={envs.data?.environments} bare />
+          <VolumeCard volume={v} computers={envs.data?.computers} bare />
           <h2 class="mt-8 mb-3 text-xl font-bold">Backups</h2>
           <BackupsPanel
             kind="volume"
             name={v.name}
             hostPath={v.kind === "host" ? v.folder : undefined}
-            stoppers={v.environments.filter((g) => envs.data?.environments.find((e) => e.name === g.name)?.state === "running").map((g) => g.name)}
+            stoppers={v.computers.filter((g) => envs.data?.computers.find((e) => e.name === g.name)?.state === "running").map((g) => g.name)}
           />
           {removing && <DeleteVolume volume={v} onClose={() => setRemoving(false)} onDeleted={() => route("/volumes")} />}
         </>

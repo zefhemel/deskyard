@@ -13,7 +13,7 @@ import (
 
 func TestImageAuthoringRoutesRemoved(t *testing.T) {
 	bt := newCatalogTest(t)
-	for _, req := range []struct{ method, path string }{{"GET", "/api/recipes"}, {"GET", "/api/recipes/template?base=img"}, {"POST", "/api/recipes"}, {"PUT", "/api/recipes/test"}, {"DELETE", "/api/recipes/test"}, {"POST", "/api/recipes/test/rebuild"}, {"GET", "/api/environments/alice/image-scan"}, {"POST", "/api/environments/alice/image"}} {
+	for _, req := range []struct{ method, path string }{{"GET", "/api/recipes"}, {"GET", "/api/recipes/template?base=img"}, {"POST", "/api/recipes"}, {"PUT", "/api/recipes/test"}, {"DELETE", "/api/recipes/test"}, {"POST", "/api/recipes/test/rebuild"}, {"GET", "/api/computers/alice/image-scan"}, {"POST", "/api/computers/alice/image"}} {
 		code, body := bt.do(bt.admin, req.method, req.path, map[string]string{})
 		if code != 404 {
 			t.Errorf("%s %s = %d %s; want 404", req.method, req.path, code, body)

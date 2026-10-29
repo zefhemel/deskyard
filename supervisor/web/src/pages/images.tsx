@@ -113,7 +113,7 @@ function ImageCard({
               Upgrade {plural(img.behind.length, "environment")}…
             </Button>
           )}
-          {img.environments.length === 0 && !img.official && (
+          {img.computers.length === 0 && !img.official && (
             <Button class={small} onClick={remove}>
               Remove from catalog
             </Button>
@@ -136,9 +136,9 @@ function ImageCard({
         <dd class="min-w-0">{img.checked ? `Pulled ${ago(img.checked).toLowerCase()}` : <span class="text-muted">Not yet</span>}</dd>
         <dt class="mt-2 text-muted sm:mt-0">Environments</dt>
         <dd class="min-w-0">
-          {img.environments.length ? (
+          {img.computers.length ? (
             <ul class="m-0 flex list-none flex-wrap gap-2 p-0" aria-label={`Environments using ${img.title || img.ref}`}>
-              {img.environments.map((n) => {
+              {img.computers.map((n) => {
                 const late = img.behind.includes(n);
                 const c = env(n);
                 return (

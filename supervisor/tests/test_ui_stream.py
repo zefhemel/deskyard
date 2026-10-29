@@ -165,7 +165,7 @@ def test_four_viewers_do_not_exhaust_http_connections(supervisor, remote, name):
                 clicked = commands.submit(remote, "-e", name, "click", "300", "200")
                 for page in pages:
                     expect(page.locator('[data-mark="click"]')).to_be_visible(timeout=5000)
-                    assert any(event["type"] == "environment" for event in snapshots[page])
+                    assert any(event["type"] == "computer" for event in snapshots[page])
                 clicked.result()
             # Use browser fetch, which competes with EventSource for sockets;
             # Playwright's request client has an independent pool and hides this bug.

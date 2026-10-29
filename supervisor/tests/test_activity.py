@@ -15,7 +15,7 @@ from helpers import bearer, exec_ws, make_account, make_credential, wait_until
 
 
 def test_activity_api_shape(admin, desktop, name):
-    r = admin.get(f"/api/environments/{name}/activity")
+    r = admin.get(f"/api/computers/{name}/activity")
     assert r.status_code == 200, r.text
     assert r.json() == {"name": name, "agents": []}
     assert admin.desktop(name)["agents"] == []
@@ -26,12 +26,12 @@ def test_activity_api_access(admin, desktop, name, supervisor):
     try:
         other = supervisor.client().login(user, "pw")
         for path in ("activity", "screen-events"):
-            assert other.get(f"/api/environments/{name}/{path}", timeout=10).status_code == 404, path
+            assert other.get(f"/api/computers/{name}/{path}", timeout=10).status_code == 404, path
         # A credential whose account lost its grant reaches neither.
         t = make_credential(admin, name)
         assert admin.patch(f"/api/accounts/{t['username']}", json={"grants": []}).status_code == 200
         for path in ("activity", "screen-events"):
-            r = requests.get(f"{supervisor.base}/api/environments/{name}/{path}", headers=bearer(t), timeout=10)
+            r = requests.get(f"{supervisor.base}/api/computers/{name}/{path}", headers=bearer(t), timeout=10)
             assert r.status_code == 404, (path, r.status_code)
     finally:
         admin.delete(f"/api/accounts/{user}")
@@ -44,7 +44,7 @@ def test_screen_events_stop_after_revoke(admin, desktop, name, supervisor):
         opened, ended = threading.Event(), threading.Event()
 
         def watch():
-            with viewer.get(f"/api/environments/{name}/screen-events", stream=True, timeout=60) as r:
+            with viewer.get(f"/api/computers/{name}/screen-events", stream=True, timeout=60) as r:
                 assert r.status_code == 200
                 opened.set()
                 for _ in r.iter_lines():
@@ -56,7 +56,7 @@ def test_screen_events_stop_after_revoke(admin, desktop, name, supervisor):
         assert opened.wait(10), "stream didn't open"
         time.sleep(0.5)
         assert not ended.is_set()
-        assert admin.put(f"/api/environments/{name}/access", json={"grants": []}).status_code == 204
+        assert admin.put(f"/api/computers/{name}/access", json={"grants": []}).status_code == 204
         assert ended.wait(5), "screen-events stream still open after revoking access"
     finally:
         admin.delete(f"/api/accounts/{user}")
@@ -70,7 +70,7 @@ def run(admin, name, t, argv, **kw):
 
 
 def summary(admin, name, credential_id=None):
-    agents = admin.get(f"/api/environments/{name}/activity").json()["agents"]
+    agents = admin.get(f"/api/computers/{name}/activity").json()["agents"]
     if credential_id:
         agents = [a for a in agents if a["id"] == credential_id]
     assert len(agents) == 1, agents
@@ -86,7 +86,7 @@ def test_outside_exec_click_type(admin, desktop, name):
     stream, opened = [], threading.Event()
 
     def watch():
-        with admin.get(f"/api/environments/{name}/screen-events", stream=True, timeout=60) as r:
+        with admin.get(f"/api/computers/{name}/screen-events", stream=True, timeout=60) as r:
             opened.set()
             for line in r.iter_lines():
                 stream.append(line.decode())
@@ -104,7 +104,7 @@ def test_outside_exec_click_type(admin, desktop, name):
     assert len(agents) == 1
     a = agents[0]
     assert {k: a[k] for k in ("id", "name", "owner", "inside")} == {"id": t["id"], "name": "deploy-bot", "owner": t["username"], "inside": False}
-    raw = admin.get(f"/api/environments/{name}/activity").text
+    raw = admin.get(f"/api/computers/{name}/activity").text
     s = json.loads(raw)["agents"][0]
     assert has_recent(s, kind="command", text="sh -c 'exit 3'", exit=3), s
     assert has_recent(s, kind="screen", action="click", count=1), s
@@ -121,7 +121,7 @@ def test_outside_exec_click_type(admin, desktop, name):
 def test_token_on_command_line_is_masked(admin, desktop, name):
     t = make_credential(admin, name)
     run(admin, name, t, ["echo", "--token", "abc123"])
-    raw = admin.get(f"/api/environments/{name}/activity").text
+    raw = admin.get(f"/api/computers/{name}/activity").text
     assert "abc123" not in raw
     assert has_recent(summary(admin, name, t["id"]), text="echo --token •••")
 
@@ -132,7 +132,7 @@ def test_disconnected_command(admin, desktop, name):
     async def go():
         task = asyncio.create_task(exec_ws(admin.base, name, t["credential"], ["sleep", "30"]))
         for _ in range(40):
-            agents = admin.get(f"/api/environments/{name}/activity").json()["agents"]
+            agents = admin.get(f"/api/computers/{name}/activity").json()["agents"]
             if agents and any(i["kind"] == "command" and i["text"] == "sleep 30" for i in agents[0]["now"]):
                 break
             await asyncio.sleep(0.25)
@@ -156,7 +156,7 @@ def test_agent_cannot_turn_inside_recording_on(admin, desktop, name):
 
 def test_browser_presence(admin, desktop, name):
     t = make_credential(admin, name)
-    r = requests.get(f"{admin.base}/api/environments/{name}/cdp/json/version", headers=bearer(t), timeout=20)
+    r = requests.get(f"{admin.base}/api/computers/{name}/cdp/json/version", headers=bearer(t), timeout=20)
     assert r.status_code == 200, r.text
     s = summary(admin, name, t["id"])
     assert any(i["kind"] == "browser" for i in s["now"]), s
@@ -253,7 +253,7 @@ def test_inside_click_is_a_terminal(admin, desktop, name):
         inside_click(name)
         agents = wait_until(lambda: inside_agents(admin, name), 15, 0.5)
         assert [(a["id"], a["name"], a["inside"], a["owner"]) for a in agents] == [("inside:a terminal", "a terminal", True, "")]
-        act = admin.get(f"/api/environments/{name}/activity").json()
+        act = admin.get(f"/api/computers/{name}/activity").json()
         mine = [a for a in act["agents"] if a["id"] == "inside:a terminal"][0]
         assert any(i["kind"] == "screen" and i["action"] == "click" for i in mine["recent"]), mine
 
@@ -265,7 +265,7 @@ def test_nested_deskyard_not_counted_inside(admin, desktop, name, supervisor):
         time.sleep(5)
         agents = admin.desktop(name)["agents"]
         assert [a["id"] for a in agents] == [t["id"]], agents
-        act = admin.get(f"/api/environments/{name}/activity").json()["agents"][0]
+        act = admin.get(f"/api/computers/{name}/activity").json()["agents"][0]
         items = act["now"] + act["recent"]
         assert any(i["kind"] == "command" and i["text"] == "sh -c 'deskyard click 5 5'" for i in items), items
         assert not any(i["kind"] == "screen" for i in items), items
@@ -274,9 +274,9 @@ def test_nested_deskyard_not_counted_inside(admin, desktop, name, supervisor):
 def test_housekeeping_not_counted(admin, desktop, name, supervisor):
     t = make_credential(admin, name)
     with events_open(admin):
-        assert admin.get(f"/api/environments/{name}/screen.png", timeout=60).status_code == 200
-        assert admin.post(f"/api/environments/{name}/keys", json={"keys": "Escape"}).status_code < 300
-        r = requests.get(f"{supervisor.base}/api/environments/{name}/status", headers=bearer(t), timeout=30)
+        assert admin.get(f"/api/computers/{name}/screen.png", timeout=60).status_code == 200
+        assert admin.post(f"/api/computers/{name}/keys", json={"keys": "Escape"}).status_code < 300
+        r = requests.get(f"{supervisor.base}/api/computers/{name}/status", headers=bearer(t), timeout=30)
         assert r.status_code == 200, r.text
         time.sleep(5)
         assert inside_agents(admin, name) == []

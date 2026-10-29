@@ -90,17 +90,17 @@ func TestAdminComputers(t *testing.T) {
 		"settings": map[string]any{"memoryBytes": 2147483648, "nanoCpus": 2000000000, "volumes": []any{map[string]any{"name": "photos", "readOnly": true}}},
 		"access":   []any{map[string]any{"username": "anna", "level": "full"}, map[string]any{"username": "bob", "level": "observe"}},
 		"viewers":  []any{"anna"}}
-	f.Answer("GET /api/environments", clitest.Answer{JSON: map[string]any{"environments": []any{alice}, "conflicts": []any{}}})
-	f.Answer("GET /api/environments/alice", clitest.Answer{JSON: alice})
+	f.Answer("GET /api/computers", clitest.Answer{JSON: map[string]any{"computers": []any{alice}, "conflicts": []any{}}})
+	f.Answer("GET /api/computers/alice", clitest.Answer{JSON: alice})
 
 	r := h.run("env", "list")
 	if r.code != 0 || !strings.Contains(r.stdout, "alice") || !strings.Contains(r.stdout, "running") {
 		t.Errorf("env list: %+v", r)
 	}
-	wantCall(t, f, "GET", "/api/environments", "", "")
+	wantCall(t, f, "GET", "/api/computers", "", "")
 	r = h.run("env", "list", "--json")
 	var list struct {
-		Computers []map[string]any `json:"environments"`
+		Computers []map[string]any `json:"computers"`
 	}
 	if json.Unmarshal([]byte(r.stdout), &list); len(list.Computers) != 1 || list.Computers[0]["name"] != "alice" {
 		t.Errorf("env list --json: %+v", r)
@@ -110,23 +110,23 @@ func TestAdminComputers(t *testing.T) {
 	if r.code != 0 || !strings.Contains(r.stdout, "Debian XFCE") || !strings.Contains(r.stdout, "bob (observe)") || !strings.Contains(r.stdout, "photos (read-only)") {
 		t.Errorf("env show: %+v", r)
 	}
-	wantCall(t, f, "GET", "/api/environments/alice", "", "")
+	wantCall(t, f, "GET", "/api/computers/alice", "", "")
 	if r = h.run("env", "show", "alice", "--json"); !strings.Contains(r.stdout, `"imageTitle": "Debian XFCE"`) {
 		t.Errorf("env show --json: %+v", r)
 	}
 
 	// create waits for the job, printing its progress.
-	f.Answer("POST /api/environments", clitest.Answer{Status: 202, JSON: map[string]string{"job": "j1"}})
+	f.Answer("POST /api/computers", clitest.Answer{Status: 202, JSON: map[string]string{"job": "j1"}})
 	f.Answer("GET /api/jobs/j1", clitest.Answer{Events: []any{
 		map[string]any{"status": "running", "message": "Pulling image", "progress": 0.5},
-		map[string]any{"status": "done", "message": "Ready", "environment": "bob"}}})
+		map[string]any{"status": "done", "message": "Ready", "computer": "bob"}}})
 	r = h.run("env", "create", "bob", "--image", "ghcr.io/x/cc:latest", "--memory", "2G", "--cpus", "1.5",
 		"--grant", "anna", "--grant", "carl=observe", "--volume", "photos:ro", "--volume", "music")
 	if r.code != 0 || !strings.Contains(r.stderr, "Pulling image (50%)") || !strings.Contains(r.stdout, "Created bob") {
 		t.Errorf("env create: %+v", r)
 	}
 	calls := f.Calls()
-	if len(calls) < 2 || calls[len(calls)-2].Path != "/api/environments" {
+	if len(calls) < 2 || calls[len(calls)-2].Path != "/api/computers" {
 		t.Fatalf("calls %+v", calls)
 	}
 	f2 := calls[len(calls)-2]
@@ -139,7 +139,7 @@ func TestAdminComputers(t *testing.T) {
 	wantCall(t, f, "GET", "/api/jobs/j1", "", "")
 
 	f.Answer("GET /api/jobs/j2", clitest.Answer{Events: []any{map[string]any{"status": "failed", "message": "Pulling image", "error": "no such image"}}})
-	f.Answer("POST /api/environments", clitest.Answer{Status: 202, JSON: map[string]string{"job": "j2"}})
+	f.Answer("POST /api/computers", clitest.Answer{Status: 202, JSON: map[string]string{"job": "j2"}})
 	if r = h.run("env", "create", "bob", "--image", "nope"); r.code != 1 || !strings.Contains(r.stderr, "no such image") {
 		t.Errorf("failed create: %+v", r)
 	}
@@ -151,22 +151,22 @@ func TestAdminComputers(t *testing.T) {
 	}
 
 	for _, action := range []string{"start", "stop", "restart"} {
-		f.Answer("POST /api/environments/alice/"+action, clitest.Answer{})
+		f.Answer("POST /api/computers/alice/"+action, clitest.Answer{})
 		if r := h.run("env", action, "alice"); r.code != 0 {
 			t.Errorf("env %s: %+v", action, r)
 		}
-		wantCall(t, f, "POST", "/api/environments/alice/"+action, "", "")
+		wantCall(t, f, "POST", "/api/computers/alice/"+action, "", "")
 	}
 
-	f.Answer("DELETE /api/environments/alice", clitest.Answer{})
+	f.Answer("DELETE /api/computers/alice", clitest.Answer{})
 	if r = h.run("env", "remove", "alice"); r.code != 0 {
 		t.Errorf("env remove: %+v", r)
 	}
-	wantCall(t, f, "DELETE", "/api/environments/alice", "", "")
+	wantCall(t, f, "DELETE", "/api/computers/alice", "", "")
 	if r = h.run("env", "remove", "alice", "--delete-files"); r.code != 0 {
 		t.Errorf("env remove --delete-files: %+v", r)
 	}
-	wantCall(t, f, "DELETE", "/api/environments/alice", "files=1", "")
+	wantCall(t, f, "DELETE", "/api/computers/alice", "files=1", "")
 
 	// access without assignments shows; with them it changes the listed
 	// accounts and keeps the others.
@@ -174,11 +174,11 @@ func TestAdminComputers(t *testing.T) {
 	if r.code != 0 || !strings.Contains(r.stdout, "anna") || !strings.Contains(r.stdout, "observe") {
 		t.Errorf("env access: %+v", r)
 	}
-	f.Answer("PUT /api/environments/alice/access", clitest.Answer{})
+	f.Answer("PUT /api/computers/alice/access", clitest.Answer{})
 	if r = h.run("env", "access", "alice", "bob=full", "anna=none", "carl=observe"); r.code != 0 {
 		t.Errorf("env access set: %+v", r)
 	}
-	wantCall(t, f, "PUT", "/api/environments/alice/access", "", `{"grants":[{"username":"bob","level":"full"},{"username":"carl","level":"observe"}]}`)
+	wantCall(t, f, "PUT", "/api/computers/alice/access", "", `{"grants":[{"username":"bob","level":"full"},{"username":"carl","level":"observe"}]}`)
 	if r = h.run("env", "access", "alice", "bob=admin"); r.code != 2 {
 		t.Errorf("bad level: %+v", r)
 	}
@@ -187,7 +187,7 @@ func TestAdminComputers(t *testing.T) {
 func TestAdminVolumes(t *testing.T) {
 	h, f := adminHarness(t)
 	f.Answer("GET /api/volumes", clitest.Answer{JSON: map[string]any{"volumes": []any{map[string]any{"name": "photos", "kind": "local", "folder": "volume/photos/",
-		"created": "2026-10-01T10:00:00Z", "environments": []any{map[string]any{"name": "alice", "readOnly": true}}}}}})
+		"created": "2026-10-01T10:00:00Z", "computers": []any{map[string]any{"name": "alice", "readOnly": true}}}}}})
 	r := h.run("volume", "list")
 	if r.code != 0 || !strings.Contains(r.stdout, "photos") || !strings.Contains(r.stdout, "alice (read-only)") {
 		t.Errorf("volume list: %+v", r)
@@ -210,7 +210,7 @@ func TestAdminVolumes(t *testing.T) {
 		t.Errorf("volume remove --delete-files: %+v", r)
 	}
 	wantCall(t, f, "DELETE", "/api/volumes/music", "deleteFiles=true", "")
-	f.Answer("DELETE /api/volumes/photos", clitest.Answer{Status: 409, JSON: map[string]any{"error": "photos is used by alice", "environments": []any{}}})
+	f.Answer("DELETE /api/volumes/photos", clitest.Answer{Status: 409, JSON: map[string]any{"error": "photos is used by alice", "computers": []any{}}})
 	if r = h.run("volume", "remove", "photos"); r.code != 1 || !strings.Contains(r.stderr, "photos is used by alice") {
 		t.Errorf("volume remove in use: %+v", r)
 	}
@@ -304,7 +304,7 @@ func TestAdminAccounts(t *testing.T) {
 func TestAdminSharing(t *testing.T) {
 	h, f := adminHarness(t)
 	fixedNow(t, time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC))
-	f.Answer("GET /api/environments/alice/shares", clitest.Answer{JSON: []any{map[string]any{"username": "sanne", "environment": "alice", "level": "observe",
+	f.Answer("GET /api/computers/alice/shares", clitest.Answer{JSON: []any{map[string]any{"username": "sanne", "computer": "alice", "level": "observe",
 		"sharedBy": map[string]any{"username": "zef", "id": "a1"}, "expires": nil, "created": "2026-10-01T10:00:00Z", "lastLogin": nil, "lastUsed": "2026-10-26T10:00:00Z", "linkPending": true, "connected": false}}})
 	r := h.run("share", "list", "alice")
 	used := time.Date(2026, 10, 26, 10, 0, 0, 0, time.UTC).Local().Format("2006-01-02 15:04")
@@ -313,20 +313,20 @@ func TestAdminSharing(t *testing.T) {
 		t.Errorf("share list: %+v", r)
 	}
 	wantColumns(t, "share list", r.stdout)
-	wantCall(t, f, "GET", "/api/environments/alice/shares", "", "")
+	wantCall(t, f, "GET", "/api/computers/alice/shares", "", "")
 	if r = h.run("share", "list", "alice", "--json"); !strings.Contains(r.stdout, `"username": "sanne"`) {
 		t.Errorf("share list --json: %+v", r)
 	}
-	f.Answer("POST /api/environments/alice/shares", clitest.Answer{Status: 201, JSON: map[string]any{"share": map[string]any{"username": "sanne"}, "link": "https://h/link#dyl_3_z"}})
+	f.Answer("POST /api/computers/alice/shares", clitest.Answer{Status: 201, JSON: map[string]any{"share": map[string]any{"username": "sanne"}, "link": "https://h/link#dyl_3_z"}})
 	r = h.run("share", "create", "alice", "sanne", "--observe", "--expires", "2h")
 	if r.code != 0 || strings.TrimSpace(r.stdout) != "https://h/link#dyl_3_z" || !strings.Contains(r.stderr, "once") {
 		t.Errorf("share create: %+v", r)
 	}
-	wantCall(t, f, "POST", "/api/environments/alice/shares", "", `{"username":"sanne","level":"observe","expires":"2026-10-27T14:00:00Z"}`)
+	wantCall(t, f, "POST", "/api/computers/alice/shares", "", `{"username":"sanne","level":"observe","expires":"2026-10-27T14:00:00Z"}`)
 	if r = h.run("share", "create", "alice", "sanne"); r.code != 0 {
 		t.Errorf("share create full: %+v", r)
 	}
-	wantCall(t, f, "POST", "/api/environments/alice/shares", "", `{"username":"sanne","level":"full"}`)
+	wantCall(t, f, "POST", "/api/computers/alice/shares", "", `{"username":"sanne","level":"full"}`)
 	f.Answer("POST /api/shares/sanne/link", clitest.Answer{JSON: map[string]string{"link": "https://h/link#dyl_4_w"}})
 	if r = h.run("share", "link", "sanne"); r.code != 0 || strings.TrimSpace(r.stdout) != "https://h/link#dyl_4_w" {
 		t.Errorf("share link: %+v", r)
@@ -414,7 +414,7 @@ func TestRemovalsDeletingFilesWaitForTheServer(t *testing.T) {
 	h, f := adminHarness(t)
 	defer func(d time.Duration) { remote.Timeout = d }(remote.Timeout)
 	remote.Timeout = 50 * time.Millisecond
-	f.Answer("DELETE /api/environments/alice", clitest.Answer{Delay: 300 * time.Millisecond})
+	f.Answer("DELETE /api/computers/alice", clitest.Answer{Delay: 300 * time.Millisecond})
 	if r := h.run("env", "remove", "alice", "--delete-files"); r.code != 0 {
 		t.Errorf("env remove --delete-files: %+v", r)
 	}

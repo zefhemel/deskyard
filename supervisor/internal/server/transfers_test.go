@@ -57,7 +57,7 @@ func TestRevocationEndsRunningUpload(t *testing.T) {
 			do, cred := transferClient(t, s, ts, how)
 			body, feed := io.Pipe()
 			defer feed.Close()
-			req, _ := http.NewRequest("POST", ts.URL+"/api/environments/alice/upload?name=late.txt", body)
+			req, _ := http.NewRequest("POST", ts.URL+"/api/computers/alice/upload?name=late.txt", body)
 			req.Header.Set("Origin", ts.URL)
 			req.ContentLength = -1
 			done := make(chan int, 1)

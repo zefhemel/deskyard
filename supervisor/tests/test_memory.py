@@ -26,11 +26,11 @@ def test_reclaim_button_preserves_browser_state(admin, supervisor, desktop, name
             expect(reclaim_item(page)).to_be_disabled(timeout=15000)
             expect(page.get_by_text("Unavailable:", exact=False)).to_be_visible()
             browser.close()
-        assert admin.post(f"/api/environments/{name}/reclaim-memory").status_code == 501
+        assert admin.post(f"/api/computers/{name}/reclaim-memory").status_code == 501
         pytest.skip("boot probe disabled reclamation: " + support["reason"])
     assert "memory reclamation enabled" in supervisor.logs()
     headers = bearer(make_credential(admin, name))
-    version = requests.get(f"{admin.base}/api/environments/{name}/cdp/json/version", headers=headers, timeout=90).json()
+    version = requests.get(f"{admin.base}/api/computers/{name}/cdp/json/version", headers=headers, timeout=90).json()
     nonce = uuid.uuid4().hex
     with sync_playwright() as pw:
         remote = pw.chromium.connect_over_cdp(version["webSocketDebuggerUrl"], headers=headers)
@@ -76,15 +76,15 @@ def test_reclaim_button_preserves_browser_state(admin, supervisor, desktop, name
         # Regular accounts may use the desktop, but cannot invoke host controls.
         user = make_account(admin, [name])
         regular = supervisor.client().login(user, "pw")
-        assert regular.post(f"/api/environments/{name}/reclaim-memory").status_code == 403
+        assert regular.post(f"/api/computers/{name}/reclaim-memory").status_code == 403
         regular_browser, regular_page = signed_in(pw, supervisor.base, user=user, password="pw")
         regular_page.goto(f"{supervisor.base}/environments/{name}")
         expect(regular_page.get_by_role("heading", name=name, exact=True)).to_be_visible(timeout=15000)
         expect(regular_page.get_by_role("button", name="More actions")).to_have_count(0)
         regular_browser.close()
 
-        assert admin.post(f"/api/environments/{name}/stop").status_code == 204
-        assert admin.post(f"/api/environments/{name}/reclaim-memory").status_code == 409
+        assert admin.post(f"/api/computers/{name}/stop").status_code == 204
+        assert admin.post(f"/api/computers/{name}/reclaim-memory").status_code == 409
         page.reload()
         expect(page.get_by_role("button", name="Start", exact=True).first).to_be_visible(timeout=15000)
         reclaim_item(page)

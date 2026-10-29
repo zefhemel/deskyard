@@ -192,7 +192,7 @@ func (s *Server) handleRedeemLink(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Log.Info("signed in with a link", "account", a.Username, "client", req.Client, "ip", clientIP(r))
 	if req.Client == "cli" {
-		writeJSON(w, http.StatusOK, map[string]any{"credential": bearer, "username": a.Username, "environments": s.cliComputers(a)})
+		writeJSON(w, http.StatusOK, map[string]any{"credential": bearer, "username": a.Username, "computers": s.cliComputers(a)})
 		return
 	}
 	s.replaceSession(w, r, a)

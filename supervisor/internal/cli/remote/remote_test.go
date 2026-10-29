@@ -24,8 +24,8 @@ func TestParseURL(t *testing.T) {
 		{"https://host/prefix/alice", "https://host/prefix", "alice"},
 		{"https://host", "https://host", ""},
 		{"https://host/", "https://host", ""},
-		{"https://host/api/environments/alice", "https://host", "alice"},
-		{"https://host/cc/api/environments/alice/exec", "https://host/cc", "alice"},
+		{"https://host/api/computers/alice", "https://host", "alice"},
+		{"https://host/cc/api/computers/alice/exec", "https://host/cc", "alice"},
 		{"https://host/cc/api/me", "https://host/cc", ""},
 		{" https://host/alice ", "https://host", "alice"},
 		// The web UI's page of a computer.
@@ -180,10 +180,10 @@ func TestValidName(t *testing.T) {
 
 func TestClientPaths(t *testing.T) {
 	c := &Client{Base: "https://h/pre", Computer: "alice"}
-	if got := c.URL("/exec"); got != "https://h/pre/api/environments/alice/exec" {
+	if got := c.URL("/exec"); got != "https://h/pre/api/computers/alice/exec" {
 		t.Errorf("URL = %q", got)
 	}
-	if got := c.WSURL("/exec"); got != "wss://h/pre/api/environments/alice/exec" {
+	if got := c.WSURL("/exec"); got != "wss://h/pre/api/computers/alice/exec" {
 		t.Errorf("WSURL = %q", got)
 	}
 	if got := c.API("/me/credentials/x"); got != "https://h/pre/api/me/credentials/x" {
@@ -232,10 +232,10 @@ func TestJSON(t *testing.T) {
 	var env struct {
 		Name string `json:"name"`
 	}
-	if err := c.JSON(context.Background(), "GET", "/environments/alice", nil, &env); err != nil || env.Name != "alice" {
+	if err := c.JSON(context.Background(), "GET", "/computers/alice", nil, &env); err != nil || env.Name != "alice" {
 		t.Errorf("GET: %+v %v", env, err)
 	}
-	if err := c.JSON(context.Background(), "GET", "/environments/nope", nil, &env); !IsStatus(err, 404) || !strings.Contains(err.Error(), "no such computer") {
+	if err := c.JSON(context.Background(), "GET", "/computers/nope", nil, &env); !IsStatus(err, 404) || !strings.Contains(err.Error(), "no such computer") {
 		t.Errorf("404: %v", err)
 	}
 	var out map[string]any
@@ -256,7 +256,7 @@ func TestJSON(t *testing.T) {
 func TestDoDoesNotFollowRedirects(t *testing.T) {
 	var reached bool
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/environments/alice/x", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/computers/alice/x", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/api/me/credentials", http.StatusMovedPermanently)
 	})
 	mux.HandleFunc("/api/me/credentials", func(w http.ResponseWriter, r *http.Request) {

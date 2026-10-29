@@ -15,7 +15,7 @@ SELKIES_WEB = "/opt/selkies/lib/python3.13/site-packages/selkies/selkies_web"
 
 def test_every_route_needs_a_session(supervisor):
     anon = requests.Session()
-    for path in ["/api/me", "/api/environments", "/api/accounts", "/api/events", "/api/images"]:
+    for path in ["/api/me", "/api/computers", "/api/accounts", "/api/events", "/api/images"]:
         assert anon.get(supervisor.base + path, timeout=5).status_code == 401, path
     r = anon.get(supervisor.base + "/", allow_redirects=False, timeout=5)
     assert r.status_code == 302 and r.headers["Location"].startswith("/login")
@@ -35,7 +35,7 @@ def test_login_logout_and_wrong_password(supervisor):
 
 
 def test_cross_origin_state_change_refused(admin):
-    r = requests.post(admin.base + "/api/environments", json={"name": "x1"}, cookies=admin.cookies,
+    r = requests.post(admin.base + "/api/computers", json={"name": "x1"}, cookies=admin.cookies,
                       headers={"Origin": "https://evil.example"}, timeout=5)
     assert r.status_code == 403
 
@@ -46,16 +46,16 @@ def test_create_desktop_and_lifecycle(admin, desktop, name, supervisor):
     assert admin.get(f"/{name}/screen/").status_code == 200
     # (Who may open its stream: test_screen.test_stream_needs_session_access_and_same_origin.)
     for action, state in [("stop", "stopped"), ("start", "running"), ("restart", "running")]:
-        assert admin.post(f"/api/environments/{name}/{action}").status_code == 204
+        assert admin.post(f"/api/computers/{name}/{action}").status_code == 204
         assert admin.desktop(name)["state"] == state
 
     def screenshot():
-        r = admin.get(f"/api/environments/{name}/screen.png")
+        r = admin.get(f"/api/computers/{name}/screen.png")
         return r if r.status_code == 200 else None
 
     png = wait_until(screenshot, 60, 1)  # the desktop takes a few seconds after a restart
     assert png and png.content[:4] == b"\x89PNG"
-    procs = admin.get(f"/api/environments/{name}/processes").json()
+    procs = admin.get(f"/api/computers/{name}/processes").json()
     assert any("Xvfb" in " ".join(r) for r in procs["rows"])
 
 
@@ -63,13 +63,13 @@ def test_remove_keeps_or_deletes_files(admin, name, supervisor):
     admin.create(name)
     folder = supervisor.data / "home" / name
     assert folder.is_dir()
-    assert admin.delete(f"/api/environments/{name}").status_code == 204
-    assert folder.is_dir() and admin.get(f"/api/environments/{name}").status_code == 404
+    assert admin.delete(f"/api/computers/{name}").status_code == 204
+    assert folder.is_dir() and admin.get(f"/api/computers/{name}").status_code == 404
     # Creating it again reuses the folder; removing with files deletes it.
     v = admin.get(f"/api/validate-name?name={name}").json()
     assert v["ok"] and v["folderExists"]
     admin.create(name)
-    assert admin.delete(f"/api/environments/{name}?files=1").status_code == 204
+    assert admin.delete(f"/api/computers/{name}?files=1").status_code == 204
     assert not folder.exists()
 
 
@@ -77,18 +77,18 @@ def test_regular_account_sees_only_its_desktops(admin, desktop, name, supervisor
     user = "u" + uuid.uuid4().hex[:5]
     assert admin.post("/api/accounts", json={"username": user, "password": "pw1", "admin": False, "grants": []}).status_code == 201
     anna = supervisor.client().login(user, "pw1")
-    assert anna.get("/api/environments").json() == {"environments": [], "conflicts": []}
-    assert anna.get(f"/api/environments/{name}").status_code == 404
+    assert anna.get("/api/computers").json() == {"computers": [], "conflicts": []}
+    assert anna.get(f"/api/computers/{name}").status_code == 404
     assert anna.get(f"/{name}/screen/").status_code == 404
-    assert anna.post(f"/api/environments/{name}/stop").status_code == 404
+    assert anna.post(f"/api/computers/{name}/stop").status_code == 404
     assert ws_handshake(anna.base, f"/{name}/screen/api/websockets", anna.cookies, origin=anna.base) == 404
-    assert anna.post("/api/environments", json={"name": "nope"}).status_code == 403
+    assert anna.post("/api/computers", json={"name": "nope"}).status_code == 403
     # Grant access: power yes, manage no.
-    assert admin.put(f"/api/environments/{name}/access", json={"grants": [{"username": user, "level": "full"}]}).status_code == 204
-    assert [c["name"] for c in anna.get("/api/environments").json()["environments"]] == [name]
-    assert anna.post(f"/api/environments/{name}/restart").status_code == 204
-    assert anna.delete(f"/api/environments/{name}").status_code == 403
-    assert anna.patch(f"/api/environments/{name}", json={"memoryBytes": 1}).status_code == 403
+    assert admin.put(f"/api/computers/{name}/access", json={"grants": [{"username": user, "level": "full"}]}).status_code == 204
+    assert [c["name"] for c in anna.get("/api/computers").json()["computers"]] == [name]
+    assert anna.post(f"/api/computers/{name}/restart").status_code == 204
+    assert anna.delete(f"/api/computers/{name}").status_code == 403
+    assert anna.patch(f"/api/computers/{name}", json={"memoryBytes": 1}).status_code == 403
     # A password change signs the account out everywhere.
     assert admin.patch(f"/api/accounts/{user}", json={"password": "pw2"}).status_code == 200
     assert anna.get("/api/me").status_code == 401
@@ -109,7 +109,7 @@ def test_revoking_access_closes_the_desktop(admin, desktop, name, supervisor):
                                       subprotocols=["binary"]) as ws:
             await asyncio.sleep(1)
             assert user in admin.desktop(name)["viewers"]
-            admin.put(f"/api/environments/{name}/access", json={"grants": []})
+            admin.put(f"/api/computers/{name}/access", json={"grants": []})
             try:
                 await asyncio.wait_for(ws.wait_closed(), 10)
             except asyncio.TimeoutError:
@@ -136,7 +136,7 @@ def test_desktop_publishes_only_8080_and_is_isolated(admin, desktop, name, super
         # where it doesn't (OrbStack, Docker Desktop), the per-desktop token refuses it.
         assert r.stdout in ("000", "", "401"), f"{name} reached {other}: {r.stdout}"
     finally:
-        admin.delete(f"/api/environments/{other}?files=1")
+        admin.delete(f"/api/computers/{other}?files=1")
 
 
 def test_replaced_web_server_isnt_served(admin, desktop, name):
@@ -149,21 +149,21 @@ def test_replaced_web_server_isnt_served(admin, desktop, name):
 
 
 def test_image_without_contract_refused(admin, name):
-    r = admin.post("/api/environments", json={"name": name, "image": "alpine:3.22"})
+    r = admin.post("/api/computers", json={"name": name, "image": "alpine:3.22"})
     st = admin.wait_job(r.json()["job"])
     assert st["status"] == "failed" and "Deskyard desktop image" in st["error"]
-    assert admin.get(f"/api/environments/{name}").status_code == 404
+    assert admin.get(f"/api/computers/{name}").status_code == 404
 
 
 def test_settings_change_recreates_and_keeps_folder(admin, desktop, name, supervisor):
     put(name, "probe.txt", b"hi")
     revision = desktop["revision"]
     assert desktop["created"] and desktop["job"] is None
-    size = admin.get(f"/api/environments/{name}/folder").json()
+    size = admin.get(f"/api/computers/{name}/folder").json()
     assert size["path"].endswith("/" + name) and size["bytes"] >= 2
     user = make_account(admin, [name])
     anna = supervisor.client().login(user, "pw")
-    r = admin.patch(f"/api/environments/{name}", json={"memoryBytes": 2 << 30, "nanoCpus": 2_000_000_000})
+    r = admin.patch(f"/api/computers/{name}", json={"memoryBytes": 2 << 30, "nanoCpus": 2_000_000_000})
     job = r.json()["job"]
     # Someone else who can see the desktop sees the job and can follow it.
     assert anna.desktop(name)["job"] == job
@@ -241,20 +241,20 @@ def test_restart_recreates_a_lost_container(supervisor, admin, desktop, name):
     assert d, c.desktop(name)
     assert d["created"] == desktop["created"] and d["revision"] == d["appliedRevision"] == desktop["revision"]
     assert in_desktop(name, "cat", "/workspace/kept.txt") == "still here"
-    assert requests.get(f"{c.base}/api/environments/{name}/status", headers=bearer(t), timeout=10).status_code == 200
+    assert requests.get(f"{c.base}/api/computers/{name}/status", headers=bearer(t), timeout=10).status_code == 200
 
 
 def test_recreated_name_does_not_revive_grants(admin, name, supervisor):
     admin.create(name)
     user = make_account(admin, [name])
     t = make_credential(admin, name)
-    assert admin.delete(f"/api/environments/{name}?files=1").status_code == 204
+    assert admin.delete(f"/api/computers/{name}?files=1").status_code == 204
     admin.create(name)
     try:
         assert admin.desktop(name)["access"] == []
         anna = supervisor.client().login(user, "pw")
-        assert anna.get(f"/api/environments/{name}").status_code == 404
-        assert requests.get(f"{admin.base}/api/environments/{name}/status", headers=bearer(t), timeout=10).status_code == 404
+        assert anna.get(f"/api/computers/{name}").status_code == 404
+        assert requests.get(f"{admin.base}/api/computers/{name}/status", headers=bearer(t), timeout=10).status_code == 404
     finally:
-        admin.delete(f"/api/environments/{name}?files=1")
+        admin.delete(f"/api/computers/{name}?files=1")
         admin.delete(f"/api/accounts/{user}")

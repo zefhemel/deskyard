@@ -163,7 +163,7 @@ func TestVPNUpdateCancellationBoundary(t *testing.T) {
 				runtime.release = make(chan struct{})
 				runtime.fail = true
 			}
-			body := `{"name":"Changed","provider":"nordvpn","country":"Germany","expectedRevision":1,"affectedEnvironments":["alice"],"confirmRestart":true}`
+			body := `{"name":"Changed","provider":"nordvpn","country":"Germany","expectedRevision":1,"affectedComputers":["alice"],"confirmRestart":true}`
 			req, _ := http.NewRequest("PUT", ts.URL+"/api/vpn/connections/"+conn.ID, strings.NewReader(body))
 			req.Header.Set("Origin", ts.URL)
 			resp, err := admin.Do(req)
@@ -260,7 +260,7 @@ func TestVPNUpdateUnselectedReferenceRequiresRepair(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	req, _ := http.NewRequest("PUT", ts.URL+"/api/vpn/connections/"+conn.ID, strings.NewReader(`{"name":"Changed","provider":"nordvpn","country":"Germany","expectedRevision":1,"affectedEnvironments":["alice"],"confirmRestart":true}`))
+	req, _ := http.NewRequest("PUT", ts.URL+"/api/vpn/connections/"+conn.ID, strings.NewReader(`{"name":"Changed","provider":"nordvpn","country":"Germany","expectedRevision":1,"affectedComputers":["alice"],"confirmRestart":true}`))
 	req.Header.Set("Origin", ts.URL)
 	resp, err := admin.Do(req)
 	if err != nil {

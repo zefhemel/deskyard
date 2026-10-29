@@ -106,7 +106,7 @@ func terminalDialQuery(t *testing.T, ts *httptest.Server, c *http.Client, query 
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	ws, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+"/api/environments/alice/terminal?"+query, &websocket.DialOptions{HTTPClient: c, HTTPHeader: http.Header{"Origin": []string{ts.URL}}})
+	ws, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+"/api/computers/alice/terminal?"+query, &websocket.DialOptions{HTTPClient: c, HTTPHeader: http.Header{"Origin": []string{ts.URL}}})
 	if err != nil {
 		t.Fatalf("dial %v %v", resp, err)
 	}
@@ -167,7 +167,7 @@ func TestTerminalHTTPGuards(t *testing.T) {
 			case "path":
 				origin = ts.URL + "/bad"
 			}
-			if got := status(t, c, "GET", ts.URL+"/api/environments/alice/terminal?session="+tc.session, origin); got != tc.want {
+			if got := status(t, c, "GET", ts.URL+"/api/computers/alice/terminal?session="+tc.session, origin); got != tc.want {
 				t.Fatalf("status %d want %d", got, tc.want)
 			}
 			if e.calls.Load() != 0 {
@@ -463,7 +463,7 @@ func TestTerminalRefusesLifecycleJoin(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Computers.Done("alice")
-	if got := status(t, login(t, ts, "admin"), "GET", ts.URL+"/api/environments/alice/terminal?session=main", ts.URL); got != 409 {
+	if got := status(t, login(t, ts, "admin"), "GET", ts.URL+"/api/computers/alice/terminal?session=main", ts.URL); got != 409 {
 		t.Fatalf("join during stop got %d", got)
 	}
 	if e.calls.Load() != 0 {
@@ -561,7 +561,7 @@ func TestTerminalRefusesBearerWithOtherCookie(t *testing.T) {
 		t.Fatal(err)
 	}
 	carol := login(t, ts, "carol")
-	req, _ := http.NewRequest("GET", ts.URL+"/api/environments/alice/terminal?session=main", nil)
+	req, _ := http.NewRequest("GET", ts.URL+"/api/computers/alice/terminal?session=main", nil)
 	req.Header.Set("Origin", ts.URL)
 	req.Header.Set("Authorization", "Bearer "+bearer)
 	resp, err := carol.Do(req)

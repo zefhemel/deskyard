@@ -47,7 +47,7 @@ function sse(res: ServerResponse): void {
 function broadcast(event: string, data: unknown): void {
   // One session at a time here: events go out as that account would get them.
   const m = me();
-  if (event === "environment" && m) {
+  if (event === "computer" && m) {
     const c = data as Computer;
     if (levelOf(m, c.name) === null) return;
     data = asSeenBy(c, m);
@@ -134,7 +134,7 @@ function shareJSON(a: MockAccount): Share {
   const g = a.grants[0]!;
   const env = computers.find((c) => c.name === g.computer);
   return {
-    username: a.username, environment: g.computer, level: g.level, sharedBy: a.sharedBy!, expires: a.expires, created: a.created,
+    username: a.username, computer: g.computer, level: g.level, sharedBy: a.sharedBy!, expires: a.expires, created: a.created,
     lastLogin: a.lastLogin, lastUsed: a.lastLogin, linkPending: [...links.values()].includes(a.username), connected: env?.viewers.includes(a.username) ?? false,
   };
 }
@@ -202,7 +202,7 @@ async function signedOut(req: IncomingMessage, res: ServerResponse, path: string
     if (b.client === "cli") {
       const id = hex(8);
       (credentials[a.username] ??= []).unshift({ id, kind: "cli", name: String(b.name ?? "deskyard CLI"), created: a.lastLogin, lastUsed: null });
-      json(res, 200, { credential: `dyc_${id}_${randomBytes(32).toString("base64url")}`, username: a.username, environments: computersOf(a) });
+      json(res, 200, { credential: `dyc_${id}_${randomBytes(32).toString("base64url")}`, username: a.username, computers: computersOf(a) });
       return true;
     }
     session = a.username;
@@ -236,7 +236,7 @@ async function signedOut(req: IncomingMessage, res: ServerResponse, path: string
       else {
         const id = hex(8);
         (credentials[a.username] ??= []).unshift({ id, kind: "cli", name: r.client, created: new Date().toISOString(), lastUsed: null });
-        json(res, 200, { credential: `dyc_${id}_${randomBytes(32).toString("base64url")}`, username: a.username, environments: computersOf(a) });
+        json(res, 200, { credential: `dyc_${id}_${randomBytes(32).toString("base64url")}`, username: a.username, computers: computersOf(a) });
       }
     }
     return true;
@@ -245,7 +245,7 @@ async function signedOut(req: IncomingMessage, res: ServerResponse, path: string
 }
 
 function changed(c: Computer): void {
-  broadcast("environment", c);
+  broadcast("computer", c);
 }
 
 function setState(c: Computer, state: Computer["state"], later?: Computer["state"]): void {
@@ -273,8 +273,8 @@ function setState(c: Computer, state: Computer["state"], later?: Computer["state
 let jobSeq = 1;
 function job(messages: string[], after: () => void, computer?: string): { job: string } {
   const id = `job${jobSeq++}`;
-  const steps: Job[] = messages.map((m, i) => ({ status: "running", message: m, progress: (i + 1) / (messages.length + 1), environment: computer }));
-  steps.push({ status: "done", message: "Done", progress: 1, environment: computer });
+  const steps: Job[] = messages.map((m, i) => ({ status: "running", message: m, progress: (i + 1) / (messages.length + 1), computer: computer }));
+  steps.push({ status: "done", message: "Done", progress: 1, computer: computer });
   jobs.set(id, { steps, after });
   // The job finishes on its own schedule, whether or not anyone follows it.
   setTimeout(after, steps.length * 700);
@@ -310,7 +310,7 @@ function volumeJSON(v: (typeof volumes)[number]) {
   const users = computers
     .flatMap((c) => c.settings.volumes.filter((g) => g.name === v.name).map((g) => ({ name: c.name, readOnly: g.readOnly })))
     .sort((a, b) => a.name.localeCompare(b.name));
-  return { ...v, folder: `${FOLDER}/volume/${v.name}`, environments: users };
+  return { ...v, folder: `${FOLDER}/volume/${v.name}`, computers: users };
 }
 
 /** The 400 for a grant of a volume that doesn't exist, as the supervisor answers. */
@@ -365,7 +365,7 @@ function history(c: Computer) {
 function fakeScreen(name: string): string {
   return `<!doctype html><html><body style="margin:0;background:#0f151d;height:100vh;overflow:hidden">
 <canvas id="videoCanvas" width="1280" height="800" style="display:none"></canvas>
-<img id="videoStream" src="/api/environments/${name}/screen.png?full=1" style="position:absolute;inset:0;width:100%;height:100%;object-fit:fill" alt="">
+<img id="videoStream" src="/api/computers/${name}/screen.png?full=1" style="position:absolute;inset:0;width:100%;height:100%;object-fit:fill" alt="">
 <div id="log" style="position:fixed;left:12px;bottom:12px;font:12px monospace;color:#9fb0c3"></div>
 <script>
 const log = (t) => (document.getElementById("log").textContent = t);
@@ -510,8 +510,8 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     if (RESERVED.includes(name)) return json(res, 200, { ok: false, error: `${name} is reserved.`, folderExists: false });
     return json(res, 200, { ok: true, folderExists: name === "old-project", folder: `${FOLDER}/home/${name}` });
   }
-  if (path === "/api/environments" && method === "GET") return json(res, 200, { environments: visible(), conflicts: m.admin ? conflicts : [] });
-  if (path === "/api/environments" && method === "POST") {
+  if (path === "/api/computers" && method === "GET") return json(res, 200, { computers: visible(), conflicts: m.admin ? conflicts : [] });
+  if (path === "/api/computers" && method === "POST") {
     const b = await readBody(req);
     const bad = unknownVolume(b.volumes);
     if (bad) return json(res, 400, { error: bad });
@@ -551,9 +551,9 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
   if (vol?.[1] && method === "DELETE") {
     const v = volumes.find((x) => x.name === vol[1]);
     if (!v) return json(res, 404, { error: "no such volume" });
-    const users = volumeJSON(v).environments;
+    const users = volumeJSON(v).computers;
     if (users.length) {
-      return json(res, 409, { error: `${v.name} is used by ${users.map((u) => u.name).join(", ")}`, environments: users.map((u) => ({ id: u.name, name: u.name })) });
+      return json(res, 409, { error: `${v.name} is used by ${users.map((u) => u.name).join(", ")}`, computers: users.map((u) => ({ id: u.name, name: u.name })) });
     }
     volumes.splice(volumes.indexOf(v), 1);
     return json(res, 204);
@@ -646,7 +646,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     const b = await readBody(req);
     if (!String(b.ref).includes(":")) return json(res, 400, { error: "Give a reference with a tag." });
     return json(res, 202, job(["Pulling " + String(b.ref), "Checking the image contract"], () => {
-      images.push({ installed: true, official: false, ref: String(b.ref), title: "Added image", version: "1.0", description: "Added in the mock", environments: [], behind: [], checked: new Date().toISOString() });
+      images.push({ installed: true, official: false, ref: String(b.ref), title: "Added image", version: "1.0", description: "Added in the mock", computers: [], behind: [], checked: new Date().toISOString() });
     }));
   }
   if (path === "/api/images/install" && method === "POST") {
@@ -678,7 +678,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
 
   const cm = /^\/api\/environments\/([^/]+)(?:\/(.+))?$/.exec(path);
   const c = cm?.[1] ? visible().find((x) => x.name === cm[1]) && computers.find((x) => x.name === cm[1]) : undefined;
-  if (!cm || !c) return json(res, 404, { error: "no such environment" });
+  if (!cm || !c) return json(res, 404, { error: "no such computer" });
   const sub = cm[2] ?? "";
   // Observers may watch, and nothing else.
   if (levelOf(m, c.name) === "observe" && !(method === "GET" && ["", "stats", "screen.png", "screen-events"].includes(sub))) {

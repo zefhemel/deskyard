@@ -18,7 +18,7 @@ func TestFolderReportsSizeAndDisk(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, "notes.txt"), make([]byte, 5000), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	resp, body := get(t, login(t, ts, "admin"), ts.URL+"/api/environments/alice/folder")
+	resp, body := get(t, login(t, ts, "admin"), ts.URL+"/api/computers/alice/folder")
 	var folder struct {
 		Path     string `json:"path"`
 		Bytes    int64  `json:"bytes"`

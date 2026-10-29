@@ -59,9 +59,9 @@ func TestVPNJournalErrorsAreSafeInPowerHTTPAndDesktopJobs(t *testing.T) {
 		name, method, path, body string
 		job                      bool
 	}{
-		{"power", "POST", "/api/environments/alice/start", "", false},
-		{"create", "POST", "/api/environments", `{"name":"new-desktop","image":"img","vpnConnectionId":"` + conn.ID + `"}`, true},
-		{"recreate", "PATCH", "/api/environments/alice", `{"vpnConnectionId":null}`, true},
+		{"power", "POST", "/api/computers/alice/start", "", false},
+		{"create", "POST", "/api/computers", `{"name":"new-desktop","image":"img","vpnConnectionId":"` + conn.ID + `"}`, true},
+		{"recreate", "PATCH", "/api/computers/alice", `{"vpnConnectionId":null}`, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req, _ := http.NewRequest(tc.method, ts.URL+tc.path, strings.NewReader(tc.body))

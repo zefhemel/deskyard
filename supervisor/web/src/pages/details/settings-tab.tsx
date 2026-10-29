@@ -59,7 +59,7 @@ export function SettingsTab({ computer: c }: { computer: Computer }) {
   const catalog = images.data ?? [];
   const list = catalog.some((i) => i.ref === c.image)
     ? catalog
-    : [{ ref: c.image, title: c.imageTitle, version: c.imageVersion, description: "Not in the catalog any more.", installed: true, official: false, environments: [], behind: [], checked: null }, ...catalog];
+    : [{ ref: c.image, title: c.imageTitle, version: c.imageVersion, description: "Not in the catalog any more.", installed: true, official: false, computers: [], behind: [], checked: null }, ...catalog];
 
   return (
     <div class="flex flex-col gap-4 px-5 py-5 md:flex-row md:gap-8">

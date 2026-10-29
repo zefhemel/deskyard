@@ -250,7 +250,7 @@ func createAccount(t *testing.T, s *Server, username string) accounts.Account {
 // Deleting a credential ends the event streams it opened, which its
 // account could otherwise keep reading.
 func TestCredentialRemoveClosesItsStreams(t *testing.T) {
-	for _, path := range []string{"/api/events", "/api/environments/alice/screen-events"} {
+	for _, path := range []string{"/api/events", "/api/computers/alice/screen-events"} {
 		t.Run(path, func(t *testing.T) {
 			s, ts := newTestServer(t)
 			if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {

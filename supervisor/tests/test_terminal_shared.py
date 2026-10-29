@@ -42,7 +42,7 @@ def test_browser_cli_and_native_launcher_share_shell(supervisor, name, desktop, 
                     return in_desktop(name, 'xdotool', 'search', '--onlyvisible', '--class', 'xfce4-terminal', check=False).splitlines()
                 assert wait_until(windows), 'Installed Deskyard Terminal launcher did not open a terminal'
                 def native_sessions():
-                    response = page.request.get(f'{supervisor.base}/api/environments/{name}/terminal/sessions')
+                    response = page.request.get(f'{supervisor.base}/api/computers/{name}/terminal/sessions')
                     assert response.status == 200, response.text()
                     return [entry['name'] for entry in response.json()['sessions']]
                 assert wait_until(lambda: len(native_sessions()) == 1), 'Native session not discoverable'

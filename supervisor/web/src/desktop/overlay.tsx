@@ -120,7 +120,7 @@ export function ActivityOverlay({ name, geometry }: { name: string; geometry: Sc
       }
     };
 
-    const es = watchUIEvents(`/api/environments/${encodeURIComponent(name)}/screen-events`);
+    const es = watchUIEvents(`/api/computers/${encodeURIComponent(name)}/screen-events`);
     es.addEventListener("screen", (m) => {
       try {
         draw(JSON.parse((m as MessageEvent<string>).data) as ScreenEvent);

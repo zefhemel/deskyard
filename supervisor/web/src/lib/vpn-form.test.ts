@@ -78,12 +78,12 @@ test("shared edit submits the exact preview revision and the affected environmen
   assert.deepEqual(
     connectionUpdate(form, {
       revision: 7,
-      environments: [
+      computers: [
         { id: "alice", name: "alice" },
         { id: "bob", name: "bob" },
       ],
     }),
-    { name: "Travel", provider: "nordvpn", country: "Poland", expectedRevision: 7, affectedEnvironments: ["alice", "bob"], confirmRestart: true },
+    { name: "Travel", provider: "nordvpn", country: "Poland", expectedRevision: 7, affectedComputers: ["alice", "bob"], confirmRestart: true },
   );
 });
 

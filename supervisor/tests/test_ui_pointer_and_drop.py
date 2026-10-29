@@ -1,5 +1,5 @@
 """The pointer on the desktop page, and files dropped on it: copied into
-~/Desktop through POST /api/environments/{name}/upload (test_upload.py)."""
+~/Desktop through POST /api/computers/{name}/upload (test_upload.py)."""
 
 import re
 import time
@@ -118,7 +118,7 @@ DRAG = """([target, type, files]) => {
 @pytest.mark.parametrize("browser_name", BROWSERS)
 def test_drop_upload(supervisor, desktop, name, browser_name):
     # Dropping files on Selkies' screen copies them into ~/Desktop through
-    # POST /api/environments/{name}/upload. The first event of a hover, in the
+    # POST /api/computers/{name}/upload. The first event of a hover, in the
     # frame on Selkies' input layer, shows our overlay; Selkies' own upload
     # (closed in the image) never runs, and nothing navigates the frame.
     files = [{"name": "dropped.txt", "content": "dropped content\n"}, {"name": "second.txt", "content": "2\n"}]

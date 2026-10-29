@@ -78,7 +78,7 @@ type loginAnswer struct {
 	Computers  []struct {
 		Name  string `json:"name"`
 		Level string `json:"level"`
-	} `json:"environments"`
+	} `json:"computers"`
 }
 
 // serverName is --name, else the server's host name. A host name that
@@ -411,7 +411,7 @@ func runEnvUse(a *App, c *call) error {
 	var got struct {
 		Level string `json:"level"`
 	}
-	if err := cl.JSON(c.ctx, http.MethodGet, "/environments/"+url.PathEscape(env), nil, &got); err != nil {
+	if err := cl.JSON(c.ctx, http.MethodGet, "/computers/"+url.PathEscape(env), nil, &got); err != nil {
 		return err
 	}
 	if got.Level != "full" {

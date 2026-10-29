@@ -62,7 +62,7 @@ func TestUnsavedDeleteKeepsTheAccountOut(t *testing.T) {
 // new level doesn't allow and holds until it is saved, from either editor.
 func TestUnsavedGrantChangesHold(t *testing.T) {
 	for _, tc := range []struct{ name, method, path, body string }{
-		{"access tab", "PUT", "/api/environments/alice/access", `{"grants":[{"username":"anna","level":"observe"}]}`},
+		{"access tab", "PUT", "/api/computers/alice/access", `{"grants":[{"username":"anna","level":"observe"}]}`},
 		{"account dialog", "PATCH", "/api/accounts/anna", `{"grants":[{"computer":"alice","level":"observe"}]}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -86,7 +86,7 @@ func TestUnsavedGrantChangesHold(t *testing.T) {
 			if a, ok := s.accountNow("anna", accountNamed(t, s, "anna").ID, time.Now()); !ok || a.Level("alice") != auth.LevelObserve {
 				t.Errorf("anna now: %v %v", ok, a.Grants)
 			}
-			if code, _, _ := bearerRequest(t, "GET", ts.URL+"/api/environments/alice/processes", bearer); code != http.StatusForbidden {
+			if code, _, _ := bearerRequest(t, "GET", ts.URL+"/api/computers/alice/processes", bearer); code != http.StatusForbidden {
 				t.Errorf("full access after the downgrade: %d", code)
 			}
 			unblockAccountsFile(t, s)
@@ -95,7 +95,7 @@ func TestUnsavedGrantChangesHold(t *testing.T) {
 				t.Errorf("the sweep didn't save the downgrade: %v", a.Grants)
 			}
 			// A later grant decides anew.
-			if code, body := send(t, admin, "PUT", ts.URL+"/api/environments/alice/access", ts.URL, `{"grants":[{"username":"anna","level":"full"}]}`); code != http.StatusNoContent {
+			if code, body := send(t, admin, "PUT", ts.URL+"/api/computers/alice/access", ts.URL, `{"grants":[{"username":"anna","level":"full"}]}`); code != http.StatusNoContent {
 				t.Fatalf("upgrade: %d %s", code, body)
 			}
 			s.sweep()
@@ -138,7 +138,7 @@ func TestUnsavedAccessChangeKeepsEarlierRevocation(t *testing.T) {
 	admin := login(t, ts, "admin")
 	blockAccountsFile(t, s)
 	for _, level := range []string{"observe", "full"} {
-		if code, body := send(t, admin, "PUT", ts.URL+"/api/environments/alice/access", ts.URL, `{"grants":[{"username":"anna","level":"`+level+`"}]}`); code != http.StatusInternalServerError {
+		if code, body := send(t, admin, "PUT", ts.URL+"/api/computers/alice/access", ts.URL, `{"grants":[{"username":"anna","level":"`+level+`"}]}`); code != http.StatusInternalServerError {
 			t.Fatalf("%s: %d %s", level, code, body)
 		}
 	}
@@ -170,7 +170,7 @@ func TestEditorsShowUnsavedRevocations(t *testing.T) {
 		}
 	}
 	var env struct{ Access []accessGrant }
-	if code := getJSON(t, admin, ts.URL+"/api/environments/alice", &env); code != 200 {
+	if code := getJSON(t, admin, ts.URL+"/api/computers/alice", &env); code != 200 {
 		t.Fatal(code)
 	}
 	if len(env.Access) != 1 || env.Access[0].Level != auth.LevelObserve {

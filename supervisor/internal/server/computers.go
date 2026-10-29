@@ -165,7 +165,7 @@ func (s *Server) handleListComputers(w http.ResponseWriter, r *http.Request) {
 			out = append(out, s.computerJSON(r.Context(), c, a))
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"environments": out, "conflicts": s.conflictsJSON(a)})
+	writeJSON(w, http.StatusOK, map[string]any{"computers": out, "conflicts": s.conflictsJSON(a)})
 }
 
 func (s *Server) handleGetComputer(w http.ResponseWriter, r *http.Request) {

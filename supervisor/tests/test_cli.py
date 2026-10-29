@@ -153,7 +153,7 @@ def test_forward_survives_restart(cli, remote, forwards, local_http, admin):
     f = forwards(cli, remote, str(p))
     f.wait_for(f"in {p} {p}")
     assert desktop_curl(remote, p).stdout == local_http.body
-    assert admin.post(f"/api/environments/{remote.name}/restart").status_code == 204
+    assert admin.post(f"/api/computers/{remote.name}/restart").status_code == 204
     deadline = time.time() + 60
     while time.time() < deadline:
         if desktop_curl(remote, p).stdout == local_http.body:
@@ -184,4 +184,4 @@ def test_forward_other_desktop_refused(cli, remote, forwards, admin):
         with pytest.raises(requests.exceptions.ConnectionError):
             requests.get(f"http://127.0.0.1:{q}/", timeout=20)
     finally:
-        admin.delete(f"/api/environments/{other}?files=1")
+        admin.delete(f"/api/computers/{other}?files=1")

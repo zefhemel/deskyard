@@ -49,7 +49,7 @@ func TestTerminalSessions(t *testing.T) {
 			if tc.user != "" {
 				c = login(t, ts, tc.user)
 			}
-			resp, err := c.Get(ts.URL + "/api/environments/alice/terminal/sessions")
+			resp, err := c.Get(ts.URL + "/api/computers/alice/terminal/sessions")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -123,7 +123,7 @@ func TestTerminalSessionsPipeCleanup(t *testing.T) {
 			}
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			req, _ := http.NewRequestWithContext(ctx, "GET", ts.URL+"/api/environments/alice/terminal/sessions", nil)
+			req, _ := http.NewRequestWithContext(ctx, "GET", ts.URL+"/api/computers/alice/terminal/sessions", nil)
 			result := make(chan error, 1)
 			go func() {
 				resp, err := client.Do(req)

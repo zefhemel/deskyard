@@ -26,7 +26,7 @@ type volumeJSON struct {
 	Kind      string           `json:"kind"`
 	HostPath  string           `json:"hostPath,omitempty"`
 	Folder    string           `json:"folder"`
-	Computers []volumeUserJSON `json:"environments"`
+	Computers []volumeUserJSON `json:"computers"`
 }
 
 func (s *Server) volumeJSON(v computers.Volume) volumeJSON {
@@ -121,7 +121,7 @@ func (s *Server) handleDeleteVolume(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusConflict, map[string]any{
 			"error":        fmt.Sprintf("%s is used by %s", name, strings.Join(inUse.Computers, ", ")),
-			"environments": refs,
+			"computers": refs,
 		})
 		return
 	case errors.Is(err, computers.ErrNotFound):

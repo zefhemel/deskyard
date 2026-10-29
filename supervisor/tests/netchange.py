@@ -85,8 +85,8 @@ _failures: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 # Match only the requests we forward at the routing layer: route.fallback()
 # also needs Python callbacks, so broader matching would pause native traffic
 # during the audio tests' recording sleeps.
-BOOTSTRAP_API = r"api/(?:me|host|environments|images|login)"
-CAPTURE_API = r"api/environments/[a-z][a-z0-9-]*/mic"
+BOOTSTRAP_API = r"api/(?:me|host|computers|images|login)"
+CAPTURE_API = r"api/computers/[a-z][a-z0-9-]*/mic"
 LOOPBACK = re.compile(
     r"^https?://(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?/"
     rf"(?:{BOOTSTRAP_API}|{CAPTURE_API}"

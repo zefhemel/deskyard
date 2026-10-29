@@ -79,7 +79,7 @@ function VolumesTab() {
       ) : (
         <div class="grid gap-3">
           {volumes.map((v) => (
-            <VolumeCard key={v.name} volume={v} computers={envs.data?.environments} backup={backups.data?.items.find((i) => i.item === `volume:${v.name}`)} onDelete={() => setRemoving(v)} />
+            <VolumeCard key={v.name} volume={v} computers={envs.data?.computers} backup={backups.data?.items.find((i) => i.item === `volume:${v.name}`)} onDelete={() => setRemoving(v)} />
           ))}
         </div>
       )}
@@ -140,9 +140,9 @@ export function VolumeCard({ volume: v, computers, backup, onDelete, bare }: { v
         <dd class="mono min-w-0 break-all">{v.folder}</dd>
         <dt class="mt-2 text-muted sm:mt-0">Environments</dt>
         <dd class="min-w-0">
-          {v.environments.length ? (
+          {v.computers.length ? (
             <ul class="m-0 flex list-none flex-wrap gap-2 p-0" aria-label={`Environments using ${v.name}`}>
-              {v.environments.map((g) => {
+              {v.computers.map((g) => {
                 const c = computers?.find((e) => e.name === g.name);
                 return (
                   <li key={g.name}>
@@ -272,7 +272,7 @@ function CreateVolume({ onClose, onCreated }: { onClose: () => void; onCreated: 
 
 export function DeleteVolume({ volume: v, onClose, onDeleted }: { volume: Volume; onClose: () => void; onDeleted: () => void }) {
   const [files, setFiles] = useState(false);
-  const [refs, setRefs] = useState<VPNReference[]>(v.environments.map((g) => ({ id: g.name, name: g.name })));
+  const [refs, setRefs] = useState<VPNReference[]>(v.computers.map((g) => ({ id: g.name, name: g.name })));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const remove = async () => {

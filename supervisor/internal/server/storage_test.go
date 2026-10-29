@@ -194,7 +194,7 @@ func TestRemoveRefusedDuringBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer release()
-	if code, b := send(admin, "DELETE", "/api/environments/alice", ""); code != 409 || !strings.Contains(string(b), "backing up") {
+	if code, b := send(admin, "DELETE", "/api/computers/alice", ""); code != 409 || !strings.Contains(string(b), "backing up") {
 		t.Fatalf("remove during backup: %d %s", code, b)
 	}
 }

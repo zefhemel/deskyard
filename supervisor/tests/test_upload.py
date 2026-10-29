@@ -1,4 +1,4 @@
-"""Copying files onto a desktop: POST /api/environments/{name}/upload."""
+"""Copying files onto a desktop: POST /api/computers/{name}/upload."""
 
 import asyncio
 import os
@@ -14,7 +14,7 @@ from helpers import bearer, exec_ws, make_credential
 
 
 def up(client, name, fname, data, **kw):
-    return client.post(f"/api/environments/{name}/upload", params={"name": fname}, data=data, **kw)
+    return client.post(f"/api/computers/{name}/upload", params={"name": fname}, data=data, **kw)
 
 
 def desk(supervisor, desktop) -> Path:
@@ -51,7 +51,7 @@ def raw_post(admin, name, fname, length):
     u = urlparse(admin.base)
     cookie = "; ".join(f"{k}={v}" for k, v in admin.cookies.items())
     s = socket.create_connection((u.hostname, u.port), timeout=10)
-    s.sendall((f"POST /api/environments/{name}/upload?name={quote(fname)} HTTP/1.1\r\nHost: {u.netloc}\r\nOrigin: {admin.base}\r\n"
+    s.sendall((f"POST /api/computers/{name}/upload?name={quote(fname)} HTTP/1.1\r\nHost: {u.netloc}\r\nOrigin: {admin.base}\r\n"
                f"Cookie: {cookie}\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n").encode())
     return s
 
@@ -90,11 +90,11 @@ def test_access_and_credentials(admin, desktop, name, supervisor):
         viewer = supervisor.client().login(user + "v", "pw-" + user + "v")
         assert up(stranger, name, "n.txt", b"x").status_code == 404
         assert up(viewer, name, "v.txt", b"x").status_code == 200
-        assert requests.post(f"{supervisor.base}/api/environments/{name}/upload?name=a", data=b"x", headers={"Origin": supervisor.base}, timeout=10).status_code == 401
-        r = requests.post(f"{supervisor.base}/api/environments/{name}/upload?name=a", data=b"x",
+        assert requests.post(f"{supervisor.base}/api/computers/{name}/upload?name=a", data=b"x", headers={"Origin": supervisor.base}, timeout=10).status_code == 401
+        r = requests.post(f"{supervisor.base}/api/computers/{name}/upload?name=a", data=b"x",
                           headers={**bearer(t), "Origin": supervisor.base}, timeout=10)
         assert r.status_code == 404
-        assert requests.post(f"{supervisor.base}/api/environments/{name}/upload?name=a", data=b"x", cookies=admin.cookies,
+        assert requests.post(f"{supervisor.base}/api/computers/{name}/upload?name=a", data=b"x", cookies=admin.cookies,
                              headers={"Origin": "https://evil.example"}, timeout=10).status_code == 403
         assert sorted(p.name for p in desk(supervisor, desktop).iterdir()) == ["v.txt"]
     finally:

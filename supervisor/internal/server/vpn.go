@@ -54,7 +54,7 @@ func (s *Server) handleListVPN(w http.ResponseWriter, r *http.Request) {
 	}
 	type entry struct {
 		vpn.Connection
-		Computers []computers.ConnectionReference `json:"environments"`
+		Computers []computers.ConnectionReference `json:"computers"`
 	}
 	out := []entry{}
 	for _, c := range cs {
@@ -87,7 +87,7 @@ func (s *Server) handleDeleteVPN(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := s.Computers.Networking.DeleteConnection(id); err != nil {
 		if errors.Is(err, vpn.ErrConflict) {
-			writeJSON(w, 409, map[string]any{"error": "VPN connection is referenced by computers", "environments": s.Computers.Networking.References(id)})
+			writeJSON(w, 409, map[string]any{"error": "VPN connection is referenced by computers", "computers": s.Computers.Networking.References(id)})
 			return
 		}
 		vpnError(w, err)
@@ -139,7 +139,7 @@ func (s *Server) handleUpdateVPN(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		vpn.Input
 		ExpectedRevision  uint64   `json:"expectedRevision"`
-		AffectedComputers []string `json:"affectedEnvironments"`
+		AffectedComputers []string `json:"affectedComputers"`
 		ConfirmRestart    bool     `json:"confirmRestart"`
 	}
 	if readJSON(r, &req) != nil {
@@ -153,7 +153,7 @@ func (s *Server) handleUpdateVPN(w http.ResponseWriter, r *http.Request) {
 	}
 	refs := n.References(id)
 	if len(refs) > 0 && !req.ConfirmRestart {
-		writeJSON(w, 409, map[string]any{"error": "confirmRestart required; affected computers' sessions will disconnect", "environments": refs})
+		writeJSON(w, 409, map[string]any{"error": "confirmRestart required; affected computers' sessions will disconnect", "computers": refs})
 		return
 	}
 	jobID := s.jobs.startCommittedResult(a.Username, func(ctx context.Context, progress func(string, float64), commit func(func() error) error) (any, error) {
@@ -181,7 +181,7 @@ func (s *Server) handleUpdateVPN(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return nil, errors.New("VPN update failed; refresh connection and computer status before retrying")
 		}
-		return map[string]any{"connection": c, "environments": results}, nil
+		return map[string]any{"connection": c, "computers": results}, nil
 	})
-	writeJSON(w, 202, map[string]any{"job": jobID, "environments": refs})
+	writeJSON(w, 202, map[string]any{"job": jobID, "computers": refs})
 }

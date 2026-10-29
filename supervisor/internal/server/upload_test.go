@@ -29,7 +29,7 @@ func (f *failingBody) Read(p []byte) (int, error) {
 
 func upload(t *testing.T, c *http.Client, base, name string, body io.Reader) (int, string) {
 	t.Helper()
-	req, _ := http.NewRequest("POST", base+"/api/environments/alice/upload?name="+url.QueryEscape(name), body)
+	req, _ := http.NewRequest("POST", base+"/api/computers/alice/upload?name="+url.QueryEscape(name), body)
 	req.Header.Set("Origin", base)
 	resp, err := c.Do(req)
 	if err != nil {
@@ -148,7 +148,7 @@ func TestUploadAccess(t *testing.T) {
 	if code, _ := upload(t, &http.Client{}, ts.URL, "n.txt", strings.NewReader("x")); code != 401 {
 		t.Errorf("anonymous: %d", code)
 	}
-	req, _ := http.NewRequest("POST", ts.URL+"/api/environments/alice/upload?name=t.txt", strings.NewReader("x"))
+	req, _ := http.NewRequest("POST", ts.URL+"/api/computers/alice/upload?name=t.txt", strings.NewReader("x"))
 	req.Header.Set("Authorization", "Bearer dyt_00000000_removed")
 	req.Header.Set("Origin", ts.URL)
 	resp, err := http.DefaultClient.Do(req)
@@ -160,7 +160,7 @@ func TestUploadAccess(t *testing.T) {
 		t.Errorf("a removed access token: %d", resp.StatusCode)
 	}
 	// Same-origin check: a state change from another origin is refused.
-	req, _ = http.NewRequest("POST", ts.URL+"/api/environments/alice/upload?name=t.txt", strings.NewReader("x"))
+	req, _ = http.NewRequest("POST", ts.URL+"/api/computers/alice/upload?name=t.txt", strings.NewReader("x"))
 	req.Header.Set("Origin", "https://evil.example")
 	resp, err = login(t, ts, "admin").Do(req)
 	if err != nil {

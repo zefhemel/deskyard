@@ -87,7 +87,7 @@ type volumeTest struct {
 	Created   time.Time        `json:"created"`
 	Kind      string           `json:"kind"`
 	Folder    string           `json:"folder"`
-	Computers []volumeUserTest `json:"environments"`
+	Computers []volumeUserTest `json:"computers"`
 }
 
 func TestVolumesAdminOnly(t *testing.T) {
@@ -186,14 +186,14 @@ func TestDeleteGrantedVolume409(t *testing.T) {
 	if code, b := send(admin, "POST", "/api/volumes", `{"name":"photos"}`); code != 201 {
 		t.Fatalf("create: %d %s", code, b)
 	}
-	code, b := send(admin, "PATCH", "/api/environments/alice", `{"volumes":[{"name":"photos","readOnly":true}]}`)
+	code, b := send(admin, "PATCH", "/api/computers/alice", `{"volumes":[{"name":"photos","readOnly":true}]}`)
 	if code != 202 {
 		t.Fatalf("PATCH: %d %s", code, b)
 	}
 	waitJob(t, s, b)
 
 	code, b = send(admin, "GET", "/api/volumes", "")
-	if code != 200 || !strings.Contains(string(b), `"environments":[{"name":"alice","readOnly":true}]`) {
+	if code != 200 || !strings.Contains(string(b), `"computers":[{"name":"alice","readOnly":true}]`) {
 		t.Fatalf("list: %d %s", code, b)
 	}
 	code, b = send(admin, "DELETE", "/api/volumes/photos?deleteFiles=true", "")
@@ -202,7 +202,7 @@ func TestDeleteGrantedVolume409(t *testing.T) {
 	}
 	var res struct {
 		Error     string
-		Computers []struct{ ID, Name string } `json:"environments"`
+		Computers []struct{ ID, Name string } `json:"computers"`
 	}
 	if err := json.Unmarshal(b, &res); err != nil {
 		t.Fatal(err)
@@ -227,7 +227,7 @@ func TestDeleteMountedVolume409(t *testing.T) {
 	if code, b := send(admin, "POST", "/api/volumes", `{"name":"photos"}`); code != 201 {
 		t.Fatalf("create: %d %s", code, b)
 	}
-	code, b := send(admin, "PATCH", "/api/environments/alice", `{"volumes":[{"name":"photos"}]}`)
+	code, b := send(admin, "PATCH", "/api/computers/alice", `{"volumes":[{"name":"photos"}]}`)
 	if code != 202 {
 		t.Fatalf("PATCH: %d %s", code, b)
 	}
@@ -262,18 +262,18 @@ func TestPatchVolumesUnknown400(t *testing.T) {
 	if err := s.Accounts.SetAccess("alice", fullAccess("anna")); err != nil {
 		t.Fatal(err)
 	}
-	code, b := send(admin, "PATCH", "/api/environments/alice", `{"volumes":[{"name":"ghost"}]}`)
+	code, b := send(admin, "PATCH", "/api/computers/alice", `{"volumes":[{"name":"ghost"}]}`)
 	if code != 400 || !strings.Contains(string(b), "no volume ghost") {
 		t.Fatalf("unknown: %d %s", code, b)
 	}
-	if code, b := send(admin, "PATCH", "/api/environments/alice", `{"volumes":[{"name":"A"}]}`); code != 400 {
+	if code, b := send(admin, "PATCH", "/api/computers/alice", `{"volumes":[{"name":"A"}]}`); code != 400 {
 		t.Fatalf("invalid: %d %s", code, b)
 	}
-	code, b = send(admin, "POST", "/api/environments", `{"name":"new-desktop","volumes":[{"name":"ghost"}]}`)
+	code, b = send(admin, "POST", "/api/computers", `{"name":"new-desktop","volumes":[{"name":"ghost"}]}`)
 	if code != 400 || !strings.Contains(string(b), "no volume ghost") {
 		t.Fatalf("create unknown: %d %s", code, b)
 	}
-	if code, _ := send(anna, "PATCH", "/api/environments/alice", `{"volumes":[]}`); code != 403 {
+	if code, _ := send(anna, "PATCH", "/api/computers/alice", `{"volumes":[]}`); code != 403 {
 		t.Fatalf("non-admin: %d", code)
 	}
 }
@@ -281,24 +281,24 @@ func TestPatchVolumesUnknown400(t *testing.T) {
 func TestComputerJSONHasVolumes(t *testing.T) {
 	s, ts, send := newVolumeServer(t)
 	admin := login(t, ts, "admin")
-	code, b := send(admin, "GET", "/api/environments/alice", "")
+	code, b := send(admin, "GET", "/api/computers/alice", "")
 	if code != 200 || !strings.Contains(string(b), `"volumes":[]`) {
 		t.Fatalf("no volumes: %d %s", code, b)
 	}
 	if code, b := send(admin, "POST", "/api/volumes", `{"name":"photos"}`); code != 201 {
 		t.Fatalf("create: %d %s", code, b)
 	}
-	code, b = send(admin, "PATCH", "/api/environments/alice", `{"volumes":[{"name":"photos"}]}`)
+	code, b = send(admin, "PATCH", "/api/computers/alice", `{"volumes":[{"name":"photos"}]}`)
 	if code != 202 {
 		t.Fatalf("PATCH: %d %s", code, b)
 	}
 	waitJob(t, s, b)
-	code, b = send(admin, "GET", "/api/environments/alice", "")
+	code, b = send(admin, "GET", "/api/computers/alice", "")
 	if code != 200 || !strings.Contains(string(b), `"volumes":[{"name":"photos","path":"/share/photos","readOnly":false}]`) {
 		t.Fatalf("grant not exposed: %d %s", code, b)
 	}
 	// Omitting volumes keeps them.
-	code, b = send(admin, "PATCH", "/api/environments/alice", `{"nanoCpus":1000000000}`)
+	code, b = send(admin, "PATCH", "/api/computers/alice", `{"nanoCpus":1000000000}`)
 	if code != 202 {
 		t.Fatalf("PATCH: %d %s", code, b)
 	}
@@ -319,7 +319,7 @@ func TestPatchKeepsDanglingGrant(t *testing.T) {
 	if code, b := send(admin, "POST", "/api/volumes", `{"name":"photos"}`); code != 201 {
 		t.Fatalf("create: %d %s", code, b)
 	}
-	code, b := send(admin, "PATCH", "/api/environments/alice", `{"volumes":[{"name":"photos"}]}`)
+	code, b := send(admin, "PATCH", "/api/computers/alice", `{"volumes":[{"name":"photos"}]}`)
 	if code != 202 {
 		t.Fatalf("grant: %d %s", code, b)
 	}
@@ -329,7 +329,7 @@ func TestPatchKeepsDanglingGrant(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, body := range []string{`{"memoryBytes":1073741824}`, `{"volumes":[{"name":"photos","readOnly":true}]}`} {
-		code, b := send(admin, "PATCH", "/api/environments/alice", body)
+		code, b := send(admin, "PATCH", "/api/computers/alice", body)
 		if code != 202 {
 			t.Fatalf("%s: %d %s", body, code, b)
 		}
@@ -348,12 +348,12 @@ func TestPatchKeepsDanglingGrant(t *testing.T) {
 			t.Fatalf("%s job: %+v", body, st)
 		}
 	}
-	if code, b := send(admin, "PATCH", "/api/environments/alice", `{"volumes":[]}`); code != 202 {
+	if code, b := send(admin, "PATCH", "/api/computers/alice", `{"volumes":[]}`); code != 202 {
 		t.Fatalf("drop: %d %s", code, b)
 	} else {
 		waitJob(t, s, b)
 	}
-	code, b = send(admin, "PATCH", "/api/environments/alice", `{"volumes":[{"name":"photos"}]}`)
+	code, b = send(admin, "PATCH", "/api/computers/alice", `{"volumes":[{"name":"photos"}]}`)
 	if code != 400 || !strings.Contains(string(b), "no volume photos") {
 		t.Fatalf("re-add: %d %s", code, b)
 	}
@@ -438,12 +438,12 @@ func TestFoldersShownAsHostPaths(t *testing.T) {
 		t.Errorf("volume folder: %+v", vols.Volumes)
 	}
 	var env struct{ Folder string }
-	get("/api/environments/alice", &env)
+	get("/api/computers/alice", &env)
 	if env.Folder != "/srv/deskyard/home/alice" {
 		t.Errorf("computer folder: %q", env.Folder)
 	}
 	var folder struct{ Path string }
-	get("/api/environments/alice/folder", &folder)
+	get("/api/computers/alice/folder", &folder)
 	if folder.Path != "/srv/deskyard/home/alice" {
 		t.Errorf("folder path: %q", folder.Path)
 	}

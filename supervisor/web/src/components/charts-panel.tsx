@@ -1,5 +1,5 @@
 // CPU and memory over the last 15 minutes: the history from
-// /api/environments/{name}/stats, then each `stats` event appended.
+// /api/computers/{name}/stats, then each `stats` event appended.
 import { useEffect, useState } from "preact/hooks";
 import { api, type Computer, type StatsPoint } from "../api.ts";
 import { useLive } from "../live.tsx";

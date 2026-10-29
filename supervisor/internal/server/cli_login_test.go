@@ -64,7 +64,7 @@ func TestCLILoginApprove(t *testing.T) {
 	var res struct {
 		Credential string
 		Username   string
-		Computers  []computerLevel `json:"environments"`
+		Computers  []computerLevel `json:"computers"`
 	}
 	_ = json.Unmarshal([]byte(body), &res)
 	if code != 200 || !strings.HasPrefix(res.Credential, "dyc_") || res.Username != "bob" ||
