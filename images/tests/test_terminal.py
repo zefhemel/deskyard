@@ -71,7 +71,7 @@ try:
     tmux('send-keys','-t','=main:','sleep 2; echo survived > /workspace/terminal-job-proof','Enter')
     for client in clients: detach(client)
     clients=[]
-    wait(lambda: os.path.exists('/workspace/terminal-job-proof'))
+    wait(lambda: os.path.exists('/workspace/terminal-job-proof') and open('/workspace/terminal-job-proof').read() == 'survived\n')
     assert open('/workspace/terminal-job-proof').read() == 'survived\n'
     assert tmux('display-message','-p','-t','=main:','#{pane_pid}') == shell
     clients=[attach('main',101,37)]

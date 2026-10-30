@@ -88,9 +88,14 @@ def test_pointerrawupdate_hidden(supervisor, desktop, name):
     with sync_playwright() as p:
         browser, page = signed_in(p, supervisor.base)
         open_desktop(page, supervisor.base, name)
-        pic = page.evaluate(PICTURE)
-        page.mouse.move(*to_page(pic, 400, 300))
-        assert wait_until(lambda: mouse_location(name) == (400, 300), 5), mouse_location(name)
+        def position_pointer():
+            # The stream's startup resize may replace the first picture's
+            # geometry before the move reaches X. Re-measure while positioning.
+            pic = page.evaluate(PICTURE)
+            page.mouse.move(*to_page(pic, 400, 300))
+            return mouse_location(name) == (400, 300)
+
+        assert wait_until(position_pointer, 5), mouse_location(name)
         bar = page.evaluate("document.querySelector('iframe').getBoundingClientRect().top")
         assert bar > 30
         page.frames[1].evaluate("""([x, y]) => {
