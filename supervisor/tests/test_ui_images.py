@@ -123,6 +123,59 @@ def test_settings_save_brings_pending_progress_into_view(mock_ui):
         browser.close()
 
 
+@pytest.mark.parametrize("event_before_snapshot", [True, False])
+def test_desktop_list_preserves_events_during_initial_load(mock_ui, event_before_snapshot):
+    """A stale initial or reconnect snapshot must not erase a terminal event."""
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.add_init_script("""window.testStreams = [];
+            const NativeWebSocket = window.WebSocket;
+            window.WebSocket = class extends EventTarget {
+                constructor(url, protocols) {
+                    super();
+                    if (new URL(url, location.href).pathname !== '/api/events') {
+                        return new NativeWebSocket(url, protocols);
+                    }
+                    window.testStreams.push(this);
+                }
+                close() {}
+            };""")
+        pending = []
+        page.route("**/api/computers", lambda route: pending.append(route))
+        page.goto(mock_ui + "/login")
+        page.fill("#u", "zef")
+        page.fill("#p", "x")
+        page.get_by_role("button", name="Sign in").click()
+        expect(page.get_by_text("Loading…", exact=True)).to_be_visible()
+        page.wait_for_function("typeof testStreams[0]?.onmessage === 'function'")
+        snapshot = page.request.get(mock_ui + "/api/computers").json()
+        computer = next(c for c in snapshot["computers"] if c["name"] == "alice")
+        computer["terminals"] = [
+            {"name": f"session-{n}", "clients": 0, "command": "bash"} for n in range(5)
+        ]
+        # Save the updated event separately from the stale HTTP snapshot.
+        page.evaluate("computer => window.updatedComputer = computer", computer)
+        computer["terminals"] = []
+        emit = "testStreams[0].onmessage({data: JSON.stringify({type: 'computer', data: updatedComputer})})"
+        if event_before_snapshot:
+            page.evaluate(emit)
+            pending[0].fulfill(json=snapshot)
+        else:
+            pending[0].fulfill(json=snapshot)
+            expect(page.get_by_text("alice", exact=True).first).to_be_visible()
+            with page.expect_request("**/api/computers"):
+                page.evaluate("testStreams[0].onopen(); testStreams[0].onopen()")
+            page.evaluate(emit)
+            expect(page.get_by_role("link", name="+2 more", exact=True)).to_be_visible()
+            # A separate snapshot field proves the delayed body was applied.
+            snapshot["conflicts"][0]["message"] = "Race snapshot applied"
+            pending[1].fulfill(json=snapshot)
+            expect(page.get_by_text("Race snapshot applied", exact=False)).to_be_visible()
+        expect(page.get_by_role("link", name="+2 more", exact=True)).to_be_visible()
+        browser.close()
+
+
 def test_desktop_list_recovers_after_failed_first_load(mock_ui):
     with sync_playwright() as p:
         browser = p.chromium.launch()

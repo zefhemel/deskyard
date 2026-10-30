@@ -85,14 +85,24 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
   // reconnects, so the page would say "Loading…" for good.
   const refreshTimer = useRef<number | undefined>(undefined);
   const refreshGeneration = useRef(0);
+  // Replay events received during a list request over its older snapshot.
+  // Before the first response there is no list to update yet.
+  const duringRefresh = useRef<((list: Computer[]) => Computer[])[] | null>(null);
+  const updateComputers = useCallback((update: (list: Computer[]) => Computer[]) => {
+    duringRefresh.current?.push(update);
+    setComputers(list => list ? update(list) : list);
+  }, []);
   const refresh = useCallback(() => {
     const generation = ++refreshGeneration.current;
     window.clearTimeout(refreshTimer.current);
     const load = (wait: number) => {
+      duringRefresh.current = [];
       api.computers().then(
         (list) => {
           if (refreshGeneration.current !== generation) return;
-          setComputers(list.computers);
+          const updates = duringRefresh.current ?? [];
+          duringRefresh.current = null;
+          setComputers(updates.reduce((computers, update) => update(computers), list.computers));
           setConflicts(list.conflicts);
         },
         () => {
@@ -117,28 +127,26 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
     const es = watchUIEvents("/api/events");
     es.addEventListener("computer", (e: MessageEvent<string>) => {
       const c = JSON.parse(e.data) as Computer;
-      setComputers((list) => (list ? upsert(list, c) : list));
+      updateComputers(list => upsert(list, c));
       hostSoon();
     });
     es.addEventListener("removed", (e: MessageEvent<string>) => {
       const { name } = JSON.parse(e.data) as RemovedEvent;
-      setComputers((list) => (list ? list.filter((c) => c.name !== name) : list));
+      updateComputers(list => list.filter(c => c.name !== name));
       hostSoon();
     });
     es.addEventListener("stats", (e: MessageEvent<string>) => {
       const s = JSON.parse(e.data) as StatsEvent;
-      setComputers((list) =>
-        list
-          ? list.map((c) =>
-              c.name === s.name ? { ...c, stats: { cpuPercent: s.cpuPercent, memBytes: s.memBytes, memLimit: s.memLimit } } : c,
-            )
-          : list,
+      updateComputers((list) =>
+        list.map((c) =>
+          c.name === s.name ? { ...c, stats: { cpuPercent: s.cpuPercent, memBytes: s.memBytes, memLimit: s.memLimit } } : c,
+        ),
       );
       for (const l of statsListeners.current) l(s);
     });
     es.addEventListener("viewers", (e: MessageEvent<string>) => {
       const v = JSON.parse(e.data) as ViewersEvent;
-      setComputers((list) => (list ? list.map((c) => (c.name === v.name ? { ...c, viewers: v.viewers, observers: v.observers ?? c.observers, mics: v.mics, forwards: v.forwards, agents: v.agents ?? c.agents } : c)) : list));
+      updateComputers(list => list.map((c) => (c.name === v.name ? { ...c, viewers: v.viewers, observers: v.observers ?? c.observers, mics: v.mics, forwards: v.forwards, agents: v.agents ?? c.agents } : c)));
     });
     es.addEventListener("activity", (e: MessageEvent<string>) => {
       const a = JSON.parse(e.data) as ActivityEvent;
@@ -156,13 +164,14 @@ export function LiveProvider({ me, children }: { me: Me; children: ComponentChil
     };
     return () => {
       ++refreshGeneration.current;
+      duringRefresh.current = null;
       es.close();
       window.clearInterval(hostInterval);
       window.clearInterval(conflictInterval);
       window.clearTimeout(hostTimer.current);
       window.clearTimeout(refreshTimer.current);
     };
-  }, [refresh, loadHost, hostSoon, me.admin]);
+  }, [refresh, loadHost, hostSoon, me.admin, updateComputers]);
 
   useEffect(() => {
     const unsubscribe = jobTracker.subscribe(job => {
