@@ -1,5 +1,10 @@
 # Images
 
+Chromium disables browser-level Google sign-in and sync, which Google restricts
+in Chromium. Google website logins (Gmail, Drive and others) remain available,
+and local bookmarks and passwords remain usable. This is an image-owned browser
+policy; existing computers receive it after an image upgrade and browser restart.
+
 The **Images** page holds the catalog of images computers can be created
 from. The built-in choice, visible before download and the default on first
 start, is Debian XFCE: `ghcr.io/zefhemel/deskyard-debian-xfce:latest`. The

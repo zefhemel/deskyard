@@ -1,3 +1,4 @@
 {
-  "RestoreOnStartup": 1
+  "RestoreOnStartup": 1,
+  "BrowserSignin": 0
 }
