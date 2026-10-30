@@ -1,0 +1,19 @@
+--- a/selkies/websockets_mode.py
++++ b/selkies/websockets_mode.py
+@@ -5742,14 +5742,14 @@
+                             self._schedule_invalidation(target_display_id, lost_frame_id)
+ 
+                     elif message == "REQUEST_KEYFRAME":
+-                        if not self._repair_taken(websocket, client_display_id, "keyframe"):
+-                            continue
+                         target_display_id = client_display_id or 'primary'
+                         instance = self.capture_instances.get(target_display_id)
+                         module = instance.get('module') if instance else None
+                         if module:
+                             now = time.monotonic()
+                             if now - self._last_keyframe_request.get(target_display_id, 0.0) >= 0.25:
++                                if not self._repair_taken(websocket, client_display_id, "keyframe"):
++                                    continue
+                                 self._last_keyframe_request[target_display_id] = now
+                                 # The log line is throttled harder than the request: a
+                                 # decode-resync loop would fill the journal at 4 lines/s.

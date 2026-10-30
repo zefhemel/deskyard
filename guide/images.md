@@ -1,5 +1,10 @@
 # Images
 
+Updated desktop images also fix keyframe recovery for secondary viewers:
+requests coalesced with a recent keyframe preserve the viewer's repair
+allowance, so a missed join picture can be requested again promptly.
+Existing computers receive this fix through an image upgrade.
+
 Chromium disables browser-level Google sign-in and sync, which Google restricts
 in Chromium. Google website logins (Gmail, Drive and others) remain available,
 and local bookmarks and passwords remain usable. This is an image-owned browser

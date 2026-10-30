@@ -1,5 +1,16 @@
 # Runtime patches
 
+## Keyframe repair budget
+
+`selkies-keyframe-budget.diff` checks Selkies 2.1.0's display-wide 250 ms
+keyframe interval before consuming a secondary viewer's one-second repair
+allowance. A request coalesced with a recent display keyframe must not spend
+that allowance: otherwise the viewer's next repair is suppressed for a second
+without receiving a replacement picture. Both existing rate limits remain.
+`images/tests/native/selkies-keyframe-budget.py` executes the installed request
+branch with a controlled clock and checks rejection, the next accepted repair,
+and the retained per-viewer limit; `test_selkies.py` runs it in the image suite.
+
 ## X input recovery
 
 `selkies-x-input-recovery.diff` fixes Selkies 2.1.0's input backend remaining disconnected after an X reply timeout. The event watcher retries missing connections every 500 ms, with one worker at a time and the existing 20-second X reply/handshake bound. The worker prepares the display, keyboard and mouse before publishing them together. Initial connection failures also enter recovery; shutdown invalidates in-flight results, and a later lifecycle cannot inherit an earlier worker's connection. Cursor negotiation/cache and tracked pointer coordinates are refreshed with the connection. All event-reader X calls are inside its recovery boundary.

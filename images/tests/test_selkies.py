@@ -22,6 +22,12 @@ SUPERVISOR_ORIGIN = "http://supervisor.deskyard.invalid"
 SELKIES_PID = "pgrep -f '^/opt/selkies/bin/python3 /opt/selkies/bin/selkies '"
 
 
+def test_coalesced_keyframe_preserves_viewer_repair_budget(sandbox):
+    script = Path(__file__).parent / "native" / "selkies-keyframe-budget.py"
+    docker("cp", str(script), f"{sandbox.name}:/tmp/selkies-keyframe-budget.py")
+    sandbox.exec("/opt/selkies/bin/python /tmp/selkies-keyframe-budget.py", timeout=15)
+
+
 def test_input_recovers_after_x_connection_failure(sandbox):
     """A failed reconnect must not strand input or revive a disconnected handler."""
     script = Path(__file__).parent / "native" / "selkies-input-recovery.py"
