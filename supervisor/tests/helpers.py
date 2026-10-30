@@ -249,7 +249,14 @@ def sign_in(browser, base, user="admin", password=ADMIN_PASSWORD, **ctx):
     page.fill("#u", user)
     page.fill("#p", password)
     page.get_by_role("button", name="Sign in").click()
-    page.wait_for_url(lambda u: "/login" not in u)
+    try:
+        page.wait_for_url(lambda u: "/login" not in u)
+    except PlaywrightError as error:
+        if netchange.CHANGED not in str(error):
+            raise
+        # Login already completed; retry only its document navigation. goto's
+        # network-change handler settles Chromium's error page and retries.
+        page.goto(base + "/")
     return page
 
 

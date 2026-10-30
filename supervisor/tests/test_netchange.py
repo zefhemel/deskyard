@@ -13,6 +13,7 @@ from unittest.mock import Mock
 from playwright.sync_api import Error, sync_playwright
 
 import netchange
+from helpers import sign_in
 from test_ui_audio import settle_audio
 
 
@@ -27,6 +28,29 @@ def dispatch(route):
         netchange._request_transport(route)
     else:
         route.fallback()
+
+
+class SignInNavigationTests(unittest.TestCase):
+    def test_network_change_after_login_reloads_without_resubmitting(self):
+        page = Mock()
+        page.wait_for_url.side_effect = [None, Error(netchange.CHANGED)]
+        browser = Mock()
+        browser.new_context.return_value.new_page.return_value = page
+        self.assertIs(sign_in(browser, "http://127.0.0.1:8080"), page)
+        self.assertEqual(page.goto.call_args_list, [
+            unittest.mock.call("http://127.0.0.1:8080/"),
+            unittest.mock.call("http://127.0.0.1:8080/"),
+        ])
+        page.get_by_role.return_value.click.assert_called_once()
+
+    def test_other_login_navigation_errors_are_reported(self):
+        page = Mock()
+        page.wait_for_url.side_effect = [None, Error("navigation failed")]
+        browser = Mock()
+        browser.new_context.return_value.new_page.return_value = page
+        with self.assertRaisesRegex(Error, "navigation failed"):
+            sign_in(browser, "http://127.0.0.1:8080")
+        page.goto.assert_called_once()
 
 
 class CaptureTransportTests(unittest.TestCase):
