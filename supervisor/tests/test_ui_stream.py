@@ -184,13 +184,17 @@ def test_four_viewers_do_not_exhaust_http_connections(supervisor, remote, name):
 COUNT_FRAMES = """(() => {
     if (window === top) return;
     window.__frames = 0;
-    const seen = new WeakSet();
+    const seen = new WeakMap();
     setInterval(() => {
         const v = window.deskyardScreen && window.deskyardScreen.video();
-        if (!(v instanceof HTMLVideoElement) || seen.has(v)) return;
-        seen.add(v);
-        const count = () => { window.__frames++; v.requestVideoFrameCallback(count); };
-        v.requestVideoFrameCallback(count);
+        if (!(v instanceof HTMLVideoElement)) return;
+        // The first frame may already have been presented before this poll.
+        // A callback alone sees only future frames, missing the join picture
+        // until the idle stream's next keepalive. Exclude dropped frames.
+        const quality = v.getVideoPlaybackQuality();
+        const displayed = quality.totalVideoFrames - quality.droppedVideoFrames;
+        window.__frames += Math.max(0, displayed - (seen.get(v) ?? 0));
+        seen.set(v, displayed);
     }, 20);
 })()"""
 
