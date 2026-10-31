@@ -150,6 +150,11 @@ func (n *Networking) recover(ctx context.Context, r networkTransition, retry boo
 	}
 	if running && !c.Running() {
 		if def.Network.Kind == NetworkVPN {
+			if err := n.prepareTailscaleServices(ctx, def, r.RuntimeID); err != nil {
+				return false, err
+			}
+		}
+		if def.Network.Kind == NetworkVPN {
 			n.startedAt(r.Name, retry)
 		}
 		if err := s.Eng.Start(ctx, c.ID); err != nil {
@@ -269,7 +274,8 @@ func (n *Networking) Poll(ctx context.Context, changed func(string)) {
 				conn, ve := n.Connections.Get(def.Network.Connection)
 				// A stopped environment's runtime is prepared when it starts.
 				gatewayLost := def.Power == PowerRunning && (ge != nil || !g.Running())
-				needsRepair = gatewayLost || ce != nil || c.Running() != (def.Power == PowerRunning) || c.NetworkContainer != r.RuntimeID ||
+				tailscaleStopPending := def.Power == PowerStopped && ve == nil && conn.Provider == "tailscale" && ge == nil && g.Running()
+				needsRepair = tailscaleStopPending || gatewayLost || ce != nil || c.Running() != (def.Power == PowerRunning) || c.NetworkContainer != r.RuntimeID ||
 					ve != nil || conn.Revision != r.AppliedConnectionRevision || def.Revision != r.AppliedRevision
 			}
 			if needsRepair {

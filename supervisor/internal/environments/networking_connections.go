@@ -38,6 +38,20 @@ func (n *Networking) references(ctx context.Context, id string) ([]ConnectionRef
 			seen[d.Name] = true
 		}
 	}
+	if retained, ok := n.runtime.(interface {
+		RetainedReferences(context.Context, string) ([]string, error)
+	}); ok {
+		names, e := retained.RetainedReferences(ctx, id)
+		if e != nil {
+			return out, e
+		}
+		for _, name := range names {
+			if !seen[name] {
+				out = append(out, ConnectionReference{name, name})
+				seen[name] = true
+			}
+		}
+	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	cs, err := n.service.Eng.List(ctx, n.service.ownFilter())

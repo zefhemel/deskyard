@@ -3,8 +3,14 @@
 package vpn
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"github.com/zefhemel/deskyard/supervisor/internal/engine"
+	dockerengine "github.com/zefhemel/deskyard/supervisor/internal/engine/docker"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -48,5 +54,50 @@ func TestTailscaleKernelEngine(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "NeedsLogin") {
 		t.Fatal("daemon not observed before authentication")
+	}
+}
+
+func TestTailscaleOfflineStateOwnerEngine(t *testing.T) {
+	hostRoot := os.Getenv("DESKYARD_TEST_HOST_WORKSPACE")
+	if hostRoot == "" {
+		t.Skip("set DESKYARD_TEST_HOST_WORKSPACE to the engine-host path of /workspace")
+	}
+	dir, err := os.MkdirTemp("/workspace/.cache", "deskyard-ts-state-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	hostDir := hostRoot + strings.TrimPrefix(dir, "/workspace")
+	out, err := exec.Command("docker", "run", "--rm", "--mount", "type=bind,src="+hostDir+",dst=/state", "--entrypoint=/bin/sh", TailscaleImage, "-c", `printf '%s' '{"_serve/profile":"public","_machinekey":"key"}' > /state/tailscaled.state; chmod 600 /state/tailscaled.state; mkdir /state/certs; chmod 700 /state/certs; printf private-test-certificate > /state/certs/test; chmod 600 /state/certs/test`).CombinedOutput()
+	if err != nil {
+		t.Fatalf("root-owned state fixture: %v %s", err, out)
+	}
+	if os.Getuid() != 0 {
+		if _, err = os.ReadFile(filepath.Join(dir, "tailscaled.state")); !os.IsPermission(err) {
+			t.Fatal("fixture should be unreadable to supervisor before ownership recovery", err)
+		}
+	}
+	docker, err := dockerengine.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng := engine.WithDataFolder(docker, "/workspace", hostRoot)
+	m := NewManager(eng, nil, dir).ForInstance("state-owner-fixture")
+	if err = m.withdrawSavedServe(context.Background(), dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.ReadFile(filepath.Join(dir, "certs", "test")); err != nil {
+		t.Fatal("private certificate state ownership was not recovered", err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "tailscaled.state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var values map[string]string
+	if json.Unmarshal(b, &values) != nil || values["_machinekey"] != "key" {
+		t.Fatal("node keys changed")
+	}
+	if _, ok := values["_serve/profile"]; ok {
+		t.Fatal("public rule retained")
 	}
 }

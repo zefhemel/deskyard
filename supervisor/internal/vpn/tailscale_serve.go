@@ -149,9 +149,11 @@ func (m *Manager) ApplyServices(ctx context.Context, name string, in []ServiceRu
 	if err == nil && observeErr == nil && sameServeConfig(observed, desired) {
 		return m.serviceStatuses(ctx, name, id, dns), nil
 	}
-	if e := m.setServe(ctx, id, serveConfig{}); e != nil {
-		_ = m.eng.Stop(context.WithoutCancel(ctx), id, 5e9)
-		return nil, errors.New("Could not withdraw Tailscale services; sidecar stopped for recovery")
+	if observeErr != nil || !sameServeConfig(observed, serveConfig{}) {
+		if e := m.setServe(ctx, id, serveConfig{}); e != nil {
+			_ = m.eng.Stop(context.WithoutCancel(ctx), id, 5e9)
+			return nil, errors.New("Could not withdraw Tailscale services; sidecar stopped for recovery")
+		}
 	}
 	if err != nil {
 		return nil, err

@@ -90,7 +90,7 @@ func TestServeWithdrawalRecovery(t *testing.T) {
 
 func (e *tsDaemonEngine) Create(ctx context.Context, s engine.ContainerSpec) (string, error) {
 	if len(s.Mounts) > 0 && s.Image == TailscaleImage {
-		if err := os.WriteFile(filepath.Join(s.Mounts[0].Source, "tailscaled.state"), []byte("persisted-node"), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(s.Mounts[0].Source, "tailscaled.state"), []byte(`{"_machinekey":"persisted-node"}`), 0600); err != nil {
 			return "", err
 		}
 	}
@@ -135,5 +135,18 @@ func TestTailscaleEnsurePreservesIdentityAcrossReplacement(t *testing.T) {
 	os.Remove(filepath.Join(other.tailscaleNodeDir("alice", c.ID), "tailscaled.state"))
 	if _, err = other.Ensure(ctx, "alice", "desktop", c.ID, nil); err == nil {
 		t.Fatal("missing node keys silently replaced")
+	}
+}
+
+func TestUnauthenticatedEmptyServeDoesNotStopSidecar(t *testing.T) {
+	m, e := serviceManager(t)
+	e.response = `{"BackendState":"NeedsMachineAuth","Self":{}}`
+	e.failSet = true
+	_, err := m.ApplyServices(context.Background(), "alice", []ServiceRule{{LocalPort: 3000, ListenPort: 443, Audience: "private"}})
+	if err == nil {
+		t.Fatal("unapproved publication accepted")
+	}
+	if e.stopped {
+		t.Fatal("empty unpublished node was stopped during approval")
 	}
 }

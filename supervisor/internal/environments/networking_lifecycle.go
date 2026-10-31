@@ -242,6 +242,12 @@ func (n *Networking) apply(ctx context.Context, r networkTransition, progress fu
 	if err := n.saveRecord(r); err != nil {
 		return n.fail(r, phaseSnapshot)
 	}
+	if def.Network.Kind == NetworkVPN {
+		if err := n.prepareTailscaleServices(ctx, def, r.RuntimeID); err != nil {
+			return n.fail(r, phaseEnsure)
+		}
+		r = n.transition(r.Name)
+	}
 	if err := s.createContainer(ctx, r.Name, def.Revision, def.Settings(), pinned(def), r.RuntimeID); err != nil {
 		// The cause is logged for the owner, never recorded: it may hold
 		// private host paths.
@@ -286,7 +292,6 @@ func (n *Networking) apply(ctx context.Context, r networkTransition, progress fu
 		}
 	}
 	s.setError(r.Name, "")
-	_ = n.syncServices(ctx, def)
 	return nil
 }
 

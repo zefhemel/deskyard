@@ -14,7 +14,7 @@ export function TailscaleServices({ computer }: { computer: Environment }) {
     <h3 class="mb-2 font-semibold">HTTP services</h3>
     <p class="mb-4 text-sm text-muted">Share an app listening on a local port. Private Serve is limited by your tailnet access rules. Public Funnel lets anyone reach the app; the app supplies its own login.</p>
     {rules.map((r, i) => <div class="mb-3 rounded-lg border border-line p-3" key={i}>
-      <Field label="Label"><input aria-label={`Service label ${i+1}`} value={r.label ?? ""} onInput={e=>update(i,{label:e.currentTarget.value})}/></Field>
+      <Field label="Label"><input type="text" aria-label={`Service label ${i+1}`} value={r.label ?? ""} onInput={e=>update(i,{label:e.currentTarget.value})}/></Field>
       <div class="grid grid-cols-2 gap-3">
         <Field label="Local HTTP port"><input aria-label={`Local HTTP port ${i+1}`} type="number" min="1" max="65535" value={r.localPort} onInput={e=>update(i,{localPort:Number(e.currentTarget.value)})}/></Field>
         <Field label="HTTPS listener port"><input aria-label={`HTTPS listener port ${i+1}`} type="number" min="1" max="65535" value={r.listenPort} onInput={e=>update(i,{listenPort:Number(e.currentTarget.value)})}/></Field>
