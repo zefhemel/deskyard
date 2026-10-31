@@ -116,7 +116,7 @@ func (m *Manager) Ensure(ctx context.Context, computer, network, connectionID st
 		return engine.Container{}, errors.New("VPN connection configuration is unavailable")
 	}
 	if connection.Provider == "tailscale" {
-		return m.ensureTailscale(ctx, environment, network, connection, exceptions)
+		return m.ensureTailscale(ctx, computer, network, connection, exceptions)
 	}
 	credentials, err := m.store.SecretFiles(connectionID)
 	if err != nil {
@@ -253,7 +253,7 @@ func (m *Manager) Remove(ctx context.Context, computer string) error {
 			b, e := m.tsCommand(ctx, c.ID, "status", "--json")
 			var v tailscaleDaemonStatus
 			if e == nil && json.Unmarshal(b, &v) == nil && v.Self.ID != "" {
-				if e = m.rememberTailscaleNode(environment, c.Labels[LabelConnection], v); e != nil {
+				if e = m.rememberTailscaleNode(computer, c.Labels[LabelConnection], v); e != nil {
 					return e
 				}
 			}

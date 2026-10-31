@@ -81,7 +81,17 @@ func TestTailscaleOfflineStateOwnerEngine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eng := engine.WithDataFolder(docker, "/workspace", hostRoot)
+	eng := engine.WithHostPaths(docker, func(p string) string {
+		if strings.HasPrefix(p, "/workspace/") {
+			return hostRoot + strings.TrimPrefix(p, "/workspace")
+		}
+		return p
+	}, func(p string) string {
+		if strings.HasPrefix(p, hostRoot+"/") {
+			return "/workspace" + strings.TrimPrefix(p, hostRoot)
+		}
+		return p
+	})
 	m := NewManager(eng, nil, dir).ForInstance("state-owner-fixture")
 	if err = m.withdrawSavedServe(context.Background(), dir); err != nil {
 		t.Fatal(err)

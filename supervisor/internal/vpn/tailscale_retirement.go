@@ -69,7 +69,7 @@ func (m *Manager) RetainedReferences(ctx context.Context, id string) ([]string, 
 		return nil, errors.New("Tailscale runtime references unavailable")
 	}
 	for _, c := range cs {
-		if name := c.Labels[LabelEnvironment]; validRuntime(name) {
+		if name := c.Labels[LabelComputer]; validRuntime(name) {
 			names[name] = true
 		}
 	}

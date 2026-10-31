@@ -67,7 +67,7 @@ func (m *Manager) Status(ctx context.Context, computer string) (Status, error) {
 		if !cs[0].Running() {
 			return Status{State: "stopped", Tailscale: &TailscaleStatus{}}, nil
 		}
-		return m.tailscaleStatus(checkCtx, environment, cs[0].ID, cs[0].Labels[LabelConnection])
+		return m.tailscaleStatus(checkCtx, computer, cs[0].ID, cs[0].Labels[LabelConnection])
 	}
 	if err == nil && len(cs) == 1 && cs[0].State == "running" {
 		verify, readErr := os.ReadFile(filepath.Join(m.directory(computer), "verify.sh"))

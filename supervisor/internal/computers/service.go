@@ -58,7 +58,7 @@ var (
 )
 
 type Settings struct {
-	Services []vpn.ServiceRule
+	Services        []vpn.ServiceRule
 	Image           string
 	MemoryBytes     int64 // 0: no limit
 	NanoCPUs        int64 // 0: no limit

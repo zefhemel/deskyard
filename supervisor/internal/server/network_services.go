@@ -9,7 +9,9 @@ import (
 
 func (s *Server) handleNetworkServices(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(r)
-	if !requireAdmin(w, a) { return }
+	if !requireAdmin(w, a) {
+		return
+	}
 	c, a, ok := s.computerFor(w, r, auth.Manage)
 	if !ok {
 		return

@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"fmt"
+	"github.com/zefhemel/deskyard/supervisor/internal/computers"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 	"io"
@@ -206,7 +206,7 @@ func TestVPNJobsExposeOnlyAllowlistedProviderFailures(t *testing.T) {
 	s, ts := newTestServer(t)
 	admin := login(t, ts, "admin")
 	secret := "private-credential"
-	c, err := s.Environments.Networking.Connections.Create(vpn.Input{Name: "Tailnet", Provider: "tailscale", Tailscale: &vpn.TailscaleInput{Tailnet: "home", ClientID: "id", ClientSecret: &secret, Tags: []string{"tag:desk"}}})
+	c, err := s.Computers.Networking.Connections.Create(vpn.Input{Name: "Tailnet", Provider: "tailscale", Tailscale: &vpn.TailscaleInput{Tailnet: "home", ClientID: "id", ClientSecret: &secret, Tags: []string{"tag:desk"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestVPNJobsExposeOnlyAllowlistedProviderFailures(t *testing.T) {
 	} {
 		for _, route := range []struct{ method, path, body string }{
 			{"POST", "/api/vpn/test", `{"name":"test","provider":"tailscale"}`},
-			{"PUT", "/api/vpn/connections/" + c.ID, `{"name":"Tailnet","provider":"tailscale","expectedRevision":1,"affectedEnvironments":[]}`},
+			{"PUT", "/api/vpn/connections/" + c.ID, `{"name":"Tailnet","provider":"tailscale","expectedRevision":1,"affectedComputers":[]}`},
 		} {
 			t.Run(tc.name+route.method, func(t *testing.T) {
 				s.vpnTests = failedVPNTester{tc.cause}
@@ -254,7 +254,7 @@ func TestVPNJobsExposeOnlyAllowlistedProviderFailures(t *testing.T) {
 				if strings.Contains(state.Error, "provider-password-secret") || strings.Contains(state.Error, "private-host-path") {
 					t.Fatal("private cause exposed")
 				}
-				current, err := s.Environments.Networking.Connections.Get(c.ID)
+				current, err := s.Computers.Networking.Connections.Get(c.ID)
 				if err != nil || current.Revision != 1 {
 					t.Fatal("failed validation changed saved revision")
 				}
