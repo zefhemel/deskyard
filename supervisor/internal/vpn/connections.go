@@ -31,22 +31,24 @@ func invalid(field, reason string) error { return &ValidationError{field, reason
 
 // Connection is the public, secret-free saved configuration.
 type Connection struct {
-	ID                    string `json:"id"`
-	Name                  string `json:"name"`
-	Provider              string `json:"provider"`
-	Country               string `json:"country"`
-	Revision              uint64 `json:"revision"`
-	CredentialsConfigured bool   `json:"credentialsConfigured"`
+	ID                    string               `json:"id"`
+	Name                  string               `json:"name"`
+	Provider              string               `json:"provider"`
+	Country               string               `json:"country"`
+	Revision              uint64               `json:"revision"`
+	CredentialsConfigured bool                 `json:"credentialsConfigured"`
+	Tailscale             *TailscaleConnection `json:"tailscale,omitempty"`
 }
 
 // Input is write-only. Nil credential fields on Update retain their saved value.
 // Name, provider and country describe the complete candidate configuration.
 type Input struct {
-	Name     string  `json:"name"`
-	Provider string  `json:"provider"`
-	Country  string  `json:"country"`
-	Username *string `json:"username,omitempty"`
-	Password *string `json:"password,omitempty"`
+	Name      string          `json:"name"`
+	Provider  string          `json:"provider"`
+	Country   string          `json:"country"`
+	Username  *string         `json:"username,omitempty"`
+	Password  *string         `json:"password,omitempty"`
+	Tailscale *TailscaleInput `json:"tailscale,omitempty"`
 }
 
 func (Input) MarshalJSON() ([]byte, error) { return nil, errors.New("VPN input is write-only") }
@@ -112,7 +114,7 @@ func (s *Store) load() ([]connectionRecord, error) {
 		if !validID(r.ID) || !validID(r.CredentialRef) || r.Revision == 0 || ids[r.ID] || names[strings.ToLower(r.Name)] {
 			return nil, errors.New("invalid VPN connection metadata")
 		}
-		if _, err := normalizeInput(Input{Name: r.Name, Provider: r.Provider, Country: r.Country}, false); err != nil {
+		if _, err := normalizeInput(Input{Name: r.Name, Provider: r.Provider, Country: r.Country, Tailscale: tailscaleMetadataInput(r.Tailscale)}, false); err != nil {
 			return nil, errors.New("invalid VPN connection metadata")
 		}
 		ids[r.ID], names[strings.ToLower(r.Name)] = true, true
@@ -202,7 +204,7 @@ func (s *Store) Create(in Input) (Connection, error) {
 	if err != nil {
 		return Connection{}, err
 	}
-	r := connectionRecord{Connection: Connection{ID: id, Name: in.Name, Provider: in.Provider, Country: in.Country, Revision: 1, CredentialsConfigured: true}, CredentialRef: ref}
+	r := connectionRecord{Connection: Connection{ID: id, Name: in.Name, Provider: in.Provider, Country: in.Country, Tailscale: tailscaleMetadata(in.Tailscale), Revision: 1, CredentialsConfigured: true}, CredentialRef: ref}
 	if err = s.save(append(rs, r)); err != nil {
 		os.RemoveAll(filepath.Join(s.secrets, id))
 		return Connection{}, err
@@ -228,8 +230,12 @@ func (s *Store) Update(id string, in Input) (Connection, error) {
 		return Connection{}, ErrConflict
 	}
 	previous := rs[i]
+	if previous.Provider != in.Provider || (previous.Tailscale != nil && (in.Tailscale == nil || previous.Tailscale.Tailnet != in.Tailscale.Tailnet)) {
+		return Connection{}, invalid("provider", "create a separate connection to change provider or tailnet")
+	}
 	r := previous
 	r.Name, r.Provider, r.Country = in.Name, in.Provider, in.Country
+	r.Tailscale = tailscaleMetadata(in.Tailscale)
 	r.Revision++
 	changed := in.Username != nil || in.Password != nil
 	if changed {
@@ -346,8 +352,14 @@ func normalizeInput(in Input, create bool) (Input, error) {
 	if in.Name == "" || len(in.Name) > 100 || strings.ContainsAny(in.Name, "\x00\r\n") {
 		return Input{}, invalid("name", "must be a display name of at most 100 bytes")
 	}
+	if in.Provider == "tailscale" {
+		return normalizeTailscaleInput(in, create)
+	}
 	if in.Provider != "nordvpn" {
-		return Input{}, invalid("provider", "only NordVPN is supported")
+		return Input{}, invalid("provider", "choose NordVPN or Tailscale")
+	}
+	if in.Tailscale != nil {
+		return Input{}, invalid("tailscale", "only valid for Tailscale connections")
 	}
 	country := ""
 	for _, c := range countries {

@@ -20,6 +20,22 @@ func (m *Manager) candidateInput(connectionID string, in Input) (Input, error) {
 	if err != nil {
 		return Input{}, errors.New("saved VPN credentials are unavailable")
 	}
+	if in.Provider == "tailscale" {
+		if in.Tailscale == nil {
+			return Input{}, invalid("tailscale", "configuration is required")
+		}
+		v := *in.Tailscale
+		if v.ClientSecret == nil {
+			b, e := os.ReadFile(files.Password)
+			if e != nil {
+				return Input{}, errors.New("saved Tailscale credentials unavailable")
+			}
+			secret := string(b)
+			v.ClientSecret = &secret
+		}
+		in.Tailscale = &v
+		return in, nil
+	}
 	for _, field := range []struct {
 		value **string
 		path  string
@@ -90,6 +106,7 @@ func (m *Manager) test(ctx context.Context, connectionID string, in Input) (resu
 		cleanup, stop := context.WithTimeout(context.Background(), 20*time.Second)
 		defer stop()
 		runtimeErr := manager.Remove(cleanup, id)
+
 		networkErr := manager.removeCandidateNetwork(cleanup, network, labels)
 		if runtimeErr != nil || networkErr != nil {
 			result = Status{}
@@ -116,6 +133,9 @@ func (m *Manager) test(ctx context.Context, connectionID string, in Input) (resu
 		case <-ctx.Done():
 			if errors.Is(ctx.Err(), context.Canceled) {
 				return Status{}, errors.New("VPN test canceled")
+			}
+			if connection.Provider == "tailscale" {
+				return Status{}, errors.New("Tailscale did not connect within two minutes; check OAuth scopes, tags, device approval and host internet access")
 			}
 			return Status{}, errors.New("VPN test did not establish verified egress within two minutes; check NordVPN service credentials (not account login), selected country/server availability and host internet access")
 		case <-ticker.C:
