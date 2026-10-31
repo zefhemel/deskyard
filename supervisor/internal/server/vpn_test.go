@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/zefhemel/deskyard/supervisor/internal/computers"
+	"fmt"
 	"github.com/zefhemel/deskyard/supervisor/internal/engine"
 	"github.com/zefhemel/deskyard/supervisor/internal/vpn"
 	"io"
@@ -189,6 +190,75 @@ func TestVPNFilesystemFailuresDoNotExposePrivateCauses(t *testing.T) {
 		response.Body.Close()
 		if response.StatusCode != 500 || strings.Contains(string(body), s.Layout.Data) || strings.Contains(string(body), "directory") || strings.Contains(string(body), "networks.json") {
 			t.Errorf("%s %s exposed private filesystem cause: %d %s", tc.method, tc.path, response.StatusCode, body)
+		}
+	}
+}
+
+type failedVPNTester struct{ err error }
+
+func (f failedVPNTester) Test(context.Context, vpn.Input) (vpn.Status, error) {
+	return vpn.Status{}, f.err
+}
+func (f failedVPNTester) TestSaved(context.Context, string, vpn.Input) (vpn.Status, error) {
+	return vpn.Status{}, f.err
+}
+func TestVPNJobsExposeOnlyAllowlistedProviderFailures(t *testing.T) {
+	s, ts := newTestServer(t)
+	admin := login(t, ts, "admin")
+	secret := "private-credential"
+	c, err := s.Environments.Networking.Connections.Create(vpn.Input{Name: "Tailnet", Provider: "tailscale", Tailscale: &vpn.TailscaleInput{Tailnet: "home", ClientID: "id", ClientSecret: &secret, Tags: []string{"tag:desk"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name       string
+		cause      error
+		actionable bool
+	}{
+		{"classified", fmt.Errorf("private-host-path and provider-password-secret: %w", vpn.ErrTailscaleTags), true},
+		{"unclassified", errors.New("provider-password-secret"), false},
+	} {
+		for _, route := range []struct{ method, path, body string }{
+			{"POST", "/api/vpn/test", `{"name":"test","provider":"tailscale"}`},
+			{"PUT", "/api/vpn/connections/" + c.ID, `{"name":"Tailnet","provider":"tailscale","expectedRevision":1,"affectedEnvironments":[]}`},
+		} {
+			t.Run(tc.name+route.method, func(t *testing.T) {
+				s.vpnTests = failedVPNTester{tc.cause}
+				req, _ := http.NewRequest(route.method, ts.URL+route.path, strings.NewReader(route.body))
+				req.Header.Set("Origin", ts.URL)
+				resp, err := admin.Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var accepted struct {
+					Job string `json:"job"`
+				}
+				json.NewDecoder(resp.Body).Decode(&accepted)
+				resp.Body.Close()
+				if resp.StatusCode != 202 {
+					t.Fatal("job not accepted", resp.StatusCode)
+				}
+				job := s.jobs.get(accepted.Job)
+				select {
+				case <-job.done:
+				case <-time.After(time.Second):
+					t.Fatal("job stalled")
+				}
+				state := job.get()
+				if state.Status != "failed" {
+					t.Fatal("expected failure", state.Status)
+				}
+				if tc.actionable && !strings.Contains(state.Error, "tailnet access policy") {
+					t.Fatalf("useful provider failure hidden: %s", state.Error)
+				}
+				if strings.Contains(state.Error, "provider-password-secret") || strings.Contains(state.Error, "private-host-path") {
+					t.Fatal("private cause exposed")
+				}
+				current, err := s.Environments.Networking.Connections.Get(c.ID)
+				if err != nil || current.Revision != 1 {
+					t.Fatal("failed validation changed saved revision")
+				}
+			})
 		}
 	}
 }

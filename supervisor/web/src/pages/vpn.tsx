@@ -234,7 +234,7 @@ function ConnectionDialog({
           <Field label="Tailnet name or ID" hint="Find this in Tailscale’s General settings."><input type="text" aria-label="Tailnet" value={form.tailnet} disabled={!!initial} onInput={e=>patch({tailnet:e.currentTarget.value})} /></Field>
           <Field label="OAuth client ID"><input type="text" aria-label="OAuth client ID" autocomplete="off" value={form.clientId} onInput={e=>patch({clientId:e.currentTarget.value})} /></Field>
           <Field label="OAuth client secret" hint={initial ? "Leave blank to keep the saved secret." : undefined}><input aria-label="OAuth client secret" type="password" autocomplete="new-password" value={form.clientSecret} onInput={e=>patch({clientSecret:e.currentTarget.value})} /></Field>
-          <Field label="Device tags" hint="Comma-separated tags permitted by your OAuth client."><input type="text" aria-label="Device tags" disabled={!!initial} value={form.tags} onInput={e=>patch({tags:e.currentTarget.value})} /></Field>
+          <Field label="Device tags" hint="Tags must exist in your tailnet access policy and be permitted by this OAuth client. Separate multiple tags with commas."><input type="text" aria-label="Device tags" disabled={!!initial} value={form.tags} onInput={e=>patch({tags:e.currentTarget.value})} /></Field>
           <Note>Create an OAuth client in Tailscale with auth_keys write and devices:core write permissions for your tags. Enable MagicDNS and HTTPS certificates, and allow Funnel for those tags to publish publicly. Each computer becomes a separate tag-owned device. <a href="https://tailscale.com/docs/features/oauth-clients" target="_blank" rel="noreferrer">Setup documentation</a></Note>
         </>}
         {preview?.computers.length ? (

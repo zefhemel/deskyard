@@ -65,10 +65,19 @@ func (c *tailscaleClient) request(req *http.Request, out any, allowGone bool) er
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		switch resp.StatusCode {
+		case http.StatusBadRequest:
+			var failure struct {
+				Message string `json:"message"`
+			}
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			if json.Unmarshal(body, &failure) == nil && strings.HasPrefix(failure.Message, "requested tags [") && strings.HasSuffix(failure.Message, "are invalid or not permitted") {
+				return ErrTailscaleTags
+			}
+			return errors.New("Tailscale API request failed")
 		case 401, 403:
-			return errors.New("Tailscale authorization failed; check OAuth scopes and device tags")
+			return ErrTailscaleAuthorization
 		case 429:
-			return errors.New("Tailscale API rate limit reached; retry later")
+			return ErrTailscaleRateLimit
 		default:
 			return errors.New("Tailscale API request failed")
 		}
