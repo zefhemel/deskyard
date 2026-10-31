@@ -1,3 +1,4 @@
+import { TailscaleServices } from "../../components/tailscale-services.tsx";
 import { VPNFields, VPNStatus } from "../../components/vpn.tsx";
 import { environmentSettingsChanged, saveEnvironmentSettings, exceptionRows, type ExceptionRow } from "../../lib/vpn-form.ts";
 import { useEffect, useRef, useState } from "preact/hooks";
@@ -113,6 +114,7 @@ export function SettingsTab({ environment: c }: { environment: Environment }) {
               <>
                 <div class="mb-4">
                   <VPNStatus vpn={c.vpn} />
+ {c.vpn.provider === "tailscale" && vpnID === c.settings.vpnConnectionId && <TailscaleServices computer={c} />}
                 </div>
                 {vpn.data ? (
                   <VPNFields connections={vpn.data.connections} value={vpnID} onChange={setVPNID} rows={lan} onRows={setLAN} />

@@ -25,6 +25,7 @@ type VPNRuntime interface {
 
 // VPNStatus contains only public configuration and centrally cached observations.
 type VPNStatus struct {
+	ServiceError string `json:"serviceError,omitempty"`
 	vpn.Status
 	ConnectionID    string `json:"connectionId,omitempty"`
 	Name            string `json:"name,omitempty"`
@@ -122,10 +123,23 @@ func (n *Networking) ValidateSettings(set Settings) (Settings, error) {
 		return set, err
 	}
 	set.LANExceptions = rules
+	services, e := vpn.NormalizeServiceRules(set.Services)
+	if e != nil {
+		return set, e
+	}
+	set.Services = services
 	if set.VPNConnectionID != "" {
-		if _, err = n.Connections.Get(set.VPNConnectionID); err != nil {
+		c, e := n.Connections.Get(set.VPNConnectionID)
+		err = e
+		if err == nil && len(set.Services) > 0 && c.Provider != "tailscale" {
+			return set, errors.New("HTTP services require a Tailscale connection")
+		}
+		if err != nil {
 			return set, err
 		}
+	}
+	if set.VPNConnectionID == "" && len(set.Services) > 0 {
+		return set, errors.New("HTTP services require a Tailscale connection")
 	}
 	return set, nil
 }
@@ -169,6 +183,7 @@ func (n *Networking) decorate(d Environment) Environment {
 	}
 	n.mu.Lock()
 	d.VPN.Status = n.statuses[d.Name]
+	d.VPN.ServiceError = r.ServiceError
 	n.mu.Unlock()
 	if !vpnSelected {
 		d.VPN.Status = vpn.Status{State: "disabled"}
@@ -194,7 +209,7 @@ func (n *Networking) decorate(d Environment) Environment {
 		}
 	} else if vpnSelected && !d.Container.Running() {
 		d.VPN.State = "stopped"
-		d.VPN.Idle = true
+		d.VPN.Idle = d.VPN.Provider != "tailscale"
 		d.VPN.CurrentExitIP = ""
 	} else if vpnSelected && r.AppliedRevision != d.Revision {
 		// Its definition is ahead of what was applied: never started on it.

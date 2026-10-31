@@ -21,11 +21,12 @@ import (
 )
 
 type settingsJSON struct {
-	VPNConnectionID *string         `json:"vpnConnectionId"`
-	LANExceptions   []vpn.Exception `json:"lanExceptions"`
-	MemoryBytes     int64           `json:"memoryBytes"`
-	NanoCPUs        int64           `json:"nanoCpus"`
-	DockerAccess    bool            `json:"dockerAccess"`
+	Services        []vpn.ServiceRule `json:"services"`
+	VPNConnectionID *string           `json:"vpnConnectionId"`
+	LANExceptions   []vpn.Exception   `json:"lanExceptions"`
+	MemoryBytes     int64             `json:"memoryBytes"`
+	NanoCPUs        int64             `json:"nanoCpus"`
+	DockerAccess    bool              `json:"dockerAccess"`
 	// Volumes is never null, like LANExceptions.
 	Volumes []environments.VolumeGrant `json:"volumes"`
 }
@@ -78,7 +79,7 @@ func (s *Server) environmentJSON(ctx context.Context, c environments.Environment
 		Revision: c.Revision, AppliedRevision: c.AppliedRevision, Power: c.Power, Error: c.Error, Conflict: c.Conflict,
 		ImageTitle: c.ImageLabels["org.opencontainers.image.title"], ImageVersion: c.ImageLabels["org.opencontainers.image.version"],
 		VPN:      c.VPN,
-		Settings: settingsJSON{MemoryBytes: c.Settings.MemoryBytes, NanoCPUs: c.Settings.NanoCPUs, LANExceptions: c.Settings.LANExceptions, DockerAccess: c.Settings.DockerAccess, Volumes: c.Settings.Volumes},
+		Settings: settingsJSON{Services: c.Settings.Services, MemoryBytes: c.Settings.MemoryBytes, NanoCPUs: c.Settings.NanoCPUs, LANExceptions: c.Settings.LANExceptions, DockerAccess: c.Settings.DockerAccess, Volumes: c.Settings.Volumes},
 		Level:    a.Level(c.Name),
 		Access:   []accessGrant{}, Viewers: s.conns.names(c.Name), Observers: s.conns.observers(c.Name),
 		Mics: s.conns.mics(c.Name), Forwards: s.forwards.list(c.Name), Agents: s.activity.Present(c.Name),
@@ -86,6 +87,9 @@ func (s *Server) environmentJSON(ctx context.Context, c environments.Environment
 	if c.Settings.VPNConnectionID != "" {
 		id := c.Settings.VPNConnectionID
 		j.Settings.VPNConnectionID = &id
+	}
+	if j.Settings.Services == nil {
+		j.Settings.Services = []vpn.ServiceRule{}
 	}
 	if j.Settings.LANExceptions == nil {
 		j.Settings.LANExceptions = []vpn.Exception{}
@@ -343,6 +347,9 @@ func (s *Server) handleUpdateEnvironment(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if req.VPNConnectionID.Set {
+		if set.VPNConnectionID != req.VPNConnectionID.ID {
+			set.Services = nil
+		}
 		set.VPNConnectionID = req.VPNConnectionID.ID
 	}
 	if req.LANExceptions != nil {

@@ -14,12 +14,13 @@ import (
 const HealthInterval = 5 * time.Second
 
 type Status struct {
-	State            string    `json:"state"`
-	Reason           string    `json:"reason,omitempty"`
-	ChangedAt        time.Time `json:"changedAt"`
-	CurrentExitIP    string    `json:"currentExitIp,omitempty"`
-	LastExitIP       string    `json:"lastExitIp,omitempty"`
-	ExitIPObservedAt time.Time `json:"exitIpObservedAt,omitempty"`
+	Tailscale        *TailscaleStatus `json:"tailscale,omitempty"`
+	State            string           `json:"state"`
+	Reason           string           `json:"reason,omitempty"`
+	ChangedAt        time.Time        `json:"changedAt"`
+	CurrentExitIP    string           `json:"currentExitIp,omitempty"`
+	LastExitIP       string           `json:"lastExitIp,omitempty"`
+	ExitIPObservedAt time.Time        `json:"exitIpObservedAt,omitempty"`
 }
 type observation struct {
 	Status
@@ -61,6 +62,12 @@ func (m *Manager) Status(ctx context.Context, environment string) (Status, error
 	cs, err := m.eng.List(checkCtx, m.runtimeLabels(environment))
 	if err != nil {
 		next.Reason = "VPN runtime discovery failed"
+	}
+	if err == nil && len(cs) == 1 && cs[0].Labels[labelProvider] == "tailscale" {
+		if !cs[0].Running() {
+			return Status{State: "stopped", Tailscale: &TailscaleStatus{}}, nil
+		}
+		return m.tailscaleStatus(checkCtx, environment, cs[0].ID, cs[0].Labels[LabelConnection])
 	}
 	if err == nil && len(cs) == 1 && cs[0].State == "running" {
 		verify, readErr := os.ReadFile(filepath.Join(m.directory(environment), "verify.sh"))

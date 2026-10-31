@@ -83,11 +83,14 @@ func (c *tailscaleClient) request(req *http.Request, out any, allowGone bool) er
 	return nil
 }
 func (c *tailscaleClient) EnrollKey(ctx context.Context, tags []string) (string, error) {
+	return c.enrollKey(ctx, tags, false)
+}
+func (c *tailscaleClient) enrollKey(ctx context.Context, tags []string, ephemeral bool) (string, error) {
 	token, err := c.token(ctx)
 	if err != nil {
 		return "", err
 	}
-	body, _ := json.Marshal(map[string]any{"expirySeconds": 600, "capabilities": map[string]any{"devices": map[string]any{"create": map[string]any{"reusable": false, "ephemeral": false, "preauthorized": true, "tags": tags}}}})
+	body, _ := json.Marshal(map[string]any{"expirySeconds": 600, "capabilities": map[string]any{"devices": map[string]any{"create": map[string]any{"reusable": false, "ephemeral": ephemeral, "preauthorized": true, "tags": tags}}}})
 	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/api/v2/tailnet/"+url.PathEscape(c.tailnet)+"/keys", bytes.NewReader(body))
 	if err != nil {
 		return "", errors.New("Tailscale enrollment request failed")

@@ -45,6 +45,7 @@ func (s *Server) routes() {
 	admin("PUT /api/vpn/connections/{id}", s.handleUpdateVPN)
 	admin("DELETE /api/vpn/connections/{id}", s.handleDeleteVPN)
 	admin("POST /api/vpn/test", s.handleTestVPN)
+	admin("PUT /api/environments/{name}/network/services", s.handleNetworkServices)
 	h("GET /api/environments", s.handleListEnvironments)
 	admin("POST /api/environments", s.handleCreateEnvironment)
 	admin("GET /api/validate-name", s.handleValidateName)

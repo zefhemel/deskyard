@@ -162,6 +162,20 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	vpnRuntime := vpn.NewManager(eng, vpnStore, layout.State).ForInstance(instance)
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			cleanup, cancel := context.WithTimeout(ctx, 20*time.Second)
+			vpnRuntime.RetryRetirements(cleanup)
+			cancel()
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
 	if err := comps.ConfigureNetworking(vpnStore, vpnRuntime, layout.State); err != nil {
 		return err
 	}

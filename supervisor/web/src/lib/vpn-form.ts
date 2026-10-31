@@ -1,6 +1,7 @@
 import type { EnvironmentVPNSettings, LANException, VPNInput, VPNStatus, VPNUpdate, VPNReference, Job, Settings, SettingsPatch, VolumeGrant } from "../api.ts";
 
 export interface ConnectionForm {
+ provider?: "nordvpn" | "tailscale"; tailnet?: string; clientId?: string; clientSecret?: string; tags?: string;
   name: string;
   country: string;
   username: string;
@@ -14,7 +15,13 @@ export interface ExceptionRow {
 
 export function connectionInput(form: ConnectionForm, editing: boolean): VPNInput {
   if (!form.name.trim()) throw new Error("Give this connection a name.");
-  if (!form.country) throw new Error("Choose a country.");
+  if (form.provider === "tailscale") {
+ const tags=(form.tags ?? "").split(",").map(x=>x.trim()).filter(Boolean);
+ if (!form.tailnet?.trim() || !form.clientId?.trim() || !tags.length || tags.some(t=>!/^tag:[a-zA-Z][a-zA-Z0-9-]{0,62}$/.test(t))) throw new Error("Enter the tailnet, OAuth client ID and device tags such as tag:deskyard.");
+ if (!editing && !form.clientSecret?.trim()) throw new Error("Enter the OAuth client secret.");
+ return {name:form.name.trim(),provider:"tailscale",country:"",tailscale:{tailnet:form.tailnet.trim(),clientId:form.clientId.trim(),tags:[...new Set(tags)].sort(),...(form.clientSecret?.trim() ? {clientSecret:form.clientSecret} : {})}};
+ }
+ if (!form.country) throw new Error("Choose a country.");
   if (!editing && (!form.username.trim() || !form.password.trim())) throw new Error("Enter both NordVPN service credentials.");
   return {
     name: form.name.trim(),
@@ -77,7 +84,8 @@ export function exceptionRows(rules: LANException[]): ExceptionRow[] {
 }
 
 export function vpnPresentation(vpn: VPNStatus) {
-  const directTransition = !vpn.connectionId && vpn.state === "blocked";
+  const tailscale = vpn.provider === "tailscale" || !!vpn.tailscale;
+ const directTransition = !vpn.connectionId && !tailscale && vpn.state === "blocked";
   const labels = {
     disabled: "No VPN",
     stopped: "VPN stopped",
@@ -88,7 +96,7 @@ export function vpnPresentation(vpn: VPNStatus) {
   };
   const detail = [
     vpn.reason,
-    vpn.idle ? "Idle: the gateway stays running and may use a provider connection." : undefined,
+    !tailscale && vpn.idle ? "Idle: the gateway stays running and may use a provider connection." : undefined,
     !directTransition && vpn.desiredRevision !== vpn.appliedRevision
       ? `Selected revision ${vpn.desiredRevision}; applied revision ${vpn.appliedRevision}. Retry start or restart to apply the selected connection.`
       : undefined,
@@ -97,16 +105,16 @@ export function vpnPresentation(vpn: VPNStatus) {
     .join(" ");
   const observed = vpn.exitIpObservedAt && !vpn.exitIpObservedAt.startsWith("0001-") && !Number.isNaN(Date.parse(vpn.exitIpObservedAt));
   return {
-    label: directTransition ? "Network transition interrupted" : vpn.state === "stopped" && vpn.idle ? "VPN idle" : labels[vpn.state],
-    notice: directTransition
+    label: tailscale ? `Tailscale ${vpn.state === "blocked" ? "needs attention" : vpn.state}` : directTransition ? "Network transition interrupted" : vpn.state === "stopped" && vpn.idle ? "VPN idle" : labels[vpn.state],
+    notice: tailscale ? "Tailnet access uses Tailscale; ordinary internet access continues through the host." : directTransition
       ? "The network transition has not finished. Recovery will retry your selected network settings."
       : ["blocked", "connecting", "reconnecting"].includes(vpn.state)
         ? "Internet access stays blocked until the VPN connects."
         : undefined,
     detail,
-    currentIP: vpn.state === "connected" ? vpn.currentExitIp : undefined,
+    currentIP: !tailscale && vpn.state === "connected" ? vpn.currentExitIp : undefined,
     history:
-      vpn.state !== "connected" && vpn.lastExitIp && observed
+      !tailscale && vpn.state !== "connected" && vpn.lastExitIp && observed
         ? `Last observed exit IP ${vpn.lastExitIp} at ${new Date(vpn.exitIpObservedAt).toLocaleString()}`
         : undefined,
   };

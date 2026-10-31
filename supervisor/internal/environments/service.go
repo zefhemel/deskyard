@@ -54,6 +54,7 @@ var (
 )
 
 type Settings struct {
+	Services        []vpn.ServiceRule
 	Image           string
 	MemoryBytes     int64 // 0: no limit
 	NanoCPUs        int64 // 0: no limit
@@ -412,7 +413,7 @@ func withSettings(def Definition, set Settings, image string) Definition {
 	next.Limits = Limits{MemoryBytes: set.MemoryBytes, NanoCPUs: set.NanoCPUs}
 	next.Network = Network{Kind: NetworkIsolated}
 	if set.VPNConnectionID != "" {
-		next.Network = Network{Kind: NetworkVPN, Connection: set.VPNConnectionID, LANExceptions: set.LANExceptions}
+		next.Network = Network{Kind: NetworkVPN, Connection: set.VPNConnectionID, LANExceptions: set.LANExceptions, Services: set.Services}
 	}
 	next.Volumes = set.Volumes
 	next.DockerAccess = set.DockerAccess
@@ -630,6 +631,15 @@ func (s *Service) createContainer(ctx context.Context, name string, revision uin
 		spec.Env["DESKYARD_DOCKER_ACCESS"] = "1"
 	}
 	if runtimeID != "" {
+		if mounts, ok := s.Networking.runtime.(interface {
+			DesktopMounts(string, string) ([]engine.Mount, error)
+		}); ok {
+			extra, e := mounts.DesktopMounts(name, set.VPNConnectionID)
+			if e != nil {
+				return e
+			}
+			spec.Mounts = append(spec.Mounts, extra...)
+		}
 		spec.NetworkContainer = runtimeID
 		spec.Network = ""
 		spec.Aliases = nil
