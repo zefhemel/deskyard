@@ -60,7 +60,11 @@ func (s *Server) handleListVPN(w http.ResponseWriter, r *http.Request) {
 	for _, c := range cs {
 		out = append(out, entry{c, s.Computers.Networking.References(c.ID)})
 	}
-	writeJSON(w, 200, map[string]any{"connections": out, "countries": vpn.Countries()})
+	pending := 0
+	if tracker, ok := s.vpnTests.(interface{ PendingRetirements() int }); ok {
+		pending = tracker.PendingRetirements()
+	}
+	writeJSON(w, 200, map[string]any{"connections": out, "countries": vpn.Countries(), "pendingDeviceRemovals": pending})
 }
 func (s *Server) handleCreateVPN(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(r)
@@ -124,7 +128,7 @@ func (s *Server) handleTestVPN(w http.ResponseWriter, r *http.Request) {
 			status, err = s.vpnTests.Test(ctx, req.Input)
 		}
 		if err != nil {
-			return nil, errors.New("VPN test failed; check service credentials, country/server availability and host internet access")
+			return nil, errors.New("Connection test failed; check provider credentials, permissions, device approval and host internet access")
 		}
 		return status, nil
 	})
@@ -159,7 +163,7 @@ func (s *Server) handleUpdateVPN(w http.ResponseWriter, r *http.Request) {
 	jobID := s.jobs.startCommittedResult(a.Username, func(ctx context.Context, progress func(string, float64), commit func(func() error) error) (any, error) {
 		progress("Validating candidate VPN connection", -1)
 		if _, err := s.vpnTests.TestSaved(ctx, id, req.Input); err != nil {
-			return nil, errors.New("VPN validation failed; saved connection is unchanged. Check service credentials, country/server availability and host internet access")
+			return nil, errors.New("Connection validation failed; saved connection is unchanged. Check provider credentials, permissions and host internet access")
 		}
 		if ctx.Err() != nil {
 			return nil, ctx.Err()

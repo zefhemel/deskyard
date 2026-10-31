@@ -2,6 +2,7 @@ package vpn
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -19,15 +20,17 @@ const SetupTimeout = 2 * time.Minute
 // name. The lifecycle caller holds its computer operation lock, stops/recreates namespace consumers, and never replaces a
 // live dependency merely because Ensure reports a conflicting configuration.
 type Manager struct {
-	eng          engine.Engine
-	store        *Store
-	stateDir     string
-	instance     string // labels and scopes its runtimes, when set
-	mu           sync.Mutex
-	observations map[string]*observation
-	locks        map[string]chan struct{}
-	reserved     []netip.Prefix
-	setupTimeout time.Duration
+	eng            engine.Engine
+	store          *Store
+	stateDir       string
+	instance       string // labels and scopes its runtimes, when set
+	mu             sync.Mutex
+	observations   map[string]*observation
+	locks          map[string]chan struct{}
+	reserved       []netip.Prefix
+	setupTimeout   time.Duration
+	candidate      bool
+	retirementRoot string
 }
 
 func NewManager(eng engine.Engine, store *Store, stateDir string) *Manager {
@@ -111,6 +114,9 @@ func (m *Manager) Ensure(ctx context.Context, computer, network, connectionID st
 			return engine.Container{}, ErrNotFound
 		}
 		return engine.Container{}, errors.New("VPN connection configuration is unavailable")
+	}
+	if connection.Provider == "tailscale" {
+		return m.ensureTailscale(ctx, environment, network, connection, exceptions)
 	}
 	credentials, err := m.store.SecretFiles(connectionID)
 	if err != nil {
@@ -243,6 +249,15 @@ func (m *Manager) Remove(ctx context.Context, computer string) error {
 		return errors.New("VPN runtime discovery failed")
 	}
 	for _, c := range cs {
+		if c.Labels[labelProvider] == "tailscale" && c.Running() {
+			b, e := m.tsCommand(ctx, c.ID, "status", "--json")
+			var v tailscaleDaemonStatus
+			if e == nil && json.Unmarshal(b, &v) == nil && v.Self.ID != "" {
+				if e = m.rememberTailscaleNode(environment, c.Labels[LabelConnection], v); e != nil {
+					return e
+				}
+			}
+		}
 		if err = m.eng.Remove(ctx, c.ID); err != nil && !errors.Is(err, engine.ErrNotFound) {
 			return errors.New("VPN runtime removal failed")
 		}

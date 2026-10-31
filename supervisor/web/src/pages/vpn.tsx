@@ -14,16 +14,17 @@ export function VPNPage() {
   const [removing, setRemoving] = useState<SavedVPNConnection | null>(null);
   return (
     <Page>
-      <PageHead title="VPN connections" sub="Reusable NordVPN settings; each computer has its own connection.">
+      <PageHead title="VPN connections" sub="Saved NordVPN and Tailscale settings; each computer has its own connection.">
         <Button variant="primary" disabled={!list.data} onClick={() => setEditing(null)}>
           Add connection
         </Button>
       </PageHead>
       <ErrorText error={list.error} />
+ {!!list.data?.pendingDeviceRemovals && <Note>{list.data.pendingDeviceRemovals} Tailscale device removal(s) are pending. Deskyard retries them automatically; check OAuth device permissions and connectivity if they persist.</Note>}
       {!list.data ? (
         <p class="text-muted">Loading…</p>
       ) : !list.data.connections.length ? (
-        <p class="text-muted">No saved connections yet. Add NordVPN service credentials and a country to get started.</p>
+        <p class="text-muted">No saved connections yet. Add a NordVPN or Tailscale connection to get started.</p>
       ) : (
         <div class="grid gap-3">
           {list.data.connections.map((c) => (
@@ -31,7 +32,7 @@ export function VPNPage() {
               <div class="mr-auto">
                 <h2 class="text-lg font-semibold">{c.name}</h2>
                 <p class="text-sm text-muted">
-                  NordVPN · {c.country} · Revision {c.revision}
+                  {c.provider === "tailscale" ? `Tailscale · ${c.tailscale?.tailnet}` : `NordVPN · ${c.country}`} · Revision {c.revision}
                 </p>
                 <p class="mt-1 text-sm">
                   {c.computers.length ? (
@@ -56,8 +57,7 @@ export function VPNPage() {
         </div>
       )}
       <p class="mt-5 max-w-[760px] text-sm text-muted">
-        Use NordVPN service credentials, which differ from your account login. A test uses a temporary connection and leaves computers unchanged. Stopped
-        computers may keep a provider connection in use.
+        Use NordVPN service credentials or a Tailscale OAuth client. A test uses a temporary device/connection and leaves computers unchanged. Tailscale sidecars stop with their computers.
       </p>
       {editing !== undefined && list.data && (
         <ConnectionDialog
@@ -86,7 +86,7 @@ function ConnectionDialog({
 }) {
   const [preview, setPreview] = useState(initial);
   // Secrets are write-only, including when reopening a saved connection.
-  const [form, setForm] = useState<ConnectionForm>({ name: initial?.name ?? "", country: initial?.country ?? "", username: "", password: "" });
+  const [form, setForm] = useState<ConnectionForm>({ name: initial?.name ?? "", country: initial?.country ?? "", username: "", password: "", provider:initial?.provider ?? "nordvpn", tailnet:initial?.tailscale?.tailnet ?? "",clientId:initial?.tailscale?.clientId ?? "",clientSecret:"",tags:initial?.tailscale?.tags.join(", ") ?? "tag:deskyard" });
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [jobID, setJobID] = useState<string | null>(null);
@@ -194,8 +194,9 @@ function ConnectionDialog({
           <input type="text" id="vpn-name" value={form.name} required onInput={(e) => patch({ name: e.currentTarget.value })} />
         </Field>
         <Field label="Provider">
-          <p class="text-sm">NordVPN</p>
+          <select aria-label="Provider" value={form.provider} disabled={!!initial} onChange={e=>patch({provider:e.currentTarget.value as "nordvpn" | "tailscale"})}><option value="nordvpn">NordVPN</option><option value="tailscale">Tailscale</option></select>
         </Field>
+        {form.provider !== "tailscale" ? <>
         <Field label="Country" htmlFor="vpn-country">
           <select id="vpn-country" value={form.country} required onChange={(e) => patch({ country: e.currentTarget.value })}>
             <option value="">Choose a country</option>
@@ -229,6 +230,13 @@ function ConnectionDialog({
             onInput={(e) => patch({ password: e.currentTarget.value })}
           />
         </Field>
+        </> : <>
+          <Field label="Tailnet name or ID" hint="Find this in Tailscale’s General settings."><input aria-label="Tailnet" value={form.tailnet} disabled={!!initial} onInput={e=>patch({tailnet:e.currentTarget.value})} /></Field>
+          <Field label="OAuth client ID"><input aria-label="OAuth client ID" autocomplete="off" value={form.clientId} onInput={e=>patch({clientId:e.currentTarget.value})} /></Field>
+          <Field label="OAuth client secret" hint={initial ? "Leave blank to keep the saved secret." : undefined}><input aria-label="OAuth client secret" type="password" autocomplete="new-password" value={form.clientSecret} onInput={e=>patch({clientSecret:e.currentTarget.value})} /></Field>
+          <Field label="Device tags" hint="Comma-separated tags permitted by your OAuth client."><input aria-label="Device tags" disabled={!!initial} value={form.tags} onInput={e=>patch({tags:e.currentTarget.value})} /></Field>
+          <Note>Create an OAuth client in Tailscale with auth_keys write and devices:core write permissions for your tags. Enable MagicDNS and HTTPS certificates, and allow Funnel for those tags to publish publicly. Each computer becomes a separate tag-owned device. <a href="https://tailscale.com/docs/features/oauth-clients" target="_blank" rel="noreferrer">Setup documentation</a></Note>
+        </>}
         {preview?.computers.length ? (
           <Note>
             <p class="mb-2">

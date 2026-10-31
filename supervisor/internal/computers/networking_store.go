@@ -15,7 +15,8 @@ import (
 // VPN, and those still leaving one. It holds no settings; the definition does.
 // It is never serialized by an API.
 type networkTransition struct {
-	Name string `json:"name"`
+	ServiceError string `json:"serviceError,omitempty"`
+	Name         string `json:"name"`
 	// ConnectionRevision is the VPN connection revision being applied, and
 	// AppliedConnectionRevision the one the runtime was last built from.
 	ConnectionRevision        uint64 `json:"connectionRevision"`

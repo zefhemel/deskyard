@@ -57,9 +57,10 @@ type VolumeGrant struct {
 }
 
 type Network struct {
-	Kind          string          `json:"kind"`
-	Connection    string          `json:"connection,omitempty"` // a saved VPN connection's ID, for kind vpn
-	LANExceptions []vpn.Exception `json:"lanExceptions,omitempty"`
+	Services      []vpn.ServiceRule `json:"services,omitempty"`
+	Kind          string            `json:"kind"`
+	Connection    string            `json:"connection,omitempty"` // a saved VPN connection's ID, for kind vpn
+	LANExceptions []vpn.Exception   `json:"lanExceptions,omitempty"`
 }
 
 // Definition is a computer's desired configuration, kept in
@@ -90,6 +91,7 @@ func (d Definition) Settings() Settings {
 		NanoCPUs:        d.Limits.NanoCPUs,
 		VPNConnectionID: d.Network.Connection,
 		LANExceptions:   d.Network.LANExceptions,
+		Services:        d.Network.Services,
 		Volumes:         d.Volumes,
 		DockerAccess:    d.DockerAccess,
 	})
@@ -113,6 +115,7 @@ func sameNetwork(a, b Network) bool {
 }
 
 func cloneSettings(s Settings) Settings {
+	s.Services = slices.Clone(s.Services)
 	s.Volumes = slices.Clone(s.Volumes)
 	s.LANExceptions = slices.Clone(s.LANExceptions)
 	for i := range s.LANExceptions {
@@ -122,8 +125,9 @@ func cloneSettings(s Settings) Settings {
 }
 
 func (d Definition) clone() Definition {
-	s := cloneSettings(Settings{Volumes: d.Volumes, LANExceptions: d.Network.LANExceptions})
+	s := cloneSettings(Settings{Volumes: d.Volumes, LANExceptions: d.Network.LANExceptions, Services: d.Network.Services})
 	d.Volumes, d.Network.LANExceptions = withGrantPaths(s.Volumes), s.LANExceptions
+	d.Network.Services = s.Services
 	return d
 }
 
@@ -145,7 +149,7 @@ func (d Definition) validate() error {
 	}
 	switch d.Network.Kind {
 	case NetworkIsolated:
-		if d.Network.Connection != "" || len(d.Network.LANExceptions) > 0 {
+		if d.Network.Connection != "" || len(d.Network.LANExceptions) > 0 || len(d.Network.Services) > 0 {
 			return errors.New("an isolated network has no VPN connection or LAN exceptions")
 		}
 	case NetworkVPN:
@@ -157,6 +161,9 @@ func (d Definition) validate() error {
 		}
 	default:
 		return fmt.Errorf("unknown network kind %q", d.Network.Kind)
+	}
+	if _, err := vpn.NormalizeServiceRules(d.Network.Services); err != nil {
+		return err
 	}
 	return ValidateVolumeGrants(d.Volumes)
 }

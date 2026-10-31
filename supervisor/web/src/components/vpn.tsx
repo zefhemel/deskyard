@@ -23,6 +23,9 @@ export function VPNStatus({ vpn, compact = false }: { vpn: VPNState | undefined;
           {view.currentIP && <p class="mt-1 text-muted">Current exit IP {view.currentIP}</p>}
           {view.history && <p class="mt-1 text-muted">{view.history}</p>}
           {view.detail && <p class="mt-1 text-muted">{view.detail}</p>}
+ {vpn.tailscale?.dnsName && <p class="mt-1 text-muted">{vpn.tailscale.dnsName} · {vpn.tailscale.addresses?.join(", ")}</p>}
+ {vpn.serviceError && <p class="mt-1 text-danger">HTTP services: {vpn.serviceError}</p>}
+ {vpn.tailscale?.services?.map((service)=> <p key={service.listenPort} class="mt-1 text-sm">{service.label || `Port ${service.localPort}`} · {service.audience === "public" ? "Public Funnel" : "Private Serve"} · {service.state}{service.url && <> · <a href={service.url} target="_blank" rel="noreferrer">{service.url}</a></>}{service.reason && <> · {service.reason}</>}</p>)}
           {view.notice && <p class="mt-1 text-muted">{view.notice}</p>}
         </>
       )}
@@ -52,7 +55,7 @@ export function VPNFields({
         htmlFor="computer-vpn"
         hint={
           selected
-            ? `NordVPN · ${selected.country}. Internet access stays blocked if the VPN is unavailable.`
+            ? selected.provider === "tailscale" ? "Tailscale connects this computer to your tailnet. Internet access continues through the host." : `NordVPN · ${selected.country}. Internet access stays blocked if the VPN is unavailable.`
             : value
               ? "The saved selection is unavailable. Refresh or choose another connection."
               : "No VPN uses direct internet access."
@@ -63,7 +66,7 @@ export function VPNFields({
           {value && !selected && <option value={value}>Selected connection unavailable</option>}
           {connections.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.name} · {c.country}
+              {c.name} · {c.provider === "tailscale" ? "Tailscale" : c.country}
             </option>
           ))}
         </select>

@@ -230,8 +230,8 @@ func (s *Store) Update(id string, in Input) (Connection, error) {
 		return Connection{}, ErrConflict
 	}
 	previous := rs[i]
-	if previous.Provider != in.Provider || (previous.Tailscale != nil && (in.Tailscale == nil || previous.Tailscale.Tailnet != in.Tailscale.Tailnet)) {
-		return Connection{}, invalid("provider", "create a separate connection to change provider or tailnet")
+	if previous.Provider != in.Provider || (previous.Tailscale != nil && (in.Tailscale == nil || (previous.Tailscale.Tailnet != in.Tailscale.Tailnet || !slices.Equal(previous.Tailscale.Tags, in.Tailscale.Tags)))) {
+		return Connection{}, invalid("provider", "create a separate connection to change provider, tailnet or device tags")
 	}
 	r := previous
 	r.Name, r.Provider, r.Country = in.Name, in.Provider, in.Country

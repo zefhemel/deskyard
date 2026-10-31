@@ -107,6 +107,9 @@ func (n *Networking) recover(ctx context.Context, r networkTransition, retry boo
 					return false, n.fail(r, phaseStop)
 				}
 			}
+			if err := n.stopTailscale(ctx, r.Name); err != nil {
+				return false, err
+			}
 			return false, nil
 		}
 		if !replace && !retry && !c.Running() && !n.mayAutoStart(r.Name) {
@@ -289,6 +292,7 @@ func (n *Networking) Poll(ctx context.Context, changed func(string)) {
 				_, _ = n.recover(repair, r, false)
 				cancelRepair()
 			} else {
+				_ = n.syncServices(check, def)
 				status, err := n.runtime.Status(check, name)
 				if err != nil {
 					status = vpn.Status{State: "blocked", Reason: "VPN status unavailable"}

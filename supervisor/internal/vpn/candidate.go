@@ -96,6 +96,8 @@ func (m *Manager) test(ctx context.Context, connectionID string, in Input) (resu
 	// The test runtime and network carry this supervisor's instance label,
 	// as every managed resource does.
 	manager := NewManager(m.eng, candidateStore, dir).ForInstance(m.instance)
+	manager.candidate = true
+	manager.retirementRoot = m.retirementQueue()
 	labels := map[string]string{LabelRole: "test", LabelComputer: id, labelAttempt: id}
 	if m.instance != "" {
 		labels[LabelInstance] = m.instance
@@ -106,6 +108,9 @@ func (m *Manager) test(ctx context.Context, connectionID string, in Input) (resu
 		cleanup, stop := context.WithTimeout(context.Background(), 20*time.Second)
 		defer stop()
 		runtimeErr := manager.Remove(cleanup, id)
+		if connection.Provider == "tailscale" {
+			runtimeErr = errors.Join(runtimeErr, manager.Retire(cleanup, id, connection.ID))
+		}
 
 		networkErr := manager.removeCandidateNetwork(cleanup, network, labels)
 		if runtimeErr != nil || networkErr != nil {

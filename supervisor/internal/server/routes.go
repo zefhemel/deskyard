@@ -62,6 +62,7 @@ func (s *Server) routes() {
 	h("PUT /api/computers/{name}/access", s.handleSetAccess)
 	h("GET /api/computers/{name}/shares", s.handleListShares)
 	h("POST /api/computers/{name}/shares", s.handleCreateShare)
+	h("PUT /api/computers/{name}/network/services", s.handleNetworkServices)
 	h("POST /api/shares/{username}/link", s.handleShareLink)
 	h("DELETE /api/shares/{username}", s.handleRevokeShare)
 	h("GET /api/computers/{name}/screen.png", s.handleScreen)

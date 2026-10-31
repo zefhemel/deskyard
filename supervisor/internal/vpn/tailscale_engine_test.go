@@ -31,6 +31,11 @@ func TestTailscaleKernelEngine(t *testing.T) {
  iptables -C DESKYARD_CONTRACT -i tailscale0 -p tcp --dport 8080 -j DROP
  tailscale --socket=/tmp/tailscaled.sock serve status --json
  `)
+	policy, policyErr := tailscalePolicy(nil, nil)
+	if policyErr != nil {
+		t.Fatal(policyErr)
+	}
+	cmd.Args[len(cmd.Args)-1] = policy + "\n" + cmd.Args[len(cmd.Args)-1]
 	t.Cleanup(func() {
 		out, err := exec.Command("docker", "rm", "-f", name).CombinedOutput()
 		if err != nil {

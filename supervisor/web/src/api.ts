@@ -72,23 +72,29 @@ export interface VolumeUsage {
 }
 
 export interface VPNReference { id: string; name: string }
+export interface TailscaleConnection { tailnet: string; clientId: string; tags: string[] }
+export interface ServiceRule { label?: string; localPort: number; listenPort: number; audience: "private" | "public" }
+export interface ServiceStatus extends ServiceRule { url?: string; state: "pending" | "applied" | "error"; reason?: string }
+export interface TailscaleStatus { backendState: string; nodeId?: string; dnsName?: string; addresses?: string[]; services?: ServiceStatus[] }
 export interface VPNConnection {
-  id: string; name: string; provider: "nordvpn"; country: string;
+ tailscale?: TailscaleConnection;
+  id: string; name: string; provider: "nordvpn" | "tailscale"; country: string;
   revision: number; credentialsConfigured: boolean;
 }
-/** A computer using a connection; its id is its name. */
+/** An environment using a connection; its id is its name. */
 export interface SavedVPNConnection extends VPNConnection { computers: VPNReference[] }
-export interface VPNInput { name: string; provider: "nordvpn"; country: string; username?: string; password?: string }
+export interface VPNInput { name: string; provider: "nordvpn" | "tailscale"; country: string; username?: string; password?: string; tailscale?: TailscaleConnection & { clientSecret?: string } }
 export interface VPNUpdate extends VPNInput { expectedRevision: number; affectedComputers: string[]; confirmRestart: boolean }
 export interface LANException { destination: string; protocol: "tcp" | "udp"; ports: {start: number; end: number}[] }
 export interface VPNStatus {
+ tailscale?: TailscaleStatus; serviceError?: string;
   state: "disabled" | "stopped" | "connecting" | "connected" | "reconnecting" | "blocked";
   reason?: string; changedAt: string; currentExitIp?: string; lastExitIp?: string; exitIpObservedAt: string;
-  connectionId?: string; name?: string; provider?: "nordvpn"; country?: string;
+  connectionId?: string; name?: string; provider?: "nordvpn" | "tailscale"; country?: string;
   desiredRevision: number; appliedRevision: number; idle: boolean;
 }
 export interface VPNRollout { connection: VPNConnection; computers: (VPNReference & {error?: string})[] }
-export interface ComputerVPNSettings { vpnConnectionId: string | null; lanExceptions: LANException[] }
+export interface ComputerVPNSettings { services?: ServiceRule[]; vpnConnectionId: string | null; lanExceptions: LANException[] }
 export interface SettingsPatch extends Partial<ComputerVPNSettings> {
   image?: string; memoryBytes?: number; nanoCpus?: number; dockerAccess?: boolean; volumes?: VolumeGrant[];
 }
@@ -651,7 +657,8 @@ export const api = {
     return `${c(name)}/screen.png${qs ? `?${qs}` : ""}`;
   },
 
-  vpnConnections: () => request<{connections: SavedVPNConnection[]; countries: string[]}>("GET", "/api/vpn/connections"),
+  updateNetworkServices: (name: string, services: ServiceRule[]) => request<JobRef>("PUT", `/api/computers/${enc(name)}/network/services`, {services}),
+  vpnConnections: () => request<{connections: SavedVPNConnection[]; countries: string[]; pendingDeviceRemovals?: number}>("GET", "/api/vpn/connections"),
   createVPN: (body: VPNInput) => request<VPNConnection>("POST", "/api/vpn/connections", body),
   updateVPN: (id: string, body: VPNUpdate) => request<JobRef>("PUT", `/api/vpn/connections/${enc(id)}`, body),
   deleteVPN: (id: string) => request<void>("DELETE", `/api/vpn/connections/${enc(id)}`),

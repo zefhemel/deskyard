@@ -218,11 +218,22 @@ func (n *Networking) apply(ctx context.Context, r networkTransition, progress fu
 	if !ok {
 		return n.fail(r, phaseDefinition)
 	}
+	if err := n.retireOther(ctx, r.Name, def.Network.Connection); err != nil {
+		return n.failWith(r, phaseRuntimeRemove, "Tailscale identity retirement requires recovery")
+	}
 	r.ConnectionRevision = 0
 	if def.Network.Kind == NetworkVPN {
 		c, err := n.Connections.Get(def.Network.Connection)
 		if err != nil {
 			return n.fail(r, phaseConnection)
+		}
+		if c.Provider == "tailscale" && def.Power == PowerStopped {
+			r.AppliedRevision = def.Revision
+			r.ConnectionRevision = c.Revision
+			r.AppliedConnectionRevision = c.Revision
+			r.Pending = false
+			r.Error = ""
+			return n.saveRecord(r)
 		}
 		g, err := n.runtime.Ensure(ctx, r.Name, containerName(r.Name), c.ID, def.Network.LANExceptions)
 		if err != nil {
@@ -281,6 +292,7 @@ func (n *Networking) apply(ctx context.Context, r networkTransition, progress fu
 		}
 	}
 	s.setError(r.Name, "")
+	_ = n.syncServices(ctx, def)
 	return nil
 }
 
@@ -342,6 +354,9 @@ func (n *Networking) power(ctx context.Context, name, action string) error {
 			if err := n.service.Eng.Stop(ctx, c.ID, stopTimeout); err != nil {
 				return errors.New("could not stop computer")
 			}
+			if err := n.stopTailscale(ctx, name); err != nil {
+				return err
+			}
 			n.setStatus(name, vpn.Status{State: "stopped", ChangedAt: time.Now().UTC()})
 			return nil
 		} else if errors.Is(e, engine.ErrNotFound) {
@@ -402,6 +417,9 @@ func (n *Networking) finishRemove(ctx context.Context, r networkTransition) erro
 	delete(n.gateways, r.Name)
 	delete(n.starts, r.Name)
 	n.mu.Unlock()
+	if err := n.retireOther(ctx, r.Name, ""); err != nil {
+		return errors.New("Tailscale identity retirement requires recovery")
+	}
 	if err := s.removeNetwork(ctx, r.Name); errors.Is(err, ErrConflict) {
 		s.Log.Warn("leaving a network that isn't this computer's", "computer", r.Name, "err", err)
 	} else if err != nil && !errors.Is(err, engine.ErrNotFound) {

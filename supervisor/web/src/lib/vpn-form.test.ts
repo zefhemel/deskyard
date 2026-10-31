@@ -206,3 +206,15 @@ test("Docker permission-only changes save once and can be revoked", async () => 
   assert.equal(await saveComputerSettings(updated, draft, async (body) => body), null);
   assert.deepEqual(await saveComputerSettings(updated, { ...draft, dockerAccess: false }, async (body) => body), { dockerAccess: false });
 });
+
+test("Tailscale setup omits blank saved OAuth secrets and never includes NordVPN fields", () => {
+ const f = {name:"Home",provider:"tailscale" as const,country:"",username:"",password:"",tailnet:"home.ts.net",clientId:"id",clientSecret:"",tags:"tag:deskyard"};
+ assert.deepEqual(connectionInput(f,true),{name:"Home",provider:"tailscale",country:"",tailscale:{tailnet:"home.ts.net",clientId:"id",tags:["tag:deskyard"]}});
+ assert.throws(()=>connectionInput(f,false),/OAuth/);
+});
+test("Tailscale outage describes host internet without a NordVPN kill-switch notice", () => {
+ const view = vpnPresentation({state:"blocked",provider:"tailscale",reason:"Authentication required",changedAt:"",exitIpObservedAt:"",desiredRevision:1,appliedRevision:1,idle:false});
+ assert.equal(view.currentIP,undefined);
+ assert.doesNotMatch(view.notice ?? "",/stays blocked/);
+ assert.match(view.notice ?? "",/host/);
+});
