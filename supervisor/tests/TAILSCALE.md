@@ -28,7 +28,9 @@ using No VPN, with sample content at `/workspace/demo`.
    appropriately in the tailnet policy. Enable MagicDNS and HTTPS certificates.
 2. In the trial's **Networking**, add **Tailscale**, enter the tailnet name/ID,
    client ID/secret and permitted tag. Test/save it. The test device is ephemeral;
-   a connection-test success does not certify Funnel permissions.
+   a connection-test success does not certify Funnel permissions. If Tailscale
+   rejects the device tags, define the tag in `tagOwners` and permit that tag for
+   the OAuth client before retrying.
 3. Open **ts-trial → Settings → Networking**, choose the saved connection and
    save. Confirm `ts-trial` appears as its own device in Tailscale (approve it if
    required). In its terminal run:

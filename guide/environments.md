@@ -62,6 +62,14 @@ Each enabled environment adds one long-lived gateway container with its own CPU/
 
 Choose **Tailscale** as the provider when adding a saved connection under **Networking** (`/_vpn`). Create an OAuth client in the [Tailscale admin console](https://login.tailscale.com/admin/settings/oauth) with **auth_keys write** and **devices:core write** permissions restricted to the device tags you will use, for example `tag:deskyard`. Enter the tailnet name or ID, client ID, client secret and tags in Deskyard. Blank secret fields retain the saved value. Provider, tailnet and tags are fixed for a saved connection; use a separate connection to change them. A test enrolls a disposable ephemeral device and requests its deletion afterward.
 
+If the connection test reports that device tags are invalid or not permitted, ensure the chosen tag exists in the tailnet's access policy and is included in the OAuth client's allowed tags (or owned by a tag that client can use). For example, merge this entry into the existing policy's `tagOwners` object:
+
+```json
+"tag:deskyard": ["autogroup:admin"]
+```
+
+Then create or select an OAuth client permitted to issue auth keys for that tag, and use exactly that tag in Deskyard. A valid client ID/secret alone does not authorize arbitrary tags. See [Tailscale's OAuth tag requirements](https://tailscale.com/docs/features/oauth-clients#generating-long-lived-auth-keys).
+
 Each computer chooses No VPN, NordVPN or Tailscale, with one provider at a time. A Tailscale computer has its own tag-owned device identity and DNS name. Its apps can connect to permitted tailnet peers normally, without an application proxy. Ordinary internet traffic goes through the host: there is no exit-node setting or NordVPN-style internet kill switch. Direct LAN access still needs an explicit destination/transport/port exception. MagicDNS uses Tailscale's resolver with a public fallback when the node cannot resolve; custom DNS policy is not provided.
 
 The managed sidecar receives networking privileges; the desktop does not. Node state survives stop/start, sidecar replacement and desktop image upgrades. Stopping a Tailscale computer stops its sidecar. Switching to another connection or No VPN, or deleting the computer, retires the old Tailscale device; switching back enrolls a new one. If remote deletion fails, Deskyard retains a private cleanup request and retries it. Networking shows the count of pending device removals. Preserve the entire data folder, including `secret/tailscale`, when backing up or moving the supervisor; copying only a workspace does not preserve a device identity.

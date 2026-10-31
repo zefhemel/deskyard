@@ -59,7 +59,7 @@ func TestTailscaleClientEnrollment(t *testing.T) {
 	}
 }
 func TestTailscaleClientSanitizesFailures(t *testing.T) {
-	for _, status := range []int{401, 403, 429, 500} {
+	for _, status := range []int{400, 401, 403, 429, 500} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(status)
@@ -72,5 +72,25 @@ func TestTailscaleClientSanitizesFailures(t *testing.T) {
 				t.Fatal("unsafe API error", err)
 			}
 		})
+	}
+}
+
+func TestTailscaleClientExplainsRejectedDeviceTags(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v2/oauth/token" {
+			w.Write([]byte(`{"access_token":"access"}`))
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"message":"requested tags [tag:deskyard] are invalid or not permitted"}`))
+	}))
+	defer server.Close()
+	c := tailscaleClient{baseURL: server.URL, clientID: "id", secret: "private", tailnet: "home", http: server.Client()}
+	_, err := c.EnrollKey(context.Background(), []string{"tag:deskyard"})
+	if err == nil {
+		t.Fatal("rejected tags accepted")
+	}
+	if !strings.Contains(err.Error(), "tailnet access policy") || !strings.Contains(err.Error(), "OAuth client") {
+		t.Fatalf("tag rejection is not actionable: %v", err)
 	}
 }
