@@ -30,6 +30,7 @@ button keeps the tab bar and current view together.
   server.
 - **Persistent installs**: `/workspace` is a plain folder on the host. Tools
   installed with mise, npm, uv or Flatpak survive restarts and image upgrades.
+- **Networking**: choose NordVPN outbound protection or a separate Tailscale device per computer, with private Serve and public Funnel for HTTP apps. See [networking setup](guide/computers.md#tailscale).
 - **Volumes and backups**: folders shared between computers, and encrypted
   restic backups to S3, B2, SFTP or WebDAV storage.
 
