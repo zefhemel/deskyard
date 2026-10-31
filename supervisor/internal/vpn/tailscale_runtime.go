@@ -110,6 +110,11 @@ func (m *Manager) ensureTailscale(ctx context.Context, name, network string, c C
 	if err = os.MkdirAll(nodeDir, 0700); err != nil {
 		return engine.Container{}, errors.New("Tailscale node storage unavailable")
 	}
+	if _, e := os.Stat(filepath.Join(nodeDir, "identity.json")); errors.Is(e, os.ErrNotExist) {
+		if store.WriteJSON(filepath.Join(nodeDir, "identity.json"), saved) != nil {
+			return engine.Container{}, errors.New("Tailscale node identity could not be initialized")
+		}
+	}
 	if err = os.MkdirAll(m.directory(name), 0700); err != nil {
 		return engine.Container{}, errors.New("Tailscale runtime storage unavailable")
 	}
@@ -134,6 +139,9 @@ func (m *Manager) ensureTailscale(ctx context.Context, name, network string, c C
 		}
 		id = cs[0].ID
 		if !cs[0].Running() {
+			if err = m.withdrawSavedServe(ctx, nodeDir); err != nil {
+				return engine.Container{}, err
+			}
 			if err = m.eng.Start(ctx, id); err != nil {
 				return engine.Container{}, errors.New("Tailscale runtime start failed")
 			}
@@ -150,6 +158,9 @@ func (m *Manager) ensureTailscale(ctx context.Context, name, network string, c C
 			return engine.Container{}, errors.New("Tailscale runtime identity unavailable")
 		}
 		spec.Labels[labelAttempt] = attempt
+		if err = m.withdrawSavedServe(ctx, nodeDir); err != nil {
+			return engine.Container{}, err
+		}
 		id, err = m.eng.Create(ctx, spec)
 		if err != nil {
 			cleanup, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -203,6 +214,10 @@ func (m *Manager) ensureTailscale(ctx context.Context, name, network string, c C
 		}
 		if len(hostname) > 63 {
 			hostname = hostname[:63]
+		}
+		identity.EnrollmentStarted = true
+		if store.WriteJSON(filepath.Join(nodeDir, "identity.json"), identity) != nil {
+			return engine.Container{}, errors.New("Tailscale enrollment intent could not be saved")
 		}
 		_, _ = m.tsCommand(ctx, id, "up", "--auth-key=file:/run/deskyard/enroll.key", "--hostname="+hostname, "--advertise-tags="+strings.Join(c.Tailscale.Tags, ","), "--accept-dns=false", "--accept-routes=false", "--netfilter-mode=off", "--ssh=false", "--timeout=10s")
 		b, e := m.tsCommand(ctx, id, "status", "--json")
@@ -284,6 +299,38 @@ func (m *Manager) Stop(ctx context.Context, name string) error {
 			if err = m.eng.Stop(ctx, c.ID, 10*time.Second); err != nil {
 				return errors.New("VPN runtime stop failed")
 			}
+		}
+	}
+	return nil
+}
+
+// Call only while no daemon has this state open. Serve configuration is a
+// separate Tailscale state-store key, so withdrawing it preserves node keys.
+// Removing persisted exposure before daemon start prevents stale Funnel rules
+// becoming active before the coordinator applies current desired intent.
+func discardSavedServe(dir string) error {
+	path := filepath.Join(dir, "tailscaled.state")
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return errors.New("Tailscale persisted state unavailable")
+	}
+	var values map[string]json.RawMessage
+	if json.Unmarshal(b, &values) != nil {
+		return errors.New("Tailscale persisted state is invalid")
+	}
+	changed := false
+	for key := range values {
+		if strings.HasPrefix(key, "_serve/") {
+			delete(values, key)
+			changed = true
+		}
+	}
+	if changed {
+		if store.WriteJSON(path, values) != nil {
+			return errors.New("Tailscale persisted exposure could not be withdrawn")
 		}
 	}
 	return nil

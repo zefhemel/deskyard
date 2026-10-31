@@ -85,3 +85,19 @@ func (n *Networking) retireOther(ctx context.Context, name, keep string) error {
 	}
 	return nil
 }
+
+// Reconcile exposure before any app process can listen in this namespace.
+// Missing publication prerequisites do not prevent normal desktop use once
+// old exposure is confirmed withdrawn; a stopped unsafe sidecar does.
+func (n *Networking) prepareTailscaleServices(ctx context.Context, def Definition, runtimeID string) error {
+	c, err := n.Connections.Get(def.Network.Connection)
+	if err != nil || c.Provider != "tailscale" {
+		return nil
+	}
+	_ = n.syncServices(ctx, def)
+	g, err := n.service.Eng.Inspect(ctx, runtimeID)
+	if err != nil || !g.Running() {
+		return errors.New("Tailscale sidecar is not safe to start the computer; retry network recovery")
+	}
+	return nil
+}

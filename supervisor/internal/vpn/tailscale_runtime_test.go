@@ -92,3 +92,69 @@ func TestTailscaleRetirementRecovery(t *testing.T) {
 }
 
 var _ engine.Engine = (*runtimeEngine)(nil)
+
+func TestTailscaleUnknownIdentityIsQuarantinedForRetirement(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewStore(filepath.Join(dir, "networks.json"), filepath.Join(dir, "secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret := "private"
+	c, err := s.Create(Input{Name: "TS", Provider: "tailscale", Tailscale: &TailscaleInput{Tailnet: "home", ClientID: "id", ClientSecret: &secret, Tags: []string{"tag:desk"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := NewManager(&runtimeEngine{}, s, filepath.Join(dir, "state"))
+	node := m.tailscaleNodeDir("alice", c.ID)
+	os.MkdirAll(node, 0700)
+	os.WriteFile(filepath.Join(node, "tailscaled.state"), []byte("unrecorded-device-state"), 0600)
+	refs, err := m.RetainedReferences(context.Background(), c.ID)
+	if err != nil || len(refs) != 1 || refs[0] != "alice" {
+		t.Fatal("retained node not referenced", refs, err)
+	}
+	if err = m.Retire(context.Background(), "alice", c.ID); err != nil {
+		t.Fatal("local retirement blocked by missing observed ID:", err)
+	}
+	if _, err = os.Stat(node); !os.IsNotExist(err) {
+		t.Fatal("old state can be reused by fresh enrollment")
+	}
+	entries, err := os.ReadDir(m.retirementQueue())
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".json") {
+			b, _ := os.ReadFile(filepath.Join(m.retirementQueue(), entry.Name()))
+			var record tailscaleRetirement
+			if json.Unmarshal(b, &record) != nil || !record.Discover {
+				t.Fatal("unknown node lost discovery intent")
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("no durable retirement record")
+	}
+	refs, err = m.RetainedReferences(context.Background(), c.ID)
+	if err != nil || len(refs) != 0 {
+		t.Fatal("queued credentials should permit connection deletion", refs, err)
+	}
+}
+
+func TestOfflineServeWithdrawalPreservesNodeKeys(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tailscaled.state")
+	os.WriteFile(path, []byte(`{"_serve/profile-one":"public-config","_machinekey":"node-key","profile-one":"profile-data"}`), 0600)
+	if err := discardSavedServe(dir); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	var v map[string]string
+	if json.Unmarshal(b, &v) != nil || v["_machinekey"] != "node-key" || v["profile-one"] != "profile-data" {
+		t.Fatal("node keys changed")
+	}
+	if _, exists := v["_serve/profile-one"]; exists {
+		t.Fatal("public config can restore before intent reconciliation")
+	}
+}

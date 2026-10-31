@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/zefhemel/deskyard/supervisor/internal/store"
-	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -55,8 +54,10 @@ func (v tailscaleDaemonStatus) publicStatus() Status {
 }
 
 type tailscaleNodeIdentity struct {
-	NodeID   string `json:"nodeId"`
-	Retiring bool   `json:"retiring,omitempty"`
+	NodeID            string `json:"nodeId"`
+	Retiring          bool   `json:"retiring,omitempty"`
+	RetirementID      string `json:"retirementId,omitempty"`
+	EnrollmentStarted bool   `json:"enrollmentStarted,omitempty"`
 }
 
 func readNodeIdentity(dir string) (tailscaleNodeIdentity, error) {
@@ -110,128 +111,4 @@ func (m *Manager) tailscaleStatus(ctx context.Context, name, id, connectionID st
 	}
 	status.Tailscale.Services = m.serviceStatuses(ctx, name, id, status.Tailscale.DNSName)
 	return status, nil
-}
-
-type tailscaleRetirement struct{ NodeID, ClientID, Secret, Tailnet string }
-
-// Retire queues an exact-ID deletion before local state goes away. The private
-// queue holds the credential needed if the saved connection is then deleted.
-// API outage does not block local computer removal; startup/poll retries it.
-func (m *Manager) Retire(ctx context.Context, name, connectionID string) error {
-	if !validRuntime(name) || (connectionID != "" && !validID(connectionID)) {
-		return invalid("tailscale", "invalid retirement identity")
-	}
-	root := filepath.Dir(m.tailscaleNodeDir(name, strings.Repeat("a", 32)))
-	entries, err := os.ReadDir(root)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return errors.New("Tailscale node state unavailable")
-	}
-	for _, entry := range entries {
-		id := entry.Name()
-		if !entry.IsDir() || !validID(id) || (connectionID != "" && id != connectionID) {
-			continue
-		}
-		dir := filepath.Join(root, id)
-		identity, e := readNodeIdentity(dir)
-		if e != nil {
-			return e
-		}
-		if identity.NodeID == "" {
-			if _, e = os.Stat(filepath.Join(dir, "tailscaled.state")); e == nil && !m.candidate {
-				return errors.New("Tailscale device identity needs reconciliation before retirement")
-			}
-			if e = os.RemoveAll(dir); e != nil {
-				return errors.New("Tailscale node cleanup failed")
-			}
-			continue
-		}
-		client, e := m.store.tailscaleClient(id)
-		if e != nil {
-			return e
-		}
-		record := tailscaleRetirement{NodeID: identity.NodeID, ClientID: client.clientID, Secret: client.secret, Tailnet: client.tailnet}
-		queue := m.retirementQueue()
-		if e = os.MkdirAll(queue, 0700); e != nil {
-			return errors.New("Tailscale retirement queue unavailable")
-		}
-		key, e := newID()
-		if e != nil {
-			return errors.New("Tailscale retirement identity unavailable")
-		}
-		file := filepath.Join(queue, key+".json")
-		if e = store.WriteJSON(file, record); e != nil {
-			return errors.New("Tailscale retirement could not be saved")
-		}
-		identity.Retiring = true
-		if e = store.WriteJSON(filepath.Join(dir, "identity.json"), identity); e != nil {
-			return errors.New("Tailscale retirement could not be saved")
-		}
-		if e = os.RemoveAll(dir); e != nil {
-			return errors.New("Tailscale node cleanup failed")
-		}
-	}
-	m.RetryRetirements(ctx)
-	return nil
-}
-func (m *Manager) RetryRetirements(ctx context.Context) {
-	queue := m.retirementQueue()
-	entries, err := os.ReadDir(queue)
-	if err != nil {
-		return
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-			continue
-		}
-		file := filepath.Join(queue, entry.Name())
-		var v tailscaleRetirement
-		if store.ReadJSON(file, &v) != nil {
-			continue
-		}
-		client := tailscaleClient{baseURL: "https://api.tailscale.com", clientID: v.ClientID, secret: v.Secret, tailnet: v.Tailnet, http: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
-		if client.DeleteDevice(ctx, v.NodeID) == nil {
-			_ = os.Remove(file)
-		}
-		if ctx.Err() != nil {
-			return
-		}
-	}
-}
-
-// RetireOther is idempotent recovery for switching connections, including a
-// crash after the definition changed but before the old device was retired.
-func (m *Manager) RetireOther(ctx context.Context, name, keep string) error {
-	if !validRuntime(name) || (keep != "" && !validID(keep)) {
-		return invalid("tailscale", "invalid retirement identity")
-	}
-	root := filepath.Dir(m.tailscaleNodeDir(name, strings.Repeat("a", 32)))
-	entries, err := os.ReadDir(root)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return errors.New("Tailscale identity inventory unavailable")
-	}
-	for _, entry := range entries {
-		if entry.IsDir() && validID(entry.Name()) && entry.Name() != keep {
-			if err = m.Retire(ctx, name, entry.Name()); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (m *Manager) retirementQueue() string {
-	if m.retirementRoot != "" {
-		return m.retirementRoot
-	}
-	return filepath.Join(m.stateDir, "tailscale", "retirements")
-}
-func (m *Manager) PendingRetirements() int {
-	entries, _ := os.ReadDir(m.retirementQueue())
-	return len(entries)
 }
