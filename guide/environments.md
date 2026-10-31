@@ -58,6 +58,27 @@ The OrbStack verification uses real Selkies desktops, the supervisor proxy, agen
 
 Each enabled environment adds one long-lived gateway container with its own CPU/memory use and provider connection; stopping the environment does not release that cost. Environment resource limits apply to its container, not its gateway. Version one uses public DNS through the tunnel, blocks external IPv6 and Docker's embedded resolver, and has no custom DNS selector. LAN exceptions intentionally send only their configured private IPv4 destination, TCP/UDP and ports outside the tunnel; other environment/control networks and link-local destinations cannot be excepted.
 
+## Tailscale
+
+Choose **Tailscale** as the provider when adding a saved connection under **Networking** (`/_vpn`). Create an OAuth client in the [Tailscale admin console](https://login.tailscale.com/admin/settings/oauth) with **auth_keys write** and **devices:core write** permissions restricted to the device tags you will use, for example `tag:deskyard`. Enter the tailnet name or ID, client ID, client secret and tags in Deskyard. Blank secret fields retain the saved value. Provider, tailnet and tags are fixed for a saved connection; use a separate connection to change them. A test enrolls a disposable ephemeral device and requests its deletion afterward.
+
+Each computer chooses No VPN, NordVPN or Tailscale, with one provider at a time. A Tailscale computer has its own tag-owned device identity and DNS name. Its apps can connect to permitted tailnet peers normally, without an application proxy. Ordinary internet traffic goes through the host: there is no exit-node setting or NordVPN-style internet kill switch. Direct LAN access still needs an explicit destination/transport/port exception. MagicDNS uses Tailscale's resolver with a public fallback when the node cannot resolve; custom DNS policy is not provided.
+
+The managed sidecar receives networking privileges; the desktop does not. Node state survives stop/start, sidecar replacement and desktop image upgrades. Stopping a Tailscale computer stops its sidecar. Switching to another connection or No VPN, or deleting the computer, retires the old Tailscale device; switching back enrolls a new one. If remote deletion fails, Deskyard retains a private cleanup request and retries it. Networking shows the count of pending device removals. Preserve the entire data folder, including `secret/tailscale`, when backing up or moving the supervisor; copying only a workspace does not preserve a device identity.
+
+### Publish an HTTP app
+
+Enable MagicDNS and HTTPS certificates in Tailscale. For public exposure, allow the `funnel` node attribute for the enrolled device tags in your tailnet policy. Deskyard never silently broadens that policy.
+
+1. Choose a saved Tailscale connection for the computer, save and start it. Approve the device in Tailscale if your tailnet requires approval.
+2. Start the app inside the computer on `127.0.0.1`, for example `python3 -m http.server 3000 --bind 127.0.0.1` from a folder containing only files you intend to share.
+3. Open the computer's **Settings → Networking → HTTP services**. Add its local port, select **Private · Serve** or **Public internet · Funnel**, and choose the HTTPS listener port. Private Serve on 443 is the default. Funnel permits 443, 8443 or 10000.
+4. Select **Save HTTP services**. This does not restart the desktop. Each listener serves one app at `/`; add another listener for another app. Open the observed URL shown in VPN status once the rule is applied.
+
+Private Serve is governed by tailnet access rules. Public Funnel is reachable by anyone and does not add a Deskyard login; the app must provide authentication if needed. Desktop control, streaming, SSH and browser-debugging ports cannot be selected as backends. Raw TCP publishing, path multiplexing, custom domains and HTTPS backends are not in this first slice. Removing all rules and saving withdraws publication. Edits on a stopped computer are saved for its next start.
+
+Tailscale's [Serve](https://tailscale.com/docs/features/tailscale-serve) and [Funnel](https://tailscale.com/docs/features/tailscale-funnel) documentation explains access rules, certificates and Funnel bandwidth limits. The scoped verification procedure and live-test limitations are in [Tailscale verification](../supervisor/tests/TAILSCALE.md).
+
 ## What persists
 
 An environment's private persistent folder is `/workspace`: the folder

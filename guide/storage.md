@@ -161,11 +161,11 @@ plain view; there is no hidden folder:
   storage-remotes.json  storage remotes (no credentials)
   backups.json        backup repositories and policies
   secret/             session key, per-environment proxy tokens (proxy/<name>),
-                      VPN service credentials (vpn/<connection-id>/), TLS certificates (certmagic/),
+                      VPN/OAuth credentials (vpn/<connection-id>/), Tailscale node state (tailscale/nodes/<name>/<connection-id>/), TLS certificates (certmagic/),
                       storage remote credentials and rclone.conf (remotes/<name>/),
                       backup recovery keys (backups/<repository>/)
   state/              this supervisor's instance ID, the ownership marker (owner), replacement records (recovery/<name>.json),
-                      VPN network transitions (network/transitions.json), VPN runtime scratch (vpn/),
+                      VPN network transitions (network/transitions.json), VPN runtime scratch (vpn/), deferred Tailscale device deletions (tailscale/retirements/, private credentials included),
                       backup run state (backups.json), runtime CLI builds (cli/linux-<arch>/deskyard)
   cache/              Selkies web clients extracted from images, restic's cache and binary; safe to delete
   home/<name>/        each environment's /workspace, owned by UID 1000

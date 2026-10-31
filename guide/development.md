@@ -177,3 +177,5 @@ For shared-engine VPN verification, use the [scoped VPN test guide](../superviso
 For UI development against an existing test supervisor, run `DESKYARD_API=http://<supervisor>:7343 npm run dev` in `supervisor/web`. The Vite proxy rewrites both Host and Origin to the supervisor for API and desktop stream requests, so login and other same-origin checks work through the development URL. Without `DESKYARD_API`, Vite uses mock data.
 
 In current desktop images, control a user service as the desktop user with `/usr/local/bin/workspace-exec supervisorctl -c /etc/workspace/user-services.conf stop selkies` (or `start selkies`). The root supervisor controls system services; the user control socket is private. Allow at least 45 seconds when stopping disposable desktop containers to observe the complete ordered shutdown.
+
+Tailscale has a separate [kernel sidecar check and manual acceptance procedure](../supervisor/tests/TAILSCALE.md). The kernel check needs Docker and TUN but no tailnet credentials; enrollment, MagicDNS, peers and Serve/Funnel require a dedicated tailnet. Use a separate supervisor data folder and unique computer names when testing on a shared engine.
